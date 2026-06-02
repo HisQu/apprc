@@ -248,10 +248,6 @@ class ConfigEditorApp(App[None]):
                 f"{kit.spec.app_name} config init STORAGE_ROOT --name NAME"
             )
             registry_label = kit.spec.registry_filename
-            hidden_env_keys = (
-                kit.spec.storage_root_env_key,
-                *hidden_env_keys,
-            )
         if owners is None:
             raise TypeError("ConfigEditorApp requires kit or owners.")
         self.registry = registry

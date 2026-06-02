@@ -18,7 +18,6 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Annotated, Any, Protocol, TypeVar, cast
 
-# == 3rd Party ===============================
 import typer
 from rich import print as rich_print
 
@@ -52,7 +51,7 @@ def config_request_skips_bootstrap(args: list[str]) -> bool:
         return True
     if args == ["--json"]:
         return True
-    return args[0] in {"doctor", "set-default"}
+    return args[0] in {"doctor", "init", "list", "set-default"}
 
 
 def active_storage_root_from_state(
@@ -174,6 +173,114 @@ def build_config_typer_app(
             "storage_root": str(storage_root) if storage_root else None,
         }
 
+    def _ordered_storage_names(registry: Any) -> list[str]:
+        """Return default storage first, then remaining storages by name."""
+        names = sorted(registry.storages)
+        default_name = registry.default_storage
+        if default_name in names:
+            names.remove(default_name)
+            names.insert(0, default_name)
+        return names
+
+    def _storage_list_payload(registry: Any) -> dict[str, Any]:
+        """Return JSON-friendly registry rows for ``config list``."""
+        storages: list[dict[str, Any]] = []
+        for name in _ordered_storage_names(registry):
+            record = registry.selected(name)
+            local_env = record.root / kit.spec.local_env_filename
+            storages.append(
+                {
+                    "name": record.name,
+                    "default": record.name == registry.default_storage,
+                    "root": str(record.root),
+                    "root_exists": record.root.is_dir(),
+                    "local_env": str(local_env),
+                    "local_env_exists": local_env.is_file(),
+                }
+            )
+        return {
+            "registry": str(registry.path),
+            "default_storage": registry.default_storage,
+            "storages": storages,
+        }
+
+    def _print_storage_list(payload: Mapping[str, Any]) -> None:
+        """Print storage registry rows in a readable text format."""
+        typer.echo(f"registry: {payload['registry']}")
+        typer.echo(f"default_storage: {payload['default_storage'] or '<none>'}")
+        storages = payload["storages"]
+        if not storages:
+            typer.echo("storages: <none>")
+            return
+        typer.echo("storages:")
+        for storage in storages:
+            marker = "*" if storage["default"] else "-"
+            typer.echo(f"{marker} {storage['name']}")
+            typer.echo(f"  root: {storage['root']}")
+            typer.echo(f"  root_exists: {str(storage['root_exists']).lower()}")
+            typer.echo(f"  local_env: {storage['local_env']}")
+            typer.echo(
+                "  local_env_exists: "
+                f"{str(storage['local_env_exists']).lower()}"
+            )
+
+    def _print_directory_listing(storage_root: Path) -> None:
+        """Print a sorted first-level listing for an existing storage root."""
+        typer.echo(f"contents of {storage_root}:")
+        for child in sorted(storage_root.iterdir(), key=lambda item: item.name):
+            suffix = "/" if child.is_dir() else ""
+            typer.echo(f"  {child.name}{suffix}")
+
+    def _confirm_existing_storage_root(storage_root: Path) -> None:
+        """Ask whether a non-empty existing storage root may be reused."""
+        typer.echo(
+            f"Storage root already exists and is not empty: {storage_root}"
+        )
+        while True:
+            try:
+                answer = typer.prompt(
+                    "Continue? [y/n/l]",
+                    default="",
+                    show_default=False,
+                )
+            except (EOFError, typer.Abort):
+                typer.echo(
+                    "Refusing to register a non-empty storage root without "
+                    "confirmation. Re-run with --yes to continue.",
+                    err=True,
+                )
+                raise typer.Exit(code=1) from None
+            normalized = answer.strip().lower()
+            if normalized in {"y", "yes"}:
+                return
+            if normalized in {"n", "no"}:
+                typer.echo("Aborted.")
+                raise typer.Exit(code=1)
+            if normalized in {"l", "list"}:
+                _print_directory_listing(storage_root)
+                continue
+            typer.echo("Answer y to continue, n to abort, or l to list.")
+
+    def _guard_storage_root_init(
+        storage_root: Path,
+        *,
+        assume_yes: bool,
+    ) -> None:
+        """Prompt before reusing a non-empty existing storage root."""
+        root = Path(storage_root).expanduser()
+        if not root.exists():
+            return
+        resolved_root = root.resolve()
+        if not resolved_root.is_dir():
+            raise typer.BadParameter(
+                f"Storage root exists but is not a directory: {resolved_root}",
+                param_hint="STORAGE_ROOT",
+            )
+        if assume_yes:
+            return
+        if any(resolved_root.iterdir()):
+            _confirm_existing_storage_root(resolved_root)
+
     @app.callback(invoke_without_command=True)
     def config_cmd(
         ctx: typer.Context,
@@ -193,6 +300,27 @@ def build_config_typer_app(
             typer.echo(migration_message, err=True)
             raise typer.Exit(code=2)
         exit_missing_action(ctx)
+
+    @app.command("list")
+    def config_list_cmd(
+        json_output: Annotated[
+            bool,
+            typer.Option("--json", help="Emit machine-readable JSON."),
+        ] = False,
+    ) -> None:
+        """List registered storage roots from the user registry."""
+        try:
+            registry = kit.load_registry()
+        except ValueError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=kit.spec.registry_filename,
+            ) from exc
+        payload = _storage_list_payload(registry)
+        if json_output:
+            dump_json(payload)
+            return
+        _print_storage_list(payload)
 
     @app.command("show")
     def config_show_cmd(
@@ -267,8 +395,17 @@ def build_config_typer_app(
                 help="Make this storage the default in the registry.",
             ),
         ] = False,
+        assume_yes: Annotated[
+            bool,
+            typer.Option(
+                "--yes",
+                "-y",
+                help="Reuse a non-empty existing storage root without prompting.",
+            ),
+        ] = False,
     ) -> None:
         """Register one storage root and create its local env file."""
+        _guard_storage_root_init(storage_root, assume_yes=assume_yes)
         try:
             registry = kit.register_storage(
                 name=name,

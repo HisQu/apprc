@@ -6,11 +6,15 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Collection, Sequence
+from importlib import import_module
 from typing import Any, NoReturn, TypeVar
 
-# == 3rd Party ===============================
-import click
 import typer
+
+try:
+    click: Any = import_module("typer._click")
+except ModuleNotFoundError:
+    click = import_module("click")
 
 MISSING_ACTION_MESSAGE = "error: no action specified"
 StateT = TypeVar("StateT")

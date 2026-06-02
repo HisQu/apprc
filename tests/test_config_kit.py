@@ -7,6 +7,7 @@ import pytest
 from textual.widgets import Button, DataTable, Input, Static
 from typer.testing import CliRunner
 
+from apprc.cli.config_app import config_request_skips_bootstrap
 from apprc.config import (
     config_field,
 )
@@ -16,6 +17,11 @@ from tests.support_config import (
     build_demo_kit,
     demo_state,
 )
+
+
+def test_config_init_and_list_skip_runtime_bootstrap() -> None:
+    assert config_request_skips_bootstrap(["init", "/tmp/storage"])
+    assert config_request_skips_bootstrap(["list"])
 
 
 def test_kit_registers_storage_and_reports_doctor_payload(
@@ -35,10 +41,41 @@ def test_kit_registers_storage_and_reports_doctor_payload(
 
     assert registry.path == tmp_path / "config" / "demo" / "demo.toml"
     assert (storage_root / ".env.demo").is_file()
+    assert f'DEMO_D_STORAGE="{storage_root.resolve()}"\n' in (
+        storage_root / ".env.demo"
+    ).read_text(encoding="utf-8")
     assert payload["ok"] is True
     assert payload["default_storage"] == "alpha"
     assert payload["selected_storage_root"] == str(storage_root.resolve())
     assert payload["selected_local_env_exists"] is True
+
+
+def test_kit_set_default_syncs_storage_root_local_env(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    beta_root = tmp_path / "beta"
+    kit.register_storage(
+        name="alpha",
+        root=tmp_path / "alpha",
+        make_default=True,
+    )
+    kit.register_storage(
+        name="beta",
+        root=beta_root,
+        make_default=False,
+    )
+    beta_local_env = beta_root / ".env.demo"
+    beta_local_env.write_text('DEMO_MODEL="custom"\n', encoding="utf-8")
+
+    registry = kit.set_default_storage(name="beta")
+
+    assert registry.default_storage == "beta"
+    assert beta_local_env.read_text(encoding="utf-8") == (
+        f'DEMO_D_STORAGE="{beta_root.resolve()}"\nDEMO_MODEL="custom"\n'
+    )
 
 
 def test_generated_config_app_sets_local_values_and_shows_payload(
@@ -73,6 +110,119 @@ def test_generated_config_app_sets_local_values_and_shows_payload(
     ).read_text(encoding="utf-8")
     assert show_result.exit_code == 0, show_result.output
     assert json.loads(show_result.output) == {"storage": str(storage_root)}
+
+
+def test_generated_config_app_inits_existing_storage_after_list_prompt(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / "payload.txt").write_text("demo", encoding="utf-8")
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["init", str(storage_root), "--name", "alpha", "--default"],
+        input="l\ny\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Storage root already exists and is not empty" in result.output
+    assert "payload.txt" in result.output
+    assert f'DEMO_D_STORAGE="{storage_root.resolve()}"\n' in (
+        storage_root / ".env.demo"
+    ).read_text(encoding="utf-8")
+
+
+def test_generated_config_app_aborts_existing_storage_when_user_says_no(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / "payload.txt").write_text("demo", encoding="utf-8")
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["init", str(storage_root), "--name", "alpha"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "Aborted." in result.output
+    assert not kit.registry_path().exists()
+    assert not (storage_root / ".env.demo").exists()
+
+
+def test_generated_config_app_inits_non_empty_storage_with_yes_option(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / "payload.txt").write_text("demo", encoding="utf-8")
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["init", str(storage_root), "--name", "alpha", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Continue? [y/n/l]" not in result.output
+    assert (storage_root / ".env.demo").is_file()
+
+
+def test_generated_config_app_lists_registered_storages_as_json(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    alpha_root = tmp_path / "alpha"
+    beta_root = tmp_path / "beta"
+    kit.register_storage(name="alpha", root=alpha_root, make_default=True)
+    kit.register_storage(name="beta", root=beta_root, make_default=False)
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == {
+        "default_storage": "alpha",
+        "registry": str(tmp_path / "config" / "demo" / "demo.toml"),
+        "storages": [
+            {
+                "default": True,
+                "local_env": str(alpha_root.resolve() / ".env.demo"),
+                "local_env_exists": True,
+                "name": "alpha",
+                "root": str(alpha_root.resolve()),
+                "root_exists": True,
+            },
+            {
+                "default": False,
+                "local_env": str(beta_root.resolve() / ".env.demo"),
+                "local_env_exists": True,
+                "name": "beta",
+                "root": str(beta_root.resolve()),
+                "root_exists": True,
+            },
+        ],
+    }
 
 
 def test_kit_builds_generic_editor_with_spec_defaults(
@@ -112,7 +262,7 @@ def test_config_field_splits_short_and_long_explanations() -> None:
 
 
 @pytest.mark.asyncio
-async def test_editor_table_hides_storage_root_and_formats_rows(
+async def test_editor_table_shows_storage_root_and_formats_rows(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -126,6 +276,7 @@ async def test_editor_table_hides_storage_root_and_formats_rows(
     )
     local_env = tmp_path / "storage" / ".env.demo"
     local_env.write_text(
+        f'DEMO_D_STORAGE="{(tmp_path / "storage").resolve()}"\n'
         'DEMO_API_TOKEN="super-secret"\n'
         'DEMO_MODEL="local-model"\n'
         'DEMO_RETRY_COUNT="7"\n',
@@ -139,6 +290,8 @@ async def test_editor_table_hides_storage_root_and_formats_rows(
 
     column_labels = [column.label.plain for column in table.columns.values()]
     row_text = [[str(cell) for cell in row] for row in rows]
+    rows_by_key = {row[2]: row for row in row_text}
+    rich_rows_by_key = {str(row[2]): row for row in rows}
 
     assert column_labels == [
         "#",
@@ -149,32 +302,30 @@ async def test_editor_table_hides_storage_root_and_formats_rows(
         "Default",
         "Explanation",
     ]
-    assert "DEMO_D_STORAGE" not in {row[2] for row in row_text}
-    assert [
-        "1",
+    assert rows_by_key["DEMO_D_STORAGE"][3] == "unset"
+    assert rows_by_key["DEMO_D_STORAGE"][4] == str(
+        (tmp_path / "storage").resolve()
+    )
+    assert rows_by_key["DEMO_MODEL"][:6] == [
+        "2",
         "Runtime",
         "DEMO_MODEL",
         "unset",
         "local-model",
         "demo-model",
-    ] == row_text[0][:6]
-    assert rows[0][4].style == "white"
-    assert rows[0][5].style == "white"
-    assert row_text[1][2] == "DEMO_API_TOKEN"
-    assert row_text[1][4] == "<secret>"
-    assert rows[1][4].style == "dim italic"
-    assert row_text[1][5] == ""
-    assert row_text[2][2] == "DEMO_STRATEGY"
-    assert row_text[2][3] == "shell"
-    assert rows[2][5].style == "bold cyan"
-    assert row_text[3][2] == "DEMO_ENABLED"
-    assert rows[3][5].style == "bold magenta"
-    assert row_text[4][2] == "DEMO_RETRY_COUNT"
-    assert rows[4][4].style == "yellow"
-    assert rows[4][5].style == "yellow"
-    assert row_text[5][2] == "DEMO_CACHE_DIR"
-    assert rows[5][5].style == "green"
-    assert rows[0][6].style == "dim"
+    ]
+    assert rich_rows_by_key["DEMO_MODEL"][4].style == "white"
+    assert rich_rows_by_key["DEMO_MODEL"][5].style == "white"
+    assert rows_by_key["DEMO_API_TOKEN"][4] == "<secret>"
+    assert rich_rows_by_key["DEMO_API_TOKEN"][4].style == "dim italic"
+    assert rows_by_key["DEMO_API_TOKEN"][5] == ""
+    assert rows_by_key["DEMO_STRATEGY"][3] == "shell"
+    assert rich_rows_by_key["DEMO_STRATEGY"][5].style == "bold cyan"
+    assert rich_rows_by_key["DEMO_ENABLED"][5].style == "bold magenta"
+    assert rich_rows_by_key["DEMO_RETRY_COUNT"][4].style == "yellow"
+    assert rich_rows_by_key["DEMO_RETRY_COUNT"][5].style == "yellow"
+    assert rich_rows_by_key["DEMO_CACHE_DIR"][5].style == "green"
+    assert rich_rows_by_key["DEMO_D_STORAGE"][6].style == "dim"
 
 
 @pytest.mark.asyncio
@@ -193,10 +344,11 @@ async def test_editor_table_required_missing_keeps_red_fill(
 
     async with editor.run_test():
         table = editor.query_one("#field-table", DataTable)
-        row = table.get_row_at(1)
+        rows = [table.get_row_at(i) for i in range(table.row_count)]
+    rows_by_key = {str(row[2]): row for row in rows}
 
-    assert str(row[5]) == "<required>"
-    assert row[5].style == "bold white on red"
+    assert str(rows_by_key["DEMO_API_TOKEN"][5]) == "<required>"
+    assert rows_by_key["DEMO_API_TOKEN"][5].style == "bold white on red"
 
 
 @pytest.mark.asyncio
@@ -216,7 +368,7 @@ async def test_editor_modal_saves_local_value(
 
     async with editor.run_test() as pilot:
         table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = (0, 0)
+        table.cursor_coordinate = (1, 0)
         editor._open_selected_field_editor()
         await pilot.pause()
         input_widget = editor.screen.query_one("#edit-value-input", Input)
@@ -245,7 +397,7 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
 
     async with editor.run_test() as pilot:
         table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = (2, 0)
+        table.cursor_coordinate = (3, 0)
         editor._open_selected_field_editor()
         await pilot.pause()
         metadata = editor.screen.query_one("#edit-metadata", Static).content

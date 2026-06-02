@@ -11,6 +11,7 @@ from __future__ import annotations
 # == Standard Library ========================
 import logging
 import os
+from importlib import import_module
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
@@ -166,7 +167,10 @@ def sync_hf_repo_into(
     :returns: The local_root (for convenience).
     """
     try:
-        from huggingface_hub import snapshot_download
+        snapshot_download = getattr(
+            import_module("huggingface_hub"),
+            "snapshot_download",
+        )
     except Exception as e:
         raise RuntimeError(
             "huggingface_hub is required for Hugging Face sync. "

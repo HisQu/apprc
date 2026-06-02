@@ -27,7 +27,9 @@ from apprc.config.environment import (
 from apprc.config.local_env import (
     LocalEnvUpdate,
     local_env_path,
+    read_local_env,
     set_local_env_value,
+    write_local_env,
 )
 from apprc.config.schema import ConfigOwner
 from apprc.config.storage_registry import (
@@ -164,13 +166,15 @@ class AppConfigKit:
         path: Path | None = None,
     ) -> StorageRegistry:
         """Add or update one storage entry for this application."""
-        return register_storage(
+        registry = register_storage(
             name=name,
             root=root,
             make_default=make_default,
             path=self.registry_path() if path is None else path,
             local_env_filename=self.spec.local_env_filename,
         )
+        self._write_storage_root_local_value(registry.selected(name).root)
+        return registry
 
     def set_default_storage(
         self,
@@ -179,10 +183,25 @@ class AppConfigKit:
         path: Path | None = None,
     ) -> StorageRegistry:
         """Set an existing storage as the default for this application."""
-        return set_default_storage(
+        registry = set_default_storage(
             name=name,
             path=self.registry_path() if path is None else path,
         )
+        self._write_storage_root_local_value(registry.selected(name).root)
+        return registry
+
+    def _write_storage_root_local_value(self, storage_root: Path) -> Path:
+        """Persist the registry-managed storage root in local dotenv form.
+
+        :param storage_root: Resolved root of the registered storage.
+        :return: Path to the storage-local dotenv file.
+        """
+        path = self.local_env_path(storage_root)
+        values = read_local_env(path)
+        values[self.spec.storage_root_env_key] = str(
+            Path(storage_root).expanduser().resolve()
+        )
+        return write_local_env(path, values, owners=self.spec.owners)
 
     def local_env_path(self, storage_root: Path) -> Path:
         """Return this application's storage-local dotenv path."""

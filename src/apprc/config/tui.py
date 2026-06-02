@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 # == 3rd Party ===============================
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
     DataTable,
@@ -21,6 +23,7 @@ from textual.widgets import (
     ListView,
     Static,
 )
+from rich.text import Text
 
 # == Internal ================================
 from apprc.config.local_env import (
@@ -34,9 +37,11 @@ from apprc.config.schema import (
     ConfigField,
     ConfigOwner,
     find_field_by_env_key,
-    iter_config_fields,
 )
 from apprc.config.storage_registry import StorageRecord, StorageRegistry
+
+if TYPE_CHECKING:
+    from apprc.config.kit import AppConfigKit
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +50,143 @@ class _SelectedField:
 
     owner: ConfigOwner
     spec: ConfigField
+
+
+@dataclass(frozen=True, slots=True)
+class _ValueEditResult:
+    """Result returned by the edit modal."""
+
+    action: Literal["save", "clear"]
+    env_key: str
+    raw_value: str
+
+
+class _ConfigValueEditScreen(ModalScreen[_ValueEditResult | None]):
+    """Modal editor for one storage-local value."""
+
+    CSS = """
+    _ConfigValueEditScreen {
+        align: center middle;
+    }
+
+    #edit-dialog {
+        width: 78;
+        max-width: 95%;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #edit-long-explanation {
+        height: 5;
+        margin: 1 0;
+    }
+
+    #edit-button-row {
+        height: 3;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [
+        ("escape", "cancel", "Cancel"),
+        ("ctrl+s", "save", "Save"),
+    ]
+
+    def __init__(
+        self,
+        *,
+        owner: ConfigOwner,
+        spec: ConfigField,
+        env_key: str,
+        local_value: str,
+        env_is_set: bool,
+    ) -> None:
+        """Store field metadata for modal rendering."""
+        super().__init__()
+        self.owner = owner
+        self.spec = spec
+        self.env_key = env_key
+        self.local_value = local_value
+        self.env_is_set = env_is_set
+
+    def compose(self) -> ComposeResult:
+        """Compose field metadata, value input, and modal actions."""
+        with Vertical(id="edit-dialog"):
+            yield Static(
+                Text(
+                    self.spec.title or self.spec.name,
+                    style="bold",
+                ),
+                id="edit-title",
+            )
+            yield Static(self.env_key, id="edit-env-key")
+            yield Static(
+                "\n".join(
+                    (
+                        f"Type: {_type_label(self.spec)}",
+                        f"Possible values: {_possible_values_label(self.spec)}",
+                        "Shell environment: "
+                        + ("set" if self.env_is_set else "unset"),
+                    )
+                ),
+                id="edit-metadata",
+            )
+            yield Static(
+                self.spec.explanation_long or self.spec.explanation_short,
+                id="edit-long-explanation",
+            )
+            yield Input(
+                value=self.local_value,
+                placeholder="Local override value",
+                password=self.spec.secret,
+                id="edit-value-input",
+            )
+            with Horizontal(id="edit-button-row"):
+                yield Button("Save", variant="primary", id="edit-save")
+                yield Button("Clear Local", id="edit-clear")
+                yield Button("Cancel", id="edit-cancel")
+
+    def on_mount(self) -> None:
+        """Focus the value input when the modal opens."""
+        self.query_one("#edit-value-input", Input).focus()
+
+    def on_button_pressed(self, event: Any) -> None:
+        """Dismiss the modal with the selected action."""
+        if event.button.id == "edit-save":
+            self.action_save()
+            return
+        if event.button.id == "edit-clear":
+            self.dismiss(
+                _ValueEditResult(
+                    action="clear",
+                    env_key=self.env_key,
+                    raw_value="",
+                )
+            )
+            return
+        if event.button.id == "edit-cancel":
+            self.action_cancel()
+
+    def on_input_submitted(self, event: Any) -> None:
+        """Save when Enter is submitted from the value input."""
+        if event.input.id == "edit-value-input":
+            self.action_save()
+
+    def action_save(self) -> None:
+        """Dismiss with the current input value."""
+        raw_value = self.query_one("#edit-value-input", Input).value
+        self.dismiss(
+            _ValueEditResult(
+                action="save",
+                env_key=self.env_key,
+                raw_value=raw_value,
+            )
+        )
+
+    def action_cancel(self) -> None:
+        """Dismiss without applying a change."""
+        self.dismiss(None)
 
 
 class ConfigEditorApp(App[None]):
@@ -61,43 +203,53 @@ class ConfigEditorApp(App[None]):
         padding: 0 1;
     }
 
-    #field-help {
-        height: 6;
-        margin: 1 0;
-    }
-
-    #button-row {
-        height: 3;
+    #field-table {
+        height: 1fr;
     }
     """
 
     BINDINGS = [
         ("q", "quit", "Quit"),
-        ("ctrl+s", "save_value", "Save"),
     ]
 
     def __init__(
         self,
         *,
         registry: StorageRegistry,
-        owners: tuple[ConfigOwner, ...],
+        kit: AppConfigKit | None = None,
+        owners: tuple[ConfigOwner, ...] | None = None,
         initial_storage: str | None = None,
         local_env_filename: str = ".env.local",
         init_command: str = "app config init STORAGE_ROOT --name NAME",
         registry_label: str = "storage registry",
+        hidden_env_keys: tuple[str, ...] = (),
     ) -> None:
-        """Keep the registry immutable while the app edits per-storage files."""
+        """Keep the registry immutable while editing per-storage files."""
         super().__init__()
+        if kit is not None:
+            owners = kit.spec.owners
+            local_env_filename = kit.spec.local_env_filename
+            init_command = (
+                f"{kit.spec.app_name} config init STORAGE_ROOT --name NAME"
+            )
+            registry_label = kit.spec.registry_filename
+            hidden_env_keys = (
+                kit.spec.storage_root_env_key,
+                *hidden_env_keys,
+            )
+        if owners is None:
+            raise TypeError("ConfigEditorApp requires kit or owners.")
         self.registry = registry
         self.owners = owners
         self.initial_storage = initial_storage
         self.local_env_filename = local_env_filename
         self.init_command = init_command
         self.registry_label = registry_label
+        self.hidden_env_keys = frozenset(hidden_env_keys)
         self.storage_names = self._ordered_storage_names()
         self.current_storage_name: str | None = None
         self.local_values: dict[str, str] = {}
-        self.row_env_keys: list[str] = []
+        self.row_env_keys: list[str | None] = []
 
     def compose(self) -> ComposeResult:
         """Compose the storage list and field editor."""
@@ -107,13 +259,6 @@ class ConfigEditorApp(App[None]):
             with Vertical(id="editor-pane"):
                 yield Static("", id="storage-title")
                 yield DataTable(id="field-table")
-                yield Static("", id="field-help")
-                yield Input(
-                    placeholder="Local override value", id="value-input"
-                )
-                with Horizontal(id="button-row"):
-                    yield Button("Save", variant="primary", id="save")
-                    yield Button("Clear", id="clear")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -146,36 +291,57 @@ class ConfigEditorApp(App[None]):
         self._select_storage(self.storage_names[index])
 
     def on_data_table_row_selected(self, event: Any) -> None:
-        """Update the value input from the selected table row."""
+        """Open a modal editor when a config field row is selected."""
         del event
-        self._refresh_selected_field_panel()
+        self._open_selected_field_editor()
 
-    def on_button_pressed(self, event: Any) -> None:
-        """Handle Save and Clear button clicks."""
-        if event.button.id == "save":
-            self.action_save_value()
-            return
-        if event.button.id == "clear":
-            self._clear_value()
-
-    def action_save_value(self) -> None:
-        """Validate and persist the current input value."""
+    def _open_selected_field_editor(self) -> None:
+        """Open the modal editor for the current table row."""
         selected = self._selected_field()
-        if selected is None or self.current_storage_name is None:
+        if selected is None:
             return
         if not selected.spec.editable:
             self.notify(
-                "This setting is managed outside .env.local.",
+                f"This setting is managed by {self.registry_label}.",
                 severity="warning",
             )
             return
-        raw_value = self.query_one("#value-input", Input).value
+        env_key = selected.owner.env_key(selected.spec.name)
+        self.push_screen(
+            _ConfigValueEditScreen(
+                owner=selected.owner,
+                spec=selected.spec,
+                env_key=env_key,
+                local_value=self.local_values.get(env_key, ""),
+                env_is_set=env_key in os.environ,
+            ),
+            self._handle_edit_result,
+        )
+
+    def on_button_pressed(self, event: Any) -> None:
+        """Handle Save and Clear button clicks."""
+        del event
+
+    def _handle_edit_result(self, result: _ValueEditResult | None) -> None:
+        """Persist the value returned by the edit modal."""
+        if result is None or self.current_storage_name is None:
+            return
+        if result.action == "clear":
+            self._clear_env_key(result.env_key)
+            return
+        self._save_env_key(result.env_key, result.raw_value)
+
+    def _save_env_key(self, env_key: str, raw_value: str) -> None:
+        """Validate and persist one local env value."""
+        found = find_field_by_env_key(self.owners, env_key)
+        if found is None:
+            return
+        owner, spec = found
         try:
-            value = normalize_env_value(selected.spec, raw_value)
+            value = normalize_env_value(spec, raw_value)
         except (TypeError, ValueError) as exc:
             self.notify(str(exc), severity="error")
             return
-        env_key = selected.owner.env_key(selected.spec.name)
         self.local_values[env_key] = value
         write_local_env(
             self._current_local_env_path(),
@@ -185,12 +351,8 @@ class ConfigEditorApp(App[None]):
         self._populate_field_table()
         self.notify(f"Saved {env_key}")
 
-    def _clear_value(self) -> None:
-        """Remove the selected key from the active local env file."""
-        selected = self._selected_field()
-        if selected is None:
-            return
-        env_key = selected.owner.env_key(selected.spec.name)
+    def _clear_env_key(self, env_key: str) -> None:
+        """Remove one key from the active local env file."""
         if env_key not in self.local_values:
             return
         self.local_values.pop(env_key)
@@ -228,46 +390,50 @@ class ConfigEditorApp(App[None]):
         table = self.query_one("#field-table", DataTable)
         table.clear(columns=True)
         table.cursor_type = "row"
-        table.add_columns("Key", "Local", "Default", "Section")
+        table.add_columns(
+            "#",
+            "Section",
+            "Key",
+            "Status",
+            "Local",
+            "Default",
+            "Explanation",
+        )
         self.row_env_keys = []
-        for owner, spec in iter_config_fields(self.owners):
-            env_key = owner.env_key(spec.name)
-            local = self.local_values.get(env_key, "")
-            default = _display_default(spec)
-            table.add_row(
-                env_key,
-                _display_value(local, secret=spec.secret),
-                default,
-                owner.title,
-            )
-            self.row_env_keys.append(env_key)
-        self._refresh_selected_field_panel()
-
-    def _refresh_selected_field_panel(self) -> None:
-        """Display metadata and current local value for the selected field."""
-        selected = self._selected_field()
-        help_panel = self.query_one("#field-help", Static)
-        value_input = self.query_one("#value-input", Input)
-        if selected is None:
-            help_panel.update("")
-            self._set_controls_enabled(False)
-            return
-        env_key = selected.owner.env_key(selected.spec.name)
-        editable = selected.spec.editable
-        value_input.value = self.local_values.get(env_key, "")
-        value_input.disabled = not editable
-        self.query_one("#save", Button).disabled = not editable
-        self.query_one("#clear", Button).disabled = not editable
-        edit_note = (
-            ""
-            if editable
-            else f"\nManaged by {self.registry_label}, not {self.local_env_filename}."
-        )
-        help_panel.update(
-            f"{selected.spec.title or selected.spec.name}\n"
-            f"{selected.owner.config_path_text(selected.spec.name)}\n"
-            f"{selected.spec.explanation}{edit_note}"
-        )
+        row_number = 1
+        rendered_section = False
+        for owner in self.owners:
+            visible_specs = [
+                spec
+                for spec in owner.fields
+                if owner.env_key(spec.name) not in self.hidden_env_keys
+            ]
+            if not visible_specs:
+                continue
+            if rendered_section:
+                table.add_row(*_separator_cells(), height=1)
+                self.row_env_keys.append(None)
+            rendered_section = True
+            for spec in visible_specs:
+                env_key = owner.env_key(spec.name)
+                local = self.local_values.get(env_key, "")
+                env_is_set = env_key in os.environ
+                default = _display_default(
+                    spec,
+                    local_value=local,
+                    env_is_set=env_is_set,
+                )
+                table.add_row(
+                    str(row_number),
+                    Text(owner.title, style="bold"),
+                    env_key,
+                    _status_cell(env_is_set),
+                    _display_value(local, secret=spec.secret),
+                    default,
+                    Text(_short_explanation(spec), style="dim"),
+                )
+                self.row_env_keys.append(env_key)
+                row_number += 1
 
     def _selected_field(self) -> _SelectedField | None:
         """Return the field represented by the current table cursor."""
@@ -279,7 +445,10 @@ class ConfigEditorApp(App[None]):
             or row_index >= len(self.row_env_keys)
         ):
             return None
-        found = find_field_by_env_key(self.owners, self.row_env_keys[row_index])
+        env_key = self.row_env_keys[row_index]
+        if env_key is None:
+            return None
+        found = find_field_by_env_key(self.owners, env_key)
         if found is None:
             return None
         owner, spec = found
@@ -300,16 +469,21 @@ class ConfigEditorApp(App[None]):
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable editor controls."""
-        self.query_one("#value-input", Input).disabled = not enabled
-        self.query_one("#save", Button).disabled = not enabled
-        self.query_one("#clear", Button).disabled = not enabled
+        self.query_one("#field-table", DataTable).disabled = not enabled
 
 
-def _display_default(spec: ConfigField) -> str:
+def _display_default(
+    spec: ConfigField,
+    *,
+    local_value: str,
+    env_is_set: bool,
+) -> str | Text:
     """Return a compact default value for table display."""
     value = spec.shared_env_value()
     if value is CONFIG_MISSING:
-        return "<required>"
+        if local_value == "" and not env_is_set:
+            return Text("<required>", style="bold white on red")
+        return ""
     return str(value)
 
 
@@ -320,3 +494,45 @@ def _display_value(value: str, *, secret: bool) -> str:
     if secret:
         return "<secret>"
     return value
+
+
+def _separator_cells() -> tuple[Text, ...]:
+    """Return a non-editable horizontal separator row."""
+    return tuple(
+        Text("─" * width, style="dim") for width in (3, 14, 22, 8, 14, 14, 32)
+    )
+
+
+def _status_cell(env_is_set: bool) -> Text:
+    """Return the shell environment status cell."""
+    if env_is_set:
+        return Text("shell", style="green")
+    return Text("unset", style="dim")
+
+
+def _short_explanation(spec: ConfigField) -> str:
+    """Return the field's compact table explanation."""
+    return spec.explanation_short or spec.explanation_long
+
+
+def _type_label(spec: ConfigField) -> str:
+    """Return a human-readable type label for editor metadata."""
+    type_name = getattr(spec.python_type, "__name__", None)
+    if isinstance(type_name, str):
+        return type_name
+    return str(spec.python_type)
+
+
+def _possible_values_label(spec: ConfigField) -> str:
+    """Return accepted values for editor metadata."""
+    if spec.choices:
+        return ", ".join(spec.choices)
+    if spec.python_type is bool:
+        return "true, false, yes, no, on, off, 1, 0"
+    if spec.python_type is int:
+        return "integer"
+    if spec.python_type is float:
+        return "number"
+    if spec.python_type is Path:
+        return "filesystem path"
+    return "free text"

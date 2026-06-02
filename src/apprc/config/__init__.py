@@ -7,11 +7,13 @@ from apprc.config.base_config import (
     BaseEnv,
     resolve_package_root,
 )
+from apprc.config.app_spec import AppConfigSpec
 from apprc.config.environment import (
     EnvBootstrapResult,
     EnvBootstrapSpec,
     bootstrap_env,
 )
+from apprc.config.kit import AppConfigKit
 from apprc.config.local_env import (
     LocalEnvUpdate,
     local_env_path,

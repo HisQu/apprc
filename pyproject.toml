@@ -24,8 +24,8 @@ dependencies = [
     "structlog",           # < Stdlib-backed structured logging
     "rich",                # < Exception rendering
     "textual",             # < Terminal config editor
+    "typer",               # < Reusable config CLI builder
     # "environs",     # < Higher-level .env parsing
-    # "typer",        # < CLI from functions
     # "tyro",         # < CLI from dataclasses
     # "rich",         # < Rich terminal output
     # "tqdm",         # < Progress bars

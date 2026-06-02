@@ -49,6 +49,36 @@ This package currently contains the config backend and stdlib/structlog logging
 setup extracted from Haiu. Application packages provide their own config owner
 catalog, packaged defaults, and CLI wiring.
 
+### App Config Kit
+
+Define an application's config contract once and let `apprc` derive the common
+runtime workflows from it:
+
+```python
+from apprc import AppConfigKit
+
+APP_CONFIG = AppConfigKit(
+    app_name="myapp",
+    display_name="MyApp",
+    config_package="myapp.config",
+    owners=ALL_CONFIG_OWNERS,
+    storage_root_env_key="MYAPP_STORAGE",
+    registry_filename="myapp.toml",
+)
+
+config_app = APP_CONFIG.typer_app(
+    state_type=MyCliState,
+    runtime_payload=build_config_payload,
+)
+```
+
+The generated Typer app provides `config show`, `config doctor`,
+`config init`, `config set-default`, `config set`, and `config edit`.
+
+Config field specs can provide `explanation_short` for compact table displays
+and `explanation_long` for the interactive editor modal. Existing
+`explanation=` values are accepted as a compatibility shortcut.
+
 ### Lightweight Dependencies:
 ```toml
     "python-dotenv",       # < Loads .env files
@@ -56,5 +86,5 @@ catalog, packaged defaults, and CLI wiring.
     "structlog",           # < Stdlib-backed structured logging
     "rich",                # < Exception rendering
     "textual",             # < Terminal config editor
-    # "typer"
+    "typer",               # < Reusable config CLI builder
 ```

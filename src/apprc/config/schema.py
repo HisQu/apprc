@@ -21,7 +21,7 @@ from typed_settings.types import LoadedSettings, LoaderMeta
 CONFIG_MISSING: Final = object()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class ConfigField:
     """Metadata for one env-backed runtime setting.
 
@@ -32,7 +32,8 @@ class ConfigField:
     :param shared_default: Packaged ``.env.shared`` value when intentionally
         different from ``default``.
     :param title: Short display label for docs and terminal UIs.
-    :param explanation: User-facing description.
+    :param explanation_short: Compact table-facing description.
+    :param explanation_long: Full editor-facing description.
     :param secret: Whether UIs and serializers should redact the value.
     :param editable: Whether config editors should allow direct editing.
     :param required: Whether the field has no fallback.
@@ -45,11 +46,53 @@ class ConfigField:
     default: Any = CONFIG_MISSING
     shared_default: Any = CONFIG_MISSING
     title: str = ""
-    explanation: str = ""
+    explanation_short: str = ""
+    explanation_long: str = ""
     secret: bool = False
     editable: bool = True
     required: bool = False
     choices: tuple[str, ...] = ()
+
+    def __init__(
+        self,
+        name: str,
+        env_var: str,
+        python_type: type[Any],
+        *,
+        default: Any = CONFIG_MISSING,
+        shared_default: Any = CONFIG_MISSING,
+        title: str = "",
+        explanation: str = "",
+        explanation_short: str = "",
+        explanation_long: str = "",
+        secret: bool = False,
+        editable: bool = True,
+        required: bool = False,
+        choices: tuple[str, ...] = (),
+    ) -> None:
+        """Store one field spec and normalize legacy explanation text."""
+        if explanation:
+            if not explanation_long:
+                explanation_long = explanation
+            if not explanation_short:
+                explanation_short = _first_sentence(explanation)
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "env_var", env_var)
+        object.__setattr__(self, "python_type", python_type)
+        object.__setattr__(self, "default", default)
+        object.__setattr__(self, "shared_default", shared_default)
+        object.__setattr__(self, "title", title)
+        object.__setattr__(self, "explanation_short", explanation_short)
+        object.__setattr__(self, "explanation_long", explanation_long)
+        object.__setattr__(self, "secret", secret)
+        object.__setattr__(self, "editable", editable)
+        object.__setattr__(self, "required", required)
+        object.__setattr__(self, "choices", choices)
+
+    @property
+    def explanation(self) -> str:
+        """Return the full explanation for older call sites."""
+        return self.explanation_long or self.explanation_short
 
     def shared_env_value(self) -> Any:
         """Return the expected packaged shared-env value."""
@@ -167,6 +210,8 @@ def config_field(
     shared_default: Any = CONFIG_MISSING,
     title: str = "",
     explanation: str = "",
+    explanation_short: str = "",
+    explanation_long: str = "",
     secret: bool = False,
     editable: bool = True,
     required: bool = False,
@@ -181,11 +226,23 @@ def config_field(
         shared_default=shared_default,
         title=title,
         explanation=explanation,
+        explanation_short=explanation_short,
+        explanation_long=explanation_long,
         secret=secret,
         editable=editable,
         required=required,
         choices=choices,
     )
+
+
+def _first_sentence(text: str) -> str:
+    """Return compact text for table display."""
+    normalized = " ".join(text.split())
+    for marker in (". ", "! ", "? "):
+        if marker in normalized:
+            end = normalized.index(marker) + 1
+            return normalized[:end]
+    return normalized
 
 
 def load_owner_from_sources(

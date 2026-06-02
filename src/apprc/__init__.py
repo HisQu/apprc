@@ -3,6 +3,8 @@
 # ruff: noqa: F401
 
 from apprc.config import (
+    AppConfigKit,
+    AppConfigSpec,
     BaseConfig,
     BaseEnv,
     ConfigField,

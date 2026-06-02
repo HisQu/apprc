@@ -1,4 +1,14 @@
-"""Storage registry helpers for globally installed application commands."""
+"""Read and write per-user storage registries.
+
+CLI applications often run globally, but their data lives in user-chosen
+project or corpus directories. AppRC solves that with a tiny TOML registry at
+``$XDG_CONFIG_HOME/<app>/<registry_filename>``. The registry maps friendly
+storage names to absolute storage roots and records which one is the default.
+
+This module owns only that user-level TOML file. Storage-local dotenv values
+inside each root are handled by :mod:`apprc.config.local_env`, and process
+environment bootstrapping is handled by :mod:`apprc.config.environment`.
+"""
 
 from __future__ import annotations
 

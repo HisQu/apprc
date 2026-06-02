@@ -1,3 +1,23 @@
+"""Base classes for runtime config objects.
+
+This module is the bridge between application dataclasses and AppRC's
+declarative config inventory. Application code normally declares a dataclass
+that inherits :class:`BaseEnv` and points it at a :class:`ConfigOwner`. AppRC
+then uses the owner to bind environment variables, serialize public config
+state, and log surprising runtime mutations.
+
+Keep this module focused on runtime config object behavior. File discovery,
+storage registries, dotenv layer precedence, and CLI editing live in sibling
+modules so beginners can look up one problem at a time:
+
+* :mod:`apprc.config.schema` owns field/owner declarations.
+* :mod:`apprc.config.environment` owns entrypoint dotenv bootstrap.
+* :mod:`apprc.config.storage_registry` owns ``~/.config/<app>/*.toml``.
+* :mod:`apprc.config.local_env` owns storage-local dotenv overrides.
+"""
+
+from __future__ import annotations
+
 # == Stdlib =============================
 import os
 from copy import deepcopy as _deepcopy
@@ -45,25 +65,25 @@ def resolve_package_root(pkg: ModuleType | str) -> Path:
     :returns: Package directory on disk.
     :raises RuntimeError: If no usable directory can be determined.
     """
-    _pkg: ModuleType = (
+    package_module: ModuleType = (
         pkg if isinstance(pkg, ModuleType) else import_module(pkg)
     )
     # -- Prefer __spec__.origin ---------------------------------------
     # > e.g.: opa.rag.__spec__.origin = "./OPA/src/opa/rag/__init__.py"
-    spec: ModuleSpec | None = getattr(_pkg, "__spec__", None)
+    spec: ModuleSpec | None = getattr(package_module, "__spec__", None)
     origin: str | None = getattr(spec, "origin", None) or None
     if origin and isinstance(origin, str):
-        p = Path(origin)
-        if p.name == "__init__.py" and p.is_file():
-            return p.resolve().parent  # !! Early exit
+        origin_path = Path(origin)
+        if origin_path.name == "__init__.py" and origin_path.is_file():
+            return origin_path.resolve().parent  # !! Early exit
     # -- Fallback to __file__ -----------------------------------------
-    file_ = getattr(_pkg, "__file__", None)
-    if file_:
-        p = Path(file_).resolve()
-        if p.name == "__init__.py" and p.is_file():
-            return p.parent
+    module_file = getattr(package_module, "__file__", None)
+    if module_file:
+        module_path = Path(module_file).resolve()
+        if module_path.name == "__init__.py" and module_path.is_file():
+            return module_path.parent
     raise RuntimeError(
-        f"Cannot determine package directory for {_pkg.__name__!r}. "
+        f"Cannot determine package directory for {package_module.__name__!r}. "
         "Expected a regular package with an __init__.py on disk."
     )
 

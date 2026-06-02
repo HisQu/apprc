@@ -1,4 +1,14 @@
-"""Textual editor for storage-local config overrides."""
+"""Interactive Textual editor for storage-local config overrides.
+
+Applications declare config fields once through :mod:`apprc.config.schema`.
+This module turns those declarations into a terminal UI that selects one
+registered storage root, reads that storage's local dotenv file, and edits
+only the values owned by the local override layer.
+
+Rendering rules for table cells live in :mod:`apprc.config.tui_rendering` so
+the widget code here stays focused on Textual events, modal handling, and file
+persistence.
+"""
 
 from __future__ import annotations
 
@@ -33,12 +43,17 @@ from apprc.config.local_env import (
     write_local_env,
 )
 from apprc.config.schema import (
-    CONFIG_MISSING,
     ConfigField,
     ConfigOwner,
     find_field_by_env_key,
 )
 from apprc.config.storage_registry import StorageRecord, StorageRegistry
+from apprc.config.tui_rendering import (
+    FIELD_TABLE_COLUMNS,
+    build_field_table_rows,
+    field_type_label,
+    possible_values_label,
+)
 
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit
@@ -124,8 +139,8 @@ class _ConfigValueEditScreen(ModalScreen[_ValueEditResult | None]):
             yield Static(
                 "\n".join(
                     (
-                        f"Type: {_type_label(self.spec)}",
-                        f"Possible values: {_possible_values_label(self.spec)}",
+                        f"Type: {field_type_label(self.spec)}",
+                        f"Possible values: {possible_values_label(self.spec)}",
                         "Shell environment: "
                         + ("set" if self.env_is_set else "unset"),
                     )
@@ -390,50 +405,19 @@ class ConfigEditorApp(App[None]):
         table = self.query_one("#field-table", DataTable)
         table.clear(columns=True)
         table.cursor_type = "row"
-        table.add_columns(
-            "#",
-            "Section",
-            "Key",
-            "Status",
-            "Local",
-            "Default",
-            "Explanation",
-        )
+        table.add_columns(*FIELD_TABLE_COLUMNS)
         self.row_env_keys = []
-        row_number = 1
-        rendered_section = False
-        for owner in self.owners:
-            visible_specs = [
-                spec
-                for spec in owner.fields
-                if owner.env_key(spec.name) not in self.hidden_env_keys
-            ]
-            if not visible_specs:
-                continue
-            if rendered_section:
-                table.add_row(*_separator_cells(), height=1)
-                self.row_env_keys.append(None)
-            rendered_section = True
-            for spec in visible_specs:
-                env_key = owner.env_key(spec.name)
-                local = self.local_values.get(env_key, "")
-                env_is_set = env_key in os.environ
-                default = _display_default(
-                    spec,
-                    local_value=local,
-                    env_is_set=env_is_set,
-                )
-                table.add_row(
-                    str(row_number),
-                    Text(owner.title, style="bold"),
-                    env_key,
-                    _status_cell(env_is_set),
-                    _display_value(spec, local),
-                    default,
-                    Text(_short_explanation(spec), style="dim"),
-                )
-                self.row_env_keys.append(env_key)
-                row_number += 1
+        for row in build_field_table_rows(
+            owners=self.owners,
+            local_values=self.local_values,
+            hidden_env_keys=self.hidden_env_keys,
+            shell_env=os.environ,
+        ):
+            if row.height is None:
+                table.add_row(*row.cells)
+            else:
+                table.add_row(*row.cells, height=row.height)
+            self.row_env_keys.append(row.env_key)
 
     def _selected_field(self) -> _SelectedField | None:
         """Return the field represented by the current table cursor."""
@@ -470,84 +454,3 @@ class ConfigEditorApp(App[None]):
     def _set_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable editor controls."""
         self.query_one("#field-table", DataTable).disabled = not enabled
-
-
-def _display_default(
-    spec: ConfigField,
-    *,
-    local_value: str,
-    env_is_set: bool,
-) -> str | Text:
-    """Return a compact default value for table display."""
-    value = spec.shared_env_value()
-    if value is CONFIG_MISSING:
-        if local_value == "" and not env_is_set:
-            return Text("<required>", style="bold white on red")
-        return ""
-    return Text(str(value), style=_value_style(spec))
-
-
-def _display_value(spec: ConfigField, value: str) -> str | Text:
-    """Return a local value safe for table display."""
-    if value == "":
-        return ""
-    if spec.secret:
-        return Text("<secret>", style=_value_style(spec))
-    return Text(value, style=_value_style(spec))
-
-
-def _value_style(spec: ConfigField) -> str:
-    """Return the table style for values declared by one field spec."""
-    if spec.secret:
-        return "dim italic"
-    if spec.choices:
-        return "bold cyan"
-    if spec.python_type is bool:
-        return "bold magenta"
-    if spec.python_type in {int, float}:
-        return "yellow"
-    if spec.python_type is Path:
-        return "green"
-    return "white"
-
-
-def _separator_cells() -> tuple[Text, ...]:
-    """Return a non-editable horizontal separator row."""
-    return tuple(
-        Text("─" * width, style="dim") for width in (3, 14, 22, 8, 14, 14, 32)
-    )
-
-
-def _status_cell(env_is_set: bool) -> Text:
-    """Return the shell environment status cell."""
-    if env_is_set:
-        return Text("shell", style="green")
-    return Text("unset", style="dim")
-
-
-def _short_explanation(spec: ConfigField) -> str:
-    """Return the field's compact table explanation."""
-    return spec.explanation_short or spec.explanation_long
-
-
-def _type_label(spec: ConfigField) -> str:
-    """Return a human-readable type label for editor metadata."""
-    type_name = getattr(spec.python_type, "__name__", None)
-    if isinstance(type_name, str):
-        return type_name
-    return str(spec.python_type)
-
-
-def _possible_values_label(spec: ConfigField) -> str:
-    """Return accepted values for editor metadata."""
-    if spec.choices:
-        return ", ".join(spec.choices)
-    if spec.python_type is bool:
-        return "true, false, yes, no, on, off, 1, 0"
-    if spec.python_type is int:
-        return "integer"
-    if spec.python_type is float:
-        return "number"
-    if spec.python_type is Path:
-        return "filesystem path"
-    return "free text"

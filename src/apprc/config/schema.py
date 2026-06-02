@@ -1,8 +1,19 @@
-"""Structured typed-settings schema helpers.
+"""Declare application config fields and load them through typed-settings.
 
-Application packages define owner specs, runtime config dataclasses inherit
-from :class:`BaseEnv`, and the loader uses ``typed-settings`` for
-string-to-type conversion.
+This is the inventory module for AppRC configuration. Application packages
+describe every env-backed setting with ``ConfigField`` objects, group related
+fields into ``ConfigOwner`` sections, and then reuse those declarations in
+three places:
+
+* runtime dataclasses inherit :class:`apprc.config.base_config.BaseEnv`;
+* storage-local dotenv editors validate user-entered values;
+* docs and CLI commands can resolve env keys, dotted config paths, or unique
+  field names back to the same declaration.
+
+The module deliberately does not know where dotenv files live. File selection
+belongs to :mod:`apprc.config.environment` and
+:mod:`apprc.config.local_env`; this module only maps declared keys to typed
+runtime values.
 """
 
 from __future__ import annotations
@@ -76,18 +87,22 @@ class ConfigField:
                 explanation_long = explanation
             if not explanation_short:
                 explanation_short = _first_sentence(explanation)
-        object.__setattr__(self, "name", name)
-        object.__setattr__(self, "env_var", env_var)
-        object.__setattr__(self, "python_type", python_type)
-        object.__setattr__(self, "default", default)
-        object.__setattr__(self, "shared_default", shared_default)
-        object.__setattr__(self, "title", title)
-        object.__setattr__(self, "explanation_short", explanation_short)
-        object.__setattr__(self, "explanation_long", explanation_long)
-        object.__setattr__(self, "secret", secret)
-        object.__setattr__(self, "editable", editable)
-        object.__setattr__(self, "required", required)
-        object.__setattr__(self, "choices", choices)
+        attrs = {
+            "name": name,
+            "env_var": env_var,
+            "python_type": python_type,
+            "default": default,
+            "shared_default": shared_default,
+            "title": title,
+            "explanation_short": explanation_short,
+            "explanation_long": explanation_long,
+            "secret": secret,
+            "editable": editable,
+            "required": required,
+            "choices": choices,
+        }
+        for attr_name, attr_value in attrs.items():
+            object.__setattr__(self, attr_name, attr_value)
 
     @property
     def explanation(self) -> str:

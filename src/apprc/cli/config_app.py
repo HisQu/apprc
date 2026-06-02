@@ -1,4 +1,14 @@
-"""Generic Typer app for storage-backed configuration workflows."""
+"""Build reusable ``config`` Typer command groups.
+
+Applications own their top-level command tree and domain commands. AppRC owns
+the repeatable config workflow that every app with ``AppConfigKit`` needs:
+show diagnostics, register storage roots, select defaults, write local
+overrides, and open the Textual editor.
+
+The factory in this module receives the application kit and a typed root state
+object. App-specific commands stay outside this module; only the shared
+``<app> config ...`` behavior belongs here.
+"""
 
 from __future__ import annotations
 
@@ -111,19 +121,23 @@ def build_config_typer_app(
     )
 
     def _state(ctx: typer.Context) -> StateT:
+        """Return the application root state stored by the parent CLI."""
         return state_from(ctx, state_type)
 
     def _active_storage_root(state: StateT) -> Path | None:
+        """Return the selected storage root using app overrides first."""
         if active_storage_root is not None:
             return active_storage_root(state)
         return active_storage_root_from_state(kit, cast(ConfigCliState, state))
 
     def _initial_storage(state: StateT) -> str | None:
+        """Return the storage name the editor should select on startup."""
         if initial_storage is not None:
             return initial_storage(state)
         return initial_storage_from_state(cast(ConfigCliState, state))
 
     def _required_storage_root(state: StateT) -> Path:
+        """Return an active storage root or raise Typer's CLI error type."""
         storage_root = _active_storage_root(state)
         if storage_root is not None:
             return storage_root
@@ -135,6 +149,7 @@ def build_config_typer_app(
         )
 
     def _validate_storage_root_for_write(storage_root: Path) -> Path:
+        """Reject writes when the active storage root no longer exists."""
         root = Path(storage_root).expanduser()
         if not root.is_dir():
             raise typer.BadParameter(
@@ -144,11 +159,13 @@ def build_config_typer_app(
         return root
 
     def _root_context_param(ctx: typer.Context, name: str) -> Any:
+        """Read one option value from the parent command context."""
         if ctx.parent is None:
             return None
         return ctx.parent.params.get(name)
 
     def _default_runtime_payload(state: StateT) -> dict[str, Any]:
+        """Return generic ``config show`` data when the app provides none."""
         storage_root = _active_storage_root(state)
         return {
             "app_name": kit.spec.app_name,

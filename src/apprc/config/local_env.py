@@ -1,4 +1,16 @@
-"""Read and write storage-local env overrides."""
+"""Read and write storage-local dotenv overrides.
+
+AppRC has two config file locations: the user-level storage registry under
+``~/.config/<app>`` and one local dotenv file inside each registered storage
+root. This module owns the second location. It validates values against the
+same ``ConfigField`` declarations used by runtime loading, writes keys in
+declaration order, and preserves unknown dotenv keys after the known AppRC
+keys.
+
+It intentionally does not mutate ``os.environ``. Entrypoints use
+:mod:`apprc.config.environment` to decide which dotenv layers enter the current
+process.
+"""
 
 from __future__ import annotations
 
@@ -68,8 +80,9 @@ def write_local_env(
     env_path = Path(path).expanduser()
     env_path.parent.mkdir(parents=True, exist_ok=True)
     ordered_keys = _ordered_env_keys(owners)
+    known_key_set = set(ordered_keys)
     known = [key for key in ordered_keys if key in values]
-    unknown = sorted(key for key in values if key not in set(ordered_keys))
+    unknown = sorted(key for key in values if key not in known_key_set)
     lines = [
         f"{key}={_dotenv_quote(values[key])}" for key in (*known, *unknown)
     ]

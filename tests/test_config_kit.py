@@ -1,133 +1,21 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 from textual.widgets import Button, DataTable, Input, Static
 from typer.testing import CliRunner
 
-from apprc import AppConfigKit
 from apprc.config import (
-    CONFIG_MISSING,
-    ConfigOwner,
-    EnvBootstrapResult,
     config_field,
 )
-
-DEMO_OWNER = ConfigOwner(
-    key="runtime",
-    title="Runtime",
-    env_prefix="DEMO_",
-    rc_path=("runtime",),
-    runtime_cls=None,
-    fields=(
-        config_field(
-            "storage_root",
-            "D_STORAGE",
-            Path,
-            default=CONFIG_MISSING,
-            editable=False,
-            required=True,
-        ),
-        config_field(
-            "model",
-            "MODEL",
-            str,
-            default="demo-model",
-            title="Demo model",
-            explanation=(
-                "Model used by the demo runtime. Longer context appears in "
-                "the modal editor."
-            ),
-        ),
-        config_field(
-            "api_token",
-            "API_TOKEN",
-            str,
-            default=CONFIG_MISSING,
-            title="API token",
-            explanation_short="Required provider token.",
-            explanation_long=(
-                "Secret token required by the demo runtime when no shell "
-                "environment or local override provides one."
-            ),
-            required=True,
-            secret=True,
-        ),
-        config_field(
-            "strategy",
-            "STRATEGY",
-            str,
-            default="VECTOR",
-            title="Strategy",
-            explanation="Selection strategy for demo candidates.",
-            choices=("VECTOR", "WEIGHT"),
-        ),
-        config_field(
-            "enabled",
-            "ENABLED",
-            bool,
-            default=True,
-            title="Enabled",
-            explanation="Turns the demo runtime on or off.",
-        ),
-        config_field(
-            "retry_count",
-            "RETRY_COUNT",
-            int,
-            default=3,
-            title="Retry count",
-            explanation="Maximum number of demo retries.",
-        ),
-        config_field(
-            "cache_dir",
-            "CACHE_DIR",
-            Path,
-            default=Path("cache"),
-            title="Cache directory",
-            explanation="Storage-local cache path.",
-        ),
-    ),
+from tests.support_config import (
+    DEMO_OWNERS,
+    DemoConfigState,
+    build_demo_kit,
+    demo_state,
 )
-DEMO_OWNERS = (DEMO_OWNER,)
-
-
-@dataclass(slots=True)
-class _ConfigState:
-    env_bootstrap: EnvBootstrapResult | None
-    storage: str | None = None
-
-
-def _kit() -> AppConfigKit:
-    """Return a tiny app config kit for tests."""
-    return AppConfigKit(
-        app_name="demo",
-        display_name="Demo",
-        config_package="apprc.config",
-        owners=DEMO_OWNERS,
-        storage_root_env_key="DEMO_D_STORAGE",
-        registry_filename="demo.toml",
-        local_env_filename=".env.demo",
-    )
-
-
-def _state(kit: AppConfigKit, storage_root: Path) -> _ConfigState:
-    """Return generic CLI state with one active storage root."""
-    return _ConfigState(
-        env_bootstrap=EnvBootstrapResult(
-            shared_env=None,
-            local_env=storage_root / ".env.demo",
-            env_file=None,
-            registry_path=kit.registry_path(),
-            storage_name="alpha",
-            storage_root=storage_root,
-            used_default_storage=True,
-            storage_count=1,
-        ),
-        storage="alpha",
-    )
 
 
 def test_kit_registers_storage_and_reports_doctor_payload(
@@ -135,7 +23,7 @@ def test_kit_registers_storage_and_reports_doctor_payload(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    kit = _kit()
+    kit = build_demo_kit()
     storage_root = tmp_path / "storage"
 
     registry = kit.register_storage(
@@ -158,12 +46,12 @@ def test_generated_config_app_sets_local_values_and_shows_payload(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    kit = _kit()
+    kit = build_demo_kit()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
-    state = _state(kit, storage_root)
+    state = demo_state(kit, storage_root)
     app = kit.typer_app(
-        state_type=_ConfigState,
+        state_type=DemoConfigState,
         runtime_payload=lambda current: {
             "storage": str(current.env_bootstrap.storage_root)
             if current.env_bootstrap is not None
@@ -192,7 +80,7 @@ def test_kit_builds_generic_editor_with_spec_defaults(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    kit = _kit()
+    kit = build_demo_kit()
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
@@ -230,7 +118,7 @@ async def test_editor_table_hides_storage_root_and_formats_rows(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("DEMO_STRATEGY", "WEIGHT")
-    kit = _kit()
+    kit = build_demo_kit()
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
@@ -295,7 +183,7 @@ async def test_editor_table_required_missing_keeps_red_fill(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    kit = _kit()
+    kit = build_demo_kit()
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
@@ -317,7 +205,7 @@ async def test_editor_modal_saves_local_value(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    kit = _kit()
+    kit = build_demo_kit()
     storage_root = tmp_path / "storage"
     registry = kit.register_storage(
         name="alpha",
@@ -347,7 +235,7 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    kit = _kit()
+    kit = build_demo_kit()
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",

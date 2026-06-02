@@ -1,4 +1,16 @@
-"""Entrypoint-only environment bootstrap for application commands."""
+"""Load dotenv layers into one CLI process at application startup.
+
+AppRC imports are side-effect free: importing a config dataclass does not read
+``.env`` files or modify the process environment. Application entrypoints call
+``bootstrap_env`` once, before runtime config objects are created, to merge the
+packaged shared defaults, the selected storage-local dotenv file, an optional
+explicit ``--env-file``, and the shell environment.
+
+The helper mutates only the current Python process. It never writes dotenv
+files and never changes the parent shell. Registry selection is delegated to
+:mod:`apprc.config.storage_registry`; storage-local editing is delegated to
+:mod:`apprc.config.local_env`.
+"""
 
 from __future__ import annotations
 

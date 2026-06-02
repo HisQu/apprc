@@ -1,4 +1,14 @@
-"""High-level application config facade."""
+"""High-level facade for one application's AppRC integration.
+
+``AppConfigKit`` is the convenient entrypoint for applications. It stores one
+``AppConfigSpec`` and delegates to the focused lower-level modules for storage
+registries, dotenv bootstrapping, local value editing, diagnostics, Textual
+editing, and Typer command generation.
+
+Use this module when wiring an application like Haiu. Use the sibling modules
+directly when testing one layer in isolation or when building a custom workflow
+that should not pull in CLI/TUI dependencies.
+"""
 
 from __future__ import annotations
 

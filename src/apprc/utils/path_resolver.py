@@ -1,21 +1,26 @@
-"""Utilities for resolving package paths, both for the installed
-site-package and local user data."""
+"""Resolve package roots and user-owned local directories.
 
-# %%
-# --- Standard Lib ---------------------
+Most AppRC code uses the newer config registry and dotenv helpers in
+``apprc.config``. This module remains as a small compatibility utility layer
+for projects that need package-root lookup or direct env-var-to-directory
+resolution outside the full AppConfigKit workflow.
+"""
+
+from __future__ import annotations
+
+# == Standard Library ========================
 import logging
 import os
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
 
-# --- Deps -----------------------------
+# == 3rd Party ===============================
 from dotenv import dotenv_values, find_dotenv
 
 LOG = logging.getLogger(__name__)
 
 
-# %%
 def package_root_dir(mod: ModuleType) -> Path:
     """Return the filesystem directory for a regular (non-namespace) package.
 
@@ -34,15 +39,15 @@ def package_root_dir(mod: ModuleType) -> Path:
     spec: ModuleSpec | None = getattr(mod, "__spec__", None)
     origin: str | None = getattr(spec, "origin", None) or None
     if origin and isinstance(origin, str):
-        p = Path(origin)
-        if p.name == "__init__.py" and p.is_file():
-            return p.resolve().parent  # !! Early exit
+        origin_path = Path(origin)
+        if origin_path.name == "__init__.py" and origin_path.is_file():
+            return origin_path.resolve().parent  # !! Early exit
     # -- Fallback to __file__ -----------------------------------------
-    file_ = getattr(mod, "__file__", None)
-    if file_:
-        p = Path(file_).resolve()
-        if p.name == "__init__.py" and p.is_file():
-            return p.parent
+    module_file = getattr(mod, "__file__", None)
+    if module_file:
+        module_path = Path(module_file).resolve()
+        if module_path.name == "__init__.py" and module_path.is_file():
+            return module_path.parent
     raise RuntimeError(
         f"Cannot determine package directory for {mod.__name__!r}. "
         "Expected a regular package with an __init__.py on disk."
@@ -50,14 +55,17 @@ def package_root_dir(mod: ModuleType) -> Path:
 
 
 def _read_dotenv_var(env_file: Path, var_name: str) -> str | None:
-    """Read *var_name* from *env_file* without mutating os.environ."""
+    """Read one dotenv value without mutating ``os.environ``.
+
+    :param env_file: Dotenv file to parse.
+    :param var_name: Variable name to look up.
+    :return: String value or ``None`` when the key is absent.
+    """
     env_path = env_file.expanduser().resolve()
     if not env_path.is_file():
         raise RuntimeError(f".env file not found: {env_path}")
 
-    values = dotenv_values(
-        env_path
-    )  # < Returns dict. Does not set os.environ. :contentReference[oaicite:1]{index=1}
+    values = dotenv_values(env_path)
     return values.get(var_name)
 
 
@@ -67,11 +75,11 @@ def require_env(
     env_file: str | Path | None = None,
     allow_os_env: bool = True,
 ) -> str:
-    """Return a required variable from a specific .env file or os.environ, or raise.
+    """Return a required variable from dotenv or the process environment.
 
     Resolution order:
-    1) env_file (If provided)
-    2) os.environ (If allow_os_env=True)
+    1. ``env_file`` when provided.
+    2. ``os.environ`` when ``allow_os_env`` is true.
 
     :param var_name: Environment variable name.
     :param env_file: Optional path to a specific .env file to read.
@@ -146,7 +154,7 @@ def sync_hf_repo_into(
 
     Uses `snapshot_download(..., local_dir=...)` which is designed for repeatedly
     pulling updates into a chosen folder and maintains a `.cache/huggingface/`
-    metadata directory under `local_dir`. :contentReference[oaicite:3]{index=3}
+    metadata directory under `local_dir`.
 
     Authentication can be provided via HF_TOKEN / HF_HOME configuration.
 

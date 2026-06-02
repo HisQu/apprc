@@ -184,6 +184,40 @@ def test_generated_config_app_inits_non_empty_storage_with_yes_option(
     assert (storage_root / ".env.demo").is_file()
 
 
+def test_generated_config_app_lists_registered_storages_as_rich_tree(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    alpha_root = tmp_path / "alpha"
+    beta_root = tmp_path / "beta"
+    kit.register_storage(name="alpha", root=alpha_root, make_default=True)
+    kit.register_storage(name="beta", root=beta_root, make_default=False)
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["list"])
+
+    assert result.exit_code == 0, result.output
+    assert "registry:" in result.output
+    assert "default_storage:" in result.output
+    assert "storages:" in result.output
+    assert "alpha [default]" in result.output
+    assert "beta" in result.output
+    assert "root:" in result.output
+    assert "root_exists:" in result.output
+    assert "local_env:" in result.output
+    assert "local_env_exists:" in result.output
+    root_lines = [
+        line
+        for line in result.output.splitlines()
+        if "root:" in line and "root_exists:" not in line
+    ]
+    assert root_lines
+    assert all(not line.startswith("root:") for line in root_lines)
+
+
 def test_generated_config_app_lists_registered_storages_as_json(
     monkeypatch,
     tmp_path: Path,

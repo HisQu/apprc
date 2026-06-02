@@ -20,6 +20,9 @@ from typing import Annotated, Any, Protocol, TypeVar, cast
 
 import typer
 from rich import print as rich_print
+from rich.console import Console
+from rich.text import Text
+from rich.tree import Tree
 
 # == Internal ================================
 from apprc.cli.doctor import (
@@ -204,25 +207,72 @@ def build_config_typer_app(
             "storages": storages,
         }
 
+    def _storage_detail_text(key: str, value: Any) -> Text:
+        """Return one colored key/value line for config list output.
+
+        :param key: Display field name.
+        :param value: Display field value.
+        :return: Rich text with a styled key and plain value.
+        """
+        return Text.assemble((key, "dim cyan"), ": ", str(value))
+
+    def _storage_bool_text(key: str, value: bool) -> Text:
+        """Return one colored boolean line for config list output.
+
+        :param key: Display field name.
+        :param value: Boolean value to show as ``true`` or ``false``.
+        :return: Rich text with a styled key and colored boolean value.
+        """
+        style = "green" if value else "red"
+        return Text.assemble(
+            (key, "dim cyan"),
+            ": ",
+            (str(value).lower(), style),
+        )
+
+    def _storage_name_text(storage: Mapping[str, Any]) -> Text:
+        """Return the display label for one storage tree branch.
+
+        :param storage: JSON-friendly storage payload row.
+        :return: Rich text with the storage name and optional default marker.
+        """
+        label = Text(str(storage["name"]), style="bold")
+        if storage["default"]:
+            label.append(" [default]", style="green")
+        return label
+
     def _print_storage_list(payload: Mapping[str, Any]) -> None:
         """Print storage registry rows in a readable text format."""
-        typer.echo(f"registry: {payload['registry']}")
-        typer.echo(f"default_storage: {payload['default_storage'] or '<none>'}")
-        storages = payload["storages"]
+        console = Console(soft_wrap=True)
+        console.print(_storage_detail_text("registry", payload["registry"]))
+        console.print(
+            _storage_detail_text(
+                "default_storage",
+                payload["default_storage"] or "<none>",
+            )
+        )
+        storages = cast(list[Mapping[str, Any]], payload["storages"])
         if not storages:
             typer.echo("storages: <none>")
             return
-        typer.echo("storages:")
+        tree = Tree(Text("storages:", style="dim cyan"))
         for storage in storages:
-            marker = "*" if storage["default"] else "-"
-            typer.echo(f"{marker} {storage['name']}")
-            typer.echo(f"  root: {storage['root']}")
-            typer.echo(f"  root_exists: {str(storage['root_exists']).lower()}")
-            typer.echo(f"  local_env: {storage['local_env']}")
-            typer.echo(
-                "  local_env_exists: "
-                f"{str(storage['local_env_exists']).lower()}"
+            branch = tree.add(_storage_name_text(storage))
+            branch.add(_storage_detail_text("root", storage["root"]))
+            branch.add(
+                _storage_bool_text(
+                    "root_exists",
+                    bool(storage["root_exists"]),
+                )
             )
+            branch.add(_storage_detail_text("local_env", storage["local_env"]))
+            branch.add(
+                _storage_bool_text(
+                    "local_env_exists",
+                    bool(storage["local_env_exists"]),
+                )
+            )
+        console.print(tree)
 
     def _print_directory_listing(storage_root: Path) -> None:
         """Print a sorted first-level listing for an existing storage root."""

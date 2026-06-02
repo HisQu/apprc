@@ -1,13 +1,13 @@
 """Semantic logging events mapped onto stdlib logging levels.
 
-Haiu exposes more intent than stdlib's five common levels. A semantic event
+AppRC exposes more intent than stdlib's five common levels. A semantic event
 describes how a helper method should travel through stdlib filtering and how it
 should look in the console: level number, stable event type, icon, color role,
 and whether a progress-style message should gain an ellipsis.
 
 The transport level still comes from stdlib, so dependency filters and pytest
 ``caplog`` keep working. Semantic metadata is just structured display context
-attached to Haiu records.
+attached to AppRC records.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class SemanticEvent:
-    """Describe one Haiu-specific logging helper.
+    """Describe one application-specific logging helper.
 
     Instances are immutable so every log call can reuse shared event metadata
     without defensive copies. The ``name`` becomes ``event_type`` in structured
@@ -171,8 +171,8 @@ def event_for_level(levelno: int) -> SemanticEvent:
     """Return a display event for a plain stdlib logging level.
 
     Foreign loggers only provide numeric stdlib levels. This function maps
-    those levels to the closest Haiu display metadata so dependency messages
-    render in the same console format as Haiu semantic messages.
+    those levels to the closest AppRC display metadata so dependency messages
+    render in the same console format as semantic messages.
 
     :param levelno: Numeric stdlib logging level from a ``LogRecord``.
     :return: Matching semantic event, falling back to ``INFO``.

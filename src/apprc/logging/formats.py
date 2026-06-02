@@ -1,4 +1,4 @@
-"""Console renderers for Haiu's structlog events.
+"""Console renderers for AppRC structlog events.
 
 This module is the last step for human-readable logging. By the time
 ``AppConsoleRenderer`` runs, ``config`` has already copied stdlib ``extra``
@@ -127,7 +127,7 @@ class SecondCollapser:
 
 @dataclass
 class AppConsoleRenderer:
-    """Render structlog event dictionaries in Haiu's column style.
+    """Render structlog event dictionaries in AppRC's column style.
 
     The renderer is a structlog processor: it receives a mutable event
     dictionary and returns the final string for the stdlib handler. It renders
@@ -399,7 +399,7 @@ def add_semantic_defaults(
 ) -> EventDict:
     """Fill display metadata for plain stdlib records.
 
-    Haiu semantic methods already attach ``event_type``, ``icon``, and
+    AppRC semantic methods already attach ``event_type``, ``icon``, and
     ``color`` to the ``LogRecord``. Plain stdlib records from dependency
     loggers do not, so this processor chooses a reasonable semantic display
     style from the numeric logging level.
@@ -417,12 +417,9 @@ def add_semantic_defaults(
     return event_dict
 
 
-HaiuConsoleRenderer = AppConsoleRenderer
-
 __all__ = [
     "ANSI",
     "AppConsoleRenderer",
-    "HaiuConsoleRenderer",
     "RendererMode",
     "SecondCollapser",
     "add_semantic_defaults",

@@ -1,10 +1,10 @@
-"""Configuration for Haiu's stdlib-backed structlog logging.
+"""Configuration for stdlib-backed structlog logging.
 
 Entrypoints call ``setup_logging`` once near startup. That function installs
 ``AppLogger`` for future named loggers, configures the root stdlib handler,
-and attaches a structlog ``ProcessorFormatter``. From that point on, both Haiu
-semantic loggers and plain dependency loggers can propagate to the same root
-handler.
+and attaches a structlog ``ProcessorFormatter``. From that point on, both
+application semantic loggers and plain dependency loggers can propagate to the
+same root handler.
 
 The processor chain has two jobs. First it enriches stdlib records with
 structured fields, runtime context, semantic display defaults, and redaction.
@@ -44,14 +44,7 @@ from apprc.logging.formats import (
 LoggingRenderer = Literal["mini", "cli", "ipy", "json"]
 
 
-DEFAULT_DEPENDENCY_LEVELS: dict[str, int] = {
-    "PIL": logging.WARNING,
-    "lightrag": logging.INFO,
-    "matplotlib": logging.WARNING,
-    "httpcore": logging.WARNING,
-    "httpx": logging.WARNING,
-    "openai": logging.INFO,
-}
+DEFAULT_DEPENDENCY_LEVELS: dict[str, int] = {}
 
 
 @dataclass
@@ -99,7 +92,7 @@ def setup_logging(
     """Configure stdlib handlers and structlog processors.
 
     The function is intentionally idempotent by default. If root handlers
-    already exist and ``force`` is false, Haiu only updates the root level and
+    already exist and ``force`` is false, AppRC only updates the root level and
     leaves handler ownership alone. With ``force=True``, root handlers are
     replaced with a ``StreamHandler`` whose formatter runs the full structlog
     processor chain.
@@ -157,7 +150,7 @@ def _processor_formatter(
 ) -> structlog.stdlib.ProcessorFormatter:
     """Build the formatter that converts ``LogRecord`` objects to output.
 
-    ``ExtraAdder`` copies stdlib ``extra`` fields, including Haiu
+    ``ExtraAdder`` copies stdlib ``extra`` fields, including AppRC
     ``extra_struct`` values already merged by ``AppLogger``. The custom
     processors then add record metadata, task/correlation context, semantic
     defaults, and redaction before the renderer receives the event dictionary.
@@ -225,7 +218,7 @@ def _foreign_pre_chain() -> list[Any]:
 
 
 def _configure_dependency_loggers(levels: dict[str, int]) -> None:
-    """Route noisy dependency loggers through the root Haiu handler.
+    """Route noisy dependency loggers through the root application handler.
 
     :param levels: Logger-name to stdlib-level mapping.
     :return: ``None``.

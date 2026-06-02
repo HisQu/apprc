@@ -1,4 +1,4 @@
-"""Reusable helper functions for Haiu's logging suite.
+"""Reusable helper functions for AppRC's logging suite.
 
 The subpackage exposes decorators and context managers that emit through
 ``AppLogger`` instead of creating a separate instrumentation channel.

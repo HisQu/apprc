@@ -1,7 +1,7 @@
-"""Subprocess output forwarding for Haiu loggers.
+"""Subprocess output forwarding for AppRC loggers.
 
 CLI helpers often run external commands that return captured stdout and stderr.
-This module converts those captured streams into ordinary Haiu log records:
+This module converts those captured streams into ordinary AppRC log records:
 stdout lines are informational, stderr lines are errors, and the child return
 code is passed back to the caller.
 """

@@ -62,7 +62,7 @@ class ConfigField:
 class ConfigOwner:
     """Architecture-aware group of related settings.
 
-    :param key: Stable owner key such as ``"rag.haiu_settings"``.
+    :param key: Stable owner key such as ``"app.runtime_settings"``.
     :param title: Short display label for docs and terminal UIs.
     :param env_prefix: Env key prefix for all owned fields.
     :param rc_path: Runtime config path components from the application root
@@ -295,7 +295,7 @@ def resolve_config_field_reference(
 
     :param owners: Owner specs to search.
     :param reference: User input such as ``APP_MODEL_LLM`` or
-        ``rag.haiu_settings.model_embed``.
+        ``app.runtime_settings.model``.
     :return: Matching owner and field spec.
     :raises ValueError: If the reference is unknown or ambiguous.
     """

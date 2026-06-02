@@ -1,4 +1,4 @@
-"""Runtime context processors for Haiu logging.
+"""Runtime context processors for AppRC logging.
 
 This module owns values that are true at emission or formatting time rather
 than values chosen by the caller. ``CID`` stores an optional correlation ID in a
@@ -43,8 +43,8 @@ def new_cid() -> str:
 def set_cid(value: str | None = None) -> str:
     """Bind a correlation ID to the current context.
 
-    The ID is stored both in Haiu's own ``ContextVar`` and in structlog's
-    contextvars storage. That lets Haiu's stdlib path and any direct structlog
+    The ID is stored both in AppRC's own ``ContextVar`` and in structlog's
+    contextvars storage. That lets AppRC's stdlib path and any direct structlog
     path agree on the same ``cid`` field.
 
     :param value: Explicit correlation ID, or ``None`` to create a new one.
@@ -89,7 +89,7 @@ def add_runtime_context(
 ) -> EventDict:
     """Add task/thread and correlation fields when missing.
 
-    This processor runs for Haiu records and foreign stdlib records. It fills
+    This processor runs for AppRC records and foreign stdlib records. It fills
     ``task`` with the active asyncio task name when possible and otherwise uses
     the current thread name. ``cid`` is ``"-"`` when no correlation ID was
     bound.
@@ -113,7 +113,7 @@ def add_log_record_fields(
     """Copy stdlib ``LogRecord`` fields into renderer-friendly names.
 
     Structlog's ``ProcessorFormatter`` stores the original record under
-    ``_record``. Haiu copies stable pieces such as logger name, level, source
+    ``_record``. AppRC copies stable pieces such as logger name, level, source
     line, and timestamp so console and JSON renderers do not need to know the
     stdlib ``LogRecord`` API.
 

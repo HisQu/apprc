@@ -1,9 +1,9 @@
-"""Async telemetry helpers for Haiu's structlog logging suite.
+"""Async telemetry helpers for AppRC's structlog logging suite.
 
 Telemetry is a lightweight progress heartbeat for async workflows. The context
 manager temporarily wraps the running event loop's ``create_task`` method so it
 can count tasks spawned inside the scope, starts a reporter task, and emits
-periodic ``TELEMETRY`` log messages through the normal Haiu logger pipeline.
+periodic ``TELEMETRY`` log messages through the normal AppRC logger pipeline.
 
 No separate metrics backend is involved. Extra counters are pulled from an
 optional callback and included in the human message so they appear in console

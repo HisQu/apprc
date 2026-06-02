@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from importlib.resources import as_file, files
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping, Protocol
 
 # == 3rd Party ===============================
 from dotenv import dotenv_values
@@ -23,6 +23,13 @@ from apprc.config.storage_registry import (
 )
 
 LOG = get_logger(__name__)
+
+
+class BootstrapLogger(Protocol):
+    """Logger interface needed for bootstrap status messages."""
+
+    def info(self, msg: Any, *args: Any, **kwargs: Any) -> Any:
+        """Emit one informational message."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +92,7 @@ def bootstrap_env(
     env_file_overrides_shell: bool,
     no_dotenv: bool,
     storage_name: str | None,
+    logger: BootstrapLogger | None = None,
 ) -> EnvBootstrapResult:
     """Populate ``os.environ`` for one application CLI process.
 
@@ -97,9 +105,11 @@ def bootstrap_env(
         exported variables inside this process.
     :param no_dotenv: Disable dotenv layer loading.
     :param storage_name: Optional named storage selector from the user registry.
+    :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
     """
     original_env = dict(os.environ)
+    log = logger or LOG
     registry = load_storage_registry(spec.registry_path())
     explicit_values = _read_explicit_env_file(env_file)
     selected_storage, used_default_storage = _select_storage(
@@ -115,7 +125,7 @@ def bootstrap_env(
         and used_default_storage
         and len(registry.storages) > 1
     ):
-        LOG.info(
+        log.info(
             f"Using default {spec.display_name} storage "
             f"{selected_storage.name!r} at {selected_storage.root} from "
             f"{registry.path}. Pass --storage to select another storage."

@@ -6,16 +6,13 @@ from apprc._lazy import build_lazy_facade
 
 _ALL_EXPORTS = [
     "AppLogger",
-    "HaiuLogger",
     "AppConsoleRenderer",
-    "HaiuConsoleRenderer",
     "LoggingConfig",
     "LoggingRenderer",
     "async_telemetry",
     "forward_cli_output",
     "get_logger",
     "install_app_logger_class",
-    "install_haiu_logger_class",
     "log_init_lifecycle",
     "new_cid",
     "set_cid",
@@ -25,16 +22,13 @@ _ALL_EXPORTS = [
 
 _SYMBOL_EXPORTS = {
     "AppLogger": "apprc.logging.core",
-    "HaiuLogger": "apprc.logging.core",
     "AppConsoleRenderer": "apprc.logging.formats",
-    "HaiuConsoleRenderer": "apprc.logging.formats",
     "LoggingConfig": "apprc.logging.config",
     "LoggingRenderer": "apprc.logging.config",
     "async_telemetry": "apprc.logging.functions",
     "forward_cli_output": "apprc.logging.subprocess",
     "get_logger": "apprc.logging.core",
     "install_app_logger_class": "apprc.logging.core",
-    "install_haiu_logger_class": "apprc.logging.core",
     "log_init_lifecycle": "apprc.logging.functions",
     "new_cid": "apprc.logging.context",
     "set_cid": "apprc.logging.context",

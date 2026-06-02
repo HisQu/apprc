@@ -1,4 +1,4 @@
-"""Exception formatting and redaction helpers for Haiu logging.
+"""Exception formatting and redaction helpers for AppRC logging.
 
 Tracebacks can expose API keys, database URLs, and prompt contents through
 local variables or structured fields. This module centralizes the defensive
@@ -151,7 +151,7 @@ class LogFieldRedactor:
 class RedactedRichTracebackFormatter:
     """Render rich tracebacks after removing sensitive local variables.
 
-    Rich extracts locals before it renders. Haiu edits that extracted trace
+    Rich extracts locals before it renders. AppRC edits that extracted trace
     tree first, deleting any local whose name matches the configured secret
     patterns, and only then prints the traceback to the target stream.
 

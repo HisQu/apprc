@@ -11,10 +11,10 @@ from contextlib import contextmanager
 def _disable_dotenv_autoload() -> Iterator[None]:
     """Temporarily disable libraries that auto-load ``.env`` files.
 
-    LightRAG imports ``python-dotenv`` through its dependency graph. Setting
-    ``PYTHON_DOTENV_DISABLED`` around those imports preserves Haiu's explicit
-    environment loading policy while restoring the user's original process
-    environment afterward.
+    Some libraries import ``python-dotenv`` through their dependency graph.
+    Setting ``PYTHON_DOTENV_DISABLED`` around those imports preserves the
+    application's explicit environment loading policy while restoring the
+    user's original process environment afterward.
 
     :return: Context manager that restores ``PYTHON_DOTENV_DISABLED``.
     """

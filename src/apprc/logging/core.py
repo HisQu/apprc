@@ -1,16 +1,16 @@
-"""Named stdlib loggers with Haiu semantic helper methods.
+"""Named stdlib loggers with application semantic helper methods.
 
 This module owns the emission side of the logging pipeline. ``get_logger``
 returns a normal stdlib logger whose class is ``AppLogger``. Calls such as
 ``LOG.success("done", extra_struct={"rows": 12})`` still travel through
-``logging.Logger._log``; Haiu only prepares the message, logging level,
+``logging.Logger._log``; AppRC only prepares the message, logging level,
 ``extra`` fields, semantic metadata, and stack attribution before stdlib builds
 the ``LogRecord``.
 
 The formatter installed by ``config`` later turns that ``LogRecord`` into a
 structlog event dictionary. Keeping stdlib as the transport lets pytest's
 ``caplog``, dependency loggers, and existing libraries behave normally while
-Haiu keeps structured fields for console and JSON rendering.
+AppRC keeps structured fields for console and JSON rendering.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ _RESERVED_LOG_RECORD_KEYS = frozenset(
 
 
 class AppLogger(logging.getLoggerClass()):
-    """Stdlib logger class with Haiu's semantic logging methods.
+    """Stdlib logger class with application semantic logging methods.
 
     This class is a real ``logging.Logger`` subclass, so callers can pass it to
     code that expects stdlib logger methods such as ``setLevel`` or
@@ -65,7 +65,7 @@ class AppLogger(logging.getLoggerClass()):
     arguments are rejected so calls stay close to the stdlib logging interface.
 
     The base class is captured with ``logging.getLoggerClass()`` at import time
-    so Haiu extends any logger class already active before this module loads.
+    so AppRC extends any logger class already active before this module loads.
     Later class changes are not rebased; stdlib logging does not support that
     safely.
     """
@@ -75,7 +75,7 @@ class AppLogger(logging.getLoggerClass()):
         """Adjust callsite attribution for a group of helper calls.
 
         Stdlib logging uses ``stacklevel`` to decide which frame appears as the
-        caller. Haiu wrapper helpers add their own frames, so this context
+        caller. Wrapper helpers add their own frames, so this context
         manager raises the default stack skip for every semantic log call inside
         the block.
 
@@ -410,10 +410,10 @@ class AppLogger(logging.getLoggerClass()):
     ) -> Any:
         """Emit one semantic event through stdlib logging.
 
-        Haiu keeps the stdlib logging interface for control keyword arguments
+        AppRC keeps the stdlib logging interface for control keyword arguments
         and reserves ``extra_struct`` for structlog event fields. This helper
         validates ``extra`` and ``extra_struct`` before stdlib sees them,
-        merges both mappings into one ``extra`` dict, adds Haiu display
+        merges both mappings into one ``extra`` dict, adds semantic display
         metadata, and finally calls ``Logger._log``.
 
         :param event_name: Semantic event key from ``SEMANTIC_EVENTS``.
@@ -421,7 +421,7 @@ class AppLogger(logging.getLoggerClass()):
         :param args: Optional printf-style formatting arguments.
         :param prefix: Optional text prepended to the message.
         :param extra_struct: Structured values added to the structlog event.
-        :param kwargs: Stdlib logging controls and Haiu exception shortcuts.
+        :param kwargs: Stdlib logging controls and exception shortcuts.
         :return: Value returned by ``Logger._log``.
         """
 
@@ -466,7 +466,7 @@ class AppLogger(logging.getLoggerClass()):
     ) -> dict[str, Any]:
         """Build the stdlib ``extra`` dict for one semantic log call.
 
-        ``extra`` is the stdlib escape hatch and ``extra_struct`` is Haiu's
+        ``extra`` is the stdlib escape hatch and ``extra_struct`` is AppRC's
         named lane for fields that should appear in structlog output. This
         helper keeps both, but refuses collisions and reserved ``LogRecord``
         names before stdlib can raise a less contextual error.
@@ -551,7 +551,7 @@ class AppLogger(logging.getLoggerClass()):
         """Resolve explicit and contextual stack attribution controls.
 
         :param stacklevel: Optional stdlib ``stacklevel`` override.
-        :param depth: Haiu-specific extra frames to skip.
+        :param depth: AppRC-specific extra frames to skip.
         :return: Stack level sent to ``Logger._log``.
         """
 
@@ -563,7 +563,7 @@ class AppLogger(logging.getLoggerClass()):
     def _exc_info(
         exc: BaseException | bool | tuple[Any, Any, Any] | None,
     ) -> bool | tuple[type[BaseException], BaseException, Any] | None:
-        """Normalize Haiu exception shortcuts into stdlib ``exc_info``.
+        """Normalize exception shortcuts into stdlib ``exc_info``.
 
         ``True`` means stdlib should read the active exception from
         ``sys.exc_info``. An exception object becomes an explicit tuple so the
@@ -594,12 +594,12 @@ def install_app_logger_class() -> type[AppLogger]:
 
     ``logging.setLoggerClass`` affects only loggers created after the call; it
     cannot safely change logger objects that already exist in the logging
-    manager. ``get_logger`` calls this before asking stdlib for a name so Haiu
+    manager. ``get_logger`` calls this before asking stdlib for a name so app
     modules get semantic methods even when they create module-level loggers at
     import time. ``setup_logging`` calls it too because entrypoints are the
     natural place for global logging configuration.
 
-    :return: The active Haiu logger class.
+    :return: The active application logger class.
     """
 
     current = logging.getLoggerClass()
@@ -610,29 +610,24 @@ def install_app_logger_class() -> type[AppLogger]:
 
 
 def get_logger(name: str) -> AppLogger:
-    """Return a named stdlib logger with Haiu semantic methods.
+    """Return a named stdlib logger with application semantic methods.
 
     The helper installs ``AppLogger`` before it calls ``logging.getLogger`` so
-    new Haiu module loggers are real stdlib loggers with methods like
+    new application module loggers are real stdlib loggers with methods like
     ``action_begin``. If a plain stdlib logger for ``name`` already exists,
     stdlib returns that existing object; this function does not mutate its
     class because that would be unsafe for arbitrary logger subclasses.
 
     :param name: Stdlib logger name, usually ``__name__``.
-    :return: Named logger, typed as ``AppLogger`` for Haiu-created names.
+    :return: Named logger, typed as ``AppLogger`` for AppRC-created names.
     """
 
     install_app_logger_class()
     return cast(AppLogger, logging.getLogger(name))
 
 
-HaiuLogger = AppLogger
-install_haiu_logger_class = install_app_logger_class
-
 __all__ = [
     "AppLogger",
-    "HaiuLogger",
     "get_logger",
     "install_app_logger_class",
-    "install_haiu_logger_class",
 ]

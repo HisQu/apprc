@@ -1,0 +1,67 @@
+# == CI workflow for Ubuntu using uv
+
+# -- Requires Personal Access Token (PAT):
+# 1) In GitHub, go to Settings → Developer settings → Personal access tokens.
+# 2) Permissions (all read-only): Metadata, Contents, Commit statuses, Pull requests
+# 3) In Repository, go to Settings → Secrets and variables → Actions → New repository secret
+# 4) Name: HISQU_GH_PAT, Value: <your_personal_access_token>
+
+name: CI ubuntu uv
+
+run-name: ${{ github.actor }} • ${{ github.event_name }} • CI on ubuntu with uv
+
+on: [push, pull_request]
+
+jobs:
+  ci_ubuntu_uv:
+    # == Job configuration ============================================
+    name: CI on ubuntu with uv
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # < Continue other jobs even if one fails
+      matrix:
+        python-version:
+          - '3.12'
+          - '3.13'
+          - '3.14'
+
+    # > Job-level security settings for GitHub PAT usage
+    permissions:
+      contents: read
+      pull-requests: read
+
+    # == Execute Steps ================================================
+    steps:
+      # -- Setup OS -----------------------------------
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: auto
+
+      # -- Git & GitHub -------------------------------
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure git for private GitHub deps
+        env:  # > Expose repository secrets as an environment variable
+          HISQU_GH_PAT: ${{ secrets.HISQU_GH_PAT }}
+        run: |
+          git config --global url."https://oauth2:${HISQU_GH_PAT}@github.com/".insteadOf "https://github.com/"
+
+      # -- Install Repo -------------------------------
+      # > For local, re-used environments, ensure a clean venv before uv sync
+      - name: Remove venv before uv sync
+        run: rm -rf .venv
+
+      - name: Install project from uv.lock
+        run: uv sync --locked --all-extras --all-groups
+
+      # -- Run Tests ----------------------------------
+      # - name: Run tests
+      #   run: uv run --locked pytest tests

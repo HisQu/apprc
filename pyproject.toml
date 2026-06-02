@@ -1,0 +1,178 @@
+# =====================================================================
+# === Build backend & settings
+# =====================================================================
+[build-system]
+requires      = ["setuptools>=68", "wheel"]        # or "hatchling", "flit_core", etc.
+build-backend = "setuptools.build_meta"
+
+# =====================================================================
+# === Project metadata (PEP 621)
+# =====================================================================
+[project]
+name        = "apprc"          # < will be replaced by scaffold script
+version     = "0.1.0"
+description = "Short, one-line summary."
+authors     = [{ name = "markur4", email = "you@example.com" }]
+readme      = "README.md"
+license     = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    # Core runtime packages only: imports needed when somebody installs and
+    # uses this package with `python -m pip install -e "."`.
+    "python-dotenv",  # < Provides `dotenv`; used by utils/path_resolver.py
+    # "environs",     # < Higher-level .env parsing
+    # "structlog",    # < Stdlib-backed structured logging
+    # "typer",        # < CLI from functions
+    # "tyro",         # < CLI from dataclasses
+    # "rich",         # < Rich terminal output
+    # "tqdm",         # < Progress bars
+    # "numpy",        # < Numeric arrays
+    # "openpyxl",     # < Excel files
+]
+
+# == This Allows refactoring across repo boundaries
+# !! Comment out before packaging !!
+# [tool.uv.sources]
+# haiu = { path = "../haiu", editable = true }
+# [tool.pyright]
+# include = ["src", "../haiu/src"]
+# extraPaths = ["src", "../haiu/src"]
+
+
+
+# =====================================================================
+# === Optional Feature Dependencies
+# =====================================================================
+
+# Optional dependencies are published package extras. Use them for feature
+# stacks that users may want at runtime, but that should not be installed by
+# default. Keep heavy feature sets here, not in [dependency-groups].
+#
+# Install commands:
+#   python -m pip install -e ".[rag]"
+#   uv sync --locked --all-extras --no-default-groups
+#
+# [project.optional-dependencies]
+# rag = [
+#     # "huggingface-hub",  # < Hugging Face model/data downloads
+#     # "openai",           # < OpenAI API client
+#     # "tiktoken",         # < Token counting for OpenAI-compatible models
+#     # "scikit-learn",     # < Vectorizers, metrics, and classical ML helpers
+#     # "torch",            # < Heavy tensor/ML runtime
+# ]
+
+
+# =====================================================================
+# === Local Dependency Groups
+# =====================================================================
+
+# Dependency groups are local-only development environments. Build backends do
+# not publish them as package metadata, so they are the right home for pytest,
+# ruff, pyright, notebooks, profiling, and docs helpers.
+#
+# Install commands:
+#   python -m pip install -e "." --group dev
+#   python -m pip install -e ".[rag]" --group dev
+#   uv sync --locked --all-groups
+#   uv sync --locked --all-extras --all-groups
+[dependency-groups]
+dev = [
+    # === Install from PyPI ===================================
+    # --- Interactive development -------
+    "jupyterlab",    # < Brings notebook, widgets, ipykernel, etc.
+    "ipywidgets",    # < Needed for interactive widgets; also installs/configures widget frontend support.
+    # "jupytext",    # < Needed for paired text notebooks / .py notebook workflows.
+    # --- Testing ----------------------
+    "pytest>=8.2",
+    "pytest-asyncio",  # < Async testing
+    "pytest-xdist",    # < Multi-core testing
+    # "pytest-cov",       # < Code-Coverage
+    # --- Code-Quality ---------
+    "pyright>=1.1",  # < Type checker
+    "ruff>=0.4",  # < Linter and formatter
+    # "mypy>=1.10",
+    # --- Code-Optimization -------------
+    "pyinstrument>=5.1",  # < Low-overhead profiling reports
+    # --- Plotting -----------------------
+    # "matplotlib",
+    # "seaborn",
+    # "plotastic",
+    # --- IO -----------------------------
+    # "sacred",        # < Experiment management
+]
+
+# =====================================================================
+# === Packaging
+# =====================================================================
+
+# === Define import paths to packages =======
+# !! Best practice: ONE import package with same name as project!
+[tool.setuptools]
+package-dir = { "" = "src"}
+
+# > Autodiscovery:
+[tool.setuptools.packages.find]
+where = ["src"]                       # < Scan only src/ for packages
+# namespaces = false                     # < Implicit namespace packages ok
+
+
+# === Include non-py files *inside* the package =======
+[tool.setuptools.package-data]
+"*" = [
+    "data/**/*.xlsx",         # src/apprc/data/
+    "images/**/*.{png,jpg}",  # src/apprc/images/
+    ]
+
+# === Include data *outside* the package (e.g. top-level docs/) ====
+# > Installs into <sys.prefix>/share/apprc
+# !! Requires a MANIFEST.in! 
+# TODO: Find solution to get rid of MANIFEST.in (hatchling..?)
+# [tool.setuptools.data-files]
+# "share/apprc/experiments" = ["experiments/*.ipynb"]
+# "share/apprc/examples" = ["examples/*.ipynb"]
+# "share/apprc/config"   = ["config/*.ini"]
+
+
+# =====================================================================
+# === Terminal entry points
+# =====================================================================
+
+# [project.scripts]
+# apprc = "apprc.cli:main" # !! No template yet for cli.py
+
+
+# =====================================================================
+# === Tool configurations
+# =====================================================================
+
+# -- Pylance prioritizes this over vs. code-level settings!
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"  # Enforce the minimum supported python version
+pythonPlatform = "All"
+include = ["src"]
+exclude = [
+    "tests", # < Tests may be dirty.
+    "**/example_data",
+    "**/old",
+    "**/__pycache__",
+    "venv", ".venv", ".direnv",
+    "build", "dist", "*.egg-info",
+    "**/node_modules", 
+    "**/.*",
+]
+
+# Ruff (linter and formatter)
+[tool.ruff]
+line-length = 80
+# unsafe-fixes = true
+
+
+# Pytest configration (This replaces `pytest.ini`)
+[tool.pytest.ini_options]
+addopts = "-n 6"  # < Use 6 cores
+testpaths = ["tests"]
+
+# ===========================
+# End of file
+# ===========================

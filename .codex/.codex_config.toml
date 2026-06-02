@@ -1,0 +1,14 @@
+# This should be in your personal ~/.codex/config.toml, but to be safety, we include it here as well.
+[shell_environment_policy]
+# inherit = "all"
+ignore_default_excludes = false
+exclude = [
+    "*_PAT*",
+    "*_KEY",
+    "*_TOKEN",
+    "*_SECRET",
+    "*PASSWORD*",
+    "*password*",
+    "*Password*",
+    "DATABASE_URL",
+]

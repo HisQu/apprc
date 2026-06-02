@@ -3,13 +3,11 @@
 # %%
 
 from functools import reduce
+from contextlib import contextmanager
 from operator import getitem
 from typing import Any
 
-from contextlib import contextmanager
 import time
-
-from typing import Callable
 
 # =====================================================================
 # === Dictionary / JSON conveniences

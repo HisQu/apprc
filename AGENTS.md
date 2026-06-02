@@ -9,8 +9,9 @@
 
 ## Project rules
 - Do not duplicate helpers or re-implement existing utilities without checking first.
-- Import `apprc`-owned utility helpers through the facade: `import haiu.utils as ut`.
-- Use explicit `ut.` prefixes at call sites, for example `LOG = ut.get_logger(__name__)`.
+- Import `apprc`-owned utility helpers through the facade: `import apprc.utils as ut`.
+- Import logging helpers from `apprc.logging`, for example
+  `from apprc.logging import get_logger`.
 - For facade `__init__.py` files, prefer clean batch re-export imports plus file-level `# ruff: noqa: F401`; do not use redundant `symbol as symbol` aliases solely to satisfy Ruff.
 - Update `README.md` if a change affects usage or setup.
 - Add minimal `__main__` demo code only when it improves discoverability or manual testing.

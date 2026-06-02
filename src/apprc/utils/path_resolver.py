@@ -3,6 +3,7 @@ site-package and local user data."""
 
 # %%
 # --- Standard Lib ---------------------
+import logging
 import os
 from importlib.machinery import ModuleSpec
 from pathlib import Path
@@ -11,12 +12,7 @@ from types import ModuleType
 # --- Deps -----------------------------
 from dotenv import dotenv_values, find_dotenv
 
-try:
-    from holylog import LOG
-except ImportError:
-    import logging
-
-    LOG = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 # %%

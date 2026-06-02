@@ -19,9 +19,12 @@ requires-python = ">=3.12"
 dependencies = [
     # Core runtime packages only: imports needed when somebody installs and
     # uses this package with `python -m pip install -e "."`.
-    "python-dotenv",  # < Provides `dotenv`; used by utils/path_resolver.py
+    "python-dotenv",       # < Loads .env files
+    "typed-settings[dotenv]", # < Typed env/config binding
+    "structlog",           # < Stdlib-backed structured logging
+    "rich",                # < Exception rendering
+    "textual",             # < Terminal config editor
     # "environs",     # < Higher-level .env parsing
-    # "structlog",    # < Stdlib-backed structured logging
     # "typer",        # < CLI from functions
     # "tyro",         # < CLI from dataclasses
     # "rich",         # < Rich terminal output

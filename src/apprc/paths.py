@@ -2,19 +2,14 @@
 
 # %%
 # --- Standard Lib ---------------------
+import logging
 from pathlib import Path
 
-# --- Deps -----------------------------
-try:
-    from holylog import LOG
-except ImportError:
-    import logging
-
-    LOG = logging.getLogger(__name__)
-
 # --- Local ----------------------------
+import apprc
 from apprc import utils as ut
 
+LOG = logging.getLogger(__name__)
 
 
 """Syntax:
@@ -30,9 +25,7 @@ D_<NAME>     # Directory
 # !! Read-only! ---
 
 # ---------------------------------------------------------------
-# -- Package Root 
-import apprc
-
+# -- Package Root
 ROOT_PKG: Path = ut.package_root_dir(apprc)
 LOG.debug(f"📂 Opa-Rag package directory: '{ROOT_PKG}'")
 
@@ -40,8 +33,6 @@ LOG.debug(f"📂 Opa-Rag package directory: '{ROOT_PKG}'")
 # -- Paths to Resources
 # D_PROMPTS = ROOT_PKG / "prompt"
 # TEMPLATES_YAML = D_PROMPTS / "templates.yaml"
-
-
 
 
 # %%

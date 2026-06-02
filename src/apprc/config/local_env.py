@@ -1,0 +1,158 @@
+"""Read and write storage-local env overrides."""
+
+from __future__ import annotations
+
+# == Standard Library ========================
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, Mapping
+
+# == 3rd Party ===============================
+from dotenv import dotenv_values
+
+# == Internal ================================
+from apprc.config.schema import (
+    CONFIG_MISSING,
+    ConfigField,
+    ConfigOwner,
+    iter_config_fields,
+    resolve_config_field_reference,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class LocalEnvUpdate:
+    """Result of one storage-local env edit.
+
+    :param path: Dotenv file that was written.
+    :param env_key: Concrete env key written to the file.
+    :param value: Normalized string value stored in the file.
+    """
+
+    path: Path
+    env_key: str
+    value: str
+
+
+def local_env_path(
+    storage_root: Path,
+    filename: str = ".env.local",
+) -> Path:
+    """Return the override file owned by one storage root."""
+    return Path(storage_root).expanduser().resolve() / filename
+
+
+def read_local_env(path: Path) -> dict[str, str]:
+    """Parse an optional dotenv file into string key/value pairs."""
+    env_path = Path(path).expanduser()
+    if not env_path.is_file():
+        return {}
+    values = dotenv_values(env_path)
+    return {
+        key: value for key, value in values.items() if isinstance(value, str)
+    }
+
+
+def write_local_env(
+    path: Path,
+    values: Mapping[str, str],
+    *,
+    owners: Iterable[ConfigOwner],
+) -> Path:
+    """Write deterministic storage-local dotenv values.
+
+    Known app keys are written in owner declaration order. Unknown keys are
+    preserved and sorted afterward so user-owned extras do not disappear.
+    """
+    env_path = Path(path).expanduser()
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    ordered_keys = _ordered_env_keys(owners)
+    known = [key for key in ordered_keys if key in values]
+    unknown = sorted(key for key in values if key not in set(ordered_keys))
+    lines = [
+        f"{key}={_dotenv_quote(values[key])}" for key in (*known, *unknown)
+    ]
+    env_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return env_path
+
+
+def set_local_env_value(
+    *,
+    storage_root: Path,
+    reference: str,
+    raw_value: str,
+    owners: Iterable[ConfigOwner],
+    local_env_filename: str = ".env.local",
+) -> LocalEnvUpdate:
+    """Set one override value in ``<storage-root>/.env.local``.
+
+    :param storage_root: Active storage root from the application registry.
+    :param reference: Full env key, dotted config path, or unique field name.
+    :param raw_value: User-provided value before type validation.
+    :param owners: Config owners to search.
+    :param local_env_filename: Storage-local dotenv filename.
+    :return: Written file, key, and normalized value.
+    :raises ValueError: If the key is unknown, read-only, or invalid.
+    """
+    owner, spec = resolve_config_field_reference(owners, reference)
+    if not spec.editable:
+        raise ValueError(
+            f"{owner.env_key(spec.name)} is managed outside .env.local."
+        )
+    value = normalize_env_value(spec, raw_value)
+    env_key = owner.env_key(spec.name)
+    path = local_env_path(storage_root, filename=local_env_filename)
+    values = read_local_env(path)
+    values[env_key] = value
+    write_local_env(path, values, owners=owners)
+    return LocalEnvUpdate(path=path, env_key=env_key, value=value)
+
+
+def normalize_env_value(spec: ConfigField, raw_value: str) -> str:
+    """Validate and normalize one user-entered dotenv value."""
+    value = raw_value.strip()
+    if spec.required and value == "":
+        raise ValueError(f"{spec.name} is required and cannot be empty.")
+    if spec.choices and value not in spec.choices:
+        choices = ", ".join(spec.choices)
+        raise ValueError(f"{spec.name} must be one of: {choices}.")
+    if spec.python_type is bool:
+        return _parse_bool(value)
+    if spec.python_type is int:
+        return str(int(value))
+    if spec.python_type is float:
+        return str(float(value))
+    if spec.python_type is Path:
+        if value == "" and spec.default is CONFIG_MISSING:
+            raise ValueError(f"{spec.name} requires a path value.")
+        return value
+    if spec.python_type is str:
+        return value
+    raise TypeError(
+        f"Unsupported config type for {spec.name}: {spec.python_type}"
+    )
+
+
+def _ordered_env_keys(owners: Iterable[ConfigOwner]) -> tuple[str, ...]:
+    """Return known env keys in owner declaration order."""
+    return tuple(
+        owner.env_key(spec.name) for owner, spec in iter_config_fields(owners)
+    )
+
+
+def _parse_bool(value: str) -> str:
+    """Return a dotenv bool literal accepted by typed-settings."""
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return "true"
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return "false"
+    raise ValueError(
+        "Boolean values must be true/false, yes/no, on/off, or 1/0."
+    )
+
+
+def _dotenv_quote(value: str) -> str:
+    """Quote one value for deterministic dotenv output."""
+    return json.dumps(value)

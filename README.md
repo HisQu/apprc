@@ -28,6 +28,12 @@
 [`just`]: https://github.com/casey/just?tab=readme-ov-file#packages
 [`uv`]: https://github.com/astral-sh/uv?tab=readme-ov-file#uv
 [PEP 621]: https://peps.python.org/pep-0621/#packaging-type-information
+[`typed-config`]: https://github.com/HisQu/typed-config
+[`typer`]: https://typer.tiangolo.com/
+[`python-dotenv`]: https://github.com/theskumar/python-dotenv
+[`textual`]: https://github.com/Textualize/textual
+[`structlog`]: https://github.com/hynek/structlog
+
 
 `apprc` is a small Python library for application runtime configuration and
 logging. It is useful when a project needs typed env-backed config, packaged
@@ -37,6 +43,13 @@ that plumbing in every application.
 
 The key idea: the application declares its config contract once, and `apprc`
 derives the boring workflows from that contract.
+
+### Tech Stack: 
+- [`typed-config`] for typed config fields and runtime dataclasses.
+- [`typer`] for CLI commands.
+- [`python-dotenv`] for `.env` file parsing and writing.
+- [`textual`] for the terminal config editor.
+- [`structlog`] for structured logging.
 
 <br>
 
@@ -99,20 +112,18 @@ pytest
 
 # Example
 
-This is the smallest complete shape of an application using `apprc`.
+An application usually wires AppRC in three steps: declare fields, create the
+kit, and mount the generated `config` CLI.
 
 ```python
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import ClassVar
 
 import typer
 
-from apprc import AppConfigKit, BaseEnv
+from apprc import AppConfigKit
 from apprc.config import ConfigOwner, config_field
 
-
+# 1) Declare the config fields your app owns.
 CLIENT_OWNER = ConfigOwner(
     key="client",
     title="Client",
@@ -126,23 +137,12 @@ CLIENT_OWNER = ConfigOwner(
             str,
             default="demo-model",
             title="Model",
-            explanation_short="Model used by client calls.",
-            explanation_long=(
-                "Model used by client calls. Set this locally when one "
-                "storage should use a different provider model."
-            ),
+            explanation="Model used by client calls.",
         ),
     ),
 )
 
-
-@dataclass(slots=True)
-class ClientEnv(BaseEnv):
-    config_owner: ClassVar[ConfigOwner] = CLIENT_OWNER
-
-    model: str = "demo-model"
-
-
+# 2) Create the reusable AppRC facade for your application.
 MYAPP_CONFIG = AppConfigKit(
     app_name="myapp",
     display_name="MyApp",
@@ -154,7 +154,7 @@ MYAPP_CONFIG = AppConfigKit(
     local_env_filename=".env.local",
 )
 
-
+# 3) Mount the generated `myapp config ...` command group.
 @dataclass(slots=True)
 class CliState:
     env_bootstrap: object | None = None
@@ -167,6 +167,11 @@ app.add_typer(
     name="config",
 )
 ```
+
+Runtime dataclasses can inherit `BaseEnv` when you want typed objects populated
+from the bootstrapped environment. The important first step is the owner
+inventory: AppRC reuses it for loading, validation, docs, CLI commands, and the
+terminal editor.
 
 Users then get:
 

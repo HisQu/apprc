@@ -428,7 +428,7 @@ class ConfigEditorApp(App[None]):
                     Text(owner.title, style="bold"),
                     env_key,
                     _status_cell(env_is_set),
-                    _display_value(local, secret=spec.secret),
+                    _display_value(spec, local),
                     default,
                     Text(_short_explanation(spec), style="dim"),
                 )
@@ -484,16 +484,31 @@ def _display_default(
         if local_value == "" and not env_is_set:
             return Text("<required>", style="bold white on red")
         return ""
-    return str(value)
+    return Text(str(value), style=_value_style(spec))
 
 
-def _display_value(value: str, *, secret: bool) -> str:
+def _display_value(spec: ConfigField, value: str) -> str | Text:
     """Return a local value safe for table display."""
     if value == "":
         return ""
-    if secret:
-        return "<secret>"
-    return value
+    if spec.secret:
+        return Text("<secret>", style=_value_style(spec))
+    return Text(value, style=_value_style(spec))
+
+
+def _value_style(spec: ConfigField) -> str:
+    """Return the table style for values declared by one field spec."""
+    if spec.secret:
+        return "dim italic"
+    if spec.choices:
+        return "bold cyan"
+    if spec.python_type is bool:
+        return "bold magenta"
+    if spec.python_type in {int, float}:
+        return "yellow"
+    if spec.python_type is Path:
+        return "green"
+    return "white"
 
 
 def _separator_cells() -> tuple[Text, ...]:

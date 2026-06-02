@@ -65,6 +65,30 @@ DEMO_OWNER = ConfigOwner(
             explanation="Selection strategy for demo candidates.",
             choices=("VECTOR", "WEIGHT"),
         ),
+        config_field(
+            "enabled",
+            "ENABLED",
+            bool,
+            default=True,
+            title="Enabled",
+            explanation="Turns the demo runtime on or off.",
+        ),
+        config_field(
+            "retry_count",
+            "RETRY_COUNT",
+            int,
+            default=3,
+            title="Retry count",
+            explanation="Maximum number of demo retries.",
+        ),
+        config_field(
+            "cache_dir",
+            "CACHE_DIR",
+            Path,
+            default=Path("cache"),
+            title="Cache directory",
+            explanation="Storage-local cache path.",
+        ),
     ),
 )
 DEMO_OWNERS = (DEMO_OWNER,)
@@ -212,6 +236,13 @@ async def test_editor_table_hides_storage_root_and_formats_rows(
         root=tmp_path / "storage",
         make_default=True,
     )
+    local_env = tmp_path / "storage" / ".env.demo"
+    local_env.write_text(
+        'DEMO_API_TOKEN="super-secret"\n'
+        'DEMO_MODEL="local-model"\n'
+        'DEMO_RETRY_COUNT="7"\n',
+        encoding="utf-8",
+    )
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test():
@@ -236,15 +267,48 @@ async def test_editor_table_hides_storage_root_and_formats_rows(
         "Runtime",
         "DEMO_MODEL",
         "unset",
-        "",
+        "local-model",
         "demo-model",
     ] == row_text[0][:6]
+    assert rows[0][4].style == "white"
+    assert rows[0][5].style == "white"
     assert row_text[1][2] == "DEMO_API_TOKEN"
-    assert row_text[1][5] == "<required>"
-    assert rows[1][5].style == "bold white on red"
+    assert row_text[1][4] == "<secret>"
+    assert rows[1][4].style == "dim italic"
+    assert row_text[1][5] == ""
     assert row_text[2][2] == "DEMO_STRATEGY"
     assert row_text[2][3] == "shell"
+    assert rows[2][5].style == "bold cyan"
+    assert row_text[3][2] == "DEMO_ENABLED"
+    assert rows[3][5].style == "bold magenta"
+    assert row_text[4][2] == "DEMO_RETRY_COUNT"
+    assert rows[4][4].style == "yellow"
+    assert rows[4][5].style == "yellow"
+    assert row_text[5][2] == "DEMO_CACHE_DIR"
+    assert rows[5][5].style == "green"
     assert rows[0][6].style == "dim"
+
+
+@pytest.mark.asyncio
+async def test_editor_table_required_missing_keeps_red_fill(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = _kit()
+    registry = kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test():
+        table = editor.query_one("#field-table", DataTable)
+        row = table.get_row_at(1)
+
+    assert str(row[5]) == "<required>"
+    assert row[5].style == "bold white on red"
 
 
 @pytest.mark.asyncio

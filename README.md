@@ -253,6 +253,9 @@ root = "/absolute/path/to/storage"
 ```
 
 Each storage root owns its own local override file, such as `.env.local`.
+On POSIX/WSL hosts, Windows drive paths such as `D:\Training\demo-project` are
+normalized to usable local paths before AppRC writes the registry or reads a
+storage-root environment value.
 
 ### Logging
 
@@ -373,6 +376,7 @@ log.success("Workspace ready", storage="default")
 | `apprc.config.schema` | `ConfigField`, `ConfigOwner`, field lookup, typed loading. |
 | `apprc.config.kit` | `AppConfigKit`, the high-level app integration facade. |
 | `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
+| `apprc.config.paths` | Storage-root path normalization helpers. |
 | `apprc.config.storage_registry` | `~/.config/<app>/*.toml` storage names. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
 | `apprc.config.tui` | Textual app and modal interactions. |

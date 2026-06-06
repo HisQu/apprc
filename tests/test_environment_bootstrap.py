@@ -135,3 +135,34 @@ def test_bootstrap_env_no_dotenv_uses_existing_storage_root_env(
     assert result.local_env is None
     assert result.storage_root == storage_root
     assert os.environ["DEMO_D_STORAGE"] == str(storage_root)
+
+
+def test_bootstrap_env_normalizes_storage_root_env(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    normalized_root = tmp_path / "demo-storage"
+    monkeypatch.setenv(
+        "DEMO_D_STORAGE",
+        r"D:\Training\demo-project",
+    )
+    monkeypatch.setattr(
+        "apprc.config.environment.normalize_storage_root_path",
+        lambda path: normalized_root,
+    )
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=None,
+        env_file_overrides_shell=False,
+        no_dotenv=True,
+        storage_name=None,
+    )
+
+    assert result.storage_root == normalized_root

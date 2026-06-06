@@ -27,6 +27,7 @@ from dotenv import dotenv_values
 
 # == Internal ================================
 from apprc.logging import get_logger
+from apprc.config.paths import normalize_storage_root_path
 from apprc.config.storage_registry import (
     StorageRecord,
     StorageRegistry,
@@ -309,7 +310,7 @@ def _storage_root_from_values(
     )
     if not root:
         return None
-    return Path(root).expanduser()
+    return normalize_storage_root_path(root)
 
 
 def _storage_root_value(

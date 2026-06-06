@@ -22,6 +22,10 @@ from apprc.config.local_env import (
     set_local_env_value,
     write_local_env,
 )
+from apprc.config.paths import (
+    normalize_storage_root_path,
+    windows_drive_path_to_posix,
+)
 from apprc.config.schema import (
     CONFIG_MISSING,
     ConfigField,

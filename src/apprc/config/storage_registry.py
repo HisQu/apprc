@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from apprc.config.paths import normalize_storage_root_path
+
 _STORAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -141,7 +143,7 @@ def register_storage(
     :return: Updated registry.
     """
     _validate_storage_name(name)
-    resolved_root = Path(root).expanduser().resolve()
+    resolved_root = normalize_storage_root_path(root).resolve()
     resolved_root.mkdir(parents=True, exist_ok=True)
     (resolved_root / local_env_filename).touch(exist_ok=True)
 
@@ -222,7 +224,7 @@ def _registry_from_toml(
             raise ValueError(f"{path}: storages.{name}.root must be a string.")
         storages[name] = StorageRecord(
             name=name,
-            root=Path(raw_root).expanduser(),
+            root=normalize_storage_root_path(raw_root),
         )
 
     if raw_default is not None and raw_default not in storages:

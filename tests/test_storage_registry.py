@@ -10,6 +10,7 @@ from apprc.config.storage_registry import (
     register_storage,
     set_default_storage,
 )
+from apprc.config.paths import windows_drive_path_to_posix
 
 
 def test_app_config_dir_uses_xdg_config_home(
@@ -52,6 +53,40 @@ def test_register_storage_writes_sorted_toml_and_local_env(
         "\n"
         "[storages.zeta]\n"
         f'root = "{second_root.resolve()}"\n'
+    )
+
+
+def test_register_storage_normalizes_windows_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "config" / "demo.toml"
+    normalized_root = tmp_path / "demo-storage"
+
+    monkeypatch.setattr(
+        "apprc.config.storage_registry.normalize_storage_root_path",
+        lambda path: normalized_root,
+    )
+
+    registry = register_storage(
+        name="demo",
+        root=Path(r"D:\Training\demo-project"),
+        make_default=True,
+        path=registry_path,
+        local_env_filename=".env.demo",
+    )
+
+    assert registry.selected("demo").root == normalized_root.resolve()
+    assert (normalized_root / ".env.demo").is_file()
+
+
+def test_windows_drive_path_to_posix_falls_back_to_mnt_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda command: None)
+
+    assert windows_drive_path_to_posix(r"D:\Training\demo-project") == Path(
+        "/mnt/d/Training/demo-project"
     )
 
 

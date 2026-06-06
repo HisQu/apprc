@@ -2,19 +2,20 @@
 # === Build backend & settings
 # =====================================================================
 [build-system]
-requires      = ["setuptools>=68", "wheel"]        # or "hatchling", "flit_core", etc.
-build-backend = "setuptools.build_meta"
+requires      = ["uv_build>=0.11.16,<0.12"]
+build-backend = "uv_build"
 
 # =====================================================================
 # === Project metadata (PEP 621)
 # =====================================================================
 [project]
-name        = "apprc"          # < will be replaced by scaffold script
+name        = "apprc"
 version     = "0.1.0"
-description = "Short, one-line summary."
-authors     = [{ name = "markur4", email = "you@example.com" }]
-readme      = "README.md"
+description = "Reusable runtime configuration, config CLI, and logging helpers for Python applications."
+authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
+readme      = { file = "README.pypi.md", content-type = "text/markdown" }
 license     = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     # Core runtime packages only: imports needed when somebody installs and
@@ -32,6 +33,29 @@ dependencies = [
     # "numpy",        # < Numeric arrays
     # "openpyxl",     # < Excel files
 ]
+keywords = [
+    "configuration",
+    "dotenv",
+    "logging",
+    "runtime-config",
+    "typer",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://hisqu.de"
+Repository = "https://github.com/HisQu/apprc"
+Issues = "https://github.com/HisQu/apprc/issues"
 
 # == This Allows refactoring across repo boundaries
 # !! Comment out before packaging !!
@@ -94,6 +118,8 @@ dev = [
     "pyright>=1.1",  # < Type checker
     "ruff>=0.4",  # < Linter and formatter
     # "mypy>=1.10",
+    # --- Packaging ---------------------
+    "twine>=6.0",  # < Validate and upload distribution metadata
     # --- Code-Optimization -------------
     "pyinstrument>=5.1",  # < Low-overhead profiling reports
     # --- Plotting -----------------------
@@ -108,40 +134,23 @@ dev = [
 # === Packaging
 # =====================================================================
 
-# === Define import paths to packages =======
-# !! Best practice: ONE import package with same name as project!
-[tool.setuptools]
-package-dir = { "" = "src"}
-
-# > Autodiscovery:
-[tool.setuptools.packages.find]
-where = ["src"]                       # < Scan only src/ for packages
-# namespaces = false                     # < Implicit namespace packages ok
-
-
-# === Include non-py files *inside* the package =======
-[tool.setuptools.package-data]
-"*" = [
-    "data/**/*.xlsx",         # src/apprc/data/
-    "images/**/*.{png,jpg}",  # src/apprc/images/
-    ]
-
-# === Include data *outside* the package (e.g. top-level docs/) ====
-# > Installs into <sys.prefix>/share/apprc
-# !! Requires a MANIFEST.in! 
-# TODO: Find solution to get rid of MANIFEST.in (hatchling..?)
-# [tool.setuptools.data-files]
-# "share/apprc/experiments" = ["experiments/*.ipynb"]
-# "share/apprc/examples" = ["examples/*.ipynb"]
-# "share/apprc/config"   = ["config/*.ini"]
+[tool.uv.build-backend]
+module-name = "apprc"
+module-root = "src"
+source-include = [
+    "src/apprc_dev/build/**",
+    "tests/**",
+]
 
 
 # =====================================================================
 # === Terminal entry points
 # =====================================================================
 
+# AppRC intentionally installs no `apprc` executable. Host applications mount
+# the generated config Typer app as a subcommand of their own CLI.
 # [project.scripts]
-# apprc = "apprc.cli:main" # !! No template yet for cli.py
+# apprc = "apprc.cli:main"
 
 
 # =====================================================================

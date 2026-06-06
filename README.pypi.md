@@ -55,11 +55,12 @@ derives the boring workflows from that contract.
 
 # Installation
 
-> [!IMPORTANT]
-> ### Prerequisites
-> - Python >=3.12
-> - `git`
-> - Optional: [`uv`], [`just`], [`direnv`]
+**Important**
+
+### Prerequisites
+- Python >=3.12
+- `git`
+- Optional: [`uv`], [`just`], [`direnv`]
 
 <br>
 

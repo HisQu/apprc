@@ -60,6 +60,8 @@ __pycache__/
 ### Distribution / packaging
 .Python
 build/
+!src/apprc_dev/build/
+!src/apprc_dev/build/**
 develop-eggs/
 dist/
 downloads/

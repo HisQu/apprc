@@ -136,6 +136,20 @@ py-switch version="3.13":
 # Testing
 # ---------------------------------------------------------------
 
+# Generate the PyPI-safe README from the GitHub README
+pypi-readme:
+    python src/apprc_dev/build/pypi_readme.py
+
+# Build release artifacts with the configured pyproject backend
+build:
+    just pypi-readme
+    uv build --no-sources
+
+# Validate package metadata and README rendering before publishing
+publish-check:
+    just build
+    uv run --with twine --no-project -- twine check dist/*
+
 # Run GitHub Actions triggered by push locally using act
 gitactions:
     act push \

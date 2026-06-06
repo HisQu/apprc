@@ -23,6 +23,7 @@ from apprc.config.local_env import (
     write_local_env,
 )
 from apprc.config.paths import (
+    StorageRootPathError,
     normalize_storage_root_path,
     windows_drive_path_to_posix,
 )

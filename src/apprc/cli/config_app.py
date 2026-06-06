@@ -33,6 +33,10 @@ from apprc.cli.doctor import (
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
+from apprc.config.paths import (
+    StorageRootPathError,
+    normalize_storage_root_path,
+)
 
 StateT = TypeVar("StateT")
 
@@ -281,11 +285,35 @@ def build_config_typer_app(
             suffix = "/" if child.is_dir() else ""
             typer.echo(f"  {child.name}{suffix}")
 
-    def _confirm_existing_storage_root(storage_root: Path) -> None:
+    def _confirm_existing_storage_root(
+        storage_root: Path,
+        *,
+        storage_name: str,
+        make_default: bool,
+    ) -> None:
         """Ask whether a non-empty existing storage root may be reused."""
         typer.echo(
             f"Storage root already exists and is not empty: {storage_root}"
         )
+        typer.echo(
+            f"AppRC will reuse this directory for "
+            f"{kit.spec.display_name} storage {storage_name!r}."
+        )
+        typer.echo("It will create or update only these config files:")
+        typer.echo(
+            f"  - storage-local env: "
+            f"{storage_root / kit.spec.local_env_filename}"
+        )
+        typer.echo(f"  - user registry: {kit.registry_path()}")
+        typer.echo(
+            "Existing files in the storage root will not be deleted, moved, "
+            "or overwritten."
+        )
+        if make_default:
+            typer.echo(
+                f"It will also mark {storage_name!r} as the default storage."
+            )
+        typer.echo("Answer l to list first-level contents before deciding.")
         while True:
             try:
                 answer = typer.prompt(
@@ -314,12 +342,20 @@ def build_config_typer_app(
     def _guard_storage_root_init(
         storage_root: Path,
         *,
+        storage_name: str,
+        make_default: bool,
         assume_yes: bool,
-    ) -> None:
+    ) -> Path:
         """Prompt before reusing a non-empty existing storage root."""
-        root = Path(storage_root).expanduser()
+        try:
+            root = normalize_storage_root_path(storage_root)
+        except StorageRootPathError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint="STORAGE_ROOT",
+            ) from exc
         if not root.exists():
-            return
+            return root
         resolved_root = root.resolve()
         if not resolved_root.is_dir():
             raise typer.BadParameter(
@@ -327,9 +363,14 @@ def build_config_typer_app(
                 param_hint="STORAGE_ROOT",
             )
         if assume_yes:
-            return
+            return resolved_root
         if any(resolved_root.iterdir()):
-            _confirm_existing_storage_root(resolved_root)
+            _confirm_existing_storage_root(
+                resolved_root,
+                storage_name=storage_name,
+                make_default=make_default,
+            )
+        return resolved_root
 
     @app.callback(invoke_without_command=True)
     def config_cmd(
@@ -455,13 +496,23 @@ def build_config_typer_app(
         ] = False,
     ) -> None:
         """Register one storage root and create its local env file."""
-        _guard_storage_root_init(storage_root, assume_yes=assume_yes)
+        normalized_root = _guard_storage_root_init(
+            storage_root,
+            storage_name=name,
+            make_default=make_default,
+            assume_yes=assume_yes,
+        )
         try:
             registry = kit.register_storage(
                 name=name,
-                root=storage_root,
+                root=normalized_root,
                 make_default=make_default,
             )
+        except StorageRootPathError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint="STORAGE_ROOT",
+            ) from exc
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--name") from exc
 

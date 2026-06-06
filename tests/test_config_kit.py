@@ -132,10 +132,49 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
 
     assert result.exit_code == 0, result.output
     assert "Storage root already exists and is not empty" in result.output
+    assert (
+        "AppRC will reuse this directory for Demo storage 'alpha'."
+        in result.output
+    )
+    assert "It will create or update only these config files:" in result.output
+    assert "storage-local env:" in result.output
+    assert "user registry:" in result.output
+    assert (
+        "Existing files in the storage root will not be deleted, moved, "
+        "or overwritten."
+    ) in result.output
+    assert "It will also mark 'alpha' as the default storage." in result.output
+    assert "Answer l to list first-level contents" in result.output
     assert "payload.txt" in result.output
     assert f'DEMO_D_STORAGE="{storage_root.resolve()}"\n' in (
         storage_root / ".env.demo"
     ).read_text(encoding="utf-8")
+
+
+def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+    malformed = "C:Projectsdemo-storage"
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["init", malformed, "--name", "alpha", "--default"],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "STORAGE_ROOT" in result.output
+    assert "Storage root looks like a Windows drive" in result.output
+    assert "path, but it is missing a slash" in result.output
+    assert "backslashes are consumed" in result.output
+    assert "C:/Projects/demo-storage" in result.output
+    assert not Path(malformed).exists()
+    assert not kit.registry_path().exists()
 
 
 def test_generated_config_app_aborts_existing_storage_when_user_says_no(

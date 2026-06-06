@@ -8,6 +8,14 @@ import subprocess
 from pathlib import Path
 
 _WINDOWS_DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:[\\/]")
+_MALFORMED_WINDOWS_DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:(?![\\/])")
+
+
+class StorageRootPathError(ValueError):
+    """Raised when storage-root text cannot be safely interpreted.
+
+    :param message: Human-readable explanation for CLI and API callers.
+    """
 
 
 def normalize_storage_root_path(path: str | Path) -> Path:
@@ -21,6 +29,10 @@ def normalize_storage_root_path(path: str | Path) -> Path:
     :return: Expanded local path without requiring the directory to exist.
     """
     path_text = str(path).strip()
+    if _is_malformed_windows_drive_path(path_text):
+        raise StorageRootPathError(
+            _malformed_windows_drive_path_message(path_text)
+        )
     if _is_windows_drive_path(path_text):
         return windows_drive_path_to_posix(path_text).expanduser()
     return Path(path_text).expanduser()
@@ -59,3 +71,32 @@ def _is_windows_drive_path(path: str) -> bool:
     :return: Whether the path begins with a Windows drive marker.
     """
     return bool(_WINDOWS_DRIVE_PATH_PATTERN.match(path))
+
+
+def _is_malformed_windows_drive_path(path: str) -> bool:
+    """Return whether text looks like a shell-damaged Windows path.
+
+    :param path: User-provided path text.
+    :return: Whether the path has a drive prefix without a path separator.
+    """
+    return bool(_MALFORMED_WINDOWS_DRIVE_PATH_PATTERN.match(path))
+
+
+def _malformed_windows_drive_path_message(path: str) -> str:
+    """Return guidance for Windows paths damaged by POSIX shell parsing.
+
+    :param path: User-provided storage root text.
+    :return: Explanation with accepted path examples.
+    """
+    return (
+        "Storage root looks like a Windows drive path, but it is missing "
+        f"a slash after the drive letter: {path!r}. On POSIX shells, "
+        "unquoted backslashes are consumed before AppRC sees the value, so "
+        r"`C:\Projects\demo-storage` can arrive as "
+        "`C:Projectsdemo-storage`. "
+        "Quote the path or use forward slashes. Accepted forms include "
+        r"`'C:\Projects\demo-storage'`, "
+        "`C:/Projects/demo-storage`, and "
+        "`/mnt/c/Projects/demo-storage`. To create a literal POSIX "
+        "relative directory with this name, prefix it with `./`."
+    )

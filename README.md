@@ -257,6 +257,18 @@ On POSIX/WSL hosts, Windows drive paths such as `D:\Training\demo-project` are
 normalized to usable local paths before AppRC writes the registry or reads a
 storage-root environment value.
 
+> [!IMPORTANT]
+> POSIX shells consume unquoted backslashes before Python sees the argument.
+> If you type `C:\Projects\demo-storage` without quotes, AppRC may receive
+> `C:Projectsdemo-storage`, which is not recoverable as a real Windows path.
+> Use one of these forms instead:
+>
+> ```shell
+> myapp config init 'C:\Projects\demo-storage' --name default --default
+> myapp config init C:/Projects/demo-storage --name default --default
+> myapp config init /mnt/c/Projects/demo-storage --name default --default
+> ```
+
 ### Logging
 
 `apprc.logging` wraps stdlib logging and structlog. `setup_logging()` installs

@@ -10,7 +10,11 @@ from apprc.config.storage_registry import (
     register_storage,
     set_default_storage,
 )
-from apprc.config.paths import windows_drive_path_to_posix
+from apprc.config.paths import (
+    StorageRootPathError,
+    normalize_storage_root_path,
+    windows_drive_path_to_posix,
+)
 
 
 def test_app_config_dir_uses_xdg_config_home(
@@ -87,6 +91,32 @@ def test_windows_drive_path_to_posix_falls_back_to_mnt_path(
 
     assert windows_drive_path_to_posix(r"D:\Training\demo-project") == Path(
         "/mnt/d/Training/demo-project"
+    )
+
+
+def test_normalize_storage_root_path_accepts_windows_drive_spellings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda command: None)
+
+    assert normalize_storage_root_path(r"C:\Projects\demo-storage") == Path(
+        "/mnt/c/Projects/demo-storage"
+    )
+    assert normalize_storage_root_path("C:/Projects/demo-storage") == Path(
+        "/mnt/c/Projects/demo-storage"
+    )
+
+
+def test_normalize_storage_root_path_rejects_damaged_windows_path() -> None:
+    with pytest.raises(StorageRootPathError) as exc_info:
+        normalize_storage_root_path("C:Projectsdemo-storage")
+
+    message = str(exc_info.value)
+    assert "unquoted backslashes are consumed" in message
+    assert "`C:/Projects/demo-storage`" in message
+    assert "`/mnt/c/Projects/demo-storage`" in message
+    assert normalize_storage_root_path("./C:Projectsdemo-storage") == Path(
+        "C:Projectsdemo-storage"
     )
 
 

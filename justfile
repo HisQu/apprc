@@ -38,6 +38,22 @@ _check-uv:
         exit 127; \
     }
 
+[private]
+_check-clean-worktree:
+    @git diff --quiet || { \
+        echo "Unstaged changes exist. Commit or stash before publishing." >&2; \
+        exit 1; \
+    }
+    @git diff --cached --quiet || { \
+        echo "Staged changes exist. Commit before publishing." >&2; \
+        exit 1; \
+    }
+    @test -z "$(git ls-files --others --exclude-standard)" || { \
+        echo "Untracked files exist. Commit, ignore, or remove them before publishing:" >&2; \
+        git ls-files --others --exclude-standard >&2; \
+        exit 1; \
+    }
+
 
 # ---------------------------------------------------------------
 # Clean / environment helpers
@@ -149,6 +165,24 @@ build:
 publish-check:
     just build
     uv run --with twine --no-project -- twine check dist/*
+
+# Usage: UV_PUBLISH_TOKEN="pypi-..." just publish-pypi
+# In Trusted Publishing CI, credentials are discovered by uv automatically.
+# Rebuild, validate, and upload release artifacts to PyPI.
+publish-pypi *ARGS:
+    just _check-uv
+    just _check-clean-worktree
+    rm -rf dist/
+    just publish-check
+    uv publish {{ARGS}}
+
+# Verify the published PyPI package in a fresh plain-pip virtualenv.
+verify-pypi requirement="apprc":
+    rm -rf /tmp/apprc-pypi-check
+    python -m venv /tmp/apprc-pypi-check
+    /tmp/apprc-pypi-check/bin/python -m pip install --upgrade pip
+    /tmp/apprc-pypi-check/bin/python -m pip install --no-cache-dir "{{requirement}}"
+    /tmp/apprc-pypi-check/bin/python -c 'import apprc; print(apprc.AppConfigKit)'
 
 # Run GitHub Actions triggered by push locally using act
 gitactions:

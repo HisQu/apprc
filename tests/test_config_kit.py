@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, DataTable, Input, Static
+from textual.widgets import Button, DataTable, Input, ListView, Static
 from typer.testing import CliRunner
 
 from apprc.cli.config_app import config_request_skips_bootstrap
@@ -22,6 +22,7 @@ from tests.support_config import (
 def test_config_init_and_list_skip_runtime_bootstrap() -> None:
     assert config_request_skips_bootstrap(["init", "/tmp/storage"])
     assert config_request_skips_bootstrap(["list"])
+    assert config_request_skips_bootstrap(["edit"])
 
 
 def test_kit_registers_storage_and_reports_doctor_payload(
@@ -316,6 +317,112 @@ def test_kit_builds_generic_editor_with_spec_defaults(
     assert editor.local_env_filename == ".env.demo"
     assert editor.init_command == "demo config init STORAGE_ROOT --name NAME"
     assert editor.registry_label == "demo.toml"
+
+
+@pytest.mark.asyncio
+async def test_editor_launches_with_empty_registry_and_new_storage_button(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    editor = kit.editor_app(registry=kit.load_registry())
+
+    async with editor.run_test():
+        title = editor.query_one("#storage-title", Static).content
+        table = editor.query_one("#field-table", DataTable)
+        new_button = editor.query_one("#storage-new", Button)
+        default_button = editor.query_one("#storage-set-default", Button)
+
+    assert "No storages registered" in str(title)
+    assert table.disabled is True
+    assert new_button.disabled is False
+    assert default_button.disabled is True
+
+
+@pytest.mark.asyncio
+async def test_editor_registers_missing_storage_directory_from_modal_flow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    editor = kit.editor_app(registry=kit.load_registry())
+    storage_root = tmp_path / "alpha"
+
+    async with editor.run_test() as pilot:
+        worker = editor.run_worker(
+            editor._register_storage_directory_flow(
+                storage_root,
+                default_name="alpha",
+            )
+        )
+        await pilot.pause()
+        editor.screen.query_one("#create", Button).press()
+        await pilot.pause()
+        editor.screen.query_one("#name-continue", Button).press()
+        await worker.wait()
+
+    registry = kit.load_registry()
+    assert registry.default_storage == "alpha"
+    assert registry.selected("alpha").root == storage_root.resolve()
+    assert (storage_root / ".env.demo").is_file()
+
+
+@pytest.mark.asyncio
+async def test_editor_set_default_and_unregister_non_default_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    kit.register_storage(
+        name="alpha", root=tmp_path / "alpha", make_default=True
+    )
+    registry = kit.register_storage(
+        name="beta",
+        root=tmp_path / "beta",
+        make_default=False,
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test():
+        editor._select_storage("beta")
+        await editor._set_current_as_default()
+        editor._select_storage("alpha")
+        removed = await editor._remove_live_storage(
+            "alpha",
+            delete_content=False,
+        )
+
+    registry = kit.load_registry()
+    assert removed is True
+    assert registry.default_storage == "beta"
+    assert sorted(registry.storages) == ["beta"]
+    assert (tmp_path / "alpha").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_editor_shows_and_prunes_stale_archived_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    registry = kit.record_archived_storage(
+        name="alpha",
+        archive=tmp_path / "alpha.apprc.tar.xz",
+        source_root=tmp_path / "alpha",
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test():
+        storage_list = editor.query_one("#storage-list", ListView)
+        assert storage_list.index == 0
+        assert editor.current_storage_kind == "archived"
+        await editor._restore_or_prune_archived_storage("alpha")
+
+    assert kit.load_registry().archived_storages == {}
 
 
 def test_config_field_splits_short_and_long_explanations() -> None:

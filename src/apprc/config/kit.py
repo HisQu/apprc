@@ -34,9 +34,15 @@ from apprc.config.local_env import (
 from apprc.config.schema import ConfigOwner
 from apprc.config.storage_registry import (
     StorageRegistry,
+    default_storage_data_root,
     load_storage_registry,
+    prune_missing_archived_storages,
+    record_archived_storage,
     register_storage,
+    remove_archived_storage,
+    replace_default_storage,
     set_default_storage,
+    unregister_storage,
 )
 
 StateT = TypeVar("StateT")
@@ -189,6 +195,74 @@ class AppConfigKit:
         )
         self._write_storage_root_local_value(registry.selected(name).root)
         return registry
+
+    def replace_default_storage(
+        self,
+        *,
+        name: str | None,
+        path: Path | None = None,
+    ) -> StorageRegistry:
+        """Set or clear this application's default storage."""
+        return replace_default_storage(
+            name=name,
+            path=self.registry_path() if path is None else path,
+        )
+
+    def unregister_storage(
+        self,
+        *,
+        name: str,
+        replacement_default: str | None = None,
+        path: Path | None = None,
+    ) -> StorageRegistry:
+        """Remove one live storage from this application's registry."""
+        return unregister_storage(
+            name=name,
+            replacement_default=replacement_default,
+            path=self.registry_path() if path is None else path,
+        )
+
+    def record_archived_storage(
+        self,
+        *,
+        name: str,
+        archive: Path,
+        source_root: Path,
+        path: Path | None = None,
+    ) -> StorageRegistry:
+        """Remember the last archive path for one storage selector."""
+        return record_archived_storage(
+            name=name,
+            archive=archive,
+            source_root=source_root,
+            path=self.registry_path() if path is None else path,
+        )
+
+    def remove_archived_storage(
+        self,
+        *,
+        name: str,
+        path: Path | None = None,
+    ) -> StorageRegistry:
+        """Remove one archived-storage convenience record."""
+        return remove_archived_storage(
+            name=name,
+            path=self.registry_path() if path is None else path,
+        )
+
+    def prune_missing_archived_storages(
+        self,
+        *,
+        path: Path | None = None,
+    ) -> StorageRegistry:
+        """Drop archive records whose last known files are gone."""
+        return prune_missing_archived_storages(
+            path=self.registry_path() if path is None else path
+        )
+
+    def default_storage_data_root(self) -> Path:
+        """Return this app's conventional default storage directory."""
+        return default_storage_data_root(self.spec.app_name)
 
     def _write_storage_root_local_value(self, storage_root: Path) -> Path:
         """Persist the registry-managed storage root in local dotenv form.

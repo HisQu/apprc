@@ -43,12 +43,20 @@ from apprc.config.schema import (
     resolve_config_field_reference,
 )
 from apprc.config.storage_registry import (
+    ArchivedStorageRecord,
     StorageRecord,
     StorageRegistry,
     app_config_dir,
+    app_data_dir,
+    default_storage_data_root,
     default_storage_registry_path,
     load_storage_registry,
+    prune_missing_archived_storages,
+    record_archived_storage,
     register_storage,
+    remove_archived_storage,
+    replace_default_storage,
     set_default_storage,
+    unregister_storage,
     write_storage_registry,
 )

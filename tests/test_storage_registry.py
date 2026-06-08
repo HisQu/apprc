@@ -6,9 +6,16 @@ import pytest
 
 from apprc.config.storage_registry import (
     app_config_dir,
+    app_data_dir,
+    default_storage_data_root,
     load_storage_registry,
+    prune_missing_archived_storages,
+    record_archived_storage,
     register_storage,
+    remove_archived_storage,
+    replace_default_storage,
     set_default_storage,
+    unregister_storage,
 )
 from apprc.config.paths import (
     StorageRootPathError,
@@ -23,6 +30,19 @@ def test_app_config_dir_uses_xdg_config_home(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
     assert app_config_dir("demo") == tmp_path / "xdg" / "demo"
+
+
+def test_app_data_dir_uses_xdg_data_home(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+
+    assert app_data_dir("demo") == tmp_path / "data" / "demo"
+    assert (
+        default_storage_data_root("demo")
+        == tmp_path / "data" / "demo" / "default"
+    )
 
 
 def test_register_storage_writes_sorted_toml_and_local_env(
@@ -58,6 +78,119 @@ def test_register_storage_writes_sorted_toml_and_local_env(
         "[storages.zeta]\n"
         f'root = "{second_root.resolve()}"\n'
     )
+
+
+def test_load_storage_registry_keeps_old_toml_compatible(
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "demo.toml"
+    registry_path.write_text(
+        'default_storage = "alpha"\n'
+        "\n"
+        "[storages.alpha]\n"
+        f'root = "{tmp_path / "alpha"}"\n',
+        encoding="utf-8",
+    )
+
+    registry = load_storage_registry(registry_path)
+
+    assert registry.default_storage == "alpha"
+    assert sorted(registry.storages) == ["alpha"]
+    assert registry.archived_storages == {}
+
+
+def test_archived_storage_records_round_trip_sorted_toml(
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "demo.toml"
+    register_storage(
+        name="alpha",
+        root=tmp_path / "alpha",
+        make_default=True,
+        path=registry_path,
+        local_env_filename=".env.demo",
+    )
+
+    registry = record_archived_storage(
+        name="zeta",
+        archive=tmp_path / "zeta.apprc.tar.xz",
+        source_root=tmp_path / "zeta",
+        path=registry_path,
+    )
+
+    assert registry.archived_storages["zeta"].archive == (
+        tmp_path / "zeta.apprc.tar.xz"
+    )
+    assert load_storage_registry(registry_path).archived_storages[
+        "zeta"
+    ].source_root == (tmp_path / "zeta")
+    assert "[archived_storages.zeta]" in registry_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_remove_and_prune_archived_storage_records(tmp_path: Path) -> None:
+    registry_path = tmp_path / "demo.toml"
+    existing_archive = tmp_path / "alpha.apprc.tar.xz"
+    existing_archive.write_bytes(b"placeholder")
+    record_archived_storage(
+        name="alpha",
+        archive=existing_archive,
+        source_root=tmp_path / "alpha",
+        path=registry_path,
+    )
+    record_archived_storage(
+        name="beta",
+        archive=tmp_path / "missing.apprc.tar.xz",
+        source_root=tmp_path / "beta",
+        path=registry_path,
+    )
+
+    registry = prune_missing_archived_storages(path=registry_path)
+    registry = remove_archived_storage(name="alpha", path=registry_path)
+
+    assert sorted(registry.archived_storages) == []
+    assert "beta" not in load_storage_registry(registry_path).archived_storages
+
+
+def test_unregister_storage_repairs_or_clears_default(tmp_path: Path) -> None:
+    registry_path = tmp_path / "demo.toml"
+    register_storage(
+        name="alpha",
+        root=tmp_path / "alpha",
+        make_default=True,
+        path=registry_path,
+    )
+    register_storage(
+        name="beta",
+        root=tmp_path / "beta",
+        make_default=False,
+        path=registry_path,
+    )
+
+    registry = unregister_storage(
+        name="alpha",
+        replacement_default="beta",
+        path=registry_path,
+    )
+    registry = unregister_storage(name="beta", path=registry_path)
+
+    assert registry.default_storage is None
+    assert registry.storages == {}
+
+
+def test_replace_default_storage_can_clear_default(tmp_path: Path) -> None:
+    registry_path = tmp_path / "demo.toml"
+    register_storage(
+        name="alpha",
+        root=tmp_path / "alpha",
+        make_default=True,
+        path=registry_path,
+    )
+
+    registry = replace_default_storage(name=None, path=registry_path)
+
+    assert registry.default_storage is None
 
 
 def test_register_storage_normalizes_windows_root(

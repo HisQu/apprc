@@ -17,7 +17,7 @@ import json
 import os
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -39,17 +39,38 @@ class StorageRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ArchivedStorageRecord:
+    """Last known archive for one storage selector.
+
+    Archive records are restore conveniences only. Runtime bootstrap still
+    selects live :class:`StorageRecord` entries from ``storages``.
+
+    :param name: Storage selector the archive was last associated with.
+    :param archive: Archive path last written by the editor.
+    :param source_root: Source directory that was compressed into the archive.
+    """
+
+    name: str
+    archive: Path
+    source_root: Path
+
+
+@dataclass(frozen=True, slots=True)
 class StorageRegistry:
     """Parsed storage registry.
 
     :param path: Registry file location.
     :param default_storage: Name used when no ``--storage`` is passed.
-    :param storages: Named storage roots by selector.
+    :param storages: Named live storage roots by selector.
+    :param archived_storages: Last known archive paths by selector.
     """
 
     path: Path
     default_storage: str | None
     storages: Mapping[str, StorageRecord]
+    archived_storages: Mapping[str, ArchivedStorageRecord] = field(
+        default_factory=dict
+    )
 
     def selected(self, name: str) -> StorageRecord:
         """Return one named storage or raise a readable error.
@@ -92,6 +113,32 @@ def app_config_dir(
     return Path.home() / ".config" / app_name
 
 
+def app_data_dir(
+    app_name: str,
+    proc_env: Mapping[str, str] | None = None,
+) -> Path:
+    """Return the per-user data directory for one application.
+
+    :param app_name: Directory name below ``$XDG_DATA_HOME`` or
+        ``~/.local/share``.
+    :param proc_env: Environment mapping used for tests and subprocess setup.
+    :return: ``$XDG_DATA_HOME/<app_name>`` or ``~/.local/share/<app_name>``.
+    """
+    env = os.environ if proc_env is None else proc_env
+    xdg_data_home = env.get("XDG_DATA_HOME")
+    if xdg_data_home:
+        return Path(xdg_data_home).expanduser() / app_name
+    return Path.home() / ".local" / "share" / app_name
+
+
+def default_storage_data_root(
+    app_name: str,
+    proc_env: Mapping[str, str] | None = None,
+) -> Path:
+    """Return the conventional live storage root for a fresh default."""
+    return app_data_dir(app_name, proc_env) / "default"
+
+
 def default_storage_registry_path(
     *,
     app_name: str,
@@ -115,6 +162,7 @@ def load_storage_registry(path: Path) -> StorageRegistry:
             path=registry_path,
             default_storage=None,
             storages={},
+            archived_storages={},
         )
     try:
         data = tomllib.loads(registry_path.read_text(encoding="utf-8"))
@@ -158,6 +206,7 @@ def register_storage(
         path=current.path,
         default_storage=default_storage,
         storages=storages,
+        archived_storages=current.archived_storages,
     )
     write_storage_registry(updated)
     return updated
@@ -182,6 +231,144 @@ def set_default_storage(
         path=current.path,
         default_storage=name,
         storages=current.storages,
+        archived_storages=current.archived_storages,
+    )
+    write_storage_registry(updated)
+    return updated
+
+
+def replace_default_storage(
+    *,
+    name: str | None,
+    path: Path,
+) -> StorageRegistry:
+    """Set or clear the default storage.
+
+    :param name: Existing live storage selector, or ``None`` to leave no
+        default.
+    :param path: Registry file location.
+    :return: Updated registry.
+    :raises ValueError: If ``name`` is unknown.
+    """
+    current = load_storage_registry(path)
+    if name is not None:
+        _validate_storage_name(name)
+        current.selected(name)
+    updated = StorageRegistry(
+        path=current.path,
+        default_storage=name,
+        storages=current.storages,
+        archived_storages=current.archived_storages,
+    )
+    write_storage_registry(updated)
+    return updated
+
+
+def unregister_storage(
+    *,
+    name: str,
+    path: Path,
+    replacement_default: str | None = None,
+) -> StorageRegistry:
+    """Remove one live storage entry from the registry.
+
+    :param name: Live storage selector to remove.
+    :param path: Registry file location.
+    :param replacement_default: New default when the removed storage was the
+        default. Pass ``None`` to leave no default.
+    :return: Updated registry.
+    :raises ValueError: If ``name`` or ``replacement_default`` is unknown.
+    """
+    _validate_storage_name(name)
+    current = load_storage_registry(path)
+    current.selected(name)
+    storages = dict(current.storages)
+    storages.pop(name)
+
+    default_storage = current.default_storage
+    if current.default_storage == name:
+        default_storage = replacement_default
+    if default_storage is not None and default_storage not in storages:
+        known = ", ".join(sorted(storages)) or "<none>"
+        raise ValueError(
+            f"Replacement default {default_storage!r} is not configured. "
+            f"Known storages: {known}."
+        )
+
+    updated = StorageRegistry(
+        path=current.path,
+        default_storage=default_storage,
+        storages=storages,
+        archived_storages=current.archived_storages,
+    )
+    write_storage_registry(updated)
+    return updated
+
+
+def record_archived_storage(
+    *,
+    name: str,
+    archive: Path,
+    source_root: Path,
+    path: Path,
+) -> StorageRegistry:
+    """Remember the last archive path for one storage selector."""
+    _validate_storage_name(name)
+    current = load_storage_registry(path)
+    archived_storages = dict(current.archived_storages)
+    archived_storages[name] = ArchivedStorageRecord(
+        name=name,
+        archive=normalize_storage_root_path(archive).expanduser(),
+        source_root=normalize_storage_root_path(source_root).expanduser(),
+    )
+    updated = StorageRegistry(
+        path=current.path,
+        default_storage=current.default_storage,
+        storages=current.storages,
+        archived_storages=archived_storages,
+    )
+    write_storage_registry(updated)
+    return updated
+
+
+def remove_archived_storage(
+    *,
+    name: str,
+    path: Path,
+) -> StorageRegistry:
+    """Remove one stale or restored archive convenience entry."""
+    _validate_storage_name(name)
+    current = load_storage_registry(path)
+    archived_storages = dict(current.archived_storages)
+    archived_storages.pop(name, None)
+    updated = StorageRegistry(
+        path=current.path,
+        default_storage=current.default_storage,
+        storages=current.storages,
+        archived_storages=archived_storages,
+    )
+    write_storage_registry(updated)
+    return updated
+
+
+def prune_missing_archived_storages(
+    *,
+    path: Path,
+) -> StorageRegistry:
+    """Drop archive records whose last known file no longer exists."""
+    current = load_storage_registry(path)
+    archived_storages = {
+        name: record
+        for name, record in current.archived_storages.items()
+        if record.archive.is_file()
+    }
+    if archived_storages == current.archived_storages:
+        return current
+    updated = StorageRegistry(
+        path=current.path,
+        default_storage=current.default_storage,
+        storages=current.storages,
+        archived_storages=archived_storages,
     )
     write_storage_registry(updated)
     return updated
@@ -227,6 +414,34 @@ def _registry_from_toml(
             root=normalize_storage_root_path(raw_root),
         )
 
+    raw_archived = data.get("archived_storages", {})
+    if not isinstance(raw_archived, dict):
+        raise ValueError(f"{path}: archived_storages must be a table.")
+
+    archived_storages: dict[str, ArchivedStorageRecord] = {}
+    for name, raw_record in raw_archived.items():
+        _validate_storage_name(name)
+        if not isinstance(raw_record, dict):
+            raise ValueError(
+                f"{path}: archived_storages.{name} must be a table."
+            )
+        raw_archive = raw_record.get("archive")
+        raw_source_root = raw_record.get("source_root")
+        if not isinstance(raw_archive, str) or not raw_archive:
+            raise ValueError(
+                f"{path}: archived_storages.{name}.archive must be a string."
+            )
+        if not isinstance(raw_source_root, str) or not raw_source_root:
+            raise ValueError(
+                f"{path}: archived_storages.{name}.source_root "
+                "must be a string."
+            )
+        archived_storages[name] = ArchivedStorageRecord(
+            name=name,
+            archive=normalize_storage_root_path(raw_archive),
+            source_root=normalize_storage_root_path(raw_source_root),
+        )
+
     if raw_default is not None and raw_default not in storages:
         known = ", ".join(sorted(storages)) or "<none>"
         raise ValueError(
@@ -237,6 +452,7 @@ def _registry_from_toml(
         path=path,
         default_storage=raw_default,
         storages=storages,
+        archived_storages=archived_storages,
     )
 
 
@@ -253,6 +469,13 @@ def _render_storage_registry(registry: StorageRegistry) -> str:
             lines.append("")
         lines.append(f"[storages.{name}]")
         lines.append(f"root = {_toml_string(str(record.root))}")
+    for name in sorted(registry.archived_storages):
+        record = registry.archived_storages[name]
+        if lines:
+            lines.append("")
+        lines.append(f"[archived_storages.{name}]")
+        lines.append(f"archive = {_toml_string(str(record.archive))}")
+        lines.append(f"source_root = {_toml_string(str(record.source_root))}")
     return "\n".join(lines).rstrip() + "\n"
 
 

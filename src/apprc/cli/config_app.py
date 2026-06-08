@@ -58,7 +58,7 @@ def config_request_skips_bootstrap(args: list[str]) -> bool:
         return True
     if args == ["--json"]:
         return True
-    return args[0] in {"doctor", "init", "list", "set-default"}
+    return args[0] in {"doctor", "edit", "init", "list", "set-default"}
 
 
 def active_storage_root_from_state(
@@ -579,7 +579,6 @@ def build_config_typer_app(
     @app.command("edit")
     def config_edit_cmd(ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
-        current_state = _state(ctx)
         try:
             registry = kit.load_registry()
         except ValueError as exc:
@@ -587,10 +586,12 @@ def build_config_typer_app(
                 str(exc),
                 param_hint=kit.spec.registry_filename,
             ) from exc
-        if not registry.storages:
-            typer.echo(missing_setup, err=True)
-            raise typer.Exit(code=2)
-        selected_storage = _initial_storage(current_state)
+        current_state = ctx.obj if isinstance(ctx.obj, state_type) else None
+        selected_storage = (
+            _initial_storage(current_state)
+            if current_state is not None
+            else None
+        )
         if editor_app_cls is not None:
             editor_app = editor_app_cls(
                 registry=registry,

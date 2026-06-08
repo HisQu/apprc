@@ -250,9 +250,16 @@ default_storage = "default"
 
 [storages.default]
 root = "/absolute/path/to/storage"
+
+[archived_storages.old-default]
+archive = "/absolute/path/to/old-default.apprc.tar.xz"
+source_root = "/absolute/path/to/old-default"
 ```
 
 Each storage root owns its own local override file, such as `.env.local`.
+Archived storage records are only last-known restore shortcuts for the
+terminal editor; runtime bootstrap still selects live directory entries from
+`[storages]`.
 On POSIX/WSL hosts, Windows drive paths such as `D:\Training\demo-project` are
 normalized to usable local paths before AppRC writes the registry or reads a
 storage-root environment value.
@@ -365,6 +372,18 @@ Selecting a row opens a modal with type information, possible values, and the
 long explanation. Secret values are redacted. Required missing values show
 `<required>`.
 
+The editor also manages storage lifecycle:
+
+- `New storage` registers a directory or restores a `*.apprc.tar.xz` archive.
+- `Set this as default storage` changes the registry default.
+- `Delete storage` can unregister only or delete the directory too.
+- `Archive storage` writes `*.apprc.tar.xz` and can optionally remove the
+  source directory after compression.
+
+If the last live default is removed, the editor prompts for a replacement path
+prefilled with `~/.local/share/<app>/default` or offers to leave AppRC in the
+fresh-install state with no default storage.
+
 ### Use Logging
 
 ```python
@@ -390,6 +409,7 @@ log.success("Workspace ready", storage="default")
 | `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
 | `apprc.config.paths` | Storage-root path normalization helpers. |
 | `apprc.config.storage_registry` | `~/.config/<app>/*.toml` storage names. |
+| `apprc.config.storage_archive` | `*.apprc.tar.xz` storage compression and restore. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
 | `apprc.config.tui` | Textual app and modal interactions. |
 | `apprc.config.tui_rendering` | Pure table cell rendering and styles. |
@@ -408,6 +428,7 @@ log.success("Workspace ready", storage="default")
 | `BaseEnv` | Runtime dataclass base that binds values from env. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
 | `StorageRegistry` | Parsed TOML registry. |
+| `ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |
 | `LocalEnvUpdate` | Result of writing one local dotenv override. |
 
 ### Config CLI Commands

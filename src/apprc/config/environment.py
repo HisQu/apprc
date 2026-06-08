@@ -31,6 +31,8 @@ from apprc.config.paths import normalize_storage_root_path
 from apprc.config.storage_registry import (
     StorageRecord,
     StorageRegistry,
+    config_file_env_key,
+    configured_storage_registry_path,
     default_storage_registry_path,
     load_storage_registry,
 )
@@ -66,9 +68,20 @@ class EnvBootstrapSpec:
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
 
-    def registry_path(self) -> Path:
-        """Return the default user registry path for this application."""
+    def config_file_env_key(self) -> str:
+        """Return the env var that overrides the registry file path."""
+        return config_file_env_key(self.app_name)
+
+    def default_registry_path(self) -> Path:
+        """Return the automatic user registry path for this application."""
         return default_storage_registry_path(
+            app_name=self.app_name,
+            registry_filename=self.registry_filename,
+        )
+
+    def registry_path(self) -> Path:
+        """Return the active user registry path for this application."""
+        return configured_storage_registry_path(
             app_name=self.app_name,
             registry_filename=self.registry_filename,
         )

@@ -48,6 +48,8 @@ from apprc.config.storage_registry import (
     StorageRegistry,
     app_config_dir,
     app_data_dir,
+    config_file_env_key,
+    configured_storage_registry_path,
     default_storage_data_root,
     default_storage_registry_path,
     load_storage_registry,

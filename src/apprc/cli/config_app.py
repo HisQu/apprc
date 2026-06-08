@@ -30,13 +30,12 @@ from apprc.cli.doctor import (
     config_setup_message,
     print_config_doctor,
 )
+from apprc.cli.setup import run_config_setup
+from apprc.cli.storage_prompts import guard_storage_root_init
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
-from apprc.config.paths import (
-    StorageRootPathError,
-    normalize_storage_root_path,
-)
+from apprc.config.paths import StorageRootPathError
 
 StateT = TypeVar("StateT")
 
@@ -58,7 +57,7 @@ def config_request_skips_bootstrap(args: list[str]) -> bool:
         return True
     if args == ["--json"]:
         return True
-    return args[0] in {"doctor", "edit", "init", "list", "set-default"}
+    return args[0] in {"doctor", "edit", "init", "list", "set-default", "setup"}
 
 
 def active_storage_root_from_state(
@@ -278,100 +277,6 @@ def build_config_typer_app(
             )
         console.print(tree)
 
-    def _print_directory_listing(storage_root: Path) -> None:
-        """Print a sorted first-level listing for an existing storage root."""
-        typer.echo(f"contents of {storage_root}:")
-        for child in sorted(storage_root.iterdir(), key=lambda item: item.name):
-            suffix = "/" if child.is_dir() else ""
-            typer.echo(f"  {child.name}{suffix}")
-
-    def _confirm_existing_storage_root(
-        storage_root: Path,
-        *,
-        storage_name: str,
-        make_default: bool,
-    ) -> None:
-        """Ask whether a non-empty existing storage root may be reused."""
-        typer.echo(
-            f"Storage root already exists and is not empty: {storage_root}"
-        )
-        typer.echo(
-            f"AppRC will reuse this directory for "
-            f"{kit.spec.display_name} storage {storage_name!r}."
-        )
-        typer.echo("It will create or update only these config files:")
-        typer.echo(
-            f"  - storage-local env: "
-            f"{storage_root / kit.spec.local_env_filename}"
-        )
-        typer.echo(f"  - user registry: {kit.registry_path()}")
-        typer.echo(
-            "Existing files in the storage root will not be deleted, moved, "
-            "or overwritten."
-        )
-        if make_default:
-            typer.echo(
-                f"It will also mark {storage_name!r} as the default storage."
-            )
-        typer.echo("Answer l to list first-level contents before deciding.")
-        while True:
-            try:
-                answer = typer.prompt(
-                    "Continue? [y/n/l]",
-                    default="",
-                    show_default=False,
-                )
-            except (EOFError, typer.Abort):
-                typer.echo(
-                    "Refusing to register a non-empty storage root without "
-                    "confirmation. Re-run with --yes to continue.",
-                    err=True,
-                )
-                raise typer.Exit(code=1) from None
-            normalized = answer.strip().lower()
-            if normalized in {"y", "yes"}:
-                return
-            if normalized in {"n", "no"}:
-                typer.echo("Aborted.")
-                raise typer.Exit(code=1)
-            if normalized in {"l", "list"}:
-                _print_directory_listing(storage_root)
-                continue
-            typer.echo("Answer y to continue, n to abort, or l to list.")
-
-    def _guard_storage_root_init(
-        storage_root: Path,
-        *,
-        storage_name: str,
-        make_default: bool,
-        assume_yes: bool,
-    ) -> Path:
-        """Prompt before reusing a non-empty existing storage root."""
-        try:
-            root = normalize_storage_root_path(storage_root)
-        except StorageRootPathError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint="STORAGE_ROOT",
-            ) from exc
-        if not root.exists():
-            return root
-        resolved_root = root.resolve()
-        if not resolved_root.is_dir():
-            raise typer.BadParameter(
-                f"Storage root exists but is not a directory: {resolved_root}",
-                param_hint="STORAGE_ROOT",
-            )
-        if assume_yes:
-            return resolved_root
-        if any(resolved_root.iterdir()):
-            _confirm_existing_storage_root(
-                resolved_root,
-                storage_name=storage_name,
-                make_default=make_default,
-            )
-        return resolved_root
-
     @app.callback(invoke_without_command=True)
     def config_cmd(
         ctx: typer.Context,
@@ -496,7 +401,8 @@ def build_config_typer_app(
         ] = False,
     ) -> None:
         """Register one storage root and create its local env file."""
-        normalized_root = _guard_storage_root_init(
+        normalized_root = guard_storage_root_init(
+            kit,
             storage_root,
             storage_name=name,
             make_default=make_default,
@@ -522,6 +428,11 @@ def build_config_typer_app(
         typer.echo(f"local_env: {record.root / kit.spec.local_env_filename}")
         typer.echo(f"registry: {registry.path}")
         typer.echo(f"default_storage: {registry.default_storage}")
+
+    @app.command("setup")
+    def config_setup_cmd() -> None:
+        """Interactively configure the registry and default storage."""
+        run_config_setup(kit)
 
     @app.command("set-default")
     def config_set_default_cmd(

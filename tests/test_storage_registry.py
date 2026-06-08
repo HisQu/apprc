@@ -7,6 +7,8 @@ import pytest
 from apprc.config.storage_registry import (
     app_config_dir,
     app_data_dir,
+    config_file_env_key,
+    configured_storage_registry_path,
     default_storage_data_root,
     load_storage_registry,
     prune_missing_archived_storages,
@@ -42,6 +44,34 @@ def test_app_data_dir_uses_xdg_data_home(
     assert (
         default_storage_data_root("demo")
         == tmp_path / "data" / "demo" / "default"
+    )
+
+
+def test_config_file_env_key_normalizes_app_name() -> None:
+    assert config_file_env_key("demo") == "DEMO_CONFIG_FILE"
+    assert config_file_env_key("my-app.rc") == "MY_APP_RC_CONFIG_FILE"
+
+
+def test_configured_storage_registry_path_uses_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    custom_registry = tmp_path / "custom" / "demo.toml"
+
+    assert configured_storage_registry_path(
+        app_name="demo",
+        registry_filename="demo.toml",
+    ) == (tmp_path / "config" / "demo" / "demo.toml")
+
+    monkeypatch.setenv("DEMO_CONFIG_FILE", str(custom_registry))
+
+    assert (
+        configured_storage_registry_path(
+            app_name="demo",
+            registry_filename="demo.toml",
+        )
+        == custom_registry
     )
 
 

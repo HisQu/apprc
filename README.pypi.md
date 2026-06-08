@@ -199,12 +199,18 @@ mounted as a subcommand of the application that depends on AppRC.
 Users then get:
 
 ```shell
+myapp config setup
 myapp config init /absolute/path/to/storage --name default --default
 myapp config doctor
 myapp config show --json
 myapp config set client.model other-model
 myapp config edit
 ```
+
+Use `myapp config setup` for normal first-time installation. It explains the
+config file and storage root locations, asks for a default storage, and prints
+next steps. `config init` remains available as the lower-level command for
+scripts or manual storage registration.
 
 <br>
 
@@ -221,7 +227,7 @@ myapp config edit
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
 | shell environment | user/process | Highest-priority process values by default. |
-| `~/.config/<app>/<app>.toml` | AppRC registry | Named storage roots and default storage. |
+| `~/.config/<app>/<registry_filename>` | AppRC registry | Named storage roots and default storage. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
 `ConfigOwner` owns env names, docs labels, editor labels, choices, and
@@ -243,8 +249,12 @@ current process.
 ### Storage Registries
 
 Globally installed commands need to find user data without hardcoding one path.
-`apprc` stores named roots in `~/.config/<app>/<registry_filename>`, for
-example:
+`apprc` stores named roots in `~/.config/<app>/<registry_filename>`, unless
+the app-specific `<APP>_CONFIG_FILE` environment variable points to a custom
+TOML file. For an app named `myapp`, that override is `MYAPP_CONFIG_FILE`.
+The interactive setup command refuses custom locations unless that variable is
+already set, because future commands must be able to rediscover the same file.
+For example:
 
 ```toml
 default_storage = "default"
@@ -437,6 +447,7 @@ log.success("Workspace ready", storage="default")
 
 | Command | Purpose |
 |---|---|
+| `config setup` | Interactively choose the registry file and default storage. |
 | `config init STORAGE_ROOT --name NAME --default` | Register a storage root. |
 | `config doctor` | Diagnose registry and selected storage state. |
 | `config show --json` | Print resolved runtime config payload. |

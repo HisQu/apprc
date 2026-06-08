@@ -23,6 +23,7 @@ def test_config_init_and_list_skip_runtime_bootstrap() -> None:
     assert config_request_skips_bootstrap(["init", "/tmp/storage"])
     assert config_request_skips_bootstrap(["list"])
     assert config_request_skips_bootstrap(["edit"])
+    assert config_request_skips_bootstrap(["setup"])
 
 
 def test_kit_registers_storage_and_reports_doctor_payload(
@@ -222,6 +223,159 @@ def test_generated_config_app_inits_non_empty_storage_with_yes_option(
     assert result.exit_code == 0, result.output
     assert "Continue? [y/n/l]" not in result.output
     assert (storage_root / ".env.demo").is_file()
+
+
+def test_generated_config_setup_creates_default_registry_and_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    kit = build_demo_kit()
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["setup"], input="\n\n\n")
+
+    storage_root = tmp_path / "data" / "demo" / "default"
+    registry = kit.load_registry()
+    assert result.exit_code == 0, result.output
+    assert registry.path == tmp_path / "config" / "demo" / "demo.toml"
+    assert registry.default_storage == "default"
+    assert registry.selected("default").root == storage_root.resolve()
+    assert f'DEMO_D_STORAGE="{storage_root.resolve()}"\n' in (
+        storage_root / ".env.demo"
+    ).read_text(encoding="utf-8")
+    assert "demo config edit" in result.output
+    assert "demo config show" in result.output
+    assert "demo config doctor" in result.output
+
+
+def test_generated_config_setup_rejects_custom_registry_without_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+    custom_registry = tmp_path / "custom" / "demo.toml"
+
+    result = runner.invoke(app, ["setup"], input=f"{custom_registry}\n")
+
+    assert result.exit_code == 1, result.output
+    assert (
+        "Custom config-file paths require an environment variable"
+        in result.output
+    )
+    assert f'export DEMO_CONFIG_FILE="{custom_registry}"' in result.output
+    assert not custom_registry.exists()
+
+
+def test_generated_config_setup_rejects_custom_registry_env_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("DEMO_CONFIG_FILE", str(tmp_path / "other.toml"))
+    kit = build_demo_kit()
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+    custom_registry = tmp_path / "custom" / "demo.toml"
+
+    result = runner.invoke(app, ["setup"], input=f"{custom_registry}\n")
+
+    assert result.exit_code == 1, result.output
+    assert f'export DEMO_CONFIG_FILE="{custom_registry}"' in result.output
+    assert not custom_registry.exists()
+
+
+def test_generated_config_setup_accepts_matching_custom_registry_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    custom_registry = tmp_path / "custom" / "demo.toml"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("DEMO_CONFIG_FILE", str(custom_registry))
+    kit = build_demo_kit()
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["setup"], input="\n\n\n")
+
+    registry = kit.load_registry()
+    assert result.exit_code == 0, result.output
+    assert registry.path == custom_registry
+    assert custom_registry.is_file()
+    assert "export DEMO_CONFIG_FILE" in result.output
+
+
+def test_generated_config_setup_keeps_existing_default_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    storage_root = tmp_path / "alpha"
+    kit.register_storage(name="alpha", root=storage_root, make_default=True)
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["setup"], input="\n\n")
+
+    registry = kit.load_registry()
+    assert result.exit_code == 0, result.output
+    assert registry.default_storage == "alpha"
+    assert registry.selected("alpha").root == storage_root.resolve()
+
+
+def test_generated_config_setup_reset_orphans_registered_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    kit = build_demo_kit()
+    old_storage_root = tmp_path / "alpha"
+    kit.register_storage(name="alpha", root=old_storage_root, make_default=True)
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["setup"], input="reset\ny\n\n\n\n")
+
+    new_storage_root = tmp_path / "data" / "demo" / "default"
+    registry = kit.load_registry()
+    assert result.exit_code == 0, result.output
+    assert old_storage_root.is_dir()
+    assert registry.default_storage == "default"
+    assert sorted(registry.storages) == ["default"]
+    assert registry.selected("default").root == new_storage_root.resolve()
+    assert "orphan" in result.output
+
+
+def test_generated_config_setup_moves_default_registry_to_env_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    storage_root = tmp_path / "alpha"
+    kit.register_storage(name="alpha", root=storage_root, make_default=True)
+    default_registry = kit.registry_path()
+    custom_registry = tmp_path / "custom" / "demo.toml"
+    monkeypatch.setenv("DEMO_CONFIG_FILE", str(custom_registry))
+    app = kit.typer_app(state_type=DemoConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["setup"], input="\n\n\n")
+
+    registry = kit.load_registry()
+    assert result.exit_code == 0, result.output
+    assert not default_registry.exists()
+    assert custom_registry.is_file()
+    assert registry.default_storage == "alpha"
+    assert registry.selected("alpha").root == storage_root.resolve()
 
 
 def test_generated_config_app_lists_registered_storages_as_rich_tree(

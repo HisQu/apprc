@@ -149,6 +149,43 @@ def default_storage_registry_path(
     return app_config_dir(app_name, proc_env) / registry_filename
 
 
+def config_file_env_key(app_name: str) -> str:
+    """Return the environment variable that overrides the registry file.
+
+    :param app_name: Application name from the AppRC integration spec.
+    :return: Uppercase ``<APP>_CONFIG_FILE`` variable name.
+    """
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", app_name).strip("_").upper()
+    if not normalized:
+        normalized = "APP"
+    return f"{normalized}_CONFIG_FILE"
+
+
+def configured_storage_registry_path(
+    *,
+    app_name: str,
+    registry_filename: str,
+    proc_env: Mapping[str, str] | None = None,
+) -> Path:
+    """Return the active registry path after applying the env override.
+
+    :param app_name: Application name from the AppRC integration spec.
+    :param registry_filename: Default registry filename below the app config
+        directory.
+    :param proc_env: Environment mapping used for tests and subprocess setup.
+    :return: The env-selected registry path, or the default path.
+    """
+    env = os.environ if proc_env is None else proc_env
+    raw_path = env.get(config_file_env_key(app_name), "").strip()
+    if raw_path:
+        return Path(raw_path).expanduser().resolve()
+    return default_storage_registry_path(
+        app_name=app_name,
+        registry_filename=registry_filename,
+        proc_env=proc_env,
+    )
+
+
 def load_storage_registry(path: Path) -> StorageRegistry:
     """Read a storage registry if it exists.
 

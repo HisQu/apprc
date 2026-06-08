@@ -10,7 +10,11 @@ from typing import Mapping
 # == Internal ================================
 from apprc.config.environment import EnvBootstrapSpec
 from apprc.config.schema import ConfigOwner
-from apprc.config.storage_registry import default_storage_registry_path
+from apprc.config.storage_registry import (
+    config_file_env_key,
+    configured_storage_registry_path,
+    default_storage_registry_path,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +44,11 @@ class AppConfigSpec:
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
 
-    def registry_path(
+    def config_file_env_key(self) -> str:
+        """Return the env var that overrides the registry file path."""
+        return config_file_env_key(self.app_name)
+
+    def default_registry_path(
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path:
@@ -51,6 +59,21 @@ class AppConfigSpec:
             ``~/.config`` fallback.
         """
         return default_storage_registry_path(
+            app_name=self.app_name,
+            registry_filename=self.registry_filename,
+            proc_env=proc_env,
+        )
+
+    def registry_path(
+        self,
+        proc_env: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Return the active user storage registry path.
+
+        :param proc_env: Optional environment mapping for tests.
+        :return: ``<APP>_CONFIG_FILE`` when set, otherwise the default path.
+        """
+        return configured_storage_registry_path(
             app_name=self.app_name,
             registry_filename=self.registry_filename,
             proc_env=proc_env,

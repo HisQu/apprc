@@ -118,12 +118,27 @@ class AppConfigKit:
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path:
-        """Return the default user storage registry path.
+        """Return the active user storage registry path.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: Default registry path for this application.
+        :return: Env-selected or default registry path for this application.
         """
         return self.spec.registry_path(proc_env)
+
+    def default_registry_path(
+        self,
+        proc_env: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Return the automatic user storage registry path.
+
+        :param proc_env: Optional environment mapping for tests.
+        :return: Default registry path before applying env overrides.
+        """
+        return self.spec.default_registry_path(proc_env)
+
+    def config_file_env_key(self) -> str:
+        """Return the env var that overrides the registry file path."""
+        return self.spec.config_file_env_key()
 
     def bootstrap(
         self,

@@ -7,7 +7,7 @@ from pathlib import Path
 from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "src/apprc_dev/build/pypi_readme.py"
+MODULE_PATH = ROOT / "src/apprc_dev/packaging/pypi_readme.py"
 
 
 def load_pypi_readme_module() -> ModuleType:

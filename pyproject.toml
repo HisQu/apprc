@@ -138,7 +138,7 @@ dev = [
 module-name = "apprc"
 module-root = "src"
 source-include = [
-    "src/apprc_dev/build/**",
+    "src/apprc_dev/packaging/**",
     "tests/**",
 ]
 

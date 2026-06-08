@@ -154,7 +154,7 @@ py-switch version="3.13":
 
 # Generate the PyPI-safe README from the GitHub README
 pypi-readme:
-    python src/apprc_dev/build/pypi_readme.py
+    python src/apprc_dev/packaging/pypi_readme.py
 
 # Build release artifacts with the configured pyproject backend
 build:

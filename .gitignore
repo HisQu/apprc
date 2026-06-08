@@ -53,6 +53,7 @@ ipython_config.py
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 ### C extensions
 *.so
@@ -60,8 +61,6 @@ __pycache__/
 ### Distribution / packaging
 .Python
 build/
-!src/apprc_dev/build/
-!src/apprc_dev/build/**
 develop-eggs/
 dist/
 downloads/

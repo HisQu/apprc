@@ -145,31 +145,36 @@ class AppConfigKit:
         self,
         *,
         env_file: Path | None,
-        env_file_overrides_shell: bool,
+        env_file_overrides_os_environ: bool,
         load_dotenv_layers: bool,
-        storage_name: str | None,
+        registry_storage_name: str | None,
         logger: BootstrapLogger | None = None,
     ) -> EnvBootstrapResult:
         """Populate ``os.environ`` for this application.
 
-        :param env_file: Optional explicit dotenv file.
-        :param env_file_overrides_shell: Whether explicit dotenv values beat
-            already exported variables inside this process.
+        :param env_file: Optional invocation-local dotenv file that outranks
+            the packaged ``.env.shared`` and active storage-local
+            ``.env.local``.
+        :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+            existing values in ``os.environ`` inside this process. The parent
+            shell is never mutated.
         :param load_dotenv_layers: Whether packaged ``.env.shared``, active
             storage-local ``.env.local``, and explicit ``env_file`` values
             should be merged into this process. Registry selection still runs
             when this is ``False``, and explicit ``env_file`` values may still
             provide the storage root used for selection.
-        :param storage_name: Optional named storage selector.
+        :param registry_storage_name: Optional ``--storage`` selector from the
+            user registry. When provided, that registry root becomes the active
+            storage root and determines the storage-local dotenv candidate.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
         """
         return bootstrap_env(
             spec=self.spec.env_bootstrap_spec(),
             env_file=env_file,
-            env_file_overrides_shell=env_file_overrides_shell,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
-            storage_name=storage_name,
+            registry_storage_name=registry_storage_name,
             logger=logger,
         )
 

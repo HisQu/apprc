@@ -1,10 +1,27 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
 
 from apprc.config.environment import EnvBootstrapSpec, bootstrap_env
 from apprc.config.storage_registry import register_storage
+
+
+@pytest.fixture(autouse=True)
+def _restore_demo_env() -> Iterator[None]:
+    original = {
+        key: value
+        for key, value in os.environ.items()
+        if key.startswith("DEMO_")
+    }
+    yield
+    for key in tuple(os.environ):
+        if key.startswith("DEMO_"):
+            del os.environ[key]
+    os.environ.update(original)
 
 
 def _shared_env_package(
@@ -35,7 +52,7 @@ def _spec(package_name: str) -> EnvBootstrapSpec:
     )
 
 
-def test_bootstrap_env_uses_shell_over_explicit_env_by_default(
+def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -64,9 +81,9 @@ def test_bootstrap_env_uses_shell_over_explicit_env_by_default(
     result = bootstrap_env(
         spec=_spec(package_name),
         env_file=explicit_env,
-        env_file_overrides_shell=False,
+        env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        storage_name=None,
+        registry_storage_name=None,
     )
 
     assert os.environ["DEMO_MODEL"] == "shell-model"
@@ -77,7 +94,43 @@ def test_bootstrap_env_uses_shell_over_explicit_env_by_default(
     assert result.local_env == storage_root.resolve() / ".env.demo"
 
 
-def test_bootstrap_env_can_let_explicit_env_override_shell(
+def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+    storage_root = tmp_path / "storage"
+    register_storage(
+        name="alpha",
+        root=storage_root,
+        make_default=True,
+        path=tmp_path / "config" / "demo" / "demo.toml",
+        local_env_filename=".env.demo",
+    )
+    (storage_root / ".env.demo").write_text(
+        'DEMO_MODEL="local-model"\n',
+        encoding="utf-8",
+    )
+    explicit_env = tmp_path / "override.env"
+    explicit_env.write_text('DEMO_MODEL="explicit-model"\n', encoding="utf-8")
+
+    bootstrap_env(
+        spec=_spec(package_name),
+        env_file=explicit_env,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        registry_storage_name=None,
+    )
+
+    assert os.environ["DEMO_MODEL"] == "explicit-model"
+
+
+def test_bootstrap_env_can_let_explicit_env_override_os_environ(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -102,15 +155,15 @@ def test_bootstrap_env_can_let_explicit_env_override_shell(
     bootstrap_env(
         spec=_spec(package_name),
         env_file=explicit_env,
-        env_file_overrides_shell=True,
+        env_file_overrides_os_environ=True,
         load_dotenv_layers=True,
-        storage_name=None,
+        registry_storage_name=None,
     )
 
     assert os.environ["DEMO_MODEL"] == "explicit-model"
 
 
-def test_bootstrap_env_without_dotenv_layers_uses_existing_storage_root_env(
+def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -126,9 +179,9 @@ def test_bootstrap_env_without_dotenv_layers_uses_existing_storage_root_env(
     result = bootstrap_env(
         spec=_spec(package_name),
         env_file=None,
-        env_file_overrides_shell=False,
+        env_file_overrides_os_environ=False,
         load_dotenv_layers=False,
-        storage_name=None,
+        registry_storage_name=None,
     )
 
     assert result.shared_env is None
@@ -160,12 +213,54 @@ def test_bootstrap_env_normalizes_storage_root_env(
     result = bootstrap_env(
         spec=_spec(package_name),
         env_file=None,
-        env_file_overrides_shell=False,
+        env_file_overrides_os_environ=False,
         load_dotenv_layers=False,
-        storage_name=None,
+        registry_storage_name=None,
     )
 
     assert result.storage_root == normalized_root
+
+
+def test_bootstrap_env_registry_storage_name_selects_active_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+    alpha_root = tmp_path / "alpha-storage"
+    beta_root = tmp_path / "beta-storage"
+    registry_path = tmp_path / "config" / "demo" / "demo.toml"
+    register_storage(
+        name="alpha",
+        root=alpha_root,
+        make_default=True,
+        path=registry_path,
+        local_env_filename=".env.demo",
+    )
+    register_storage(
+        name="beta",
+        root=beta_root,
+        make_default=False,
+        path=registry_path,
+        local_env_filename=".env.demo",
+    )
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=None,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        registry_storage_name="beta",
+    )
+
+    assert result.storage_name == "beta"
+    assert result.storage_root == beta_root.resolve()
+    assert result.local_env == beta_root.resolve() / ".env.demo"
+    assert os.environ["DEMO_D_STORAGE"] == str(beta_root.resolve())
 
 
 def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
@@ -201,9 +296,9 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     result = bootstrap_env(
         spec=_spec(package_name),
         env_file=explicit_env,
-        env_file_overrides_shell=True,
+        env_file_overrides_os_environ=True,
         load_dotenv_layers=False,
-        storage_name=None,
+        registry_storage_name=None,
     )
 
     assert result.shared_env is None

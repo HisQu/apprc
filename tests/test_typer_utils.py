@@ -23,6 +23,11 @@ def test_strip_leading_options_handles_flags_values_and_separator() -> None:
         value_options={"--storage"},
     ) == ["config", "show"]
     assert strip_leading_options(
+        ["-o", "--storage", "alpha", "config", "show"],
+        flag_options={"-o"},
+        value_options={"--storage"},
+    ) == ["config", "show"]
+    assert strip_leading_options(
         ["--storage", "alpha", "--", "config", "--json"],
         flag_options=set(),
         value_options={"--storage"},
@@ -44,6 +49,11 @@ def test_args_after_command_skips_root_options_before_command() -> None:
     assert args_after_command(
         "config",
         tokens=["-s", "config", "doctor"],
+        root_value_options={"--env-file"},
+    ) == ["doctor"]
+    assert args_after_command(
+        "config",
+        tokens=["-o", "config", "doctor"],
         root_value_options={"--env-file"},
     ) == ["doctor"]
     assert (

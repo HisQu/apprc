@@ -4,7 +4,8 @@ from __future__ import annotations
 
 COMMON_ROOT_FLAG_OPTIONS = frozenset(
     {
-        "--env-file-overrides-shell",
+        "--env-file-overrides-os-environ",
+        "-o",
         "--skip-dotenv-layers",
         "-s",
     }

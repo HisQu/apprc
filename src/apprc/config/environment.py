@@ -4,7 +4,7 @@ AppRC imports are side-effect free: importing a config dataclass does not read
 ``.env`` files or modify the process environment. Application entrypoints call
 ``bootstrap_env`` once, before runtime config objects are created, to merge the
 packaged shared defaults, the selected storage-local dotenv file, an optional
-explicit ``--env-file``, and the shell environment.
+explicit ``--env-file``, and the values already present in ``os.environ``.
 
 The helper mutates only the current Python process. It never writes dotenv
 files and never changes the parent shell. Registry selection is delegated to
@@ -99,7 +99,8 @@ class EnvBootstrapResult:
         optional.
     :param env_file: Explicit dotenv file passed through the CLI.
     :param registry_path: Per-user storage registry path.
-    :param storage_name: Active registry storage name, when selected.
+    :param storage_name: Registry storage record selected for this bootstrap,
+        usually by ``--storage`` or the registry default.
     :param storage_root: Active storage root, when known.
     :param used_default_storage: Whether the registry default was selected.
     :param storage_count: Number of configured registry storages.
@@ -119,9 +120,9 @@ def bootstrap_env(
     *,
     spec: EnvBootstrapSpec,
     env_file: Path | None,
-    env_file_overrides_shell: bool,
+    env_file_overrides_os_environ: bool,
     load_dotenv_layers: bool,
-    storage_name: str | None,
+    registry_storage_name: str | None,
     logger: BootstrapLogger | None = None,
 ) -> EnvBootstrapResult:
     """Populate ``os.environ`` for one application CLI process.
@@ -129,18 +130,24 @@ def bootstrap_env(
     Imports stay side-effect free; entrypoints call this helper before building
     runtime config objects. The parent shell is not mutated. Dotenv layers are
     the packaged ``.env.shared``, the active storage-local ``.env.local``, and
-    the optional explicit ``env_file``. When dotenv layers are skipped, the
-    explicit ``env_file`` is still parsed so it can guide storage-root
+    the optional explicit ``env_file``. The explicit file always overrides the
+    packaged and storage-local dotenv layers. When dotenv layers are skipped,
+    the explicit ``env_file`` is still parsed so it can guide storage-root
     selection, but its values are not merged into ``os.environ``.
 
     :param spec: Application-specific bootstrap contract.
-    :param env_file: Optional explicit dotenv file.
-    :param env_file_overrides_shell: Whether ``env_file`` beats already
-        exported variables inside this process.
-    :param load_dotenv_layers: Whether packaged (.shared.env), storage-local (.env.local), and explicit
-        dotenv values should be merged into this process. Registry selection
-        still runs when this is ``False``.
-    :param storage_name: Optional named storage selector from the user registry.
+    :param env_file: Optional invocation-local dotenv file that outranks the
+        packaged ``.env.shared`` and active storage-local ``.env.local``.
+    :param env_file_overrides_os_environ: Whether ``env_file`` beats already
+        existing values in ``os.environ`` inside this process. The parent shell
+        is never mutated.
+    :param load_dotenv_layers: Whether packaged ``.env.shared``,
+        storage-local ``.env.local``, and explicit dotenv values should be
+        merged into this process. Registry selection still runs when this is
+        ``False``.
+    :param registry_storage_name: Optional ``--storage`` selector from the user
+        registry. When provided, that registry root becomes the active storage
+        root and determines the storage-local dotenv candidate.
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
     """
@@ -150,10 +157,10 @@ def bootstrap_env(
     selected_storage, used_default_storage = _select_storage(
         spec=spec,
         registry=registry,
-        storage_name=storage_name,
+        registry_storage_name=registry_storage_name,
         original_env=original_env,
         explicit_values=explicit_values,
-        env_file_overrides_shell=env_file_overrides_shell,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
 
     active_storage_root = (
@@ -162,7 +169,7 @@ def bootstrap_env(
         else _storage_root_from_values(
             original_env=original_env,
             explicit_values=explicit_values,
-            env_file_overrides_shell=env_file_overrides_shell,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
             storage_root_env_key=spec.storage_root_env_key,
         )
     )
@@ -199,7 +206,7 @@ def bootstrap_env(
                 local_values=_read_dotenv_file(active_local_env),
                 explicit_values=explicit_values,
                 original_env=original_env,
-                env_file_overrides_shell=env_file_overrides_shell,
+                env_file_overrides_os_environ=env_file_overrides_os_environ,
             )
             os.environ.update(merged)
     if selected_storage is not None:
@@ -256,10 +263,10 @@ def _merged_env_values(
     local_values: Mapping[str, str],
     explicit_values: Mapping[str, str],
     original_env: Mapping[str, str],
-    env_file_overrides_shell: bool,
+    env_file_overrides_os_environ: bool,
 ) -> dict[str, str]:
     """Merge env layers using the selected CLI precedence policy."""
-    if env_file_overrides_shell:
+    if env_file_overrides_os_environ:
         return {
             **shared_values,
             **local_values,
@@ -278,18 +285,18 @@ def _select_storage(
     *,
     spec: EnvBootstrapSpec,
     registry: StorageRegistry,
-    storage_name: str | None,
+    registry_storage_name: str | None,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
-    env_file_overrides_shell: bool,
+    env_file_overrides_os_environ: bool,
 ) -> tuple[StorageRecord | None, bool]:
     """Return the registry-selected storage, if registry selection applies."""
-    if storage_name is not None:
-        return registry.selected(storage_name), False
+    if registry_storage_name is not None:
+        return registry.selected(registry_storage_name), False
     if _storage_root_value(
         original_env=original_env,
         explicit_values=explicit_values,
-        env_file_overrides_shell=env_file_overrides_shell,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
         storage_root_env_key=spec.storage_root_env_key,
     ):
         return None, False
@@ -303,14 +310,14 @@ def _storage_root_from_values(
     *,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
-    env_file_overrides_shell: bool,
+    env_file_overrides_os_environ: bool,
     storage_root_env_key: str,
 ) -> Path | None:
     """Return active storage root from higher-precedence env values."""
     root = _storage_root_value(
         original_env=original_env,
         explicit_values=explicit_values,
-        env_file_overrides_shell=env_file_overrides_shell,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
         storage_root_env_key=storage_root_env_key,
     )
     if not root:
@@ -322,11 +329,11 @@ def _storage_root_value(
     *,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
-    env_file_overrides_shell: bool,
+    env_file_overrides_os_environ: bool,
     storage_root_env_key: str,
 ) -> str | None:
-    """Return the storage-root value implied by shell/explicit env layers."""
-    if env_file_overrides_shell:
+    """Return the storage-root value implied by ``os.environ`` and ``env_file``."""
+    if env_file_overrides_os_environ:
         return explicit_values.get(storage_root_env_key) or original_env.get(
             storage_root_env_key
         )

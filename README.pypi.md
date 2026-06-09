@@ -229,7 +229,7 @@ scripts or manual storage registration.
 | `ConfigOwner` | application | A named section of related fields. |
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
-| shell environment | user/process | Highest-priority process values by default. |
+| `os.environ` | current process | Highest-priority values by default. |
 | `~/.config/<app>/<registry_filename>` | AppRC registry | Named storage roots and default storage. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
@@ -243,11 +243,14 @@ Applications call `AppConfigKit.bootstrap(...)` once at CLI startup. It merges:
 1. packaged `.env.shared`
 2. selected storage-local `.env.local`
 3. explicit `--env-file`
-4. current shell environment
+4. values already present in `os.environ`
 
-By default, the shell wins over `--env-file`. Set
-`env_file_overrides_shell=True` when an explicit file should win inside the
-current process.
+The explicit env file always overrides the packaged and storage-local dotenv
+layers. By default, values already present in `os.environ` win over
+`--env-file`. Set `env_file_overrides_os_environ=True` when an explicit file
+should win inside the current Python process. AppRC never mutates the parent
+shell. CLI applications should expose this as
+`--env-file-overrides-os-environ` with the `-o` shorthand.
 
 Set `load_dotenv_layers=False` in Python, or expose a CLI flag such as
 `--skip-dotenv-layers`, to skip merging packaged, storage-local, and explicit
@@ -354,9 +357,9 @@ from apprc.logging import setup_logging
 state.env_bootstrap = bootstrap_cli_env(
     MYAPP_CONFIG,
     env_file=env_file,
-    env_file_overrides_shell=env_file_overrides_shell,
+    env_file_overrides_os_environ=env_file_overrides_os_environ,
     load_dotenv_layers=not skip_dotenv_layers,
-    storage_name=storage,
+    registry_storage_name=storage,
     log_level=log_level,
     setup_logging=setup_logging,
 )

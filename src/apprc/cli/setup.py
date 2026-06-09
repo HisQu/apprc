@@ -9,7 +9,8 @@ from pathlib import Path
 
 # == 3rd Party ===============================
 import typer
-from rich.console import Console
+from rich import box
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -55,7 +56,7 @@ def _print_setup_intro(kit: AppConfigKit, console: Console) -> None:
     active_path = _normalized_config_file_path(kit.registry_path())
     body = (
         f"[bold]{kit.spec.display_name} config setup[/bold]\n\n"
-        "AppRC uses one small TOML config file to remember named storage "
+        f"{kit.spec.display_name} uses one small TOML config file to remember named storage "
         "directories and which storage is the default. The config file does "
         "not contain your storage data; it only points to storage roots.\n\n"
         f"Automatic config file:\n[cyan]{default_path}[/cyan]\n\n"
@@ -114,32 +115,46 @@ def _print_existing_registry(
     console: Console,
 ) -> None:
     """Show the current registry and its known storage roots."""
-    table = Table(title="Registered storages", show_header=True)
+    table = Table(box=box.SIMPLE, show_header=True)
+    table.add_column("#", justify="right")
     table.add_column("Name", style="bold")
     table.add_column("Default")
     table.add_column("Root")
-    for name in sorted(registry.storages):
+    for index, name in enumerate(_ordered_storage_names(registry), start=1):
         record = registry.selected(name)
+        row_style = "green" if name == registry.default_storage else None
         table.add_row(
+            str(index),
             name,
             "yes" if name == registry.default_storage else "",
             str(record.root),
+            style=row_style,
         )
 
     body = (
-        f"AppRC found an existing {kit.spec.display_name} config file:\n"
+        f"{kit.spec.display_name} found an existing config file:\n"
         f"[cyan]{registry.path}[/cyan]\n\n"
         "Keeping it preserves the registered storage roots. Resetting removes "
-        "only AppRC config state, not storage directories. Moving it preserves "
+        f"only {kit.spec.display_name} config state, not storage directories. Moving it preserves "
         "the registry contents at a new config-file path."
     )
-    console.print(
-        Panel(body, title="Step 0: Existing Setup", border_style="yellow")
-    )
     if registry.storages:
-        console.print(table)
+        panel_body = Group(
+            body,
+            "\nThe current config has these storages registered:",
+            table,
+        )
     else:
-        console.print("[dim]No live storages are registered yet.[/dim]")
+        panel_body = (
+            f"{body}\n\n[dim]No live storages are registered yet.[/dim]"
+        )
+    console.print(
+        Panel(
+            panel_body,
+            title="Step 0: Existing Setup",
+            border_style="yellow",
+        )
+    )
 
 
 def _confirm_registry_reset(
@@ -156,11 +171,14 @@ def _confirm_registry_reset(
             record = registry.selected(name)
             console.print(f"  [yellow]- {name}: {record.root}[/yellow]")
     console.print(
-        "Storage directories are left untouched. Only the AppRC config file "
+        "Storage directories are left untouched. Only the config file "
         "is removed. When it lives below the automatic config directory, that "
-        f"AppRC-owned {kit.spec.display_name} directory is removed too."
+        f"{kit.spec.display_name} config directory is removed too."
     )
-    if not Confirm.ask("Reset AppRC config state?", default=False):
+    if not Confirm.ask(
+        f"Reset {kit.spec.display_name} config state?",
+        default=False,
+    ):
         console.print("Aborted.")
         raise typer.Exit(code=1)
 
@@ -227,7 +245,7 @@ def _prompt_registry_path(
     default_path: Path | None = None,
     title: str = "Step 1: Config File",
 ) -> Path:
-    """Ask where the AppRC registry TOML file should live."""
+    """Ask where the host app registry TOML file should live."""
     env_key = kit.config_file_env_key()
     suggested = default_path or _normalized_config_file_path(
         kit.registry_path()
@@ -238,7 +256,7 @@ def _prompt_registry_path(
         "your normal per-user config directory.\n\n"
         f"Press Enter to use:\n[cyan]{suggested}[/cyan]\n\n"
         f"To use any custom path, start the command with [cyan]{env_key}[/cyan] "
-        "pointing at that exact file. AppRC does not edit shell startup files."
+        f"pointing at that exact file. {kit.spec.display_name} setup does not edit shell startup files."
     )
     console.print(Panel(body, title=title, border_style="cyan"))
     raw_path = Prompt.ask("Config file", default=str(suggested))
@@ -304,7 +322,7 @@ def _ensure_default_storage(
 
     storage_name = Prompt.ask(
         "Storage name",
-        default=registry.default_storage or "default",
+        default=registry.default_storage or kit.default_storage_name(),
     )
     raw_storage_root = Prompt.ask(
         "Storage root",
@@ -370,6 +388,16 @@ def _load_registry(kit: AppConfigKit, registry_path: Path) -> StorageRegistry:
             str(exc),
             param_hint=str(registry_path),
         ) from exc
+
+
+def _ordered_storage_names(registry: StorageRegistry) -> list[str]:
+    """Return default storage first, then remaining storages by name."""
+    names = sorted(registry.storages)
+    default_name = registry.default_storage
+    if default_name in names:
+        names.remove(default_name)
+        names.insert(0, default_name)
+    return names
 
 
 def _env_path_matches(kit: AppConfigKit, registry_path: Path) -> bool:

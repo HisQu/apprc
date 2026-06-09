@@ -91,7 +91,7 @@ def _malformed_windows_drive_path_message(path: str) -> str:
     return (
         "Storage root looks like a Windows drive path, but it is missing "
         f"a slash after the drive letter: {path!r}. On POSIX shells, "
-        "unquoted backslashes are consumed before AppRC sees the value, so "
+        "unquoted backslashes are consumed before the app sees the value, so "
         r"`C:\Projects\demo-storage` can arrive as "
         "`C:Projectsdemo-storage`. "
         "Quote the path or use forward slashes. Accepted forms include "

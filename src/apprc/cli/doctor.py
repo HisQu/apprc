@@ -26,10 +26,14 @@ def config_command_text(kit: AppConfigKit, action: str) -> str:
 
 def config_setup_message(kit: AppConfigKit) -> str:
     """Return setup text shown when no storage is registered."""
+    init_action = (
+        "init /absolute/path/to/storage-root "
+        f"--name {kit.default_storage_name()} --default"
+    )
     return (
         f"No {kit.spec.display_name} storage is registered yet.\n\n"
         "Create a default storage:\n"
-        f"  {config_command_text(kit, 'init /absolute/path/to/storage-root --name default --default')}\n\n"
+        f"  {config_command_text(kit, init_action)}\n\n"
         "Then inspect the setup:\n"
         f"  {config_command_text(kit, 'doctor')}\n"
         f"  {config_command_text(kit, 'show')}\n\n"
@@ -136,7 +140,8 @@ def build_config_doctor_payload(
         else [
             config_command_text(
                 kit,
-                "init /absolute/path/to/storage-root --name default --default",
+                "init /absolute/path/to/storage-root "
+                f"--name {kit.default_storage_name()} --default",
             ),
             config_command_text(kit, "doctor"),
             config_command_text(kit, "show"),

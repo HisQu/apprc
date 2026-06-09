@@ -35,6 +35,7 @@ from apprc.config.schema import ConfigOwner
 from apprc.config.storage_registry import (
     StorageRegistry,
     default_storage_data_root,
+    default_storage_name,
     load_storage_registry,
     prune_missing_archived_storages,
     record_archived_storage,
@@ -278,6 +279,10 @@ class AppConfigKit:
     def default_storage_data_root(self) -> Path:
         """Return this app's conventional default storage directory."""
         return default_storage_data_root(self.spec.app_name)
+
+    def default_storage_name(self) -> str:
+        """Return this app's conventional first storage selector."""
+        return default_storage_name(self.spec.app_name)
 
     def _write_storage_root_local_value(self, storage_root: Path) -> Path:
         """Persist the registry-managed storage root in local dotenv form.

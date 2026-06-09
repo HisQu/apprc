@@ -51,6 +51,7 @@ from apprc.config.storage_registry import (
     config_file_env_key,
     configured_storage_registry_path,
     default_storage_data_root,
+    default_storage_name,
     default_storage_registry_path,
     load_storage_registry,
     prune_missing_archived_storages,

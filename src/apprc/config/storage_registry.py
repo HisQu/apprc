@@ -136,7 +136,19 @@ def default_storage_data_root(
     proc_env: Mapping[str, str] | None = None,
 ) -> Path:
     """Return the conventional live storage root for a fresh default."""
-    return app_data_dir(app_name, proc_env) / "default"
+    return app_data_dir(app_name, proc_env) / default_storage_name(app_name)
+
+
+def default_storage_name(app_name: str) -> str:
+    """Return the conventional registry name for a fresh first storage.
+
+    :param app_name: Application name from the AppRC integration spec.
+    :return: Host-specific selector that does not reuse the UI term
+        ``default``.
+    """
+    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", app_name).strip("_-")
+    base_name = normalized or "apprc"
+    return f"{base_name}_stor-1"
 
 
 def default_storage_registry_path(

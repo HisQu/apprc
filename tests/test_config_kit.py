@@ -8,6 +8,7 @@ from textual.widgets import Button, DataTable, Input, ListView, Static
 from typer.testing import CliRunner
 
 from apprc.cli.config_app import config_request_skips_bootstrap
+from apprc.cli.doctor import build_config_doctor_payload, config_setup_message
 from apprc.config import (
     config_field,
 )
@@ -135,7 +136,7 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     assert result.exit_code == 0, result.output
     assert "Storage root already exists and is not empty" in result.output
     assert (
-        "AppRC will reuse this directory for Demo storage 'alpha'."
+        "Demo will reuse this directory for Demo storage 'alpha'."
         in result.output
     )
     assert "It will create or update only these config files:" in result.output
@@ -148,6 +149,7 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     assert "It will also mark 'alpha' as the default storage." in result.output
     assert "Answer l to list first-level contents" in result.output
     assert "payload.txt" in result.output
+    assert "AppRC" not in result.output
     assert f'DEMO_D_STORAGE="{storage_root.resolve()}"\n' in (
         storage_root / ".env.demo"
     ).read_text(encoding="utf-8")
@@ -174,6 +176,7 @@ def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
     assert "Storage root looks like a Windows drive" in result.output
     assert "path, but it is missing a slash" in result.output
     assert "backslashes are consumed" in result.output
+    assert "AppRC" not in result.output
     assert "C:/Projects/demo-storage" in result.output
     assert not Path(malformed).exists()
     assert not kit.registry_path().exists()
@@ -237,18 +240,20 @@ def test_generated_config_setup_creates_default_registry_and_storage(
 
     result = runner.invoke(app, ["setup"], input="\n\n\n")
 
-    storage_root = tmp_path / "data" / "demo" / "default"
+    storage_root = tmp_path / "data" / "demo" / "demo_stor-1"
     registry = kit.load_registry()
     assert result.exit_code == 0, result.output
     assert registry.path == tmp_path / "config" / "demo" / "demo.toml"
-    assert registry.default_storage == "default"
-    assert registry.selected("default").root == storage_root.resolve()
+    assert registry.default_storage == "demo_stor-1"
+    assert registry.selected("demo_stor-1").root == storage_root.resolve()
     assert f'DEMO_D_STORAGE="{storage_root.resolve()}"\n' in (
         storage_root / ".env.demo"
     ).read_text(encoding="utf-8")
     assert "demo config edit" in result.output
     assert "demo config show" in result.output
     assert "demo config doctor" in result.output
+    assert "Demo uses one small TOML config file" in result.output
+    assert "AppRC" not in result.output
 
 
 def test_generated_config_setup_rejects_custom_registry_without_env(
@@ -328,6 +333,9 @@ def test_generated_config_setup_keeps_existing_default_storage(
     assert result.exit_code == 0, result.output
     assert registry.default_storage == "alpha"
     assert registry.selected("alpha").root == storage_root.resolve()
+    assert "The current config has these storages registered:" in result.output
+    assert "1   alpha" in result.output
+    assert "AppRC" not in result.output
 
 
 def test_generated_config_setup_reset_orphans_registered_storage(
@@ -344,14 +352,15 @@ def test_generated_config_setup_reset_orphans_registered_storage(
 
     result = runner.invoke(app, ["setup"], input="reset\ny\n\n\n\n")
 
-    new_storage_root = tmp_path / "data" / "demo" / "default"
+    new_storage_root = tmp_path / "data" / "demo" / "demo_stor-1"
     registry = kit.load_registry()
     assert result.exit_code == 0, result.output
     assert old_storage_root.is_dir()
-    assert registry.default_storage == "default"
-    assert sorted(registry.storages) == ["default"]
-    assert registry.selected("default").root == new_storage_root.resolve()
+    assert registry.default_storage == "demo_stor-1"
+    assert sorted(registry.storages) == ["demo_stor-1"]
+    assert registry.selected("demo_stor-1").root == new_storage_root.resolve()
     assert "orphan" in result.output
+    assert "AppRC" not in result.output
 
 
 def test_generated_config_setup_moves_default_registry_to_env_target(
@@ -451,6 +460,24 @@ def test_generated_config_app_lists_registered_storages_as_json(
             },
         ],
     }
+
+
+def test_config_doctor_guidance_uses_host_default_storage_name(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+
+    message = config_setup_message(kit)
+    payload = build_config_doctor_payload(kit, storage_name=None)
+
+    assert "--name demo_stor-1 --default" in message
+    assert "--name default" not in message
+    assert payload["next_steps"][0].endswith(
+        "init /absolute/path/to/storage-root --name demo_stor-1 --default"
+    )
+    assert "--name default" not in payload["next_steps"][0]
 
 
 def test_kit_builds_generic_editor_with_spec_defaults(
@@ -554,6 +581,43 @@ async def test_editor_set_default_and_unregister_non_default_storage(
     assert registry.default_storage == "beta"
     assert sorted(registry.storages) == ["beta"]
     assert (tmp_path / "alpha").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_editor_recreates_last_default_with_host_storage_name(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    kit = build_demo_kit()
+    registry = kit.register_storage(
+        name="alpha",
+        root=tmp_path / "alpha",
+        make_default=True,
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test() as pilot:
+        worker = editor.run_worker(
+            editor._remove_live_storage("alpha", delete_content=False)
+        )
+        await pilot.pause()
+        message = editor.screen.query_one(
+            "#default-path-message", Static
+        ).content
+        assert "Demo" in str(message)
+        assert "AppRC" not in str(message)
+        editor.screen.query_one("#default-create", Button).press()
+        await pilot.pause()
+        removed = await worker.wait()
+
+    new_storage_root = tmp_path / "data" / "demo" / "demo_stor-1"
+    registry = kit.load_registry()
+    assert removed is True
+    assert registry.default_storage == "demo_stor-1"
+    assert sorted(registry.storages) == ["demo_stor-1"]
+    assert registry.selected("demo_stor-1").root == new_storage_root.resolve()
 
 
 @pytest.mark.asyncio

@@ -194,12 +194,15 @@ terminal editor.
 
 AppRC does not install its own `apprc` command. The config CLI is meant to be
 mounted as a subcommand of the application that depends on AppRC.
+Generated end-user prompts should feel owned by that host application: a Haiu
+user should see Haiu setup text, not AppRC implementation details. `app_name`
+drives paths and selectors, while `display_name` drives human-facing labels.
 
 Users then get:
 
 ```shell
 myapp config setup
-myapp config init /absolute/path/to/storage --name default --default
+myapp config init /absolute/path/to/storage --name myapp_stor-1 --default
 myapp config doctor
 myapp config show --json
 myapp config set client.model other-model
@@ -256,9 +259,9 @@ already set, because future commands must be able to rediscover the same file.
 For example:
 
 ```toml
-default_storage = "default"
+default_storage = "myapp_stor-1"
 
-[storages.default]
+[storages.myapp_stor-1]
 root = "/absolute/path/to/storage"
 
 [archived_storages.old-default]
@@ -281,9 +284,9 @@ storage-root environment value.
 > Use one of these forms instead:
 >
 > ```shell
-> myapp config init 'C:\Projects\demo-storage' --name default --default
-> myapp config init C:/Projects/demo-storage --name default --default
-> myapp config init /mnt/c/Projects/demo-storage --name default --default
+> myapp config init 'C:\Projects\demo-storage' --name myapp_stor-1 --default
+> myapp config init C:/Projects/demo-storage --name myapp_stor-1 --default
+> myapp config init /mnt/c/Projects/demo-storage --name myapp_stor-1 --default
 > ```
 
 ### Logging
@@ -391,8 +394,8 @@ The editor also manages storage lifecycle:
   source directory after compression.
 
 If the last live default is removed, the editor prompts for a replacement path
-prefilled with `~/.local/share/<app>/default` or offers to leave AppRC in the
-fresh-install state with no default storage.
+prefilled with `~/.local/share/<app>/<app>_stor-1` or offers to leave the app
+in the fresh-install state with no default storage.
 
 ### Use Logging
 
@@ -403,7 +406,7 @@ setup_logging(level="INFO", renderer="cli")
 log = get_logger(__name__)
 
 log.action_begin("Loading workspace")
-log.success("Workspace ready", storage="default")
+log.success("Workspace ready", storage="myapp_stor-1")
 ```
 
 <br>

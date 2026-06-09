@@ -10,6 +10,7 @@ from apprc.config.storage_registry import (
     config_file_env_key,
     configured_storage_registry_path,
     default_storage_data_root,
+    default_storage_name,
     load_storage_registry,
     prune_missing_archived_storages,
     record_archived_storage,
@@ -43,8 +44,15 @@ def test_app_data_dir_uses_xdg_data_home(
     assert app_data_dir("demo") == tmp_path / "data" / "demo"
     assert (
         default_storage_data_root("demo")
-        == tmp_path / "data" / "demo" / "default"
+        == tmp_path / "data" / "demo" / "demo_stor-1"
     )
+
+
+def test_default_storage_name_uses_valid_host_specific_selector() -> None:
+    assert default_storage_name("demo") == "demo_stor-1"
+    assert default_storage_name("my-app.rc") == "my-app_rc_stor-1"
+    assert default_storage_name("") == "apprc_stor-1"
+    assert default_storage_name("???") == "apprc_stor-1"
 
 
 def test_config_file_env_key_normalizes_app_name() -> None:
@@ -127,6 +135,24 @@ def test_load_storage_registry_keeps_old_toml_compatible(
     assert registry.default_storage == "alpha"
     assert sorted(registry.storages) == ["alpha"]
     assert registry.archived_storages == {}
+
+
+def test_load_storage_registry_keeps_old_default_name_compatible(
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "demo.toml"
+    registry_path.write_text(
+        'default_storage = "default"\n'
+        "\n"
+        "[storages.default]\n"
+        f'root = "{tmp_path / "default"}"\n',
+        encoding="utf-8",
+    )
+
+    registry = load_storage_registry(registry_path)
+
+    assert registry.default_storage == "default"
+    assert sorted(registry.storages) == ["default"]
 
 
 def test_archived_storage_records_round_trip_sorted_toml(

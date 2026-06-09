@@ -41,7 +41,7 @@ def confirm_existing_storage_root(
     """
     typer.echo(f"Storage root already exists and is not empty: {storage_root}")
     typer.echo(
-        f"AppRC will reuse this directory for "
+        f"{kit.spec.display_name} will reuse this directory for "
         f"{kit.spec.display_name} storage {storage_name!r}."
     )
     typer.echo("It will create or update only these config files:")

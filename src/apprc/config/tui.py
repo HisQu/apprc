@@ -660,18 +660,25 @@ class _DefaultPathScreen(ModalScreen[_DefaultPathResult | None]):
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, *, default_path: Path) -> None:
+    def __init__(
+        self,
+        *,
+        default_path: Path,
+        display_name: str,
+    ) -> None:
         """Store the suggested default data directory."""
         super().__init__()
         self.default_path = default_path
+        self.display_name = display_name
 
     def compose(self) -> ComposeResult:
         """Compose the no-live-default dialog."""
         with Vertical(id="default-path-dialog"):
             yield Static(Text("No default storage remains", style="bold"))
             yield Static(
-                "Choose a replacement default storage, or leave AppRC in an "
-                "uninitialized state like a fresh install.",
+                "Choose a replacement default storage, or leave "
+                f"{self.display_name} in an uninitialized state like a "
+                "fresh install.",
                 id="default-path-message",
             )
             yield Input(
@@ -1246,17 +1253,18 @@ class ConfigEditorApp(App[None]):
                 replacement_default=replacement.replacement_name,
             )
             if replacement.create_default_path is not None:
+                replacement_name = kit.default_storage_name()
                 self.registry = kit.register_storage(
-                    name="default",
+                    name=replacement_name,
                     root=replacement.create_default_path,
                     make_default=True,
                 )
         except ValueError as exc:
             self.notify(str(exc), severity="error")
             return False
-        select_name = replacement.replacement_name or (
-            "default" if replacement.create_default_path is not None else None
-        )
+        select_name = replacement.replacement_name
+        if select_name is None and replacement.create_default_path is not None:
+            select_name = kit.default_storage_name()
         await self._refresh_storage_list(select_name=select_name)
         self.notify(f"Removed storage {name!r}")
         return True
@@ -1298,7 +1306,10 @@ class ConfigEditorApp(App[None]):
         if kit is None:
             return None
         result = await self.push_screen_wait(
-            _DefaultPathScreen(default_path=kit.default_storage_data_root())
+            _DefaultPathScreen(
+                default_path=kit.default_storage_data_root(),
+                display_name=kit.spec.display_name,
+            )
         )
         if result is None:
             return None
@@ -1613,8 +1624,15 @@ class ConfigEditorApp(App[None]):
 
     def _suggest_storage_name(self, path: Path) -> str:
         """Return a simple registry-name suggestion from a path."""
-        name = path.name or "default"
+        fallback_name = self._fallback_storage_name()
+        name = path.name or fallback_name
         if is_storage_archive_path(path):
             name = storage_root_name_from_archive(path)
         normalized = re.sub(r"[^A-Za-z0-9_-]+", "-", name).strip("-_")
-        return normalized or "default"
+        return normalized or fallback_name
+
+    def _fallback_storage_name(self) -> str:
+        """Return a storage selector when no path name is available."""
+        if self.kit is not None:
+            return self.kit.default_storage_name()
+        return "apprc_stor-1"

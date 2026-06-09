@@ -39,26 +39,45 @@ def test_standalone_cli_help_shows_config_command() -> None:
 
 
 def test_console_script_points_to_demo_cli() -> None:
+    root = Path(__file__).parents[1]
+    root_pyproject = tomllib.loads(
+        (root / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    demo_pyproject = tomllib.loads(
+        (root / "examples" / "apprc_demo" / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "scripts" not in root_pyproject["project"]
+    assert (
+        demo_pyproject["project"]["scripts"]["apprc"] == "apprc_demo.cli:main"
+    )
+
+
+def test_build_backend_packages_only_library_in_root_wheel() -> None:
     pyproject = tomllib.loads(
         (Path(__file__).parents[1] / "pyproject.toml").read_text(
             encoding="utf-8"
         )
     )
 
-    assert pyproject["project"]["scripts"]["apprc"] == "apprc_demo.cli:main"
+    assert pyproject["tool"]["uv"]["build-backend"]["module-name"] == "apprc"
 
 
-def test_build_backend_packages_library_and_demo_separately() -> None:
+def test_demo_package_is_dev_dependency_only() -> None:
     pyproject = tomllib.loads(
         (Path(__file__).parents[1] / "pyproject.toml").read_text(
             encoding="utf-8"
         )
     )
 
-    assert pyproject["tool"]["uv"]["build-backend"]["module-name"] == [
-        "apprc",
-        "apprc_demo",
-    ]
+    assert pyproject["dependency-groups"]["demo"] == ["apprc-demo"]
+    assert {"include-group": "demo"} in pyproject["dependency-groups"]["dev"]
+    assert pyproject["tool"]["uv"]["sources"]["apprc-demo"] == {
+        "path": "examples/apprc_demo",
+        "editable": True,
+    }
 
 
 def test_core_package_does_not_import_demo_package() -> None:

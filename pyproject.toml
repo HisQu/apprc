@@ -57,9 +57,10 @@ Homepage = "https://hisqu.de"
 Repository = "https://github.com/HisQu/apprc"
 Issues = "https://github.com/HisQu/apprc/issues"
 
-# == This Allows refactoring across repo boundaries
-# !! Comment out before packaging !!
-# [tool.uv.sources]
+# Local-only dependency sources used by uv. These are not published as package
+# requirements in AppRC wheel metadata.
+[tool.uv.sources]
+"apprc-demo" = { path = "examples/apprc_demo", editable = true }
 # haiu = { path = "../haiu", editable = true }
 # [tool.pyright]
 # include = ["src", "../haiu/src"]
@@ -103,7 +104,11 @@ Issues = "https://github.com/HisQu/apprc/issues"
 #   uv sync --locked --all-groups
 #   uv sync --locked --all-extras --all-groups
 [dependency-groups]
+demo = [
+    "apprc-demo",
+]
 dev = [
+    { include-group = "demo" },
     # === Install from PyPI ===================================
     # --- Interactive development -------
     "jupyterlab",    # < Brings notebook, widgets, ipykernel, etc.
@@ -135,20 +140,12 @@ dev = [
 # =====================================================================
 
 [tool.uv.build-backend]
-module-name = ["apprc", "apprc_demo"]
+module-name = "apprc"
 module-root = "src"
 source-include = [
     "src/apprc_dev/packaging/**",
     "tests/**",
 ]
-
-
-# =====================================================================
-# === Terminal entry points
-# =====================================================================
-
-[project.scripts]
-apprc = "apprc_demo.cli:main"
 
 
 # =====================================================================

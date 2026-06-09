@@ -51,7 +51,11 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+demo = [
+    { name = "apprc-demo" },
+]
 dev = [
+    { name = "apprc-demo" },
     { name = "ipywidgets" },
     { name = "jupyterlab" },
     { name = "pyinstrument" },
@@ -74,7 +78,9 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+demo = [{ name = "apprc-demo", editable = "examples/apprc_demo" }]
 dev = [
+    { name = "apprc-demo", editable = "examples/apprc_demo" },
     { name = "ipywidgets" },
     { name = "jupyterlab" },
     { name = "pyinstrument", specifier = ">=5.1" },
@@ -85,6 +91,17 @@ dev = [
     { name = "ruff", specifier = ">=0.4" },
     { name = "twine", specifier = ">=6.0" },
 ]
+
+[[package]]
+name = "apprc-demo"
+version = "0.0.0"
+source = { editable = "examples/apprc_demo" }
+dependencies = [
+    { name = "apprc" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "apprc" }]
 
 [[package]]
 name = "argon2-cffi"

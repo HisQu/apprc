@@ -31,6 +31,10 @@ name = "apprc"
 directory = { path = ".", editable = true }
 
 [[packages]]
+name = "apprc-demo"
+directory = { path = "examples/apprc_demo", editable = true }
+
+[[packages]]
 name = "argon2-cffi"
 version = "25.1.0"
 index = "https://pypi.org/simple"

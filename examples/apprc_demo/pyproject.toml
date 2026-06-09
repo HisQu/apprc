@@ -1,0 +1,19 @@
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12"]
+build-backend = "uv_build"
+
+[project]
+name = "apprc-demo"
+version = "0.0.0"
+description = "Repository-local demo CLI for exercising AppRC."
+requires-python = ">=3.12"
+dependencies = [
+    "apprc",
+]
+
+[project.scripts]
+apprc = "apprc_demo.cli:main"
+
+[tool.uv.build-backend]
+module-name = "apprc_demo"
+module-root = "src"

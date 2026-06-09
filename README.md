@@ -124,29 +124,30 @@ uv sync --frozen --all-groups
 
 ```shell
 python -c "import apprc; print(apprc.AppConfigKit)"
-apprc --help
 pytest
 ```
 
 <br>
 
-### Try The Standalone Demo CLI
+### Try The Dev-Only Demo CLI
 
-AppRC installs an `apprc` command that mounts the generated config workflow
-against a built-in demo app. Use it to test setup, storage registries, local
+The repository dev environment installs a local `apprc` command from the
+`examples/apprc_demo` package. Use it to test setup, storage registries, local
 dotenv overrides, JSON output, and the Textual editor before wiring AppRC into
-another project. The demo implementation ships as a separate `apprc_demo`
-package so sample-app code stays outside the main `apprc` library package.
-The installed `apprc` executable points at `apprc_demo.cli`; `python -m apprc`
-is intentionally not a supported entrypoint.
+another project. The published `apprc` wheel does not install this command.
+`python -m apprc` is intentionally not a supported entrypoint.
+
+After `uv sync --all-groups`, run:
 
 ```shell
-apprc config setup --yes
-apprc config show --json
-apprc config set runtime.model other-model
-apprc config set retry_count 5
-apprc config edit
+.venv/bin/apprc config setup --yes
+.venv/bin/apprc config show --json
+.venv/bin/apprc config set runtime.model other-model
+.venv/bin/apprc config set retry_count 5
+.venv/bin/apprc config edit
 ```
+
+or use `uv run apprc ...` for the same commands.
 
 The executable is `apprc`, but its disposable demo files live under the
 `apprc-demo` namespace:

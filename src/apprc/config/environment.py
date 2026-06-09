@@ -119,10 +119,10 @@ class EnvBootstrapResult:
 def bootstrap_env(
     *,
     spec: EnvBootstrapSpec,
-    env_file: Path | None,
-    env_file_overrides_os_environ: bool,
-    load_dotenv_layers: bool,
-    registry_storage_name: str | None,
+    env_file: Path | None = None,
+    env_file_overrides_os_environ: bool = False,
+    load_dotenv_layers: bool = True,
+    registry_storage_name: str | None = None,
     logger: BootstrapLogger | None = None,
 ) -> EnvBootstrapResult:
     """Populate ``os.environ`` for one application CLI process.

@@ -239,10 +239,11 @@ def next_steps_text(kit: "AppConfigKit", registry: StorageRegistry) -> str:
     :param registry: Registry selected by setup.
     :return: Newline-delimited commands and export guidance.
     """
+    command_name = kit.spec.config_command_name()
     lines = [
-        f"{kit.spec.app_name} config edit",
-        f"{kit.spec.app_name} config show",
-        f"{kit.spec.app_name} config doctor",
+        f"{command_name} config edit",
+        f"{command_name} config show",
+        f"{command_name} config doctor",
     ]
     if not same_path(registry.path, kit.default_registry_path()):
         lines.append(

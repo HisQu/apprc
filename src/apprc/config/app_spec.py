@@ -30,6 +30,7 @@ class AppConfigSpec:
     :param config_package: Package containing the packaged shared dotenv file.
     :param owners: Config owner inventory for editable and documented fields.
     :param storage_root_env_key: Env key that stores the active storage root.
+    :param command_name: Optional executable name shown in generated CLI copy.
     :param registry_filename: Per-user TOML registry filename.
     :param shared_env_filename: Packaged shared dotenv filename.
     :param local_env_filename: Storage-local dotenv override filename.
@@ -40,9 +41,14 @@ class AppConfigSpec:
     config_package: str
     owners: tuple[ConfigOwner, ...]
     storage_root_env_key: str
+    command_name: str | None = None
     registry_filename: str = "app.toml"
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
+
+    def config_command_name(self) -> str:
+        """Return the executable name shown in generated config commands."""
+        return self.command_name or self.app_name
 
     def config_file_env_key(self) -> str:
         """Return the env var that overrides the registry file path."""

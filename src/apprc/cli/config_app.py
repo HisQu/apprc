@@ -123,7 +123,7 @@ def build_config_typer_app(
     missing_setup = setup_message or config_setup_message(kit)
     migration_message = (
         legacy_json_migration_message
-        or f"Use: {kit.spec.app_name} config show --json"
+        or f"Use: {kit.spec.config_command_name()} config show --json"
     )
 
     def _state(ctx: typer.Context) -> StateT:
@@ -149,7 +149,8 @@ def build_config_typer_app(
             return storage_root
         raise typer.BadParameter(
             f"No active {kit.spec.display_name} storage root. Run "
-            f"`{kit.spec.app_name} config init STORAGE_ROOT --name NAME` "
+            f"`{kit.spec.config_command_name()} config init "
+            "STORAGE_ROOT --name NAME` "
             "or pass --storage.",
             param_hint="--storage",
         )

@@ -147,10 +147,8 @@ source-include = [
 # === Terminal entry points
 # =====================================================================
 
-# AppRC intentionally installs no `apprc` executable. Host applications mount
-# the generated config Typer app as a subcommand of their own CLI.
-# [project.scripts]
-# apprc = "apprc.cli:main"
+[project.scripts]
+apprc = "apprc.main:main"
 
 
 # =====================================================================
@@ -162,6 +160,8 @@ source-include = [
 typeCheckingMode = "basic"
 pythonVersion = "3.12"  # Enforce the minimum supported python version
 pythonPlatform = "All"
+venvPath = "."
+venv = ".venv"
 include = ["src"]
 exclude = [
     "tests", # < Tests may be dirty.

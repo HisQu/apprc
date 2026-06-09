@@ -125,8 +125,37 @@ uv sync --frozen --all-groups
 
 ```shell
 python -c "import apprc; print(apprc.AppConfigKit)"
+apprc --help
+python -m apprc --help
 pytest
 ```
+
+<br>
+
+### Try The Standalone Demo CLI
+
+AppRC installs an `apprc` command that mounts the generated config workflow
+against a built-in demo app. Use it to test setup, storage registries, local
+dotenv overrides, JSON output, and the Textual editor before wiring AppRC into
+another project.
+
+```shell
+apprc config setup --yes
+apprc config show --json
+apprc config set runtime.model other-model
+apprc config set retry_count 5
+apprc config edit
+```
+
+The executable is `apprc`, but its disposable demo files live under the
+`apprc-demo` namespace:
+
+| Item | Default |
+|---|---|
+| Registry | `~/.config/apprc-demo/apprc-demo.toml` |
+| Default storage | `~/.local/share/apprc-demo/apprc-demo_stor-1` |
+| Local env | `~/.local/share/apprc-demo/apprc-demo_stor-1/.env.apprc-demo` |
+| Registry override | `APPRC_DEMO_CONFIG_FILE` |
 
 <br>
 
@@ -193,11 +222,12 @@ from the bootstrapped environment. The important first step is the owner
 inventory: AppRC reuses it for loading, validation, docs, CLI commands, and the
 terminal editor.
 
-AppRC does not install its own `apprc` command. The config CLI is meant to be
-mounted as a subcommand of the application that depends on AppRC.
-Generated end-user prompts should feel owned by that host application: a Haiu
-user should see Haiu setup text, not AppRC implementation details. `app_name`
-drives paths and selectors, while `display_name` drives human-facing labels.
+Host applications should still mount the generated config CLI as a subcommand
+of the application that depends on AppRC. Generated end-user prompts should
+feel owned by that host application: a Haiu user should see Haiu setup text,
+not AppRC implementation details. `app_name` drives paths and selectors,
+`display_name` drives human-facing labels, and optional `command_name`
+overrides the executable shown in generated next-step commands.
 
 Users then get:
 

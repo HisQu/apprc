@@ -21,7 +21,7 @@ def config_command_text(kit: AppConfigKit, action: str) -> str:
     :param action: Command suffix after ``<app> config``.
     :return: Human-readable command text.
     """
-    return f"{kit.spec.app_name} config {action}"
+    return f"{kit.spec.config_command_name()} config {action}"
 
 
 def config_setup_message(kit: AppConfigKit) -> str:

@@ -137,7 +137,7 @@ def bootstrap_env(
     :param env_file: Optional explicit dotenv file.
     :param env_file_overrides_shell: Whether ``env_file`` beats already
         exported variables inside this process.
-    :param load_dotenv_layers: Whether packaged, storage-local, and explicit
+    :param load_dotenv_layers: Whether packaged (.shared.env), storage-local (.env.local), and explicit
         dotenv values should be merged into this process. Registry selection
         still runs when this is ``False``.
     :param storage_name: Optional named storage selector from the user registry.

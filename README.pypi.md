@@ -137,7 +137,8 @@ pytest
 AppRC installs an `apprc` command that mounts the generated config workflow
 against a built-in demo app. Use it to test setup, storage registries, local
 dotenv overrides, JSON output, and the Textual editor before wiring AppRC into
-another project.
+another project. The demo implementation ships as a separate `apprc_demo`
+package so sample-app code stays outside the main `apprc` library package.
 
 ```shell
 apprc config setup --yes

@@ -10,7 +10,7 @@ from typing import Annotated
 import typer
 
 # == Internal ================================
-from apprc._demo import (
+from apprc_demo import (
     APPRC_DEMO_KIT,
     AppRcDemoState,
     demo_runtime_payload,

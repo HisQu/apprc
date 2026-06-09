@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from apprc._demo import APPRC_DEMO_KIT
 from apprc.cli.doctor import config_command_text
 from apprc.main import app
+from apprc_demo import APPRC_DEMO_KIT
 from tests.support_config import build_demo_kit
 
 

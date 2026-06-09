@@ -75,6 +75,7 @@ if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit
 
 ButtonVariant = Literal["default", "primary", "success", "warning", "error"]
+StorageEntryKind = Literal["live", "missing", "archived"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +99,7 @@ class _ValueEditResult:
 class _StorageListEntry:
     """One selectable row in the storage list."""
 
-    kind: Literal["live", "archived"]
+    kind: StorageEntryKind
     name: str
 
 
@@ -827,7 +828,7 @@ class ConfigEditorApp(App[None]):
         self.hidden_env_keys = frozenset(hidden_env_keys)
         self.storage_entries = self._ordered_storage_entries()
         self.current_storage_name: str | None = None
-        self.current_storage_kind: Literal["live", "archived"] | None = None
+        self.current_storage_kind: StorageEntryKind | None = None
         self.local_values: dict[str, str] = {}
         self.row_env_keys: list[str | None] = []
 
@@ -872,6 +873,9 @@ class ConfigEditorApp(App[None]):
         entry = self.storage_entries[index]
         if entry.kind == "live":
             self._select_storage(entry.name)
+            return
+        if entry.kind == "missing":
+            self._select_missing_storage(entry.name)
             return
         self.run_worker(
             self._restore_or_prune_archived_storage(entry.name),
@@ -1147,27 +1151,40 @@ class ConfigEditorApp(App[None]):
     async def _open_delete_storage_flow(self) -> None:
         """Prompt for unregister/delete behavior for the current storage."""
         if (
-            self.current_storage_kind != "live"
+            self.current_storage_kind not in {"live", "missing"}
             or self.current_storage_name is None
         ):
             return
         record = self._current_storage()
+        can_delete_content = record.root.is_dir()
+        message = (
+            f"Storage: {record.name}\nRoot: {record.root}\n\n"
+            "Choose whether to only unregister it or delete the "
+            "directory contents too."
+            if can_delete_content
+            else (
+                f"Storage: {record.name}\nRoot: {record.root}\n\n"
+                "The storage root is missing or is not a directory. "
+                "Only the registry entry will be removed."
+            )
+        )
+        actions: tuple[tuple[str, str, ButtonVariant], ...] = (
+            (
+                ("unregister", "Unregister only", "warning"),
+                (
+                    "delete-content",
+                    "Delete directory and unregister",
+                    "error",
+                ),
+            )
+            if can_delete_content
+            else (("unregister", "Unregister only", "warning"),)
+        )
         action = await self.push_screen_wait(
             _ConfirmScreen(
                 title="Delete storage",
-                message=(
-                    f"Storage: {record.name}\nRoot: {record.root}\n\n"
-                    "Choose whether to only unregister it or delete the "
-                    "directory contents too."
-                ),
-                actions=(
-                    ("unregister", "Unregister only", "warning"),
-                    (
-                        "delete-content",
-                        "Delete directory and unregister",
-                        "error",
-                    ),
-                ),
+                message=message,
+                actions=actions,
             )
         )
         if action == "unregister":
@@ -1278,7 +1295,7 @@ class ConfigEditorApp(App[None]):
             return _RemovalDefaultChoice()
         remaining = [
             name
-            for name in self._ordered_live_storage_names()
+            for name in self._ordered_existing_storage_names()
             if name != removed_name
         ]
         if remaining:
@@ -1445,7 +1462,7 @@ class ConfigEditorApp(App[None]):
         *,
         select_name: str | None = None,
     ) -> None:
-        """Reload registry rows and select the requested live storage."""
+        """Reload registry rows and select the requested storage."""
         self.storage_entries = self._ordered_storage_entries()
         storage_list = self.query_one("#storage-list", ListView)
         await storage_list.clear()
@@ -1475,14 +1492,20 @@ class ConfigEditorApp(App[None]):
         entry = self.storage_entries[selected_index]
         if entry.kind == "live":
             self._select_storage(entry.name)
-        else:
-            self._select_archived_storage(entry.name)
+            return
+        if entry.kind == "missing":
+            self._select_missing_storage(entry.name)
+            return
+        self._select_archived_storage(entry.name)
 
     def _ordered_storage_entries(self) -> list[_StorageListEntry]:
-        """Return live storages followed by archived restore rows."""
+        """Return registered storages followed by archived restore rows."""
         entries = [
-            _StorageListEntry(kind="live", name=name)
-            for name in self._ordered_live_storage_names()
+            _StorageListEntry(
+                kind=self._storage_entry_kind(name),
+                name=name,
+            )
+            for name in self._ordered_storage_names()
         ]
         live_names = {entry.name for entry in entries}
         entries.extend(
@@ -1492,14 +1515,31 @@ class ConfigEditorApp(App[None]):
         )
         return entries
 
-    def _ordered_live_storage_names(self) -> list[str]:
-        """Return default storage first, then remaining live storages."""
+    def _ordered_storage_names(self) -> list[str]:
+        """Return default storage first, then remaining registry storages."""
         names = sorted(self.registry.storages)
         default_name = self.registry.default_storage
         if default_name in names:
             names.remove(default_name)
             names.insert(0, default_name)
         return names
+
+    def _ordered_existing_storage_names(self) -> list[str]:
+        """Return registered storages whose roots are existing directories."""
+        return [
+            name
+            for name in self._ordered_storage_names()
+            if self.registry.selected(name).root.is_dir()
+        ]
+
+    def _storage_entry_kind(self, name: str) -> StorageEntryKind:
+        """Return whether one registered storage root can be edited.
+
+        :param name: Registry selector to inspect.
+        :return: ``live`` when the root is a directory, otherwise ``missing``.
+        """
+        record = self.registry.selected(name)
+        return "live" if record.root.is_dir() else "missing"
 
     def _storage_entry_index(self, name: str | None) -> int | None:
         """Return the first list index for a storage name."""
@@ -1512,14 +1552,15 @@ class ConfigEditorApp(App[None]):
 
     def _storage_entry_label(self, entry: _StorageListEntry) -> str:
         """Return a readable storage-list label."""
-        if entry.kind == "live":
+        if entry.kind in {"live", "missing"}:
             record = self.registry.selected(entry.name)
             default = (
                 " [default]"
                 if record.name == self.registry.default_storage
                 else ""
             )
-            return f"{record.name}{default}\n{record.root}"
+            missing = " [missing]" if entry.kind == "missing" else ""
+            return f"{record.name}{default}{missing}\n{record.root}"
         record = self.registry.archived_storages[entry.name]
         return f"{record.name} [Last Archived]\n{record.archive}"
 
@@ -1536,6 +1577,25 @@ class ConfigEditorApp(App[None]):
         )
         self._populate_field_table()
         self._set_live_controls_enabled(True)
+
+    def _select_missing_storage(self, name: str) -> None:
+        """Show a registered storage whose root no longer exists."""
+        self.current_storage_name = name
+        self.current_storage_kind = "missing"
+        record = self.registry.selected(name)
+        self.local_values = {}
+        self.query_one("#storage-title", Static).update(
+            f"{record.name}: Missing storage root\n"
+            f"Root: {record.root}\n"
+            "No storage-local env file is available."
+        )
+        self._clear_field_table()
+        self._set_storage_controls_enabled(
+            fields=False,
+            set_default=False,
+            delete=True,
+            archive=False,
+        )
 
     def _select_archived_storage(self, name: str) -> None:
         """Show archived metadata without enabling field editing."""
@@ -1614,13 +1674,34 @@ class ConfigEditorApp(App[None]):
 
     def _set_live_controls_enabled(self, enabled: bool) -> None:
         """Enable storage-specific controls only for live storages."""
-        self._set_controls_enabled(enabled)
-        for button_id in (
-            "#storage-set-default",
-            "#storage-delete",
-            "#storage-archive",
-        ):
-            self.query_one(button_id, Button).disabled = not enabled
+        self._set_storage_controls_enabled(
+            fields=enabled,
+            set_default=enabled,
+            delete=enabled,
+            archive=enabled,
+        )
+
+    def _set_storage_controls_enabled(
+        self,
+        *,
+        fields: bool,
+        set_default: bool,
+        delete: bool,
+        archive: bool,
+    ) -> None:
+        """Enable or disable each storage-scoped editor control.
+
+        :param fields: Whether config field rows may be edited.
+        :param set_default: Whether the current storage may become default.
+        :param delete: Whether the current registry row may be removed.
+        :param archive: Whether the current storage directory may be archived.
+        """
+        self._set_controls_enabled(fields)
+        self.query_one(
+            "#storage-set-default", Button
+        ).disabled = not set_default
+        self.query_one("#storage-delete", Button).disabled = not delete
+        self.query_one("#storage-archive", Button).disabled = not archive
 
     def _suggest_storage_name(self, path: Path) -> str:
         """Return a simple registry-name suggestion from a path."""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -527,6 +528,39 @@ async def test_editor_launches_with_empty_registry_and_new_storage_button(
 
 
 @pytest.mark.asyncio
+async def test_editor_launches_with_missing_default_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    storage_root = tmp_path / "alpha"
+    registry = kit.register_storage(
+        name="alpha",
+        root=storage_root,
+        make_default=True,
+    )
+    shutil.rmtree(storage_root)
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test():
+        title = editor.query_one("#storage-title", Static).content
+        table = editor.query_one("#field-table", DataTable)
+        default_button = editor.query_one("#storage-set-default", Button)
+        delete_button = editor.query_one("#storage-delete", Button)
+        archive_button = editor.query_one("#storage-archive", Button)
+
+    assert editor.current_storage_kind == "missing"
+    assert "Missing storage root" in str(title)
+    assert str(storage_root.resolve()) in str(title)
+    assert table.disabled is True
+    assert default_button.disabled is True
+    assert delete_button.disabled is False
+    assert archive_button.disabled is True
+    assert not storage_root.exists()
+
+
+@pytest.mark.asyncio
 async def test_editor_registers_missing_storage_directory_from_modal_flow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -553,6 +587,40 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
     assert registry.default_storage == "alpha"
     assert registry.selected("alpha").root == storage_root.resolve()
     assert (storage_root / ".env.demo").is_file()
+
+
+@pytest.mark.asyncio
+async def test_editor_unregisters_missing_non_default_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    beta_root = tmp_path / "beta"
+    alpha_root = tmp_path / "alpha"
+    kit.register_storage(name="beta", root=beta_root, make_default=True)
+    registry = kit.register_storage(
+        name="alpha",
+        root=alpha_root,
+        make_default=False,
+    )
+    shutil.rmtree(alpha_root)
+    editor = kit.editor_app(registry=registry, initial_storage="alpha")
+
+    async with editor.run_test() as pilot:
+        worker = editor.run_worker(editor._open_delete_storage_flow())
+        await pilot.pause()
+        assert editor.current_storage_kind == "missing"
+        assert list(editor.screen.query("#delete-content")) == []
+        editor.screen.query_one("#unregister", Button).press()
+        await pilot.pause()
+        await worker.wait()
+
+    registry = kit.load_registry()
+    assert registry.default_storage == "beta"
+    assert sorted(registry.storages) == ["beta"]
+    assert registry.selected("beta").root == beta_root.resolve()
+    assert not alpha_root.exists()
 
 
 @pytest.mark.asyncio
@@ -586,6 +654,43 @@ async def test_editor_set_default_and_unregister_non_default_storage(
     assert registry.default_storage == "beta"
     assert sorted(registry.storages) == ["beta"]
     assert (tmp_path / "alpha").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_editor_default_replacement_skips_missing_storages(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    alpha_root = tmp_path / "alpha"
+    beta_root = tmp_path / "beta"
+    gamma_root = tmp_path / "gamma"
+    kit.register_storage(name="alpha", root=alpha_root, make_default=True)
+    kit.register_storage(name="beta", root=beta_root, make_default=False)
+    registry = kit.register_storage(
+        name="gamma",
+        root=gamma_root,
+        make_default=False,
+    )
+    shutil.rmtree(beta_root)
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test() as pilot:
+        worker = editor.run_worker(
+            editor._remove_live_storage("alpha", delete_content=False)
+        )
+        await pilot.pause()
+        assert list(editor.screen.query("#default-beta")) == []
+        editor.screen.query_one("#default-gamma", Button).press()
+        await pilot.pause()
+        removed = await worker.wait()
+
+    registry = kit.load_registry()
+    assert removed is True
+    assert registry.default_storage == "gamma"
+    assert sorted(registry.storages) == ["beta", "gamma"]
+    assert registry.selected("gamma").root == gamma_root.resolve()
 
 
 @pytest.mark.asyncio

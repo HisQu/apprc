@@ -400,6 +400,8 @@ The editor also manages storage lifecycle:
 - `Delete storage` can unregister only or delete the directory too.
 - `Archive storage` writes `*.apprc.tar.xz` and can optionally remove the
   source directory after compression.
+- Missing registered roots stay visible and can be unregistered without
+  recreating their directories.
 
 If the last live default is removed, the editor prompts for a replacement path
 prefilled with `~/.local/share/<app>/<app>_stor-1` or offers to leave the app

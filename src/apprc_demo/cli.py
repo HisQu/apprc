@@ -10,11 +10,6 @@ from typing import Annotated
 import typer
 
 # == Internal ================================
-from apprc_demo import (
-    APPRC_DEMO_KIT,
-    AppRcDemoState,
-    demo_runtime_payload,
-)
 from apprc.cli import (
     COMMON_ROOT_VALUE_OPTIONS,
     args_after_command,
@@ -22,6 +17,11 @@ from apprc.cli import (
     config_request_skips_bootstrap,
 )
 from apprc.logging import setup_logging
+from apprc_demo import (
+    APPRC_DEMO_KIT,
+    AppRcDemoState,
+    demo_runtime_payload,
+)
 
 
 app = typer.Typer(

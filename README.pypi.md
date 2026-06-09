@@ -126,7 +126,6 @@ uv sync --frozen --all-groups
 ```shell
 python -c "import apprc; print(apprc.AppConfigKit)"
 apprc --help
-python -m apprc --help
 pytest
 ```
 
@@ -139,6 +138,8 @@ against a built-in demo app. Use it to test setup, storage registries, local
 dotenv overrides, JSON output, and the Textual editor before wiring AppRC into
 another project. The demo implementation ships as a separate `apprc_demo`
 package so sample-app code stays outside the main `apprc` library package.
+The installed `apprc` executable points at `apprc_demo.cli`; `python -m apprc`
+is intentionally not a supported entrypoint.
 
 ```shell
 apprc config setup --yes

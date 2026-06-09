@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from apprc.cli.doctor import config_command_text
-from apprc.main import app
 from apprc_demo import APPRC_DEMO_KIT
+from apprc_demo.cli import app
 from tests.support_config import build_demo_kit
 
 
@@ -39,25 +38,38 @@ def test_standalone_cli_help_shows_config_command() -> None:
     assert "generated config CLI" in result.output
 
 
-def test_python_module_entrypoint_shows_help(tmp_path: Path) -> None:
-    env = {
-        **os.environ,
-        "PYTHONPATH": str(Path(__file__).parents[1] / "src"),
-        "XDG_CONFIG_HOME": str(tmp_path / "config"),
-        "XDG_DATA_HOME": str(tmp_path / "data"),
-    }
-
-    result = subprocess.run(
-        [sys.executable, "-m", "apprc", "--help"],
-        check=False,
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
+def test_console_script_points_to_demo_cli() -> None:
+    pyproject = tomllib.loads(
+        (Path(__file__).parents[1] / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
     )
 
-    assert result.returncode == 0, result.stderr
-    assert "config" in result.stdout
+    assert pyproject["project"]["scripts"]["apprc"] == "apprc_demo.cli:main"
+
+
+def test_build_backend_packages_library_and_demo_separately() -> None:
+    pyproject = tomllib.loads(
+        (Path(__file__).parents[1] / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert pyproject["tool"]["uv"]["build-backend"]["module-name"] == [
+        "apprc",
+        "apprc_demo",
+    ]
+
+
+def test_core_package_does_not_import_demo_package() -> None:
+    core_files = (Path(__file__).parents[1] / "src" / "apprc").rglob("*.py")
+
+    offenders = [
+        path
+        for path in core_files
+        if "apprc_demo" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
 
 
 def test_demo_config_setup_uses_demo_paths_and_apprc_command_text(

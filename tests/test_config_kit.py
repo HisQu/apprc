@@ -134,20 +134,25 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     )
 
     assert result.exit_code == 0, result.output
-    assert "Storage root already exists and is not empty" in result.output
+    assert "Storage Root Already Exists" in result.output
+    assert "Directory exists and is not empty." in result.output
+    assert str(storage_root) in result.output
     assert (
         "Demo will reuse this directory for Demo storage 'alpha'."
         in result.output
     )
-    assert "It will create or update only these config files:" in result.output
-    assert "storage-local env:" in result.output
-    assert "user registry:" in result.output
+    assert "Config files to create or update:" in result.output
+    assert "storage-local env" in result.output
+    assert "user registry" in result.output
     assert (
-        "Existing files in the storage root will not be deleted, moved, "
-        "or overwritten."
-    ) in result.output
-    assert "It will also mark 'alpha' as the default storage." in result.output
-    assert "Answer l to list first-level contents" in result.output
+        "No existing files will be deleted, moved, or overwritten."
+        in result.output
+    )
+    assert "Default storage: 'alpha'" in result.output
+    assert (
+        "Choices: y continue  n abort  l list first-level contents"
+        in result.output
+    )
     assert "payload.txt" in result.output
     assert "AppRC" not in result.output
     assert f'DEMO_D_STORAGE="{storage_root.resolve()}"\n' in (

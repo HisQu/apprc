@@ -91,8 +91,12 @@ class EnvBootstrapSpec:
 class EnvBootstrapResult:
     """Files and storage selected during CLI env bootstrap.
 
-    :param shared_env: Packaged shared dotenv path.
-    :param local_env: Active storage-local dotenv path, when known.
+    :param shared_env: Packaged shared dotenv path loaded into the process, or
+        ``None`` when dotenv layers were skipped.
+    :param local_env: Active storage-local dotenv candidate considered during
+        loading, or ``None`` when dotenv layers were skipped or no storage root
+        is known. The path may not exist because missing local files are
+        optional.
     :param env_file: Explicit dotenv file passed through the CLI.
     :param registry_path: Per-user storage registry path.
     :param storage_name: Active registry storage name, when selected.
@@ -116,28 +120,33 @@ def bootstrap_env(
     spec: EnvBootstrapSpec,
     env_file: Path | None,
     env_file_overrides_shell: bool,
-    no_dotenv: bool,
+    load_dotenv_layers: bool,
     storage_name: str | None,
     logger: BootstrapLogger | None = None,
 ) -> EnvBootstrapResult:
     """Populate ``os.environ`` for one application CLI process.
 
     Imports stay side-effect free; entrypoints call this helper before building
-    runtime config objects. The parent shell is not mutated.
+    runtime config objects. The parent shell is not mutated. Dotenv layers are
+    the packaged ``.env.shared``, the active storage-local ``.env.local``, and
+    the optional explicit ``env_file``. When dotenv layers are skipped, the
+    explicit ``env_file`` is still parsed so it can guide storage-root
+    selection, but its values are not merged into ``os.environ``.
 
     :param spec: Application-specific bootstrap contract.
     :param env_file: Optional explicit dotenv file.
     :param env_file_overrides_shell: Whether ``env_file`` beats already
         exported variables inside this process.
-    :param no_dotenv: Disable dotenv layer loading.
+    :param load_dotenv_layers: Whether packaged, storage-local, and explicit
+        dotenv values should be merged into this process. Registry selection
+        still runs when this is ``False``.
     :param storage_name: Optional named storage selector from the user registry.
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
     """
     original_env = dict(os.environ)
-    log = logger or LOG
-    registry = load_storage_registry(spec.registry_path())
     explicit_values = _read_explicit_env_file(env_file)
+    registry = load_storage_registry(spec.registry_path())
     selected_storage, used_default_storage = _select_storage(
         spec=spec,
         registry=registry,
@@ -146,40 +155,6 @@ def bootstrap_env(
         explicit_values=explicit_values,
         env_file_overrides_shell=env_file_overrides_shell,
     )
-    if (
-        selected_storage is not None
-        and used_default_storage
-        and len(registry.storages) > 1
-    ):
-        log.info(
-            f"Using default {spec.display_name} storage "
-            f"{selected_storage.name!r} at {selected_storage.root} from "
-            f"{registry.path}. Pass --storage to select another storage."
-        )
-
-    if no_dotenv:
-        active_storage_root = (
-            selected_storage.root
-            if selected_storage is not None
-            else _storage_root_from_values(
-                original_env=original_env,
-                explicit_values=explicit_values,
-                env_file_overrides_shell=env_file_overrides_shell,
-                storage_root_env_key=spec.storage_root_env_key,
-            )
-        )
-        if selected_storage is not None:
-            os.environ[spec.storage_root_env_key] = str(selected_storage.root)
-        return EnvBootstrapResult(
-            shared_env=None,
-            local_env=None,
-            env_file=env_file,
-            registry_path=registry.path,
-            storage_name=selected_storage.name if selected_storage else None,
-            storage_root=active_storage_root,
-            used_default_storage=used_default_storage,
-            storage_count=len(registry.storages),
-        )
 
     active_storage_root = (
         selected_storage.root
@@ -191,44 +166,57 @@ def bootstrap_env(
             storage_root_env_key=spec.storage_root_env_key,
         )
     )
-    local_env = (
+    active_local_env = (
         None
         if active_storage_root is None
         else Path(active_storage_root) / spec.local_env_filename
     )
 
-    with as_file(_shared_env_resource(spec)) as shared_env:
-        if not shared_env.is_file():
-            raise FileNotFoundError(
-                f"Did not find packaged .env.shared at {shared_env}."
-            )
-        merged = _merged_env_values(
-            shared_values=_read_dotenv_file(shared_env),
-            local_values=_read_dotenv_file(local_env),
-            explicit_values=explicit_values,
-            original_env=original_env,
-            env_file_overrides_shell=env_file_overrides_shell,
+    if (
+        selected_storage is not None
+        and used_default_storage
+        and len(registry.storages) > 1
+    ):
+        log = logger or LOG
+        log.info(
+            f"Using default {spec.display_name} storage "
+            f"{selected_storage.name!r} at {selected_storage.root} from "
+            f"{registry.path}. Pass --storage to select another storage."
         )
-        os.environ.update(merged)
-        if selected_storage is not None:
-            os.environ[spec.storage_root_env_key] = str(selected_storage.root)
 
-        return EnvBootstrapResult(
-            shared_env=shared_env,
-            local_env=local_env,
-            env_file=env_file,
-            registry_path=registry.path,
-            storage_name=(
-                selected_storage.name if selected_storage is not None else None
-            ),
-            storage_root=(
-                selected_storage.root
-                if selected_storage is not None
-                else active_storage_root
-            ),
-            used_default_storage=used_default_storage,
-            storage_count=len(registry.storages),
-        )
+    shared_env_path: Path | None = None
+    loaded_local_env: Path | None = None
+    if load_dotenv_layers:
+        loaded_local_env = active_local_env
+        with as_file(_shared_env_resource(spec)) as shared_env:
+            if not shared_env.is_file():
+                raise FileNotFoundError(
+                    f"Did not find packaged .env.shared at {shared_env}."
+                )
+            shared_env_path = shared_env
+            merged = _merged_env_values(
+                shared_values=_read_dotenv_file(shared_env),
+                local_values=_read_dotenv_file(active_local_env),
+                explicit_values=explicit_values,
+                original_env=original_env,
+                env_file_overrides_shell=env_file_overrides_shell,
+            )
+            os.environ.update(merged)
+    if selected_storage is not None:
+        os.environ[spec.storage_root_env_key] = str(selected_storage.root)
+
+    return EnvBootstrapResult(
+        shared_env=shared_env_path,
+        local_env=loaded_local_env,
+        env_file=env_file,
+        registry_path=registry.path,
+        storage_name=(
+            selected_storage.name if selected_storage is not None else None
+        ),
+        storage_root=active_storage_root,
+        used_default_storage=used_default_storage,
+        storage_count=len(registry.storages),
+    )
 
 
 def _shared_env_resource(spec: EnvBootstrapSpec) -> Traversable:
@@ -237,7 +225,11 @@ def _shared_env_resource(spec: EnvBootstrapSpec) -> Traversable:
 
 
 def _read_explicit_env_file(env_file: Path | None) -> dict[str, str]:
-    """Read the optional explicit dotenv file."""
+    """Read the optional explicit dotenv file.
+
+    Explicit values may guide storage-root selection even when dotenv layers
+    are not merged into ``os.environ``.
+    """
     if env_file is None:
         return {}
     resolved = Path(env_file).expanduser()

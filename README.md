@@ -248,6 +248,11 @@ By default, the shell wins over `--env-file`. Set
 `env_file_overrides_shell=True` when an explicit file should win inside the
 current process.
 
+Set `load_dotenv_layers=False` in Python, or expose a CLI flag such as
+`--skip-dotenv-layers`, to skip merging packaged, storage-local, and explicit
+dotenv values into the process. Registry storage selection still runs; the
+explicit env file may still provide the storage-root value used for selection.
+
 ### Storage Registries
 
 Globally installed commands need to find user data without hardcoding one path.
@@ -348,7 +353,7 @@ state.env_bootstrap = bootstrap_cli_env(
     MYAPP_CONFIG,
     env_file=env_file,
     env_file_overrides_shell=env_file_overrides_shell,
-    no_dotenv=no_dotenv,
+    load_dotenv_layers=not skip_dotenv_layers,
     storage_name=storage,
     log_level=log_level,
     setup_logging=setup_logging,

@@ -7,15 +7,20 @@ from apprc.cli.typer_utils import args_after_command, strip_leading_options
 def test_strip_leading_options_handles_flags_values_and_separator() -> None:
     assert strip_leading_options(
         [
-            "--no-dotenv",
+            "--skip-dotenv-layers",
             "--storage",
             "alpha",
             "--log-level=DEBUG",
             "config",
             "show",
         ],
-        flag_options={"--no-dotenv"},
+        flag_options={"--skip-dotenv-layers"},
         value_options={"--storage", "--log-level"},
+    ) == ["config", "show"]
+    assert strip_leading_options(
+        ["-s", "--storage", "alpha", "config", "show"],
+        flag_options={"-s"},
+        value_options={"--storage"},
     ) == ["config", "show"]
     assert strip_leading_options(
         ["--storage", "alpha", "--", "config", "--json"],
@@ -30,10 +35,15 @@ def test_args_after_command_skips_root_options_before_command() -> None:
         tokens=[
             "--env-file",
             "local.env",
-            "--no-dotenv",
+            "--skip-dotenv-layers",
             "config",
             "doctor",
         ],
+        root_value_options={"--env-file"},
+    ) == ["doctor"]
+    assert args_after_command(
+        "config",
+        tokens=["-s", "config", "doctor"],
         root_value_options={"--env-file"},
     ) == ["doctor"]
     assert (

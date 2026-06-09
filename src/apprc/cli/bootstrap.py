@@ -29,7 +29,7 @@ def bootstrap_cli_env(
     *,
     env_file: Path | None,
     env_file_overrides_shell: bool,
-    no_dotenv: bool,
+    load_dotenv_layers: bool,
     storage_name: str | None,
     log_level: str | None = None,
     setup_logging: Callable[..., Any] | None = None,
@@ -41,7 +41,11 @@ def bootstrap_cli_env(
     :param env_file: Optional explicit dotenv file.
     :param env_file_overrides_shell: Whether explicit dotenv values beat
         already exported variables inside this process.
-    :param no_dotenv: Disable dotenv layer loading.
+    :param load_dotenv_layers: Whether packaged ``.env.shared``, active
+        storage-local ``.env.local``, and explicit ``env_file`` values should
+        be merged into this process. Registry selection still runs when this
+        is ``False``, and explicit ``env_file`` values may still provide the
+        storage root used for selection.
     :param storage_name: Optional named storage selector.
     :param log_level: Optional CLI log-level token.
     :param setup_logging: Optional application logging setup callable.
@@ -56,7 +60,7 @@ def bootstrap_cli_env(
         return kit.bootstrap(
             env_file=env_file,
             env_file_overrides_shell=env_file_overrides_shell,
-            no_dotenv=no_dotenv,
+            load_dotenv_layers=load_dotenv_layers,
             storage_name=storage_name,
             logger=logger,
         )

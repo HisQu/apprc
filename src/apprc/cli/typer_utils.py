@@ -74,7 +74,7 @@ def strip_leading_options(
         token = remaining[i]
         if token == "--":
             return remaining[i + 1 :]
-        if not token.startswith("--"):
+        if not token.startswith("-"):
             return remaining[i:]
 
         option_name = token.split("=", maxsplit=1)[0]
@@ -114,7 +114,7 @@ def args_after_command(
             return args[i + 1 :]
         if token == "--":
             return None
-        if token.startswith("--"):
+        if token.startswith("-"):
             option_name = token.split("=", maxsplit=1)[0]
             if option_name in root_value_options and "=" not in token:
                 i += 2

@@ -146,7 +146,7 @@ class AppConfigKit:
         *,
         env_file: Path | None,
         env_file_overrides_shell: bool,
-        no_dotenv: bool,
+        load_dotenv_layers: bool,
         storage_name: str | None,
         logger: BootstrapLogger | None = None,
     ) -> EnvBootstrapResult:
@@ -155,7 +155,11 @@ class AppConfigKit:
         :param env_file: Optional explicit dotenv file.
         :param env_file_overrides_shell: Whether explicit dotenv values beat
             already exported variables inside this process.
-        :param no_dotenv: Disable dotenv layer loading.
+        :param load_dotenv_layers: Whether packaged ``.env.shared``, active
+            storage-local ``.env.local``, and explicit ``env_file`` values
+            should be merged into this process. Registry selection still runs
+            when this is ``False``, and explicit ``env_file`` values may still
+            provide the storage root used for selection.
         :param storage_name: Optional named storage selector.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
@@ -164,7 +168,7 @@ class AppConfigKit:
             spec=self.spec.env_bootstrap_spec(),
             env_file=env_file,
             env_file_overrides_shell=env_file_overrides_shell,
-            no_dotenv=no_dotenv,
+            load_dotenv_layers=load_dotenv_layers,
             storage_name=storage_name,
             logger=logger,
         )

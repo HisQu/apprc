@@ -5,12 +5,14 @@ import shutil
 from pathlib import Path
 
 import pytest
+from textual.coordinate import Coordinate
 from textual.widgets import Button, DataTable, Input, ListView, Static
 from typer.testing import CliRunner
 
 from apprc.cli.config_app import config_request_skips_bootstrap
 from apprc.cli.doctor import build_config_doctor_payload, config_setup_message
 from apprc.config import (
+    ConfigOwner,
     config_field,
 )
 from apprc.config.tui_primitives import PathSuggester
@@ -27,6 +29,36 @@ def test_config_init_and_list_skip_runtime_bootstrap() -> None:
     assert config_request_skips_bootstrap(["list"])
     assert config_request_skips_bootstrap(["edit"])
     assert config_request_skips_bootstrap(["setup"])
+
+
+def test_config_owner_runtime_cls_is_optional() -> None:
+    owner = ConfigOwner(
+        key="runtime",
+        title="Runtime",
+        env_prefix="DEMO_",
+        rc_path=("runtime",),
+        fields=(
+            config_field(
+                "model",
+                "MODEL",
+                str,
+                default="demo-model",
+            ),
+        ),
+    )
+
+    assert owner.runtime_cls is None
+    assert owner.env_key("model") == "DEMO_MODEL"
+
+    legacy_owner = ConfigOwner(
+        key="legacy",
+        title="Legacy",
+        env_prefix="LEGACY_",
+        rc_path=("legacy",),
+        runtime_cls=object,
+        fields=owner.fields,
+    )
+    assert legacy_owner.runtime_cls is object
 
 
 def test_kit_registers_storage_and_reports_doctor_payload(
@@ -115,6 +147,29 @@ def test_generated_config_app_sets_local_values_and_shows_payload(
     ).read_text(encoding="utf-8")
     assert show_result.exit_code == 0, show_result.output
     assert json.loads(show_result.output) == {"storage": str(storage_root)}
+
+
+def test_kit_clears_local_value_with_app_local_env_filename(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_demo_kit()
+    storage_root = tmp_path / "storage"
+    kit.set_local_value(
+        storage_root=storage_root,
+        reference="runtime.model",
+        raw_value="other-model",
+    )
+
+    update = kit.clear_local_value(
+        storage_root=storage_root,
+        reference="DEMO_MODEL",
+    )
+
+    assert update is not None
+    assert update.path == storage_root.resolve() / ".env.demo"
+    assert (storage_root / ".env.demo").read_text(encoding="utf-8") == "\n"
 
 
 def test_generated_config_app_inits_existing_storage_after_list_prompt(
@@ -1040,7 +1095,7 @@ async def test_editor_modal_saves_local_value(
 
     async with editor.run_test() as pilot:
         table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = (1, 0)
+        table.cursor_coordinate = Coordinate(1, 0)
         editor._open_selected_field_editor()
         await pilot.pause()
         input_widget = editor.screen.query_one("#edit-value-input", Input)
@@ -1069,7 +1124,7 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
 
     async with editor.run_test() as pilot:
         table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = (3, 0)
+        table.cursor_coordinate = Coordinate(3, 0)
         editor._open_selected_field_editor()
         await pilot.pause()
         metadata = editor.screen.query_one("#edit-metadata", Static).content

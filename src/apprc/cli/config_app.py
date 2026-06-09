@@ -16,13 +16,10 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Annotated, Any, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Annotated, Any, Protocol, TypeVar, cast
 
 import typer
 from rich import print as rich_print
-from rich.console import Console
-from rich.text import Text
-from rich.tree import Tree
 
 # == Internal ================================
 from apprc.cli.doctor import (
@@ -30,15 +27,29 @@ from apprc.cli.doctor import (
     config_setup_message,
     print_config_doctor,
 )
+from apprc.cli.options import (
+    COMMON_ROOT_FLAG_OPTIONS,
+    COMMON_ROOT_VALUE_OPTIONS,
+)
 from apprc.cli.setup import run_config_setup
 from apprc.cli.storage_prompts import guard_storage_root_init
-from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
+from apprc.cli.storage_output import print_storage_list, storage_list_payload
+from apprc.cli.typer_utils import (
+    dump_json,
+    exit_missing_action,
+    state_from,
+    strip_leading_options,
+)
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.paths import StorageRootPathError
+from apprc.config.storage_registry import StorageRegistry
 import apprc.config.setup_flow as setup_flow
 
 StateT = TypeVar("StateT")
+
+if TYPE_CHECKING:
+    from apprc.config.tui import ConfigEditorApp
 
 
 class ConfigCliState(Protocol):
@@ -54,11 +65,23 @@ def config_request_skips_bootstrap(args: list[str]) -> bool:
     :param args: Tokens after the top-level ``config`` command.
     :return: Whether the config command can run without root config state.
     """
-    if not args:
+    action_args = strip_leading_options(
+        args,
+        flag_options=COMMON_ROOT_FLAG_OPTIONS,
+        value_options=COMMON_ROOT_VALUE_OPTIONS,
+    )
+    if not action_args:
         return True
-    if args == ["--json"]:
+    if action_args == ["--json"]:
         return True
-    return args[0] in {"doctor", "edit", "init", "list", "set-default", "setup"}
+    return action_args[0] in {
+        "doctor",
+        "edit",
+        "init",
+        "list",
+        "set-default",
+        "setup",
+    }
 
 
 def active_storage_root_from_state(
@@ -84,6 +107,17 @@ def initial_storage_from_state(state: ConfigCliState) -> str | None:
     return state.storage
 
 
+def _load_config_registry_for_cli(kit: AppConfigKit) -> StorageRegistry:
+    """Load the registry and raise Typer's parse-error shape on failure."""
+    try:
+        return kit.load_registry()
+    except ValueError as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint=kit.spec.registry_filename,
+        ) from exc
+
+
 def build_config_typer_app(
     kit: AppConfigKit,
     *,
@@ -91,7 +125,7 @@ def build_config_typer_app(
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
     active_storage_root: Callable[[StateT], Path | None] | None = None,
     initial_storage: Callable[[StateT], str | None] | None = None,
-    editor_app_cls: type[Any] | None = None,
+    editor_app_cls: type[ConfigEditorApp] | None = None,
     help: str | None = None,
     setup_message: str | None = None,
     legacy_json_migration_message: str | None = None,
@@ -165,7 +199,7 @@ def build_config_typer_app(
             )
         return root
 
-    def _root_context_param(ctx: typer.Context, name: str) -> Any:
+    def _root_context_param(ctx: typer.Context, name: str) -> object | None:
         """Read one option value from the parent command context."""
         if ctx.parent is None:
             return None
@@ -180,104 +214,6 @@ def build_config_typer_app(
             "registry_path": str(kit.registry_path()),
             "storage_root": str(storage_root) if storage_root else None,
         }
-
-    def _ordered_storage_names(registry: Any) -> list[str]:
-        """Return default storage first, then remaining storages by name."""
-        names = sorted(registry.storages)
-        default_name = registry.default_storage
-        if default_name in names:
-            names.remove(default_name)
-            names.insert(0, default_name)
-        return names
-
-    def _storage_list_payload(registry: Any) -> dict[str, Any]:
-        """Return JSON-friendly registry rows for ``config list``."""
-        storages: list[dict[str, Any]] = []
-        for name in _ordered_storage_names(registry):
-            record = registry.selected(name)
-            local_env = record.root / kit.spec.local_env_filename
-            storages.append(
-                {
-                    "name": record.name,
-                    "default": record.name == registry.default_storage,
-                    "root": str(record.root),
-                    "root_exists": record.root.is_dir(),
-                    "local_env": str(local_env),
-                    "local_env_exists": local_env.is_file(),
-                }
-            )
-        return {
-            "registry": str(registry.path),
-            "default_storage": registry.default_storage,
-            "storages": storages,
-        }
-
-    def _storage_detail_text(key: str, value: Any) -> Text:
-        """Return one colored key/value line for config list output.
-
-        :param key: Display field name.
-        :param value: Display field value.
-        :return: Rich text with a styled key and plain value.
-        """
-        return Text.assemble((key, "dim cyan"), ": ", str(value))
-
-    def _storage_bool_text(key: str, value: bool) -> Text:
-        """Return one colored boolean line for config list output.
-
-        :param key: Display field name.
-        :param value: Boolean value to show as ``true`` or ``false``.
-        :return: Rich text with a styled key and colored boolean value.
-        """
-        style = "green" if value else "red"
-        return Text.assemble(
-            (key, "dim cyan"),
-            ": ",
-            (str(value).lower(), style),
-        )
-
-    def _storage_name_text(storage: Mapping[str, Any]) -> Text:
-        """Return the display label for one storage tree branch.
-
-        :param storage: JSON-friendly storage payload row.
-        :return: Rich text with the storage name and optional default marker.
-        """
-        label = Text(str(storage["name"]), style="bold")
-        if storage["default"]:
-            label.append(" [default]", style="green")
-        return label
-
-    def _print_storage_list(payload: Mapping[str, Any]) -> None:
-        """Print storage registry rows in a readable text format."""
-        console = Console(soft_wrap=True)
-        console.print(_storage_detail_text("registry", payload["registry"]))
-        console.print(
-            _storage_detail_text(
-                "default_storage",
-                payload["default_storage"] or "<none>",
-            )
-        )
-        storages = cast(list[Mapping[str, Any]], payload["storages"])
-        if not storages:
-            typer.echo("storages: <none>")
-            return
-        tree = Tree(Text("storages:", style="dim cyan"))
-        for storage in storages:
-            branch = tree.add(_storage_name_text(storage))
-            branch.add(_storage_detail_text("root", storage["root"]))
-            branch.add(
-                _storage_bool_text(
-                    "root_exists",
-                    bool(storage["root_exists"]),
-                )
-            )
-            branch.add(_storage_detail_text("local_env", storage["local_env"]))
-            branch.add(
-                _storage_bool_text(
-                    "local_env_exists",
-                    bool(storage["local_env_exists"]),
-                )
-            )
-        console.print(tree)
 
     @app.callback(invoke_without_command=True)
     def config_cmd(
@@ -307,18 +243,15 @@ def build_config_typer_app(
         ] = False,
     ) -> None:
         """List registered storage roots from the user registry."""
-        try:
-            registry = kit.load_registry()
-        except ValueError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=kit.spec.registry_filename,
-            ) from exc
-        payload = _storage_list_payload(registry)
+        registry = _load_config_registry_for_cli(kit)
+        payload = storage_list_payload(
+            registry,
+            local_env_filename=kit.spec.local_env_filename,
+        )
         if json_output:
             dump_json(payload)
             return
-        _print_storage_list(payload)
+        print_storage_list(payload)
 
     @app.command("show")
     def config_show_cmd(
@@ -536,13 +469,7 @@ def build_config_typer_app(
     @app.command("edit")
     def config_edit_cmd(ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
-        try:
-            registry = kit.load_registry()
-        except ValueError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=kit.spec.registry_filename,
-            ) from exc
+        registry = _load_config_registry_for_cli(kit)
         current_state = ctx.obj if isinstance(ctx.obj, state_type) else None
         selected_storage = (
             _initial_storage(current_state)

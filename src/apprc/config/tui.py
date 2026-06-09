@@ -14,43 +14,35 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
-import re
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING
 
 # == 3rd Party ===============================
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
     DataTable,
     Footer,
     Header,
-    Input,
     Label,
     ListItem,
     ListView,
-    ProgressBar,
     Static,
 )
-from rich.text import Text
 
 # == Internal ================================
 from apprc.config.local_env import (
+    clear_local_env_value,
     local_env_path,
-    normalize_env_value,
     read_local_env,
-    write_local_env,
+    set_local_env_value,
 )
 from apprc.config.paths import normalize_storage_root_path
-from apprc.config.schema import (
-    ConfigField,
-    ConfigOwner,
-    find_field_by_env_key,
-)
+from apprc.config.schema import ConfigOwner
 from apprc.config.storage_archive import (
     StorageArchiveProgress,
     archive_directory,
@@ -59,69 +51,42 @@ from apprc.config.storage_archive import (
     storage_archive_default_path,
     storage_root_name_from_archive,
 )
-from apprc.config.storage_registry import (
-    StorageRecord,
-    StorageRegistry,
-)
+from apprc.config.storage_registry import StorageRecord, StorageRegistry
 from apprc.config.tui_primitives import (
     ButtonVariant,
     ConfirmScreen,
     PathInputScreen,
-    PathSuggester,
     StorageNameScreen,
+)
+from apprc.config.tui_modals import (
+    ArchiveOptionsScreen,
+    ConfigValueEditScreen,
+    DefaultPathScreen,
+    ProgressScreen,
+    ValueEditResult,
 )
 from apprc.config.tui_rendering import (
     FIELD_TABLE_COLUMNS,
     build_field_table_rows,
-    field_type_label,
-    possible_values_label,
+)
+from apprc.config.tui_field_state import (
+    SelectedField,
+    archived_storage_title,
+    live_storage_title,
+    missing_storage_title,
+    selected_field_for_row,
+)
+from apprc.config.tui_storage_entries import (
+    StorageEntryKind,
+    ordered_existing_storage_names,
+    ordered_storage_entries,
+    storage_entry_index,
+    storage_entry_label,
+    suggest_storage_name,
 )
 
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit
-
-StorageEntryKind = Literal["live", "missing", "archived"]
-
-
-@dataclass(frozen=True, slots=True)
-class _SelectedField:
-    """One field selected by env key in the editor table."""
-
-    owner: ConfigOwner
-    spec: ConfigField
-
-
-@dataclass(frozen=True, slots=True)
-class _ValueEditResult:
-    """Result returned by the edit modal."""
-
-    action: Literal["save", "clear"]
-    env_key: str
-    raw_value: str
-
-
-@dataclass(frozen=True, slots=True)
-class _StorageListEntry:
-    """One selectable row in the storage list."""
-
-    kind: StorageEntryKind
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
-class _ArchiveOptionsResult:
-    """Archive options selected by the user."""
-
-    archive_path: Path
-    delete_source: bool
-
-
-@dataclass(frozen=True, slots=True)
-class _DefaultPathResult:
-    """Result returned when no live default storage remains."""
-
-    action: Literal["create", "leave"]
-    path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,378 +95,6 @@ class _RemovalDefaultChoice:
 
     replacement_name: str | None = None
     create_default_path: Path | None = None
-
-
-class _ConfigValueEditScreen(ModalScreen[_ValueEditResult | None]):
-    """Modal editor for one storage-local value."""
-
-    CSS = """
-    _ConfigValueEditScreen {
-        align: center middle;
-    }
-
-    #edit-dialog {
-        width: 78;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-
-    #edit-long-explanation {
-        height: 5;
-        margin: 1 0;
-    }
-
-    #edit-button-row {
-        height: 3;
-        margin-top: 1;
-    }
-    """
-
-    BINDINGS = [
-        ("escape", "cancel", "Cancel"),
-        ("ctrl+s", "save", "Save"),
-    ]
-
-    def __init__(
-        self,
-        *,
-        owner: ConfigOwner,
-        spec: ConfigField,
-        env_key: str,
-        local_value: str,
-        env_is_set: bool,
-    ) -> None:
-        """Store field metadata for modal rendering."""
-        super().__init__()
-        self.owner = owner
-        self.spec = spec
-        self.env_key = env_key
-        self.local_value = local_value
-        self.env_is_set = env_is_set
-
-    def compose(self) -> ComposeResult:
-        """Compose field metadata, value input, and modal actions."""
-        with Vertical(id="edit-dialog"):
-            yield Static(
-                Text(
-                    self.spec.title or self.spec.name,
-                    style="bold",
-                ),
-                id="edit-title",
-            )
-            yield Static(self.env_key, id="edit-env-key")
-            yield Static(
-                "\n".join(
-                    (
-                        f"Type: {field_type_label(self.spec)}",
-                        f"Possible values: {possible_values_label(self.spec)}",
-                        "Shell environment: "
-                        + ("set" if self.env_is_set else "unset"),
-                    )
-                ),
-                id="edit-metadata",
-            )
-            yield Static(
-                self.spec.explanation_long or self.spec.explanation_short,
-                id="edit-long-explanation",
-            )
-            yield Input(
-                value=self.local_value,
-                placeholder="Local override value",
-                password=self.spec.secret,
-                id="edit-value-input",
-            )
-            with Horizontal(id="edit-button-row"):
-                yield Button("Save", variant="primary", id="edit-save")
-                yield Button("Clear Local", id="edit-clear")
-                yield Button("Cancel", id="edit-cancel")
-
-    def on_mount(self) -> None:
-        """Focus the value input when the modal opens."""
-        self.query_one("#edit-value-input", Input).focus()
-
-    def on_button_pressed(self, event: Any) -> None:
-        """Dismiss the modal with the selected action."""
-        if event.button.id == "edit-save":
-            self.action_save()
-            return
-        if event.button.id == "edit-clear":
-            self.dismiss(
-                _ValueEditResult(
-                    action="clear",
-                    env_key=self.env_key,
-                    raw_value="",
-                )
-            )
-            return
-        if event.button.id == "edit-cancel":
-            self.action_cancel()
-
-    def on_input_submitted(self, event: Any) -> None:
-        """Save when Enter is submitted from the value input."""
-        if event.input.id == "edit-value-input":
-            self.action_save()
-
-    def action_save(self) -> None:
-        """Dismiss with the current input value."""
-        raw_value = self.query_one("#edit-value-input", Input).value
-        self.dismiss(
-            _ValueEditResult(
-                action="save",
-                env_key=self.env_key,
-                raw_value=raw_value,
-            )
-        )
-
-    def action_cancel(self) -> None:
-        """Dismiss without applying a change."""
-        self.dismiss(None)
-
-
-class _ArchiveOptionsScreen(ModalScreen[_ArchiveOptionsResult | None]):
-    """Modal for archive path and source deletion choice."""
-
-    CSS = """
-    _ArchiveOptionsScreen {
-        align: center middle;
-    }
-
-    #archive-dialog {
-        width: 82;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-
-    #archive-message {
-        margin: 1 0;
-    }
-
-    #archive-button-row {
-        height: 3;
-        margin-top: 1;
-    }
-    """
-
-    BINDINGS = [("escape", "cancel", "Cancel")]
-
-    def __init__(
-        self,
-        *,
-        storage_name: str,
-        source_root: Path,
-        default_archive: Path,
-    ) -> None:
-        """Store archive defaults for the selected storage."""
-        super().__init__()
-        self.storage_name = storage_name
-        self.source_root = source_root
-        self.default_archive = default_archive
-        self.delete_source = False
-
-    def compose(self) -> ComposeResult:
-        """Compose the archive options dialog."""
-        with Vertical(id="archive-dialog"):
-            yield Static(Text("Archive storage", style="bold"))
-            yield Static(
-                "Compressing can take a while. The live storage is unchanged "
-                "unless you choose to delete the source after compression.\n"
-                f"Source: {self.source_root}",
-                id="archive-message",
-            )
-            yield Input(
-                value=str(self.default_archive),
-                placeholder="Archive path ending in *.apprc.tar.xz",
-                suggester=PathSuggester(case_sensitive=True),
-                id="archive-path-input",
-            )
-            with Horizontal(id="archive-button-row"):
-                yield Button("Archive", variant="primary", id="archive-run")
-                yield Button(
-                    "Delete source: no",
-                    id="archive-toggle-delete",
-                )
-                yield Button("Cancel", id="archive-cancel")
-
-    def on_mount(self) -> None:
-        """Focus the archive path input."""
-        self.query_one("#archive-path-input", Input).focus()
-
-    def on_button_pressed(self, event: Any) -> None:
-        """Handle archive option buttons."""
-        if event.button.id == "archive-run":
-            self._run()
-            return
-        if event.button.id == "archive-toggle-delete":
-            self.delete_source = not self.delete_source
-            label = (
-                "Delete source: yes"
-                if self.delete_source
-                else "Delete source: no"
-            )
-            event.button.label = label
-            return
-        if event.button.id == "archive-cancel":
-            self.action_cancel()
-
-    def on_input_submitted(self, event: Any) -> None:
-        """Archive when Enter is submitted from the path input."""
-        if event.input.id == "archive-path-input":
-            self._run()
-
-    def _run(self) -> None:
-        """Dismiss with archive options when the path is valid enough."""
-        path_text = self.query_one("#archive-path-input", Input).value.strip()
-        if not path_text:
-            self.notify("Enter an archive path first.", severity="warning")
-            return
-        self.dismiss(
-            _ArchiveOptionsResult(
-                archive_path=Path(path_text),
-                delete_source=self.delete_source,
-            )
-        )
-
-    def action_cancel(self) -> None:
-        """Dismiss without archiving."""
-        self.dismiss(None)
-
-
-class _DefaultPathScreen(ModalScreen[_DefaultPathResult | None]):
-    """Prompt for a new default path when no live storages remain."""
-
-    CSS = """
-    _DefaultPathScreen {
-        align: center middle;
-    }
-
-    #default-path-dialog {
-        width: 82;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-
-    #default-path-message {
-        margin: 1 0;
-    }
-
-    #default-path-button-row {
-        height: 3;
-        margin-top: 1;
-    }
-    """
-
-    BINDINGS = [("escape", "cancel", "Cancel")]
-
-    def __init__(
-        self,
-        *,
-        default_path: Path,
-        display_name: str,
-    ) -> None:
-        """Store the suggested default data directory."""
-        super().__init__()
-        self.default_path = default_path
-        self.display_name = display_name
-
-    def compose(self) -> ComposeResult:
-        """Compose the no-live-default dialog."""
-        with Vertical(id="default-path-dialog"):
-            yield Static(Text("No default storage remains", style="bold"))
-            yield Static(
-                "Choose a replacement default storage, or leave "
-                f"{self.display_name} in an uninitialized state like a "
-                "fresh install.",
-                id="default-path-message",
-            )
-            yield Input(
-                value=str(self.default_path),
-                placeholder="Default storage directory",
-                suggester=PathSuggester(case_sensitive=True),
-                id="default-path-input",
-            )
-            with Horizontal(id="default-path-button-row"):
-                yield Button(
-                    "Create default", variant="primary", id="default-create"
-                )
-                yield Button("Leave no default", id="default-leave")
-                yield Button("Cancel", id="default-cancel")
-
-    def on_mount(self) -> None:
-        """Focus the default path input."""
-        self.query_one("#default-path-input", Input).focus()
-
-    def on_button_pressed(self, event: Any) -> None:
-        """Handle default replacement buttons."""
-        if event.button.id == "default-create":
-            path_text = self.query_one(
-                "#default-path-input", Input
-            ).value.strip()
-            if not path_text:
-                self.notify("Enter a default path first.", severity="warning")
-                return
-            self.dismiss(
-                _DefaultPathResult(action="create", path=Path(path_text))
-            )
-            return
-        if event.button.id == "default-leave":
-            self.dismiss(_DefaultPathResult(action="leave"))
-            return
-        if event.button.id == "default-cancel":
-            self.action_cancel()
-
-    def action_cancel(self) -> None:
-        """Dismiss without changing the default."""
-        self.dismiss(None)
-
-
-class _ProgressScreen(ModalScreen[None]):
-    """Modal progress bar for archive operations."""
-
-    CSS = """
-    _ProgressScreen {
-        align: center middle;
-    }
-
-    #progress-dialog {
-        width: 78;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-
-    #progress-path {
-        margin-top: 1;
-    }
-    """
-
-    def __init__(self, *, title: str) -> None:
-        """Store the title shown above the progress bar."""
-        super().__init__()
-        self.dialog_title = title
-
-    def compose(self) -> ComposeResult:
-        """Compose the progress dialog."""
-        with Vertical(id="progress-dialog"):
-            yield Static(
-                Text(self.dialog_title, style="bold"),
-                id="progress-title",
-            )
-            yield ProgressBar(total=1, id="progress-bar")
-            yield Static("", id="progress-path")
-
-    def update_progress(self, progress: StorageArchiveProgress) -> None:
-        """Refresh the bar and current path label."""
-        bar = self.query_one("#progress-bar", ProgressBar)
-        total = max(progress.total, 1)
-        bar.update(total=total, progress=progress.completed)
-        self.query_one("#progress-path", Static).update(str(progress.path))
 
 
 class ConfigEditorApp(App[None]):
@@ -551,7 +144,8 @@ class ConfigEditorApp(App[None]):
             owners = kit.spec.owners
             local_env_filename = kit.spec.local_env_filename
             init_command = (
-                f"{kit.spec.app_name} config init STORAGE_ROOT --name NAME"
+                f"{kit.spec.config_command_name()} config init "
+                "STORAGE_ROOT --name NAME"
             )
             registry_label = kit.spec.registry_filename
         if owners is None:
@@ -563,7 +157,7 @@ class ConfigEditorApp(App[None]):
         self.init_command = init_command
         self.registry_label = registry_label
         self.hidden_env_keys = frozenset(hidden_env_keys)
-        self.storage_entries = self._ordered_storage_entries()
+        self.storage_entries = ordered_storage_entries(self.registry)
         self.current_storage_name: str | None = None
         self.current_storage_kind: StorageEntryKind | None = None
         self.local_values: dict[str, str] = {}
@@ -602,7 +196,7 @@ class ConfigEditorApp(App[None]):
         """Populate storages and select the active one."""
         await self._refresh_storage_list(select_name=self.initial_storage)
 
-    async def on_list_view_selected(self, event: Any) -> None:
+    async def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Switch the edited ``.env.local`` when a storage is selected."""
         index = event.list_view.index
         if index is None or index >= len(self.storage_entries):
@@ -619,7 +213,7 @@ class ConfigEditorApp(App[None]):
             exclusive=True,
         )
 
-    def on_data_table_row_selected(self, event: Any) -> None:
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Open a modal editor when a config field row is selected."""
         del event
         self._open_selected_field_editor()
@@ -637,7 +231,7 @@ class ConfigEditorApp(App[None]):
             return
         env_key = selected.owner.env_key(selected.spec.name)
         self.push_screen(
-            _ConfigValueEditScreen(
+            ConfigValueEditScreen(
                 owner=selected.owner,
                 spec=selected.spec,
                 env_key=env_key,
@@ -647,7 +241,7 @@ class ConfigEditorApp(App[None]):
             self._handle_edit_result,
         )
 
-    async def on_button_pressed(self, event: Any) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle storage action button clicks."""
         if event.button.id == "storage-new":
             self.run_worker(self._open_new_storage_flow(), exclusive=True)
@@ -661,7 +255,7 @@ class ConfigEditorApp(App[None]):
         if event.button.id == "storage-archive":
             self.run_worker(self._open_archive_storage_flow(), exclusive=True)
 
-    def _handle_edit_result(self, result: _ValueEditResult | None) -> None:
+    def _handle_edit_result(self, result: ValueEditResult | None) -> None:
         """Persist the value returned by the edit modal."""
         if result is None or self.current_storage_name is None:
             return
@@ -940,7 +534,7 @@ class ConfigEditorApp(App[None]):
             return
         record = self._current_storage()
         options = await self.push_screen_wait(
-            _ArchiveOptionsScreen(
+            ArchiveOptionsScreen(
                 storage_name=record.name,
                 source_root=record.root,
                 default_archive=storage_archive_default_path(record.root),
@@ -1032,7 +626,7 @@ class ConfigEditorApp(App[None]):
             return _RemovalDefaultChoice()
         remaining = [
             name
-            for name in self._ordered_existing_storage_names()
+            for name in ordered_existing_storage_names(self.registry)
             if name != removed_name
         ]
         if remaining:
@@ -1060,7 +654,7 @@ class ConfigEditorApp(App[None]):
         if kit is None:
             return None
         result = await self.push_screen_wait(
-            _DefaultPathScreen(
+            DefaultPathScreen(
                 default_path=kit.default_storage_data_root(),
                 display_name=kit.spec.display_name,
             )
@@ -1100,27 +694,14 @@ class ConfigEditorApp(App[None]):
         archive_path: Path,
     ) -> Path:
         """Run archive compression with a progress modal."""
-        progress_screen = _ProgressScreen(title="Compressing storage")
-        await self.push_screen(progress_screen)
-
-        def progress(progress_update: StorageArchiveProgress) -> None:
-            self.call_from_thread(
-                progress_screen.update_progress, progress_update
-            )
-
-        worker = self.run_worker(
-            lambda: archive_directory(
+        return await self._run_storage_progress(
+            title="Compressing storage",
+            operation=lambda progress: archive_directory(
                 source_root=source_root,
                 archive_path=archive_path,
                 progress=progress,
             ),
-            thread=True,
-            exit_on_error=False,
         )
-        try:
-            return await worker.wait()
-        finally:
-            progress_screen.dismiss(None)
 
     async def _run_extract_progress(
         self,
@@ -1129,7 +710,29 @@ class ConfigEditorApp(App[None]):
         destination_root: Path,
     ) -> Path:
         """Run archive extraction with a progress modal."""
-        progress_screen = _ProgressScreen(title="Decompressing storage")
+        return await self._run_storage_progress(
+            title="Decompressing storage",
+            operation=lambda progress: extract_archive(
+                archive_path=archive_path,
+                destination_root=destination_root,
+                progress=progress,
+            ),
+        )
+
+    async def _run_storage_progress(
+        self,
+        *,
+        title: str,
+        operation: Callable[[Callable[[StorageArchiveProgress], None]], Path],
+    ) -> Path:
+        """Run one storage archive operation with a progress modal.
+
+        :param title: Modal title shown above the progress bar.
+        :param operation: Blocking storage operation that accepts progress
+            callbacks and returns the final path.
+        :return: Path returned by the storage operation.
+        """
+        progress_screen = ProgressScreen(title=title)
         await self.push_screen(progress_screen)
 
         def progress(progress_update: StorageArchiveProgress) -> None:
@@ -1138,11 +741,7 @@ class ConfigEditorApp(App[None]):
             )
 
         worker = self.run_worker(
-            lambda: extract_archive(
-                archive_path=archive_path,
-                destination_root=destination_root,
-                progress=progress,
-            ),
+            lambda: operation(progress),
             thread=True,
             exit_on_error=False,
         )
@@ -1163,36 +762,38 @@ class ConfigEditorApp(App[None]):
 
     def _save_env_key(self, env_key: str, raw_value: str) -> None:
         """Validate and persist one local env value."""
-        found = find_field_by_env_key(self.owners, env_key)
-        if found is None:
-            return
-        owner, spec = found
         try:
-            value = normalize_env_value(spec, raw_value)
+            update = set_local_env_value(
+                storage_root=self._current_storage().root,
+                reference=env_key,
+                raw_value=raw_value,
+                owners=self.owners,
+                local_env_filename=self.local_env_filename,
+            )
         except (TypeError, ValueError) as exc:
             self.notify(str(exc), severity="error")
             return
-        self.local_values[env_key] = value
-        write_local_env(
-            self._current_local_env_path(),
-            self.local_values,
-            owners=self.owners,
-        )
+        self.local_values = read_local_env(update.path)
         self._populate_field_table()
-        self.notify(f"Saved {env_key}")
+        self.notify(f"Saved {update.env_key}")
 
     def _clear_env_key(self, env_key: str) -> None:
         """Remove one key from the active local env file."""
-        if env_key not in self.local_values:
+        try:
+            update = clear_local_env_value(
+                storage_root=self._current_storage().root,
+                reference=env_key,
+                owners=self.owners,
+                local_env_filename=self.local_env_filename,
+            )
+        except ValueError as exc:
+            self.notify(str(exc), severity="error")
             return
-        self.local_values.pop(env_key)
-        write_local_env(
-            self._current_local_env_path(),
-            self.local_values,
-            owners=self.owners,
-        )
+        if update is None:
+            return
+        self.local_values = read_local_env(update.path)
         self._populate_field_table()
-        self.notify(f"Cleared {env_key}")
+        self.notify(f"Cleared {update.env_key}")
 
     async def _refresh_storage_list(
         self,
@@ -1200,7 +801,7 @@ class ConfigEditorApp(App[None]):
         select_name: str | None = None,
     ) -> None:
         """Reload registry rows and select the requested storage."""
-        self.storage_entries = self._ordered_storage_entries()
+        self.storage_entries = ordered_storage_entries(self.registry)
         storage_list = self.query_one("#storage-list", ListView)
         await storage_list.clear()
         if not self.storage_entries:
@@ -1208,20 +809,21 @@ class ConfigEditorApp(App[None]):
             self.current_storage_kind = None
             self.local_values = {}
             self.query_one("#storage-title", Static).update(
-                "No storages registered. Use New storage to add one."
+                "No storages registered. Use New storage to add one.\n"
+                f"CLI: {self.init_command}"
             )
             self._clear_field_table()
             self._set_live_controls_enabled(False)
             return
         for entry in self.storage_entries:
             await storage_list.append(
-                ListItem(Label(self._storage_entry_label(entry)))
+                ListItem(Label(storage_entry_label(self.registry, entry)))
             )
 
-        selected_index = self._storage_entry_index(select_name)
+        selected_index = storage_entry_index(self.storage_entries, select_name)
         if selected_index is None:
-            selected_index = self._storage_entry_index(
-                self.registry.default_storage
+            selected_index = storage_entry_index(
+                self.storage_entries, self.registry.default_storage
             )
         if selected_index is None:
             selected_index = 0
@@ -1235,72 +837,6 @@ class ConfigEditorApp(App[None]):
             return
         self._select_archived_storage(entry.name)
 
-    def _ordered_storage_entries(self) -> list[_StorageListEntry]:
-        """Return registered storages followed by archived restore rows."""
-        entries = [
-            _StorageListEntry(
-                kind=self._storage_entry_kind(name),
-                name=name,
-            )
-            for name in self._ordered_storage_names()
-        ]
-        live_names = {entry.name for entry in entries}
-        entries.extend(
-            _StorageListEntry(kind="archived", name=name)
-            for name in sorted(self.registry.archived_storages)
-            if name not in live_names
-        )
-        return entries
-
-    def _ordered_storage_names(self) -> list[str]:
-        """Return default storage first, then remaining registry storages."""
-        names = sorted(self.registry.storages)
-        default_name = self.registry.default_storage
-        if default_name in names:
-            names.remove(default_name)
-            names.insert(0, default_name)
-        return names
-
-    def _ordered_existing_storage_names(self) -> list[str]:
-        """Return registered storages whose roots are existing directories."""
-        return [
-            name
-            for name in self._ordered_storage_names()
-            if self.registry.selected(name).root.is_dir()
-        ]
-
-    def _storage_entry_kind(self, name: str) -> StorageEntryKind:
-        """Return whether one registered storage root can be edited.
-
-        :param name: Registry selector to inspect.
-        :return: ``live`` when the root is a directory, otherwise ``missing``.
-        """
-        record = self.registry.selected(name)
-        return "live" if record.root.is_dir() else "missing"
-
-    def _storage_entry_index(self, name: str | None) -> int | None:
-        """Return the first list index for a storage name."""
-        if name is None:
-            return None
-        for index, entry in enumerate(self.storage_entries):
-            if entry.name == name:
-                return index
-        return None
-
-    def _storage_entry_label(self, entry: _StorageListEntry) -> str:
-        """Return a readable storage-list label."""
-        if entry.kind in {"live", "missing"}:
-            record = self.registry.selected(entry.name)
-            default = (
-                " [default]"
-                if record.name == self.registry.default_storage
-                else ""
-            )
-            missing = " [missing]" if entry.kind == "missing" else ""
-            return f"{record.name}{default}{missing}\n{record.root}"
-        record = self.registry.archived_storages[entry.name]
-        return f"{record.name} [Last Archived]\n{record.archive}"
-
     def _select_storage(self, name: str) -> None:
         """Load one storage-local env file and refresh the field table."""
         self.current_storage_name = name
@@ -1310,7 +846,7 @@ class ConfigEditorApp(App[None]):
         path.touch(exist_ok=True)
         self.local_values = read_local_env(path)
         self.query_one("#storage-title", Static).update(
-            f"{record.name}: {record.root}\n{path}"
+            live_storage_title(record, path)
         )
         self._populate_field_table()
         self._set_live_controls_enabled(True)
@@ -1322,9 +858,7 @@ class ConfigEditorApp(App[None]):
         record = self.registry.selected(name)
         self.local_values = {}
         self.query_one("#storage-title", Static).update(
-            f"{record.name}: Missing storage root\n"
-            f"Root: {record.root}\n"
-            "No storage-local env file is available."
+            missing_storage_title(record)
         )
         self._clear_field_table()
         self._set_storage_controls_enabled(
@@ -1341,9 +875,7 @@ class ConfigEditorApp(App[None]):
         record = self.registry.archived_storages[name]
         self.local_values = {}
         self.query_one("#storage-title", Static).update(
-            f"{record.name}: Last Archived\n"
-            f"Archive: {record.archive}\n"
-            f"Last source: {record.source_root}"
+            archived_storage_title(record)
         )
         self._clear_field_table()
         self._set_live_controls_enabled(False)
@@ -1373,24 +905,14 @@ class ConfigEditorApp(App[None]):
         table.clear(columns=True)
         self.row_env_keys = []
 
-    def _selected_field(self) -> _SelectedField | None:
+    def _selected_field(self) -> SelectedField | None:
         """Return the field represented by the current table cursor."""
         table = self.query_one("#field-table", DataTable)
-        row_index = table.cursor_row
-        if (
-            row_index is None
-            or row_index < 0
-            or row_index >= len(self.row_env_keys)
-        ):
-            return None
-        env_key = self.row_env_keys[row_index]
-        if env_key is None:
-            return None
-        found = find_field_by_env_key(self.owners, env_key)
-        if found is None:
-            return None
-        owner, spec = found
-        return _SelectedField(owner=owner, spec=spec)
+        return selected_field_for_row(
+            owners=self.owners,
+            row_env_keys=self.row_env_keys,
+            row_index=table.cursor_row,
+        )
 
     def _current_storage(self) -> StorageRecord:
         """Return the active storage record."""
@@ -1442,12 +964,10 @@ class ConfigEditorApp(App[None]):
 
     def _suggest_storage_name(self, path: Path) -> str:
         """Return a simple registry-name suggestion from a path."""
-        fallback_name = self._fallback_storage_name()
-        name = path.name or fallback_name
-        if is_storage_archive_path(path):
-            name = storage_root_name_from_archive(path)
-        normalized = re.sub(r"[^A-Za-z0-9_-]+", "-", name).strip("-_")
-        return normalized or fallback_name
+        return suggest_storage_name(
+            path,
+            fallback_name=self._fallback_storage_name(),
+        )
 
     def _fallback_storage_name(self) -> str:
         """Return a storage selector when no path name is available."""

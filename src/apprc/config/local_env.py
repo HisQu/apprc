@@ -55,6 +55,22 @@ def local_env_path(
     return Path(storage_root).expanduser().resolve() / filename
 
 
+def ensure_local_env_file(
+    storage_root: Path,
+    filename: str = ".env.local",
+) -> Path:
+    """Create the storage-local dotenv file when it is missing.
+
+    :param storage_root: Directory that owns the local override file.
+    :param filename: Dotenv filename inside the storage root.
+    :return: Path to the existing dotenv file.
+    """
+    path = local_env_path(storage_root, filename=filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch(exist_ok=True)
+    return path
+
+
 def read_local_env(path: Path) -> dict[str, str]:
     """Parse an optional dotenv file into string key/value pairs."""
     env_path = Path(path).expanduser()
@@ -120,6 +136,37 @@ def set_local_env_value(
     values[env_key] = value
     write_local_env(path, values, owners=owners)
     return LocalEnvUpdate(path=path, env_key=env_key, value=value)
+
+
+def clear_local_env_value(
+    *,
+    storage_root: Path,
+    reference: str,
+    owners: Iterable[ConfigOwner],
+    local_env_filename: str = ".env.local",
+) -> LocalEnvUpdate | None:
+    """Remove one override value from ``<storage-root>/.env.local``.
+
+    :param storage_root: Active storage root from the application registry.
+    :param reference: Full env key, dotted config path, or unique field name.
+    :param owners: Config owners to search.
+    :param local_env_filename: Storage-local dotenv filename.
+    :return: Written file and removed key, or ``None`` when the key was absent.
+    :raises ValueError: If the key is unknown or read-only.
+    """
+    owner, spec = resolve_config_field_reference(owners, reference)
+    if not spec.editable:
+        raise ValueError(
+            f"{owner.env_key(spec.name)} is managed outside .env.local."
+        )
+    env_key = owner.env_key(spec.name)
+    path = local_env_path(storage_root, filename=local_env_filename)
+    values = read_local_env(path)
+    if env_key not in values:
+        return None
+    values.pop(env_key)
+    write_local_env(path, values, owners=owners)
+    return LocalEnvUpdate(path=path, env_key=env_key, value="")
 
 
 def normalize_env_value(spec: ConfigField, raw_value: str) -> str:

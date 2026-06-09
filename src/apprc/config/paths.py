@@ -53,12 +53,21 @@ def windows_drive_path_to_posix(path: str) -> Path:
                 text=True,
             )
         except (OSError, subprocess.CalledProcessError):
-            pass
+            return _windows_drive_fallback_path(path)
         else:
             converted = result.stdout.strip()
             if converted:
                 return Path(converted)
 
+    return _windows_drive_fallback_path(path)
+
+
+def _windows_drive_fallback_path(path: str) -> Path:
+    """Return the conventional WSL mount path for Windows drive text.
+
+    :param path: Windows drive path text.
+    :return: POSIX path under ``/mnt/<drive>``.
+    """
     drive = path[0].lower()
     rest = path[2:].lstrip("\\/").replace("\\", "/")
     return Path(f"/mnt/{drive}") / rest

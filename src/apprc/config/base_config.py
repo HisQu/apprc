@@ -23,7 +23,6 @@ import os
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass, field, fields, is_dataclass
 from importlib import import_module
-from importlib.machinery import ModuleSpec
 from pathlib import Path
 
 # == Typing ===============================
@@ -31,6 +30,7 @@ from types import ModuleType
 from typing import Any, ClassVar, Literal, Mapping, Self
 
 # == Internal ================================
+import apprc.utils as ut
 from apprc.logging import get_logger
 from apprc._dotenv_guard import (
     _disable_dotenv_autoload as _disable_dotenv_autoload,
@@ -46,11 +46,6 @@ LOG = get_logger(__name__)
 
 _DEEPCOPY_LOG_DEPTH_KEY = ("apprc.config.base_config", "deepcopy_log_depth")
 
-# ===============================================================
-# == Root path resolver for easy Resource access in packages
-# !! Avoid importlib.resources.files() like the plague !!!
-# ===============================================================
-
 
 def resolve_package_root(pkg: ModuleType | str) -> Path:
     """Return the filesystem directory for a regular (non-namespace) package.
@@ -62,30 +57,11 @@ def resolve_package_root(pkg: ModuleType | str) -> Path:
     and falls back to :attr:`module.__file__` when needed.
 
     :param pkg: Imported package module or import path, e.g. ``your_app.rag``.
-    :returns: Package directory on disk.
+    :return: Package directory on disk.
     :raises RuntimeError: If no usable directory can be determined.
     """
-    package_module: ModuleType = (
-        pkg if isinstance(pkg, ModuleType) else import_module(pkg)
-    )
-    # -- Prefer __spec__.origin ---------------------------------------
-    # > e.g.: opa.rag.__spec__.origin = "./OPA/src/opa/rag/__init__.py"
-    spec: ModuleSpec | None = getattr(package_module, "__spec__", None)
-    origin: str | None = getattr(spec, "origin", None) or None
-    if origin and isinstance(origin, str):
-        origin_path = Path(origin)
-        if origin_path.name == "__init__.py" and origin_path.is_file():
-            return origin_path.resolve().parent  # !! Early exit
-    # -- Fallback to __file__ -----------------------------------------
-    module_file = getattr(package_module, "__file__", None)
-    if module_file:
-        module_path = Path(module_file).resolve()
-        if module_path.name == "__init__.py" and module_path.is_file():
-            return module_path.parent
-    raise RuntimeError(
-        f"Cannot determine package directory for {package_module.__name__!r}. "
-        "Expected a regular package with an __init__.py on disk."
-    )
+    module = pkg if isinstance(pkg, ModuleType) else import_module(pkg)
+    return ut.package_root_dir(module)
 
 
 # ===============================================================

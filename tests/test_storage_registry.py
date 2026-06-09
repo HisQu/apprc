@@ -12,6 +12,7 @@ from apprc.config.storage_registry import (
     default_storage_data_root,
     default_storage_name,
     load_storage_registry,
+    ordered_storage_names,
     prune_missing_archived_storages,
     record_archived_storage,
     register_storage,
@@ -116,6 +117,24 @@ def test_register_storage_writes_sorted_toml_and_local_env(
         "[storages.zeta]\n"
         f'root = "{second_root.resolve()}"\n'
     )
+
+
+def test_ordered_storage_names_places_default_first(tmp_path: Path) -> None:
+    registry_path = tmp_path / "config" / "demo.toml"
+    register_storage(
+        name="alpha",
+        root=tmp_path / "alpha",
+        make_default=False,
+        path=registry_path,
+    )
+    registry = register_storage(
+        name="zeta",
+        root=tmp_path / "zeta",
+        make_default=True,
+        path=registry_path,
+    )
+
+    assert ordered_storage_names(registry) == ["zeta", "alpha"]
 
 
 def test_load_storage_registry_keeps_old_toml_compatible(
@@ -329,6 +348,41 @@ def test_load_storage_registry_rejects_invalid_default(
     registry_path.write_text('default_storage = "missing"\n', encoding="utf-8")
 
     with pytest.raises(ValueError, match="default_storage 'missing'"):
+        load_storage_registry(registry_path)
+
+
+def test_load_storage_registry_rejects_invalid_storage_tables(
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "demo.toml"
+    registry_path.write_text('storages = "alpha"\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="storages must be a table"):
+        load_storage_registry(registry_path)
+
+    registry_path.write_text(
+        "[storages.alpha]\nroot = []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"storages\.alpha\.root"):
+        load_storage_registry(registry_path)
+
+
+def test_load_storage_registry_rejects_invalid_archived_storage_tables(
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "demo.toml"
+    registry_path.write_text(
+        "[archived_storages.alpha]\n"
+        f'archive = "{tmp_path / "alpha.apprc.tar.xz"}"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"archived_storages\.alpha\.source_root",
+    ):
         load_storage_registry(registry_path)
 
 

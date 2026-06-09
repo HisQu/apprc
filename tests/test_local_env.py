@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from apprc.config.local_env import (
+    clear_local_env_value,
+    ensure_local_env_file,
     normalize_env_value,
     read_local_env,
     set_local_env_value,
@@ -35,6 +37,15 @@ def test_write_local_env_orders_known_keys_before_unknown_keys(
         'A_USER_EXTRA="first"\n'
         'Z_USER_EXTRA="last"\n'
     )
+
+
+def test_ensure_local_env_file_creates_parent_and_file(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
+
+    path = ensure_local_env_file(storage_root, filename=".env.demo")
+
+    assert path == storage_root.resolve() / ".env.demo"
+    assert path.is_file()
 
 
 def test_set_local_env_value_accepts_env_key_config_path_or_unique_name(
@@ -82,6 +93,43 @@ def test_set_local_env_value_rejects_registry_owned_storage_root(
             storage_root=tmp_path / "storage",
             reference="DEMO_D_STORAGE",
             raw_value="/tmp/storage",
+            owners=DEMO_OWNERS,
+            local_env_filename=".env.demo",
+        )
+
+
+def test_clear_local_env_value_removes_existing_override(
+    tmp_path: Path,
+) -> None:
+    storage_root = tmp_path / "storage"
+    set_local_env_value(
+        storage_root=storage_root,
+        reference="DEMO_MODEL",
+        raw_value="env-model",
+        owners=DEMO_OWNERS,
+        local_env_filename=".env.demo",
+    )
+
+    update = clear_local_env_value(
+        storage_root=storage_root,
+        reference="runtime.model",
+        owners=DEMO_OWNERS,
+        local_env_filename=".env.demo",
+    )
+
+    assert update is not None
+    assert update.env_key == "DEMO_MODEL"
+    assert update.value == ""
+    assert read_local_env(storage_root / ".env.demo") == {}
+
+
+def test_clear_local_env_value_rejects_registry_owned_storage_root(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="managed outside .env.local"):
+        clear_local_env_value(
+            storage_root=tmp_path / "storage",
+            reference="DEMO_D_STORAGE",
             owners=DEMO_OWNERS,
             local_env_filename=".env.demo",
         )

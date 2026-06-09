@@ -15,7 +15,7 @@ from __future__ import annotations
 # == Standard Library ========================
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 # == Internal ================================
 from apprc.config.app_spec import AppConfigSpec
@@ -26,6 +26,7 @@ from apprc.config.environment import (
 )
 from apprc.config.local_env import (
     LocalEnvUpdate,
+    clear_local_env_value,
     local_env_path,
     read_local_env,
     set_local_env_value,
@@ -47,6 +48,12 @@ from apprc.config.storage_registry import (
 )
 
 StateT = TypeVar("StateT")
+
+if TYPE_CHECKING:
+    import typer
+
+    from apprc.config.setup_tui import ConfigSetupApp
+    from apprc.config.tui import ConfigEditorApp
 
 
 class AppConfigKit:
@@ -338,6 +345,25 @@ class AppConfigKit:
             local_env_filename=self.spec.local_env_filename,
         )
 
+    def clear_local_value(
+        self,
+        *,
+        storage_root: Path,
+        reference: str,
+    ) -> LocalEnvUpdate | None:
+        """Remove one storage-local override value.
+
+        :param storage_root: Active storage root from the registry.
+        :param reference: Env key, dotted config path, or unique field name.
+        :return: Written dotenv path and env key, or ``None`` when absent.
+        """
+        return clear_local_env_value(
+            storage_root=storage_root,
+            reference=reference,
+            owners=self.spec.owners,
+            local_env_filename=self.spec.local_env_filename,
+        )
+
     def doctor_payload(self, storage_name: str | None = None) -> dict[str, Any]:
         """Return JSON-friendly local setup diagnostics."""
         from apprc.cli.doctor import build_config_doctor_payload
@@ -349,7 +375,7 @@ class AppConfigKit:
         *,
         registry: StorageRegistry,
         initial_storage: str | None = None,
-    ) -> Any:
+    ) -> ConfigEditorApp:
         """Build the generic Textual config editor for this application."""
         from apprc.config.tui import ConfigEditorApp
 
@@ -359,7 +385,7 @@ class AppConfigKit:
             initial_storage=initial_storage,
         )
 
-    def setup_app(self) -> Any:
+    def setup_app(self) -> ConfigSetupApp:
         """Build the generic Textual setup wizard for this application."""
         from apprc.config.setup_tui import ConfigSetupApp
 
@@ -372,12 +398,12 @@ class AppConfigKit:
         runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
         active_storage_root: Callable[[StateT], Path | None] | None = None,
         initial_storage: Callable[[StateT], str | None] | None = None,
-        editor_app_cls: type[Any] | None = None,
+        editor_app_cls: type[ConfigEditorApp] | None = None,
         help: str | None = None,
         setup_message: str | None = None,
         legacy_json_migration_message: str | None = None,
         runtime_error_param_hint: str = "CONFIG",
-    ) -> Any:
+    ) -> typer.Typer:
         """Build the generic Typer ``config`` command group.
 
         :param state_type: Application root CLI state type stored on

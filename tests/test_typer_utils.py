@@ -69,6 +69,12 @@ def test_args_after_command_skips_root_options_before_command() -> None:
 def test_config_request_skips_bootstrap_for_setup_only_commands() -> None:
     assert config_request_skips_bootstrap([]) is True
     assert config_request_skips_bootstrap(["--json"]) is True
+    assert (
+        config_request_skips_bootstrap(
+            ["--skip-dotenv-layers", "--storage", "alpha", "doctor"]
+        )
+        is True
+    )
     assert config_request_skips_bootstrap(["doctor"]) is True
     assert config_request_skips_bootstrap(["set-default", "alpha"]) is True
     assert config_request_skips_bootstrap(["show"]) is False

@@ -8,20 +8,39 @@ package instead of growing this module into a miscellaneous toolbox.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from functools import reduce
-from operator import getitem
-from typing import Any
-
 import time
+from collections.abc import Hashable, Iterator, Mapping, MutableMapping
+from contextlib import contextmanager
+from typing import TypeVar, cast, overload
+
+DictKeyT = TypeVar("DictKeyT", bound=Hashable)
+DefaultT = TypeVar("DefaultT")
 
 # =====================================================================
 # === Dictionary / JSON conveniences
 # =====================================================================
 
 
-# %%
-def deep_get(d: dict, keypath: tuple, default=None) -> Any:
+@overload
+def deep_get(
+    d: Mapping[DictKeyT, object],
+    keypath: tuple[DictKeyT, ...],
+) -> object | None: ...
+
+
+@overload
+def deep_get(
+    d: Mapping[DictKeyT, object],
+    keypath: tuple[DictKeyT, ...],
+    default: DefaultT,
+) -> object | DefaultT: ...
+
+
+def deep_get(
+    d: Mapping[DictKeyT, object],
+    keypath: tuple[DictKeyT, ...],
+    default: DefaultT | None = None,
+) -> object | DefaultT | None:
     """Read a nested dictionary value without branching at every level.
 
     :param d: Mapping tree to inspect.
@@ -30,15 +49,18 @@ def deep_get(d: dict, keypath: tuple, default=None) -> Any:
     :return: Leaf value or ``default``.
     """
     try:
-        return reduce(getitem, keypath, d)
+        value: object = d
+        for key in keypath:
+            value = cast(Mapping[DictKeyT, object], value)[key]
+        return value
     except (KeyError, TypeError):
         return default
 
 
 def deep_set(
-    d: dict,
-    keypath: tuple,
-    value: Any,
+    d: MutableMapping[DictKeyT, object],
+    keypath: tuple[DictKeyT, ...],
+    value: object,
 ) -> None:
     """Write a nested dictionary value and create missing parent mappings.
 
@@ -46,22 +68,30 @@ def deep_set(
     :param keypath: Ordered dictionary keys from root to leaf.
     :param value: Value stored at the final key.
     """
+    node = d
     for k in keypath[:-1]:
-        d = d.setdefault(k, {})
-    d[keypath[-1]] = value
+        node = cast(MutableMapping[DictKeyT, object], node.setdefault(k, {}))
+    node[keypath[-1]] = value
 
 
-def deep_right_merge(a: dict, b: dict) -> dict:
+def deep_right_merge(
+    a: Mapping[DictKeyT, object],
+    b: Mapping[DictKeyT, object],
+) -> dict[DictKeyT, object]:
     """Merge two nested dictionaries and let ``b`` win conflicts.
 
     :param a: Base dictionary that should remain untouched.
     :param b: Overlay dictionary whose leaves replace matching leaves in ``a``.
     :return: New merged dictionary.
     """
-    out = a.copy()
+    out = dict(a)
     for k, v in b.items():
-        if isinstance(v, dict) and isinstance(out.get(k), dict):
-            out[k] = deep_right_merge(out[k], v)
+        existing = out.get(k)
+        if isinstance(v, Mapping) and isinstance(existing, Mapping):
+            out[k] = deep_right_merge(
+                cast(Mapping[DictKeyT, object], existing),
+                cast(Mapping[DictKeyT, object], v),
+            )
         else:
             out[k] = v
     return out
@@ -72,9 +102,8 @@ def deep_right_merge(a: dict, b: dict) -> dict:
 # =====================================================================
 
 
-# %%
 @contextmanager
-def timer(name: str = "block"):
+def timer(name: str = "block") -> Iterator[None]:
     """Print elapsed wall time when a manual diagnostic block exits.
 
     The helper is intentionally simple and stdout-based. Production logging

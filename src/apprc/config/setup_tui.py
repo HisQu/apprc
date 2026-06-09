@@ -4,7 +4,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 # == 3rd Party ===============================
 from textual.app import App, ComposeResult
@@ -13,6 +13,7 @@ from textual.widgets import Button, Footer, Header, Static
 
 # == Internal ================================
 import apprc.config.setup_flow as setup_flow
+import apprc.config.setup_text as setup_text
 from apprc.config.storage_registry import StorageRegistry
 from apprc.config.tui_primitives import (
     ButtonVariant,
@@ -79,7 +80,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         """Show the setup overview as the first screen."""
         await self._show_overview()
 
-    async def on_button_pressed(self, event: Any) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Dispatch setup wizard actions.
 
         :param event: Textual button event.
@@ -104,7 +105,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         """Render the first setup screen."""
         await self._set_screen(
             title=f"{self.kit.spec.display_name} config setup",
-            body=setup_flow.setup_overview_text(self.kit),
+            body=setup_text.setup_overview_text(self.kit),
             buttons=(
                 ("setup-start", "Start setup", "primary"),
                 ("setup-cancel", "Cancel", "default"),
@@ -157,7 +158,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         buttons.append(("setup-cancel", "Cancel", "default"))
         await self._set_screen(
             title="Existing setup",
-            body=setup_flow.existing_registry_text(self.kit, registry),
+            body=setup_text.existing_registry_text(self.kit, registry),
             buttons=tuple(buttons),
         )
 
@@ -185,7 +186,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 confirmed = await self.push_screen_wait(
                     ConfirmScreen(
                         title="Reset config state",
-                        message=setup_flow.reset_warning_text(
+                        message=setup_text.reset_warning_text(
                             self.kit,
                             registry,
                         ),
@@ -293,7 +294,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             result = await self.push_screen_wait(
                 PathInputScreen(
                     title=title,
-                    message=setup_flow.config_file_step_text(
+                    message=setup_text.config_file_step_text(
                         self.kit,
                         default_path,
                     ),
@@ -354,7 +355,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         root_result = await self.push_screen_wait(
             PathInputScreen(
                 title="Default storage root",
-                message=setup_flow.default_storage_step_text(self.kit),
+                message=setup_text.default_storage_step_text(self.kit),
                 placeholder="Storage root directory",
                 value=str(self.kit.default_storage_data_root()),
             )
@@ -406,7 +407,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             action = await self.push_screen_wait(
                 ConfirmScreen(
                     title="Reuse storage root?",
-                    message=setup_flow.storage_root_reuse_text(
+                    message=setup_text.storage_root_reuse_text(
                         self.kit,
                         root,
                         storage_name=storage_name,
@@ -438,7 +439,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             f"default_storage: {default}\n"
             f"doctor: {status}\n\n"
             "Next steps:\n"
-            f"{setup_flow.next_steps_text(self.kit, registry)}"
+            f"{setup_text.next_steps_text(self.kit, registry)}"
         )
         await self._set_screen(
             title="Done",

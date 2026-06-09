@@ -181,7 +181,6 @@ CLIENT_OWNER = ConfigOwner(
     title="Client",
     env_prefix="MYAPP_",
     rc_path=("client",),
-    runtime_cls=None,
     fields=(
         config_field(
             "model",
@@ -365,7 +364,6 @@ STORAGE_OWNER = ConfigOwner(
     title="Storage",
     env_prefix="MYAPP_",
     rc_path=("storage",),
-    runtime_cls=None,
     fields=(
         config_field(
             "root",

@@ -125,8 +125,8 @@ class ConfigOwner:
     :param env_prefix: Env key prefix for all owned fields.
     :param rc_path: Runtime config path components from the application root
         config object.
-    :param runtime_cls: Runtime dataclass type. Filled after class definition
-        to avoid import cycles.
+    :param runtime_cls: Compatibility slot from older declaration APIs. AppRC
+        no longer reads this value.
     :param fields: Owner-local field specs.
     """
 
@@ -134,8 +134,8 @@ class ConfigOwner:
     title: str
     env_prefix: str
     rc_path: tuple[str, ...]
-    runtime_cls: type[Any] | None
-    fields: tuple[ConfigField, ...]
+    runtime_cls: type[Any] | None = None
+    fields: tuple[ConfigField, ...] = ()
 
     def field(self, name: str) -> ConfigField:
         """Return one owner-local field spec."""

@@ -14,7 +14,7 @@ import typer
 
 # == Internal ================================
 from apprc.config.kit import AppConfigKit
-from apprc.config.paths import StorageRootPathError, normalize_storage_root_path
+import apprc.config.setup_flow as setup_flow
 
 
 def print_directory_listing(storage_root: Path) -> None:
@@ -162,27 +162,27 @@ def guard_storage_root_init(
     :raises typer.Exit: If the user declines reuse of a non-empty directory.
     """
     try:
-        root = normalize_storage_root_path(storage_root)
-    except StorageRootPathError as exc:
+        root = setup_flow.validate_storage_root_for_setup(
+            kit,
+            storage_root,
+            storage_name=storage_name,
+            make_default=make_default,
+            allow_non_empty_storage=True,
+        )
+    except setup_flow.ConfigSetupError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint="STORAGE_ROOT",
+            param_hint=exc.param_hint,
         ) from exc
     if not root.exists():
         return root
-    resolved_root = root.resolve()
-    if not resolved_root.is_dir():
-        raise typer.BadParameter(
-            f"Storage root exists but is not a directory: {resolved_root}",
-            param_hint="STORAGE_ROOT",
-        )
     if assume_yes:
-        return resolved_root
-    if any(resolved_root.iterdir()):
+        return root
+    if any(root.iterdir()):
         confirm_existing_storage_root(
             kit,
-            resolved_root,
+            root,
             storage_name=storage_name,
             make_default=make_default,
         )
-    return resolved_root
+    return root

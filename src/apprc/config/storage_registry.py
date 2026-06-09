@@ -5,9 +5,9 @@ project or corpus directories. AppRC solves that with a tiny TOML registry at
 ``$XDG_CONFIG_HOME/<app>/<registry_filename>``. The registry maps friendly
 storage names to absolute storage roots and records which one is the default.
 
-This module owns only that user-level TOML file. Storage-local dotenv values
-inside each root are handled by :mod:`apprc.config.local_env`, and process
-environment bootstrapping is handled by :mod:`apprc.config.environment`.
+This module owns the user-level TOML file and storage selector semantics.
+Storage-local dotenv value handling lives in :mod:`apprc.config.local_env`, and
+process environment bootstrapping lives in :mod:`apprc.config.environment`.
 """
 
 from __future__ import annotations
@@ -17,10 +17,12 @@ import json
 import os
 import re
 import tomllib
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import cast
 
+from apprc.config.local_env import ensure_local_env_file
 from apprc.config.paths import normalize_storage_root_path
 
 _STORAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -242,7 +244,7 @@ def register_storage(
     _validate_storage_name(name)
     resolved_root = normalize_storage_root_path(root).resolve()
     resolved_root.mkdir(parents=True, exist_ok=True)
-    (resolved_root / local_env_filename).touch(exist_ok=True)
+    ensure_local_env_file(resolved_root, filename=local_env_filename)
 
     current = load_storage_registry(path)
     storages = dict(current.storages)
@@ -251,11 +253,10 @@ def register_storage(
     if make_default or default_storage is None:
         default_storage = name
 
-    updated = StorageRegistry(
-        path=current.path,
+    updated = replace(
+        current,
         default_storage=default_storage,
         storages=storages,
-        archived_storages=current.archived_storages,
     )
     write_storage_registry(updated)
     return updated
@@ -276,11 +277,9 @@ def set_default_storage(
     _validate_storage_name(name)
     current = load_storage_registry(path)
     current.selected(name)
-    updated = StorageRegistry(
-        path=current.path,
+    updated = replace(
+        current,
         default_storage=name,
-        storages=current.storages,
-        archived_storages=current.archived_storages,
     )
     write_storage_registry(updated)
     return updated
@@ -303,11 +302,9 @@ def replace_default_storage(
     if name is not None:
         _validate_storage_name(name)
         current.selected(name)
-    updated = StorageRegistry(
-        path=current.path,
+    updated = replace(
+        current,
         default_storage=name,
-        storages=current.storages,
-        archived_storages=current.archived_storages,
     )
     write_storage_registry(updated)
     return updated
@@ -344,11 +341,10 @@ def unregister_storage(
             f"Known storages: {known}."
         )
 
-    updated = StorageRegistry(
-        path=current.path,
+    updated = replace(
+        current,
         default_storage=default_storage,
         storages=storages,
-        archived_storages=current.archived_storages,
     )
     write_storage_registry(updated)
     return updated
@@ -370,10 +366,8 @@ def record_archived_storage(
         archive=normalize_storage_root_path(archive).expanduser(),
         source_root=normalize_storage_root_path(source_root).expanduser(),
     )
-    updated = StorageRegistry(
-        path=current.path,
-        default_storage=current.default_storage,
-        storages=current.storages,
+    updated = replace(
+        current,
         archived_storages=archived_storages,
     )
     write_storage_registry(updated)
@@ -390,10 +384,8 @@ def remove_archived_storage(
     current = load_storage_registry(path)
     archived_storages = dict(current.archived_storages)
     archived_storages.pop(name, None)
-    updated = StorageRegistry(
-        path=current.path,
-        default_storage=current.default_storage,
-        storages=current.storages,
+    updated = replace(
+        current,
         archived_storages=archived_storages,
     )
     write_storage_registry(updated)
@@ -413,10 +405,8 @@ def prune_missing_archived_storages(
     }
     if archived_storages == current.archived_storages:
         return current
-    updated = StorageRegistry(
-        path=current.path,
-        default_storage=current.default_storage,
-        storages=current.storages,
+    updated = replace(
+        current,
         archived_storages=archived_storages,
     )
     write_storage_registry(updated)
@@ -436,9 +426,23 @@ def write_storage_registry(registry: StorageRegistry) -> Path:
     return registry.path
 
 
+def ordered_storage_names(registry: StorageRegistry) -> list[str]:
+    """Return default storage first, then remaining storages by name.
+
+    :param registry: Registry whose storage names should be ordered.
+    :return: Stable display order for CLIs and TUIs.
+    """
+    names = sorted(registry.storages)
+    default_name = registry.default_storage
+    if default_name in names:
+        names.remove(default_name)
+        names.insert(0, default_name)
+    return names
+
+
 def _registry_from_toml(
     *,
-    data: Mapping[str, Any],
+    data: Mapping[str, object],
     path: Path,
 ) -> StorageRegistry:
     """Build a typed registry from parsed TOML data."""
@@ -446,45 +450,56 @@ def _registry_from_toml(
     if raw_default is not None and not isinstance(raw_default, str):
         raise ValueError(f"{path}: default_storage must be a string.")
 
-    raw_storages = data.get("storages", {})
-    if not isinstance(raw_storages, dict):
-        raise ValueError(f"{path}: storages must be a table.")
-
+    raw_storages = _toml_table(data=data, key="storages", path=path)
     storages: dict[str, StorageRecord] = {}
     for name, raw_record in raw_storages.items():
         _validate_storage_name(name)
-        if not isinstance(raw_record, dict):
-            raise ValueError(f"{path}: storages.{name} must be a table.")
-        raw_root = raw_record.get("root")
-        if not isinstance(raw_root, str) or not raw_root:
-            raise ValueError(f"{path}: storages.{name}.root must be a string.")
+        record = _toml_record_table(
+            raw_record=raw_record,
+            path=path,
+            section="storages",
+            name=name,
+        )
+        raw_root = _toml_string_field(
+            record=record,
+            path=path,
+            section="storages",
+            name=name,
+            field="root",
+        )
         storages[name] = StorageRecord(
             name=name,
             root=normalize_storage_root_path(raw_root),
         )
 
-    raw_archived = data.get("archived_storages", {})
-    if not isinstance(raw_archived, dict):
-        raise ValueError(f"{path}: archived_storages must be a table.")
-
+    raw_archived = _toml_table(
+        data=data,
+        key="archived_storages",
+        path=path,
+    )
     archived_storages: dict[str, ArchivedStorageRecord] = {}
     for name, raw_record in raw_archived.items():
         _validate_storage_name(name)
-        if not isinstance(raw_record, dict):
-            raise ValueError(
-                f"{path}: archived_storages.{name} must be a table."
-            )
-        raw_archive = raw_record.get("archive")
-        raw_source_root = raw_record.get("source_root")
-        if not isinstance(raw_archive, str) or not raw_archive:
-            raise ValueError(
-                f"{path}: archived_storages.{name}.archive must be a string."
-            )
-        if not isinstance(raw_source_root, str) or not raw_source_root:
-            raise ValueError(
-                f"{path}: archived_storages.{name}.source_root "
-                "must be a string."
-            )
+        record = _toml_record_table(
+            raw_record=raw_record,
+            path=path,
+            section="archived_storages",
+            name=name,
+        )
+        raw_archive = _toml_string_field(
+            record=record,
+            path=path,
+            section="archived_storages",
+            name=name,
+            field="archive",
+        )
+        raw_source_root = _toml_string_field(
+            record=record,
+            path=path,
+            section="archived_storages",
+            name=name,
+            field="source_root",
+        )
         archived_storages[name] = ArchivedStorageRecord(
             name=name,
             archive=normalize_storage_root_path(raw_archive),
@@ -503,6 +518,47 @@ def _registry_from_toml(
         storages=storages,
         archived_storages=archived_storages,
     )
+
+
+def _toml_table(
+    *,
+    data: Mapping[str, object],
+    key: str,
+    path: Path,
+) -> Mapping[str, object]:
+    """Return one top-level TOML table or raise a registry schema error."""
+    raw_table = data.get(key, {})
+    if not isinstance(raw_table, Mapping):
+        raise ValueError(f"{path}: {key} must be a table.")
+    return cast(Mapping[str, object], raw_table)
+
+
+def _toml_record_table(
+    *,
+    raw_record: object,
+    path: Path,
+    section: str,
+    name: str,
+) -> Mapping[str, object]:
+    """Return one nested record table or raise a registry schema error."""
+    if not isinstance(raw_record, Mapping):
+        raise ValueError(f"{path}: {section}.{name} must be a table.")
+    return cast(Mapping[str, object], raw_record)
+
+
+def _toml_string_field(
+    *,
+    record: Mapping[str, object],
+    path: Path,
+    section: str,
+    name: str,
+    field: str,
+) -> str:
+    """Return one required string field or raise a registry schema error."""
+    value = record.get(field)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{path}: {section}.{name}.{field} must be a string.")
+    return value
 
 
 def _render_storage_registry(registry: StorageRegistry) -> str:

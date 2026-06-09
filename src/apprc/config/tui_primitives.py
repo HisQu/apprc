@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 # == 3rd Party ===============================
 from rich.text import Text
@@ -140,7 +140,7 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
         """Focus the path input when the modal opens."""
         self.query_one("#path-input", Input).focus()
 
-    def on_input_submitted(self, event: Any) -> None:
+    def on_input_submitted(self, event: Input.Submitted) -> None:
         """Continue when Enter is submitted from the path input.
 
         :param event: Textual input event.
@@ -148,7 +148,7 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
         if event.input.id == "path-input":
             self._continue()
 
-    def on_button_pressed(self, event: Any) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle dialog button clicks.
 
         :param event: Textual button event.
@@ -227,7 +227,7 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
         """Focus the name input when the modal opens."""
         self.query_one("#name-input", Input).focus()
 
-    def on_input_submitted(self, event: Any) -> None:
+    def on_input_submitted(self, event: Input.Submitted) -> None:
         """Continue when Enter is submitted from the name input.
 
         :param event: Textual input event.
@@ -235,7 +235,7 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
         if event.input.id == "name-input":
             self._continue()
 
-    def on_button_pressed(self, event: Any) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle dialog button clicks.
 
         :param event: Textual button event.
@@ -321,7 +321,7 @@ class ConfirmScreen(ModalScreen[str | None]):
                     yield Button(label, variant=variant, id=action_id)
                 yield Button("Cancel", id="confirm-cancel")
 
-    def on_button_pressed(self, event: Any) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         """Dismiss with the selected action id.
 
         :param event: Textual button event.

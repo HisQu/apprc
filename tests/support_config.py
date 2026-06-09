@@ -23,7 +23,6 @@ DEMO_OWNER = ConfigOwner(
     title="Runtime",
     env_prefix="DEMO_",
     rc_path=("runtime",),
-    runtime_cls=None,
     fields=(
         config_field(
             "storage_root",

@@ -12,6 +12,7 @@ import typer
 from apprc.cli.doctor import build_config_doctor_payload, print_config_doctor
 from apprc.config.kit import AppConfigKit
 import apprc.config.setup_flow as setup_flow
+import apprc.config.setup_text as setup_text
 from apprc.config.setup_tui import ConfigSetupApp
 from apprc.config.storage_registry import StorageRegistry
 
@@ -95,7 +96,7 @@ def _print_setup_finish(
     print_config_doctor(kit, payload)
     typer.echo("")
     typer.echo("Next steps:")
-    for line in setup_flow.next_steps_text(kit, registry).splitlines():
+    for line in setup_text.next_steps_text(kit, registry).splitlines():
         typer.echo(f"  {line}" if line else "")
     if not payload["ok"]:
         raise typer.Exit(code=1)

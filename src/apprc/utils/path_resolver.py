@@ -32,7 +32,7 @@ def package_root_dir(mod: ModuleType) -> Path:
     and falls back to :attr:`module.__file__` when needed.
 
     :param mod: Imported package module.
-    :returns: Package directory on disk.
+    :return: Package directory on disk.
     :raises RuntimeError: If no usable directory can be determined.
     """
     # -- Prefer __spec__.origin ---------------------------------------
@@ -164,7 +164,7 @@ def sync_hf_repo_into(
     :param revision: Branch, tag, or commit hash.
     :param allow_patterns: Optional glob(s) to limit what gets pulled.
     :param ignore_patterns: Optional glob(s) to exclude files.
-    :returns: The local_root (for convenience).
+    :return: The local_root for convenience.
     """
     try:
         snapshot_download = getattr(

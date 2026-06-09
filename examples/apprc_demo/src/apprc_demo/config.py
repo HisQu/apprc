@@ -6,7 +6,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 # == Internal ================================
 from apprc.config import (
@@ -25,7 +24,6 @@ APPRC_DEMO_OWNER = ConfigOwner(
     title="Runtime",
     env_prefix="APPRC_DEMO_",
     rc_path=("runtime",),
-    runtime_cls=None,
     fields=(
         config_field(
             "storage_root",
@@ -120,7 +118,7 @@ class AppRcDemoState:
     storage: str | None = None
 
 
-def demo_runtime_payload(state: AppRcDemoState) -> dict[str, Any]:
+def demo_runtime_payload(state: AppRcDemoState) -> dict[str, object]:
     """Return bootstrap and runtime values for ``apprc config show``.
 
     :param state: Root command state populated during CLI bootstrap.
@@ -137,7 +135,7 @@ def demo_runtime_payload(state: AppRcDemoState) -> dict[str, Any]:
 
 def _bootstrap_payload(
     bootstrap: EnvBootstrapResult | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Return JSON-friendly bootstrap state for the current invocation."""
     if bootstrap is None:
         return {
@@ -162,16 +160,16 @@ def _bootstrap_payload(
     }
 
 
-def _runtime_values() -> dict[str, Any]:
+def _runtime_values() -> dict[str, object]:
     """Return current process config values declared by the demo owner."""
-    values: dict[str, Any] = {}
+    values: dict[str, object] = {}
     for owner, spec in iter_config_fields(APPRC_DEMO_OWNERS):
         env_key = owner.env_key(spec.name)
         values[spec.name] = _display_value(spec, os.environ.get(env_key))
     return values
 
 
-def _display_value(spec: ConfigField, raw_value: str | None) -> Any:
+def _display_value(spec: ConfigField, raw_value: str | None) -> object:
     """Return one runtime value with defaults and secret redaction applied."""
     if spec.secret:
         if raw_value:
@@ -186,7 +184,7 @@ def _display_value(spec: ConfigField, raw_value: str | None) -> Any:
     return _json_value(spec.default)
 
 
-def _coerce_display_value(spec: ConfigField, raw_value: str) -> Any:
+def _coerce_display_value(spec: ConfigField, raw_value: str) -> object:
     """Coerce dotenv strings into the runtime type shown by demo output."""
     if spec.python_type is bool:
         normalized = raw_value.strip().lower()
@@ -210,7 +208,7 @@ def _coerce_display_value(spec: ConfigField, raw_value: str) -> Any:
     return raw_value
 
 
-def _json_value(value: Any) -> Any:
+def _json_value(value: object) -> object:
     """Return a JSON-friendly representation of one field default."""
     if isinstance(value, Path):
         return str(value)

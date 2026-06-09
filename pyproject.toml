@@ -118,7 +118,6 @@ dev = [
     "pytest>=8.2",
     "pytest-asyncio",  # < Async testing
     "pytest-xdist",    # < Multi-core testing
-    # "pytest-cov",       # < Code-Coverage
     # --- Code-Quality ---------
     "pyright>=1.1",  # < Type checker
     "ruff>=0.4",  # < Linter and formatter
@@ -159,9 +158,8 @@ pythonVersion = "3.12"  # Enforce the minimum supported python version
 pythonPlatform = "All"
 venvPath = "."
 venv = ".venv"
-include = ["src"]
+include = ["src", "tests", "examples/apprc_demo/src"]
 exclude = [
-    "tests", # < Tests may be dirty.
     "**/example_data",
     "**/old",
     "**/__pycache__",
@@ -177,7 +175,7 @@ line-length = 80
 # unsafe-fixes = true
 
 
-# Pytest configration (This replaces `pytest.ini`)
+# Pytest configuration (This replaces `pytest.ini`)
 [tool.pytest.ini_options]
 addopts = "-n 6"  # < Use 6 cores
 testpaths = ["tests"]

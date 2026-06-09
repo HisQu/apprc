@@ -203,6 +203,7 @@ Users then get:
 
 ```shell
 myapp config setup
+myapp config setup --yes --storage-root /absolute/path/to/storage --name myapp_stor-1
 myapp config init /absolute/path/to/storage --name myapp_stor-1 --default
 myapp config doctor
 myapp config show --json
@@ -210,10 +211,13 @@ myapp config set client.model other-model
 myapp config edit
 ```
 
-Use `myapp config setup` for normal first-time installation. It explains the
-config file and storage root locations, asks for a default storage, and prints
-next steps. `config init` remains available as the lower-level command for
-scripts or manual storage registration.
+Use `myapp config setup` for normal first-time installation. With no options it
+opens a Textual wizard with path autocomplete, explains the config file and
+storage root locations, asks for a default storage, and shows next steps.
+For CI or scripted bootstrap, pass `--yes` with `--config-file`,
+`--storage-root`, `--name`, and `--existing-action keep|reset|move` as needed.
+`config init` remains available as the lower-level command for scripts or
+manual storage registration.
 
 <br>
 
@@ -381,6 +385,10 @@ app.add_typer(config_app, name="config")
 
 ### Edit Local Values in the Terminal
 
+`config setup` opens a Textual wizard for first-time setup unless `--yes` is
+passed for non-interactive use. The wizard handles existing registries, custom
+config-file paths, default storage creation, and final diagnostics.
+
 `config edit` opens a Textual editor. The editor shows:
 
 - key number
@@ -436,7 +444,10 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.config.storage_registry` | `~/.config/<app>/*.toml` storage names. |
 | `apprc.config.storage_archive` | `*.apprc.tar.xz` storage compression and restore. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
+| `apprc.config.setup_flow` | Shared setup workflow rules and setup copy. |
+| `apprc.config.setup_tui` | Textual setup wizard. |
 | `apprc.config.tui` | Textual app and modal interactions. |
+| `apprc.config.tui_primitives` | Shared Textual path, name, and confirmation modals. |
 | `apprc.config.tui_rendering` | Pure table cell rendering and styles. |
 | `apprc.cli.config_app` | Generated `config` Typer commands. |
 | `apprc.cli.bootstrap` | Common root CLI bootstrap options. |
@@ -460,7 +471,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 
 | Command | Purpose |
 |---|---|
-| `config setup` | Interactively choose the registry file and default storage. |
+| `config setup` | Open the setup wizard, or run non-interactively with `--yes`. |
 | `config init STORAGE_ROOT --name NAME --default` | Register a storage root. |
 | `config doctor` | Diagnose registry and selected storage state. |
 | `config show --json` | Print resolved runtime config payload. |

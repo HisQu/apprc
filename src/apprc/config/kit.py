@@ -356,6 +356,12 @@ class AppConfigKit:
             initial_storage=initial_storage,
         )
 
+    def setup_app(self) -> Any:
+        """Build the generic Textual setup wizard for this application."""
+        from apprc.config.setup_tui import ConfigSetupApp
+
+        return ConfigSetupApp(kit=self)
+
     def typer_app(
         self,
         *,

@@ -36,6 +36,7 @@ from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.paths import StorageRootPathError
+import apprc.config.setup_flow as setup_flow
 
 StateT = TypeVar("StateT")
 
@@ -430,9 +431,53 @@ def build_config_typer_app(
         typer.echo(f"default_storage: {registry.default_storage}")
 
     @app.command("setup")
-    def config_setup_cmd() -> None:
+    def config_setup_cmd(
+        assume_yes: Annotated[
+            bool,
+            typer.Option(
+                "--yes",
+                "-y",
+                help="Run setup non-interactively with the selected values.",
+            ),
+        ] = False,
+        config_file: Annotated[
+            Path | None,
+            typer.Option(
+                "--config-file",
+                help="Registry TOML path for non-interactive setup.",
+            ),
+        ] = None,
+        storage_root: Annotated[
+            Path | None,
+            typer.Option(
+                "--storage-root",
+                help="Default storage root for non-interactive setup.",
+            ),
+        ] = None,
+        storage_name: Annotated[
+            str | None,
+            typer.Option(
+                "--name",
+                help="Default storage selector for non-interactive setup.",
+            ),
+        ] = None,
+        existing_action: Annotated[
+            setup_flow.ExistingSetupAction | None,
+            typer.Option(
+                "--existing-action",
+                help="How to handle an existing registry.",
+            ),
+        ] = None,
+    ) -> None:
         """Interactively configure the registry and default storage."""
-        run_config_setup(kit)
+        run_config_setup(
+            kit,
+            assume_yes=assume_yes,
+            config_file=config_file,
+            storage_root=storage_root,
+            storage_name=storage_name,
+            existing_action=existing_action,
+        )
 
     @app.command("set-default")
     def config_set_default_cmd(

@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, Literal
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.suggester import Suggester
 from textual.widgets import (
     Button,
     DataTable,
@@ -64,6 +63,13 @@ from apprc.config.storage_registry import (
     StorageRecord,
     StorageRegistry,
 )
+from apprc.config.tui_primitives import (
+    ButtonVariant,
+    ConfirmScreen,
+    PathInputScreen,
+    PathSuggester,
+    StorageNameScreen,
+)
 from apprc.config.tui_rendering import (
     FIELD_TABLE_COLUMNS,
     build_field_table_rows,
@@ -74,7 +80,6 @@ from apprc.config.tui_rendering import (
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit
 
-ButtonVariant = Literal["default", "primary", "success", "warning", "error"]
 StorageEntryKind = Literal["live", "missing", "archived"]
 
 
@@ -104,20 +109,6 @@ class _StorageListEntry:
 
 
 @dataclass(frozen=True, slots=True)
-class _PathInputResult:
-    """Path text returned by a modal input."""
-
-    path: Path
-
-
-@dataclass(frozen=True, slots=True)
-class _StorageNameResult:
-    """Storage name returned by the name modal."""
-
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
 class _ArchiveOptionsResult:
     """Archive options selected by the user."""
 
@@ -139,32 +130,6 @@ class _RemovalDefaultChoice:
 
     replacement_name: str | None = None
     create_default_path: Path | None = None
-
-
-class _PathSuggester(Suggester):
-    """Complete filesystem paths inside Textual input widgets."""
-
-    async def get_suggestion(self, value: str) -> str | None:
-        """Return the first matching filesystem path completion."""
-        if not value:
-            return None
-        text = value.strip()
-        expanded = Path(text).expanduser()
-        parent = expanded if text.endswith(os.sep) else expanded.parent
-        prefix = "" if text.endswith(os.sep) else expanded.name
-        if not parent.is_dir():
-            return None
-        for child in sorted(parent.iterdir(), key=lambda item: item.name):
-            if not child.name.startswith(prefix):
-                continue
-            suggestion = str(child)
-            if text.startswith("~"):
-                home = str(Path.home())
-                suggestion = suggestion.replace(home, "~", 1)
-            if child.is_dir():
-                suggestion += os.sep
-            return suggestion
-        return None
 
 
 class _ConfigValueEditScreen(ModalScreen[_ValueEditResult | None]):
@@ -295,234 +260,6 @@ class _ConfigValueEditScreen(ModalScreen[_ValueEditResult | None]):
         self.dismiss(None)
 
 
-class _PathInputScreen(ModalScreen[_PathInputResult | None]):
-    """Modal path input with filesystem suggestions."""
-
-    CSS = """
-    _PathInputScreen {
-        align: center middle;
-    }
-
-    #path-dialog {
-        width: 82;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-
-    #path-message {
-        margin: 1 0;
-    }
-
-    #path-button-row {
-        height: 3;
-        margin-top: 1;
-    }
-    """
-
-    BINDINGS = [("escape", "cancel", "Cancel")]
-
-    def __init__(
-        self,
-        *,
-        title: str,
-        message: str,
-        placeholder: str,
-        value: str = "",
-    ) -> None:
-        """Store input labels and the prefilled path text."""
-        super().__init__()
-        self.dialog_title = title
-        self.message = message
-        self.placeholder = placeholder
-        self.value = value
-
-    def compose(self) -> ComposeResult:
-        """Compose the path input dialog."""
-        with Vertical(id="path-dialog"):
-            yield Static(Text(self.dialog_title, style="bold"), id="path-title")
-            yield Static(self.message, id="path-message")
-            yield Input(
-                value=self.value,
-                placeholder=self.placeholder,
-                suggester=_PathSuggester(case_sensitive=True),
-                id="path-input",
-            )
-            with Horizontal(id="path-button-row"):
-                yield Button("Continue", variant="primary", id="path-continue")
-                yield Button("Cancel", id="path-cancel")
-
-    def on_mount(self) -> None:
-        """Focus the path input when the modal opens."""
-        self.query_one("#path-input", Input).focus()
-
-    def on_input_submitted(self, event: Any) -> None:
-        """Continue when Enter is submitted from the path input."""
-        if event.input.id == "path-input":
-            self._continue()
-
-    def on_button_pressed(self, event: Any) -> None:
-        """Handle dialog button clicks."""
-        if event.button.id == "path-continue":
-            self._continue()
-            return
-        if event.button.id == "path-cancel":
-            self.action_cancel()
-
-    def _continue(self) -> None:
-        """Dismiss with the typed path when it is not empty."""
-        value = self.query_one("#path-input", Input).value.strip()
-        if not value:
-            self.notify("Enter a path first.", severity="warning")
-            return
-        self.dismiss(_PathInputResult(path=Path(value)))
-
-    def action_cancel(self) -> None:
-        """Dismiss without choosing a path."""
-        self.dismiss(None)
-
-
-class _StorageNameScreen(ModalScreen[_StorageNameResult | None]):
-    """Modal storage-name input."""
-
-    CSS = """
-    _StorageNameScreen {
-        align: center middle;
-    }
-
-    #name-dialog {
-        width: 64;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-
-    #name-message {
-        margin: 1 0;
-    }
-
-    #name-button-row {
-        height: 3;
-        margin-top: 1;
-    }
-    """
-
-    BINDINGS = [("escape", "cancel", "Cancel")]
-
-    def __init__(self, *, default_name: str, message: str) -> None:
-        """Store the default storage name and helper text."""
-        super().__init__()
-        self.default_name = default_name
-        self.message = message
-
-    def compose(self) -> ComposeResult:
-        """Compose the storage name dialog."""
-        with Vertical(id="name-dialog"):
-            yield Static(Text("Storage name", style="bold"), id="name-title")
-            yield Static(self.message, id="name-message")
-            yield Input(value=self.default_name, id="name-input")
-            with Horizontal(id="name-button-row"):
-                yield Button("Continue", variant="primary", id="name-continue")
-                yield Button("Cancel", id="name-cancel")
-
-    def on_mount(self) -> None:
-        """Focus the name input when the modal opens."""
-        self.query_one("#name-input", Input).focus()
-
-    def on_input_submitted(self, event: Any) -> None:
-        """Continue when Enter is submitted from the name input."""
-        if event.input.id == "name-input":
-            self._continue()
-
-    def on_button_pressed(self, event: Any) -> None:
-        """Handle dialog button clicks."""
-        if event.button.id == "name-continue":
-            self._continue()
-            return
-        if event.button.id == "name-cancel":
-            self.action_cancel()
-
-    def _continue(self) -> None:
-        """Dismiss with the typed storage name when it is not empty."""
-        name = self.query_one("#name-input", Input).value.strip()
-        if not name:
-            self.notify("Enter a storage name first.", severity="warning")
-            return
-        self.dismiss(_StorageNameResult(name=name))
-
-    def action_cancel(self) -> None:
-        """Dismiss without choosing a name."""
-        self.dismiss(None)
-
-
-class _ConfirmScreen(ModalScreen[str | None]):
-    """Generic confirmation dialog with caller-defined actions."""
-
-    CSS = """
-    _ConfirmScreen {
-        align: center middle;
-    }
-
-    #confirm-dialog {
-        width: 82;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-
-    #confirm-message {
-        margin: 1 0;
-    }
-
-    #confirm-button-row {
-        height: auto;
-        margin-top: 1;
-    }
-    """
-
-    BINDINGS = [("escape", "cancel", "Cancel")]
-
-    def __init__(
-        self,
-        *,
-        title: str,
-        message: str,
-        actions: tuple[tuple[str, str, ButtonVariant], ...],
-    ) -> None:
-        """Store confirmation text and ``(id, label, variant)`` actions."""
-        super().__init__()
-        self.dialog_title = title
-        self.message = message
-        self.actions = actions
-
-    def compose(self) -> ComposeResult:
-        """Compose the confirmation dialog."""
-        with Vertical(id="confirm-dialog"):
-            yield Static(
-                Text(self.dialog_title, style="bold"),
-                id="confirm-title",
-            )
-            yield Static(self.message, id="confirm-message")
-            with Horizontal(id="confirm-button-row"):
-                for action_id, label, variant in self.actions:
-                    yield Button(label, variant=variant, id=action_id)
-                yield Button("Cancel", id="confirm-cancel")
-
-    def on_button_pressed(self, event: Any) -> None:
-        """Dismiss with the selected action id."""
-        if event.button.id == "confirm-cancel":
-            self.action_cancel()
-            return
-        self.dismiss(str(event.button.id))
-
-    def action_cancel(self) -> None:
-        """Dismiss without confirming."""
-        self.dismiss(None)
-
-
 class _ArchiveOptionsScreen(ModalScreen[_ArchiveOptionsResult | None]):
     """Modal for archive path and source deletion choice."""
 
@@ -578,7 +315,7 @@ class _ArchiveOptionsScreen(ModalScreen[_ArchiveOptionsResult | None]):
             yield Input(
                 value=str(self.default_archive),
                 placeholder="Archive path ending in *.apprc.tar.xz",
-                suggester=_PathSuggester(case_sensitive=True),
+                suggester=PathSuggester(case_sensitive=True),
                 id="archive-path-input",
             )
             with Horizontal(id="archive-button-row"):
@@ -685,7 +422,7 @@ class _DefaultPathScreen(ModalScreen[_DefaultPathResult | None]):
             yield Input(
                 value=str(self.default_path),
                 placeholder="Default storage directory",
-                suggester=_PathSuggester(case_sensitive=True),
+                suggester=PathSuggester(case_sensitive=True),
                 id="default-path-input",
             )
             with Horizontal(id="default-path-button-row"):
@@ -938,7 +675,7 @@ class ConfigEditorApp(App[None]):
         if self._require_kit() is None:
             return
         result = await self.push_screen_wait(
-            _PathInputScreen(
+            PathInputScreen(
                 title="New storage",
                 message=(
                     "Enter path to a directory or an archived *.apprc.tar.xz."
@@ -974,7 +711,7 @@ class ConfigEditorApp(App[None]):
         restored_name = default_name or storage_root_name_from_archive(archive)
         destination = default_destination or archive.parent / restored_name
         result = await self.push_screen_wait(
-            _PathInputScreen(
+            PathInputScreen(
                 title="Restore archived storage",
                 message="Enter destination directory for the restored storage.",
                 placeholder="Destination directory",
@@ -995,7 +732,7 @@ class ConfigEditorApp(App[None]):
             normalized_destination.iterdir()
         ):
             action = await self.push_screen_wait(
-                _ConfirmScreen(
+                ConfirmScreen(
                     title="Destination is not empty",
                     message=(
                         "Extracting the archive may overwrite files in:\n"
@@ -1033,7 +770,7 @@ class ConfigEditorApp(App[None]):
         if guarded_root is None:
             return
         name_result = await self.push_screen_wait(
-            _StorageNameScreen(
+            StorageNameScreen(
                 default_name=default_name,
                 message="Choose the registry name used by --storage.",
             )
@@ -1044,7 +781,7 @@ class ConfigEditorApp(App[None]):
         if name in self.registry.storages:
             existing = self.registry.selected(name)
             action = await self.push_screen_wait(
-                _ConfirmScreen(
+                ConfirmScreen(
                     title="Replace storage entry?",
                     message=(
                         f"{name!r} is already registered at:\n"
@@ -1078,7 +815,7 @@ class ConfigEditorApp(App[None]):
             parent = root.parent
             if parent.exists():
                 action = await self.push_screen_wait(
-                    _ConfirmScreen(
+                    ConfirmScreen(
                         title="Directory does not exist",
                         message=(
                             "Directory does not exist, create new directory "
@@ -1117,7 +854,7 @@ class ConfigEditorApp(App[None]):
                 f"{self.local_env_filename}?\n{resolved_root}"
             )
         action = await self.push_screen_wait(
-            _ConfirmScreen(
+            ConfirmScreen(
                 title="Confirm storage directory",
                 message=message,
                 actions=(("proceed", "Proceed", "warning"),),
@@ -1181,7 +918,7 @@ class ConfigEditorApp(App[None]):
             else (("unregister", "Unregister only", "warning"),)
         )
         action = await self.push_screen_wait(
-            _ConfirmScreen(
+            ConfirmScreen(
                 title="Delete storage",
                 message=message,
                 actions=actions,
@@ -1304,7 +1041,7 @@ class ConfigEditorApp(App[None]):
                 variant: ButtonVariant = "primary" if index == 0 else "default"
                 actions.append((f"default-{name}", name, variant))
             action = await self.push_screen_wait(
-                _ConfirmScreen(
+                ConfirmScreen(
                     title="Choose replacement default",
                     message=(
                         f"{removed_name!r} is the default storage. "

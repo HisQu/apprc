@@ -1,4 +1,4 @@
-"""Example-app config contract for the standalone ``apprc`` command."""
+"""Example App config contract for the standalone ``apprc`` command."""
 
 from __future__ import annotations
 
@@ -19,10 +19,10 @@ from apprc.config import (
 )
 
 
-EXAMPLE_APP_OWNER = ConfigOwner(
+APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
     key="app",
     title="App",
-    env_prefix="EXAMPLE_APP_",
+    env_prefix="APPRC_EXAMPLE_APP_",
     rc_path=("app",),
     fields=(
         config_field(
@@ -33,7 +33,7 @@ EXAMPLE_APP_OWNER = ConfigOwner(
             title="Storage root",
             explanation_short="Active storage root.",
             explanation_long=(
-                "Selected through the example-app storage registry and written "
+                "Selected through the Example App storage registry and written "
                 "automatically when a storage is registered."
             ),
             editable=False,
@@ -53,7 +53,7 @@ EXAMPLE_APP_OWNER = ConfigOwner(
             str,
             default="AUTO",
             title="Mode",
-            explanation="Operating mode selected for example-app commands.",
+            explanation="Operating mode selected for Example App commands.",
             choices=("AUTO", "MANUAL"),
         ),
         config_field(
@@ -96,38 +96,40 @@ EXAMPLE_APP_OWNER = ConfigOwner(
         ),
     ),
 )
-EXAMPLE_APP_OWNERS = (EXAMPLE_APP_OWNER,)
+APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
 
-EXAMPLE_APP_KIT = AppConfigKit(
-    app_name="example-app",
+APPRC_EXAMPLE_APP_KIT = AppConfigKit(
+    app_name="apprc_example_app",
     display_name="Example App",
-    config_package="example_app",
-    owners=EXAMPLE_APP_OWNERS,
-    storage_root_env_key="EXAMPLE_APP_D_STORAGE",
+    config_package="apprc_example_app",
+    owners=APPRC_EXAMPLE_APP_OWNERS,
+    storage_root_env_key="APPRC_EXAMPLE_APP_D_STORAGE",
     command_name="apprc",
-    registry_filename="example-app.toml",
-    local_env_filename=".env.example-app",
+    registry_filename="apprc_example_app.toml",
+    local_env_filename=".env.apprc_example_app",
 )
 
 
 @dataclass(slots=True)
-class ExampleAppState:
-    """Root CLI state for the standalone ``apprc`` example command."""
+class ApprcExampleAppState:
+    """Root CLI state for the standalone ``apprc`` Example App command."""
 
     env_bootstrap: EnvBootstrapResult | None = None
     storage: str | None = None
 
 
-def example_config_payload(state: ExampleAppState) -> dict[str, object]:
+def apprc_example_app_config_payload(
+    state: ApprcExampleAppState,
+) -> dict[str, object]:
     """Return bootstrap and config values for ``apprc config show``.
 
     :param state: Root command state populated during CLI bootstrap.
     :return: JSON-friendly payload with secret values redacted.
     """
     return {
-        "app_name": EXAMPLE_APP_KIT.spec.app_name,
-        "command_name": EXAMPLE_APP_KIT.spec.config_command_name(),
-        "display_name": EXAMPLE_APP_KIT.spec.display_name,
+        "app_name": APPRC_EXAMPLE_APP_KIT.spec.app_name,
+        "command_name": APPRC_EXAMPLE_APP_KIT.spec.config_command_name(),
+        "display_name": APPRC_EXAMPLE_APP_KIT.spec.display_name,
         "bootstrap": _bootstrap_payload(state.env_bootstrap),
         "config": _config_values(),
     }
@@ -142,7 +144,7 @@ def _bootstrap_payload(
             "shared_env": None,
             "local_env": None,
             "env_file": None,
-            "registry_path": str(EXAMPLE_APP_KIT.registry_path()),
+            "registry_path": str(APPRC_EXAMPLE_APP_KIT.registry_path()),
             "storage_name": None,
             "storage_root": None,
             "used_default_storage": False,
@@ -161,9 +163,9 @@ def _bootstrap_payload(
 
 
 def _config_values() -> dict[str, object]:
-    """Return current process config values declared by the example owner."""
+    """Return current process config values declared by the Example App owner."""
     values: dict[str, object] = {}
-    for owner, spec in iter_config_fields(EXAMPLE_APP_OWNERS):
+    for owner, spec in iter_config_fields(APPRC_EXAMPLE_APP_OWNERS):
         env_key = owner.env_key(spec.name)
         values[spec.name] = _display_value(spec, os.environ.get(env_key))
     return values
@@ -185,7 +187,7 @@ def _display_value(spec: ConfigField, raw_value: str | None) -> object:
 
 
 def _coerce_display_value(spec: ConfigField, raw_value: str) -> object:
-    """Coerce dotenv strings into the value type shown by example output."""
+    """Coerce dotenv strings into the value type shown by Example App output."""
     if spec.python_type is bool:
         normalized = raw_value.strip().lower()
         if normalized in {"1", "true", "yes", "y", "on"}:

@@ -31,6 +31,10 @@ name = "apprc"
 directory = { path = ".", editable = true }
 
 [[packages]]
+name = "apprc-example-app"
+directory = { path = "examples/apprc_example_app", editable = true }
+
+[[packages]]
 name = "argon2-cffi"
 version = "25.1.0"
 index = "https://pypi.org/simple"
@@ -340,10 +344,6 @@ version = "0.23"
 index = "https://pypi.org/simple"
 sdist = { url = "https://files.pythonhosted.org/packages/39/a4/5180d9afc57e8fca05601dd652bdff19604c218814037fe90ffc7625a50a/docutils-0.23.tar.gz", upload-time = 2026-05-27T17:41:06Z, size = 2303823, hashes = { sha256 = "746f5060322511280a1e50eb76846ed6bf2342984b2ac04dc42caa1a8d78799e" } }
 wheels = [{ url = "https://files.pythonhosted.org/packages/32/91/30151a39f7570f448ed84529390628a651d7f27c87d73c9b887f8189695e/docutils-0.23-py3-none-any.whl", upload-time = 2026-05-27T17:40:58Z, size = 634701, hashes = { sha256 = "25d013af9bf23bc1c7b2b093dff4208166c53a94786c9e447808335ef1185fea" } }]
-
-[[packages]]
-name = "example-app"
-directory = { path = "examples/example_app", editable = true }
 
 [[packages]]
 name = "execnet"

@@ -133,7 +133,7 @@ pytest
 ### Try The Dev-Only Example CLI
 
 The repository dev environment installs a local `apprc` command from the
-`examples/example_app` package. Use it to test setup, storage registries,
+`examples/apprc_example_app` package. Use it to test setup, storage registries,
 local dotenv overrides, JSON output, and the Textual editor before wiring
 AppRC into another project. The published `apprc` wheel does not install this
 command. `python -m apprc` is intentionally not a supported entrypoint.
@@ -152,14 +152,14 @@ After `uv sync --all-groups`, run:
 or use `uv run apprc ...` for the same commands.
 
 The executable is `apprc`, but its disposable example files live under the
-`example-app` namespace:
+`apprc_example_app` namespace:
 
 | Item | Default |
 |---|---|
-| Registry | `~/.config/example-app/example-app.toml` |
-| Default storage | `~/.local/share/example-app/example-app_stor-1` |
-| Local env | `~/.local/share/example-app/example-app_stor-1/.env.example-app` |
-| Registry override | `EXAMPLE_APP_CONFIG_FILE` |
+| Registry | `~/.config/apprc_example_app/apprc_example_app.toml` |
+| Default storage | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
+| Local env | `~/.local/share/apprc_example_app/apprc_example_app_stor-1/.env.apprc_example_app` |
+| Registry override | `APPRC_EXAMPLE_APP_CONFIG_FILE` |
 
 <br>
 

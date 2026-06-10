@@ -10,7 +10,10 @@ from apprc.config.tui_rendering import (
     possible_values_label,
     value_style,
 )
-from tests.support_config import EXAMPLE_OWNER, EXAMPLE_OWNERS
+from tests.support_config import (
+    APPRC_EXAMPLE_APP_OWNER,
+    APPRC_EXAMPLE_APP_OWNERS,
+)
 
 
 def _text_cell(row: FieldTableRow, index: int) -> Text:
@@ -27,13 +30,13 @@ def _text_cell(row: FieldTableRow, index: int) -> Text:
 
 def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     rows = build_field_table_rows(
-        owners=EXAMPLE_OWNERS,
+        owners=APPRC_EXAMPLE_APP_OWNERS,
         local_values={
-            "EXAMPLE_ACCESS_TOKEN": "secret",
-            "EXAMPLE_RETRY_COUNT": "9",
+            "APPRC_EXAMPLE_APP_ACCESS_TOKEN": "secret",
+            "APPRC_EXAMPLE_APP_RETRY_COUNT": "9",
         },
-        hidden_env_keys=frozenset({"EXAMPLE_D_STORAGE"}),
-        shell_env={"EXAMPLE_MODE": "MANUAL"},
+        hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_D_STORAGE"}),
+        shell_env={"APPRC_EXAMPLE_APP_MODE": "MANUAL"},
     )
     rows_by_key = {row.env_key: row for row in rows if row.env_key is not None}
 
@@ -46,21 +49,32 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
         "Default",
         "Explanation",
     )
-    assert "EXAMPLE_D_STORAGE" not in rows_by_key
-    assert str(rows_by_key["EXAMPLE_ACCESS_TOKEN"].cells[4]) == "<secret>"
-    assert _text_cell(rows_by_key["EXAMPLE_ACCESS_TOKEN"], 4).style == (
-        "dim italic"
+    assert "APPRC_EXAMPLE_APP_D_STORAGE" not in rows_by_key
+    assert (
+        str(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"].cells[4])
+        == "<secret>"
     )
-    assert _text_cell(rows_by_key["EXAMPLE_MODE"], 3).plain == "shell"
-    assert _text_cell(rows_by_key["EXAMPLE_MODE"], 5).style == "bold cyan"
-    assert _text_cell(rows_by_key["EXAMPLE_RETRY_COUNT"], 4).style == ("yellow")
-    assert _text_cell(rows_by_key["EXAMPLE_CACHE_DIR"], 5).style == "green"
+    assert _text_cell(
+        rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"], 4
+    ).style == ("dim italic")
+    assert _text_cell(rows_by_key["APPRC_EXAMPLE_APP_MODE"], 3).plain == "shell"
+    assert (
+        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_MODE"], 5).style
+        == "bold cyan"
+    )
+    assert _text_cell(
+        rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"], 4
+    ).style == ("yellow")
+    assert (
+        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"], 5).style
+        == "green"
+    )
 
 
 def test_tui_rendering_labels_match_field_metadata() -> None:
-    mode = EXAMPLE_OWNER.field("mode")
-    enabled = EXAMPLE_OWNER.field("enabled")
-    cache_dir = EXAMPLE_OWNER.field("cache_dir")
+    mode = APPRC_EXAMPLE_APP_OWNER.field("mode")
+    enabled = APPRC_EXAMPLE_APP_OWNER.field("enabled")
+    cache_dir = APPRC_EXAMPLE_APP_OWNER.field("cache_dir")
 
     assert value_style(mode) == "bold cyan"
     assert field_type_label(cache_dir) == "Path"

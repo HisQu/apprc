@@ -1,4 +1,4 @@
-"""Shared example config declarations for AppRC tests.
+"""Shared Example App config declarations for AppRC tests.
 
 The production package expects applications to provide their own config owner
 inventory. Tests use this tiny fake application so storage, dotenv, CLI, and
@@ -18,10 +18,10 @@ from apprc.config import (
     config_field,
 )
 
-EXAMPLE_OWNER = ConfigOwner(
+APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
     key="app",
     title="App",
-    env_prefix="EXAMPLE_",
+    env_prefix="APPRC_EXAMPLE_APP_",
     rc_path=("app",),
     fields=(
         config_field(
@@ -49,7 +49,7 @@ EXAMPLE_OWNER = ConfigOwner(
             str,
             default="AUTO",
             title="Mode",
-            explanation="Operating mode used by example-app commands.",
+            explanation="Operating mode used by Example App commands.",
             choices=("AUTO", "MANUAL"),
         ),
         config_field(
@@ -92,39 +92,39 @@ EXAMPLE_OWNER = ConfigOwner(
         ),
     ),
 )
-EXAMPLE_OWNERS = (EXAMPLE_OWNER,)
+APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
 
 
 @dataclass(slots=True)
-class ExampleConfigState:
+class ApprcExampleAppConfigState:
     """Root CLI state used by generated config app tests."""
 
     env_bootstrap: EnvBootstrapResult | None
     storage: str | None = None
 
 
-def build_example_kit() -> AppConfigKit:
+def build_apprc_example_app_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that behaves like a real application."""
     return AppConfigKit(
-        app_name="example",
-        display_name="Example",
+        app_name="apprc_example_app",
+        display_name="Example App",
         config_package="apprc.config",
-        owners=EXAMPLE_OWNERS,
-        storage_root_env_key="EXAMPLE_D_STORAGE",
-        registry_filename="example.toml",
-        local_env_filename=".env.example",
+        owners=APPRC_EXAMPLE_APP_OWNERS,
+        storage_root_env_key="APPRC_EXAMPLE_APP_D_STORAGE",
+        registry_filename="apprc_example_app.toml",
+        local_env_filename=".env.apprc_example_app",
     )
 
 
-def example_state(
+def apprc_example_app_state(
     kit: AppConfigKit,
     storage_root: Path,
-) -> ExampleConfigState:
+) -> ApprcExampleAppConfigState:
     """Return generic CLI state with one active storage root."""
-    return ExampleConfigState(
+    return ApprcExampleAppConfigState(
         env_bootstrap=EnvBootstrapResult(
             shared_env=None,
-            local_env=storage_root / ".env.example",
+            local_env=storage_root / ".env.apprc_example_app",
             env_file=None,
             registry_path=kit.registry_path(),
             storage_name="alpha",

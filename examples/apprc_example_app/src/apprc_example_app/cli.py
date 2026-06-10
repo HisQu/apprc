@@ -1,4 +1,4 @@
-"""Standalone example CLI for exercising AppRC config workflows."""
+"""Standalone Example App CLI for exercising AppRC config workflows."""
 
 from __future__ import annotations
 
@@ -17,10 +17,10 @@ from apprc.cli import (
     config_request_skips_bootstrap,
 )
 from apprc.logging import setup_logging
-from example_app import (
-    EXAMPLE_APP_KIT,
-    ExampleAppState,
-    example_config_payload,
+from apprc_example_app import (
+    APPRC_EXAMPLE_APP_KIT,
+    ApprcExampleAppState,
+    apprc_example_app_config_payload,
 )
 
 
@@ -64,7 +64,7 @@ def root_cmd(
         str | None,
         typer.Option(
             "--storage",
-            help="Registered example-app storage selector to use for this command.",
+            help="Registered Example App storage selector to use for this command.",
         ),
     ] = None,
     log_level: Annotated[
@@ -75,13 +75,13 @@ def root_cmd(
         ),
     ] = None,
 ) -> None:
-    """Bootstrap example-app config state for commands that need runtime values."""
-    state = ExampleAppState(storage=storage)
+    """Bootstrap Example App config state for commands that need runtime values."""
+    state = ApprcExampleAppState(storage=storage)
     ctx.obj = state
     if _config_request_skips_runtime_bootstrap():
         return
     state.env_bootstrap = bootstrap_cli_env(
-        EXAMPLE_APP_KIT,
+        APPRC_EXAMPLE_APP_KIT,
         env_file=env_file,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         load_dotenv_layers=not skip_dotenv_layers,
@@ -102,15 +102,15 @@ def _config_request_skips_runtime_bootstrap() -> bool:
     return config_request_skips_bootstrap(config_args)
 
 
-config_app = EXAMPLE_APP_KIT.typer_app(
-    state_type=ExampleAppState,
-    runtime_payload=example_config_payload,
+config_app = APPRC_EXAMPLE_APP_KIT.typer_app(
+    state_type=ApprcExampleAppState,
+    runtime_payload=apprc_example_app_config_payload,
 )
 app.add_typer(config_app, name="config")
 
 
 def main() -> None:
-    """Run the standalone AppRC example CLI."""
+    """Run the standalone AppRC Example App CLI."""
     app()
 
 

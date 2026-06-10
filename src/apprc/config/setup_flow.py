@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-import os
 import shutil
 from dataclasses import dataclass
 from enum import Enum
@@ -77,30 +76,19 @@ def find_existing_registry_path(kit: "AppConfigKit") -> Path | None:
     """Return the registry path setup should treat as already configured.
 
     :param kit: Application config facade.
-    :return: Existing active/default registry path, or ``None``.
+    :return: Existing env-selected registry path, or ``None``.
     """
-    active_path = normalized_config_file_path(kit.registry_path())
-    if active_path.is_file():
-        return active_path
-
-    default_path = normalized_config_file_path(kit.default_registry_path())
-    if not same_path(active_path, default_path) and default_path.is_file():
-        return default_path
+    active_path = kit.optional_registry_path()
+    if active_path is not None and active_path.is_file():
+        return normalized_config_file_path(active_path)
     return None
 
 
-def default_existing_setup_action(
-    registry_path: Path,
-    active_path: Path,
-) -> ExistingSetupAction:
+def default_existing_setup_action() -> ExistingSetupAction:
     """Return the safest existing-registry action for default setup.
 
-    :param registry_path: Existing registry found by setup.
-    :param active_path: Registry path selected for this process.
-    :return: ``MOVE`` when an env-selected target differs, else ``KEEP``.
+    :return: ``KEEP`` because setup no longer has an automatic move target.
     """
-    if not same_path(registry_path, active_path):
-        return ExistingSetupAction.MOVE
     return ExistingSetupAction.KEEP
 
 
@@ -121,33 +109,34 @@ def prepare_setup_registry(
     :return: Selected registry and action metadata.
     :raises ConfigSetupError: If the requested path cannot be rediscovered.
     """
-    target_path = normalized_config_file_path(
-        config_file_path or kit.registry_path()
+    target_path = setup_registry_path(kit, config_file_path)
+    env_existing_path = find_existing_registry_path(kit)
+    existing_path = _setup_existing_registry_path(
+        target_path=target_path,
+        env_existing_path=env_existing_path,
+        explicit_config_file=config_file_path is not None,
+        existing_action=existing_action,
     )
-    existing_path = find_existing_registry_path(kit)
     if existing_path is None:
-        require_registry_path_available(kit, target_path)
+        require_registry_path_available(target_path)
         return ConfigSetupResult(registry=load_registry(kit, target_path))
 
-    action = existing_action or default_existing_setup_action(
-        existing_path,
-        normalized_config_file_path(kit.registry_path()),
-    )
+    action = existing_action or default_existing_setup_action()
     if action == ExistingSetupAction.KEEP:
-        require_registry_path_available(kit, existing_path)
+        require_registry_path_available(existing_path)
         return ConfigSetupResult(
             registry=load_registry(kit, existing_path),
             existing_action=action,
         )
     if action == ExistingSetupAction.RESET:
-        remove_registry_config_state(kit, existing_path)
-        require_registry_path_available(kit, target_path)
+        remove_registry_config_state(existing_path)
+        require_registry_path_available(target_path)
         return ConfigSetupResult(
             registry=load_registry(kit, target_path),
             existing_action=action,
         )
 
-    require_registry_path_available(kit, target_path)
+    require_registry_path_available(target_path)
     registry = move_existing_registry(
         kit,
         source_path=existing_path,
@@ -155,6 +144,33 @@ def prepare_setup_registry(
         replace_existing_file=replace_existing_file,
     )
     return ConfigSetupResult(registry=registry, existing_action=action)
+
+
+def _setup_existing_registry_path(
+    *,
+    target_path: Path,
+    env_existing_path: Path | None,
+    explicit_config_file: bool,
+    existing_action: ExistingSetupAction | None,
+) -> Path | None:
+    """Return the existing registry setup should operate on.
+
+    :param target_path: Registry path selected for this setup run.
+    :param env_existing_path: Existing env-selected registry, if any.
+    :param explicit_config_file: Whether ``--config-file`` selected the target.
+    :param existing_action: Optional action for an existing env registry.
+    :return: Existing registry path, or ``None``.
+    """
+    if target_path.is_file():
+        return target_path
+    if not explicit_config_file:
+        return env_existing_path
+    if existing_action in {
+        ExistingSetupAction.MOVE,
+        ExistingSetupAction.RESET,
+    }:
+        return env_existing_path
+    return None
 
 
 def ensure_default_storage(
@@ -259,58 +275,55 @@ def validate_storage_root_for_setup(
     )
 
 
-def require_registry_path_available(
+def setup_registry_path(
     kit: "AppConfigKit",
-    registry_path: Path,
-) -> None:
-    """Reject config-file paths future commands cannot rediscover.
+    config_file_path: Path | None,
+) -> Path:
+    """Return the setup target path from explicit input or the env.
 
     :param kit: Application config facade.
-    :param registry_path: Requested registry path.
-    :raises ConfigSetupError: If the env override does not select the path.
+    :param config_file_path: Optional setup ``--config-file`` value.
+    :return: Normalized registry path setup should write.
+    :raises ConfigSetupError: If no path was provided or exported.
     """
-    default_path = normalized_config_file_path(kit.default_registry_path())
-    if same_path(registry_path, default_path):
-        raw_override = os.environ.get(kit.config_file_env_key(), "").strip()
-        if raw_override and not same_path(raw_override, default_path):
-            raise ConfigSetupError(
-                "The config-file override is active.\n"
-                "Unset it before using the automatic path:\n"
-                f"unset {kit.config_file_env_key()}",
-                param_hint="CONFIG_FILE",
-                exit_code=1,
-            )
-        return
-
-    if env_path_matches(kit, registry_path):
-        return
-
+    if config_file_path is not None:
+        return normalized_config_file_path(config_file_path)
+    active_path = kit.optional_registry_path()
+    if active_path is not None:
+        return normalized_config_file_path(active_path)
     raise ConfigSetupError(
-        "Custom config-file paths require an environment variable.\n"
-        "Run setup again with this variable exported so future commands use "
-        "the same file:\n"
-        f"{export_config_file_command(kit, registry_path)}",
-        param_hint="CONFIG_FILE",
-        exit_code=1,
+        f"{kit.spec.display_name} setup needs a config file path because "
+        f"{kit.config_file_env_key()} is not set.\n"
+        "Run setup again with an explicit TOML path:\n"
+        f"{kit.spec.config_command_name()} config setup --yes "
+        f"--config-file /absolute/path/to/{kit.spec.registry_filename}",
+        param_hint="--config-file",
     )
 
 
-def remove_registry_config_state(
-    kit: "AppConfigKit",
+def require_registry_path_available(
     registry_path: Path,
 ) -> None:
+    """Reject config-file targets that cannot be written as files.
+
+    :param registry_path: Requested registry path.
+    :raises ConfigSetupError: If the path is an existing directory.
+    """
+    path = normalized_config_file_path(registry_path)
+    if not path.exists() or path.is_file():
+        return
+    raise ConfigSetupError(
+        f"Config file target is not a file: {path}",
+        param_hint="CONFIG_FILE",
+    )
+
+
+def remove_registry_config_state(registry_path: Path) -> None:
     """Delete only config files, never registered storage roots.
 
-    :param kit: Application config facade.
     :param registry_path: Registry file to remove.
     """
-    default_dir = normalized_config_file_path(
-        kit.default_registry_path()
-    ).parent
     resolved_registry_path = normalized_config_file_path(registry_path)
-    if resolved_registry_path.is_relative_to(default_dir):
-        shutil.rmtree(default_dir, ignore_errors=True)
-        return
     resolved_registry_path.unlink(missing_ok=True)
 
 
@@ -369,19 +382,6 @@ def load_registry(
             str(exc),
             param_hint=str(registry_path),
         ) from exc
-
-
-def env_path_matches(kit: "AppConfigKit", registry_path: Path) -> bool:
-    """Return whether the override env var points at ``registry_path``.
-
-    :param kit: Application config facade.
-    :param registry_path: Registry path to compare.
-    :return: Whether the active env override matches the path.
-    """
-    raw_override = os.environ.get(kit.config_file_env_key(), "").strip()
-    if not raw_override:
-        return False
-    return same_path(raw_override, registry_path)
 
 
 def same_path(left: str | Path, right: str | Path) -> bool:

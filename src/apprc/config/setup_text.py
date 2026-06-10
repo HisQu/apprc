@@ -18,13 +18,11 @@ if TYPE_CHECKING:
 class ConfigSetupPaths:
     """Important registry paths shown during setup.
 
-    :param automatic: Default config file path before environment overrides.
-    :param active: Config file path selected for this process.
-    :param env_key: Environment variable that overrides the config file path.
+    :param active: Config file path selected by the environment.
+    :param env_key: Environment variable that selects the config file path.
     """
 
-    automatic: Path
-    active: Path
+    active: Path | None
     env_key: str
 
 
@@ -35,8 +33,7 @@ def setup_paths(kit: "AppConfigKit") -> ConfigSetupPaths:
     :return: Paths and env var displayed by setup UIs.
     """
     return ConfigSetupPaths(
-        automatic=_normalized_config_file_path(kit.default_registry_path()),
-        active=_normalized_config_file_path(kit.registry_path()),
+        active=kit.optional_registry_path(),
         env_key=kit.config_file_env_key(),
     )
 
@@ -48,32 +45,42 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     :return: Host-app-specific setup explanation.
     """
     paths = setup_paths(kit)
+    active_text = str(paths.active) if paths.active is not None else "<not set>"
     return (
         f"{kit.spec.display_name} uses one small TOML config file to remember "
         "named storage directories and which storage is the default. The "
         "config file does not contain your storage data; it only points to "
         "storage roots.\n\n"
-        f"Automatic config file:\n{paths.automatic}\n\n"
-        f"Override variable:\n{paths.env_key}\n\n"
-        f"Active config file for this process:\n{paths.active}"
+        f"{kit.spec.display_name} expects this variable to point at that "
+        f"TOML file:\n{paths.env_key}\n\n"
+        "If it is not set yet, setup will ask where the new or existing "
+        f"{kit.spec.registry_filename} file should live.\n\n"
+        f"Current value:\n{active_text}"
     )
 
 
-def config_file_step_text(kit: "AppConfigKit", suggested: Path) -> str:
+def config_file_step_text(
+    kit: "AppConfigKit",
+    suggested: Path | None,
+) -> str:
     """Return the explanation shown before choosing a registry path.
 
     :param kit: Application config facade.
-    :param suggested: Prefilled config file path.
+    :param suggested: Prefilled config file path, if one is known.
     :return: Plain text for CLI and Textual setup UIs.
     """
+    suggested_text = (
+        f"\n\nCurrent path:\n{suggested}" if suggested is not None else ""
+    )
     return (
         "This TOML file stores the storage registry: storage names, storage "
-        "root paths, and the default storage. It is small and safe to keep in "
-        "your normal per-user config directory.\n\n"
-        f"Suggested path:\n{suggested}\n\n"
-        f"To use any custom path, start the command with "
-        f"{kit.config_file_env_key()} pointing at that exact file. "
-        f"{kit.spec.display_name} setup does not edit shell startup files."
+        "root paths, and the default storage.\n\n"
+        f"{kit.spec.display_name} expects {kit.config_file_env_key()} to point "
+        f"at this file in future shells, so setup needs a path to a new or "
+        f"existing {kit.spec.registry_filename} file."
+        f"{suggested_text}\n\n"
+        f"{kit.spec.display_name} setup prints the export command when it "
+        "finishes, but it does not edit shell startup files."
     )
 
 
@@ -144,8 +151,8 @@ def reset_warning_text(
     """
     lines = [
         "Storage directories are left untouched. Only the config file is "
-        "removed. When it lives below the automatic config directory, that "
-        f"{kit.spec.display_name} config directory is removed too."
+        f"removed. {kit.spec.display_name} storage directories are not "
+        "deleted."
     ]
     if registry.storages:
         lines.insert(
@@ -162,6 +169,7 @@ def storage_root_reuse_text(
     *,
     storage_name: str,
     make_default: bool,
+    registry_path: Path | None = None,
 ) -> str:
     """Return the warning for reusing a non-empty storage root.
 
@@ -169,8 +177,10 @@ def storage_root_reuse_text(
     :param storage_root: Existing non-empty storage directory.
     :param storage_name: Registry selector that will point at the directory.
     :param make_default: Whether the selector will become the default.
+    :param registry_path: Registry file that will be created or updated.
     :return: Plain text warning.
     """
+    active_registry_path = registry_path or kit.registry_path()
     default_line = (
         f"\n\nDefault storage: {storage_name}" if make_default else ""
     )
@@ -181,7 +191,7 @@ def storage_root_reuse_text(
         f"{kit.spec.display_name} storage {storage_name!r}.\n\n"
         "Config files to create or update:\n"
         f"storage-local env: {storage_root / kit.spec.local_env_filename}\n"
-        f"user registry: {kit.registry_path()}\n\n"
+        f"user registry: {active_registry_path}\n\n"
         "No existing files will be deleted, moved, or overwritten."
         f"{default_line}"
     )
@@ -200,11 +210,10 @@ def next_steps_text(kit: "AppConfigKit", registry: StorageRegistry) -> str:
         f"{command_name} config show",
         f"{command_name} config doctor",
     ]
-    if not _same_path(registry.path, kit.default_registry_path()):
-        lines.append(
-            "Keep this variable exported for future shells:\n"
-            f"{export_config_file_command(kit, registry.path)}"
-        )
+    lines.append(
+        "Keep this variable exported for future shells:\n"
+        f"{export_config_file_command(kit, registry.path)}"
+    )
     return "\n".join(lines)
 
 
@@ -223,13 +232,6 @@ def export_config_file_command(
         '\\"',
     )
     return f'export {kit.config_file_env_key()}="{path_text}"'
-
-
-def _same_path(left: str | Path, right: str | Path) -> bool:
-    """Return whether two path spellings identify the same filesystem path."""
-    return _normalized_config_file_path(left) == _normalized_config_file_path(
-        right
-    )
 
 
 def _normalized_config_file_path(path: str | Path) -> Path:

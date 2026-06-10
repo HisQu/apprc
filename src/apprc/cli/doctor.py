@@ -11,6 +11,7 @@ from typing import Any
 import typer
 
 # == Internal ================================
+from apprc.config.install_state import ConfigInstallState
 from apprc.config.kit import AppConfigKit
 
 
@@ -26,19 +27,18 @@ def config_command_text(kit: AppConfigKit, action: str) -> str:
 
 def config_setup_message(kit: AppConfigKit) -> str:
     """Return setup text shown when no storage is registered."""
-    init_action = (
-        "init /absolute/path/to/storage-root "
-        f"--name {kit.default_storage_name()} --default"
-    )
+    setup_action = f"setup --yes --config-file /absolute/path/to/{kit.spec.registry_filename}"
     return (
-        f"No {kit.spec.display_name} storage is registered yet.\n\n"
-        "Create a default storage:\n"
-        f"  {config_command_text(kit, init_action)}\n\n"
+        f"No {kit.spec.display_name} config file is installed yet.\n\n"
+        f"{kit.spec.display_name} expects {kit.config_file_env_key()} to point "
+        "at its TOML config file. Choose where that file should live, then "
+        "run setup:\n"
+        f"  {config_command_text(kit, setup_action)}\n\n"
         "Then inspect the setup:\n"
         f"  {config_command_text(kit, 'doctor')}\n"
         f"  {config_command_text(kit, 'show')}\n\n"
-        "This creates:\n"
-        f"  ~/.config/{kit.spec.app_name}/{kit.spec.registry_filename}\n"
+        "Setup creates:\n"
+        f"  /absolute/path/to/{kit.spec.registry_filename}\n"
         f"  /absolute/path/to/storage-root/{kit.spec.local_env_filename}"
     )
 
@@ -47,14 +47,23 @@ def build_config_doctor_payload(
     kit: AppConfigKit,
     *,
     storage_name: str | None,
+    registry_path: Path | None = None,
 ) -> dict[str, Any]:
     """Return local setup diagnostics for one app's config registry.
 
     :param kit: Application config facade.
     :param storage_name: Optional registry storage selected by ``--storage``.
+    :param registry_path: Optional explicit registry path used by setup.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    registry_path = kit.registry_path()
+    registry_env_key = kit.config_file_env_key()
+    raw_registry_env_value = os.environ.get(registry_env_key, "").strip()
+    registry_env_value = raw_registry_env_value or None
+    active_registry_path = (
+        Path(registry_path).expanduser().resolve()
+        if registry_path is not None
+        else kit.optional_registry_path()
+    )
     issues: list[str] = []
     selected_storage: str | None = None
     selected_storage_source: str | None = None
@@ -62,41 +71,59 @@ def build_config_doctor_payload(
     registry_error: str | None = None
     storage_count = 0
     default_storage: str | None = None
+    registry_exists = (
+        active_registry_path.is_file()
+        if active_registry_path is not None
+        else False
+    )
+    install_state = ConfigInstallState.NOT_INSTALLED
 
-    try:
-        registry = kit.load_registry()
-    except ValueError as exc:
-        registry_error = str(exc)
-        issues.append(f"Storage registry is invalid: {registry_error}")
+    if active_registry_path is None:
+        issues.append(
+            f"{registry_env_key} is not set. Run "
+            f"{config_command_text(kit, f'setup --yes --config-file /absolute/path/to/{kit.spec.registry_filename}')}"
+            " and keep the printed export command in your shell setup."
+        )
+    elif not registry_exists:
+        issues.append(f"Config file does not exist: {active_registry_path}")
     else:
-        storage_count = len(registry.storages)
-        default_storage = registry.default_storage
-        env_storage = os.environ.get(kit.spec.storage_root_env_key)
-        if storage_name is not None:
-            selected_storage = storage_name
-            selected_storage_source = "--storage"
-            try:
-                selected_storage_root = registry.selected(storage_name).root
-            except ValueError as exc:
-                issues.append(str(exc))
-        elif env_storage:
-            selected_storage_source = kit.spec.storage_root_env_key
-            selected_storage_root = Path(env_storage).expanduser()
-        elif registry.default_storage is not None:
-            selected_storage = registry.default_storage
-            selected_storage_source = "default_storage"
-            selected_storage_root = registry.selected(
-                registry.default_storage
-            ).root
-        elif registry.storages:
-            issues.append(
-                f"No default {kit.spec.display_name} storage is configured. "
-                f"Run {config_command_text(kit, 'set-default NAME')}."
-            )
+        install_state = ConfigInstallState.INSTALLED_UNHEALTHY
+        try:
+            registry = kit.load_registry(path=active_registry_path)
+        except ValueError as exc:
+            registry_error = str(exc)
+            issues.append(f"Storage registry is invalid: {registry_error}")
         else:
-            issues.append(
-                f"No {kit.spec.display_name} storage is registered yet."
-            )
+            storage_count = len(registry.storages)
+            default_storage = registry.default_storage
+            env_storage = os.environ.get(kit.spec.storage_root_env_key)
+            if not registry.storages:
+                issues.append(
+                    f"No {kit.spec.display_name} storage is registered yet."
+                )
+            elif registry.default_storage is None:
+                issues.append(
+                    f"No default {kit.spec.display_name} storage is "
+                    "configured. "
+                    f"Run {config_command_text(kit, 'set-default NAME')}."
+                )
+
+            if storage_name is not None:
+                selected_storage = storage_name
+                selected_storage_source = "--storage"
+                try:
+                    selected_storage_root = registry.selected(storage_name).root
+                except ValueError as exc:
+                    issues.append(str(exc))
+            elif env_storage:
+                selected_storage_source = kit.spec.storage_root_env_key
+                selected_storage_root = Path(env_storage).expanduser()
+            elif registry.default_storage is not None:
+                selected_storage = registry.default_storage
+                selected_storage_source = "default_storage"
+                selected_storage_root = registry.selected(
+                    registry.default_storage
+                ).root
 
     local_env = (
         selected_storage_root / kit.spec.local_env_filename
@@ -114,11 +141,26 @@ def build_config_doctor_payload(
     if local_env is not None and not local_env_exists:
         issues.append(f"Storage local env file does not exist: {local_env}")
 
+    if registry_exists and not issues:
+        install_state = ConfigInstallState.INSTALLED_HEALTHY
+    elif registry_exists:
+        install_state = ConfigInstallState.INSTALLED_UNHEALTHY
+
+    healthy = install_state == ConfigInstallState.INSTALLED_HEALTHY
     return {
-        "ok": not issues,
-        "registry_path": str(registry_path),
-        "registry_exists": registry_path.is_file(),
-        "registry_parse_ok": registry_error is None,
+        "ok": healthy,
+        "install_state": install_state.value,
+        "installed": install_state != ConfigInstallState.NOT_INSTALLED,
+        "healthy": healthy,
+        "registry_env_key": registry_env_key,
+        "registry_env_value": registry_env_value,
+        "registry_path": (
+            str(active_registry_path)
+            if active_registry_path is not None
+            else None
+        ),
+        "registry_exists": registry_exists,
+        "registry_parse_ok": registry_exists and registry_error is None,
         "registry_error": registry_error,
         "storage_count": storage_count,
         "default_storage": default_storage,
@@ -140,8 +182,7 @@ def build_config_doctor_payload(
         else [
             config_command_text(
                 kit,
-                "init /absolute/path/to/storage-root "
-                f"--name {kit.default_storage_name()} --default",
+                f"setup --yes --config-file /absolute/path/to/{kit.spec.registry_filename}",
             ),
             config_command_text(kit, "doctor"),
             config_command_text(kit, "show"),
@@ -154,10 +195,21 @@ def print_config_doctor(
     payload: dict[str, Any],
 ) -> None:
     """Print a human-readable ``config doctor`` report."""
-    status = "ok" if payload["ok"] else "needs setup"
+    status_labels = {
+        ConfigInstallState.NOT_INSTALLED.value: "not installed",
+        ConfigInstallState.INSTALLED_UNHEALTHY.value: (
+            "installed but unhealthy"
+        ),
+        ConfigInstallState.INSTALLED_HEALTHY.value: "installed and healthy",
+    }
+    status = status_labels[str(payload["install_state"])]
     typer.echo(f"{kit.spec.display_name} config doctor: {status}")
     typer.echo("")
-    typer.echo(f"registry_path: {payload['registry_path']}")
+    typer.echo(f"registry_env_key: {payload['registry_env_key']}")
+    typer.echo(
+        f"registry_env_value: {payload['registry_env_value'] or '<none>'}"
+    )
+    typer.echo(f"registry_path: {payload['registry_path'] or '<none>'}")
     typer.echo(f"registry_exists: {payload['registry_exists']}")
     typer.echo(f"registry_parse_ok: {payload['registry_parse_ok']}")
     typer.echo(f"storage_count: {payload['storage_count']}")

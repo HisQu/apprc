@@ -13,7 +13,7 @@ from apprc.config.schema import ConfigOwner
 from apprc.config.storage_registry import (
     config_file_env_key,
     configured_storage_registry_path,
-    default_storage_registry_path,
+    optional_storage_registry_path,
 )
 
 
@@ -25,7 +25,7 @@ class AppConfigSpec:
     storage registry path, dotenv bootstrap spec, local-env behavior, config
     doctor diagnostics, and optional config CLI from it.
 
-    :param app_name: Lowercase application name used below ``~/.config``.
+    :param app_name: Lowercase application name used in env var derivation.
     :param display_name: Human-readable application name for terminal output.
     :param config_package: Package containing the packaged shared dotenv file.
     :param owners: Config owner inventory for editable and documented fields.
@@ -54,22 +54,6 @@ class AppConfigSpec:
         """Return the env var that overrides the registry file path."""
         return config_file_env_key(self.app_name)
 
-    def default_registry_path(
-        self,
-        proc_env: Mapping[str, str] | None = None,
-    ) -> Path:
-        """Return the default user storage registry path.
-
-        :param proc_env: Optional environment mapping for tests.
-        :return: ``$XDG_CONFIG_HOME/<app>/<registry_filename>`` or the
-            ``~/.config`` fallback.
-        """
-        return default_storage_registry_path(
-            app_name=self.app_name,
-            registry_filename=self.registry_filename,
-            proc_env=proc_env,
-        )
-
     def registry_path(
         self,
         proc_env: Mapping[str, str] | None = None,
@@ -77,11 +61,26 @@ class AppConfigSpec:
         """Return the active user storage registry path.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: ``<APP>_CONFIG_FILE`` when set, otherwise the default path.
+        :return: ``<APP>_CONFIG_FILE`` when set.
+        :raises ConfigFileEnvError: If the config-file env var is missing.
         """
         return configured_storage_registry_path(
             app_name=self.app_name,
             registry_filename=self.registry_filename,
+            proc_env=proc_env,
+        )
+
+    def optional_registry_path(
+        self,
+        proc_env: Mapping[str, str] | None = None,
+    ) -> Path | None:
+        """Return the env-selected registry path when it is configured.
+
+        :param proc_env: Optional environment mapping for tests.
+        :return: ``<APP>_CONFIG_FILE`` path, or ``None``.
+        """
+        return optional_storage_registry_path(
+            app_name=self.app_name,
             proc_env=proc_env,
         )
 

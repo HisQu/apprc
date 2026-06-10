@@ -139,12 +139,13 @@ def _bootstrap_payload(
     bootstrap: EnvBootstrapResult | None,
 ) -> dict[str, object]:
     """Return JSON-friendly bootstrap state for the current invocation."""
+    registry_path = APPRC_EXAMPLE_APP_KIT.optional_registry_path()
     if bootstrap is None:
         return {
             "shared_env": None,
             "local_env": None,
             "env_file": None,
-            "registry_path": str(APPRC_EXAMPLE_APP_KIT.registry_path()),
+            "registry_path": str(registry_path) if registry_path else None,
             "storage_name": None,
             "storage_root": None,
             "used_default_storage": False,

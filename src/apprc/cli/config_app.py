@@ -43,7 +43,7 @@ from apprc.cli.typer_utils import (
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.paths import StorageRootPathError
-from apprc.config.storage_registry import StorageRegistry
+from apprc.config.storage_registry import ConfigFileEnvError, StorageRegistry
 import apprc.config.setup_flow as setup_flow
 
 StateT = TypeVar("StateT")
@@ -111,6 +111,11 @@ def _load_config_registry_for_cli(kit: AppConfigKit) -> StorageRegistry:
     """Load the registry and raise Typer's parse-error shape on failure."""
     try:
         return kit.load_registry()
+    except ConfigFileEnvError as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint=kit.config_file_env_key(),
+        ) from exc
     except ValueError as exc:
         raise typer.BadParameter(
             str(exc),
@@ -336,6 +341,13 @@ def build_config_typer_app(
         ] = False,
     ) -> None:
         """Register one storage root and create its local env file."""
+        try:
+            kit.registry_path()
+        except ConfigFileEnvError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=kit.config_file_env_key(),
+            ) from exc
         normalized_root = guard_storage_root_init(
             kit,
             storage_root,
@@ -349,6 +361,11 @@ def build_config_typer_app(
                 root=normalized_root,
                 make_default=make_default,
             )
+        except ConfigFileEnvError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=kit.config_file_env_key(),
+            ) from exc
         except StorageRootPathError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -426,6 +443,11 @@ def build_config_typer_app(
         try:
             old_default = kit.load_registry().default_storage
             registry = kit.set_default_storage(name=name)
+        except ConfigFileEnvError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=kit.config_file_env_key(),
+            ) from exc
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="NAME") from exc
         typer.echo(f"previous_default_storage: {old_default}")

@@ -12,6 +12,8 @@ from typer.testing import CliRunner
 from apprc.cli.config_app import config_request_skips_bootstrap
 from apprc.cli.doctor import build_config_doctor_payload, config_setup_message
 from apprc.config import (
+    ConfigFileEnvError,
+    ConfigInstallState,
     ConfigOwner,
     config_field,
 )
@@ -21,6 +23,7 @@ from tests.support_config import (
     ApprcExampleAppConfigState,
     build_apprc_example_app_kit,
     apprc_example_app_state,
+    set_apprc_example_app_config_file,
 )
 
 
@@ -61,11 +64,137 @@ def test_config_owner_runtime_cls_is_optional() -> None:
     assert legacy_owner.runtime_cls is object
 
 
+def test_kit_registry_path_requires_config_file_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_CONFIG_FILE", raising=False)
+    kit = build_apprc_example_app_kit()
+
+    with pytest.raises(ConfigFileEnvError) as exc_info:
+        kit.registry_path()
+
+    message = str(exc_info.value)
+    assert "APPRC_EXAMPLE_APP_CONFIG_FILE is required" in message
+    assert "config setup --yes --config-file" in message
+
+
+def test_config_doctor_reports_not_installed_without_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_CONFIG_FILE", raising=False)
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    payload = build_config_doctor_payload(kit, storage_name=None)
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert payload["install_state"] == ConfigInstallState.NOT_INSTALLED.value
+    assert payload["installed"] is False
+    assert payload["healthy"] is False
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.output)["install_state"] == "not_installed"
+
+
+def test_generated_config_setup_yes_requires_config_file_without_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_CONFIG_FILE", raising=False)
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["setup", "--yes"])
+
+    assert result.exit_code == 2, result.output
+    assert "--config-file" in result.output
+    assert "APPRC_EXAMPLE_APP_CONFIG_FILE is not set" in result.output
+
+
+def test_install_state_reports_not_installed_for_missing_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    missing_registry = tmp_path / "missing.toml"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_CONFIG_FILE", str(missing_registry))
+    kit = build_apprc_example_app_kit()
+
+    assert kit.install_state() == ConfigInstallState.NOT_INSTALLED
+
+
+def test_install_state_reports_unhealthy_for_incomplete_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    registry_path = set_apprc_example_app_config_file(monkeypatch, tmp_path)
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text("\n", encoding="utf-8")
+    kit = build_apprc_example_app_kit()
+
+    payload = kit.doctor_payload()
+
+    assert kit.install_state() == ConfigInstallState.INSTALLED_UNHEALTHY
+    assert payload["installed"] is True
+    assert payload["healthy"] is False
+    assert "No Example App storage is registered yet." in payload["issues"]
+
+
+def test_install_state_reports_unhealthy_for_invalid_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    registry_path = set_apprc_example_app_config_file(monkeypatch, tmp_path)
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text("[invalid", encoding="utf-8")
+    kit = build_apprc_example_app_kit()
+
+    payload = kit.doctor_payload()
+
+    assert kit.install_state() == ConfigInstallState.INSTALLED_UNHEALTHY
+    assert payload["registry_parse_ok"] is False
+    assert payload["registry_error"] is not None
+
+
+def test_install_state_reports_unhealthy_for_missing_local_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "storage"
+    kit.register_storage(name="alpha", root=storage_root, make_default=True)
+    (storage_root / ".env.apprc_example_app").unlink()
+
+    payload = kit.doctor_payload()
+
+    assert kit.install_state() == ConfigInstallState.INSTALLED_UNHEALTHY
+    assert payload["selected_local_env_exists"] is False
+
+
+def test_install_state_reports_healthy_for_default_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+
+    payload = kit.doctor_payload()
+
+    assert kit.install_state() == ConfigInstallState.INSTALLED_HEALTHY
+    assert payload["ok"] is True
+    assert payload["healthy"] is True
+
+
 def test_kit_registers_storage_and_reports_doctor_payload(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
 
@@ -94,7 +223,7 @@ def test_kit_set_default_syncs_storage_root_local_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     beta_root = tmp_path / "beta"
     kit.register_storage(
@@ -126,7 +255,7 @@ def test_generated_config_app_sets_local_values_and_shows_payload(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
@@ -160,7 +289,7 @@ def test_kit_clears_local_value_with_app_local_env_filename(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     kit.set_local_value(
@@ -185,7 +314,7 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
@@ -230,7 +359,7 @@ def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -257,7 +386,7 @@ def test_generated_config_app_aborts_existing_storage_when_user_says_no(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
@@ -281,7 +410,7 @@ def test_generated_config_app_inits_non_empty_storage_with_yes_option(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
@@ -303,7 +432,7 @@ def test_generated_config_setup_creates_default_registry_and_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -335,11 +464,11 @@ def test_generated_config_setup_creates_default_registry_and_storage(
     assert "AppRC" not in result.output
 
 
-def test_generated_config_setup_rejects_custom_registry_without_env(
+def test_generated_config_setup_accepts_config_file_without_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -350,25 +479,26 @@ def test_generated_config_setup_rejects_custom_registry_without_env(
         ["setup", "--yes", "--config-file", str(custom_registry)],
     )
 
-    assert result.exit_code == 1, result.output
-    assert (
-        "Custom config-file paths require an environment variable"
-        in result.output
-    )
+    registry = kit.load_registry(path=custom_registry)
+    assert result.exit_code == 0, result.output
+    assert registry.path == custom_registry
+    assert custom_registry.is_file()
     assert (
         f'export APPRC_EXAMPLE_APP_CONFIG_FILE="{custom_registry}"'
         in result.output
     )
-    assert not custom_registry.exists()
+    assert kit.optional_registry_path() is None
 
 
-def test_generated_config_setup_rejects_custom_registry_env_mismatch(
+def test_generated_config_setup_accepts_config_file_env_mismatch(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    other_registry = tmp_path / "other.toml"
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_CONFIG_FILE", str(tmp_path / "other.toml")
+        "APPRC_EXAMPLE_APP_CONFIG_FILE",
+        str(other_registry),
     )
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -380,12 +510,15 @@ def test_generated_config_setup_rejects_custom_registry_env_mismatch(
         ["setup", "--yes", "--config-file", str(custom_registry)],
     )
 
-    assert result.exit_code == 1, result.output
+    registry = kit.load_registry(path=custom_registry)
+    assert result.exit_code == 0, result.output
+    assert registry.path == custom_registry
+    assert custom_registry.is_file()
+    assert not other_registry.exists()
     assert (
         f'export APPRC_EXAMPLE_APP_CONFIG_FILE="{custom_registry}"'
         in result.output
     )
-    assert not custom_registry.exists()
 
 
 def test_generated_config_setup_accepts_matching_custom_registry_env(
@@ -393,7 +526,7 @@ def test_generated_config_setup_accepts_matching_custom_registry_env(
     tmp_path: Path,
 ) -> None:
     custom_registry = tmp_path / "custom" / "apprc_example_app.toml"
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_CONFIG_FILE", str(custom_registry))
     kit = build_apprc_example_app_kit()
@@ -413,7 +546,7 @@ def test_generated_config_setup_accepts_custom_default_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -442,7 +575,7 @@ def test_generated_config_setup_options_require_yes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -470,7 +603,7 @@ def test_generated_config_setup_keeps_existing_default_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "alpha"
     kit.register_storage(name="alpha", root=storage_root, make_default=True)
@@ -492,7 +625,7 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
     old_storage_root = tmp_path / "alpha"
@@ -520,28 +653,41 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     assert "AppRC" not in result.output
 
 
-def test_generated_config_setup_moves_default_registry_to_env_target(
+def test_generated_config_setup_moves_existing_registry_to_config_file_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "alpha"
     kit.register_storage(name="alpha", root=storage_root, make_default=True)
     default_registry = kit.registry_path()
     custom_registry = tmp_path / "custom" / "apprc_example_app.toml"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_CONFIG_FILE", str(custom_registry))
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
 
-    result = runner.invoke(app, ["setup", "--yes"])
+    result = runner.invoke(
+        app,
+        [
+            "setup",
+            "--yes",
+            "--config-file",
+            str(custom_registry),
+            "--existing-action",
+            "move",
+        ],
+    )
 
-    registry = kit.load_registry()
+    registry = kit.load_registry(path=custom_registry)
     assert result.exit_code == 0, result.output
     assert not default_registry.exists()
     assert custom_registry.is_file()
     assert registry.default_storage == "alpha"
     assert registry.selected("alpha").root == storage_root.resolve()
+    assert (
+        f'export APPRC_EXAMPLE_APP_CONFIG_FILE="{custom_registry}"'
+        in result.output
+    )
 
 
 @pytest.mark.asyncio
@@ -549,7 +695,7 @@ async def test_config_setup_wizard_launches_with_host_overview(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     setup_app = kit.setup_app()
 
@@ -568,7 +714,7 @@ async def test_config_setup_wizard_opens_prefilled_path_input(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     setup_app = kit.setup_app()
 
@@ -586,11 +732,29 @@ async def test_config_setup_wizard_opens_prefilled_path_input(
 
 
 @pytest.mark.asyncio
+async def test_config_setup_wizard_asks_for_path_without_env(
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    setup_app = kit.setup_app()
+
+    async with setup_app.run_test() as pilot:
+        setup_app.query_one("#setup-start", Button).press()
+        await pilot.pause()
+        path_input = setup_app.screen.query_one("#path-input", Input)
+        message = setup_app.screen.query_one("#path-message", Static).content
+
+    assert path_input.value == ""
+    assert "APPRC_EXAMPLE_APP_CONFIG_FILE" in str(message)
+    assert "new or existing apprc_example_app.toml" in str(message)
+
+
+@pytest.mark.asyncio
 async def test_config_setup_wizard_shows_existing_registry_actions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     kit.register_storage(
         name="alpha",
@@ -622,7 +786,7 @@ async def test_config_setup_wizard_finish_shows_doctor_and_next_steps(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
         name="alpha",
@@ -647,7 +811,7 @@ def test_generated_config_app_lists_registered_storages_as_rich_tree(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
@@ -681,7 +845,7 @@ def test_generated_config_app_lists_registered_storages_as_json(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
@@ -728,25 +892,24 @@ def test_config_doctor_guidance_uses_host_default_storage_name(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
 
     message = config_setup_message(kit)
     payload = build_config_doctor_payload(kit, storage_name=None)
 
-    assert "--name apprc_example_app_stor-1 --default" in message
-    assert "--name default" not in message
+    assert "APPRC_EXAMPLE_APP_CONFIG_FILE" in message
+    assert "setup --yes --config-file" in message
     assert payload["next_steps"][0].endswith(
-        "init /absolute/path/to/storage-root --name apprc_example_app_stor-1 --default"
+        "setup --yes --config-file /absolute/path/to/apprc_example_app.toml"
     )
-    assert "--name default" not in payload["next_steps"][0]
 
 
 def test_kit_builds_generic_editor_with_spec_defaults(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
         name="alpha",
@@ -769,7 +932,7 @@ async def test_editor_launches_with_empty_registry_and_new_storage_button(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     editor = kit.editor_app(registry=kit.load_registry())
 
@@ -790,7 +953,7 @@ async def test_editor_launches_with_missing_default_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "alpha"
     registry = kit.register_storage(
@@ -823,7 +986,7 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     editor = kit.editor_app(registry=kit.load_registry())
     storage_root = tmp_path / "alpha"
@@ -852,7 +1015,7 @@ async def test_editor_unregisters_missing_non_default_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     beta_root = tmp_path / "beta"
     alpha_root = tmp_path / "alpha"
@@ -886,7 +1049,7 @@ async def test_editor_set_default_and_unregister_non_default_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     kit.register_storage(
         name="alpha", root=tmp_path / "alpha", make_default=True
@@ -919,7 +1082,7 @@ async def test_editor_default_replacement_skips_missing_storages(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
@@ -956,7 +1119,7 @@ async def test_editor_recreates_last_default_with_host_storage_name(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
@@ -997,7 +1160,7 @@ async def test_editor_shows_and_prunes_stale_archived_rows(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     registry = kit.record_archived_storage(
         name="alpha",
@@ -1036,7 +1199,7 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("APPRC_EXAMPLE_APP_MODE", "MANUAL")
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
@@ -1111,7 +1274,7 @@ async def test_editor_table_required_missing_keeps_red_fill(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
         name="alpha",
@@ -1136,7 +1299,7 @@ async def test_editor_modal_saves_local_value(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     registry = kit.register_storage(
@@ -1166,7 +1329,7 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
         name="alpha",

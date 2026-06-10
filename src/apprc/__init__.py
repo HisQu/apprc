@@ -8,6 +8,7 @@ from apprc.config import (
     BaseConfig,
     BaseEnv,
     ConfigField,
+    ConfigInstallState,
     ConfigOwner,
     EnvBootstrapSpec,
 )

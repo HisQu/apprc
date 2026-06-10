@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from apprc.config.environment import EnvBootstrapSpec, bootstrap_env
-from apprc.config.storage_registry import register_storage
+from apprc.config.storage_registry import ConfigFileEnvError, register_storage
 
 
 @pytest.fixture(autouse=True)
@@ -52,11 +52,39 @@ def _spec(package_name: str) -> EnvBootstrapSpec:
     )
 
 
+def _set_demo_config_file(monkeypatch, tmp_path: Path) -> Path:
+    """Point the demo bootstrap spec at a test registry file."""
+    registry_path = tmp_path / "config" / "demo" / "demo.toml"
+    monkeypatch.setenv("DEMO_CONFIG_FILE", str(registry_path))
+    return registry_path
+
+
+def test_bootstrap_env_requires_config_file_env(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("DEMO_CONFIG_FILE", raising=False)
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+
+    with pytest.raises(ConfigFileEnvError, match="DEMO_CONFIG_FILE"):
+        bootstrap_env(
+            spec=_spec(package_name),
+            env_file=None,
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            registry_storage_name=None,
+        )
+
+
 def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("DEMO_MODEL", "shell-model")
     package_name = _shared_env_package(
         monkeypatch,
@@ -68,7 +96,7 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
         name="alpha",
         root=storage_root,
         make_default=True,
-        path=tmp_path / "config" / "demo" / "demo.toml",
+        path=registry_path,
         local_env_filename=".env.demo",
     )
     (storage_root / ".env.demo").write_text(
@@ -98,7 +126,7 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -109,7 +137,7 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
         name="alpha",
         root=storage_root,
         make_default=True,
-        path=tmp_path / "config" / "demo" / "demo.toml",
+        path=registry_path,
         local_env_filename=".env.demo",
     )
     (storage_root / ".env.demo").write_text(
@@ -134,7 +162,7 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("DEMO_MODEL", "shell-model")
     package_name = _shared_env_package(
         monkeypatch,
@@ -146,7 +174,7 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
         name="alpha",
         root=storage_root,
         make_default=True,
-        path=tmp_path / "config" / "demo" / "demo.toml",
+        path=registry_path,
         local_env_filename=".env.demo",
     )
     explicit_env = tmp_path / "override.env"
@@ -167,7 +195,7 @@ def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    _set_demo_config_file(monkeypatch, tmp_path)
     storage_root = tmp_path / "from-shell"
     monkeypatch.setenv("DEMO_D_STORAGE", str(storage_root))
     package_name = _shared_env_package(
@@ -194,7 +222,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    _set_demo_config_file(monkeypatch, tmp_path)
     normalized_root = tmp_path / "demo-storage"
     monkeypatch.setenv(
         "DEMO_D_STORAGE",
@@ -225,7 +253,7 @@ def test_bootstrap_env_registry_storage_name_selects_active_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -233,7 +261,6 @@ def test_bootstrap_env_registry_storage_name_selects_active_root(
     )
     alpha_root = tmp_path / "alpha-storage"
     beta_root = tmp_path / "beta-storage"
-    registry_path = tmp_path / "config" / "demo" / "demo.toml"
     register_storage(
         name="alpha",
         root=alpha_root,
@@ -267,7 +294,7 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -279,7 +306,7 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
         name="alpha",
         root=default_root,
         make_default=True,
-        path=tmp_path / "config" / "demo" / "demo.toml",
+        path=registry_path,
         local_env_filename=".env.demo",
     )
     explicit_root.mkdir()

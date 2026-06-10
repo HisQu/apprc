@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from apprc.config.storage_registry import (
-    app_config_dir,
     app_data_dir,
+    ConfigFileEnvError,
     config_file_env_key,
     configured_storage_registry_path,
     default_storage_data_root,
@@ -26,14 +26,6 @@ from apprc.config.paths import (
     normalize_storage_root_path,
     windows_drive_path_to_posix,
 )
-
-
-def test_app_config_dir_uses_xdg_config_home(
-    monkeypatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-
-    assert app_config_dir("demo") == tmp_path / "xdg" / "demo"
 
 
 def test_app_data_dir_uses_xdg_data_home(
@@ -65,13 +57,13 @@ def test_configured_storage_registry_path_uses_env_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     custom_registry = tmp_path / "custom" / "demo.toml"
 
-    assert configured_storage_registry_path(
-        app_name="demo",
-        registry_filename="demo.toml",
-    ) == (tmp_path / "config" / "demo" / "demo.toml")
+    with pytest.raises(ConfigFileEnvError, match="DEMO_CONFIG_FILE"):
+        configured_storage_registry_path(
+            app_name="demo",
+            registry_filename="demo.toml",
+        )
 
     monkeypatch.setenv("DEMO_CONFIG_FILE", str(custom_registry))
 

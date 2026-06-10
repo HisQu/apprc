@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from pytest import MonkeyPatch
+
 from apprc import AppConfigKit
 from apprc.config import (
     CONFIG_MISSING,
@@ -114,6 +116,18 @@ def build_apprc_example_app_kit() -> AppConfigKit:
         registry_filename="apprc_example_app.toml",
         local_env_filename=".env.apprc_example_app",
     )
+
+
+def set_apprc_example_app_config_file(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> Path:
+    """Point the example app at a test registry file."""
+    registry_path = (
+        tmp_path / "config" / "apprc_example_app" / "apprc_example_app.toml"
+    )
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_CONFIG_FILE", str(registry_path))
+    return registry_path
 
 
 def apprc_example_app_state(

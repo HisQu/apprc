@@ -56,7 +56,7 @@ def run_config_setup(
         result = ConfigSetupApp(kit=kit).run()
         if result is None:
             raise typer.Exit(code=1)
-        _raise_if_doctor_failed(kit)
+        _raise_if_doctor_failed(kit, registry_path=result.registry.path)
         return
 
     try:
@@ -92,7 +92,11 @@ def _print_setup_finish(
     typer.echo(f"registry: {registry.path}")
     typer.echo(f"default_storage: {registry.default_storage or '<none>'}")
     typer.echo("")
-    payload = build_config_doctor_payload(kit, storage_name=None)
+    payload = build_config_doctor_payload(
+        kit,
+        storage_name=None,
+        registry_path=registry.path,
+    )
     print_config_doctor(kit, payload)
     typer.echo("")
     typer.echo("Next steps:")
@@ -102,13 +106,22 @@ def _print_setup_finish(
         raise typer.Exit(code=1)
 
 
-def _raise_if_doctor_failed(kit: AppConfigKit) -> None:
+def _raise_if_doctor_failed(
+    kit: AppConfigKit,
+    *,
+    registry_path: Path,
+) -> None:
     """Exit when the setup wizard completed but diagnostics still fail.
 
     :param kit: Application config facade.
+    :param registry_path: Registry path setup selected.
     :raises typer.Exit: If doctor reports that setup is incomplete.
     """
-    payload = build_config_doctor_payload(kit, storage_name=None)
+    payload = build_config_doctor_payload(
+        kit,
+        storage_name=None,
+        registry_path=registry_path,
+    )
     if not payload["ok"]:
         raise typer.Exit(code=1)
 

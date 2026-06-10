@@ -24,8 +24,23 @@ def _isolate_apprc_example_app_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def _clear_process_apprc_example_app_env() -> None:
     """Remove Example App env values mutated by in-process CLI invocations."""
     for key in tuple(os.environ):
-        if key.startswith("APPRC_EXAMPLE_APP_"):
+        if (
+            key.startswith("APPRC_EXAMPLE_APP_")
+            and key != "APPRC_EXAMPLE_APP_CONFIG_FILE"
+        ):
             del os.environ[key]
+
+
+def _set_demo_config_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Path:
+    """Point the demo CLI at a test registry file."""
+    registry_path = (
+        tmp_path / "config" / "apprc_example_app" / "apprc_example_app.toml"
+    )
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_CONFIG_FILE", str(registry_path))
+    return registry_path
 
 
 def test_standalone_cli_help_shows_config_command() -> None:
@@ -96,7 +111,7 @@ def test_demo_config_setup_uses_demo_paths_and_apprc_command_text(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     runner = CliRunner()
 
@@ -107,9 +122,7 @@ def test_demo_config_setup_uses_demo_paths_and_apprc_command_text(
     )
     registry = APPRC_EXAMPLE_APP_KIT.load_registry()
     assert result.exit_code == 0, result.output
-    assert registry.path == (
-        tmp_path / "config" / "apprc_example_app" / "apprc_example_app.toml"
-    )
+    assert registry.path == registry_path
     assert registry.default_storage == "apprc_example_app_stor-1"
     assert registry.selected("apprc_example_app_stor-1").root == (
         storage_root.resolve()
@@ -125,7 +138,7 @@ def test_demo_config_set_and_show_payload(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     runner = CliRunner()
 
@@ -170,7 +183,7 @@ def test_demo_root_env_file_option_before_config_show(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     explicit_env = tmp_path / "override.env"
     explicit_env.write_text(

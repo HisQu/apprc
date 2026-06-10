@@ -126,10 +126,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             self.notify(str(exc), severity="error")
             return
         self.registry = registry
-        default_action = setup_flow.default_existing_setup_action(
-            existing_path,
-            setup_flow.normalized_config_file_path(self.kit.registry_path()),
-        )
+        default_action = setup_flow.default_existing_setup_action()
         await self._show_existing_registry(registry, default_action)
 
     async def _show_existing_registry(
@@ -177,7 +174,6 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         try:
             if action == setup_flow.ExistingSetupAction.KEEP:
                 setup_flow.require_registry_path_available(
-                    self.kit,
                     registry.path,
                 )
                 await self._ensure_default_storage(registry)
@@ -195,10 +191,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 )
                 if confirmed != "reset":
                     return
-                setup_flow.remove_registry_config_state(
-                    self.kit,
-                    registry.path,
-                )
+                setup_flow.remove_registry_config_state(registry.path)
                 fresh = await self._choose_new_registry()
                 if fresh is not None:
                     await self._ensure_default_storage(fresh)
@@ -216,9 +209,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :return: Empty or parsed registry at the selected path.
         """
         registry_path = await self._choose_registry_path(
-            default_path=setup_flow.normalized_config_file_path(
-                self.kit.registry_path()
-            ),
+            default_path=self.kit.optional_registry_path(),
             title="Config file",
         )
         if registry_path is None:
@@ -239,9 +230,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :return: Registry loaded from the move target, or ``None``.
         """
         target_path = await self._choose_registry_path(
-            default_path=setup_flow.normalized_config_file_path(
-                self.kit.registry_path()
-            ),
+            default_path=registry.path,
             title="Move config file",
         )
         if target_path is None:
@@ -281,7 +270,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
     async def _choose_registry_path(
         self,
         *,
-        default_path: Path,
+        default_path: Path | None,
         title: str,
     ) -> Path | None:
         """Prompt until the user picks a rediscoverable registry path.
@@ -299,14 +288,14 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                         default_path,
                     ),
                     placeholder="Config file path",
-                    value=str(default_path),
+                    value="" if default_path is None else str(default_path),
                 )
             )
             if result is None:
                 return None
             path = setup_flow.normalized_config_file_path(result.path)
             try:
-                setup_flow.require_registry_path_available(self.kit, path)
+                setup_flow.require_registry_path_available(path)
             except setup_flow.ConfigSetupError as exc:
                 self.notify(str(exc), severity="error")
                 continue
@@ -412,6 +401,9 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                         root,
                         storage_name=storage_name,
                         make_default=True,
+                        registry_path=self.registry.path
+                        if self.registry is not None
+                        else None,
                     ),
                     actions=(("proceed", "Proceed", "warning"),),
                 )
@@ -430,7 +422,10 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             registry=registry,
             existing_action=self.existing_action,
         )
-        payload = self.kit.doctor_payload(storage_name=None)
+        payload = self.kit.doctor_payload(
+            storage_name=None,
+            registry_path=registry.path,
+        )
         status = "ok" if payload["ok"] else "needs setup"
         default = registry.default_storage or "<none>"
         body = (

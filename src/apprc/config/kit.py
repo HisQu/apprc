@@ -24,6 +24,7 @@ from apprc.config.environment import (
     EnvBootstrapResult,
     bootstrap_env,
 )
+from apprc.config.install_state import ConfigInstallState
 from apprc.config.local_env import (
     LocalEnvUpdate,
     clear_local_env_value,
@@ -132,20 +133,21 @@ class AppConfigKit:
         """Return the active user storage registry path.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: Env-selected or default registry path for this application.
+        :return: Env-selected registry path for this application.
+        :raises ConfigFileEnvError: If the config-file env var is missing.
         """
         return self.spec.registry_path(proc_env)
 
-    def default_registry_path(
+    def optional_registry_path(
         self,
         proc_env: Mapping[str, str] | None = None,
-    ) -> Path:
-        """Return the automatic user storage registry path.
+    ) -> Path | None:
+        """Return the active registry path when the env var is set.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: Default registry path before applying env overrides.
+        :return: Env-selected registry path, or ``None``.
         """
-        return self.spec.default_registry_path(proc_env)
+        return self.spec.optional_registry_path(proc_env)
 
     def config_file_env_key(self) -> str:
         """Return the env var that overrides the registry file path."""
@@ -364,11 +366,37 @@ class AppConfigKit:
             local_env_filename=self.spec.local_env_filename,
         )
 
-    def doctor_payload(self, storage_name: str | None = None) -> dict[str, Any]:
+    def install_state(
+        self,
+        storage_name: str | None = None,
+        registry_path: Path | None = None,
+    ) -> ConfigInstallState:
+        """Return this application's explicit local installation state.
+
+        :param storage_name: Optional registry storage selected by ``--storage``.
+        :param registry_path: Optional explicit registry path used by setup.
+        :return: Coarse installation and health state.
+        """
+        return ConfigInstallState(
+            self.doctor_payload(
+                storage_name=storage_name,
+                registry_path=registry_path,
+            )["install_state"]
+        )
+
+    def doctor_payload(
+        self,
+        storage_name: str | None = None,
+        registry_path: Path | None = None,
+    ) -> dict[str, Any]:
         """Return JSON-friendly local setup diagnostics."""
         from apprc.cli.doctor import build_config_doctor_payload
 
-        return build_config_doctor_payload(self, storage_name=storage_name)
+        return build_config_doctor_payload(
+            self,
+            storage_name=storage_name,
+            registry_path=registry_path,
+        )
 
     def editor_app(
         self,

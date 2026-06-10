@@ -13,6 +13,7 @@ import typer
 # == Internal ================================
 from apprc.config.environment import BootstrapLogger, EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
+from apprc.config.storage_registry import ConfigFileEnvError
 
 
 def parse_log_level(log_level: str) -> str | int:
@@ -70,5 +71,10 @@ def bootstrap_cli_env(
         )
     except FileNotFoundError as exc:
         raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
+    except ConfigFileEnvError as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint=kit.config_file_env_key(),
+        ) from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint="--storage") from exc

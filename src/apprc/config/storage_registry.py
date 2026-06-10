@@ -1,9 +1,10 @@
-"""Read and write per-user storage registries.
+"""Read and write application storage registries.
 
 CLI applications often run globally, but their data lives in user-chosen
-project or corpus directories. AppRC solves that with a tiny TOML registry at
-``$XDG_CONFIG_HOME/<app>/<registry_filename>``. The registry maps friendly
-storage names to absolute storage roots and records which one is the default.
+project or corpus directories. AppRC solves that with a tiny TOML registry
+selected by the app-specific ``<APP>_CONFIG_FILE`` environment variable. The
+registry maps friendly storage names to absolute storage roots and records
+which one is the default.
 
 This module owns the user-level TOML file and storage selector semantics.
 Storage-local dotenv value handling lives in :mod:`apprc.config.local_env`, and
@@ -26,6 +27,10 @@ from apprc.config.local_env import ensure_local_env_file
 from apprc.config.paths import normalize_storage_root_path
 
 _STORAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+class ConfigFileEnvError(ValueError):
+    """Raised when an app registry path cannot be resolved from the env."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,24 +102,6 @@ class StorageRegistry:
         return self.selected(self.default_storage)
 
 
-def app_config_dir(
-    app_name: str,
-    proc_env: Mapping[str, str] | None = None,
-) -> Path:
-    """Return the per-user config directory for one application.
-
-    :param app_name: Directory name below ``$XDG_CONFIG_HOME`` or
-        ``~/.config``.
-    :param proc_env: Environment mapping used for tests and subprocess setup.
-    :return: ``$XDG_CONFIG_HOME/<app_name>`` or ``~/.config/<app_name>``.
-    """
-    env = os.environ if proc_env is None else proc_env
-    xdg_config_home = env.get("XDG_CONFIG_HOME")
-    if xdg_config_home:
-        return Path(xdg_config_home).expanduser() / app_name
-    return Path.home() / ".config" / app_name
-
-
 def app_data_dir(
     app_name: str,
     proc_env: Mapping[str, str] | None = None,
@@ -153,16 +140,6 @@ def default_storage_name(app_name: str) -> str:
     return f"{base_name}_stor-1"
 
 
-def default_storage_registry_path(
-    *,
-    app_name: str,
-    registry_filename: str,
-    proc_env: Mapping[str, str] | None = None,
-) -> Path:
-    """Return the default user registry path for one application."""
-    return app_config_dir(app_name, proc_env) / registry_filename
-
-
 def config_file_env_key(app_name: str) -> str:
     """Return the environment variable that overrides the registry file.
 
@@ -181,22 +158,65 @@ def configured_storage_registry_path(
     registry_filename: str,
     proc_env: Mapping[str, str] | None = None,
 ) -> Path:
-    """Return the active registry path after applying the env override.
+    """Return the active registry path from the required env variable.
 
     :param app_name: Application name from the AppRC integration spec.
-    :param registry_filename: Default registry filename below the app config
-        directory.
+    :param registry_filename: Suggested TOML basename shown in setup guidance.
     :param proc_env: Environment mapping used for tests and subprocess setup.
-    :return: The env-selected registry path, or the default path.
+    :return: The env-selected registry path.
+    :raises ConfigFileEnvError: If the app-specific env var is missing.
+    """
+    path = optional_storage_registry_path(
+        app_name=app_name,
+        proc_env=proc_env,
+    )
+    if path is not None:
+        return path
+    raise ConfigFileEnvError(
+        missing_config_file_env_message(
+            app_name=app_name,
+            registry_filename=registry_filename,
+        )
+    )
+
+
+def optional_storage_registry_path(
+    *,
+    app_name: str,
+    proc_env: Mapping[str, str] | None = None,
+) -> Path | None:
+    """Return the env-selected registry path when the variable is set.
+
+    :param app_name: Application name from the AppRC integration spec.
+    :param proc_env: Environment mapping used for tests and subprocess setup.
+    :return: The env-selected registry path, or ``None``.
     """
     env = os.environ if proc_env is None else proc_env
     raw_path = env.get(config_file_env_key(app_name), "").strip()
     if raw_path:
         return Path(raw_path).expanduser().resolve()
-    return default_storage_registry_path(
-        app_name=app_name,
-        registry_filename=registry_filename,
-        proc_env=proc_env,
+    return None
+
+
+def missing_config_file_env_message(
+    *,
+    app_name: str,
+    registry_filename: str,
+) -> str:
+    """Return guidance for a missing registry-path env variable.
+
+    :param app_name: Application name from the AppRC integration spec.
+    :param registry_filename: Suggested TOML basename shown in setup guidance.
+    :return: Human-facing setup guidance.
+    """
+    env_key = config_file_env_key(app_name)
+    command_name = app_name or "app"
+    return (
+        f"{env_key} is required and must point to this app's TOML config "
+        "file. Choose where that file should live, then run:\n"
+        f"  {command_name} config setup --yes --config-file "
+        f"/absolute/path/to/{registry_filename}\n"
+        "Keep the variable exported for future commands."
     )
 
 

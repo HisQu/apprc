@@ -33,7 +33,6 @@ from apprc.config.storage_registry import (
     StorageRegistry,
     config_file_env_key,
     configured_storage_registry_path,
-    default_storage_registry_path,
     load_storage_registry,
 )
 
@@ -51,7 +50,7 @@ class BootstrapLogger(Protocol):
 class EnvBootstrapSpec:
     """Application-specific bootstrap contract.
 
-    :param app_name: Lowercase application name used below ``~/.config``.
+    :param app_name: Lowercase application name used in env var derivation.
     :param display_name: Human-readable application name in log messages.
     :param config_package: Package containing the shared dotenv resource.
     :param storage_root_env_key: Env key that stores the active storage root.
@@ -72,15 +71,8 @@ class EnvBootstrapSpec:
         """Return the env var that overrides the registry file path."""
         return config_file_env_key(self.app_name)
 
-    def default_registry_path(self) -> Path:
-        """Return the automatic user registry path for this application."""
-        return default_storage_registry_path(
-            app_name=self.app_name,
-            registry_filename=self.registry_filename,
-        )
-
     def registry_path(self) -> Path:
-        """Return the active user registry path for this application."""
+        """Return the env-selected user registry path for this application."""
         return configured_storage_registry_path(
             app_name=self.app_name,
             registry_filename=self.registry_filename,

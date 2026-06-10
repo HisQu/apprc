@@ -129,35 +129,36 @@ pytest
 
 <br>
 
-### Try The Dev-Only Demo CLI
+### Try The Dev-Only Example CLI
 
 The repository dev environment installs a local `apprc` command from the
-`examples/apprc_demo` package. Use it to test setup, storage registries, local
-dotenv overrides, JSON output, and the Textual editor before wiring AppRC into
-another project. The published `apprc` wheel does not install this command.
-`python -m apprc` is intentionally not a supported entrypoint.
+`examples/example_app` package. Use it to test setup, storage registries,
+local dotenv overrides, JSON output, and the Textual editor before wiring
+AppRC into another project. The published `apprc` wheel does not install this
+command. `python -m apprc` is intentionally not a supported entrypoint.
 
 After `uv sync --all-groups`, run:
 
 ```shell
 .venv/bin/apprc config setup --yes
 .venv/bin/apprc config show --json
-.venv/bin/apprc config set runtime.model other-model
+.venv/bin/apprc config set app.profile other-profile
 .venv/bin/apprc config set retry_count 5
+.venv/bin/apprc config set access_token secret-token
 .venv/bin/apprc config edit
 ```
 
 or use `uv run apprc ...` for the same commands.
 
-The executable is `apprc`, but its disposable demo files live under the
-`apprc-demo` namespace:
+The executable is `apprc`, but its disposable example files live under the
+`example-app` namespace:
 
 | Item | Default |
 |---|---|
-| Registry | `~/.config/apprc-demo/apprc-demo.toml` |
-| Default storage | `~/.local/share/apprc-demo/apprc-demo_stor-1` |
-| Local env | `~/.local/share/apprc-demo/apprc-demo_stor-1/.env.apprc-demo` |
-| Registry override | `APPRC_DEMO_CONFIG_FILE` |
+| Registry | `~/.config/example-app/example-app.toml` |
+| Default storage | `~/.local/share/example-app/example-app_stor-1` |
+| Local env | `~/.local/share/example-app/example-app_stor-1/.env.example-app` |
+| Registry override | `EXAMPLE_APP_CONFIG_FILE` |
 
 <br>
 
@@ -175,19 +176,19 @@ from apprc import AppConfigKit
 from apprc.config import ConfigOwner, config_field
 
 # 1) Declare the config fields your app owns.
-CLIENT_OWNER = ConfigOwner(
-    key="client",
-    title="Client",
+APP_OWNER = ConfigOwner(
+    key="app",
+    title="App",
     env_prefix="MYAPP_",
-    rc_path=("client",),
+    rc_path=("app",),
     fields=(
         config_field(
-            "model",
-            "MODEL",
+            "profile",
+            "PROFILE",
             str,
-            default="demo-model",
-            title="Model",
-            explanation="Model used by client calls.",
+            default="default",
+            title="Profile",
+            explanation="Named profile used by the application.",
         ),
     ),
 )
@@ -197,7 +198,7 @@ MYAPP_CONFIG = AppConfigKit(
     app_name="myapp",
     display_name="MyApp",
     config_package="myapp.config",
-    owners=(CLIENT_OWNER,),
+    owners=(APP_OWNER,),
     storage_root_env_key="MYAPP_D_STORAGE",
     registry_filename="myapp.toml",
     shared_env_filename=".env.shared",
@@ -225,7 +226,7 @@ terminal editor.
 
 Host applications should still mount the generated config CLI as a subcommand
 of the application that depends on AppRC. Generated end-user prompts should
-feel owned by that host application: a Haiu user should see Haiu setup text,
+feel owned by that host application: a MyApp user should see MyApp setup text,
 not AppRC implementation details. `app_name` drives paths and selectors,
 `display_name` drives human-facing labels, and optional `command_name`
 overrides the executable shown in generated next-step commands.
@@ -238,7 +239,7 @@ myapp config setup --yes --storage-root /absolute/path/to/storage --name myapp_s
 myapp config init /absolute/path/to/storage --name myapp_stor-1 --default
 myapp config doctor
 myapp config show --json
-myapp config set client.model other-model
+myapp config set app.profile other-profile
 myapp config edit
 ```
 
@@ -554,14 +555,14 @@ pyright
 pytest
 ```
 
-### Test Against Haiu
+### Test Against A Downstream App
 
-Haiu is the main downstream integration test for AppRC. From the Haiu repo:
+If you maintain a host application that depends on AppRC, install the local
+checkout there and run that application's tests:
 
 ```shell
-cd ../haiu
+cd /path/to/host-app
 .venv/bin/python -m pip install --no-deps --no-build-isolation -e ../apprc
-.venv/bin/pytest tests/haiu/core/test_config_tui.py -q
 .venv/bin/pytest
 ```
 

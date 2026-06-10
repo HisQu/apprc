@@ -60,11 +60,7 @@ Issues = "https://github.com/HisQu/apprc/issues"
 # Local-only dependency sources used by uv. These are not published as package
 # requirements in AppRC wheel metadata.
 [tool.uv.sources]
-"apprc-demo" = { path = "examples/apprc_demo", editable = true }
-# haiu = { path = "../haiu", editable = true }
-# [tool.pyright]
-# include = ["src", "../haiu/src"]
-# extraPaths = ["src", "../haiu/src"]
+"example-app" = { path = "examples/example_app", editable = true }
 
 
 
@@ -105,7 +101,7 @@ Issues = "https://github.com/HisQu/apprc/issues"
 #   uv sync --locked --all-extras --all-groups
 [dependency-groups]
 demo = [
-    "apprc-demo",
+    "example-app",
 ]
 dev = [
     { include-group = "demo" },
@@ -158,7 +154,7 @@ pythonVersion = "3.12"  # Enforce the minimum supported python version
 pythonPlatform = "All"
 venvPath = "."
 venv = ".venv"
-include = ["src", "tests", "examples/apprc_demo/src"]
+include = ["src", "tests", "examples/example_app/src"]
 exclude = [
     "**/example_data",
     "**/old",

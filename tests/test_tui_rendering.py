@@ -10,7 +10,7 @@ from apprc.config.tui_rendering import (
     possible_values_label,
     value_style,
 )
-from tests.support_config import DEMO_OWNER, DEMO_OWNERS
+from tests.support_config import EXAMPLE_OWNER, EXAMPLE_OWNERS
 
 
 def _text_cell(row: FieldTableRow, index: int) -> Text:
@@ -27,13 +27,13 @@ def _text_cell(row: FieldTableRow, index: int) -> Text:
 
 def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     rows = build_field_table_rows(
-        owners=DEMO_OWNERS,
+        owners=EXAMPLE_OWNERS,
         local_values={
-            "DEMO_API_TOKEN": "secret",
-            "DEMO_RETRY_COUNT": "9",
+            "EXAMPLE_ACCESS_TOKEN": "secret",
+            "EXAMPLE_RETRY_COUNT": "9",
         },
-        hidden_env_keys=frozenset({"DEMO_D_STORAGE"}),
-        shell_env={"DEMO_STRATEGY": "WEIGHT"},
+        hidden_env_keys=frozenset({"EXAMPLE_D_STORAGE"}),
+        shell_env={"EXAMPLE_MODE": "MANUAL"},
     )
     rows_by_key = {row.env_key: row for row in rows if row.env_key is not None}
 
@@ -46,23 +46,25 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
         "Default",
         "Explanation",
     )
-    assert "DEMO_D_STORAGE" not in rows_by_key
-    assert str(rows_by_key["DEMO_API_TOKEN"].cells[4]) == "<secret>"
-    assert _text_cell(rows_by_key["DEMO_API_TOKEN"], 4).style == "dim italic"
-    assert _text_cell(rows_by_key["DEMO_STRATEGY"], 3).plain == "shell"
-    assert _text_cell(rows_by_key["DEMO_STRATEGY"], 5).style == "bold cyan"
-    assert _text_cell(rows_by_key["DEMO_RETRY_COUNT"], 4).style == "yellow"
-    assert _text_cell(rows_by_key["DEMO_CACHE_DIR"], 5).style == "green"
+    assert "EXAMPLE_D_STORAGE" not in rows_by_key
+    assert str(rows_by_key["EXAMPLE_ACCESS_TOKEN"].cells[4]) == "<secret>"
+    assert _text_cell(rows_by_key["EXAMPLE_ACCESS_TOKEN"], 4).style == (
+        "dim italic"
+    )
+    assert _text_cell(rows_by_key["EXAMPLE_MODE"], 3).plain == "shell"
+    assert _text_cell(rows_by_key["EXAMPLE_MODE"], 5).style == "bold cyan"
+    assert _text_cell(rows_by_key["EXAMPLE_RETRY_COUNT"], 4).style == ("yellow")
+    assert _text_cell(rows_by_key["EXAMPLE_CACHE_DIR"], 5).style == "green"
 
 
 def test_tui_rendering_labels_match_field_metadata() -> None:
-    strategy = DEMO_OWNER.field("strategy")
-    enabled = DEMO_OWNER.field("enabled")
-    cache_dir = DEMO_OWNER.field("cache_dir")
+    mode = EXAMPLE_OWNER.field("mode")
+    enabled = EXAMPLE_OWNER.field("enabled")
+    cache_dir = EXAMPLE_OWNER.field("cache_dir")
 
-    assert value_style(strategy) == "bold cyan"
+    assert value_style(mode) == "bold cyan"
     assert field_type_label(cache_dir) == "Path"
-    assert possible_values_label(strategy) == "VECTOR, WEIGHT"
+    assert possible_values_label(mode) == "AUTO, MANUAL"
     assert (
         possible_values_label(enabled) == "true, false, yes, no, on, off, 1, 0"
     )

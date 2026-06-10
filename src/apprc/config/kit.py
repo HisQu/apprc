@@ -5,7 +5,7 @@
 registries, dotenv bootstrapping, local value editing, diagnostics, Textual
 editing, and Typer command generation.
 
-Use this module when wiring an application like Haiu. Use the sibling modules
+Use this module when wiring a host application. Use the sibling modules
 directly when testing one layer in isolation or when building a custom workflow
 that should not pull in CLI/TUI dependencies.
 """

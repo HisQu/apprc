@@ -9,21 +9,21 @@ from apprc.config.tui_field_state import (
     missing_storage_title,
     selected_field_for_row,
 )
-from tests.support_config import DEMO_OWNERS
+from tests.support_config import EXAMPLE_OWNERS
 
 
 def test_selected_field_for_row_ignores_non_field_rows() -> None:
     assert (
         selected_field_for_row(
-            owners=DEMO_OWNERS,
-            row_env_keys=["DEMO_MODEL"],
+            owners=EXAMPLE_OWNERS,
+            row_env_keys=["EXAMPLE_PROFILE"],
             row_index=None,
         )
         is None
     )
     assert (
         selected_field_for_row(
-            owners=DEMO_OWNERS,
+            owners=EXAMPLE_OWNERS,
             row_env_keys=[None],
             row_index=0,
         )
@@ -31,8 +31,8 @@ def test_selected_field_for_row_ignores_non_field_rows() -> None:
     )
     assert (
         selected_field_for_row(
-            owners=DEMO_OWNERS,
-            row_env_keys=["DEMO_MODEL"],
+            owners=EXAMPLE_OWNERS,
+            row_env_keys=["EXAMPLE_PROFILE"],
             row_index=10,
         )
         is None
@@ -41,19 +41,19 @@ def test_selected_field_for_row_ignores_non_field_rows() -> None:
 
 def test_selected_field_for_row_resolves_known_env_key() -> None:
     selected = selected_field_for_row(
-        owners=DEMO_OWNERS,
-        row_env_keys=["DEMO_MODEL"],
+        owners=EXAMPLE_OWNERS,
+        row_env_keys=["EXAMPLE_PROFILE"],
         row_index=0,
     )
 
     assert selected is not None
-    assert selected.spec.name == "model"
-    assert selected.owner.env_key("model") == "DEMO_MODEL"
+    assert selected.spec.name == "profile"
+    assert selected.owner.env_key("profile") == "EXAMPLE_PROFILE"
 
 
 def test_storage_titles_match_editor_text() -> None:
     root = Path("/tmp/demo-storage")
-    local_env = root / ".env.demo"
+    local_env = root / ".env.example"
     live = StorageRecord(name="alpha", root=root)
     archived = ArchivedStorageRecord(
         name="beta",
@@ -62,7 +62,7 @@ def test_storage_titles_match_editor_text() -> None:
     )
 
     assert live_storage_title(live, local_env) == (
-        "alpha: /tmp/demo-storage\n/tmp/demo-storage/.env.demo"
+        "alpha: /tmp/demo-storage\n/tmp/demo-storage/.env.example"
     )
     assert missing_storage_title(live) == (
         "alpha: Missing storage root\n"

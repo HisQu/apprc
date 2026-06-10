@@ -50,4 +50,4 @@ jobs:
         run: uv run --locked pytest
 
       - name: Compile sources
-        run: uv run --locked python -m compileall -q src/apprc examples/apprc_demo/src tests
+        run: uv run --locked python -m compileall -q src/apprc examples/example_app/src tests

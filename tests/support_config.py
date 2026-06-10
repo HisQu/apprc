@@ -1,8 +1,8 @@
-"""Shared demo config declarations for AppRC tests.
+"""Shared example config declarations for AppRC tests.
 
 The production package expects applications to provide their own config owner
 inventory. Tests use this tiny fake application so storage, dotenv, CLI, and
-TUI behavior can be exercised without depending on Haiu.
+TUI behavior can be exercised without depending on a downstream app.
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ from apprc.config import (
     config_field,
 )
 
-DEMO_OWNER = ConfigOwner(
-    key="runtime",
-    title="Runtime",
-    env_prefix="DEMO_",
-    rc_path=("runtime",),
+EXAMPLE_OWNER = ConfigOwner(
+    key="app",
+    title="App",
+    env_prefix="EXAMPLE_",
+    rc_path=("app",),
     fields=(
         config_field(
             "storage_root",
@@ -33,38 +33,24 @@ DEMO_OWNER = ConfigOwner(
             required=True,
         ),
         config_field(
-            "model",
-            "MODEL",
+            "profile",
+            "PROFILE",
             str,
-            default="demo-model",
-            title="Demo model",
+            default="default",
+            title="Profile",
             explanation=(
-                "Model used by the demo runtime. Longer context appears in "
-                "the modal editor."
+                "Named profile used by the example app. Longer context "
+                "appears in the modal editor."
             ),
         ),
         config_field(
-            "api_token",
-            "API_TOKEN",
+            "mode",
+            "MODE",
             str,
-            default=CONFIG_MISSING,
-            title="API token",
-            explanation_short="Required provider token.",
-            explanation_long=(
-                "Secret token required by the demo runtime when no shell "
-                "environment or local override provides one."
-            ),
-            required=True,
-            secret=True,
-        ),
-        config_field(
-            "strategy",
-            "STRATEGY",
-            str,
-            default="VECTOR",
-            title="Strategy",
-            explanation="Selection strategy for demo candidates.",
-            choices=("VECTOR", "WEIGHT"),
+            default="AUTO",
+            title="Mode",
+            explanation="Operating mode used by example-app commands.",
+            choices=("AUTO", "MANUAL"),
         ),
         config_field(
             "enabled",
@@ -72,7 +58,7 @@ DEMO_OWNER = ConfigOwner(
             bool,
             default=True,
             title="Enabled",
-            explanation="Turns the demo runtime on or off.",
+            explanation="Turns the example app on or off.",
         ),
         config_field(
             "retry_count",
@@ -80,7 +66,7 @@ DEMO_OWNER = ConfigOwner(
             int,
             default=3,
             title="Retry count",
-            explanation="Maximum number of demo retries.",
+            explanation="Maximum number of retry attempts.",
         ),
         config_field(
             "cache_dir",
@@ -90,41 +76,55 @@ DEMO_OWNER = ConfigOwner(
             title="Cache directory",
             explanation="Storage-local cache path.",
         ),
+        config_field(
+            "access_token",
+            "ACCESS_TOKEN",
+            str,
+            default=CONFIG_MISSING,
+            title="Access token",
+            explanation_short="Required secret token.",
+            explanation_long=(
+                "Secret token required by the example app when no shell "
+                "environment or local override provides one."
+            ),
+            required=True,
+            secret=True,
+        ),
     ),
 )
-DEMO_OWNERS = (DEMO_OWNER,)
+EXAMPLE_OWNERS = (EXAMPLE_OWNER,)
 
 
 @dataclass(slots=True)
-class DemoConfigState:
+class ExampleConfigState:
     """Root CLI state used by generated config app tests."""
 
     env_bootstrap: EnvBootstrapResult | None
     storage: str | None = None
 
 
-def build_demo_kit() -> AppConfigKit:
+def build_example_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that behaves like a real application."""
     return AppConfigKit(
-        app_name="demo",
-        display_name="Demo",
+        app_name="example",
+        display_name="Example",
         config_package="apprc.config",
-        owners=DEMO_OWNERS,
-        storage_root_env_key="DEMO_D_STORAGE",
-        registry_filename="demo.toml",
-        local_env_filename=".env.demo",
+        owners=EXAMPLE_OWNERS,
+        storage_root_env_key="EXAMPLE_D_STORAGE",
+        registry_filename="example.toml",
+        local_env_filename=".env.example",
     )
 
 
-def demo_state(
+def example_state(
     kit: AppConfigKit,
     storage_root: Path,
-) -> DemoConfigState:
+) -> ExampleConfigState:
     """Return generic CLI state with one active storage root."""
-    return DemoConfigState(
+    return ExampleConfigState(
         env_bootstrap=EnvBootstrapResult(
             shared_env=None,
-            local_env=storage_root / ".env.demo",
+            local_env=storage_root / ".env.example",
             env_file=None,
             registry_path=kit.registry_path(),
             storage_name="alpha",

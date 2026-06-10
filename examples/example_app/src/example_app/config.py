@@ -1,4 +1,4 @@
-"""Demo config contract for the standalone ``apprc`` command."""
+"""Example-app config contract for the standalone ``apprc`` command."""
 
 from __future__ import annotations
 
@@ -19,11 +19,11 @@ from apprc.config import (
 )
 
 
-APPRC_DEMO_OWNER = ConfigOwner(
-    key="runtime",
-    title="Runtime",
-    env_prefix="APPRC_DEMO_",
-    rc_path=("runtime",),
+EXAMPLE_APP_OWNER = ConfigOwner(
+    key="app",
+    title="App",
+    env_prefix="EXAMPLE_APP_",
+    rc_path=("app",),
     fields=(
         config_field(
             "storage_root",
@@ -33,28 +33,28 @@ APPRC_DEMO_OWNER = ConfigOwner(
             title="Storage root",
             explanation_short="Active storage root.",
             explanation_long=(
-                "Selected through the AppRC demo storage registry and written "
+                "Selected through the example-app storage registry and written "
                 "automatically when a storage is registered."
             ),
             editable=False,
             required=True,
         ),
         config_field(
-            "model",
-            "MODEL",
+            "profile",
+            "PROFILE",
             str,
-            default="demo-model",
-            title="Model",
-            explanation="Model name used by the demo runtime payload.",
+            default="default",
+            title="Profile",
+            explanation="Named profile used by the example app.",
         ),
         config_field(
-            "strategy",
-            "STRATEGY",
+            "mode",
+            "MODE",
             str,
-            default="VECTOR",
-            title="Strategy",
-            explanation="Selection strategy used by demo commands.",
-            choices=("VECTOR", "WEIGHT"),
+            default="AUTO",
+            title="Mode",
+            explanation="Operating mode selected for example-app commands.",
+            choices=("AUTO", "MANUAL"),
         ),
         config_field(
             "enabled",
@@ -62,7 +62,7 @@ APPRC_DEMO_OWNER = ConfigOwner(
             bool,
             default=True,
             title="Enabled",
-            explanation="Turns the demo runtime on or off.",
+            explanation="Turns the example app on or off.",
         ),
         config_field(
             "retry_count",
@@ -70,7 +70,7 @@ APPRC_DEMO_OWNER = ConfigOwner(
             int,
             default=3,
             title="Retry count",
-            explanation="Maximum number of demo retries.",
+            explanation="Maximum number of retry attempts.",
         ),
         config_field(
             "cache_dir",
@@ -78,17 +78,17 @@ APPRC_DEMO_OWNER = ConfigOwner(
             Path,
             default=Path("cache"),
             title="Cache directory",
-            explanation="Storage-local cache directory used by the demo.",
+            explanation="Storage-local cache directory used by the example app.",
         ),
         config_field(
-            "api_token",
-            "API_TOKEN",
+            "access_token",
+            "ACCESS_TOKEN",
             str,
             default=CONFIG_MISSING,
-            title="API token",
-            explanation_short="Required provider token.",
+            title="Access token",
+            explanation_short="Required secret token.",
             explanation_long=(
-                "Secret token used to verify that AppRC editors and runtime "
+                "Secret token used to verify that AppRC editors and example "
                 "payloads redact sensitive values."
             ),
             secret=True,
@@ -96,40 +96,40 @@ APPRC_DEMO_OWNER = ConfigOwner(
         ),
     ),
 )
-APPRC_DEMO_OWNERS = (APPRC_DEMO_OWNER,)
+EXAMPLE_APP_OWNERS = (EXAMPLE_APP_OWNER,)
 
-APPRC_DEMO_KIT = AppConfigKit(
-    app_name="apprc-demo",
-    display_name="AppRC Demo",
-    config_package="apprc_demo",
-    owners=APPRC_DEMO_OWNERS,
-    storage_root_env_key="APPRC_DEMO_D_STORAGE",
+EXAMPLE_APP_KIT = AppConfigKit(
+    app_name="example-app",
+    display_name="Example App",
+    config_package="example_app",
+    owners=EXAMPLE_APP_OWNERS,
+    storage_root_env_key="EXAMPLE_APP_D_STORAGE",
     command_name="apprc",
-    registry_filename="apprc-demo.toml",
-    local_env_filename=".env.apprc-demo",
+    registry_filename="example-app.toml",
+    local_env_filename=".env.example-app",
 )
 
 
 @dataclass(slots=True)
-class AppRcDemoState:
-    """Root CLI state for the standalone ``apprc`` demo command."""
+class ExampleAppState:
+    """Root CLI state for the standalone ``apprc`` example command."""
 
     env_bootstrap: EnvBootstrapResult | None = None
     storage: str | None = None
 
 
-def demo_runtime_payload(state: AppRcDemoState) -> dict[str, object]:
-    """Return bootstrap and runtime values for ``apprc config show``.
+def example_config_payload(state: ExampleAppState) -> dict[str, object]:
+    """Return bootstrap and config values for ``apprc config show``.
 
     :param state: Root command state populated during CLI bootstrap.
     :return: JSON-friendly payload with secret values redacted.
     """
     return {
-        "app_name": APPRC_DEMO_KIT.spec.app_name,
-        "command_name": APPRC_DEMO_KIT.spec.config_command_name(),
-        "display_name": APPRC_DEMO_KIT.spec.display_name,
+        "app_name": EXAMPLE_APP_KIT.spec.app_name,
+        "command_name": EXAMPLE_APP_KIT.spec.config_command_name(),
+        "display_name": EXAMPLE_APP_KIT.spec.display_name,
         "bootstrap": _bootstrap_payload(state.env_bootstrap),
-        "runtime": _runtime_values(),
+        "config": _config_values(),
     }
 
 
@@ -142,7 +142,7 @@ def _bootstrap_payload(
             "shared_env": None,
             "local_env": None,
             "env_file": None,
-            "registry_path": str(APPRC_DEMO_KIT.registry_path()),
+            "registry_path": str(EXAMPLE_APP_KIT.registry_path()),
             "storage_name": None,
             "storage_root": None,
             "used_default_storage": False,
@@ -160,17 +160,17 @@ def _bootstrap_payload(
     }
 
 
-def _runtime_values() -> dict[str, object]:
-    """Return current process config values declared by the demo owner."""
+def _config_values() -> dict[str, object]:
+    """Return current process config values declared by the example owner."""
     values: dict[str, object] = {}
-    for owner, spec in iter_config_fields(APPRC_DEMO_OWNERS):
+    for owner, spec in iter_config_fields(EXAMPLE_APP_OWNERS):
         env_key = owner.env_key(spec.name)
         values[spec.name] = _display_value(spec, os.environ.get(env_key))
     return values
 
 
 def _display_value(spec: ConfigField, raw_value: str | None) -> object:
-    """Return one runtime value with defaults and secret redaction applied."""
+    """Return one config value with defaults and secret redaction applied."""
     if spec.secret:
         if raw_value:
             return "<redacted>"
@@ -185,7 +185,7 @@ def _display_value(spec: ConfigField, raw_value: str | None) -> object:
 
 
 def _coerce_display_value(spec: ConfigField, raw_value: str) -> object:
-    """Coerce dotenv strings into the runtime type shown by demo output."""
+    """Coerce dotenv strings into the value type shown by example output."""
     if spec.python_type is bool:
         normalized = raw_value.strip().lower()
         if normalized in {"1", "true", "yes", "y", "on"}:

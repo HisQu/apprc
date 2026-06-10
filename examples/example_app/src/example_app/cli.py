@@ -1,4 +1,4 @@
-"""Standalone demo CLI for exercising AppRC config workflows."""
+"""Standalone example CLI for exercising AppRC config workflows."""
 
 from __future__ import annotations
 
@@ -17,16 +17,16 @@ from apprc.cli import (
     config_request_skips_bootstrap,
 )
 from apprc.logging import setup_logging
-from apprc_demo import (
-    APPRC_DEMO_KIT,
-    AppRcDemoState,
-    demo_runtime_payload,
+from example_app import (
+    EXAMPLE_APP_KIT,
+    ExampleAppState,
+    example_config_payload,
 )
 
 
 app = typer.Typer(
     help=(
-        "Exercise AppRC's generated config CLI against a built-in demo "
+        "Exercise AppRC's generated config CLI against a built-in example "
         "application."
     ),
     no_args_is_help=True,
@@ -64,7 +64,7 @@ def root_cmd(
         str | None,
         typer.Option(
             "--storage",
-            help="Registered demo storage selector to use for this command.",
+            help="Registered example-app storage selector to use for this command.",
         ),
     ] = None,
     log_level: Annotated[
@@ -75,13 +75,13 @@ def root_cmd(
         ),
     ] = None,
 ) -> None:
-    """Bootstrap demo config state for commands that need runtime values."""
-    state = AppRcDemoState(storage=storage)
+    """Bootstrap example-app config state for commands that need runtime values."""
+    state = ExampleAppState(storage=storage)
     ctx.obj = state
     if _config_request_skips_runtime_bootstrap():
         return
     state.env_bootstrap = bootstrap_cli_env(
-        APPRC_DEMO_KIT,
+        EXAMPLE_APP_KIT,
         env_file=env_file,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         load_dotenv_layers=not skip_dotenv_layers,
@@ -102,15 +102,15 @@ def _config_request_skips_runtime_bootstrap() -> bool:
     return config_request_skips_bootstrap(config_args)
 
 
-config_app = APPRC_DEMO_KIT.typer_app(
-    state_type=AppRcDemoState,
-    runtime_payload=demo_runtime_payload,
+config_app = EXAMPLE_APP_KIT.typer_app(
+    state_type=ExampleAppState,
+    runtime_payload=example_config_payload,
 )
 app.add_typer(config_app, name="config")
 
 
 def main() -> None:
-    """Run the standalone AppRC demo CLI."""
+    """Run the standalone AppRC example CLI."""
     app()
 
 

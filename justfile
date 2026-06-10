@@ -128,7 +128,6 @@ upgrade-repos *ARGS:
         # --upgrade-package mongodbapi \
         # --upgrade-package gta \
         # --upgrade-package embedding \
-        # --upgrade-package haiu \
         {{ARGS}}
     uv sync --all-extras --all-groups --locked
 alias uprep := upgrade-repos

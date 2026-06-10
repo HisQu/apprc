@@ -10,8 +10,22 @@ from apprc.config.environment import EnvBootstrapSpec, bootstrap_env
 from apprc.config.storage_registry import ConfigFileEnvError, register_storage
 
 
+pytestmark = [pytest.mark.requires_apprc_env("DEMO")]
+
+
 @pytest.fixture(autouse=True)
-def _restore_demo_env() -> Iterator[None]:
+def _restore_demo_env(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Iterator[None]:
+    if request.node.get_closest_marker("allow_missing_apprc_env") is None:
+        registry_path = tmp_path / "config" / "demo" / "demo.toml"
+        storage_root = tmp_path / "demo-storage"
+        storage_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("DEMO_CONFIG_FILE", str(registry_path))
+        monkeypatch.setenv("DEMO_D_STORAGE", str(storage_root.resolve()))
+
     original = {
         key: value
         for key, value in os.environ.items()
@@ -59,6 +73,7 @@ def _set_demo_config_file(monkeypatch, tmp_path: Path) -> Path:
     return registry_path
 
 
+@pytest.mark.allow_missing_apprc_env
 def test_bootstrap_env_requires_config_file_env(
     monkeypatch,
     tmp_path: Path,
@@ -99,6 +114,7 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
         path=registry_path,
         local_env_filename=".env.demo",
     )
+    monkeypatch.setenv("DEMO_D_STORAGE", str(storage_root))
     (storage_root / ".env.demo").write_text(
         'DEMO_MODEL="local-model"\n',
         encoding="utf-8",
@@ -117,8 +133,8 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
     assert os.environ["DEMO_MODEL"] == "shell-model"
     assert os.environ["DEMO_RETRY_COUNT"] == "3"
     assert os.environ["DEMO_D_STORAGE"] == str(storage_root.resolve())
-    assert result.storage_name == "alpha"
-    assert result.used_default_storage is True
+    assert result.storage_name is None
+    assert result.used_default_storage is False
     assert result.local_env == storage_root.resolve() / ".env.demo"
 
 
@@ -290,6 +306,7 @@ def test_bootstrap_env_registry_storage_name_selects_active_root(
     assert os.environ["DEMO_D_STORAGE"] == str(beta_root.resolve())
 
 
+@pytest.mark.allow_missing_apprc_env
 def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     monkeypatch,
     tmp_path: Path,

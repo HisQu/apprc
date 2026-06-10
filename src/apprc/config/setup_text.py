@@ -53,6 +53,8 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
         "storage roots.\n\n"
         f"{kit.spec.display_name} expects this variable to point at that "
         f"TOML file:\n{paths.env_key}\n\n"
+        f"{kit.spec.storage_root_env_key} points at the active default "
+        "storage while commands are running.\n\n"
         "If it is not set yet, setup will ask where the new or existing "
         f"{kit.spec.registry_filename} file should live.\n\n"
         f"Current value:\n{active_text}"
@@ -80,7 +82,9 @@ def config_file_step_text(
         f"existing {kit.spec.registry_filename} file."
         f"{suggested_text}\n\n"
         f"{kit.spec.display_name} setup prints the export command when it "
-        "finishes, but it does not edit shell startup files."
+        "finishes, but it does not edit shell startup files. "
+        f"{kit.spec.storage_root_env_key} is the current default-storage "
+        "pointer for the active shell strategy."
     )
 
 

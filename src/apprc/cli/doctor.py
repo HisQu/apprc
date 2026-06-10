@@ -27,14 +27,16 @@ def config_command_text(kit: AppConfigKit, action: str) -> str:
 
 def config_setup_message(kit: AppConfigKit) -> str:
     """Return setup text shown when no storage is registered."""
+    storage_key = kit.spec.storage_root_env_key
     setup_action = f"setup --yes --config-file /absolute/path/to/{kit.spec.registry_filename}"
     return (
         f"No {kit.spec.display_name} config file is installed yet.\n\n"
         f"{kit.spec.display_name} expects {kit.config_file_env_key()} to point "
-        "at its TOML config file. Choose where that file should live, then "
-        "run setup:\n"
+        "at its TOML config file, and "
+        f"{storage_key} to track the active default storage.\n"
+        "Choose where that file should live, then run setup:\n"
         f"  {config_command_text(kit, setup_action)}\n\n"
-        "Then inspect the setup:\n"
+        "Keep both variables exported for future commands, then inspect the setup:\n"
         f"  {config_command_text(kit, 'doctor')}\n"
         f"  {config_command_text(kit, 'show')}\n\n"
         "Setup creates:\n"

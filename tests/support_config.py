@@ -123,11 +123,42 @@ def set_apprc_example_app_config_file(
     tmp_path: Path,
 ) -> Path:
     """Point the example app at a test registry file."""
-    registry_path = (
-        tmp_path / "config" / "apprc_example_app" / "apprc_example_app.toml"
-    )
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_CONFIG_FILE", str(registry_path))
+    registry_path, _ = set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
     return registry_path
+
+
+def set_apprc_example_app_bootstrap(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    *,
+    config_file: Path | None = None,
+    storage_root: Path | None = None,
+) -> tuple[Path, Path]:
+    """Point the example app at explicit bootstrap environment variables."""
+    registry_path = (
+        config_file
+        if config_file is not None
+        else tmp_path
+        / "config"
+        / "apprc_example_app"
+        / "apprc_example_app.toml"
+    )
+    default_storage_root = (
+        storage_root
+        if storage_root is not None
+        else tmp_path / "default-storage"
+    )
+    default_storage_root.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv(
+        "APPRC_EXAMPLE_APP_CONFIG_FILE",
+        str(registry_path),
+    )
+    monkeypatch.setenv(
+        "APPRC_EXAMPLE_APP_D_STORAGE",
+        str(default_storage_root.resolve()),
+    )
+    return registry_path, default_storage_root
 
 
 def apprc_example_app_state(

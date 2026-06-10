@@ -11,14 +11,24 @@ from typer.testing import CliRunner
 from apprc.cli.doctor import config_command_text
 from apprc_example_app import APPRC_EXAMPLE_APP_KIT
 from apprc_example_app.cli import app
-from tests.support_config import build_apprc_example_app_kit
+from tests.support_config import (
+    build_apprc_example_app_kit,
+    set_apprc_example_app_bootstrap,
+)
+
+
+pytestmark = [pytest.mark.requires_apprc_env("APPRC_EXAMPLE_APP")]
 
 
 @pytest.fixture(autouse=True)
-def _isolate_apprc_example_app_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_apprc_example_app_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     for key in tuple(os.environ):
         if key.startswith("APPRC_EXAMPLE_APP_"):
             monkeypatch.delenv(key, raising=False)
+    set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
 
 
 def _clear_process_apprc_example_app_env() -> None:
@@ -36,10 +46,14 @@ def _set_demo_config_file(
     tmp_path: Path,
 ) -> Path:
     """Point the demo CLI at a test registry file."""
-    registry_path = (
-        tmp_path / "config" / "apprc_example_app" / "apprc_example_app.toml"
+    registry_path, _ = set_apprc_example_app_bootstrap(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        config_file=tmp_path
+        / "config"
+        / "apprc_example_app"
+        / "apprc_example_app.toml",
     )
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_CONFIG_FILE", str(registry_path))
     return registry_path
 
 
@@ -113,6 +127,17 @@ def test_demo_config_setup_uses_demo_paths_and_apprc_command_text(
 ) -> None:
     registry_path = _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv(
+        "APPRC_EXAMPLE_APP_D_STORAGE",
+        str(
+            (
+                tmp_path
+                / "data"
+                / "apprc_example_app"
+                / "apprc_example_app_stor-1"
+            ).resolve()
+        ),
+    )
     runner = CliRunner()
 
     result = runner.invoke(app, ["config", "setup", "--yes"])
@@ -140,6 +165,17 @@ def test_demo_config_set_and_show_payload(
 ) -> None:
     _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv(
+        "APPRC_EXAMPLE_APP_D_STORAGE",
+        str(
+            (
+                tmp_path
+                / "data"
+                / "apprc_example_app"
+                / "apprc_example_app_stor-1"
+            ).resolve()
+        ),
+    )
     runner = CliRunner()
 
     setup_result = runner.invoke(app, ["config", "setup", "--yes"])
@@ -185,6 +221,17 @@ def test_demo_root_env_file_option_before_config_show(
 ) -> None:
     _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv(
+        "APPRC_EXAMPLE_APP_D_STORAGE",
+        str(
+            (
+                tmp_path
+                / "data"
+                / "apprc_example_app"
+                / "apprc_example_app_stor-1"
+            ).resolve()
+        ),
+    )
     explicit_env = tmp_path / "override.env"
     explicit_env.write_text(
         'APPRC_EXAMPLE_APP_PROFILE="explicit-profile"\n',

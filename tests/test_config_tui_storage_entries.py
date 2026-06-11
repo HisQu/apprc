@@ -3,11 +3,11 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from apprc.config.storage_registry import (
+from apprc.config.storage.registry import (
     record_archived_storage,
     register_storage,
 )
-from apprc.config.tui.storage_entries import (
+from apprc.config.tui.storage.entries import (
     ordered_existing_storage_names,
     ordered_storage_entries,
     storage_entry_index,

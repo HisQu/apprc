@@ -1,7 +1,7 @@
 """Legacy path constants for scaffolded AppRC applications.
 
 New applications should prefer :class:`apprc.AppConfigKit` and the storage
-registry helpers in :mod:`apprc.config.storage_registry`. This module is kept
+registry helpers in :mod:`apprc.config.storage.registry`. This module is kept
 only for older scaffold-style code that imports ``apprc.paths.ROOT_PKG`` or
 ``apprc.paths.ROOT_STORAGE`` directly.
 

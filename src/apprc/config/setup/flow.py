@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 # == Internal ================================
 from apprc.config.apprc_toml import normalized_apprc_toml_path
 from apprc.config.paths import StorageRootPathError, normalize_storage_root_path
-import apprc.config.setup_text as setup_text
-from apprc.config.storage_registry import StorageRegistry
+import apprc.config.setup.text as setup_text
+from apprc.config.storage.registry import StorageRegistry
 
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit

@@ -12,7 +12,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 # == Internal ================================
-from apprc.config.storage_registry import StorageRegistry, ordered_storage_names
+from apprc.config.storage.registry import StorageRegistry, ordered_storage_names
 
 
 class StorageListRowPayload(TypedDict):

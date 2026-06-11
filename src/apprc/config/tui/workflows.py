@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 # == Internal ================================
 from apprc.config.local_env import read_local_env
 from apprc.config.paths import normalize_storage_root_path
-from apprc.config.storage_archive import (
+from apprc.config.storage.archive import (
     StorageArchiveProgress,
     archive_directory,
     extract_archive,
@@ -31,7 +31,7 @@ from apprc.config.tui.primitives import (
     PathInputScreen,
     StorageNameScreen,
 )
-from apprc.config.tui.storage_entries import ordered_existing_storage_names
+from apprc.config.tui.storage.entries import ordered_existing_storage_names
 
 if TYPE_CHECKING:
     from apprc.config.tui import ConfigEditorApp

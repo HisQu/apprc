@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from apprc.cli.config_app import config_request_skips_bootstrap
+from apprc.cli.config import config_request_skips_bootstrap
 from apprc.cli.typer_utils import args_after_command, strip_leading_options
 
 

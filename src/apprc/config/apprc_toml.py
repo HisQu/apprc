@@ -2,7 +2,7 @@
 
 The AppRC TOML is the user-level state file selected by
 ``<APP>_APPRC_TOML``. Its storage tables are parsed by
-:mod:`apprc.config.storage_registry`, while this module owns the file naming and
+:mod:`apprc.config.storage.registry`, while this module owns the file naming and
 environment-variable contract so future non-storage AppRC settings can reuse the
 same file without living in storage-specific code.
 """

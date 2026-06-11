@@ -12,9 +12,9 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Footer, Header, Static
 
 # == Internal ================================
-import apprc.config.setup_flow as setup_flow
-import apprc.config.setup_text as setup_text
-from apprc.config.storage_registry import StorageRegistry
+import apprc.config.setup.flow as setup_flow
+import apprc.config.setup.text as setup_text
+from apprc.config.storage.registry import StorageRegistry
 from apprc.config.tui.primitives import (
     ButtonVariant,
     ConfirmScreen,

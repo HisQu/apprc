@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Literal
 
 # == Internal ================================
-from apprc.config.storage_archive import (
+from apprc.config.storage.archive import (
     is_storage_archive_path,
     storage_root_name_from_archive,
 )
-from apprc.config.storage_registry import (
+from apprc.config.storage.registry import (
     StorageRegistry,
     ordered_storage_names,
 )

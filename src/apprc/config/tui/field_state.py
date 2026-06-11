@@ -13,7 +13,7 @@ from apprc.config.schema import (
     ConfigOwner,
     find_field_by_env_key,
 )
-from apprc.config.storage_registry import ArchivedStorageRecord, StorageRecord
+from apprc.config.storage.registry import ArchivedStorageRecord, StorageRecord
 
 
 @dataclass(frozen=True, slots=True)

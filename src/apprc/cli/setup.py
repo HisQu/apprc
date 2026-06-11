@@ -12,9 +12,9 @@ import typer
 from apprc.cli.doctor import print_config_doctor
 from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
-import apprc.config.setup_flow as setup_flow
-import apprc.config.setup_text as setup_text
-from apprc.config.storage_registry import StorageRegistry
+import apprc.config.setup.flow as setup_flow
+import apprc.config.setup.text as setup_text
+from apprc.config.storage.registry import StorageRegistry
 from apprc.config.tui.setup import ConfigSetupApp
 
 

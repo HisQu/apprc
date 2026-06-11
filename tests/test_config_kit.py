@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from apprc.cli.config_app import config_request_skips_bootstrap
+from apprc.cli.config import config_request_skips_bootstrap
 from apprc.config import (
     AppConfigKit,
     ApprcTomlEnvError,

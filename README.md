@@ -517,17 +517,19 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.config.apprc_toml` | `<APP>_APPRC_TOML` naming, env lookup, and path normalization. |
 | `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
 | `apprc.config.paths` | Storage-root path normalization helpers. |
-| `apprc.config.storage_selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
-| `apprc.config.storage_registry` | Storage tables inside the AppRC TOML. |
-| `apprc.config.storage_archive` | `*.apprc.tar.xz` storage compression and restore. |
+| `apprc.config.storage.selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
+| `apprc.config.storage.registry` | Storage tables inside the AppRC TOML. |
+| `apprc.config.storage.archive` | `*.apprc.tar.xz` storage compression and restore. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
-| `apprc.config.setup_flow` | Shared setup workflow rules. |
-| `apprc.config.setup_text` | User-facing setup copy. |
+| `apprc.config.setup.flow` | Shared setup workflow rules. |
+| `apprc.config.setup.text` | User-facing setup copy. |
 | `apprc.config.tui` | Textual config editor and setup wizard package. |
 | `apprc.config.tui.setup` | Textual setup wizard. |
 | `apprc.config.tui.primitives` | Shared Textual path, name, and confirmation modals. |
 | `apprc.config.tui.rendering` | Pure table cell rendering and styles. |
-| `apprc.cli.config_app` | Generated `config` Typer commands. |
+| `apprc.cli.config` | Generated `config` Typer command package. |
+| `apprc.cli.config.app` | Typer command factory for generated config CLIs. |
+| `apprc.cli.config.handlers` | Behavior behind generated config commands. |
 | `apprc.cli.bootstrap` | Common root CLI bootstrap options. |
 | `apprc.logging` | Logging facade: `setup_logging`, `get_logger`, `AppLogger`. |
 

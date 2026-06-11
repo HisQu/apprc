@@ -3,7 +3,7 @@
 # ruff: noqa: F401
 
 from apprc.cli.bootstrap import bootstrap_cli_env, parse_log_level
-from apprc.cli.config_app import (
+from apprc.cli.config import (
     ConfigCliState,
     active_storage_root_from_state,
     build_config_typer_app,

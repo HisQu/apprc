@@ -8,7 +8,7 @@ import pytest
 
 from apprc.config.apprc_toml import ApprcTomlEnvError
 from apprc.config.environment import EnvBootstrapSpec, bootstrap_env
-from apprc.config.storage_registry import register_storage
+from apprc.config.storage.registry import register_storage
 
 
 pytestmark = [pytest.mark.requires_apprc_env("DEMO")]
@@ -247,7 +247,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
         r"D:\Training\demo-project",
     )
     monkeypatch.setattr(
-        "apprc.config.storage_selector.normalize_storage_root_path",
+        "apprc.config.storage.selector.normalize_storage_root_path",
         lambda path: normalized_root,
     )
     package_name = _shared_env_package(

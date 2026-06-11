@@ -16,7 +16,7 @@ from pathlib import Path
 
 # == Internal ================================
 from apprc.config.paths import normalize_storage_root_path
-from apprc.config.storage_registry import StorageRegistry
+from apprc.config.storage.registry import StorageRegistry
 
 _WINDOWS_DRIVE_SELECTOR_PATTERN = re.compile(r"^[A-Za-z]:")
 

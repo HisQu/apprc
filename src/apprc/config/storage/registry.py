@@ -7,7 +7,7 @@ absolute storage roots and records which one setup/editor flows should treat as
 the default.
 
 AppRC TOML path selection lives in :mod:`apprc.config.apprc_toml`, storage
-selector resolution lives in :mod:`apprc.config.storage_selector`, and
+selector resolution lives in :mod:`apprc.config.storage.selector`, and
 storage-local dotenv value handling lives in :mod:`apprc.config.local_env`.
 """
 

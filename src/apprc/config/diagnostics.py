@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
 from apprc.config.install_state import ConfigInstallState
-from apprc.config.storage_selector import (
+from apprc.config.storage.selector import (
     StorageSelection,
     StorageSelectorError,
     resolve_active_storage_selection,

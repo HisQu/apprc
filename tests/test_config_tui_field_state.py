@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from apprc.config.storage_registry import ArchivedStorageRecord, StorageRecord
+from apprc.config.storage.registry import ArchivedStorageRecord, StorageRecord
 from apprc.config.tui.field_state import (
     archived_storage_title,
     live_storage_title,

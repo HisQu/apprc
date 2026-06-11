@@ -59,7 +59,7 @@ from apprc.config.schema import (
     provided_owner_field_names,
     resolve_config_field_reference,
 )
-from apprc.config.storage_selector import (
+from apprc.config.storage.selector import (
     StorageSelection,
     StorageSelectorError,
     missing_storage_selector_error,
@@ -67,7 +67,7 @@ from apprc.config.storage_selector import (
     resolve_registered_storage_name,
     resolve_storage_selector_value,
 )
-from apprc.config.storage_registry import (
+from apprc.config.storage.registry import (
     ArchivedStorageRecord,
     StorageRecord,
     StorageRegistry,

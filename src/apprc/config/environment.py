@@ -9,7 +9,7 @@ explicit ``--env-file``, and the values already present in ``os.environ``.
 The helper mutates only the current Python process. It never writes dotenv
 files and never changes the parent shell. AppRC TOML path lookup is delegated
 to :mod:`apprc.config.apprc_toml`, active storage selection is delegated to
-:mod:`apprc.config.storage_selector`, and storage-local editing is delegated to
+:mod:`apprc.config.storage.selector`, and storage-local editing is delegated to
 :mod:`apprc.config.local_env`.
 """
 
@@ -31,11 +31,11 @@ from apprc.config.apprc_toml import (
     apprc_toml_env_key,
     configured_apprc_toml_path,
 )
-from apprc.config.storage_selector import (
+from apprc.config.storage.selector import (
     missing_storage_selector_error,
     resolve_active_storage_selection,
 )
-from apprc.config.storage_registry import load_storage_registry
+from apprc.config.storage.registry import load_storage_registry
 from apprc.logging import get_logger
 
 LOG = get_logger(__name__)

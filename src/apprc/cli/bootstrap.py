@@ -14,7 +14,7 @@ import typer
 from apprc.config.apprc_toml import ApprcTomlEnvError
 from apprc.config.environment import BootstrapLogger, EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
-from apprc.config.storage_selector import StorageSelectorError
+from apprc.config.storage.selector import StorageSelectorError
 
 
 def parse_log_level(log_level: str) -> str | int:

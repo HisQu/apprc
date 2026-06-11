@@ -39,7 +39,7 @@ from apprc.config.local_env import (
     set_local_env_value,
 )
 from apprc.config.schema import ConfigOwner
-from apprc.config.storage_registry import StorageRecord, StorageRegistry
+from apprc.config.storage.registry import StorageRecord, StorageRegistry
 from apprc.config.tui.modals import (
     ConfigValueEditScreen,
     ValueEditResult,
@@ -55,7 +55,7 @@ from apprc.config.tui.field_state import (
     missing_storage_title,
     selected_field_for_row,
 )
-from apprc.config.tui.storage_entries import (
+from apprc.config.tui.storage.entries import (
     StorageEntryKind,
     ordered_storage_entries,
     storage_entry_index,

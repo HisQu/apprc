@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.storage_archive import (
+from apprc.config.storage.archive import (
     ARCHIVE_SUFFIX,
     StorageArchiveProgress,
     archive_directory,

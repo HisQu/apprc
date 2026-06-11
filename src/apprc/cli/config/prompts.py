@@ -14,7 +14,7 @@ import typer
 
 # == Internal ================================
 from apprc.config.kit import AppConfigKit
-import apprc.config.setup_flow as setup_flow
+import apprc.config.setup.flow as setup_flow
 
 
 def print_directory_listing(storage_root: Path) -> None:

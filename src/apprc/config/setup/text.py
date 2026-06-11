@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 # == Internal ================================
-from apprc.config.storage_registry import StorageRegistry, ordered_storage_names
+from apprc.config.storage.registry import StorageRegistry, ordered_storage_names
 
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit

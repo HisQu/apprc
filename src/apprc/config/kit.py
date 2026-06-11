@@ -35,7 +35,7 @@ from apprc.config.local_env import (
 )
 from apprc.config.schema import ConfigOwner
 from apprc.config.apprc_toml import default_apprc_toml_filename
-from apprc.config.storage_registry import (
+from apprc.config.storage.registry import (
     StorageRegistry,
     default_storage_data_root,
     default_storage_name,
@@ -455,7 +455,7 @@ class AppConfigKit:
             validation errors.
         :return: Configured Typer app.
         """
-        from apprc.cli.config_app import build_config_typer_app
+        from apprc.cli.config import build_config_typer_app
 
         return build_config_typer_app(
             self,

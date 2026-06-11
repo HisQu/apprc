@@ -10,7 +10,7 @@ from apprc.config.apprc_toml import (
     configured_apprc_toml_path,
     default_apprc_toml_filename,
 )
-from apprc.config.storage_registry import (
+from apprc.config.storage.registry import (
     app_data_dir,
     default_storage_data_root,
     default_storage_name,
@@ -278,7 +278,7 @@ def test_register_storage_normalizes_windows_root(
     normalized_root = tmp_path / "demo-storage"
 
     monkeypatch.setattr(
-        "apprc.config.storage_registry.normalize_storage_root_path",
+        "apprc.config.storage.registry.normalize_storage_root_path",
         lambda path: normalized_root,
     )
 

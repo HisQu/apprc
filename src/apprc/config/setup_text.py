@@ -55,32 +55,38 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
         f"TOML file:\n{paths.env_key}\n\n"
         f"{kit.spec.storage_env_key} selects the active storage name or path "
         "while commands are running.\n\n"
-        "If it is not set yet, setup will ask where the new or existing "
-        f"{kit.spec.apprc_toml_filename} file should live.\n\n"
+        "If it is not set yet, setup will ask which directory should contain "
+        f"the new or existing {kit.spec.apprc_toml_filename} file.\n\n"
         f"Current value:\n{active_text}"
     )
 
 
-def apprc_toml_step_text(
+def apprc_dir_step_text(
     kit: "AppConfigKit",
     suggested: Path | None,
 ) -> str:
-    """Return the explanation shown before choosing an AppRC TOML path.
+    """Return the explanation shown before choosing an AppRC directory.
 
     :param kit: Application config facade.
-    :param suggested: Prefilled AppRC TOML path, if one is known.
+    :param suggested: Prefilled AppRC directory, if one is known.
     :return: Plain text for CLI and Textual setup UIs.
     """
+    computed = (
+        f"\n\nComputed TOML path:\n{suggested / kit.spec.apprc_toml_filename}"
+        if suggested is not None
+        else ""
+    )
     suggested_text = (
-        f"\n\nCurrent path:\n{suggested}" if suggested is not None else ""
+        f"\n\nCurrent directory:\n{suggested}" if suggested is not None else ""
     )
     return (
         "This TOML file stores the storage registry: storage names, storage "
         "root paths, and the default storage.\n\n"
         f"{kit.spec.display_name} expects {kit.apprc_toml_env_key()} to point "
-        f"at this file in future shells, so setup needs a path to a new or "
-        f"existing {kit.spec.apprc_toml_filename} file."
-        f"{suggested_text}\n\n"
+        "at the full file path in future shells. Setup only needs the "
+        "directory and will use the fixed file name "
+        f"{kit.spec.apprc_toml_filename}."
+        f"{suggested_text}{computed}\n\n"
         f"{kit.spec.display_name} setup prints the export command when it "
         "finishes, but it does not edit shell startup files. "
         f"{kit.spec.storage_env_key} is the active storage selector for the "

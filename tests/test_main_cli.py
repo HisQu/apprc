@@ -53,7 +53,7 @@ def _set_demo_apprc_toml(
         apprc_toml=tmp_path
         / "config"
         / "apprc_example_app"
-        / "apprc_example_app_apprc.toml",
+        / "apprc_example_app.apprc.toml",
     )
     return registry_path
 

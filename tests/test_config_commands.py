@@ -251,7 +251,7 @@ def test_generated_config_app_lists_registered_storages_as_json(
             tmp_path
             / "config"
             / "apprc_example_app"
-            / "apprc_example_app_apprc.toml"
+            / "apprc_example_app.apprc.toml"
         ),
         "default_storage": "alpha",
         "storages": [
@@ -290,7 +290,7 @@ def test_config_doctor_guidance_uses_host_default_storage_name(
     payload = build_config_doctor_payload(kit, storage_name=None)
 
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in message
-    assert "setup --yes --apprc-toml" in message
+    assert "setup --yes --apprc-dir" in message
     assert payload["next_steps"][0].endswith(
-        "setup --yes --apprc-toml /absolute/path/to/apprc_example_app_apprc.toml"
+        "setup --yes --apprc-dir /absolute/path/to/config-dir"
     )

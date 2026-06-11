@@ -113,7 +113,7 @@ def build_apprc_example_app_kit() -> AppConfigKit:
         config_package="apprc.config",
         owners=APPRC_EXAMPLE_APP_OWNERS,
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
-        apprc_toml_filename="apprc_example_app_apprc.toml",
+        apprc_toml_filename="apprc_example_app.apprc.toml",
         local_env_filename=".env.apprc_example_app",
     )
 
@@ -141,7 +141,7 @@ def set_apprc_example_app_bootstrap(
         else tmp_path
         / "config"
         / "apprc_example_app"
-        / "apprc_example_app_apprc.toml"
+        / "apprc_example_app.apprc.toml"
     )
     default_storage_root = (
         storage_root

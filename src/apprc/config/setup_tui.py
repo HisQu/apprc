@@ -204,16 +204,20 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             await self._ensure_default_storage(moved)
 
     async def _choose_new_registry(self) -> StorageRegistry | None:
-        """Prompt for the AppRC TOML path and load the chosen file.
+        """Prompt for the AppRC directory and load the computed TOML file.
 
         :return: Empty or parsed registry at the selected AppRC TOML path.
         """
-        apprc_toml_path = await self._choose_apprc_toml_path(
-            default_path=self.kit.optional_apprc_toml_path(),
-            title="AppRC TOML",
+        apprc_dir = await self._choose_apprc_dir(
+            default_dir=self._default_apprc_dir(),
+            title="AppRC Directory",
         )
-        if apprc_toml_path is None:
+        if apprc_dir is None:
             return None
+        apprc_toml_path = setup_flow.setup_apprc_toml_path_from_dir(
+            self.kit,
+            apprc_dir,
+        )
         try:
             return setup_flow.load_registry(self.kit, apprc_toml_path)
         except setup_flow.ConfigSetupError as exc:
@@ -229,12 +233,16 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :param registry: Existing registry to move.
         :return: Registry loaded from the move target, or ``None``.
         """
-        target_path = await self._choose_apprc_toml_path(
-            default_path=registry.path,
+        target_dir = await self._choose_apprc_dir(
+            default_dir=registry.path.parent,
             title="Move AppRC TOML",
         )
-        if target_path is None:
+        if target_dir is None:
             return None
+        target_path = setup_flow.setup_apprc_toml_path_from_dir(
+            self.kit,
+            target_dir,
+        )
         replace = False
         if target_path.exists() and not setup_flow.same_path(
             registry.path,
@@ -267,39 +275,44 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             self.notify(str(exc), severity="error")
             return None
 
-    async def _choose_apprc_toml_path(
+    async def _choose_apprc_dir(
         self,
         *,
-        default_path: Path | None,
+        default_dir: Path | None,
         title: str,
     ) -> Path | None:
-        """Prompt until the user picks a rediscoverable AppRC TOML path.
+        """Prompt until the user picks a usable AppRC directory.
 
-        :param default_path: Prefilled AppRC TOML path.
+        :param default_dir: Prefilled AppRC directory.
         :param title: Modal title.
-        :return: Normalized AppRC TOML path, or ``None`` when canceled.
+        :return: Normalized AppRC directory, or ``None`` when canceled.
         """
         while True:
             result = await self.push_screen_wait(
                 PathInputScreen(
                     title=title,
-                    message=setup_text.apprc_toml_step_text(
+                    message=setup_text.apprc_dir_step_text(
                         self.kit,
-                        default_path,
+                        default_dir,
                     ),
-                    placeholder="AppRC TOML path",
-                    value="" if default_path is None else str(default_path),
+                    placeholder="AppRC directory",
+                    value="" if default_dir is None else str(default_dir),
                 )
             )
             if result is None:
                 return None
-            path = setup_flow.normalized_apprc_toml_path(result.path)
             try:
-                setup_flow.require_apprc_toml_path_available(path)
+                return setup_flow.setup_apprc_toml_dir(result.path)
             except setup_flow.ConfigSetupError as exc:
                 self.notify(str(exc), severity="error")
                 continue
-            return path
+
+    def _default_apprc_dir(self) -> Path | None:
+        """Return the env-selected AppRC TOML parent directory, if known."""
+        active_path = self.kit.optional_apprc_toml_path()
+        if active_path is None:
+            return None
+        return active_path.parent
 
     async def _ensure_default_storage(
         self,

@@ -72,7 +72,7 @@ def test_kit_computes_default_apprc_toml_filename() -> None:
         storage_env_key="MY_APP_STORAGE",
     )
 
-    assert kit.spec.apprc_toml_filename == "my-app_rc_apprc.toml"
+    assert kit.spec.apprc_toml_filename == "my-app_rc.apprc.toml"
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -88,7 +88,7 @@ def test_kit_registry_path_requires_apprc_toml_env(
 
     message = str(exc_info.value)
     assert "APPRC_EXAMPLE_APP_APPRC_TOML is required" in message
-    assert "config setup --yes --apprc-toml" in message
+    assert "config setup --yes --apprc-dir" in message
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -124,7 +124,7 @@ def test_generated_config_setup_yes_requires_apprc_toml_without_env(
     result = runner.invoke(app, ["setup", "--yes"])
 
     assert result.exit_code == 2, result.output
-    assert "--apprc-toml" in result.output
+    assert "--apprc-dir" in result.output
     assert "APPRC_EXAMPLE_APP_APPRC_TOML is not set" in result.output
 
 
@@ -286,7 +286,7 @@ def test_kit_registers_storage_and_reports_doctor_payload(
         == tmp_path
         / "config"
         / "apprc_example_app"
-        / "apprc_example_app_apprc.toml"
+        / "apprc_example_app.apprc.toml"
     )
     assert (storage_root / ".env.apprc_example_app").is_file()
     assert f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"\n' in (

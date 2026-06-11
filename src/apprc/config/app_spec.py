@@ -42,7 +42,7 @@ class AppConfigSpec:
     owners: tuple[ConfigOwner, ...]
     storage_env_key: str
     command_name: str | None = None
-    apprc_toml_filename: str = "app_apprc.toml"
+    apprc_toml_filename: str = "app.apprc.toml"
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
 

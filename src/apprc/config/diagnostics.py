@@ -59,22 +59,19 @@ def config_command_text(kit: "AppConfigKit", action: str) -> str:
 def config_setup_message(kit: "AppConfigKit") -> str:
     """Return setup text shown when no storage is registered."""
     storage_key = kit.spec.storage_env_key
-    setup_action = (
-        "setup --yes --apprc-toml "
-        f"/absolute/path/to/{kit.spec.apprc_toml_filename}"
-    )
+    setup_action = "setup --yes --apprc-dir /absolute/path/to/config-dir"
     return (
         f"No {kit.spec.display_name} AppRC TOML is installed yet.\n\n"
         f"{kit.spec.display_name} expects {kit.apprc_toml_env_key()} to point "
         "at its AppRC TOML, and "
         f"{storage_key} to track the active storage selector.\n"
-        "Choose where that file should live, then run setup:\n"
+        "Choose where that file's directory should live, then run setup:\n"
         f"  {config_command_text(kit, setup_action)}\n\n"
         "Keep both variables exported for future commands, then inspect the setup:\n"
         f"  {config_command_text(kit, 'doctor')}\n"
         f"  {config_command_text(kit, 'show')}\n\n"
         "Setup creates:\n"
-        f"  /absolute/path/to/{kit.spec.apprc_toml_filename}\n"
+        f"  /absolute/path/to/config-dir/{kit.spec.apprc_toml_filename}\n"
         f"  /absolute/path/to/storage-root/{kit.spec.local_env_filename}"
     )
 
@@ -113,7 +110,7 @@ def build_config_doctor_payload(
     if active_toml_path is None:
         issues.append(
             f"{toml_env_key} is not set. Run "
-            f"{config_command_text(kit, f'setup --yes --apprc-toml /absolute/path/to/{kit.spec.apprc_toml_filename}')}"
+            f"{config_command_text(kit, 'setup --yes --apprc-dir /absolute/path/to/config-dir')}"
             " and keep the printed export command in your shell setup."
         )
     elif not toml_exists:
@@ -226,7 +223,7 @@ def build_config_doctor_payload(
         else [
             config_command_text(
                 kit,
-                f"setup --yes --apprc-toml /absolute/path/to/{kit.spec.apprc_toml_filename}",
+                "setup --yes --apprc-dir /absolute/path/to/config-dir",
             ),
             config_command_text(kit, "doctor"),
             config_command_text(kit, "show"),

@@ -25,7 +25,7 @@ def _missing_bootstrap_env_for(prefix: str) -> tuple[str, str]:
 def _format_bootstrap_usage(prefix: str) -> str:
     """Build concise guidance for one required bootstrap prefix."""
     config_key, storage_key = _missing_bootstrap_env_for(prefix)
-    apprc_toml_name = f"{prefix.lower()}_apprc.toml"
+    apprc_toml_name = f"{prefix.lower()}.apprc.toml"
     return (
         f"{prefix}: set these two variables in your shell startup (or env):\n"
         f'  export {config_key}="/absolute/path/to/{apprc_toml_name}"\n'

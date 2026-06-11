@@ -21,7 +21,7 @@ def _restore_demo_env(
     tmp_path: Path,
 ) -> Iterator[None]:
     if request.node.get_closest_marker("allow_missing_apprc_env") is None:
-        registry_path = tmp_path / "config" / "demo" / "demo_apprc.toml"
+        registry_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
         storage_root = tmp_path / "demo-storage"
         storage_root.mkdir(parents=True, exist_ok=True)
         monkeypatch.setenv("DEMO_APPRC_TOML", str(registry_path))
@@ -61,7 +61,7 @@ def _spec(package_name: str) -> EnvBootstrapSpec:
         display_name="Demo",
         config_package=package_name,
         storage_env_key="DEMO_STORAGE",
-        apprc_toml_filename="demo_apprc.toml",
+        apprc_toml_filename="demo.apprc.toml",
         shared_env_filename=".env.shared",
         local_env_filename=".env.demo",
     )
@@ -69,7 +69,7 @@ def _spec(package_name: str) -> EnvBootstrapSpec:
 
 def _set_demo_apprc_toml(monkeypatch, tmp_path: Path) -> Path:
     """Point the demo bootstrap spec at a test AppRC TOML file."""
-    registry_path = tmp_path / "config" / "demo" / "demo_apprc.toml"
+    registry_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
     monkeypatch.setenv("DEMO_APPRC_TOML", str(registry_path))
     return registry_path
 

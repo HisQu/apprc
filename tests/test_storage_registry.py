@@ -52,10 +52,10 @@ def test_default_storage_name_uses_valid_host_specific_selector() -> None:
 
 
 def test_default_apprc_toml_filename_uses_host_app_name() -> None:
-    assert default_apprc_toml_filename("demo") == "demo_apprc.toml"
-    assert default_apprc_toml_filename("my-app.rc") == "my-app_rc_apprc.toml"
-    assert default_apprc_toml_filename("") == "app_apprc.toml"
-    assert default_apprc_toml_filename("???") == "app_apprc.toml"
+    assert default_apprc_toml_filename("demo") == "demo.apprc.toml"
+    assert default_apprc_toml_filename("my-app.rc") == "my-app_rc.apprc.toml"
+    assert default_apprc_toml_filename("") == "app.apprc.toml"
+    assert default_apprc_toml_filename("???") == "app.apprc.toml"
 
 
 def test_apprc_toml_env_key_normalizes_app_name() -> None:
@@ -67,12 +67,12 @@ def test_configured_apprc_toml_path_uses_env_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    custom_registry = tmp_path / "custom" / "demo_apprc.toml"
+    custom_registry = tmp_path / "custom" / "demo.apprc.toml"
 
     with pytest.raises(ApprcTomlEnvError, match="DEMO_APPRC_TOML"):
         configured_apprc_toml_path(
             app_name="demo",
-            apprc_toml_filename="demo_apprc.toml",
+            apprc_toml_filename="demo.apprc.toml",
         )
 
     monkeypatch.setenv("DEMO_APPRC_TOML", str(custom_registry))
@@ -80,7 +80,7 @@ def test_configured_apprc_toml_path_uses_env_override(
     assert (
         configured_apprc_toml_path(
             app_name="demo",
-            apprc_toml_filename="demo_apprc.toml",
+            apprc_toml_filename="demo.apprc.toml",
         )
         == custom_registry
     )
@@ -89,7 +89,7 @@ def test_configured_apprc_toml_path_uses_env_override(
 def test_register_storage_writes_sorted_toml_and_local_env(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "config" / "demo_apprc.toml"
+    registry_path = tmp_path / "config" / "demo.apprc.toml"
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
 
@@ -122,7 +122,7 @@ def test_register_storage_writes_sorted_toml_and_local_env(
 
 
 def test_ordered_storage_names_places_default_first(tmp_path: Path) -> None:
-    registry_path = tmp_path / "config" / "demo_apprc.toml"
+    registry_path = tmp_path / "config" / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
@@ -142,7 +142,7 @@ def test_ordered_storage_names_places_default_first(tmp_path: Path) -> None:
 def test_load_storage_registry_keeps_old_toml_compatible(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     registry_path.write_text(
         'default_storage = "alpha"\n'
         "\n"
@@ -161,7 +161,7 @@ def test_load_storage_registry_keeps_old_toml_compatible(
 def test_load_storage_registry_keeps_old_default_name_compatible(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     registry_path.write_text(
         'default_storage = "default"\n'
         "\n"
@@ -179,7 +179,7 @@ def test_load_storage_registry_keeps_old_default_name_compatible(
 def test_archived_storage_records_round_trip_sorted_toml(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
@@ -207,7 +207,7 @@ def test_archived_storage_records_round_trip_sorted_toml(
 
 
 def test_remove_and_prune_archived_storage_records(tmp_path: Path) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     existing_archive = tmp_path / "alpha.apprc.tar.xz"
     existing_archive.write_bytes(b"placeholder")
     record_archived_storage(
@@ -231,7 +231,7 @@ def test_remove_and_prune_archived_storage_records(tmp_path: Path) -> None:
 
 
 def test_unregister_storage_repairs_or_clears_default(tmp_path: Path) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
@@ -257,7 +257,7 @@ def test_unregister_storage_repairs_or_clears_default(tmp_path: Path) -> None:
 
 
 def test_replace_default_storage_can_clear_default(tmp_path: Path) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
@@ -274,7 +274,7 @@ def test_register_storage_normalizes_windows_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "config" / "demo_apprc.toml"
+    registry_path = tmp_path / "config" / "demo.apprc.toml"
     normalized_root = tmp_path / "demo-storage"
 
     monkeypatch.setattr(
@@ -331,7 +331,7 @@ def test_normalize_storage_root_path_rejects_damaged_windows_path() -> None:
 
 
 def test_set_default_storage_requires_existing_name(tmp_path: Path) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "storage",
@@ -346,7 +346,7 @@ def test_set_default_storage_requires_existing_name(tmp_path: Path) -> None:
 def test_load_storage_registry_rejects_invalid_default(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     registry_path.write_text('default_storage = "missing"\n', encoding="utf-8")
 
     with pytest.raises(ValueError, match="default_storage 'missing'"):
@@ -356,7 +356,7 @@ def test_load_storage_registry_rejects_invalid_default(
 def test_load_storage_registry_rejects_invalid_storage_tables(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     registry_path.write_text('storages = "alpha"\n', encoding="utf-8")
 
     with pytest.raises(ValueError, match="storages must be a table"):
@@ -374,7 +374,7 @@ def test_load_storage_registry_rejects_invalid_storage_tables(
 def test_load_storage_registry_rejects_invalid_archived_storage_tables(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "demo_apprc.toml"
+    registry_path = tmp_path / "demo.apprc.toml"
     registry_path.write_text(
         "[archived_storages.alpha]\n"
         f'archive = "{tmp_path / "alpha.apprc.tar.xz"}"\n',
@@ -400,5 +400,5 @@ def test_register_storage_rejects_names_that_cannot_be_toml_keys(
                 name=name,
                 root=tmp_path / "storage",
                 make_default=True,
-                path=tmp_path / "demo_apprc.toml",
+                path=tmp_path / "demo.apprc.toml",
             )

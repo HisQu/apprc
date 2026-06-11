@@ -35,7 +35,7 @@ def test_kit_builds_generic_editor_with_spec_defaults(
     assert editor.init_command == (
         "apprc_example_app config init STORAGE_ROOT --name NAME"
     )
-    assert editor.registry_label == "apprc_example_app_apprc.toml"
+    assert editor.registry_label == "apprc_example_app.apprc.toml"
 
 
 @pytest.mark.asyncio

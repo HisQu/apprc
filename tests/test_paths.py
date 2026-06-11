@@ -11,7 +11,7 @@ import apprc.paths as legacy_paths
 def test_legacy_paths_import_does_not_resolve_root_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delattr(legacy_paths, "ROOT_STORAGE", raising=False)
+    monkeypatch.delitem(legacy_paths.__dict__, "ROOT_STORAGE", raising=False)
 
     def fail_root_lookup(*args: object, **kwargs: object) -> Path:
         raise AssertionError("ROOT_STORAGE should be lazy")

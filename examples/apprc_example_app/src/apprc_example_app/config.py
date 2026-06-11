@@ -105,7 +105,7 @@ APPRC_EXAMPLE_APP_KIT = AppConfigKit(
     owners=APPRC_EXAMPLE_APP_OWNERS,
     storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
     command_name="apprc",
-    apprc_toml_filename="apprc_example_app_apprc.toml",
+    apprc_toml_filename="apprc_example_app.apprc.toml",
     local_env_filename=".env.apprc_example_app",
 )
 

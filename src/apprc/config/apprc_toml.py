@@ -24,11 +24,11 @@ def default_apprc_toml_filename(app_name: str) -> str:
     """Return the conventional AppRC TOML basename for one application.
 
     :param app_name: Application name from the AppRC integration spec.
-    :return: Host-specific TOML filename ending in ``_apprc.toml``.
+    :return: Host-specific TOML filename ending in ``.apprc.toml``.
     """
     normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", app_name).strip("_-")
     base_name = normalized or "app"
-    return f"{base_name}_apprc.toml"
+    return f"{base_name}.apprc.toml"
 
 
 def apprc_toml_env_key(app_name: str) -> str:
@@ -104,9 +104,10 @@ def missing_apprc_toml_env_message(
     command_name = app_name or "app"
     return (
         f"{env_key} is required and must point to this app's AppRC TOML. "
-        "Choose where that file should live, then run:\n"
-        f"  {command_name} config setup --yes --apprc-toml "
-        f"/absolute/path/to/{apprc_toml_filename}\n"
+        "Choose where that file's directory should live, then run:\n"
+        f"  {command_name} config setup --yes --apprc-dir "
+        "/absolute/path/to/config-dir\n"
+        f"Setup will use /absolute/path/to/config-dir/{apprc_toml_filename}. "
         "Keep the variable exported for future commands."
     )
 

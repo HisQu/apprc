@@ -40,7 +40,7 @@ def test_generated_config_setup_creates_default_registry_and_storage(
         == tmp_path
         / "config"
         / "apprc_example_app"
-        / "apprc_example_app_apprc.toml"
+        / "apprc_example_app.apprc.toml"
     )
     assert registry.default_storage == "apprc_example_app_stor-1"
     assert (
@@ -66,7 +66,7 @@ def test_generated_config_setup_creates_default_registry_and_storage(
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_generated_config_setup_accepts_apprc_toml_without_env(
+def test_generated_config_setup_accepts_apprc_dir_without_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -74,11 +74,12 @@ def test_generated_config_setup_accepts_apprc_toml_without_env(
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
-    custom_registry = tmp_path / "custom" / "apprc_example_app_apprc.toml"
+    custom_dir = tmp_path / "custom"
+    custom_registry = custom_dir / "apprc_example_app.apprc.toml"
 
     result = runner.invoke(
         app,
-        ["setup", "--yes", "-t", str(custom_registry)],
+        ["setup", "--yes", "-d", str(custom_dir)],
     )
 
     registry = kit.load_registry(path=custom_registry)
@@ -96,7 +97,7 @@ def test_generated_config_setup_accepts_apprc_toml_without_env(
     assert kit.optional_apprc_toml_path() is None
 
 
-def test_generated_config_setup_accepts_apprc_toml_env_mismatch(
+def test_generated_config_setup_accepts_apprc_dir_env_mismatch(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -113,11 +114,12 @@ def test_generated_config_setup_accepts_apprc_toml_env_mismatch(
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
-    custom_registry = tmp_path / "custom" / "apprc_example_app_apprc.toml"
+    custom_dir = tmp_path / "custom"
+    custom_registry = custom_dir / "apprc_example_app.apprc.toml"
 
     result = runner.invoke(
         app,
-        ["setup", "--yes", "--apprc-toml", str(custom_registry)],
+        ["setup", "--yes", "--apprc-dir", str(custom_dir)],
     )
 
     registry = kit.load_registry(path=custom_registry)
@@ -135,7 +137,7 @@ def test_generated_config_setup_accepts_matching_custom_registry_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    custom_registry = tmp_path / "custom" / "apprc_example_app_apprc.toml"
+    custom_registry = tmp_path / "custom" / "apprc_example_app.apprc.toml"
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(custom_registry))
@@ -219,6 +221,26 @@ def test_generated_config_setup_options_require_yes(
     assert not kit.apprc_toml_path().exists()
 
 
+@pytest.mark.allow_missing_apprc_env
+def test_generated_config_setup_rejects_apprc_dir_that_is_file(
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+    file_path = tmp_path / "not-a-directory"
+    file_path.write_text("payload", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["setup", "--yes", "--apprc-dir", str(file_path)],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "APPRC_DIR" in result.output
+    assert "AppRC directory is not a directory" in result.output
+
+
 def test_generated_config_setup_keeps_existing_default_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -281,7 +303,7 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     assert "AppRC TOML" in result.output
 
 
-def test_generated_config_setup_moves_existing_registry_to_apprc_toml_target(
+def test_generated_config_setup_moves_existing_registry_to_apprc_dir_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -294,7 +316,8 @@ def test_generated_config_setup_moves_existing_registry_to_apprc_toml_target(
         str(storage_root.resolve()),
     )
     default_registry = kit.apprc_toml_path()
-    custom_registry = tmp_path / "custom" / "apprc_example_app_apprc.toml"
+    custom_dir = tmp_path / "custom"
+    custom_registry = custom_dir / "apprc_example_app.apprc.toml"
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
 
@@ -303,8 +326,8 @@ def test_generated_config_setup_moves_existing_registry_to_apprc_toml_target(
         [
             "setup",
             "--yes",
-            "--apprc-toml",
-            str(custom_registry),
+            "--apprc-dir",
+            str(custom_dir),
             "--existing-action",
             "move",
         ],

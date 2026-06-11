@@ -141,9 +141,9 @@ command. `python -m apprc` is intentionally not a supported entrypoint.
 After `uv sync --all-groups`, run:
 
 ```shell
-export APPRC_EXAMPLE_APP_APPRC_TOML="$PWD/.demo/apprc_example_app_apprc.toml"
+export APPRC_EXAMPLE_APP_APPRC_TOML="$PWD/.demo/apprc_example_app.apprc.toml"
 export APPRC_EXAMPLE_APP_STORAGE="$PWD/.demo/storage"
-.venv/bin/apprc config setup --yes --apprc-toml "$APPRC_EXAMPLE_APP_APPRC_TOML" --storage-root "$APPRC_EXAMPLE_APP_STORAGE"
+.venv/bin/apprc config setup --yes --apprc-dir "$PWD/.demo" --storage-root "$APPRC_EXAMPLE_APP_STORAGE"
 .venv/bin/apprc config show --json
 .venv/bin/apprc config set app.profile other-profile
 .venv/bin/apprc config set retry_count 5
@@ -203,7 +203,7 @@ MYAPP_CONFIG = AppConfigKit(
     config_package="myapp.config",
     owners=(APP_OWNER,),
     storage_env_key="MYAPP_STORAGE",
-    apprc_toml_filename="myapp_apprc.toml",
+    apprc_toml_filename="myapp.apprc.toml",
     shared_env_filename=".env.shared",
     local_env_filename=".env.local",
 )
@@ -238,10 +238,10 @@ overrides the executable shown in generated next-step commands.
 Users then get:
 
 ```shell
-export MYAPP_APPRC_TOML="/absolute/path/to/myapp_apprc.toml"
+export MYAPP_APPRC_TOML="/absolute/path/to/config-dir/myapp.apprc.toml"
 export MYAPP_STORAGE="/absolute/path/to/default/storage"
 myapp config setup
-myapp config setup --yes --apprc-toml "$MYAPP_APPRC_TOML" --storage-root "$MYAPP_STORAGE" --name myapp_stor-1
+myapp config setup --yes --apprc-dir "/absolute/path/to/config-dir" --storage-root "$MYAPP_STORAGE" --name myapp_stor-1
 myapp config init /absolute/path/to/storage --name myapp_stor-1 --default
 myapp config doctor
 myapp config show --json
@@ -251,10 +251,10 @@ myapp config edit
 
 Use `myapp config setup` for normal first-time installation. With no options it
 opens a Textual wizard with path autocomplete, explains the AppRC TOML and
-storage root locations, asks for an AppRC TOML path when `MYAPP_APPRC_TOML`
+storage root locations, asks for an AppRC directory when `MYAPP_APPRC_TOML`
 is not set, explains that `<APP>_STORAGE` must be set after setup, asks for a
 default storage, and shows next steps. For CI or
-scripted bootstrap, pass `--yes` with `--apprc-toml`, `--storage-root`,
+scripted bootstrap, pass `--yes` with `--apprc-dir`, `--storage-root`,
 `--name`, and `--existing-action keep|reset|move` as needed. `config init`
 remains available as the lower-level command for scripts or manual storage
 registration after `MYAPP_APPRC_TOML` is exported.
@@ -263,7 +263,7 @@ registration after `MYAPP_APPRC_TOML` is exported.
 
 For AppRC-backed apps, keep both AppRC TOML and storage selectors in startup:
 
-- `export <APP>_APPRC_TOML="/absolute/path/to/<app>_apprc.toml"`
+- `export <APP>_APPRC_TOML="/absolute/path/to/<app>.apprc.toml"`
 - `export <APP>_STORAGE="storage_name_or_path"`
 
 `<APP>_STORAGE` is always the active storage selector for the current shell. It
@@ -275,7 +275,7 @@ relative paths.
 
 Runtime behavior when keys are missing:
 
-- `<APP>_APPRC_TOML` missing: `config setup` with explicit `--apprc-toml` still
+- `<APP>_APPRC_TOML` missing: `config setup` with explicit `--apprc-dir` still
   works, but runtime commands that need a registry are unavailable until setup is
   done.
 - `<APP>_STORAGE` missing: runtime bootstrap fails. Setup and doctor commands
@@ -297,7 +297,7 @@ Runtime behavior when keys are missing:
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
 | `os.environ` | current process | Highest-priority values by default. |
-| `<APP>_APPRC_TOML -> <app>_apprc.toml` | AppRC TOML | Named storage roots and default storage. |
+| `<APP>_APPRC_TOML -> <app>.apprc.toml` | AppRC TOML | Named storage roots and default storage. |
 | `<APP>_STORAGE` | Bootstrap selector | Active storage name or storage path for current shell context. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
@@ -332,10 +332,10 @@ so AppRC uses one explicit rule: the app-specific `<APP>_APPRC_TOML`
 environment variable must point at the AppRC TOML file. For an app named
 `myapp`, that variable is `MYAPP_APPRC_TOML`.
 
-Setup is the bootstrap exception. `myapp config setup` can ask for a new or
-existing TOML path when `MYAPP_APPRC_TOML` is not set, and
-`myapp config setup --yes --apprc-toml /absolute/path/to/myapp_apprc.toml` works
-non-interactively. Setup prints the exact export command to keep for future
+Setup is the bootstrap exception. `myapp config setup` can ask for the
+directory that should contain `myapp.apprc.toml` when `MYAPP_APPRC_TOML` is not
+set, and `myapp config setup --yes --apprc-dir /absolute/path/to/config-dir`
+works non-interactively. Setup prints the exact export command to keep for future
 shells; AppRC does not edit shell startup files. Runtime selection also depends
 on `<APP>_STORAGE` to keep the active storage explicit and stable.
 
@@ -464,7 +464,7 @@ app.add_typer(config_app, name="config")
 
 `config setup` opens a Textual wizard for first-time setup unless `--yes` is
 passed for non-interactive use. The wizard handles existing registries, custom
-AppRC TOML paths, default storage creation, and final diagnostics.
+AppRC directories, default storage creation, and final diagnostics.
 
 `config edit` opens a Textual editor. The editor shows:
 

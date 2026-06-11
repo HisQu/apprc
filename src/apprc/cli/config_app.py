@@ -417,12 +417,12 @@ def build_config_typer_app(
                 help="Run setup non-interactively with the selected values.",
             ),
         ] = False,
-        apprc_toml: Annotated[
+        apprc_dir: Annotated[
             Path | None,
             typer.Option(
-                "--apprc-toml",
-                "-t",
-                help="AppRC TOML path for non-interactive setup.",
+                "--apprc-dir",
+                "-d",
+                help="Directory that will contain the AppRC TOML.",
             ),
         ] = None,
         storage_root: Annotated[
@@ -451,7 +451,7 @@ def build_config_typer_app(
         run_config_setup(
             kit,
             assume_yes=assume_yes,
-            apprc_toml=apprc_toml,
+            apprc_dir=apprc_dir,
             storage_root=storage_root,
             storage_name=storage_name,
             existing_action=existing_action,

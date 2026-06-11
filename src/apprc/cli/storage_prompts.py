@@ -77,7 +77,7 @@ def confirm_existing_storage_root(
             ".",
         ),
         Text(""),
-        Text("Config files to create or update:", style="dim"),
+        Text("AppRC-managed files to create or update:", style="dim"),
         apprc_tomls,
         Text(""),
         Text(

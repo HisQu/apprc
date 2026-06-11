@@ -55,8 +55,8 @@ if TYPE_CHECKING:
     import typer
 
     from apprc.config.diagnostics import ConfigDoctorPayload
-    from apprc.config.setup_tui import ConfigSetupApp
     from apprc.config.tui import ConfigEditorApp
+    from apprc.config.tui.setup import ConfigSetupApp
 
 
 class AppConfigKit:
@@ -421,7 +421,7 @@ class AppConfigKit:
 
     def setup_app(self) -> ConfigSetupApp:
         """Build the generic Textual setup wizard for this application."""
-        from apprc.config.setup_tui import ConfigSetupApp
+        from apprc.config.tui.setup import ConfigSetupApp
 
         return ConfigSetupApp(kit=self)
 

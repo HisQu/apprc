@@ -14,8 +14,8 @@ from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
 import apprc.config.setup_flow as setup_flow
 import apprc.config.setup_text as setup_text
-from apprc.config.setup_tui import ConfigSetupApp
 from apprc.config.storage_registry import StorageRegistry
+from apprc.config.tui.setup import ConfigSetupApp
 
 
 def run_config_setup(

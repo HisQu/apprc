@@ -10,6 +10,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,6 +77,52 @@ def resolve_registered_storage_name(
     )
 
 
+def resolve_active_storage_selection(
+    *,
+    registry: StorageRegistry,
+    storage_name: str | None,
+    storage_env_key: str,
+    original_env: Mapping[str, str],
+    explicit_values: Mapping[str, str] | None = None,
+    env_file_overrides_os_environ: bool = False,
+) -> StorageSelection | None:
+    """Return the active storage selected by CLI, env, or explicit dotenv.
+
+    ``--storage`` always wins and is intentionally a registered-name selector.
+    Without it, AppRC reads ``storage_env_key`` from the process environment
+    and optional explicit dotenv values using the same precedence policy as the
+    dotenv merge step.
+
+    :param registry: Parsed AppRC TOML storage registry.
+    :param storage_name: Optional ``--storage`` selector.
+    :param storage_env_key: Env key that stores the active storage selector.
+    :param original_env: Process environment captured before dotenv loading.
+    :param explicit_values: Values read from ``--env-file``.
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+        already exported process values.
+    :return: Resolved selection, or ``None`` when no selector was provided.
+    :raises StorageSelectorError: If the selected value is invalid.
+    """
+    if storage_name is not None:
+        return resolve_registered_storage_name(
+            registry=registry,
+            name=storage_name,
+        )
+    storage_selector = _storage_selector_value(
+        original_env=original_env,
+        explicit_values=explicit_values or {},
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        storage_env_key=storage_env_key,
+    )
+    if storage_selector:
+        return resolve_storage_selector_value(
+            registry=registry,
+            raw_value=storage_selector,
+            storage_env_key=storage_env_key,
+        )
+    return None
+
+
 def resolve_storage_selector_value(
     *,
     registry: StorageRegistry,
@@ -131,6 +178,23 @@ def missing_storage_selector_error(
         "storage name or an explicit storage path. Pass --storage NAME or "
         f'export {storage_env_key}="/path/to/storage".',
         param_hint=storage_env_key,
+    )
+
+
+def _storage_selector_value(
+    *,
+    original_env: Mapping[str, str],
+    explicit_values: Mapping[str, str],
+    env_file_overrides_os_environ: bool,
+    storage_env_key: str,
+) -> str | None:
+    """Return the storage selector implied by env-file precedence."""
+    if env_file_overrides_os_environ:
+        return explicit_values.get(storage_env_key) or original_env.get(
+            storage_env_key
+        )
+    return original_env.get(storage_env_key) or explicit_values.get(
+        storage_env_key
     )
 
 

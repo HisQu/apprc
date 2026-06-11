@@ -17,8 +17,8 @@ from textual.widgets import Button, Input, ProgressBar, Static
 # == Internal ================================
 from apprc.config.schema import ConfigField, ConfigOwner
 from apprc.config.storage_archive import StorageArchiveProgress
-from apprc.config.tui_primitives import PathSuggester
-from apprc.config.tui_rendering import field_type_label, possible_values_label
+from apprc.config.tui.primitives import PathSuggester
+from apprc.config.tui.rendering import field_type_label, possible_values_label
 
 
 @dataclass(frozen=True, slots=True)

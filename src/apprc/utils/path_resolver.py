@@ -11,7 +11,6 @@ from __future__ import annotations
 # == Standard Library ========================
 import logging
 import os
-from importlib import import_module
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
@@ -138,69 +137,3 @@ def get_local_dir_from_env(
     else:
         LOG.info(f"Using '{env_var}' from environment: '{root}'.")
     return root
-
-
-# ---------------------------------------------------------------
-# -- Hugging Face hook (Explicit call)
-
-
-def sync_hf_repo_into(
-    local_root: Path,
-    repo_id: str,
-    revision: str | None = None,
-    allow_patterns: list[str] | str | None = None,
-    ignore_patterns: list[str] | str | None = None,
-) -> Path:
-    """Pull a Hugging Face repo snapshot into a specific local folder.
-
-    Uses `snapshot_download(..., local_dir=...)` which is designed for repeatedly
-    pulling updates into a chosen folder and maintains a `.cache/huggingface/`
-    metadata directory under `local_dir`.
-
-    Authentication can be provided via HF_TOKEN / HF_HOME configuration.
-
-    :param local_root: Target folder (your OPA_RAG_ROOT).
-    :param repo_id: Hub repo id, e.g. "Org/name".
-    :param revision: Branch, tag, or commit hash.
-    :param allow_patterns: Optional glob(s) to limit what gets pulled.
-    :param ignore_patterns: Optional glob(s) to exclude files.
-    :return: The local_root for convenience.
-    """
-    try:
-        snapshot_download = getattr(
-            import_module("huggingface_hub"),
-            "snapshot_download",
-        )
-    except Exception as e:
-        raise RuntimeError(
-            "huggingface_hub is required for Hugging Face sync. "
-            "Install it (e.g. add an extra) to use this feature."
-        ) from e
-
-    local_root.mkdir(parents=True, exist_ok=True)
-
-    snapshot_download(
-        repo_id=repo_id,
-        revision=revision,
-        local_dir=str(local_root),
-        allow_patterns=allow_patterns,
-        ignore_patterns=ignore_patterns,
-    )
-    return local_root
-
-
-def sync_hf_if_configured(local_root: Path) -> None:
-    """Sync from Hugging Face if OPA_RAG_HF_REPO is set."""
-    repo_id = os.getenv("OPA_RAG_HF_REPO")
-    if not repo_id:
-        return
-
-    revision = os.getenv("OPA_RAG_HF_REVISION") or None
-
-    LOG.info(f"Syncing Hugging Face repo '{repo_id}' into '{local_root}'...")
-    sync_hf_repo_into(
-        local_root=local_root,
-        repo_id=repo_id,
-        revision=revision,
-        # > Example: allow_patterns=["rag_workdir/**"] if you only want the workdir.
-    )

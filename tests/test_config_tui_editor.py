@@ -104,7 +104,7 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
 
     async with editor.run_test() as pilot:
         worker = editor.run_worker(
-            editor._register_storage_directory_flow(
+            editor.storage_workflows.register_storage_directory_flow(
                 storage_root,
                 default_name="alpha",
             )
@@ -140,7 +140,9 @@ async def test_editor_unregisters_missing_non_default_storage(
     editor = kit.editor_app(registry=registry, initial_storage="alpha")
 
     async with editor.run_test() as pilot:
-        worker = editor.run_worker(editor._open_delete_storage_flow())
+        worker = editor.run_worker(
+            editor.storage_workflows.open_delete_storage_flow()
+        )
         await pilot.pause()
         assert editor.current_storage_kind == "missing"
         assert list(editor.screen.query("#delete-content")) == []
@@ -174,9 +176,9 @@ async def test_editor_set_default_and_unregister_non_default_storage(
 
     async with editor.run_test():
         editor._select_storage("beta")
-        await editor._set_current_as_default()
+        await editor.storage_workflows.set_current_as_default()
         editor._select_storage("alpha")
-        removed = await editor._remove_live_storage(
+        removed = await editor.storage_workflows.remove_live_storage(
             "alpha",
             delete_content=False,
         )
@@ -210,7 +212,10 @@ async def test_editor_default_replacement_skips_missing_storages(
 
     async with editor.run_test() as pilot:
         worker = editor.run_worker(
-            editor._remove_live_storage("alpha", delete_content=False)
+            editor.storage_workflows.remove_live_storage(
+                "alpha",
+                delete_content=False,
+            )
         )
         await pilot.pause()
         assert list(editor.screen.query("#default-beta")) == []
@@ -242,7 +247,10 @@ async def test_editor_recreates_last_default_with_host_storage_name(
 
     async with editor.run_test() as pilot:
         worker = editor.run_worker(
-            editor._remove_live_storage("alpha", delete_content=False)
+            editor.storage_workflows.remove_live_storage(
+                "alpha",
+                delete_content=False,
+            )
         )
         await pilot.pause()
         message = editor.screen.query_one(
@@ -284,7 +292,9 @@ async def test_editor_shows_and_prunes_stale_archived_rows(
         storage_list = editor.query_one("#storage-list", ListView)
         assert storage_list.index == 0
         assert editor.current_storage_kind == "archived"
-        await editor._restore_or_prune_archived_storage("alpha")
+        await editor.storage_workflows.restore_or_prune_archived_storage(
+            "alpha"
+        )
 
     assert kit.load_registry().archived_storages == {}
 

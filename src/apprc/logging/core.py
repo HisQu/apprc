@@ -45,6 +45,116 @@ _RESERVED_LOG_RECORD_KEYS = frozenset(
 ) | {"message", "asctime"}
 
 
+def _logging_extra_from_kwargs(
+    kwargs: dict[str, Any],
+    *,
+    extra_struct: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Build the stdlib ``extra`` dict for one semantic log call.
+
+    :param kwargs: Remaining keyword arguments after logging controls were
+        removed.
+    :param extra_struct: Structured fields destined for the event dict.
+    :return: Combined mapping safe to pass as ``Logger._log(extra=...)``.
+    """
+    extra_arg = kwargs.pop("extra", _MISSING)
+    _reject_unknown_log_kwargs(kwargs)
+    extra = (
+        dict(extra_arg)
+        if extra_arg is not _MISSING and extra_arg is not None
+        else {}
+    )
+    struct_extra = dict(extra_struct or {})
+    _validate_log_extra_keys("extra", extra)
+    _validate_log_extra_keys("extra_struct", struct_extra)
+    duplicate_keys = extra.keys() & struct_extra.keys()
+    if duplicate_keys:
+        keys = ", ".join(sorted(str(key) for key in duplicate_keys))
+        raise KeyError(
+            "Duplicate logging structured field(s) in extra and "
+            f"extra_struct: {keys}"
+        )
+    extra.update(struct_extra)
+    return extra
+
+
+def _reject_unknown_log_kwargs(kwargs: Mapping[str, Any]) -> None:
+    """Raise when a caller used bare structured logging fields.
+
+    :param kwargs: Keyword arguments not claimed as stdlib controls.
+    :raise TypeError: If any unsupported keyword argument remains.
+    """
+    if not kwargs:
+        return
+    keys = ", ".join(sorted(str(key) for key in kwargs))
+    raise TypeError(
+        "Unsupported logging keyword argument(s): "
+        f"{keys}. Put structured fields in extra_struct={{...}}."
+    )
+
+
+def _validate_log_extra_keys(source: str, extra: Mapping[str, Any]) -> None:
+    """Reject structured fields that would overwrite ``LogRecord`` data.
+
+    :param source: Name of the user-facing mapping being checked.
+    :param extra: Structured fields supplied by the caller.
+    :raise KeyError: If any field collides with stdlib logging attributes.
+    """
+    collisions = set(extra) & _RESERVED_LOG_RECORD_KEYS
+    if not collisions:
+        return
+    keys = ", ".join(sorted(str(key) for key in collisions))
+    raise KeyError(f"{source} contains reserved LogRecord field(s): {keys}")
+
+
+def _message_text(msg: Any, *, prefix: str, event: SemanticEvent) -> str:
+    """Return the final human-readable message for stdlib logging.
+
+    :param msg: Caller-provided message object.
+    :param prefix: Optional text prepended before the message.
+    :param event: Semantic event controlling ellipsis behavior.
+    :return: String passed as the stdlib log message.
+    """
+    text = str(msg)
+    if event.append_ellipsis and not text.endswith("..."):
+        text = f"{text} ..."
+    if not prefix:
+        return text
+    spacer = "" if prefix.endswith(" ") else " "
+    return f"{prefix}{spacer}{text}"
+
+
+def _stacklevel(stacklevel: Any, depth: Any) -> int:
+    """Resolve explicit and contextual stack attribution controls.
+
+    :param stacklevel: Optional stdlib ``stacklevel`` override.
+    :param depth: AppRC-specific extra frames to skip.
+    :return: Stack level sent to ``Logger._log``.
+    """
+    if stacklevel is not None:
+        return int(stacklevel)
+    return _DEPTH_OVERRIDE.get() + int(depth)
+
+
+def _exc_info(
+    exc: BaseException | bool | tuple[Any, Any, Any] | None,
+) -> bool | tuple[type[BaseException], BaseException, Any] | None:
+    """Normalize exception shortcuts into stdlib ``exc_info``.
+
+    :param exc: Exception object, bool flag, tuple, or ``None``.
+    :return: Value accepted by stdlib logging as ``exc_info``.
+    """
+    if exc is None:
+        return True
+    if exc is False:
+        return None
+    if exc is True:
+        return True
+    if isinstance(exc, BaseException):
+        return (type(exc), exc, exc.__traceback__)
+    return cast(tuple[type[BaseException], BaseException, Any], exc)
+
+
 # ===============================================================
 # == Main Logger Class
 # ===============================================================
@@ -372,7 +482,7 @@ class AppLogger(logging.getLoggerClass()):
         text = str(msg)
         if text and not text.endswith(":"):
             text = f"{text}:"
-        kwargs["exc_info"] = self._exc_info(exc)
+        kwargs["exc_info"] = _exc_info(exc)
         return self._emit_semantic(
             "TRACEBACK",
             text or "Traceback:",
@@ -429,19 +539,19 @@ class AppLogger(logging.getLoggerClass()):
         if not self.isEnabledFor(event.level):
             return None
 
-        text = self._message_text(msg, prefix=prefix, event=event)
-        stacklevel = self._stacklevel(
+        text = _message_text(msg, prefix=prefix, event=event)
+        stacklevel = _stacklevel(
             kwargs.pop("stacklevel", None),
             kwargs.pop("depth", 0),
         )
         if "exception" in kwargs and "exc_info" not in kwargs:
-            kwargs["exc_info"] = self._exc_info(kwargs.pop("exception"))
+            kwargs["exc_info"] = _exc_info(kwargs.pop("exception"))
         if "exc" in kwargs and "exc_info" not in kwargs:
-            kwargs["exc_info"] = self._exc_info(kwargs.pop("exc"))
+            kwargs["exc_info"] = _exc_info(kwargs.pop("exc"))
 
         exc_info = kwargs.pop("exc_info", None)
         stack_info = bool(kwargs.pop("stack_info", False))
-        extra = self._extra_from_kwargs(
+        extra = _logging_extra_from_kwargs(
             kwargs,
             extra_struct=extra_struct,
         )
@@ -457,131 +567,6 @@ class AppLogger(logging.getLoggerClass()):
             stack_info=stack_info,
             stacklevel=stacklevel,
         )
-
-    @staticmethod
-    def _extra_from_kwargs(
-        kwargs: dict[str, Any],
-        *,
-        extra_struct: Mapping[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Build the stdlib ``extra`` dict for one semantic log call.
-
-        ``extra`` is the stdlib escape hatch and ``extra_struct`` is AppRC's
-        named lane for fields that should appear in structlog output. This
-        helper keeps both, but refuses collisions and reserved ``LogRecord``
-        names before stdlib can raise a less contextual error.
-
-        :param kwargs: Remaining keyword arguments after logging controls were
-            removed.
-        :param extra_struct: Structured fields destined for the event dict.
-        :return: Combined mapping safe to pass as ``Logger._log(extra=...)``.
-        """
-
-        extra_arg = kwargs.pop("extra", _MISSING)
-        AppLogger._reject_unknown_kwargs(kwargs)
-        extra = (
-            dict(extra_arg)
-            if extra_arg is not _MISSING and extra_arg is not None
-            else {}
-        )
-        struct_extra = dict(extra_struct or {})
-        AppLogger._validate_extra_keys("extra", extra)
-        AppLogger._validate_extra_keys("extra_struct", struct_extra)
-        duplicate_keys = extra.keys() & struct_extra.keys()
-        if duplicate_keys:
-            keys = ", ".join(sorted(str(key) for key in duplicate_keys))
-            raise KeyError(
-                "Duplicate logging structured field(s) in extra and "
-                f"extra_struct: {keys}"
-            )
-        extra.update(struct_extra)
-        return extra
-
-    @staticmethod
-    def _reject_unknown_kwargs(kwargs: Mapping[str, Any]) -> None:
-        """Raise when a caller used bare structured logging fields.
-
-        :param kwargs: Keyword arguments not claimed as stdlib controls.
-        :raise TypeError: If any unsupported keyword argument remains.
-        """
-
-        if not kwargs:
-            return
-        keys = ", ".join(sorted(str(key) for key in kwargs))
-        raise TypeError(
-            "Unsupported logging keyword argument(s): "
-            f"{keys}. Put structured fields in extra_struct={{...}}."
-        )
-
-    @staticmethod
-    def _validate_extra_keys(source: str, extra: Mapping[str, Any]) -> None:
-        """Reject structured fields that would overwrite ``LogRecord`` data.
-
-        :param source: Name of the user-facing mapping being checked.
-        :param extra: Structured fields supplied by the caller.
-        :raise KeyError: If any field collides with stdlib logging attributes.
-        """
-
-        collisions = set(extra) & _RESERVED_LOG_RECORD_KEYS
-        if not collisions:
-            return
-        keys = ", ".join(sorted(str(key) for key in collisions))
-        raise KeyError(f"{source} contains reserved LogRecord field(s): {keys}")
-
-    @staticmethod
-    def _message_text(msg: Any, *, prefix: str, event: SemanticEvent) -> str:
-        """Return the final human-readable message for stdlib logging.
-
-        :param msg: Caller-provided message object.
-        :param prefix: Optional text prepended before the message.
-        :param event: Semantic event controlling ellipsis behavior.
-        :return: String passed as the stdlib log message.
-        """
-
-        text = str(msg)
-        if event.append_ellipsis and not text.endswith("..."):
-            text = f"{text} ..."
-        if not prefix:
-            return text
-        spacer = "" if prefix.endswith(" ") else " "
-        return f"{prefix}{spacer}{text}"
-
-    @staticmethod
-    def _stacklevel(stacklevel: Any, depth: Any) -> int:
-        """Resolve explicit and contextual stack attribution controls.
-
-        :param stacklevel: Optional stdlib ``stacklevel`` override.
-        :param depth: AppRC-specific extra frames to skip.
-        :return: Stack level sent to ``Logger._log``.
-        """
-
-        if stacklevel is not None:
-            return int(stacklevel)
-        return _DEPTH_OVERRIDE.get() + int(depth)
-
-    @staticmethod
-    def _exc_info(
-        exc: BaseException | bool | tuple[Any, Any, Any] | None,
-    ) -> bool | tuple[type[BaseException], BaseException, Any] | None:
-        """Normalize exception shortcuts into stdlib ``exc_info``.
-
-        ``True`` means stdlib should read the active exception from
-        ``sys.exc_info``. An exception object becomes an explicit tuple so the
-        right traceback survives even after leaving the ``except`` block.
-
-        :param exc: Exception object, bool flag, tuple, or ``None``.
-        :return: Value accepted by stdlib logging as ``exc_info``.
-        """
-
-        if exc is None:
-            return True
-        if exc is False:
-            return None
-        if exc is True:
-            return True
-        if isinstance(exc, BaseException):
-            return (type(exc), exc, exc.__traceback__)
-        return cast(tuple[type[BaseException], BaseException, Any], exc)
 
 
 # ===============================================================

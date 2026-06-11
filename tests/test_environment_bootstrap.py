@@ -310,6 +310,48 @@ def test_bootstrap_env_storage_name_selects_active_root(
     assert os.environ["DEMO_STORAGE"] == str(beta_root.resolve())
 
 
+def test_bootstrap_env_storage_name_wins_over_env_selector(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+    alpha_root = tmp_path / "alpha-storage"
+    beta_root = tmp_path / "beta-storage"
+    register_storage(
+        name="alpha",
+        root=alpha_root,
+        make_default=True,
+        path=registry_path,
+        local_env_filename=".env.demo",
+    )
+    register_storage(
+        name="beta",
+        root=beta_root,
+        make_default=False,
+        path=registry_path,
+        local_env_filename=".env.demo",
+    )
+    monkeypatch.setenv("DEMO_STORAGE", "alpha")
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=None,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage_name="beta",
+    )
+
+    assert result.storage_name == "beta"
+    assert result.storage_selector_source == "--storage"
+    assert result.storage_selector_value == "beta"
+    assert result.storage_root == beta_root.resolve()
+
+
 def test_bootstrap_env_storage_env_name_selects_registered_root(
     monkeypatch,
     tmp_path: Path,

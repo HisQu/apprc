@@ -7,7 +7,7 @@ from apprc.config.storage_registry import (
     record_archived_storage,
     register_storage,
 )
-from apprc.config.tui_storage_entries import (
+from apprc.config.tui.storage_entries import (
     ordered_existing_storage_names,
     ordered_storage_entries,
     storage_entry_index,
@@ -16,7 +16,7 @@ from apprc.config.tui_storage_entries import (
 )
 
 
-def test_tui_storage_entries_order_live_missing_and_archived(
+def test_config_textual_storage_entries_order_live_missing_and_archived(
     tmp_path: Path,
 ) -> None:
     registry_path = tmp_path / "config" / "demo.apprc.toml"

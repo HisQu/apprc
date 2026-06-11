@@ -200,7 +200,7 @@ def storage_root_reuse_text(
         f"Path:\n{storage_root}\n\n"
         f"{kit.spec.display_name} will reuse this directory for "
         f"{kit.spec.display_name} storage {storage_name!r}.\n\n"
-        "Config files to create or update:\n"
+        "AppRC-managed files to create or update:\n"
         f"storage-local env: {storage_root / kit.spec.local_env_filename}\n"
         f"AppRC TOML: {active_registry_path}\n\n"
         "No existing files will be deleted, moved, or overwritten."

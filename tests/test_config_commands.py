@@ -54,6 +54,30 @@ def test_generated_config_app_sets_local_values_and_shows_payload(
     assert json.loads(show_result.output) == {"storage": str(storage_root)}
 
 
+def test_generated_config_app_rejects_bare_unknown_storage_selector(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    kit.register_storage(
+        name="alpha",
+        root=tmp_path / "alpha-storage",
+        make_default=True,
+    )
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "beta")
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    state = ApprcExampleAppConfigState(env_bootstrap=None)
+    runner = CliRunner()
+
+    payload = build_config_doctor_payload(kit, storage_name=None)
+    result = runner.invoke(app, ["show"], obj=state)
+
+    assert result.exit_code == 2, result.output
+    assert "not a registered storage" in result.output
+    assert any("Use './beta'" in issue for issue in payload["issues"])
+
+
 def test_kit_clears_local_value_with_app_local_env_filename(
     monkeypatch,
     tmp_path: Path,
@@ -105,7 +129,7 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
         "Example App will reuse this directory for Example App storage "
         "'alpha'." in result.output
     )
-    assert "Config files to create or update:" in result.output
+    assert "AppRC-managed files to create or update:" in result.output
     assert "storage-local env" in result.output
     assert "AppRC TOML" in result.output
     assert (

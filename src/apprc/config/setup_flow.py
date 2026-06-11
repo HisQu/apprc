@@ -48,20 +48,6 @@ class ConfigSetupError(ValueError):
         self.exit_code = exit_code
 
 
-apprc_dir_step_text = setup_text.apprc_dir_step_text
-ConfigSetupPaths = setup_text.ConfigSetupPaths
-default_storage_step_text = setup_text.default_storage_step_text
-existing_registry_text = setup_text.existing_registry_text
-existing_registry_rows_text = setup_text.existing_registry_rows_text
-export_apprc_toml_command = setup_text.export_apprc_toml_command
-export_storage_selector_command = setup_text.export_storage_selector_command
-next_steps_text = setup_text.next_steps_text
-reset_warning_text = setup_text.reset_warning_text
-setup_overview_text = setup_text.setup_overview_text
-setup_paths = setup_text.setup_paths
-storage_root_reuse_text = setup_text.storage_root_reuse_text
-
-
 @dataclass(frozen=True, slots=True)
 class ConfigSetupResult:
     """Result returned after setup writes or confirms a registry.
@@ -267,7 +253,7 @@ def validate_storage_root_for_setup(
     if allow_non_empty_storage or not any(resolved_root.iterdir()):
         return resolved_root
     raise ConfigSetupError(
-        storage_root_reuse_text(
+        setup_text.storage_root_reuse_text(
             kit,
             resolved_root,
             storage_name=storage_name,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rich.text import Text
 
-from apprc.config.tui_rendering import (
+from apprc.config.tui.rendering import (
     FIELD_TABLE_COLUMNS,
     FieldTableRow,
     build_field_table_rows,
@@ -71,7 +71,7 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     )
 
 
-def test_tui_rendering_labels_match_field_metadata() -> None:
+def test_config_textual_rendering_labels_match_field_metadata() -> None:
     mode = APPRC_EXAMPLE_APP_OWNER.field("mode")
     enabled = APPRC_EXAMPLE_APP_OWNER.field("enabled")
     cache_dir = APPRC_EXAMPLE_APP_OWNER.field("cache_dir")

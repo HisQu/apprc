@@ -32,15 +32,10 @@ from apprc.config.apprc_toml import (
     configured_apprc_toml_path,
 )
 from apprc.config.storage_selector import (
-    StorageSelection,
     missing_storage_selector_error,
-    resolve_registered_storage_name,
-    resolve_storage_selector_value,
+    resolve_active_storage_selection,
 )
-from apprc.config.storage_registry import (
-    StorageRegistry,
-    load_storage_registry,
-)
+from apprc.config.storage_registry import load_storage_registry
 from apprc.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -157,10 +152,10 @@ def bootstrap_env(
     original_env = dict(os.environ)
     explicit_values = _read_explicit_env_file(env_file)
     registry = load_storage_registry(spec.apprc_toml_path())
-    selection = _select_storage(
-        spec=spec,
+    selection = resolve_active_storage_selection(
         registry=registry,
         storage_name=storage_name,
+        storage_env_key=spec.storage_env_key,
         original_env=original_env,
         explicit_values=explicit_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
@@ -202,36 +197,6 @@ def bootstrap_env(
         storage_root=active_storage_root,
         storage_count=len(registry.storages),
     )
-
-
-def _select_storage(
-    *,
-    spec: EnvBootstrapSpec,
-    registry: StorageRegistry,
-    storage_name: str | None,
-    original_env: Mapping[str, str],
-    explicit_values: Mapping[str, str],
-    env_file_overrides_os_environ: bool,
-) -> StorageSelection | None:
-    """Return storage selected by CLI or env selector."""
-    if storage_name is not None:
-        return resolve_registered_storage_name(
-            registry=registry,
-            name=storage_name,
-        )
-    storage_selector = _storage_selector_value(
-        original_env=original_env,
-        explicit_values=explicit_values,
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-        storage_env_key=spec.storage_env_key,
-    )
-    if storage_selector:
-        return resolve_storage_selector_value(
-            registry=registry,
-            raw_value=storage_selector,
-            storage_env_key=spec.storage_env_key,
-        )
-    return None
 
 
 def _shared_env_resource(spec: EnvBootstrapSpec) -> Traversable:
@@ -287,20 +252,3 @@ def _merged_env_values(
         **explicit_values,
         **original_env,
     }
-
-
-def _storage_selector_value(
-    *,
-    original_env: Mapping[str, str],
-    explicit_values: Mapping[str, str],
-    env_file_overrides_os_environ: bool,
-    storage_env_key: str,
-) -> str | None:
-    """Return the storage selector implied by ``os.environ`` and ``env_file``."""
-    if env_file_overrides_os_environ:
-        return explicit_values.get(storage_env_key) or original_env.get(
-            storage_env_key
-        )
-    return original_env.get(storage_env_key) or explicit_values.get(
-        storage_env_key
-    )

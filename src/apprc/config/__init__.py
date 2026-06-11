@@ -63,6 +63,7 @@ from apprc.config.storage_selector import (
     StorageSelection,
     StorageSelectorError,
     missing_storage_selector_error,
+    resolve_active_storage_selection,
     resolve_registered_storage_name,
     resolve_storage_selector_value,
 )

@@ -33,8 +33,8 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             title="Storage root",
             explanation_short="Active storage root.",
             explanation_long=(
-                "Selected through the Example App storage registry and written "
-                "automatically when a storage is registered."
+                "Selected through the AppRC TOML for Example App and written "
+                "automatically when a storage root is registered."
             ),
             editable=False,
             required=True,

@@ -5,9 +5,9 @@ registry helpers in :mod:`apprc.config.storage_registry`. This module is kept
 only for older scaffold-style code that imports ``apprc.paths.ROOT_PKG`` or
 ``apprc.paths.ROOT_STORAGE`` directly.
 
-``ROOT_STORAGE`` is resolved lazily on first access from the historical
-``apprc_STORAGE`` environment variable so importing this module does not read
-dotenv files or require local storage to be configured.
+``ROOT_STORAGE`` is resolved lazily on first access from the quarantined
+``APPRC_LEGACY_STORAGE`` environment variable so importing this module does not
+read dotenv files or require local storage to be configured.
 """
 
 # == Standard Library ========================
@@ -28,11 +28,11 @@ LOG.debug(f"AppRC package directory: {ROOT_PKG}")
 def root_storage() -> Path:
     """Return the legacy local storage directory for scaffolded projects.
 
-    :return: Path selected by ``apprc_STORAGE`` in ``.env.template`` or the
-        current process environment.
+    :return: Path selected by ``APPRC_LEGACY_STORAGE`` in ``.env.template`` or
+        the current process environment.
     """
     return ut.get_local_dir_from_env(
-        env_var="apprc_STORAGE",
+        env_var="APPRC_LEGACY_STORAGE",
         env_file=".env.template",
     )
 

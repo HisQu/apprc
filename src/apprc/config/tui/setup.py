@@ -15,7 +15,7 @@ from textual.widgets import Button, Footer, Header, Static
 import apprc.config.setup_flow as setup_flow
 import apprc.config.setup_text as setup_text
 from apprc.config.storage_registry import StorageRegistry
-from apprc.config.tui_primitives import (
+from apprc.config.tui.primitives import (
     ButtonVariant,
     ConfirmScreen,
     PathInputScreen,

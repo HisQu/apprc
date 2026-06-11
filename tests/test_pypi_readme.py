@@ -41,3 +41,11 @@ def test_convert_github_callouts_renders_plain_markdown() -> None:
         "- Python >=3.12\n\n"
         "Body\n"
     )
+
+
+def test_pypi_readme_is_generated_from_github_readme() -> None:
+    module = load_pypi_readme_module()
+    github_readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    pypi_readme = (ROOT / "README.pypi.md").read_text(encoding="utf-8")
+
+    assert pypi_readme == module.convert_github_callouts(github_readme)

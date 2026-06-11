@@ -417,7 +417,7 @@ STORAGE_OWNER = ConfigOwner(
             editable=False,
             required=True,
             explanation_short="Active storage root.",
-            explanation_long="Selected through the AppRC storage registry.",
+            explanation_long="Selected through the AppRC TOML.",
         ),
     ),
 )
@@ -521,11 +521,12 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.config.storage_registry` | Storage tables inside the AppRC TOML. |
 | `apprc.config.storage_archive` | `*.apprc.tar.xz` storage compression and restore. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
-| `apprc.config.setup_flow` | Shared setup workflow rules and setup copy. |
-| `apprc.config.setup_tui` | Textual setup wizard. |
-| `apprc.config.tui` | Textual app and modal interactions. |
-| `apprc.config.tui_primitives` | Shared Textual path, name, and confirmation modals. |
-| `apprc.config.tui_rendering` | Pure table cell rendering and styles. |
+| `apprc.config.setup_flow` | Shared setup workflow rules. |
+| `apprc.config.setup_text` | User-facing setup copy. |
+| `apprc.config.tui` | Textual config editor and setup wizard package. |
+| `apprc.config.tui.setup` | Textual setup wizard. |
+| `apprc.config.tui.primitives` | Shared Textual path, name, and confirmation modals. |
+| `apprc.config.tui.rendering` | Pure table cell rendering and styles. |
 | `apprc.cli.config_app` | Generated `config` Typer commands. |
 | `apprc.cli.bootstrap` | Common root CLI bootstrap options. |
 | `apprc.logging` | Logging facade: `setup_logging`, `get_logger`, `AppLogger`. |

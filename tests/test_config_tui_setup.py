@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import Button, Input, Static
 
-from apprc.config.tui_primitives import PathSuggester
+from apprc.config.tui.primitives import PathSuggester
 from tests.support_config import (
     build_apprc_example_app_kit,
     set_apprc_example_app_apprc_toml,

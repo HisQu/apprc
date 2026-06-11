@@ -12,8 +12,7 @@ from apprc.config.install_state import ConfigInstallState
 from apprc.config.storage_selector import (
     StorageSelection,
     StorageSelectorError,
-    resolve_registered_storage_name,
-    resolve_storage_selector_value,
+    resolve_active_storage_selection,
 )
 
 if TYPE_CHECKING:
@@ -121,11 +120,10 @@ def build_config_doctor_payload(
             registry = kit.load_registry(path=active_toml_path)
         except ValueError as exc:
             toml_error = str(exc)
-            issues.append(f"Storage registry is invalid: {toml_error}")
+            issues.append(f"AppRC TOML is invalid: {toml_error}")
         else:
             storage_count = len(registry.storages)
             default_storage = registry.default_storage
-            env_storage = os.environ.get(kit.spec.storage_env_key, "").strip()
             if not registry.storages:
                 issues.append(
                     f"No {kit.spec.display_name} storage is registered yet."
@@ -138,24 +136,16 @@ def build_config_doctor_payload(
                     f"Run {config_command_text(kit, 'set-default NAME')}."
                 )
 
-            if storage_name is not None:
-                try:
-                    selection = resolve_registered_storage_name(
-                        registry=registry,
-                        name=storage_name,
-                    )
-                except StorageSelectorError as exc:
-                    issues.append(str(exc))
-            elif env_storage:
-                try:
-                    selection = resolve_storage_selector_value(
-                        registry=registry,
-                        raw_value=env_storage,
-                        storage_env_key=kit.spec.storage_env_key,
-                    )
-                except StorageSelectorError as exc:
-                    issues.append(str(exc))
-            elif registry.storages:
+            try:
+                selection = resolve_active_storage_selection(
+                    registry=registry,
+                    storage_name=storage_name,
+                    storage_env_key=kit.spec.storage_env_key,
+                    original_env=os.environ,
+                )
+            except StorageSelectorError as exc:
+                issues.append(str(exc))
+            if selection is None and registry.storages:
                 issues.append(
                     f"{kit.spec.storage_env_key} is not set. Export a "
                     "registered storage name or explicit storage path; the "

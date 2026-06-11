@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+# == 3rd Party ===============================
+from rich.text import Text
+
 # == Internal ================================
 from apprc.config.storage.archive import (
     is_storage_archive_path,
@@ -16,6 +19,13 @@ from apprc.config.storage.archive import (
 from apprc.config.storage.registry import (
     StorageRegistry,
     ordered_storage_names,
+)
+from apprc.config.tui.styles import (
+    ARCHIVE_STYLE,
+    DEFAULT_STYLE,
+    MISSING_STYLE,
+    path_text,
+    storage_name_text,
 )
 
 StorageEntryKind = Literal["live", "missing", "archived"]
@@ -101,7 +111,7 @@ def storage_entry_index(
 def storage_entry_label(
     registry: StorageRegistry,
     entry: StorageListEntry,
-) -> str:
+) -> Text:
     """Return a readable storage-list label.
 
     :param registry: User storage registry containing ``entry``.
@@ -110,15 +120,20 @@ def storage_entry_label(
     """
     if entry.kind in {"live", "missing"}:
         record = registry.selected(entry.name)
-        default = (
-            " [setup/editor default]"
-            if record.name == registry.default_storage
-            else ""
-        )
-        missing = " [missing]" if entry.kind == "missing" else ""
-        return f"{record.name}{default}{missing}\n{record.root}"
+        label = storage_name_text(record.name)
+        if record.name == registry.default_storage:
+            label.append(" [setup/editor default]", style=DEFAULT_STYLE)
+        if entry.kind == "missing":
+            label.append(" [missing]", style=MISSING_STYLE)
+        label.append("\n")
+        label.append_text(path_text(record.root))
+        return label
     record = registry.archived_storages[entry.name]
-    return f"{record.name} [Last Archived]\n{record.archive}"
+    label = storage_name_text(record.name)
+    label.append(" [Last Archived]", style=ARCHIVE_STYLE)
+    label.append("\n")
+    label.append_text(path_text(record.archive))
+    return label
 
 
 def suggest_storage_name(

@@ -19,6 +19,13 @@ from apprc.config.schema import ConfigField, ConfigOwner
 from apprc.config.storage.archive import StorageArchiveProgress
 from apprc.config.tui.primitives import PathSuggester
 from apprc.config.tui.rendering import field_type_label, possible_values_label
+from apprc.config.tui.styles import (
+    PATH_INPUT_CLASS,
+    env_key_text,
+    label_value_text,
+    lines_text,
+    path_text,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +78,10 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         height: 3;
         margin-top: 1;
     }
+
+    Input.path-input {
+        color: cyan;
+    }
     """
 
     BINDINGS = [
@@ -105,7 +116,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
                 ),
                 id="edit-title",
             )
-            yield Static(self.env_key, id="edit-env-key")
+            yield Static(env_key_text(self.env_key), id="edit-env-key")
             yield Static(
                 "\n".join(
                     (
@@ -126,6 +137,9 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
                 placeholder="Local override value",
                 password=self.spec.secret,
                 id="edit-value-input",
+                classes=(
+                    PATH_INPUT_CLASS if self.spec.python_type is Path else None
+                ),
             )
             with Horizontal(id="edit-button-row"):
                 yield Button("Save", variant="primary", id="edit-save")
@@ -198,6 +212,10 @@ class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
         height: 3;
         margin-top: 1;
     }
+
+    Input.path-input {
+        color: cyan;
+    }
     """
 
     BINDINGS = [("escape", "cancel", "Cancel")]
@@ -221,9 +239,12 @@ class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
         with Vertical(id="archive-dialog"):
             yield Static(Text("Archive storage", style="bold"))
             yield Static(
-                "Compressing can take a while. The live storage is unchanged "
-                "unless you choose to delete the source after compression.\n"
-                f"Source: {self.source_root}",
+                lines_text(
+                    "Compressing can take a while. The live storage is "
+                    "unchanged unless you choose to delete the source after "
+                    "compression.",
+                    label_value_text("Source", path_text(self.source_root)),
+                ),
                 id="archive-message",
             )
             yield Input(
@@ -231,6 +252,7 @@ class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
                 placeholder="Archive path ending in *.apprc.tar.xz",
                 suggester=PathSuggester(case_sensitive=True),
                 id="archive-path-input",
+                classes=PATH_INPUT_CLASS,
             )
             with Horizontal(id="archive-button-row"):
                 yield Button("Archive", variant="primary", id="archive-run")
@@ -308,6 +330,10 @@ class DefaultPathScreen(ModalScreen[DefaultPathResult | None]):
         height: 3;
         margin-top: 1;
     }
+
+    Input.path-input {
+        color: cyan;
+    }
     """
 
     BINDINGS = [("escape", "cancel", "Cancel")]
@@ -340,6 +366,7 @@ class DefaultPathScreen(ModalScreen[DefaultPathResult | None]):
                 placeholder="Setup/editor default storage directory",
                 suggester=PathSuggester(case_sensitive=True),
                 id="default-path-input",
+                classes=PATH_INPUT_CLASS,
             )
             with Horizontal(id="default-path-button-row"):
                 yield Button(
@@ -417,4 +444,6 @@ class ProgressScreen(ModalScreen[None]):
         bar = self.query_one("#progress-bar", ProgressBar)
         total = max(progress.total, 1)
         bar.update(total=total, progress=progress.completed)
-        self.query_one("#progress-path", Static).update(str(progress.path))
+        self.query_one("#progress-path", Static).update(
+            path_text(progress.path)
+        )

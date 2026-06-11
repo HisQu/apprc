@@ -22,6 +22,17 @@ from rich.text import Text
 
 # == Internal ================================
 from apprc.config.schema import CONFIG_MISSING, ConfigField, ConfigOwner
+from apprc.config.tui.styles import (
+    BOOL_STYLE,
+    CHOICE_STYLE,
+    DEFAULT_STYLE,
+    LABEL_STYLE,
+    NUMBER_STYLE,
+    PATH_STYLE,
+    REQUIRED_STYLE,
+    SECRET_STYLE,
+    TEXT_STYLE,
+)
 
 FIELD_TABLE_COLUMNS = (
     "#",
@@ -105,7 +116,7 @@ def build_field_table_rows(
                             local_value=local_value,
                             env_is_set=env_is_set,
                         ),
-                        Text(short_explanation(spec), style="dim"),
+                        Text(short_explanation(spec), style=LABEL_STYLE),
                     ),
                 )
             )
@@ -133,7 +144,7 @@ def default_value_cell(
     value = spec.shared_env_value()
     if value is CONFIG_MISSING:
         if local_value == "" and not env_is_set:
-            return Text("<required>", style="bold white on red")
+            return Text("<required>", style=REQUIRED_STYLE)
         return ""
     return Text(str(value), style=value_style(spec))
 
@@ -167,16 +178,16 @@ def value_style(spec: ConfigField) -> str:
     :return: Rich style string.
     """
     if spec.secret:
-        return "dim italic"
+        return SECRET_STYLE
     if spec.choices:
-        return "bold cyan"
+        return CHOICE_STYLE
     if spec.python_type is bool:
-        return "bold magenta"
+        return BOOL_STYLE
     if spec.python_type in {int, float}:
-        return "yellow"
+        return NUMBER_STYLE
     if spec.python_type is Path:
-        return "green"
-    return "white"
+        return PATH_STYLE
+    return TEXT_STYLE
 
 
 def section_separator_row() -> FieldTableRow:
@@ -184,7 +195,8 @@ def section_separator_row() -> FieldTableRow:
     return FieldTableRow(
         env_key=None,
         cells=tuple(
-            Text("─" * width, style="dim") for width in _SEPARATOR_CELL_WIDTHS
+            Text("─" * width, style=LABEL_STYLE)
+            for width in _SEPARATOR_CELL_WIDTHS
         ),
         height=1,
     )
@@ -193,8 +205,8 @@ def section_separator_row() -> FieldTableRow:
 def shell_status_cell(env_is_set: bool) -> Text:
     """Return whether the process environment currently sets a field."""
     if env_is_set:
-        return Text("shell", style="green")
-    return Text("unset", style="dim")
+        return Text("shell", style=DEFAULT_STYLE)
+    return Text("unset", style=LABEL_STYLE)
 
 
 def short_explanation(spec: ConfigField) -> str:

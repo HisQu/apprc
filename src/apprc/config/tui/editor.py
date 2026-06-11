@@ -268,7 +268,7 @@ class ConfigEditorApp(App[None]):
                 local_env_filename=self.local_env_filename,
             )
         except (TypeError, ValueError) as exc:
-            self.notify(str(exc), severity="error")
+            self.notify(str(exc), severity="error", markup=False)
             return
         self.local_values = read_local_env(update.path)
         self._populate_field_table()
@@ -284,7 +284,7 @@ class ConfigEditorApp(App[None]):
                 local_env_filename=self.local_env_filename,
             )
         except ValueError as exc:
-            self.notify(str(exc), severity="error")
+            self.notify(str(exc), severity="error", markup=False)
             return
         if update is None:
             return

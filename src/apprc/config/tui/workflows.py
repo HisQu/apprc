@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# == 3rd Party ===============================
+from rich.text import Text
+
 # == Internal ================================
 from apprc.config.local_env import read_local_env
 from apprc.config.paths import normalize_storage_root_path
@@ -32,6 +35,13 @@ from apprc.config.tui.primitives import (
     StorageNameScreen,
 )
 from apprc.config.tui.storage.entries import ordered_existing_storage_names
+from apprc.config.tui.styles import (
+    label_value_text,
+    lines_text,
+    path_markup,
+    path_text,
+    storage_name_text,
+)
 
 if TYPE_CHECKING:
     from apprc.config.tui import ConfigEditorApp
@@ -103,7 +113,7 @@ class ConfigEditorStorageWorkflows:
         archive = archive_path.expanduser()
         if not archive.is_file():
             self.editor.notify(
-                f"Storage archive does not exist: {archive}",
+                f"Storage archive does not exist: {path_markup(archive)}",
                 severity="error",
             )
             return
@@ -125,7 +135,7 @@ class ConfigEditorStorageWorkflows:
                 destination_root
             )
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error")
+            self.editor.notify(str(exc), severity="error", markup=False)
             return
         if normalized_destination.exists() and any(
             normalized_destination.iterdir()
@@ -133,9 +143,11 @@ class ConfigEditorStorageWorkflows:
             action = await self.editor.push_screen_wait(
                 ConfirmScreen(
                     title="Destination is not empty",
-                    message=(
-                        "Extracting the archive may overwrite files in:\n"
-                        f"{normalized_destination}\n\nProceed?"
+                    message=lines_text(
+                        "Extracting the archive may overwrite files in:",
+                        path_text(normalized_destination),
+                        "",
+                        "Proceed?",
                     ),
                     actions=(("confirm", "Proceed", "warning"),),
                 )
@@ -148,7 +160,7 @@ class ConfigEditorStorageWorkflows:
                 destination_root=normalized_destination,
             )
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error")
+            self.editor.notify(str(exc), severity="error", markup=False)
             return
         await self.register_storage_directory_flow(
             normalized_destination,
@@ -186,10 +198,15 @@ class ConfigEditorStorageWorkflows:
             action = await self.editor.push_screen_wait(
                 ConfirmScreen(
                     title="Replace storage entry?",
-                    message=(
-                        f"{name!r} is already registered at:\n"
-                        f"{existing.root}\n\nReplace it with:\n"
-                        f"{guarded_root}"
+                    message=lines_text(
+                        Text.assemble(
+                            storage_name_text(repr(name)),
+                            " is already registered at:",
+                        ),
+                        path_text(existing.root),
+                        "",
+                        "Replace it with:",
+                        path_text(guarded_root),
                     ),
                     actions=(("replace", "Replace", "warning"),),
                 )
@@ -203,7 +220,7 @@ class ConfigEditorStorageWorkflows:
                 make_default=self.editor.registry.default_storage is None,
             )
         except (TypeError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error")
+            self.editor.notify(str(exc), severity="error", markup=False)
             return
         await self.editor._refresh_storage_list(select_name=name)
         self.editor.notify(f"Registered storage {name!r}")
@@ -217,7 +234,7 @@ class ConfigEditorStorageWorkflows:
         try:
             root = normalize_storage_root_path(storage_root)
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error")
+            self.editor.notify(str(exc), severity="error", markup=False)
             return None
         if not root.exists():
             parent = root.parent
@@ -225,20 +242,26 @@ class ConfigEditorStorageWorkflows:
                 action = await self.editor.push_screen_wait(
                     ConfirmScreen(
                         title="Directory does not exist",
-                        message=(
+                        message=Text.assemble(
                             "Directory does not exist, create new directory "
-                            f"inside {parent}?"
+                            "inside ",
+                            path_text(parent),
+                            "?",
                         ),
                         actions=(("create", "Create", "primary"),),
                     )
                 )
                 return root if action == "create" else None
-            self.editor.notify(f"Path not found! {parent}", severity="error")
+            self.editor.notify(
+                f"Path not found! {path_markup(parent)}",
+                severity="error",
+            )
             return None
         resolved_root = root.resolve()
         if not resolved_root.is_dir():
             self.editor.notify(
-                f"Storage path exists but is not a directory: {resolved_root}",
+                "Storage path exists but is not a directory: "
+                f"{path_markup(resolved_root)}",
                 severity="error",
             )
             return None
@@ -256,10 +279,11 @@ class ConfigEditorStorageWorkflows:
                 "Proceed?"
             )
         else:
-            message = (
+            message = lines_text(
                 "Storage not empty, but no "
                 f"{self.editor.local_env_filename} found, initialize with "
-                f"empty {self.editor.local_env_filename}?\n{resolved_root}"
+                f"empty {self.editor.local_env_filename}?",
+                path_text(resolved_root),
             )
         action = await self.editor.push_screen_wait(
             ConfirmScreen(
@@ -294,7 +318,7 @@ class ConfigEditorStorageWorkflows:
                 name=self.editor.current_storage_name
             )
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error")
+            self.editor.notify(str(exc), severity="error", markup=False)
             return
         await self.editor._refresh_storage_list(
             select_name=self.editor.current_storage_name
@@ -314,14 +338,20 @@ class ConfigEditorStorageWorkflows:
         record = self.editor._current_storage()
         can_delete_content = record.root.is_dir()
         message = (
-            f"Storage: {record.name}\nRoot: {record.root}\n\n"
-            "Choose whether to only unregister it or delete the "
-            "directory contents too."
+            lines_text(
+                label_value_text("Storage", storage_name_text(record.name)),
+                label_value_text("Root", path_text(record.root)),
+                "",
+                "Choose whether to only unregister it or delete the "
+                "directory contents too.",
+            )
             if can_delete_content
-            else (
-                f"Storage: {record.name}\nRoot: {record.root}\n\n"
+            else lines_text(
+                label_value_text("Storage", storage_name_text(record.name)),
+                label_value_text("Root", path_text(record.root)),
+                "",
                 "The storage root is missing or is not a directory. "
-                "Only the registry entry will be removed."
+                "Only the registry entry will be removed.",
             )
         )
         actions: tuple[tuple[str, str, ButtonVariant], ...] = (
@@ -373,7 +403,7 @@ class ConfigEditorStorageWorkflows:
                 archive_path=options.archive_path,
             )
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error")
+            self.editor.notify(str(exc), severity="error", markup=False)
             return
         self.editor.registry = kit.record_archived_storage(
             name=record.name,
@@ -395,7 +425,7 @@ class ConfigEditorStorageWorkflows:
         else:
             await self.editor._refresh_storage_list(select_name=record.name)
         self.editor.notify(
-            f"Archived storage {record.name!r} to {archive_path}"
+            f"Archived storage {record.name!r} to {path_markup(archive_path)}"
         )
 
     async def remove_live_storage(
@@ -416,7 +446,7 @@ class ConfigEditorStorageWorkflows:
         try:
             record = self.editor.registry.selected(name)
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error")
+            self.editor.notify(str(exc), severity="error", markup=False)
             return False
         replacement = await self.default_choice_before_removal(name)
         if replacement is None:
@@ -425,7 +455,7 @@ class ConfigEditorStorageWorkflows:
             try:
                 shutil.rmtree(record.root)
             except OSError as exc:
-                self.editor.notify(str(exc), severity="error")
+                self.editor.notify(str(exc), severity="error", markup=False)
                 return False
         try:
             self.editor.registry = kit.unregister_storage(
@@ -440,7 +470,7 @@ class ConfigEditorStorageWorkflows:
                     make_default=True,
                 )
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error")
+            self.editor.notify(str(exc), severity="error", markup=False)
             return False
         select_name = replacement.replacement_name
         if select_name is None and replacement.create_default_path is not None:

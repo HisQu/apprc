@@ -10,6 +10,7 @@ from apprc.config.tui.rendering import (
     possible_values_label,
     value_style,
 )
+from apprc.config.tui.styles import PATH_STYLE
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNER,
     APPRC_EXAMPLE_APP_OWNERS,
@@ -67,7 +68,7 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     ).style == ("yellow")
     assert (
         _text_cell(rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"], 5).style
-        == "green"
+        == PATH_STYLE
     )
 
 
@@ -77,6 +78,7 @@ def test_config_textual_rendering_labels_match_field_metadata() -> None:
     cache_dir = APPRC_EXAMPLE_APP_OWNER.field("cache_dir")
 
     assert value_style(mode) == "bold cyan"
+    assert value_style(cache_dir) == PATH_STYLE
     assert field_type_label(cache_dir) == "Path"
     assert possible_values_label(mode) == "AUTO, MANUAL"
     assert (

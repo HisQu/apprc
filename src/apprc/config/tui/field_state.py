@@ -7,6 +7,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+# == 3rd Party ===============================
+from rich.text import Text
+
 # == Internal ================================
 from apprc.config.schema import (
     ConfigField,
@@ -14,6 +17,14 @@ from apprc.config.schema import (
     find_field_by_env_key,
 )
 from apprc.config.storage.registry import ArchivedStorageRecord, StorageRecord
+from apprc.config.tui.styles import (
+    ARCHIVE_STYLE,
+    MISSING_STYLE,
+    label_value_text,
+    lines_text,
+    path_text,
+    storage_name_text,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,37 +62,46 @@ def selected_field_for_row(
     return SelectedField(owner=owner, spec=spec)
 
 
-def live_storage_title(record: StorageRecord, local_env: Path) -> str:
+def live_storage_title(record: StorageRecord, local_env: Path) -> Text:
     """Return the title shown for one editable live storage.
 
     :param record: Registry storage record.
     :param local_env: Storage-local dotenv path.
     :return: Multi-line title for the selected storage.
     """
-    return f"{record.name}: {record.root}\n{local_env}"
+    title = storage_name_text(record.name)
+    title.append(": ")
+    title.append_text(path_text(record.root))
+    return lines_text(title, path_text(local_env))
 
 
-def missing_storage_title(record: StorageRecord) -> str:
+def missing_storage_title(record: StorageRecord) -> Text:
     """Return the title shown when a registered storage root is missing.
 
     :param record: Registry storage record whose root is unavailable.
     :return: Multi-line title explaining the missing root.
     """
-    return (
-        f"{record.name}: Missing storage root\n"
-        f"Root: {record.root}\n"
-        "No storage-local env file is available."
+    title = storage_name_text(record.name)
+    title.append(": ")
+    title.append("Missing storage root", style=MISSING_STYLE)
+    return lines_text(
+        title,
+        label_value_text("Root", path_text(record.root)),
+        "No storage-local env file is available.",
     )
 
 
-def archived_storage_title(record: ArchivedStorageRecord) -> str:
+def archived_storage_title(record: ArchivedStorageRecord) -> Text:
     """Return the title shown for an archived storage record.
 
     :param record: Archived storage metadata from the registry.
     :return: Multi-line title with archive and last source paths.
     """
-    return (
-        f"{record.name}: Last Archived\n"
-        f"Archive: {record.archive}\n"
-        f"Last source: {record.source_root}"
+    title = storage_name_text(record.name)
+    title.append(": ")
+    title.append("Last Archived", style=ARCHIVE_STYLE)
+    return lines_text(
+        title,
+        label_value_text("Archive", path_text(record.archive)),
+        label_value_text("Last source", path_text(record.source_root)),
     )

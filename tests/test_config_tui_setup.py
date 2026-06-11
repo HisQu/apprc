@@ -3,14 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from rich.text import Text
 from textual.widgets import Button, Input, Static
 
 from apprc.config.tui.primitives import PathSuggester
+from apprc.config.tui.styles import ENV_KEY_STYLE, PATH_INPUT_CLASS, PATH_STYLE
 from tests.support_config import (
     build_apprc_example_app_kit,
     set_apprc_example_app_apprc_toml,
     set_apprc_example_app_bootstrap,
 )
+from tests.support_tui import text_has_span
 
 pytestmark = [pytest.mark.requires_apprc_env("APPRC_EXAMPLE_APP")]
 
@@ -34,6 +37,8 @@ async def test_config_setup_wizard_launches_with_host_overview(
     assert "Example App directory (AppRC)" in str(body)
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in str(body)
     assert "AppRC TOML" in str(body)
+    assert isinstance(body, Text)
+    assert text_has_span(body, "APPRC_EXAMPLE_APP_APPRC_TOML", ENV_KEY_STYLE)
 
 
 @pytest.mark.asyncio
@@ -56,11 +61,24 @@ async def test_config_setup_wizard_opens_prefilled_path_input(
 
     assert path_value == str(tmp_path / "config" / "apprc_example_app")
     assert isinstance(suggester, PathSuggester)
+    assert path_input.has_class(PATH_INPUT_CLASS)
     assert "Example App directory (AppRC)" in str(title)
     assert "Choose the Example App directory (AppRC)." in str(message)
     assert "This TOML file" not in str(message)
     assert "Derived AppRC TOML path:" in str(message)
     assert "apprc_example_app.apprc.toml" in str(message)
+    assert isinstance(message, Text)
+    assert text_has_span(message, path_value, PATH_STYLE)
+    assert text_has_span(
+        message,
+        str(
+            tmp_path
+            / "config"
+            / "apprc_example_app"
+            / "apprc_example_app.apprc.toml"
+        ),
+        PATH_STYLE,
+    )
 
 
 @pytest.mark.asyncio
@@ -78,10 +96,13 @@ async def test_config_setup_wizard_asks_for_path_without_env(
         message = setup_app.screen.query_one("#path-message", Static).content
 
     assert path_input.value == ""
+    assert path_input.has_class(PATH_INPUT_CLASS)
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in str(message)
     assert "Choose the Example App directory (AppRC)." in str(message)
     assert "This TOML file" not in str(message)
     assert "apprc_example_app.apprc.toml inside this directory" in str(message)
+    assert isinstance(message, Text)
+    assert text_has_span(message, "APPRC_EXAMPLE_APP_APPRC_TOML", ENV_KEY_STYLE)
 
 
 @pytest.mark.asyncio

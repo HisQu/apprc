@@ -14,7 +14,11 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.suggester import Suggester
+from textual.visual import VisualType
 from textual.widgets import Button, Input, Static
+
+# == Internal ================================
+from apprc.config.tui.styles import PATH_INPUT_CLASS
 
 ButtonVariant = Literal["default", "primary", "success", "warning", "error"]
 
@@ -93,6 +97,10 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
         height: 3;
         margin-top: 1;
     }
+
+    Input.path-input {
+        color: cyan;
+    }
     """
 
     BINDINGS = [("escape", "cancel", "Cancel")]
@@ -101,14 +109,14 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
         self,
         *,
         title: str,
-        message: str,
+        message: VisualType,
         placeholder: str,
         value: str = "",
     ) -> None:
         """Store input labels and the prefilled path text.
 
         :param title: Dialog title.
-        :param message: Help text shown above the input.
+        :param message: Help text or Rich renderable shown above the input.
         :param placeholder: Placeholder when the input is empty.
         :param value: Prefilled path text.
         """
@@ -131,6 +139,7 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
                 placeholder=self.placeholder,
                 suggester=PathSuggester(case_sensitive=True),
                 id="path-input",
+                classes=PATH_INPUT_CLASS,
             )
             with Horizontal(id="path-button-row"):
                 yield Button("Continue", variant="primary", id="path-continue")
@@ -200,11 +209,16 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, *, default_name: str, message: str) -> None:
+    def __init__(
+        self,
+        *,
+        default_name: str,
+        message: VisualType,
+    ) -> None:
         """Store the default storage name and helper text.
 
         :param default_name: Prefilled registry selector.
-        :param message: Help text shown above the input.
+        :param message: Help text or Rich renderable shown above the input.
         """
         super().__init__()
         self.default_name = default_name
@@ -291,13 +305,14 @@ class ConfirmScreen(ModalScreen[str | None]):
         self,
         *,
         title: str,
-        message: str,
+        message: VisualType,
         actions: tuple[tuple[str, str, ButtonVariant], ...],
     ) -> None:
         """Store confirmation text and ``(id, label, variant)`` actions.
 
         :param title: Dialog title.
-        :param message: Question or warning shown above action buttons.
+        :param message: Question, warning, or Rich renderable shown above
+            action buttons.
         :param actions: Button IDs, labels, and Textual variants.
         """
         super().__init__()

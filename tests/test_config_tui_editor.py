@@ -4,14 +4,18 @@ import shutil
 from pathlib import Path
 
 import pytest
+from rich.text import Text
 from textual.coordinate import Coordinate
 from textual.widgets import Button, DataTable, Input, ListView, Static
 
+from apprc.config.tui.modals import ArchiveOptionsScreen
+from apprc.config.tui.styles import PATH_INPUT_CLASS, PATH_STYLE
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     build_apprc_example_app_kit,
     set_apprc_example_app_apprc_toml,
 )
+from tests.support_tui import text_has_span
 
 pytestmark = [pytest.mark.requires_apprc_env("APPRC_EXAMPLE_APP")]
 
@@ -85,6 +89,8 @@ async def test_editor_launches_with_missing_default_storage(
     assert editor.current_storage_kind == "missing"
     assert "Missing storage root" in str(title)
     assert str(storage_root.resolve()) in str(title)
+    assert isinstance(title, Text)
+    assert text_has_span(title, str(storage_root.resolve()), PATH_STYLE)
     assert table.disabled is True
     assert default_button.disabled is True
     assert delete_button.disabled is False
@@ -256,8 +262,10 @@ async def test_editor_recreates_last_default_with_host_storage_name(
         message = editor.screen.query_one(
             "#default-path-message", Static
         ).content
+        path_input = editor.screen.query_one("#default-path-input", Input)
         assert "Example App" in str(message)
         assert "AppRC" not in str(message)
+        assert path_input.has_class(PATH_INPUT_CLASS)
         editor.screen.query_one("#default-create", Button).press()
         await pilot.pause()
         removed = await worker.wait()
@@ -372,7 +380,10 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
     assert (
         rich_rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"][5].style == "yellow"
     )
-    assert rich_rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"][5].style == "green"
+    assert rich_rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][4].style == PATH_STYLE
+    assert (
+        rich_rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"][5].style == PATH_STYLE
+    )
     assert rich_rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][6].style == "dim"
 
 
@@ -461,3 +472,61 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
     assert "Operating mode used by Example App commands." in str(
         long_explanation
     )
+
+
+@pytest.mark.asyncio
+async def test_editor_modal_marks_path_inputs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    registry = kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test() as pilot:
+        table = editor.query_one("#field-table", DataTable)
+        table.cursor_coordinate = Coordinate(5, 0)
+        editor._open_selected_field_editor()
+        await pilot.pause()
+        input_widget = editor.screen.query_one("#edit-value-input", Input)
+        metadata = editor.screen.query_one("#edit-metadata", Static).content
+
+    assert input_widget.has_class(PATH_INPUT_CLASS)
+    assert "Type: Path" in str(metadata)
+
+
+@pytest.mark.asyncio
+async def test_archive_options_marks_path_input_and_source_path(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    registry = kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+    editor = kit.editor_app(registry=registry)
+    source_root = registry.selected("alpha").root
+
+    async with editor.run_test() as pilot:
+        await editor.push_screen(
+            ArchiveOptionsScreen(
+                storage_name="alpha",
+                source_root=source_root,
+                default_archive=tmp_path / "alpha.apprc.tar.xz",
+            )
+        )
+        await pilot.pause()
+        input_widget = editor.screen.query_one("#archive-path-input", Input)
+        message = editor.screen.query_one("#archive-message", Static).content
+
+    assert input_widget.has_class(PATH_INPUT_CLASS)
+    assert isinstance(message, Text)
+    assert text_has_span(message, str(source_root), PATH_STYLE)

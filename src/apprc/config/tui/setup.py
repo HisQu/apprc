@@ -7,19 +7,30 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 # == 3rd Party ===============================
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.visual import VisualType
 from textual.widgets import Button, Footer, Header, Static
 
 # == Internal ================================
 import apprc.config.setup.flow as setup_flow
 import apprc.config.setup.text as setup_text
-from apprc.config.storage.registry import StorageRegistry
+from apprc.config.storage.registry import StorageRegistry, ordered_storage_names
 from apprc.config.tui.primitives import (
     ButtonVariant,
     ConfirmScreen,
     PathInputScreen,
     StorageNameScreen,
+)
+from apprc.config.tui.styles import (
+    ENV_KEY_STYLE,
+    PATH_STYLE,
+    lines_text,
+    path_markup,
+    path_text,
+    storage_name_text,
+    style_literals,
 )
 
 if TYPE_CHECKING:
@@ -103,9 +114,14 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
 
     async def _show_overview(self) -> None:
         """Render the first setup screen."""
+        paths = setup_text.setup_paths(self.kit)
+        active_paths = () if paths.active is None else (paths.active,)
         await self._set_screen(
             title=f"{self.kit.spec.display_name} config setup",
-            body=setup_text.setup_overview_text(self.kit),
+            body=self._style_setup_text(
+                setup_text.setup_overview_text(self.kit),
+                paths=active_paths,
+            ),
             buttons=(
                 ("setup-start", "Start setup", "primary"),
                 ("setup-cancel", "Cancel", "default"),
@@ -123,7 +139,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         try:
             registry = setup_flow.load_registry(self.kit, existing_path)
         except setup_flow.ConfigSetupError as exc:
-            self.notify(str(exc), severity="error")
+            self.notify(str(exc), severity="error", markup=False)
             return
         self.registry = registry
         default_action = setup_flow.default_existing_setup_action()
@@ -155,7 +171,10 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         buttons.append(("setup-cancel", "Cancel", "default"))
         await self._set_screen(
             title="Existing setup",
-            body=setup_text.existing_registry_text(self.kit, registry),
+            body=self._style_registry_text(
+                setup_text.existing_registry_text(self.kit, registry),
+                registry,
+            ),
             buttons=tuple(buttons),
         )
 
@@ -182,8 +201,11 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 confirmed = await self.push_screen_wait(
                     ConfirmScreen(
                         title="Reset config state",
-                        message=setup_text.reset_warning_text(
-                            self.kit,
+                        message=self._style_registry_text(
+                            setup_text.reset_warning_text(
+                                self.kit,
+                                registry,
+                            ),
                             registry,
                         ),
                         actions=(("reset", "Reset", "warning"),),
@@ -198,7 +220,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 return
             moved = await self._move_existing_apprc_toml(registry)
         except setup_flow.ConfigSetupError as exc:
-            self.notify(str(exc), severity="error")
+            self.notify(str(exc), severity="error", markup=False)
             return
         if moved is not None:
             await self._ensure_default_storage(moved)
@@ -221,7 +243,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         try:
             return setup_flow.load_registry(self.kit, apprc_toml_path)
         except setup_flow.ConfigSetupError as exc:
-            self.notify(str(exc), severity="error")
+            self.notify(str(exc), severity="error", markup=False)
             return None
 
     async def _move_existing_apprc_toml(
@@ -250,14 +272,18 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         ):
             if target_path.is_dir():
                 self.notify(
-                    f"AppRC TOML target is a directory: {target_path}",
+                    "AppRC TOML target is a directory: "
+                    f"{path_markup(target_path)}",
                     severity="error",
                 )
                 return None
             action = await self.push_screen_wait(
                 ConfirmScreen(
                     title="Replace AppRC TOML?",
-                    message=f"Replace existing AppRC TOML?\n{target_path}",
+                    message=lines_text(
+                        "Replace existing AppRC TOML?",
+                        path_text(target_path),
+                    ),
                     actions=(("replace", "Replace", "warning"),),
                 )
             )
@@ -272,7 +298,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 replace_existing_file=replace,
             )
         except setup_flow.ConfigSetupError as exc:
-            self.notify(str(exc), severity="error")
+            self.notify(str(exc), severity="error", markup=False)
             return None
 
     async def _choose_apprc_dir(
@@ -291,8 +317,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             result = await self.push_screen_wait(
                 PathInputScreen(
                     title=title,
-                    message=setup_text.apprc_dir_step_text(
-                        self.kit,
+                    message=self._style_apprc_dir_step_text(
                         default_dir,
                     ),
                     placeholder=f"{self.kit.spec.display_name} directory",
@@ -304,7 +329,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             try:
                 return setup_flow.setup_apprc_toml_dir(result.path)
             except setup_flow.ConfigSetupError as exc:
-                self.notify(str(exc), severity="error")
+                self.notify(str(exc), severity="error", markup=False)
                 continue
 
     def _default_apprc_dir(self) -> Path | None:
@@ -328,10 +353,15 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             action = await self.push_screen_wait(
                 ConfirmScreen(
                     title="Setup/editor default storage",
-                    message=(
-                        f"Current setup/editor default storage:\n"
-                        f"{current_default.name} -> {current_default.root}\n\n"
-                        "Keep this setup/editor default?"
+                    message=lines_text(
+                        "Current setup/editor default storage:",
+                        Text.assemble(
+                            storage_name_text(current_default.name),
+                            " -> ",
+                            path_text(current_default.root),
+                        ),
+                        "",
+                        "Keep this setup/editor default?",
                     ),
                     actions=(
                         ("keep", "Keep default", "primary"),
@@ -357,7 +387,9 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         root_result = await self.push_screen_wait(
             PathInputScreen(
                 title="Setup/editor default storage root",
-                message=setup_text.default_storage_step_text(self.kit),
+                message=self._style_setup_text(
+                    setup_text.default_storage_step_text(self.kit),
+                ),
                 placeholder="Storage root directory",
                 value=str(self.kit.default_storage_data_root()),
             )
@@ -378,7 +410,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 path=registry.path,
             )
         except ValueError as exc:
-            self.notify(str(exc), severity="error")
+            self.notify(str(exc), severity="error", markup=False)
             return
         await self._finish_setup(updated)
 
@@ -403,20 +435,15 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 allow_non_empty_storage=True,
             )
         except setup_flow.ConfigSetupError as exc:
-            self.notify(str(exc), severity="error")
+            self.notify(str(exc), severity="error", markup=False)
             return None
         if root.exists() and root.is_dir() and any(root.iterdir()):
             action = await self.push_screen_wait(
                 ConfirmScreen(
                     title="Reuse storage root?",
-                    message=setup_text.storage_root_reuse_text(
-                        self.kit,
+                    message=self._style_storage_root_reuse_text(
                         root,
                         storage_name=storage_name,
-                        make_default=True,
-                        registry_path=self.registry.path
-                        if self.registry is not None
-                        else None,
                     ),
                     actions=(("proceed", "Proceed", "warning"),),
                 )
@@ -451,7 +478,10 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         )
         await self._set_screen(
             title="Done",
-            body=body,
+            body=self._style_setup_text(
+                body,
+                paths=(registry.path, registry.path.expanduser().resolve()),
+            ),
             buttons=(("finish-close", "Close", "success"),),
         )
 
@@ -459,13 +489,13 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self,
         *,
         title: str,
-        body: str,
+        body: VisualType,
         buttons: tuple[tuple[str, str, ButtonVariant], ...],
     ) -> None:
         """Replace the main wizard text and actions.
 
         :param title: Screen title.
-        :param body: Screen body text.
+        :param body: Screen body text or Rich renderable.
         :param buttons: Button IDs, labels, and Textual variants.
         """
         self.query_one("#setup-title", Static).update(title)
@@ -477,4 +507,92 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 Button(label, variant=variant, id=button_id)
                 for button_id, label, variant in buttons
             )
+        )
+
+    def _style_setup_text(
+        self,
+        text: str,
+        *,
+        paths: tuple[Path | str, ...] = (),
+    ) -> Text:
+        """Style known env keys and path literals in setup prose.
+
+        :param text: Plain setup text from :mod:`apprc.config.setup.text`.
+        :param paths: Exact path values known by the caller.
+        :return: Rich text with semantic spans.
+        """
+        styles = {
+            self.kit.apprc_toml_env_key(): ENV_KEY_STYLE,
+            self.kit.spec.storage_env_key: ENV_KEY_STYLE,
+        }
+        styles.update({str(path): PATH_STYLE for path in paths if str(path)})
+        return style_literals(text, styles)
+
+    def _style_registry_text(
+        self,
+        text: str,
+        registry: StorageRegistry,
+    ) -> Text:
+        """Style known registry paths in setup prose.
+
+        :param text: Plain text that mentions registry state.
+        :param registry: Registry whose paths appear in the text.
+        :return: Rich text with path and env-key spans.
+        """
+        paths = [registry.path]
+        paths.extend(
+            registry.selected(name).root
+            for name in ordered_storage_names(registry)
+        )
+        return self._style_setup_text(text, paths=tuple(paths))
+
+    def _style_apprc_dir_step_text(self, default_dir: Path | None) -> Text:
+        """Return the AppRC directory step body with known paths styled.
+
+        :param default_dir: Prefilled AppRC directory, if available.
+        :return: Rich setup body.
+        """
+        paths: tuple[Path | str, ...]
+        if default_dir is None:
+            paths = ()
+        else:
+            paths = (
+                default_dir,
+                default_dir / self.kit.spec.apprc_toml_filename,
+            )
+        return self._style_setup_text(
+            setup_text.apprc_dir_step_text(self.kit, default_dir),
+            paths=paths,
+        )
+
+    def _style_storage_root_reuse_text(
+        self,
+        root: Path,
+        *,
+        storage_name: str,
+    ) -> Text:
+        """Return the non-empty storage-root warning with paths styled.
+
+        :param root: Existing storage root selected by setup.
+        :param storage_name: Registry selector that will point at ``root``.
+        :return: Rich setup warning.
+        """
+        registry_path = (
+            self.registry.path if self.registry is not None else None
+        )
+        text = setup_text.storage_root_reuse_text(
+            self.kit,
+            root,
+            storage_name=storage_name,
+            make_default=True,
+            registry_path=registry_path,
+        )
+        active_registry_path = registry_path or self.kit.apprc_toml_path()
+        return self._style_setup_text(
+            text,
+            paths=(
+                root,
+                root / self.kit.spec.local_env_filename,
+                active_registry_path,
+            ),
         )

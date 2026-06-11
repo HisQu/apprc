@@ -122,8 +122,8 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     )
 
     assert result.exit_code == 0, result.output
-    assert "Storage Root Already Exists" in result.output
-    assert "Directory exists and is not empty." in result.output
+    assert "Storage Root Not Empty" in result.output
+    assert "Storage root exists and is not empty." in result.output
     assert str(storage_root) in result.output
     assert (
         "Example App will reuse this directory for Example App storage "
@@ -132,11 +132,9 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     assert "AppRC-managed files to create or update:" in result.output
     assert "storage-local env" in result.output
     assert "AppRC TOML" in result.output
-    assert (
-        "No existing files will be deleted, moved, or overwritten."
-        in result.output
-    )
-    assert "Default storage: 'alpha'" in result.output
+    assert "Existing files inside the storage root" in result.output
+    assert "will not be deleted" in result.output
+    assert "Setup/editor default storage: 'alpha'" in result.output
     assert (
         "Choices: y continue  n abort  l list first-level contents"
         in result.output
@@ -238,7 +236,7 @@ def test_generated_config_app_lists_registered_storages_as_rich_tree(
     assert "apprc_toml_path:" in result.output
     assert "default_storage:" in result.output
     assert "storages:" in result.output
-    assert "alpha [default]" in result.output
+    assert "alpha [setup/editor default]" in result.output
     assert "beta" in result.output
     assert "root:" in result.output
     assert "root_exists:" in result.output
@@ -314,6 +312,8 @@ def test_config_doctor_guidance_uses_host_default_storage_name(
     payload = build_config_doctor_payload(kit, storage_name=None)
 
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in message
+    assert "Example App directory (AppRC)" in message
+    assert "active storage selector" in message
     assert "setup --yes --apprc-dir" in message
     assert payload["next_steps"][0].endswith(
         "setup --yes --apprc-dir /absolute/path/to/config-dir"

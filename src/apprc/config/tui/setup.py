@@ -210,7 +210,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         """
         apprc_dir = await self._choose_apprc_dir(
             default_dir=self._default_apprc_dir(),
-            title="AppRC Directory",
+            title=setup_text.apprc_dir_label(self.kit),
         )
         if apprc_dir is None:
             return None
@@ -295,7 +295,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                         self.kit,
                         default_dir,
                     ),
-                    placeholder="AppRC directory",
+                    placeholder=f"{self.kit.spec.display_name} directory",
                     value="" if default_dir is None else str(default_dir),
                 )
             )
@@ -318,7 +318,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self,
         registry: StorageRegistry,
     ) -> None:
-        """Ensure the chosen registry has a live default storage.
+        """Ensure the chosen registry has a live setup/editor default storage.
 
         :param registry: Registry selected by setup.
         """
@@ -327,11 +327,11 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         if current_default is not None and current_default.root.is_dir():
             action = await self.push_screen_wait(
                 ConfirmScreen(
-                    title="Default storage",
+                    title="Setup/editor default storage",
                     message=(
-                        f"Current default storage:\n"
+                        f"Current setup/editor default storage:\n"
                         f"{current_default.name} -> {current_default.root}\n\n"
-                        "Keep this default storage?"
+                        "Keep this setup/editor default?"
                     ),
                     actions=(
                         ("keep", "Keep default", "primary"),
@@ -356,7 +356,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             return
         root_result = await self.push_screen_wait(
             PathInputScreen(
-                title="Default storage root",
+                title="Setup/editor default storage root",
                 message=setup_text.default_storage_step_text(self.kit),
                 placeholder="Storage root directory",
                 value=str(self.kit.default_storage_data_root()),
@@ -442,7 +442,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         status = "ok" if payload["ok"] else "needs setup"
         default = registry.default_storage or "<none>"
         body = (
-            "Setup wrote the AppRC TOML.\n\n"
+            "Setup wrote or reused the AppRC TOML.\n\n"
             f"apprc_toml_path: {registry.path}\n"
             f"default_storage: {default}\n"
             f"doctor: {status}\n\n"

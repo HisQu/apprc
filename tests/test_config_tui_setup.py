@@ -30,6 +30,8 @@ async def test_config_setup_wizard_launches_with_host_overview(
 
     assert "Example App config setup" in str(title)
     assert "Example App uses one small AppRC TOML" in str(body)
+    assert "setup/editor default storage" in str(body)
+    assert "Example App directory (AppRC)" in str(body)
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in str(body)
     assert "AppRC TOML" in str(body)
 
@@ -49,11 +51,15 @@ async def test_config_setup_wizard_opens_prefilled_path_input(
         path_input = setup_app.screen.query_one("#path-input", Input)
         path_value = path_input.value
         suggester = path_input.suggester
+        title = setup_app.screen.query_one("#path-title", Static).content
         message = setup_app.screen.query_one("#path-message", Static).content
 
     assert path_value == str(tmp_path / "config" / "apprc_example_app")
     assert isinstance(suggester, PathSuggester)
-    assert "Computed TOML path:" in str(message)
+    assert "Example App directory (AppRC)" in str(title)
+    assert "Choose the Example App directory (AppRC)." in str(message)
+    assert "This TOML file" not in str(message)
+    assert "Derived AppRC TOML path:" in str(message)
     assert "apprc_example_app.apprc.toml" in str(message)
 
 
@@ -73,7 +79,9 @@ async def test_config_setup_wizard_asks_for_path_without_env(
 
     assert path_input.value == ""
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in str(message)
-    assert "fixed file name apprc_example_app.apprc.toml" in str(message)
+    assert "Choose the Example App directory (AppRC)." in str(message)
+    assert "This TOML file" not in str(message)
+    assert "apprc_example_app.apprc.toml inside this directory" in str(message)
 
 
 @pytest.mark.asyncio
@@ -101,8 +109,8 @@ async def test_config_setup_wizard_shows_existing_registry_actions(
         reset_disabled = reset_button.disabled
         move_disabled = move_button.disabled
 
-    assert "The current config has these storages registered:" in str(body)
-    assert "alpha [default]" in str(body)
+    assert "The current AppRC TOML has these storages registered:" in str(body)
+    assert "alpha [setup/editor default]" in str(body)
     assert keep_disabled is False
     assert reset_disabled is False
     assert move_disabled is False

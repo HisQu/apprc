@@ -198,7 +198,7 @@ class ConfigCommandHandlers:
         storage_name: str | None,
         existing_action: setup_flow.ExistingSetupAction | None,
     ) -> None:
-        """Interactively configure the AppRC TOML and first storage."""
+        """Interactively configure the AppRC TOML and first storage root."""
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,
@@ -209,7 +209,7 @@ class ConfigCommandHandlers:
         )
 
     def set_default(self, *, name: str) -> None:
-        """Set the default storage used by setup and editor flows."""
+        """Set the setup/editor default storage."""
         try:
             old_default = self.kit.load_registry().default_storage
             registry = self.kit.set_default_storage(name=name)

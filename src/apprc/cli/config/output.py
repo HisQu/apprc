@@ -138,5 +138,5 @@ def _storage_name_text(storage: StorageListRowPayload) -> Text:
     """
     label = Text(str(storage["name"]), style="bold")
     if storage["default"]:
-        label.append(" [default]", style="green")
+        label.append(" [setup/editor default]", style="green")
     return label

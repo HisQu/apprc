@@ -61,15 +61,16 @@ def config_setup_message(kit: "AppConfigKit") -> str:
     setup_action = "setup --yes --apprc-dir /absolute/path/to/config-dir"
     return (
         f"No {kit.spec.display_name} AppRC TOML is installed yet.\n\n"
-        f"{kit.spec.display_name} expects {kit.apprc_toml_env_key()} to point "
-        "at its AppRC TOML, and "
-        f"{storage_key} to track the active storage selector.\n"
-        "Choose where that file's directory should live, then run setup:\n"
+        f"{kit.apprc_toml_env_key()} must point at the AppRC TOML file. "
+        f"{storage_key} is the active storage selector: a registered storage "
+        "name or an explicit storage path.\n"
+        f"Choose the {kit.spec.display_name} directory (AppRC); setup will "
+        "derive the TOML file path and print the export command:\n"
         f"  {config_command_text(kit, setup_action)}\n\n"
         "Keep both variables exported for future commands, then inspect the setup:\n"
         f"  {config_command_text(kit, 'doctor')}\n"
         f"  {config_command_text(kit, 'show')}\n\n"
-        "Setup creates:\n"
+        "Setup creates or checks:\n"
         f"  /absolute/path/to/config-dir/{kit.spec.apprc_toml_filename}\n"
         f"  /absolute/path/to/storage-root/{kit.spec.local_env_filename}"
     )
@@ -110,7 +111,8 @@ def build_config_doctor_payload(
         issues.append(
             f"{toml_env_key} is not set. Run "
             f"{config_command_text(kit, 'setup --yes --apprc-dir /absolute/path/to/config-dir')}"
-            " and keep the printed export command in your shell setup."
+            f" to choose the {kit.spec.display_name} directory (AppRC), then "
+            "keep the printed AppRC TOML export command in your shell setup."
         )
     elif not toml_exists:
         issues.append(f"AppRC TOML does not exist: {active_toml_path}")
@@ -130,9 +132,9 @@ def build_config_doctor_payload(
                 )
             elif registry.default_storage is None:
                 issues.append(
-                    f"No default {kit.spec.display_name} storage is "
-                    "configured. The default is used as the first setup/editor "
-                    "selection, not as a runtime fallback. "
+                    f"No setup/editor default {kit.spec.display_name} "
+                    "storage is configured. This default is used as the first "
+                    "setup/editor selection, not as a runtime fallback. "
                     f"Run {config_command_text(kit, 'set-default NAME')}."
                 )
 
@@ -149,7 +151,7 @@ def build_config_doctor_payload(
                 issues.append(
                     f"{kit.spec.storage_env_key} is not set. Export a "
                     "registered storage name or explicit storage path; the "
-                    "registry default is not used as a runtime fallback."
+                    "setup/editor default is not used as a runtime fallback."
                 )
 
     selected_storage_root = selection.root if selection is not None else None
@@ -165,9 +167,13 @@ def build_config_doctor_payload(
     )
     local_env_exists = local_env.is_file() if local_env is not None else None
     if selected_storage_root is not None and not storage_root_exists:
-        issues.append(f"Storage root does not exist: {selected_storage_root}")
+        issues.append(
+            f"Selected storage root does not exist: {selected_storage_root}"
+        )
     if local_env is not None and not local_env_exists:
-        issues.append(f"Storage local env file does not exist: {local_env}")
+        issues.append(
+            f"Selected storage local env file does not exist: {local_env}"
+        )
 
     if toml_exists and not issues:
         install_state = ConfigInstallState.INSTALLED_HEALTHY

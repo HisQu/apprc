@@ -285,7 +285,8 @@ class ConfigEditorStorageWorkflows:
             self.editor.current_storage_name
         ):
             self.editor.notify(
-                f"{self.editor.current_storage_name!r} is already the default."
+                f"{self.editor.current_storage_name!r} is already the "
+                "setup/editor default."
             )
             return
         try:
@@ -299,7 +300,8 @@ class ConfigEditorStorageWorkflows:
             select_name=self.editor.current_storage_name
         )
         self.editor.notify(
-            f"Default storage set to {self.editor.current_storage_name!r}"
+            "Setup/editor default storage set to "
+            f"{self.editor.current_storage_name!r}"
         )
 
     async def open_delete_storage_flow(self) -> None:
@@ -470,10 +472,12 @@ class ConfigEditorStorageWorkflows:
                 actions.append((f"default-{name}", name, variant))
             action = await self.editor.push_screen_wait(
                 ConfirmScreen(
-                    title="Choose replacement default",
+                    title="Choose setup/editor default",
                     message=(
-                        f"{removed_name!r} is the default storage. "
-                        "Choose the new default before removing it."
+                        f"{removed_name!r} is the setup/editor default "
+                        "storage. "
+                        "Choose the new setup/editor default before "
+                        "removing it."
                     ),
                     actions=tuple(actions),
                 )

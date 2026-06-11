@@ -169,14 +169,14 @@ def ensure_default_storage(
     storage_root: Path | None,
     allow_non_empty_storage: bool,
 ) -> StorageRegistry:
-    """Ensure a live default storage exists after registry setup.
+    """Ensure a live setup/editor default storage exists after registry setup.
 
     :param kit: Application config facade.
     :param registry: Registry selected by setup.
-    :param storage_name: Optional selector to register as the default.
-    :param storage_root: Optional storage root to register as the default.
+    :param storage_name: Optional selector to register as setup/editor default.
+    :param storage_root: Optional storage root to register as setup/editor default.
     :param allow_non_empty_storage: Whether non-empty roots may be reused.
-    :return: Registry with a live default storage.
+    :return: Registry with a live setup/editor default storage.
     :raises ConfigSetupError: If the storage root is unsafe.
     """
     current_default = registry.default()
@@ -280,9 +280,10 @@ def setup_apprc_toml_path(
     if active_path is not None:
         return normalized_apprc_toml_path(active_path)
     raise ConfigSetupError(
-        f"{kit.spec.display_name} setup needs an AppRC directory because "
+        f"{kit.spec.display_name} setup needs the "
+        f"{kit.spec.display_name} directory (AppRC) because "
         f"{kit.apprc_toml_env_key()} is not set.\n"
-        "Run setup again with an explicit AppRC directory:\n"
+        "Run setup again with an explicit directory:\n"
         f"{kit.spec.config_command_name()} config setup --yes "
         "--apprc-dir /absolute/path/to/config-dir",
         param_hint="--apprc-dir",

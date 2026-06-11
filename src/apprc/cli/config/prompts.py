@@ -63,9 +63,9 @@ def confirm_existing_storage_root(
     apprc_tomls.add_row("AppRC TOML", str(kit.apprc_toml_path()))
 
     panel_lines: list[RenderableType] = [
-        Text("Directory exists and is not empty.", style="yellow"),
+        Text("Storage root exists and is not empty.", style="yellow"),
         Text(""),
-        Text("Path:", style="dim"),
+        Text("Storage root:", style="dim"),
         Text(str(storage_root), style="cyan"),
         Text(""),
         Text.assemble(
@@ -81,7 +81,8 @@ def confirm_existing_storage_root(
         apprc_tomls,
         Text(""),
         Text(
-            "No existing files will be deleted, moved, or overwritten.",
+            "Existing files inside the storage root will not be deleted, "
+            "moved, or overwritten.",
             style="green",
         ),
     ]
@@ -90,7 +91,7 @@ def confirm_existing_storage_root(
             [
                 Text(""),
                 Text.assemble(
-                    ("Default storage: ", "dim"),
+                    ("Setup/editor default storage: ", "dim"),
                     (repr(storage_name), "bold"),
                 ),
             ]
@@ -112,7 +113,7 @@ def confirm_existing_storage_root(
     console.print(
         Panel(
             Group(*panel_lines),
-            title="[bold yellow]Storage Root Already Exists[/]",
+            title="[bold yellow]Storage Root Not Empty[/]",
             border_style="yellow",
         )
     )

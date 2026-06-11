@@ -147,7 +147,7 @@ class ConfigEditorApp(App[None]):
                         "New storage", variant="primary", id="storage-new"
                     )
                     yield Button(
-                        "Set this as default storage",
+                        "Set as setup/editor default",
                         id="storage-set-default",
                         disabled=True,
                     )

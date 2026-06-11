@@ -111,7 +111,9 @@ def storage_entry_label(
     if entry.kind in {"live", "missing"}:
         record = registry.selected(entry.name)
         default = (
-            " [default]" if record.name == registry.default_storage else ""
+            " [setup/editor default]"
+            if record.name == registry.default_storage
+            else ""
         )
         missing = " [missing]" if entry.kind == "missing" else ""
         return f"{record.name}{default}{missing}\n{record.root}"

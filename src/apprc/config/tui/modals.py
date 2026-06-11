@@ -40,7 +40,7 @@ class ArchiveOptionsResult:
 
 @dataclass(frozen=True, slots=True)
 class DefaultPathResult:
-    """Result returned when no live default storage remains."""
+    """Result returned when no live setup/editor default storage remains."""
 
     action: Literal["create", "leave"]
     path: Path | None = None
@@ -326,16 +326,18 @@ class DefaultPathScreen(ModalScreen[DefaultPathResult | None]):
     def compose(self) -> ComposeResult:
         """Compose the no-live-default dialog."""
         with Vertical(id="default-path-dialog"):
-            yield Static(Text("No default storage remains", style="bold"))
             yield Static(
-                "Choose a replacement default storage, or leave "
+                Text("No setup/editor default storage remains", style="bold")
+            )
+            yield Static(
+                "Choose a replacement setup/editor default storage, or leave "
                 f"{self.display_name} in an uninitialized state like a "
                 "fresh install.",
                 id="default-path-message",
             )
             yield Input(
                 value=str(self.default_path),
-                placeholder="Default storage directory",
+                placeholder="Setup/editor default storage directory",
                 suggester=PathSuggester(case_sensitive=True),
                 id="default-path-input",
             )

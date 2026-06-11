@@ -157,7 +157,7 @@ def build_config_typer_app(
             bool,
             typer.Option(
                 "--default/--no-default",
-                help="Make this storage the default in the registry.",
+                help="Make this storage the setup/editor default.",
             ),
         ] = False,
         assume_yes: Annotated[
@@ -192,21 +192,27 @@ def build_config_typer_app(
             typer.Option(
                 "--apprc-dir",
                 "-d",
-                help="Directory that will contain the AppRC TOML.",
+                help="Directory that will contain the AppRC TOML for this app.",
             ),
         ] = None,
         storage_root: Annotated[
             Path | None,
             typer.Option(
                 "--storage-root",
-                help="Default storage root for non-interactive setup.",
+                help=(
+                    "Setup/editor default storage root for non-interactive "
+                    "setup."
+                ),
             ),
         ] = None,
         storage_name: Annotated[
             str | None,
             typer.Option(
                 "--name",
-                help="Default storage selector for non-interactive setup.",
+                help=(
+                    "Setup/editor default storage selector for "
+                    "non-interactive setup."
+                ),
             ),
         ] = None,
         existing_action: Annotated[
@@ -217,7 +223,7 @@ def build_config_typer_app(
             ),
         ] = None,
     ) -> None:
-        """Interactively configure the AppRC TOML and first storage."""
+        """Interactively configure the AppRC TOML and first storage root."""
         handlers.setup(
             assume_yes=assume_yes,
             apprc_dir=apprc_dir,
@@ -231,11 +237,11 @@ def build_config_typer_app(
         name: Annotated[
             str,
             typer.Argument(
-                help="Existing storage selector to make the default."
+                help="Existing storage selector to make the setup/editor default."
             ),
         ],
     ) -> None:
-        """Set the default storage used by setup and editor flows."""
+        """Set the setup/editor default storage."""
         handlers.set_default(name=name)
 
     @app.command("set")

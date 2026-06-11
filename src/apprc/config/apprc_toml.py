@@ -104,10 +104,11 @@ def missing_apprc_toml_env_message(
     command_name = app_name or "app"
     return (
         f"{env_key} is required and must point to this app's AppRC TOML. "
-        "Choose where that file's directory should live, then run:\n"
+        "Choose this app's directory (AppRC), then run:\n"
         f"  {command_name} config setup --yes --apprc-dir "
         "/absolute/path/to/config-dir\n"
-        f"Setup will use /absolute/path/to/config-dir/{apprc_toml_filename}. "
+        "Setup will derive the AppRC TOML path:\n"
+        f"  /absolute/path/to/config-dir/{apprc_toml_filename}\n"
         "Keep the variable exported for future commands."
     )
 

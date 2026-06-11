@@ -160,7 +160,7 @@ The executable is `apprc`, but its disposable example files live under the
 |---|---|
 | AppRC TOML selector | `APPRC_EXAMPLE_APP_APPRC_TOML` |
 | Storage selector | `APPRC_EXAMPLE_APP_STORAGE` |
-| Default storage root | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
+| Setup/editor default storage root | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
 | Local env | `~/.local/share/apprc_example_app/apprc_example_app_stor-1/.env.apprc_example_app` |
 
 <br>
@@ -251,9 +251,9 @@ myapp config edit
 
 Use `myapp config setup` for normal first-time installation. With no options it
 opens a Textual wizard with path autocomplete, explains the AppRC TOML and
-storage root locations, asks for an AppRC directory when `MYAPP_APPRC_TOML`
-is not set, explains that `<APP>_STORAGE` must be set after setup, asks for a
-default storage, and shows next steps. For CI or
+storage root locations, asks for the app directory (AppRC) when
+`MYAPP_APPRC_TOML` is not set, explains that `<APP>_STORAGE` must be set after
+setup, asks for a setup/editor default storage root, and shows next steps. For CI or
 scripted bootstrap, pass `--yes` with `--apprc-dir`, `--storage-root`,
 `--name`, and `--existing-action keep|reset|move` as needed. `config init`
 remains available as the lower-level command for scripts or manual storage
@@ -297,7 +297,7 @@ Runtime behavior when keys are missing:
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
 | `os.environ` | current process | Highest-priority values by default. |
-| `<APP>_APPRC_TOML -> <app>.apprc.toml` | AppRC TOML | Named storage roots and default storage. |
+| `<APP>_APPRC_TOML -> <app>.apprc.toml` | AppRC TOML | Named storage roots and setup/editor default storage. |
 | `<APP>_STORAGE` | Bootstrap selector | Active storage name or storage path for current shell context. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
@@ -332,12 +332,13 @@ so AppRC uses one explicit rule: the app-specific `<APP>_APPRC_TOML`
 environment variable must point at the AppRC TOML file. For an app named
 `myapp`, that variable is `MYAPP_APPRC_TOML`.
 
-Setup is the bootstrap exception. `myapp config setup` can ask for the
-directory that should contain `myapp.apprc.toml` when `MYAPP_APPRC_TOML` is not
-set, and `myapp config setup --yes --apprc-dir /absolute/path/to/config-dir`
-works non-interactively. Setup prints the exact export command to keep for future
-shells; AppRC does not edit shell startup files. Runtime selection also depends
-on `<APP>_STORAGE` to keep the active storage explicit and stable.
+Setup is the bootstrap exception. `myapp config setup` can ask for the app
+directory (AppRC) that should contain `myapp.apprc.toml` when
+`MYAPP_APPRC_TOML` is not set, and
+`myapp config setup --yes --apprc-dir /absolute/path/to/config-dir` works
+non-interactively. Setup prints the exact AppRC TOML export command to keep for
+future shells; AppRC does not edit shell startup files. Runtime selection also
+depends on `<APP>_STORAGE` to keep the active storage explicit and stable.
 
 Installation state is explicit:
 
@@ -464,7 +465,8 @@ app.add_typer(config_app, name="config")
 
 `config setup` opens a Textual wizard for first-time setup unless `--yes` is
 passed for non-interactive use. The wizard handles existing registries, custom
-AppRC directories, default storage creation, and final diagnostics.
+app directories (AppRC), setup/editor default storage creation, and final
+diagnostics.
 
 `config edit` opens a Textual editor. The editor shows:
 
@@ -483,7 +485,7 @@ long explanation. Secret values are redacted. Required missing values show
 The editor also manages storage lifecycle:
 
 - `New storage` registers a directory or restores a `*.apprc.tar.xz` archive.
-- `Set this as default storage` changes the registry default.
+- `Set as setup/editor default` changes the registry default.
 - `Delete storage` can unregister only or delete the directory too.
 - `Archive storage` writes `*.apprc.tar.xz` and can optionally remove the
   source directory after compression.
@@ -492,7 +494,7 @@ The editor also manages storage lifecycle:
 
 If the last live default is removed, the editor prompts for a replacement path
 prefilled with `~/.local/share/<app>/<app>_stor-1` or offers to leave the app
-in the fresh-install state with no default storage.
+in the fresh-install state with no setup/editor default storage.
 
 ### Use Logging
 
@@ -558,7 +560,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `config init STORAGE_ROOT --name NAME --default` | Register a storage root. |
 | `config doctor` | Diagnose registry and selected storage state. |
 | `config show --json` | Print resolved runtime config payload. |
-| `config set-default NAME` | Change default storage. |
+| `config set-default NAME` | Change setup/editor default storage. |
 | `config set KEY VALUE` | Write one local override. |
 | `config edit` | Open the Textual editor. |
 

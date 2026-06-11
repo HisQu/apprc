@@ -48,16 +48,16 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     active_text = str(paths.active) if paths.active is not None else "<not set>"
     return (
         f"{kit.spec.display_name} uses one small AppRC TOML to remember "
-        "named storage directories and which storage is the default. The "
-        "AppRC TOML does not contain your storage data; it only points to "
-        "storage roots.\n\n"
-        f"{kit.spec.display_name} expects this variable to point at that "
-        f"TOML file:\n{paths.env_key}\n\n"
-        f"{kit.spec.storage_env_key} selects the active storage name or path "
-        "while commands are running.\n\n"
-        "If it is not set yet, setup will ask which directory should contain "
-        f"the new or existing {kit.spec.apprc_toml_filename} file.\n\n"
-        f"Current value:\n{active_text}"
+        "named storage roots and the setup/editor default storage. The "
+        "AppRC TOML does not contain storage data.\n\n"
+        f"{paths.env_key} must point at that AppRC TOML file.\n\n"
+        f"{kit.spec.storage_env_key} is the active storage selector for each "
+        "shell; it may be a registered storage name or an explicit storage "
+        "path.\n\n"
+        f"If {paths.env_key} is not set, setup will ask for the "
+        f"{apprc_dir_label(kit)} and derive the TOML path as "
+        f"<directory>/{kit.spec.apprc_toml_filename}.\n\n"
+        f"Current AppRC TOML value:\n{active_text}"
     )
 
 
@@ -72,25 +72,29 @@ def apprc_dir_step_text(
     :return: Plain text for CLI and Textual setup UIs.
     """
     computed = (
-        f"\n\nComputed TOML path:\n{suggested / kit.spec.apprc_toml_filename}"
+        "\n\nDerived AppRC TOML path:\n"
+        f"{suggested / kit.spec.apprc_toml_filename}"
         if suggested is not None
         else ""
     )
     suggested_text = (
-        f"\n\nCurrent directory:\n{suggested}" if suggested is not None else ""
+        f"\n\nCurrent {apprc_dir_label(kit)}:\n{suggested}"
+        if suggested is not None
+        else ""
     )
     return (
-        "This TOML file stores the storage registry: storage names, storage "
-        "root paths, and the default storage.\n\n"
-        f"{kit.spec.display_name} expects {kit.apprc_toml_env_key()} to point "
-        "at the full file path in future shells. Setup only needs the "
-        "directory and will use the fixed file name "
-        f"{kit.spec.apprc_toml_filename}."
+        f"Choose the {apprc_dir_label(kit)}. Setup will create or reuse "
+        f"{kit.spec.apprc_toml_filename} inside this directory.\n\n"
+        "The derived AppRC TOML stores AppRC state: registered storage names, "
+        "storage root paths, and the setup/editor default storage.\n\n"
+        f"{kit.apprc_toml_env_key()} must point at the full AppRC TOML path "
+        "in future shells. Setup asks for the directory so the file name stays "
+        "consistent."
         f"{suggested_text}{computed}\n\n"
-        f"{kit.spec.display_name} setup prints the export command when it "
-        "finishes, but it does not edit shell startup files. "
-        f"{kit.spec.storage_env_key} is the active storage selector for the "
-        "current shell."
+        f"After setup, keep {kit.spec.storage_env_key} exported as the active "
+        "storage selector. It may be a registered storage name or an explicit "
+        "storage path. Setup prints export commands but does not edit shell "
+        "startup files."
     )
 
 
@@ -103,9 +107,10 @@ def default_storage_step_text(kit: "AppConfigKit") -> str:
     return (
         "A storage root is where the application keeps user data and the "
         f"storage-local {kit.spec.local_env_filename} file. The registry can "
-        "remember many named storages, and setup makes one default for editor "
-        f"ordering and next-step guidance. {kit.spec.storage_env_key} remains "
-        "the runtime storage selector."
+        "remember many named storages. Setup registers one storage root and "
+        "marks it as the setup/editor default for ordering and next-step "
+        f"guidance. Runtime commands still use {kit.spec.storage_env_key} as "
+        "the active storage selector."
     )
 
 
@@ -130,7 +135,7 @@ def existing_registry_text(
     if rows:
         return (
             f"{body}\n\n"
-            "The current config has these storages registered:\n"
+            "The current AppRC TOML has these storages registered:\n"
             f"{rows}"
         )
     return f"{body}\n\nNo live storages are registered yet."
@@ -145,7 +150,11 @@ def existing_registry_rows_text(registry: StorageRegistry) -> str:
     rows: list[str] = []
     for index, name in enumerate(ordered_storage_names(registry), start=1):
         record = registry.selected(name)
-        default = " [default]" if name == registry.default_storage else ""
+        default = (
+            " [setup/editor default]"
+            if name == registry.default_storage
+            else ""
+        )
         rows.append(f"{index}. {name}{default}: {record.root}")
     return "\n".join(rows)
 
@@ -193,17 +202,20 @@ def storage_root_reuse_text(
     """
     active_registry_path = registry_path or kit.apprc_toml_path()
     default_line = (
-        f"\n\nDefault storage: {storage_name}" if make_default else ""
+        f"\n\nSetup/editor default storage: {storage_name}"
+        if make_default
+        else ""
     )
     return (
-        "Directory exists and is not empty.\n\n"
-        f"Path:\n{storage_root}\n\n"
+        "Storage root exists and is not empty.\n\n"
+        f"Storage root:\n{storage_root}\n\n"
         f"{kit.spec.display_name} will reuse this directory for "
         f"{kit.spec.display_name} storage {storage_name!r}.\n\n"
         "AppRC-managed files to create or update:\n"
         f"storage-local env: {storage_root / kit.spec.local_env_filename}\n"
         f"AppRC TOML: {active_registry_path}\n\n"
-        "No existing files will be deleted, moved, or overwritten."
+        "Existing files inside the storage root will not be deleted, moved, "
+        "or overwritten."
         f"{default_line}"
     )
 
@@ -252,6 +264,15 @@ def export_apprc_toml_command(
         '\\"',
     )
     return f'export {kit.apprc_toml_env_key()}="{path_text}"'
+
+
+def apprc_dir_label(kit: "AppConfigKit") -> str:
+    """Return the user-facing setup directory label.
+
+    :param kit: Application config facade.
+    :return: Display-name-specific AppRC directory label.
+    """
+    return f"{kit.spec.display_name} directory (AppRC)"
 
 
 def export_storage_selector_command(

@@ -54,7 +54,10 @@ def test_config_textual_storage_entries_order_live_missing_and_archived(
     assert ordered_existing_storage_names(registry) == ["alpha"]
     assert storage_entry_index(entries, "beta") == 1
     assert storage_entry_index(entries, "missing") is None
-    assert "alpha [default]" in storage_entry_label(registry, entries[0])
+    assert "alpha [setup/editor default]" in storage_entry_label(
+        registry,
+        entries[0],
+    )
     assert "beta [missing]" in storage_entry_label(registry, entries[1])
     assert "zeta [Last Archived]" in storage_entry_label(registry, entries[2])
 

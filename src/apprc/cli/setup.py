@@ -32,8 +32,8 @@ def run_config_setup(
     :param kit: Application config facade mounted by the host CLI.
     :param assume_yes: Whether to run without opening the Textual wizard.
     :param apprc_dir: Optional AppRC directory for non-interactive setup.
-    :param storage_root: Optional default storage root for setup.
-    :param storage_name: Optional default storage selector for setup.
+    :param storage_root: Optional setup/editor default storage root.
+    :param storage_name: Optional setup/editor default storage selector.
     :param existing_action: Optional action for an existing registry.
     :raises typer.Exit: If the user cancels or setup diagnostics fail.
     :raises typer.BadParameter: If setup inputs are invalid.

@@ -20,6 +20,7 @@ from apprc.config.setup.flow import (
     validate_storage_root_for_setup,
 )
 from apprc.config.setup.text import (
+    apprc_dir_label,
     apprc_dir_step_text,
     default_storage_step_text,
     existing_registry_text,

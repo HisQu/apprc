@@ -1,8 +1,8 @@
 """Read and write storage-local dotenv overrides.
 
-AppRC has two config file locations: the env-selected storage registry and one
-local dotenv file inside each registered storage root. This module owns the
-second location. It validates values against the
+AppRC has two managed file locations: the env-selected AppRC TOML and one local
+dotenv file inside each registered storage root. This module owns the second
+location. It validates values against the
 same ``ConfigField`` declarations used by runtime loading, writes keys in
 declaration order, and preserves unknown dotenv keys after the known AppRC
 keys.

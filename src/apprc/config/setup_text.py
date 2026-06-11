@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 class ConfigSetupPaths:
     """Important registry paths shown during setup.
 
-    :param active: Config file path selected by the environment.
-    :param env_key: Environment variable that selects the config file path.
+    :param active: AppRC TOML path selected by the environment.
+    :param env_key: Environment variable that selects the AppRC TOML path.
     """
 
     active: Path | None
@@ -34,7 +34,7 @@ def setup_paths(kit: "AppConfigKit") -> ConfigSetupPaths:
     """
     return ConfigSetupPaths(
         active=kit.optional_registry_path(),
-        env_key=kit.config_file_env_key(),
+        env_key=kit.apprc_toml_env_key(),
     )
 
 
@@ -47,28 +47,28 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     paths = setup_paths(kit)
     active_text = str(paths.active) if paths.active is not None else "<not set>"
     return (
-        f"{kit.spec.display_name} uses one small TOML config file to remember "
+        f"{kit.spec.display_name} uses one small AppRC TOML to remember "
         "named storage directories and which storage is the default. The "
-        "config file does not contain your storage data; it only points to "
+        "AppRC TOML does not contain your storage data; it only points to "
         "storage roots.\n\n"
         f"{kit.spec.display_name} expects this variable to point at that "
         f"TOML file:\n{paths.env_key}\n\n"
-        f"{kit.spec.storage_root_env_key} points at the active default "
-        "storage while commands are running.\n\n"
+        f"{kit.spec.storage_env_key} selects the active storage name or path "
+        "while commands are running.\n\n"
         "If it is not set yet, setup will ask where the new or existing "
-        f"{kit.spec.registry_filename} file should live.\n\n"
+        f"{kit.spec.apprc_toml_filename} file should live.\n\n"
         f"Current value:\n{active_text}"
     )
 
 
-def config_file_step_text(
+def apprc_toml_step_text(
     kit: "AppConfigKit",
     suggested: Path | None,
 ) -> str:
     """Return the explanation shown before choosing a registry path.
 
     :param kit: Application config facade.
-    :param suggested: Prefilled config file path, if one is known.
+    :param suggested: Prefilled AppRC TOML path, if one is known.
     :return: Plain text for CLI and Textual setup UIs.
     """
     suggested_text = (
@@ -77,14 +77,14 @@ def config_file_step_text(
     return (
         "This TOML file stores the storage registry: storage names, storage "
         "root paths, and the default storage.\n\n"
-        f"{kit.spec.display_name} expects {kit.config_file_env_key()} to point "
+        f"{kit.spec.display_name} expects {kit.apprc_toml_env_key()} to point "
         f"at this file in future shells, so setup needs a path to a new or "
-        f"existing {kit.spec.registry_filename} file."
+        f"existing {kit.spec.apprc_toml_filename} file."
         f"{suggested_text}\n\n"
         f"{kit.spec.display_name} setup prints the export command when it "
         "finishes, but it does not edit shell startup files. "
-        f"{kit.spec.storage_root_env_key} is the current default-storage "
-        "pointer for the active shell strategy."
+        f"{kit.spec.storage_env_key} is the active storage selector for the "
+        "current shell."
     )
 
 
@@ -113,11 +113,11 @@ def existing_registry_text(
     :return: Plain text summary of available actions.
     """
     body = (
-        f"{kit.spec.display_name} found an existing config file:\n"
+        f"{kit.spec.display_name} found an existing AppRC TOML:\n"
         f"{registry.path}\n\n"
         "Keeping it preserves the registered storage roots. Resetting removes "
-        f"only {kit.spec.display_name} config state, not storage directories. "
-        "Moving it preserves the registry contents at a new config-file path."
+        f"only {kit.spec.display_name} AppRC state, not storage directories. "
+        "Moving it preserves the registry contents at a new AppRC TOML path."
     )
     rows = existing_registry_rows_text(registry)
     if rows:
@@ -154,7 +154,7 @@ def reset_warning_text(
     :return: Plain text warning.
     """
     lines = [
-        "Storage directories are left untouched. Only the config file is "
+        "Storage directories are left untouched. Only the AppRC TOML is "
         f"removed. {kit.spec.display_name} storage directories are not "
         "deleted."
     ]
@@ -214,7 +214,7 @@ def next_steps_text(kit: "AppConfigKit", registry: StorageRegistry) -> str:
         f"{command_name} config show",
         f"{command_name} config doctor",
     ]
-    export_commands = [export_config_file_command(kit, registry.path)]
+    export_commands = [export_apprc_toml_command(kit, registry.path)]
     default_storage = registry.default()
     if default_storage is not None:
         export_commands.append(
@@ -230,21 +230,21 @@ def next_steps_text(kit: "AppConfigKit", registry: StorageRegistry) -> str:
     return "\n".join(lines)
 
 
-def export_config_file_command(
+def export_apprc_toml_command(
     kit: "AppConfigKit",
     registry_path: Path,
 ) -> str:
-    """Return the shell export command for one custom config file path.
+    """Return the shell export command for one custom AppRC TOML path.
 
     :param kit: Application config facade.
     :param registry_path: Custom registry path.
     :return: POSIX shell export command.
     """
-    path_text = str(_normalized_config_file_path(registry_path)).replace(
+    path_text = str(_normalized_apprc_toml_path(registry_path)).replace(
         '"',
         '\\"',
     )
-    return f'export {kit.config_file_env_key()}="{path_text}"'
+    return f'export {kit.apprc_toml_env_key()}="{path_text}"'
 
 
 def export_storage_root_command(
@@ -261,9 +261,9 @@ def export_storage_root_command(
         '"',
         '\\"',
     )
-    return f'export {kit.spec.storage_root_env_key}="{path_text}"'
+    return f'export {kit.spec.storage_env_key}="{path_text}"'
 
 
-def _normalized_config_file_path(path: str | Path) -> Path:
-    """Return an absolute, user-expanded config file path."""
+def _normalized_apprc_toml_path(path: str | Path) -> Path:
+    """Return an absolute, user-expanded AppRC TOML path."""
     return Path(path).expanduser().resolve()

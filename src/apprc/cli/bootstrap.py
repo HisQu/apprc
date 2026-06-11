@@ -13,7 +13,7 @@ import typer
 # == Internal ================================
 from apprc.config.environment import BootstrapLogger, EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
-from apprc.config.storage_registry import ConfigFileEnvError
+from apprc.config.storage_registry import ApprcTomlEnvError
 
 
 def parse_log_level(log_level: str) -> str | int:
@@ -48,7 +48,7 @@ def bootstrap_cli_env(
         storage-local ``.env.local``, and explicit ``env_file`` values should
         be merged into this process. Registry selection still runs when this
         is ``False``, and explicit ``env_file`` values may still provide the
-        storage root used for selection.
+        storage selector used for selection.
     :param registry_storage_name: Optional ``--storage`` selector from the
         user registry. When provided, that registry root becomes the active
         storage root and determines the storage-local dotenv candidate.
@@ -71,10 +71,10 @@ def bootstrap_cli_env(
         )
     except FileNotFoundError as exc:
         raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
-    except ConfigFileEnvError as exc:
+    except ApprcTomlEnvError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=kit.config_file_env_key(),
+            param_hint=kit.apprc_toml_env_key(),
         ) from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint="--storage") from exc

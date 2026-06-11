@@ -147,7 +147,7 @@ class ConfigEditorApp(App[None]):
                 f"{kit.spec.config_command_name()} config init "
                 "STORAGE_ROOT --name NAME"
             )
-            registry_label = kit.spec.registry_filename
+            registry_label = kit.spec.apprc_toml_filename
         if owners is None:
             raise TypeError("ConfigEditorApp requires kit or owners.")
         self.registry = registry

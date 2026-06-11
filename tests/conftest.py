@@ -19,17 +19,17 @@ def _required_apprc_prefixes(item: pytest.Item) -> list[str]:
 
 def _missing_bootstrap_env_for(prefix: str) -> tuple[str, str]:
     """Return the required env var pair for one AppRC bootstrap prefix."""
-    return f"{prefix}_CONFIG_FILE", f"{prefix}_STORAGE"
+    return f"{prefix}_APPRC_TOML", f"{prefix}_STORAGE"
 
 
 def _format_bootstrap_usage(prefix: str) -> str:
     """Build concise guidance for one required bootstrap prefix."""
     config_key, storage_key = _missing_bootstrap_env_for(prefix)
-    registry_name = prefix.lower().replace("_", "-")
+    apprc_toml_name = f"{prefix.lower()}_apprc.toml"
     return (
         f"{prefix}: set these two variables in your shell startup (or env):\n"
-        f'  export {config_key}="/absolute/path/to/{registry_name}.toml"\n'
-        f'  export {storage_key}="/path/to/{registry_name}-storage"\n'
+        f'  export {config_key}="/absolute/path/to/{apprc_toml_name}"\n'
+        f'  export {storage_key}="/path/to/{prefix.lower()}-storage"\n'
     )
 
 
@@ -45,7 +45,7 @@ def pytest_configure(config: pytest.Config) -> None:
     """Expose the example package and register AppRC test markers."""
     config.addinivalue_line(
         "markers",
-        "requires_apprc_env(prefix): requires APP_CONFIG_FILE and APP_STORAGE "
+        "requires_apprc_env(prefix): requires APP_APPRC_TOML and APP_STORAGE "
         "to be available before the test body runs.",
     )
     config.addinivalue_line(

@@ -11,6 +11,7 @@ from typing import Any
 import typer
 
 # == Internal ================================
+from apprc.config.environment import resolve_storage_selector_value
 from apprc.config.install_state import ConfigInstallState
 from apprc.config.kit import AppConfigKit
 
@@ -27,20 +28,23 @@ def config_command_text(kit: AppConfigKit, action: str) -> str:
 
 def config_setup_message(kit: AppConfigKit) -> str:
     """Return setup text shown when no storage is registered."""
-    storage_key = kit.spec.storage_root_env_key
-    setup_action = f"setup --yes --config-file /absolute/path/to/{kit.spec.registry_filename}"
+    storage_key = kit.spec.storage_env_key
+    setup_action = (
+        "setup --yes --apprc-toml "
+        f"/absolute/path/to/{kit.spec.apprc_toml_filename}"
+    )
     return (
-        f"No {kit.spec.display_name} config file is installed yet.\n\n"
-        f"{kit.spec.display_name} expects {kit.config_file_env_key()} to point "
-        "at its TOML config file, and "
-        f"{storage_key} to track the active default storage.\n"
+        f"No {kit.spec.display_name} AppRC TOML is installed yet.\n\n"
+        f"{kit.spec.display_name} expects {kit.apprc_toml_env_key()} to point "
+        "at its AppRC TOML, and "
+        f"{storage_key} to track the active storage selector.\n"
         "Choose where that file should live, then run setup:\n"
         f"  {config_command_text(kit, setup_action)}\n\n"
         "Keep both variables exported for future commands, then inspect the setup:\n"
         f"  {config_command_text(kit, 'doctor')}\n"
         f"  {config_command_text(kit, 'show')}\n\n"
         "Setup creates:\n"
-        f"  /absolute/path/to/{kit.spec.registry_filename}\n"
+        f"  /absolute/path/to/{kit.spec.apprc_toml_filename}\n"
         f"  /absolute/path/to/storage-root/{kit.spec.local_env_filename}"
     )
 
@@ -58,7 +62,7 @@ def build_config_doctor_payload(
     :param registry_path: Optional explicit registry path used by setup.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    registry_env_key = kit.config_file_env_key()
+    registry_env_key = kit.apprc_toml_env_key()
     raw_registry_env_value = os.environ.get(registry_env_key, "").strip()
     registry_env_value = raw_registry_env_value or None
     active_registry_path = (
@@ -83,11 +87,11 @@ def build_config_doctor_payload(
     if active_registry_path is None:
         issues.append(
             f"{registry_env_key} is not set. Run "
-            f"{config_command_text(kit, f'setup --yes --config-file /absolute/path/to/{kit.spec.registry_filename}')}"
+            f"{config_command_text(kit, f'setup --yes --apprc-toml /absolute/path/to/{kit.spec.apprc_toml_filename}')}"
             " and keep the printed export command in your shell setup."
         )
     elif not registry_exists:
-        issues.append(f"Config file does not exist: {active_registry_path}")
+        issues.append(f"AppRC TOML does not exist: {active_registry_path}")
     else:
         install_state = ConfigInstallState.INSTALLED_UNHEALTHY
         try:
@@ -98,7 +102,7 @@ def build_config_doctor_payload(
         else:
             storage_count = len(registry.storages)
             default_storage = registry.default_storage
-            env_storage = os.environ.get(kit.spec.storage_root_env_key)
+            env_storage = os.environ.get(kit.spec.storage_env_key)
             if not registry.storages:
                 issues.append(
                     f"No {kit.spec.display_name} storage is registered yet."
@@ -118,8 +122,19 @@ def build_config_doctor_payload(
                 except ValueError as exc:
                     issues.append(str(exc))
             elif env_storage:
-                selected_storage_source = kit.spec.storage_root_env_key
-                selected_storage_root = Path(env_storage).expanduser()
+                selected_storage_source = kit.spec.storage_env_key
+                try:
+                    record, root = resolve_storage_selector_value(
+                        registry=registry,
+                        raw_value=env_storage,
+                        storage_env_key=kit.spec.storage_env_key,
+                    )
+                except ValueError as exc:
+                    issues.append(str(exc))
+                else:
+                    selected_storage_root = root
+                    if record is not None:
+                        selected_storage = record.name
             elif registry.default_storage is not None:
                 selected_storage = registry.default_storage
                 selected_storage_source = "default_storage"
@@ -184,7 +199,7 @@ def build_config_doctor_payload(
         else [
             config_command_text(
                 kit,
-                f"setup --yes --config-file /absolute/path/to/{kit.spec.registry_filename}",
+                f"setup --yes --apprc-toml /absolute/path/to/{kit.spec.apprc_toml_filename}",
             ),
             config_command_text(kit, "doctor"),
             config_command_text(kit, "show"),

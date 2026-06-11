@@ -21,7 +21,7 @@ def run_config_setup(
     kit: AppConfigKit,
     *,
     assume_yes: bool = False,
-    config_file: Path | None = None,
+    apprc_toml: Path | None = None,
     storage_root: Path | None = None,
     storage_name: str | None = None,
     existing_action: setup_flow.ExistingSetupAction | None = None,
@@ -30,7 +30,7 @@ def run_config_setup(
 
     :param kit: Application config facade mounted by the host CLI.
     :param assume_yes: Whether to run without opening the Textual wizard.
-    :param config_file: Optional registry path for non-interactive setup.
+    :param apprc_toml: Optional registry path for non-interactive setup.
     :param storage_root: Optional default storage root for setup.
     :param storage_name: Optional default storage selector for setup.
     :param existing_action: Optional action for an existing registry.
@@ -40,7 +40,7 @@ def run_config_setup(
     has_setup_options = any(
         option is not None
         for option in (
-            config_file,
+            apprc_toml,
             storage_root,
             storage_name,
             existing_action,
@@ -62,7 +62,7 @@ def run_config_setup(
     try:
         setup_result = setup_flow.prepare_setup_registry(
             kit,
-            config_file_path=config_file,
+            apprc_toml_path=apprc_toml,
             existing_action=existing_action,
             replace_existing_file=True,
         )

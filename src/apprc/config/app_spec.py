@@ -11,9 +11,9 @@ from typing import Mapping
 from apprc.config.environment import EnvBootstrapSpec
 from apprc.config.schema import ConfigOwner
 from apprc.config.storage_registry import (
-    config_file_env_key,
-    configured_storage_registry_path,
-    optional_storage_registry_path,
+    apprc_toml_env_key,
+    configured_apprc_toml_path,
+    optional_apprc_toml_path,
 )
 
 
@@ -29,9 +29,9 @@ class AppConfigSpec:
     :param display_name: Human-readable application name for terminal output.
     :param config_package: Package containing the packaged shared dotenv file.
     :param owners: Config owner inventory for editable and documented fields.
-    :param storage_root_env_key: Env key that stores the active storage root.
+    :param storage_env_key: Env key that stores the active storage selector.
     :param command_name: Optional executable name shown in generated CLI copy.
-    :param registry_filename: Per-user TOML registry filename.
+    :param apprc_toml_filename: Per-user TOML registry filename.
     :param shared_env_filename: Packaged shared dotenv filename.
     :param local_env_filename: Storage-local dotenv override filename.
     """
@@ -40,9 +40,9 @@ class AppConfigSpec:
     display_name: str
     config_package: str
     owners: tuple[ConfigOwner, ...]
-    storage_root_env_key: str
+    storage_env_key: str
     command_name: str | None = None
-    registry_filename: str = "app.toml"
+    apprc_toml_filename: str = "app_apprc.toml"
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
 
@@ -50,9 +50,9 @@ class AppConfigSpec:
         """Return the executable name shown in generated config commands."""
         return self.command_name or self.app_name
 
-    def config_file_env_key(self) -> str:
+    def apprc_toml_env_key(self) -> str:
         """Return the env var that overrides the registry file path."""
-        return config_file_env_key(self.app_name)
+        return apprc_toml_env_key(self.app_name)
 
     def registry_path(
         self,
@@ -61,12 +61,12 @@ class AppConfigSpec:
         """Return the active user storage registry path.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: ``<APP>_CONFIG_FILE`` when set.
-        :raises ConfigFileEnvError: If the config-file env var is missing.
+        :return: ``<APP>_APPRC_TOML`` when set.
+        :raises ApprcTomlEnvError: If the AppRC TOML env var is missing.
         """
-        return configured_storage_registry_path(
+        return configured_apprc_toml_path(
             app_name=self.app_name,
-            registry_filename=self.registry_filename,
+            apprc_toml_filename=self.apprc_toml_filename,
             proc_env=proc_env,
         )
 
@@ -77,9 +77,9 @@ class AppConfigSpec:
         """Return the env-selected registry path when it is configured.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: ``<APP>_CONFIG_FILE`` path, or ``None``.
+        :return: ``<APP>_APPRC_TOML`` path, or ``None``.
         """
-        return optional_storage_registry_path(
+        return optional_apprc_toml_path(
             app_name=self.app_name,
             proc_env=proc_env,
         )
@@ -90,8 +90,8 @@ class AppConfigSpec:
             app_name=self.app_name,
             display_name=self.display_name,
             config_package=self.config_package,
-            storage_root_env_key=self.storage_root_env_key,
-            registry_filename=self.registry_filename,
+            storage_env_key=self.storage_env_key,
+            apprc_toml_filename=self.apprc_toml_filename,
             shared_env_filename=self.shared_env_filename,
             local_env_filename=self.local_env_filename,
         )

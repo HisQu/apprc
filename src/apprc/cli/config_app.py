@@ -43,7 +43,7 @@ from apprc.cli.typer_utils import (
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.paths import StorageRootPathError
-from apprc.config.storage_registry import ConfigFileEnvError, StorageRegistry
+from apprc.config.storage_registry import ApprcTomlEnvError, StorageRegistry
 import apprc.config.setup_flow as setup_flow
 
 StateT = TypeVar("StateT")
@@ -94,7 +94,7 @@ def active_storage_root_from_state(
         and state.env_bootstrap.storage_root is not None
     ):
         return state.env_bootstrap.storage_root
-    env_storage = os.environ.get(kit.spec.storage_root_env_key)
+    env_storage = os.environ.get(kit.spec.storage_env_key)
     if env_storage:
         return Path(env_storage).expanduser()
     return None
@@ -111,15 +111,15 @@ def _load_config_registry_for_cli(kit: AppConfigKit) -> StorageRegistry:
     """Load the registry and raise Typer's parse-error shape on failure."""
     try:
         return kit.load_registry()
-    except ConfigFileEnvError as exc:
+    except ApprcTomlEnvError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=kit.config_file_env_key(),
+            param_hint=kit.apprc_toml_env_key(),
         ) from exc
     except ValueError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=kit.spec.registry_filename,
+            param_hint=kit.spec.apprc_toml_filename,
         ) from exc
 
 
@@ -343,10 +343,10 @@ def build_config_typer_app(
         """Register one storage root and create its local env file."""
         try:
             kit.registry_path()
-        except ConfigFileEnvError as exc:
+        except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=kit.config_file_env_key(),
+                param_hint=kit.apprc_toml_env_key(),
             ) from exc
         normalized_root = guard_storage_root_init(
             kit,
@@ -361,10 +361,10 @@ def build_config_typer_app(
                 root=normalized_root,
                 make_default=make_default,
             )
-        except ConfigFileEnvError as exc:
+        except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=kit.config_file_env_key(),
+                param_hint=kit.apprc_toml_env_key(),
             ) from exc
         except StorageRootPathError as exc:
             raise typer.BadParameter(
@@ -391,11 +391,12 @@ def build_config_typer_app(
                 help="Run setup non-interactively with the selected values.",
             ),
         ] = False,
-        config_file: Annotated[
+        apprc_toml: Annotated[
             Path | None,
             typer.Option(
-                "--config-file",
-                help="Registry TOML path for non-interactive setup.",
+                "--apprc-toml",
+                "-t",
+                help="AppRC TOML path for non-interactive setup.",
             ),
         ] = None,
         storage_root: Annotated[
@@ -424,7 +425,7 @@ def build_config_typer_app(
         run_config_setup(
             kit,
             assume_yes=assume_yes,
-            config_file=config_file,
+            apprc_toml=apprc_toml,
             storage_root=storage_root,
             storage_name=storage_name,
             existing_action=existing_action,
@@ -443,10 +444,10 @@ def build_config_typer_app(
         try:
             old_default = kit.load_registry().default_storage
             registry = kit.set_default_storage(name=name)
-        except ConfigFileEnvError as exc:
+        except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=kit.config_file_env_key(),
+                param_hint=kit.apprc_toml_env_key(),
             ) from exc
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="NAME") from exc

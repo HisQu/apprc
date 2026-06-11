@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from apprc.config.environment import EnvBootstrapSpec, bootstrap_env
-from apprc.config.storage_registry import ConfigFileEnvError, register_storage
+from apprc.config.storage_registry import ApprcTomlEnvError, register_storage
 
 
 pytestmark = [pytest.mark.requires_apprc_env("DEMO")]
@@ -20,10 +20,10 @@ def _restore_demo_env(
     tmp_path: Path,
 ) -> Iterator[None]:
     if request.node.get_closest_marker("allow_missing_apprc_env") is None:
-        registry_path = tmp_path / "config" / "demo" / "demo.toml"
+        registry_path = tmp_path / "config" / "demo" / "demo_apprc.toml"
         storage_root = tmp_path / "demo-storage"
         storage_root.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setenv("DEMO_CONFIG_FILE", str(registry_path))
+        monkeypatch.setenv("DEMO_APPRC_TOML", str(registry_path))
         monkeypatch.setenv("DEMO_STORAGE", str(storage_root.resolve()))
 
     original = {
@@ -59,33 +59,33 @@ def _spec(package_name: str) -> EnvBootstrapSpec:
         app_name="demo",
         display_name="Demo",
         config_package=package_name,
-        storage_root_env_key="DEMO_STORAGE",
-        registry_filename="demo.toml",
+        storage_env_key="DEMO_STORAGE",
+        apprc_toml_filename="demo_apprc.toml",
         shared_env_filename=".env.shared",
         local_env_filename=".env.demo",
     )
 
 
-def _set_demo_config_file(monkeypatch, tmp_path: Path) -> Path:
+def _set_demo_apprc_toml(monkeypatch, tmp_path: Path) -> Path:
     """Point the demo bootstrap spec at a test registry file."""
-    registry_path = tmp_path / "config" / "demo" / "demo.toml"
-    monkeypatch.setenv("DEMO_CONFIG_FILE", str(registry_path))
+    registry_path = tmp_path / "config" / "demo" / "demo_apprc.toml"
+    monkeypatch.setenv("DEMO_APPRC_TOML", str(registry_path))
     return registry_path
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_bootstrap_env_requires_config_file_env(
+def test_bootstrap_env_requires_apprc_toml_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.delenv("DEMO_CONFIG_FILE", raising=False)
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
         'DEMO_MODEL="shared-model"\n',
     )
 
-    with pytest.raises(ConfigFileEnvError, match="DEMO_CONFIG_FILE"):
+    with pytest.raises(ApprcTomlEnvError, match="DEMO_APPRC_TOML"):
         bootstrap_env(
             spec=_spec(package_name),
             env_file=None,
@@ -99,7 +99,7 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
+    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     monkeypatch.setenv("DEMO_MODEL", "shell-model")
     package_name = _shared_env_package(
         monkeypatch,
@@ -142,7 +142,7 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
+    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -178,7 +178,7 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
+    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     monkeypatch.setenv("DEMO_MODEL", "shell-model")
     package_name = _shared_env_package(
         monkeypatch,
@@ -211,7 +211,7 @@ def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _set_demo_config_file(monkeypatch, tmp_path)
+    _set_demo_apprc_toml(monkeypatch, tmp_path)
     storage_root = tmp_path / "from-shell"
     monkeypatch.setenv("DEMO_STORAGE", str(storage_root))
     package_name = _shared_env_package(
@@ -238,7 +238,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _set_demo_config_file(monkeypatch, tmp_path)
+    _set_demo_apprc_toml(monkeypatch, tmp_path)
     normalized_root = tmp_path / "demo-storage"
     monkeypatch.setenv(
         "DEMO_STORAGE",
@@ -269,7 +269,7 @@ def test_bootstrap_env_registry_storage_name_selects_active_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
+    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -306,12 +306,97 @@ def test_bootstrap_env_registry_storage_name_selects_active_root(
     assert os.environ["DEMO_STORAGE"] == str(beta_root.resolve())
 
 
+def test_bootstrap_env_storage_env_name_selects_registered_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+    beta_root = tmp_path / "beta-storage"
+    register_storage(
+        name="beta",
+        root=beta_root,
+        make_default=True,
+        path=registry_path,
+        local_env_filename=".env.demo",
+    )
+    monkeypatch.setenv("DEMO_STORAGE", "beta")
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=None,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        registry_storage_name=None,
+    )
+
+    assert result.storage_name == "beta"
+    assert result.storage_root == beta_root.resolve()
+    assert result.local_env == beta_root.resolve() / ".env.demo"
+    assert os.environ["DEMO_STORAGE"] == str(beta_root.resolve())
+
+
+def test_bootstrap_env_storage_env_bare_unknown_name_is_error(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+    register_storage(
+        name="alpha",
+        root=tmp_path / "alpha-storage",
+        make_default=True,
+        path=registry_path,
+        local_env_filename=".env.demo",
+    )
+    monkeypatch.setenv("DEMO_STORAGE", "beta")
+
+    with pytest.raises(ValueError, match="Use './beta'"):
+        bootstrap_env(
+            spec=_spec(package_name),
+            env_file=None,
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            registry_storage_name=None,
+        )
+
+
+def test_bootstrap_env_requires_storage_selector(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _set_demo_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("DEMO_STORAGE", raising=False)
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+
+    with pytest.raises(ValueError, match="DEMO_STORAGE is required"):
+        bootstrap_env(
+            spec=_spec(package_name),
+            env_file=None,
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            registry_storage_name=None,
+        )
+
+
 @pytest.mark.allow_missing_apprc_env
 def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_config_file(monkeypatch, tmp_path)
+    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -350,6 +435,6 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     assert result.storage_name is None
     assert result.storage_root == explicit_root.resolve()
     assert result.used_default_storage is False
-    assert "DEMO_STORAGE" not in os.environ
+    assert os.environ["DEMO_STORAGE"] == str(explicit_root.resolve())
     assert "DEMO_MODEL" not in os.environ
     assert "DEMO_LOCAL" not in os.environ

@@ -19,7 +19,7 @@ from apprc.config.tui_storage_entries import (
 def test_tui_storage_entries_order_live_missing_and_archived(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "config" / "demo.toml"
+    registry_path = tmp_path / "config" / "demo_apprc.toml"
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
     archive_path = tmp_path / "zeta.apprc.tar.xz"

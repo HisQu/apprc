@@ -36,6 +36,7 @@ from apprc.config.local_env import (
 from apprc.config.schema import ConfigOwner
 from apprc.config.storage_registry import (
     StorageRegistry,
+    default_apprc_toml_filename,
     default_storage_data_root,
     default_storage_name,
     load_storage_registry,
@@ -78,9 +79,9 @@ class AppConfigKit:
         display_name: str,
         config_package: str,
         owners: tuple[ConfigOwner, ...],
-        storage_root_env_key: str,
+        storage_env_key: str,
         command_name: str | None = None,
-        registry_filename: str = "app.toml",
+        apprc_toml_filename: str | None = None,
         shared_env_filename: str = ".env.shared",
         local_env_filename: str = ".env.local",
     ) -> None: ...
@@ -93,9 +94,9 @@ class AppConfigKit:
         display_name: str | None = None,
         config_package: str | None = None,
         owners: tuple[ConfigOwner, ...] | None = None,
-        storage_root_env_key: str | None = None,
+        storage_env_key: str | None = None,
         command_name: str | None = None,
-        registry_filename: str = "app.toml",
+        apprc_toml_filename: str | None = None,
         shared_env_filename: str = ".env.shared",
         local_env_filename: str = ".env.local",
     ) -> None:
@@ -108,7 +109,7 @@ class AppConfigKit:
             or display_name is None
             or config_package is None
             or owners is None
-            or storage_root_env_key is None
+            or storage_env_key is None
         ):
             raise TypeError(
                 "AppConfigKit requires either an AppConfigSpec or all "
@@ -119,9 +120,13 @@ class AppConfigKit:
             display_name=display_name,
             config_package=config_package,
             owners=owners,
-            storage_root_env_key=storage_root_env_key,
+            storage_env_key=storage_env_key,
             command_name=command_name,
-            registry_filename=registry_filename,
+            apprc_toml_filename=(
+                apprc_toml_filename
+                if apprc_toml_filename is not None
+                else default_apprc_toml_filename(app_name)
+            ),
             shared_env_filename=shared_env_filename,
             local_env_filename=local_env_filename,
         )
@@ -134,7 +139,7 @@ class AppConfigKit:
 
         :param proc_env: Optional environment mapping for tests.
         :return: Env-selected registry path for this application.
-        :raises ConfigFileEnvError: If the config-file env var is missing.
+        :raises ApprcTomlEnvError: If the AppRC TOML env var is missing.
         """
         return self.spec.registry_path(proc_env)
 
@@ -149,9 +154,9 @@ class AppConfigKit:
         """
         return self.spec.optional_registry_path(proc_env)
 
-    def config_file_env_key(self) -> str:
+    def apprc_toml_env_key(self) -> str:
         """Return the env var that overrides the registry file path."""
-        return self.spec.config_file_env_key()
+        return self.spec.apprc_toml_env_key()
 
     def bootstrap(
         self,
@@ -174,7 +179,7 @@ class AppConfigKit:
             storage-local ``.env.local``, and explicit ``env_file`` values
             should be merged into this process. Registry selection still runs
             when this is ``False``, and explicit ``env_file`` values may still
-            provide the storage root used for selection.
+            provide the storage selector used for selection.
         :param registry_storage_name: Optional ``--storage`` selector from the
             user registry. When provided, that registry root becomes the active
             storage root and determines the storage-local dotenv candidate.
@@ -313,7 +318,7 @@ class AppConfigKit:
         """
         path = self.local_env_path(storage_root)
         values = read_local_env(path)
-        values[self.spec.storage_root_env_key] = str(
+        values[self.spec.storage_env_key] = str(
             Path(storage_root).expanduser().resolve()
         )
         return write_local_env(path, values, owners=self.spec.owners)

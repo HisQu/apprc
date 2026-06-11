@@ -7,7 +7,7 @@ from apprc.config.storage_registry import register_storage
 
 
 def test_storage_list_payload_reports_local_env_status(tmp_path: Path) -> None:
-    registry_path = tmp_path / "config" / "demo.toml"
+    registry_path = tmp_path / "config" / "demo_apprc.toml"
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
     register_storage(

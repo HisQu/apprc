@@ -16,6 +16,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
+import re
 from dataclasses import dataclass
 from importlib.resources import as_file, files
 from importlib.resources.abc import Traversable
@@ -31,12 +32,13 @@ from apprc.config.paths import normalize_storage_root_path
 from apprc.config.storage_registry import (
     StorageRecord,
     StorageRegistry,
-    config_file_env_key,
-    configured_storage_registry_path,
+    apprc_toml_env_key,
+    configured_apprc_toml_path,
     load_storage_registry,
 )
 
 LOG = get_logger(__name__)
+_WINDOWS_DRIVE_SELECTOR_PATTERN = re.compile(r"^[A-Za-z]:")
 
 
 class BootstrapLogger(Protocol):
@@ -53,8 +55,8 @@ class EnvBootstrapSpec:
     :param app_name: Lowercase application name used in env var derivation.
     :param display_name: Human-readable application name in log messages.
     :param config_package: Package containing the shared dotenv resource.
-    :param storage_root_env_key: Env key that stores the active storage root.
-    :param registry_filename: Per-user TOML registry filename.
+    :param storage_env_key: Env key that stores the active storage selector.
+    :param apprc_toml_filename: Per-user TOML registry filename.
     :param shared_env_filename: Packaged shared dotenv filename.
     :param local_env_filename: Storage-local dotenv override filename.
     """
@@ -62,20 +64,20 @@ class EnvBootstrapSpec:
     app_name: str
     display_name: str
     config_package: str
-    storage_root_env_key: str
-    registry_filename: str
+    storage_env_key: str
+    apprc_toml_filename: str
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
 
-    def config_file_env_key(self) -> str:
+    def apprc_toml_env_key(self) -> str:
         """Return the env var that overrides the registry file path."""
-        return config_file_env_key(self.app_name)
+        return apprc_toml_env_key(self.app_name)
 
     def registry_path(self) -> Path:
         """Return the env-selected user registry path for this application."""
-        return configured_storage_registry_path(
+        return configured_apprc_toml_path(
             app_name=self.app_name,
-            registry_filename=self.registry_filename,
+            apprc_toml_filename=self.apprc_toml_filename,
         )
 
 
@@ -146,30 +148,30 @@ def bootstrap_env(
     original_env = dict(os.environ)
     explicit_values = _read_explicit_env_file(env_file)
     registry = load_storage_registry(spec.registry_path())
-    selected_storage, used_default_storage = _select_storage(
-        spec=spec,
-        registry=registry,
-        registry_storage_name=registry_storage_name,
-        original_env=original_env,
-        explicit_values=explicit_values,
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-    )
-
-    active_storage_root = (
-        selected_storage.root
-        if selected_storage is not None
-        else _storage_root_from_values(
+    selected_storage, explicit_storage_root, used_default_storage = (
+        _select_storage(
+            spec=spec,
+            registry=registry,
+            registry_storage_name=registry_storage_name,
             original_env=original_env,
             explicit_values=explicit_values,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
-            storage_root_env_key=spec.storage_root_env_key,
         )
     )
-    active_local_env = (
-        None
-        if active_storage_root is None
-        else Path(active_storage_root) / spec.local_env_filename
+    active_storage_root = (
+        selected_storage.root
+        if selected_storage is not None
+        else explicit_storage_root
     )
+    if active_storage_root is None:
+        raise ValueError(
+            f"{spec.storage_env_key} is required and must be either a "
+            "registered storage name or an explicit storage path. Pass "
+            "--storage NAME or export "
+            f'{spec.storage_env_key}="/path/to/storage".'
+        )
+
+    active_local_env = Path(active_storage_root) / spec.local_env_filename
 
     if (
         selected_storage is not None
@@ -201,8 +203,7 @@ def bootstrap_env(
                 env_file_overrides_os_environ=env_file_overrides_os_environ,
             )
             os.environ.update(merged)
-    if selected_storage is not None:
-        os.environ[spec.storage_root_env_key] = str(selected_storage.root)
+    os.environ[spec.storage_env_key] = str(active_storage_root)
 
     return EnvBootstrapResult(
         shared_env=shared_env_path,
@@ -218,6 +219,76 @@ def bootstrap_env(
     )
 
 
+def resolve_storage_selector_value(
+    *,
+    registry: StorageRegistry,
+    raw_value: str,
+    storage_env_key: str,
+) -> tuple[StorageRecord | None, Path]:
+    """Resolve one storage env value to a record name or path.
+
+    :param registry: Parsed AppRC TOML storage registry.
+    :param raw_value: Value from ``<APP>_STORAGE`` or an explicit env file.
+    :param storage_env_key: Env key used in human-facing errors.
+    :return: Selected registry record, if any, and resolved storage root.
+    :raises ValueError: If a bare selector is not registered.
+    """
+    selector = raw_value.strip()
+    if selector in registry.storages:
+        record = registry.selected(selector)
+        return record, record.root
+    if _is_storage_path_like(selector):
+        return None, normalize_storage_root_path(selector).resolve()
+    known = ", ".join(sorted(registry.storages)) or "<none>"
+    raise ValueError(
+        f"{storage_env_key} value {selector!r} is not a registered storage "
+        f"name in {registry.path}. Known storages: {known}. Use "
+        f"{'./' + selector!r} if you meant a relative storage path."
+    )
+
+
+def _is_storage_path_like(value: str) -> bool:
+    """Return whether selector text should be interpreted as a path."""
+    path = Path(value).expanduser()
+    return (
+        value in {".", "..", "~"}
+        or "/" in value
+        or "\\" in value
+        or path.is_absolute()
+        or value.startswith("~/")
+        or _WINDOWS_DRIVE_SELECTOR_PATTERN.match(value) is not None
+    )
+
+
+def _select_storage(
+    *,
+    spec: EnvBootstrapSpec,
+    registry: StorageRegistry,
+    registry_storage_name: str | None,
+    original_env: Mapping[str, str],
+    explicit_values: Mapping[str, str],
+    env_file_overrides_os_environ: bool,
+) -> tuple[StorageRecord | None, Path | None, bool]:
+    """Return storage selected by CLI or env selector."""
+    if registry_storage_name is not None:
+        record = registry.selected(registry_storage_name)
+        return record, record.root, False
+    storage_selector = _storage_selector_value(
+        original_env=original_env,
+        explicit_values=explicit_values,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        storage_env_key=spec.storage_env_key,
+    )
+    if storage_selector:
+        record, root = resolve_storage_selector_value(
+            registry=registry,
+            raw_value=storage_selector,
+            storage_env_key=spec.storage_env_key,
+        )
+        return record, root, False
+    return None, None, False
+
+
 def _shared_env_resource(spec: EnvBootstrapSpec) -> Traversable:
     """Return the packaged shared dotenv resource."""
     return files(spec.config_package).joinpath(spec.shared_env_filename)
@@ -226,7 +297,7 @@ def _shared_env_resource(spec: EnvBootstrapSpec) -> Traversable:
 def _read_explicit_env_file(env_file: Path | None) -> dict[str, str]:
     """Read the optional explicit dotenv file.
 
-    Explicit values may guide storage-root selection even when dotenv layers
+    Explicit values may guide storage selection even when dotenv layers
     are not merged into ``os.environ``.
     """
     if env_file is None:
@@ -273,62 +344,18 @@ def _merged_env_values(
     }
 
 
-def _select_storage(
-    *,
-    spec: EnvBootstrapSpec,
-    registry: StorageRegistry,
-    registry_storage_name: str | None,
-    original_env: Mapping[str, str],
-    explicit_values: Mapping[str, str],
-    env_file_overrides_os_environ: bool,
-) -> tuple[StorageRecord | None, bool]:
-    """Return the registry-selected storage, if registry selection applies."""
-    if registry_storage_name is not None:
-        return registry.selected(registry_storage_name), False
-    if _storage_root_value(
-        original_env=original_env,
-        explicit_values=explicit_values,
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-        storage_root_env_key=spec.storage_root_env_key,
-    ):
-        return None, False
-    default_storage = registry.default()
-    if default_storage is None:
-        return None, False
-    return default_storage, True
-
-
-def _storage_root_from_values(
+def _storage_selector_value(
     *,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
     env_file_overrides_os_environ: bool,
-    storage_root_env_key: str,
-) -> Path | None:
-    """Return active storage root from higher-precedence env values."""
-    root = _storage_root_value(
-        original_env=original_env,
-        explicit_values=explicit_values,
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-        storage_root_env_key=storage_root_env_key,
-    )
-    if not root:
-        return None
-    return normalize_storage_root_path(root)
-
-
-def _storage_root_value(
-    *,
-    original_env: Mapping[str, str],
-    explicit_values: Mapping[str, str],
-    env_file_overrides_os_environ: bool,
-    storage_root_env_key: str,
+    storage_env_key: str,
 ) -> str | None:
-    """Return the storage-root value implied by ``os.environ`` and ``env_file``."""
+    """Return the storage selector implied by ``os.environ`` and ``env_file``."""
     if env_file_overrides_os_environ:
-        return explicit_values.get(storage_root_env_key) or original_env.get(
-            storage_root_env_key
+        return explicit_values.get(storage_env_key) or original_env.get(
+            storage_env_key
         )
-    return original_env.get(storage_root_env_key) or explicit_values.get(
-        storage_root_env_key
+    return original_env.get(storage_env_key) or explicit_values.get(
+        storage_env_key
     )

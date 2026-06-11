@@ -2,7 +2,7 @@
 
 CLI applications often run globally, but their data lives in user-chosen
 project or corpus directories. AppRC solves that with a tiny TOML registry
-selected by the app-specific ``<APP>_CONFIG_FILE`` environment variable. The
+selected by the app-specific ``<APP>_APPRC_TOML`` environment variable. The
 registry maps friendly storage names to absolute storage roots and records
 which one is the default.
 
@@ -29,7 +29,7 @@ from apprc.config.paths import normalize_storage_root_path
 _STORAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-class ConfigFileEnvError(ValueError):
+class ApprcTomlEnvError(ValueError):
     """Raised when an app registry path cannot be resolved from the env."""
 
 
@@ -140,47 +140,58 @@ def default_storage_name(app_name: str) -> str:
     return f"{base_name}_stor-1"
 
 
-def config_file_env_key(app_name: str) -> str:
+def default_apprc_toml_filename(app_name: str) -> str:
+    """Return the conventional AppRC TOML basename for one application.
+
+    :param app_name: Application name from the AppRC integration spec.
+    :return: Host-specific TOML filename ending in ``_apprc.toml``.
+    """
+    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", app_name).strip("_-")
+    base_name = normalized or "app"
+    return f"{base_name}_apprc.toml"
+
+
+def apprc_toml_env_key(app_name: str) -> str:
     """Return the environment variable that overrides the registry file.
 
     :param app_name: Application name from the AppRC integration spec.
-    :return: Uppercase ``<APP>_CONFIG_FILE`` variable name.
+    :return: Uppercase ``<APP>_APPRC_TOML`` variable name.
     """
     normalized = re.sub(r"[^A-Za-z0-9]+", "_", app_name).strip("_").upper()
     if not normalized:
         normalized = "APP"
-    return f"{normalized}_CONFIG_FILE"
+    return f"{normalized}_APPRC_TOML"
 
 
-def configured_storage_registry_path(
+def configured_apprc_toml_path(
     *,
     app_name: str,
-    registry_filename: str,
+    apprc_toml_filename: str,
     proc_env: Mapping[str, str] | None = None,
 ) -> Path:
     """Return the active registry path from the required env variable.
 
     :param app_name: Application name from the AppRC integration spec.
-    :param registry_filename: Suggested TOML basename shown in setup guidance.
+    :param apprc_toml_filename: Suggested TOML basename shown in setup guidance.
     :param proc_env: Environment mapping used for tests and subprocess setup.
     :return: The env-selected registry path.
-    :raises ConfigFileEnvError: If the app-specific env var is missing.
+    :raises ApprcTomlEnvError: If the app-specific env var is missing.
     """
-    path = optional_storage_registry_path(
+    path = optional_apprc_toml_path(
         app_name=app_name,
         proc_env=proc_env,
     )
     if path is not None:
         return path
-    raise ConfigFileEnvError(
-        missing_config_file_env_message(
+    raise ApprcTomlEnvError(
+        missing_apprc_toml_env_message(
             app_name=app_name,
-            registry_filename=registry_filename,
+            apprc_toml_filename=apprc_toml_filename,
         )
     )
 
 
-def optional_storage_registry_path(
+def optional_apprc_toml_path(
     *,
     app_name: str,
     proc_env: Mapping[str, str] | None = None,
@@ -192,30 +203,30 @@ def optional_storage_registry_path(
     :return: The env-selected registry path, or ``None``.
     """
     env = os.environ if proc_env is None else proc_env
-    raw_path = env.get(config_file_env_key(app_name), "").strip()
+    raw_path = env.get(apprc_toml_env_key(app_name), "").strip()
     if raw_path:
         return Path(raw_path).expanduser().resolve()
     return None
 
 
-def missing_config_file_env_message(
+def missing_apprc_toml_env_message(
     *,
     app_name: str,
-    registry_filename: str,
+    apprc_toml_filename: str,
 ) -> str:
     """Return guidance for a missing registry-path env variable.
 
     :param app_name: Application name from the AppRC integration spec.
-    :param registry_filename: Suggested TOML basename shown in setup guidance.
+    :param apprc_toml_filename: Suggested TOML basename shown in setup guidance.
     :return: Human-facing setup guidance.
     """
-    env_key = config_file_env_key(app_name)
+    env_key = apprc_toml_env_key(app_name)
     command_name = app_name or "app"
     return (
-        f"{env_key} is required and must point to this app's TOML config "
-        "file. Choose where that file should live, then run:\n"
-        f"  {command_name} config setup --yes --config-file "
-        f"/absolute/path/to/{registry_filename}\n"
+        f"{env_key} is required and must point to this app's AppRC TOML. "
+        "Choose where that file should live, then run:\n"
+        f"  {command_name} config setup --yes --apprc-toml "
+        f"/absolute/path/to/{apprc_toml_filename}\n"
         "Keep the variable exported for future commands."
     )
 
@@ -613,6 +624,7 @@ def _validate_storage_name(name: str) -> None:
     """Reject storage names that cannot be written as simple TOML keys."""
     if not _STORAGE_NAME_PATTERN.fullmatch(name):
         raise ValueError(
-            "Storage names may contain only letters, numbers, "
-            "underscores, and hyphens."
+            "Storage names may contain only letters, numbers, underscores, "
+            "and hyphens; they must not include `/` or `\\`. Use "
+            "<APP>_STORAGE or --storage-root for path values."
         )

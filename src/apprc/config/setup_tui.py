@@ -113,7 +113,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         )
 
     async def _start_setup(self) -> None:
-        """Load any existing registry or start fresh config-file selection."""
+        """Load any existing registry or start fresh AppRC TOML selection."""
         existing_path = setup_flow.find_existing_registry_path(self.kit)
         if existing_path is None:
             registry = await self._choose_new_registry()
@@ -210,7 +210,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         """
         registry_path = await self._choose_registry_path(
             default_path=self.kit.optional_registry_path(),
-            title="Config file",
+            title="AppRC TOML",
         )
         if registry_path is None:
             return None
@@ -231,7 +231,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         """
         target_path = await self._choose_registry_path(
             default_path=registry.path,
-            title="Move config file",
+            title="Move AppRC TOML",
         )
         if target_path is None:
             return None
@@ -242,14 +242,14 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         ):
             if target_path.is_dir():
                 self.notify(
-                    f"Config file target is a directory: {target_path}",
+                    f"AppRC TOML target is a directory: {target_path}",
                     severity="error",
                 )
                 return None
             action = await self.push_screen_wait(
                 ConfirmScreen(
-                    title="Replace config file?",
-                    message=f"Replace existing config file?\n{target_path}",
+                    title="Replace AppRC TOML?",
+                    message=f"Replace existing AppRC TOML?\n{target_path}",
                     actions=(("replace", "Replace", "warning"),),
                 )
             )
@@ -283,7 +283,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             result = await self.push_screen_wait(
                 PathInputScreen(
                     title=title,
-                    message=setup_text.config_file_step_text(
+                    message=setup_text.apprc_toml_step_text(
                         self.kit,
                         default_path,
                     ),
@@ -293,7 +293,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             )
             if result is None:
                 return None
-            path = setup_flow.normalized_config_file_path(result.path)
+            path = setup_flow.normalized_apprc_toml_path(result.path)
             try:
                 setup_flow.require_registry_path_available(path)
             except setup_flow.ConfigSetupError as exc:

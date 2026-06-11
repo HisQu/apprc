@@ -112,13 +112,13 @@ def build_apprc_example_app_kit() -> AppConfigKit:
         display_name="Example App",
         config_package="apprc.config",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_root_env_key="APPRC_EXAMPLE_APP_STORAGE",
-        registry_filename="apprc_example_app.toml",
+        storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
+        apprc_toml_filename="apprc_example_app_apprc.toml",
         local_env_filename=".env.apprc_example_app",
     )
 
 
-def set_apprc_example_app_config_file(
+def set_apprc_example_app_apprc_toml(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
@@ -131,17 +131,17 @@ def set_apprc_example_app_bootstrap(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
     *,
-    config_file: Path | None = None,
+    apprc_toml: Path | None = None,
     storage_root: Path | None = None,
 ) -> tuple[Path, Path]:
     """Point the example app at explicit bootstrap environment variables."""
     registry_path = (
-        config_file
-        if config_file is not None
+        apprc_toml
+        if apprc_toml is not None
         else tmp_path
         / "config"
         / "apprc_example_app"
-        / "apprc_example_app.toml"
+        / "apprc_example_app_apprc.toml"
     )
     default_storage_root = (
         storage_root
@@ -151,7 +151,7 @@ def set_apprc_example_app_bootstrap(
     default_storage_root.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_CONFIG_FILE",
+        "APPRC_EXAMPLE_APP_APPRC_TOML",
         str(registry_path),
     )
     monkeypatch.setenv(

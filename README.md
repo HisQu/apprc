@@ -140,9 +140,9 @@ command. `python -m apprc` is intentionally not a supported entrypoint.
 After `uv sync --all-groups`, run:
 
 ```shell
-export APPRC_EXAMPLE_APP_CONFIG_FILE="$PWD/.demo/apprc_example_app.toml"
+export APPRC_EXAMPLE_APP_APPRC_TOML="$PWD/.demo/apprc_example_app_apprc.toml"
 export APPRC_EXAMPLE_APP_STORAGE="$PWD/.demo/storage"
-.venv/bin/apprc config setup --yes --config-file "$APPRC_EXAMPLE_APP_CONFIG_FILE" --storage-root "$APPRC_EXAMPLE_APP_STORAGE"
+.venv/bin/apprc config setup --yes --apprc-toml "$APPRC_EXAMPLE_APP_APPRC_TOML" --storage-root "$APPRC_EXAMPLE_APP_STORAGE"
 .venv/bin/apprc config show --json
 .venv/bin/apprc config set app.profile other-profile
 .venv/bin/apprc config set retry_count 5
@@ -157,7 +157,7 @@ The executable is `apprc`, but its disposable example files live under the
 
 | Item | Default |
 |---|---|
-| Registry selector | `APPRC_EXAMPLE_APP_CONFIG_FILE` |
+| Registry selector | `APPRC_EXAMPLE_APP_APPRC_TOML` |
 | Storage root selector | `APPRC_EXAMPLE_APP_STORAGE` |
 | Default storage | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
 | Local env | `~/.local/share/apprc_example_app/apprc_example_app_stor-1/.env.apprc_example_app` |
@@ -201,8 +201,8 @@ MYAPP_CONFIG = AppConfigKit(
     display_name="MyApp",
     config_package="myapp.config",
     owners=(APP_OWNER,),
-    storage_root_env_key="MYAPP_STORAGE",
-    registry_filename="myapp.toml",
+    storage_env_key="MYAPP_STORAGE",
+    apprc_toml_filename="myapp_apprc.toml",
     shared_env_filename=".env.shared",
     local_env_filename=".env.local",
 )
@@ -237,10 +237,10 @@ overrides the executable shown in generated next-step commands.
 Users then get:
 
 ```shell
-export MYAPP_CONFIG_FILE="/absolute/path/to/myapp.toml"
+export MYAPP_APPRC_TOML="/absolute/path/to/myapp_apprc.toml"
 export MYAPP_STORAGE="/absolute/path/to/default/storage"
 myapp config setup
-myapp config setup --yes --config-file "$MYAPP_CONFIG_FILE" --storage-root "$MYAPP_STORAGE" --name myapp_stor-1
+myapp config setup --yes --apprc-toml "$MYAPP_APPRC_TOML" --storage-root "$MYAPP_STORAGE" --name myapp_stor-1
 myapp config init /absolute/path/to/storage --name myapp_stor-1 --default
 myapp config doctor
 myapp config show --json
@@ -249,35 +249,36 @@ myapp config edit
 ```
 
 Use `myapp config setup` for normal first-time installation. With no options it
-opens a Textual wizard with path autocomplete, explains the config file and
-storage root locations, asks for a config-file path when `MYAPP_CONFIG_FILE`
+opens a Textual wizard with path autocomplete, explains the AppRC TOML and
+storage root locations, asks for an AppRC TOML path when `MYAPP_APPRC_TOML`
 is not set, explains that `<APP>_STORAGE` must be set after setup, asks for a
 default storage, and shows next steps. For CI or
-scripted bootstrap, pass `--yes` with `--config-file`, `--storage-root`,
+scripted bootstrap, pass `--yes` with `--apprc-toml`, `--storage-root`,
 `--name`, and `--existing-action keep|reset|move` as needed. `config init`
 remains available as the lower-level command for scripts or manual storage
-registration after `MYAPP_CONFIG_FILE` is exported.
+registration after `MYAPP_APPRC_TOML` is exported.
 
 ### Bootstrap Recommendation
 
 For AppRC-backed apps, keep both registry and storage pointers in startup:
 
-- `export <APP>_CONFIG_FILE="/absolute/path/to/<app>.toml"`
-- `export <APP>_STORAGE="/path/to/what/currently-is-default"`
+- `export <APP>_APPRC_TOML="/absolute/path/to/<app>_apprc.toml"`
+- `export <APP>_STORAGE="storage_name_or_path"`
 
-`<APP>_STORAGE` is always the active default for the current shell. The
-effective default is where this variable points. If it drifts between projects,
-config commands can silently pick up the wrong storage. Setting both keys per
-project prevents cross-repo defaults from mixing.
+`<APP>_STORAGE` is always the active storage selector for the current shell. It
+may be a registered storage name from the AppRC TOML or an explicit storage
+path. Registered names win on exact match; path-like values such as
+`./project`, `/data/project`, `~/project`, and `C:/Projects/project` are treated
+as paths. Bare unknown names fail with guidance, so typos do not silently become
+relative paths.
 
 Runtime behavior when keys are missing:
 
-- `<APP>_CONFIG_FILE` missing: `config setup` with explicit `--config-file` still
+- `<APP>_APPRC_TOML` missing: `config setup` with explicit `--apprc-toml` still
   works, but runtime commands that need a registry are unavailable until setup is
   done.
-- `<APP>_STORAGE` missing: bootstrap still has access to registries and may fall
-  back to registry default, but the shell currently has no explicit active default
-  pointer.
+- `<APP>_STORAGE` missing: runtime bootstrap fails. Setup and doctor commands
+  can still run in partial setup states to help fix the missing variable.
 - Export both keys together after setup so startup behavior stays deterministic.
 
 <br>
@@ -295,8 +296,8 @@ Runtime behavior when keys are missing:
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
 | `os.environ` | current process | Highest-priority values by default. |
-| `<APP>_CONFIG_FILE -> <app>.toml` | AppRC registry | Named storage roots and default storage. |
-| `<APP>_STORAGE` | Bootstrap default | Active storage root pointer for current shell context. |
+| `<APP>_APPRC_TOML -> <app>_apprc.toml` | AppRC TOML | Named storage roots and default storage. |
+| `<APP>_STORAGE` | Bootstrap selector | Active storage name or storage path for current shell context. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
 `ConfigOwner` owns env names, docs labels, editor labels, choices, and
@@ -321,27 +322,27 @@ shell. CLI applications should expose this as
 Set `load_dotenv_layers=False` in Python, or expose a CLI flag such as
 `--skip-dotenv-layers`, to skip merging packaged, storage-local, and explicit
 dotenv values into the process. Registry storage selection still runs; the
-explicit env file may still provide the storage-root value used for selection.
+explicit env file may still provide the storage selector used for selection.
 
 ### Storage Registries
 
 Globally installed commands need to find user data without hardcoding one path,
-so AppRC uses one explicit rule: the app-specific `<APP>_CONFIG_FILE`
-environment variable must point at the registry TOML file. For an app named
-`myapp`, that variable is `MYAPP_CONFIG_FILE`.
+so AppRC uses one explicit rule: the app-specific `<APP>_APPRC_TOML`
+environment variable must point at the AppRC TOML file. For an app named
+`myapp`, that variable is `MYAPP_APPRC_TOML`.
 
 Setup is the bootstrap exception. `myapp config setup` can ask for a new or
-existing TOML path when `MYAPP_CONFIG_FILE` is not set, and
-`myapp config setup --yes --config-file /absolute/path/to/myapp.toml` works
+existing TOML path when `MYAPP_APPRC_TOML` is not set, and
+`myapp config setup --yes --apprc-toml /absolute/path/to/myapp_apprc.toml` works
 non-interactively. Setup prints the exact export command to keep for future
 shells; AppRC does not edit shell startup files. Runtime selection also depends
-on `<APP>_STORAGE` to keep the current default storage explicit and stable.
+on `<APP>_STORAGE` to keep the active storage explicit and stable.
 
 Installation state is explicit:
 
 | State | Meaning |
 |---|---|
-| `not_installed` | `<APP>_CONFIG_FILE` is missing, points nowhere, or points to a missing file. |
+| `not_installed` | `<APP>_APPRC_TOML` is missing, points nowhere, or points to a missing file. |
 | `installed_unhealthy` | The registry exists, but the TOML is invalid or storage setup is incomplete. |
 | `installed_healthy` | The registry exists, has a default storage, and the storage root plus local env file exist. |
 
@@ -461,7 +462,7 @@ app.add_typer(config_app, name="config")
 
 `config setup` opens a Textual wizard for first-time setup unless `--yes` is
 passed for non-interactive use. The wizard handles existing registries, custom
-config-file paths, default storage creation, and final diagnostics.
+AppRC TOML paths, default storage creation, and final diagnostics.
 
 `config edit` opens a Textual editor. The editor shows:
 

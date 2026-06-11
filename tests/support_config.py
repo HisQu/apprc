@@ -28,7 +28,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
     fields=(
         config_field(
             "storage_root",
-            "D_STORAGE",
+            "STORAGE",
             Path,
             default=CONFIG_MISSING,
             editable=False,
@@ -112,7 +112,7 @@ def build_apprc_example_app_kit() -> AppConfigKit:
         display_name="Example App",
         config_package="apprc.config",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_root_env_key="APPRC_EXAMPLE_APP_D_STORAGE",
+        storage_root_env_key="APPRC_EXAMPLE_APP_STORAGE",
         registry_filename="apprc_example_app.toml",
         local_env_filename=".env.apprc_example_app",
     )
@@ -155,7 +155,7 @@ def set_apprc_example_app_bootstrap(
         str(registry_path),
     )
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(default_storage_root.resolve()),
     )
     return registry_path, default_storage_root

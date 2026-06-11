@@ -83,7 +83,7 @@ def test_kit_registry_path_requires_config_file_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_CONFIG_FILE", raising=False)
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_D_STORAGE", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
 
     with pytest.raises(ConfigFileEnvError) as exc_info:
@@ -99,7 +99,7 @@ def test_config_doctor_reports_not_installed_without_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_CONFIG_FILE", raising=False)
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_D_STORAGE", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -119,7 +119,7 @@ def test_generated_config_setup_yes_requires_config_file_without_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_CONFIG_FILE", raising=False)
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_D_STORAGE", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -233,10 +233,10 @@ def test_install_state_tracks_selected_storage_source_from_env(
         root=registry_root,
         make_default=True,
     )
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_D_STORAGE", str(active_root))
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(active_root))
     payload = kit.doctor_payload()
 
-    assert payload["selected_storage_source"] == "APPRC_EXAMPLE_APP_D_STORAGE"
+    assert payload["selected_storage_source"] == "APPRC_EXAMPLE_APP_STORAGE"
     assert payload["selected_storage_root"] == str(active_root.resolve())
     assert payload["selected_storage"] is None
     assert payload["ok"] is True
@@ -266,7 +266,7 @@ def test_kit_registers_storage_and_reports_doctor_payload(
         == tmp_path / "config" / "apprc_example_app" / "apprc_example_app.toml"
     )
     assert (storage_root / ".env.apprc_example_app").is_file()
-    assert f'APPRC_EXAMPLE_APP_D_STORAGE="{storage_root.resolve()}"\n' in (
+    assert f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"\n' in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
     assert payload["ok"] is True
@@ -302,7 +302,7 @@ def test_kit_set_default_syncs_storage_root_local_env(
 
     assert registry.default_storage == "beta"
     assert beta_local_env.read_text(encoding="utf-8") == (
-        f'APPRC_EXAMPLE_APP_D_STORAGE="{beta_root.resolve()}"\n'
+        f'APPRC_EXAMPLE_APP_STORAGE="{beta_root.resolve()}"\n'
         'APPRC_EXAMPLE_APP_PROFILE="custom"\n'
     )
 
@@ -406,7 +406,7 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     )
     assert "payload.txt" in result.output
     assert "AppRC" not in result.output
-    assert f'APPRC_EXAMPLE_APP_D_STORAGE="{storage_root.resolve()}"\n' in (
+    assert f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"\n' in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
 
@@ -492,7 +492,7 @@ def test_generated_config_setup_creates_default_registry_and_storage(
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(kit.default_storage_data_root()),
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -514,9 +514,17 @@ def test_generated_config_setup_creates_default_registry_and_storage(
         registry.selected("apprc_example_app_stor-1").root
         == storage_root.resolve()
     )
-    assert f'APPRC_EXAMPLE_APP_D_STORAGE="{storage_root.resolve()}"\n' in (
+    assert f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"\n' in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
+    assert (
+        f'export APPRC_EXAMPLE_APP_CONFIG_FILE="{registry.path}"'
+        in result.output
+    )
+    assert (
+        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
+        in result.output
+    )
     assert "apprc_example_app config edit" in result.output
     assert "apprc_example_app config show" in result.output
     assert "apprc_example_app config doctor" in result.output
@@ -541,11 +549,18 @@ def test_generated_config_setup_accepts_config_file_without_env(
     )
 
     registry = kit.load_registry(path=custom_registry)
+    storage_root = (
+        tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
+    )
     assert result.exit_code == 0, result.output
     assert registry.path == custom_registry
     assert custom_registry.is_file()
     assert (
         f'export APPRC_EXAMPLE_APP_CONFIG_FILE="{custom_registry}"'
+        in result.output
+    )
+    assert (
+        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
         in result.output
     )
     assert kit.optional_registry_path() is None
@@ -563,7 +578,7 @@ def test_generated_config_setup_accepts_config_file_env_mismatch(
     )
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(kit.default_storage_data_root()),
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -596,7 +611,7 @@ def test_generated_config_setup_accepts_matching_custom_registry_env(
     monkeypatch.setenv("APPRC_EXAMPLE_APP_CONFIG_FILE", str(custom_registry))
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(kit.default_storage_data_root()),
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -620,7 +635,7 @@ def test_generated_config_setup_accepts_custom_default_storage(
     set_apprc_example_app_config_file(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(storage_root.resolve()),
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -643,6 +658,10 @@ def test_generated_config_setup_accepts_custom_default_storage(
     assert registry.default_storage == "alpha"
     assert registry.selected("alpha").root == storage_root.resolve()
     assert (storage_root / ".env.apprc_example_app").is_file()
+    assert (
+        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
+        in result.output
+    )
 
 
 def test_generated_config_setup_options_require_yes(
@@ -682,7 +701,7 @@ def test_generated_config_setup_keeps_existing_default_storage(
     storage_root = tmp_path / "alpha"
     kit.register_storage(name="alpha", root=storage_root, make_default=True)
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(storage_root.resolve()),
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -707,7 +726,7 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(kit.default_storage_data_root()),
     )
     old_storage_root = tmp_path / "alpha"
@@ -744,7 +763,7 @@ def test_generated_config_setup_moves_existing_registry_to_config_file_target(
     storage_root = tmp_path / "alpha"
     kit.register_storage(name="alpha", root=storage_root, make_default=True)
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(storage_root.resolve()),
     )
     default_registry = kit.registry_path()
@@ -897,6 +916,11 @@ async def test_config_setup_wizard_finish_shows_doctor_and_next_steps(
     assert "apprc_example_app config edit" in str(body)
     assert "apprc_example_app config show" in str(body)
     assert "apprc_example_app config doctor" in str(body)
+    assert "export APPRC_EXAMPLE_APP_CONFIG_FILE" in str(body)
+    assert (
+        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
+        in str(body)
+    )
 
 
 def test_generated_config_app_lists_registered_storages_as_rich_tree(
@@ -1293,7 +1317,7 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
     tmp_path: Path,
 ) -> None:
     set_apprc_example_app_config_file(monkeypatch, tmp_path)
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_D_STORAGE", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     monkeypatch.setenv("APPRC_EXAMPLE_APP_MODE", "MANUAL")
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
@@ -1303,7 +1327,7 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
     )
     local_env = tmp_path / "storage" / ".env.apprc_example_app"
     local_env.write_text(
-        f'APPRC_EXAMPLE_APP_D_STORAGE="{(tmp_path / "storage").resolve()}"\n'
+        f'APPRC_EXAMPLE_APP_STORAGE="{(tmp_path / "storage").resolve()}"\n'
         'APPRC_EXAMPLE_APP_ACCESS_TOKEN="super-secret"\n'
         'APPRC_EXAMPLE_APP_PROFILE="local-profile"\n'
         'APPRC_EXAMPLE_APP_RETRY_COUNT="7"\n',
@@ -1329,8 +1353,8 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
         "Default",
         "Explanation",
     ]
-    assert rows_by_key["APPRC_EXAMPLE_APP_D_STORAGE"][3] == "unset"
-    assert rows_by_key["APPRC_EXAMPLE_APP_D_STORAGE"][4] == str(
+    assert rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][3] == "unset"
+    assert rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][4] == str(
         (tmp_path / "storage").resolve()
     )
     assert rows_by_key["APPRC_EXAMPLE_APP_PROFILE"][:6] == [
@@ -1360,7 +1384,7 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
         rich_rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"][5].style == "yellow"
     )
     assert rich_rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"][5].style == "green"
-    assert rich_rows_by_key["APPRC_EXAMPLE_APP_D_STORAGE"][6].style == "dim"
+    assert rich_rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][6].style == "dim"
 
 
 @pytest.mark.asyncio

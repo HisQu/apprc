@@ -96,7 +96,7 @@ def test_set_local_env_value_rejects_registry_owned_storage_root(
     with pytest.raises(ValueError, match="managed outside .env.local"):
         set_local_env_value(
             storage_root=tmp_path / "storage",
-            reference="APPRC_EXAMPLE_APP_D_STORAGE",
+            reference="APPRC_EXAMPLE_APP_STORAGE",
             raw_value="/tmp/storage",
             owners=APPRC_EXAMPLE_APP_OWNERS,
             local_env_filename=".env.apprc_example_app",
@@ -134,7 +134,7 @@ def test_clear_local_env_value_rejects_registry_owned_storage_root(
     with pytest.raises(ValueError, match="managed outside .env.local"):
         clear_local_env_value(
             storage_root=tmp_path / "storage",
-            reference="APPRC_EXAMPLE_APP_D_STORAGE",
+            reference="APPRC_EXAMPLE_APP_STORAGE",
             owners=APPRC_EXAMPLE_APP_OWNERS,
             local_env_filename=".env.apprc_example_app",
         )

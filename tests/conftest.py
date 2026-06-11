@@ -19,7 +19,7 @@ def _required_apprc_prefixes(item: pytest.Item) -> list[str]:
 
 def _missing_bootstrap_env_for(prefix: str) -> tuple[str, str]:
     """Return the required env var pair for one AppRC bootstrap prefix."""
-    return f"{prefix}_CONFIG_FILE", f"{prefix}_D_STORAGE"
+    return f"{prefix}_CONFIG_FILE", f"{prefix}_STORAGE"
 
 
 def _format_bootstrap_usage(prefix: str) -> str:
@@ -45,8 +45,8 @@ def pytest_configure(config: pytest.Config) -> None:
     """Expose the example package and register AppRC test markers."""
     config.addinivalue_line(
         "markers",
-        "requires_apprc_env(prefix): requires APP_CONFIG_FILE and APP_D_STORAGE "
-        "to be set before the test runs.",
+        "requires_apprc_env(prefix): requires APP_CONFIG_FILE and APP_STORAGE "
+        "to be available before the test body runs.",
     )
     config.addinivalue_line(
         "markers",
@@ -65,7 +65,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_runtest_call(item: pytest.Item) -> None:
-    """Fail fast when required AppRC bootstrap environment is missing."""
+    """Fail fast when test-body AppRC bootstrap environment is missing."""
     if item.get_closest_marker("allow_missing_apprc_env") is not None:
         return
     prefixes = _required_apprc_prefixes(item)

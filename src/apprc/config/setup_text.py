@@ -214,9 +214,18 @@ def next_steps_text(kit: "AppConfigKit", registry: StorageRegistry) -> str:
         f"{command_name} config show",
         f"{command_name} config doctor",
     ]
+    export_commands = [export_config_file_command(kit, registry.path)]
+    default_storage = registry.default()
+    if default_storage is not None:
+        export_commands.append(
+            export_storage_root_command(kit, default_storage.root)
+        )
+    export_label = (
+        "these variables" if len(export_commands) > 1 else "this variable"
+    )
     lines.append(
-        "Keep this variable exported for future shells:\n"
-        f"{export_config_file_command(kit, registry.path)}"
+        f"Keep {export_label} exported for future shells:\n"
+        + "\n".join(export_commands)
     )
     return "\n".join(lines)
 
@@ -236,6 +245,23 @@ def export_config_file_command(
         '\\"',
     )
     return f'export {kit.config_file_env_key()}="{path_text}"'
+
+
+def export_storage_root_command(
+    kit: "AppConfigKit",
+    storage_root: Path,
+) -> str:
+    """Return the shell export command for one active storage root.
+
+    :param kit: Application config facade.
+    :param storage_root: Storage root selected as active for future shells.
+    :return: POSIX shell export command.
+    """
+    path_text = str(Path(storage_root).expanduser().resolve()).replace(
+        '"',
+        '\\"',
+    )
+    return f'export {kit.spec.storage_root_env_key}="{path_text}"'
 
 
 def _normalized_config_file_path(path: str | Path) -> Path:

@@ -27,7 +27,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
     fields=(
         config_field(
             "storage_root",
-            "D_STORAGE",
+            "STORAGE",
             Path,
             default=CONFIG_MISSING,
             title="Storage root",
@@ -103,7 +103,7 @@ APPRC_EXAMPLE_APP_KIT = AppConfigKit(
     display_name="Example App",
     config_package="apprc_example_app",
     owners=APPRC_EXAMPLE_APP_OWNERS,
-    storage_root_env_key="APPRC_EXAMPLE_APP_D_STORAGE",
+    storage_root_env_key="APPRC_EXAMPLE_APP_STORAGE",
     command_name="apprc",
     registry_filename="apprc_example_app.toml",
     local_env_filename=".env.apprc_example_app",

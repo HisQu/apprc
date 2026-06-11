@@ -35,7 +35,7 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
             "APPRC_EXAMPLE_APP_ACCESS_TOKEN": "secret",
             "APPRC_EXAMPLE_APP_RETRY_COUNT": "9",
         },
-        hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_D_STORAGE"}),
+        hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_STORAGE"}),
         shell_env={"APPRC_EXAMPLE_APP_MODE": "MANUAL"},
     )
     rows_by_key = {row.env_key: row for row in rows if row.env_key is not None}
@@ -49,7 +49,7 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
         "Default",
         "Explanation",
     )
-    assert "APPRC_EXAMPLE_APP_D_STORAGE" not in rows_by_key
+    assert "APPRC_EXAMPLE_APP_STORAGE" not in rows_by_key
     assert (
         str(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"].cells[4])
         == "<secret>"

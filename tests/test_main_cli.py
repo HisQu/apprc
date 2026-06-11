@@ -121,30 +121,29 @@ def test_core_package_does_not_import_demo_package() -> None:
     assert offenders == []
 
 
-def test_demo_config_setup_uses_demo_paths_and_apprc_command_text(
+def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     registry_path = _set_demo_config_file(monkeypatch, tmp_path)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    storage_root = tmp_path / ".demo" / "storage"
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
-        str(
-            (
-                tmp_path
-                / "data"
-                / "apprc_example_app"
-                / "apprc_example_app_stor-1"
-            ).resolve()
-        ),
+        "APPRC_EXAMPLE_APP_STORAGE",
+        str(storage_root.resolve()),
     )
     runner = CliRunner()
 
-    result = runner.invoke(app, ["config", "setup", "--yes"])
-
-    storage_root = (
-        tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "setup",
+            "--yes",
+            "--storage-root",
+            os.environ["APPRC_EXAMPLE_APP_STORAGE"],
+        ],
     )
+
     registry = APPRC_EXAMPLE_APP_KIT.load_registry()
     assert result.exit_code == 0, result.output
     assert registry.path == registry_path
@@ -153,6 +152,10 @@ def test_demo_config_setup_uses_demo_paths_and_apprc_command_text(
         storage_root.resolve()
     )
     assert (storage_root / ".env.apprc_example_app").is_file()
+    assert (
+        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
+        in result.output
+    )
     assert "apprc config edit" in result.output
     assert "apprc config show" in result.output
     assert "apprc config doctor" in result.output
@@ -166,7 +169,7 @@ def test_demo_config_set_and_show_payload(
     _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(
             (
                 tmp_path
@@ -222,7 +225,7 @@ def test_demo_root_env_file_option_before_config_show(
     _set_demo_config_file(monkeypatch, tmp_path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_D_STORAGE",
+        "APPRC_EXAMPLE_APP_STORAGE",
         str(
             (
                 tmp_path

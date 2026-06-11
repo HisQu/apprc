@@ -141,7 +141,9 @@ command. `python -m apprc` is intentionally not a supported entrypoint.
 After `uv sync --all-groups`, run:
 
 ```shell
-.venv/bin/apprc config setup --yes
+export APPRC_EXAMPLE_APP_CONFIG_FILE="$PWD/.demo/apprc_example_app.toml"
+export APPRC_EXAMPLE_APP_STORAGE="$PWD/.demo/storage"
+.venv/bin/apprc config setup --yes --config-file "$APPRC_EXAMPLE_APP_CONFIG_FILE" --storage-root "$APPRC_EXAMPLE_APP_STORAGE"
 .venv/bin/apprc config show --json
 .venv/bin/apprc config set app.profile other-profile
 .venv/bin/apprc config set retry_count 5
@@ -156,10 +158,10 @@ The executable is `apprc`, but its disposable example files live under the
 
 | Item | Default |
 |---|---|
-| Registry | `~/.config/apprc_example_app/apprc_example_app.toml` |
+| Registry selector | `APPRC_EXAMPLE_APP_CONFIG_FILE` |
+| Storage root selector | `APPRC_EXAMPLE_APP_STORAGE` |
 | Default storage | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
 | Local env | `~/.local/share/apprc_example_app/apprc_example_app_stor-1/.env.apprc_example_app` |
-| Registry override | `APPRC_EXAMPLE_APP_CONFIG_FILE` |
 
 <br>
 
@@ -200,11 +202,12 @@ MYAPP_CONFIG = AppConfigKit(
     display_name="MyApp",
     config_package="myapp.config",
     owners=(APP_OWNER,),
-    storage_root_env_key="MYAPP_D_STORAGE",
+    storage_root_env_key="MYAPP_STORAGE",
     registry_filename="myapp.toml",
     shared_env_filename=".env.shared",
     local_env_filename=".env.local",
 )
+
 
 # 3) Mount the generated `myapp config ...` command group.
 @dataclass(slots=True)
@@ -235,8 +238,10 @@ overrides the executable shown in generated next-step commands.
 Users then get:
 
 ```shell
+export MYAPP_CONFIG_FILE="/absolute/path/to/myapp.toml"
+export MYAPP_STORAGE="/absolute/path/to/default/storage"
 myapp config setup
-myapp config setup --yes --storage-root /absolute/path/to/storage --name myapp_stor-1
+myapp config setup --yes --config-file "$MYAPP_CONFIG_FILE" --storage-root "$MYAPP_STORAGE" --name myapp_stor-1
 myapp config init /absolute/path/to/storage --name myapp_stor-1 --default
 myapp config doctor
 myapp config show --json
@@ -246,11 +251,35 @@ myapp config edit
 
 Use `myapp config setup` for normal first-time installation. With no options it
 opens a Textual wizard with path autocomplete, explains the config file and
-storage root locations, asks for a default storage, and shows next steps.
-For CI or scripted bootstrap, pass `--yes` with `--config-file`,
-`--storage-root`, `--name`, and `--existing-action keep|reset|move` as needed.
-`config init` remains available as the lower-level command for scripts or
-manual storage registration.
+storage root locations, asks for a config-file path when `MYAPP_CONFIG_FILE`
+is not set, explains that `<APP>_STORAGE` must be set after setup, asks for a
+default storage, and shows next steps. For CI or
+scripted bootstrap, pass `--yes` with `--config-file`, `--storage-root`,
+`--name`, and `--existing-action keep|reset|move` as needed. `config init`
+remains available as the lower-level command for scripts or manual storage
+registration after `MYAPP_CONFIG_FILE` is exported.
+
+### Bootstrap Recommendation
+
+For AppRC-backed apps, keep both registry and storage pointers in startup:
+
+- `export <APP>_CONFIG_FILE="/absolute/path/to/<app>.toml"`
+- `export <APP>_STORAGE="/path/to/what/currently-is-default"`
+
+`<APP>_STORAGE` is always the active default for the current shell. The
+effective default is where this variable points. If it drifts between projects,
+config commands can silently pick up the wrong storage. Setting both keys per
+project prevents cross-repo defaults from mixing.
+
+Runtime behavior when keys are missing:
+
+- `<APP>_CONFIG_FILE` missing: `config setup` with explicit `--config-file` still
+  works, but runtime commands that need a registry are unavailable until setup is
+  done.
+- `<APP>_STORAGE` missing: bootstrap still has access to registries and may fall
+  back to registry default, but the shell currently has no explicit active default
+  pointer.
+- Export both keys together after setup so startup behavior stays deterministic.
 
 <br>
 
@@ -267,7 +296,8 @@ manual storage registration.
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
 | `os.environ` | current process | Highest-priority values by default. |
-| `~/.config/<app>/<registry_filename>` | AppRC registry | Named storage roots and default storage. |
+| `<APP>_CONFIG_FILE -> <app>.toml` | AppRC registry | Named storage roots and default storage. |
+| `<APP>_STORAGE` | Bootstrap default | Active storage root pointer for current shell context. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
 `ConfigOwner` owns env names, docs labels, editor labels, choices, and
@@ -296,12 +326,26 @@ explicit env file may still provide the storage-root value used for selection.
 
 ### Storage Registries
 
-Globally installed commands need to find user data without hardcoding one path.
-`apprc` stores named roots in `~/.config/<app>/<registry_filename>`, unless
-the app-specific `<APP>_CONFIG_FILE` environment variable points to a custom
-TOML file. For an app named `myapp`, that override is `MYAPP_CONFIG_FILE`.
-The interactive setup command refuses custom locations unless that variable is
-already set, because future commands must be able to rediscover the same file.
+Globally installed commands need to find user data without hardcoding one path,
+so AppRC uses one explicit rule: the app-specific `<APP>_CONFIG_FILE`
+environment variable must point at the registry TOML file. For an app named
+`myapp`, that variable is `MYAPP_CONFIG_FILE`.
+
+Setup is the bootstrap exception. `myapp config setup` can ask for a new or
+existing TOML path when `MYAPP_CONFIG_FILE` is not set, and
+`myapp config setup --yes --config-file /absolute/path/to/myapp.toml` works
+non-interactively. Setup prints the exact export command to keep for future
+shells; AppRC does not edit shell startup files. Runtime selection also depends
+on `<APP>_STORAGE` to keep the current default storage explicit and stable.
+
+Installation state is explicit:
+
+| State | Meaning |
+|---|---|
+| `not_installed` | `<APP>_CONFIG_FILE` is missing, points nowhere, or points to a missing file. |
+| `installed_unhealthy` | The registry exists, but the TOML is invalid or storage setup is incomplete. |
+| `installed_healthy` | The registry exists, has a default storage, and the storage root plus local env file exist. |
+
 For example:
 
 ```toml
@@ -368,7 +412,7 @@ STORAGE_OWNER = ConfigOwner(
     fields=(
         config_field(
             "root",
-            "D_STORAGE",
+            "STORAGE",
             Path,
             default=CONFIG_MISSING,
             editable=False,
@@ -473,7 +517,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.config.kit` | `AppConfigKit`, the high-level app integration facade. |
 | `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
 | `apprc.config.paths` | Storage-root path normalization helpers. |
-| `apprc.config.storage_registry` | `~/.config/<app>/*.toml` storage names. |
+| `apprc.config.storage_registry` | Env-selected registry TOML storage names. |
 | `apprc.config.storage_archive` | `*.apprc.tar.xz` storage compression and restore. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
 | `apprc.config.setup_flow` | Shared setup workflow rules and setup copy. |
@@ -493,6 +537,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `AppConfigSpec` | Frozen declaration behind the kit. |
 | `ConfigOwner` | One config section, env prefix, runtime path, and fields. |
 | `ConfigField` | One editable or read-only env-backed setting. |
+| `ConfigInstallState` | `not_installed`, `installed_unhealthy`, or `installed_healthy`. |
 | `BaseEnv` | Runtime dataclass base that binds values from env. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
 | `StorageRegistry` | Parsed TOML registry. |

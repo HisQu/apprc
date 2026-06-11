@@ -24,7 +24,7 @@ def _restore_demo_env(
         storage_root = tmp_path / "demo-storage"
         storage_root.mkdir(parents=True, exist_ok=True)
         monkeypatch.setenv("DEMO_CONFIG_FILE", str(registry_path))
-        monkeypatch.setenv("DEMO_D_STORAGE", str(storage_root.resolve()))
+        monkeypatch.setenv("DEMO_STORAGE", str(storage_root.resolve()))
 
     original = {
         key: value
@@ -59,7 +59,7 @@ def _spec(package_name: str) -> EnvBootstrapSpec:
         app_name="demo",
         display_name="Demo",
         config_package=package_name,
-        storage_root_env_key="DEMO_D_STORAGE",
+        storage_root_env_key="DEMO_STORAGE",
         registry_filename="demo.toml",
         shared_env_filename=".env.shared",
         local_env_filename=".env.demo",
@@ -114,7 +114,7 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
         path=registry_path,
         local_env_filename=".env.demo",
     )
-    monkeypatch.setenv("DEMO_D_STORAGE", str(storage_root))
+    monkeypatch.setenv("DEMO_STORAGE", str(storage_root))
     (storage_root / ".env.demo").write_text(
         'DEMO_MODEL="local-model"\n',
         encoding="utf-8",
@@ -132,7 +132,7 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
 
     assert os.environ["DEMO_MODEL"] == "shell-model"
     assert os.environ["DEMO_RETRY_COUNT"] == "3"
-    assert os.environ["DEMO_D_STORAGE"] == str(storage_root.resolve())
+    assert os.environ["DEMO_STORAGE"] == str(storage_root.resolve())
     assert result.storage_name is None
     assert result.used_default_storage is False
     assert result.local_env == storage_root.resolve() / ".env.demo"
@@ -213,7 +213,7 @@ def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
 ) -> None:
     _set_demo_config_file(monkeypatch, tmp_path)
     storage_root = tmp_path / "from-shell"
-    monkeypatch.setenv("DEMO_D_STORAGE", str(storage_root))
+    monkeypatch.setenv("DEMO_STORAGE", str(storage_root))
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -231,7 +231,7 @@ def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
     assert result.shared_env is None
     assert result.local_env is None
     assert result.storage_root == storage_root
-    assert os.environ["DEMO_D_STORAGE"] == str(storage_root)
+    assert os.environ["DEMO_STORAGE"] == str(storage_root)
 
 
 def test_bootstrap_env_normalizes_storage_root_env(
@@ -241,7 +241,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
     _set_demo_config_file(monkeypatch, tmp_path)
     normalized_root = tmp_path / "demo-storage"
     monkeypatch.setenv(
-        "DEMO_D_STORAGE",
+        "DEMO_STORAGE",
         r"D:\Training\demo-project",
     )
     monkeypatch.setattr(
@@ -303,7 +303,7 @@ def test_bootstrap_env_registry_storage_name_selects_active_root(
     assert result.storage_name == "beta"
     assert result.storage_root == beta_root.resolve()
     assert result.local_env == beta_root.resolve() / ".env.demo"
-    assert os.environ["DEMO_D_STORAGE"] == str(beta_root.resolve())
+    assert os.environ["DEMO_STORAGE"] == str(beta_root.resolve())
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -333,7 +333,7 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     )
     explicit_env = tmp_path / "override.env"
     explicit_env.write_text(
-        f'DEMO_D_STORAGE="{explicit_root}"\nDEMO_MODEL="explicit-model"\n',
+        f'DEMO_STORAGE="{explicit_root}"\nDEMO_MODEL="explicit-model"\n',
         encoding="utf-8",
     )
 
@@ -350,6 +350,6 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     assert result.storage_name is None
     assert result.storage_root == explicit_root.resolve()
     assert result.used_default_storage is False
-    assert "DEMO_D_STORAGE" not in os.environ
+    assert "DEMO_STORAGE" not in os.environ
     assert "DEMO_MODEL" not in os.environ
     assert "DEMO_LOCAL" not in os.environ

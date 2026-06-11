@@ -53,6 +53,7 @@ default_storage_step_text = setup_text.default_storage_step_text
 existing_registry_text = setup_text.existing_registry_text
 existing_registry_rows_text = setup_text.existing_registry_rows_text
 export_config_file_command = setup_text.export_config_file_command
+export_storage_root_command = setup_text.export_storage_root_command
 next_steps_text = setup_text.next_steps_text
 reset_warning_text = setup_text.reset_warning_text
 setup_overview_text = setup_text.setup_overview_text

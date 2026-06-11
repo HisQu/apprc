@@ -157,9 +157,9 @@ The executable is `apprc`, but its disposable example files live under the
 
 | Item | Default |
 |---|---|
-| Registry selector | `APPRC_EXAMPLE_APP_APPRC_TOML` |
-| Storage root selector | `APPRC_EXAMPLE_APP_STORAGE` |
-| Default storage | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
+| AppRC TOML selector | `APPRC_EXAMPLE_APP_APPRC_TOML` |
+| Storage selector | `APPRC_EXAMPLE_APP_STORAGE` |
+| Default storage root | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
 | Local env | `~/.local/share/apprc_example_app/apprc_example_app_stor-1/.env.apprc_example_app` |
 
 <br>
@@ -260,7 +260,7 @@ registration after `MYAPP_APPRC_TOML` is exported.
 
 ### Bootstrap Recommendation
 
-For AppRC-backed apps, keep both registry and storage pointers in startup:
+For AppRC-backed apps, keep both AppRC TOML and storage selectors in startup:
 
 - `export <APP>_APPRC_TOML="/absolute/path/to/<app>_apprc.toml"`
 - `export <APP>_STORAGE="storage_name_or_path"`
@@ -321,7 +321,7 @@ shell. CLI applications should expose this as
 
 Set `load_dotenv_layers=False` in Python, or expose a CLI flag such as
 `--skip-dotenv-layers`, to skip merging packaged, storage-local, and explicit
-dotenv values into the process. Registry storage selection still runs; the
+dotenv values into the process. AppRC TOML and storage selection still run; the
 explicit env file may still provide the storage selector used for selection.
 
 ### Storage Registries
@@ -343,8 +343,8 @@ Installation state is explicit:
 | State | Meaning |
 |---|---|
 | `not_installed` | `<APP>_APPRC_TOML` is missing, points nowhere, or points to a missing file. |
-| `installed_unhealthy` | The registry exists, but the TOML is invalid or storage setup is incomplete. |
-| `installed_healthy` | The registry exists, has a default storage, and the storage root plus local env file exist. |
+| `installed_unhealthy` | The AppRC TOML exists, but the TOML is invalid, `<APP>_STORAGE` is missing or invalid, or storage setup is incomplete. |
+| `installed_healthy` | The AppRC TOML exists, `<APP>_STORAGE` selects a registered name or path, and the storage root plus local env file exist. |
 
 For example:
 
@@ -438,7 +438,7 @@ state.env_bootstrap = bootstrap_cli_env(
     env_file=env_file,
     env_file_overrides_os_environ=env_file_overrides_os_environ,
     load_dotenv_layers=not skip_dotenv_layers,
-    registry_storage_name=storage,
+    storage_name=storage,
     log_level=log_level,
     setup_logging=setup_logging,
 )
@@ -514,9 +514,11 @@ log.success("Workspace ready", storage="myapp_stor-1")
 |---|---|
 | `apprc.config.schema` | `ConfigField`, `ConfigOwner`, field lookup, typed loading. |
 | `apprc.config.kit` | `AppConfigKit`, the high-level app integration facade. |
+| `apprc.config.apprc_toml` | `<APP>_APPRC_TOML` naming, env lookup, and path normalization. |
 | `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
 | `apprc.config.paths` | Storage-root path normalization helpers. |
-| `apprc.config.storage_registry` | Env-selected registry TOML storage names. |
+| `apprc.config.storage_selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
+| `apprc.config.storage_registry` | Storage tables inside the AppRC TOML. |
 | `apprc.config.storage_archive` | `*.apprc.tar.xz` storage compression and restore. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
 | `apprc.config.setup_flow` | Shared setup workflow rules and setup copy. |

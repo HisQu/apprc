@@ -122,7 +122,7 @@ def set_apprc_example_app_apprc_toml(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
-    """Point the example app at a test registry file."""
+    """Point the example app at a test AppRC TOML file."""
     registry_path, _ = set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
     return registry_path
 
@@ -171,10 +171,11 @@ def apprc_example_app_state(
             shared_env=None,
             local_env=storage_root / ".env.apprc_example_app",
             env_file=None,
-            registry_path=kit.registry_path(),
+            apprc_toml_path=kit.apprc_toml_path(),
+            storage_selector_source="--storage",
+            storage_selector_value="alpha",
             storage_name="alpha",
             storage_root=storage_root,
-            used_default_storage=True,
             storage_count=1,
         ),
         storage="alpha",

@@ -114,7 +114,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
 
     async def _start_setup(self) -> None:
         """Load any existing registry or start fresh AppRC TOML selection."""
-        existing_path = setup_flow.find_existing_registry_path(self.kit)
+        existing_path = setup_flow.find_existing_apprc_toml_path(self.kit)
         if existing_path is None:
             registry = await self._choose_new_registry()
             if registry is not None:
@@ -173,7 +173,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self.existing_action = action
         try:
             if action == setup_flow.ExistingSetupAction.KEEP:
-                setup_flow.require_registry_path_available(
+                setup_flow.require_apprc_toml_path_available(
                     registry.path,
                 )
                 await self._ensure_default_storage(registry)
@@ -191,12 +191,12 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 )
                 if confirmed != "reset":
                     return
-                setup_flow.remove_registry_config_state(registry.path)
+                setup_flow.remove_apprc_toml_config_state(registry.path)
                 fresh = await self._choose_new_registry()
                 if fresh is not None:
                     await self._ensure_default_storage(fresh)
                 return
-            moved = await self._move_existing_registry(registry)
+            moved = await self._move_existing_apprc_toml(registry)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error")
             return
@@ -204,32 +204,32 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             await self._ensure_default_storage(moved)
 
     async def _choose_new_registry(self) -> StorageRegistry | None:
-        """Prompt for the registry path and load the chosen file.
+        """Prompt for the AppRC TOML path and load the chosen file.
 
-        :return: Empty or parsed registry at the selected path.
+        :return: Empty or parsed registry at the selected AppRC TOML path.
         """
-        registry_path = await self._choose_registry_path(
-            default_path=self.kit.optional_registry_path(),
+        apprc_toml_path = await self._choose_apprc_toml_path(
+            default_path=self.kit.optional_apprc_toml_path(),
             title="AppRC TOML",
         )
-        if registry_path is None:
+        if apprc_toml_path is None:
             return None
         try:
-            return setup_flow.load_registry(self.kit, registry_path)
+            return setup_flow.load_registry(self.kit, apprc_toml_path)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error")
             return None
 
-    async def _move_existing_registry(
+    async def _move_existing_apprc_toml(
         self,
         registry: StorageRegistry,
     ) -> StorageRegistry | None:
-        """Prompt for a move target and move the registry file.
+        """Prompt for a move target and move the AppRC TOML file.
 
         :param registry: Existing registry to move.
         :return: Registry loaded from the move target, or ``None``.
         """
-        target_path = await self._choose_registry_path(
+        target_path = await self._choose_apprc_toml_path(
             default_path=registry.path,
             title="Move AppRC TOML",
         )
@@ -257,7 +257,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             if not replace:
                 return None
         try:
-            return setup_flow.move_existing_registry(
+            return setup_flow.move_existing_apprc_toml(
                 self.kit,
                 source_path=registry.path,
                 target_path=target_path,
@@ -267,17 +267,17 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             self.notify(str(exc), severity="error")
             return None
 
-    async def _choose_registry_path(
+    async def _choose_apprc_toml_path(
         self,
         *,
         default_path: Path | None,
         title: str,
     ) -> Path | None:
-        """Prompt until the user picks a rediscoverable registry path.
+        """Prompt until the user picks a rediscoverable AppRC TOML path.
 
-        :param default_path: Prefilled registry path.
+        :param default_path: Prefilled AppRC TOML path.
         :param title: Modal title.
-        :return: Normalized registry path, or ``None`` when canceled.
+        :return: Normalized AppRC TOML path, or ``None`` when canceled.
         """
         while True:
             result = await self.push_screen_wait(
@@ -287,7 +287,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                         self.kit,
                         default_path,
                     ),
-                    placeholder="Config file path",
+                    placeholder="AppRC TOML path",
                     value="" if default_path is None else str(default_path),
                 )
             )
@@ -295,7 +295,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 return None
             path = setup_flow.normalized_apprc_toml_path(result.path)
             try:
-                setup_flow.require_registry_path_available(path)
+                setup_flow.require_apprc_toml_path_available(path)
             except setup_flow.ConfigSetupError as exc:
                 self.notify(str(exc), severity="error")
                 continue
@@ -423,14 +423,14 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             existing_action=self.existing_action,
         )
         payload = self.kit.doctor_payload(
-            storage_name=None,
-            registry_path=registry.path,
+            storage_name=registry.default_storage,
+            apprc_toml_path=registry.path,
         )
         status = "ok" if payload["ok"] else "needs setup"
         default = registry.default_storage or "<none>"
         body = (
-            "Setup wrote the registry.\n\n"
-            f"registry_path: {registry.path}\n"
+            "Setup wrote the AppRC TOML.\n\n"
+            f"apprc_toml_path: {registry.path}\n"
             f"default_storage: {default}\n"
             f"doctor: {status}\n\n"
             "Next steps:\n"

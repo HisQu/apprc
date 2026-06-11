@@ -11,9 +11,10 @@ from typing import Any
 import typer
 
 # == Internal ================================
+from apprc.config.apprc_toml import ApprcTomlEnvError
 from apprc.config.environment import BootstrapLogger, EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
-from apprc.config.storage_registry import ApprcTomlEnvError
+from apprc.config.storage_selector import StorageSelectorError
 
 
 def parse_log_level(log_level: str) -> str | int:
@@ -31,7 +32,7 @@ def bootstrap_cli_env(
     env_file: Path | None,
     env_file_overrides_os_environ: bool,
     load_dotenv_layers: bool,
-    registry_storage_name: str | None,
+    storage_name: str | None,
     log_level: str | None = None,
     setup_logging: Callable[..., Any] | None = None,
     logger: BootstrapLogger | None = None,
@@ -49,9 +50,9 @@ def bootstrap_cli_env(
         be merged into this process. Registry selection still runs when this
         is ``False``, and explicit ``env_file`` values may still provide the
         storage selector used for selection.
-    :param registry_storage_name: Optional ``--storage`` selector from the
-        user registry. When provided, that registry root becomes the active
-        storage root and determines the storage-local dotenv candidate.
+    :param storage_name: Optional ``--storage`` selector from the storage
+        registry. When provided, that registry root becomes the active storage
+        root and determines the storage-local dotenv candidate.
     :param log_level: Optional CLI log-level token.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status messages.
@@ -66,7 +67,7 @@ def bootstrap_cli_env(
             env_file=env_file,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
-            registry_storage_name=registry_storage_name,
+            storage_name=storage_name,
             logger=logger,
         )
     except FileNotFoundError as exc:
@@ -75,6 +76,11 @@ def bootstrap_cli_env(
         raise typer.BadParameter(
             str(exc),
             param_hint=kit.apprc_toml_env_key(),
+        ) from exc
+    except StorageSelectorError as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint=exc.param_hint,
         ) from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint="--storage") from exc

@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from apprc.config.apprc_toml import ApprcTomlEnvError
 from apprc.config.environment import EnvBootstrapSpec, bootstrap_env
-from apprc.config.storage_registry import ApprcTomlEnvError, register_storage
+from apprc.config.storage_registry import register_storage
 
 
 pytestmark = [pytest.mark.requires_apprc_env("DEMO")]
@@ -67,7 +68,7 @@ def _spec(package_name: str) -> EnvBootstrapSpec:
 
 
 def _set_demo_apprc_toml(monkeypatch, tmp_path: Path) -> Path:
-    """Point the demo bootstrap spec at a test registry file."""
+    """Point the demo bootstrap spec at a test AppRC TOML file."""
     registry_path = tmp_path / "config" / "demo" / "demo_apprc.toml"
     monkeypatch.setenv("DEMO_APPRC_TOML", str(registry_path))
     return registry_path
@@ -91,7 +92,7 @@ def test_bootstrap_env_requires_apprc_toml_env(
             env_file=None,
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
-            registry_storage_name=None,
+            storage_name=None,
         )
 
 
@@ -127,14 +128,15 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
         env_file=explicit_env,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        registry_storage_name=None,
+        storage_name=None,
     )
 
     assert os.environ["DEMO_MODEL"] == "shell-model"
     assert os.environ["DEMO_RETRY_COUNT"] == "3"
     assert os.environ["DEMO_STORAGE"] == str(storage_root.resolve())
     assert result.storage_name is None
-    assert result.used_default_storage is False
+    assert result.storage_selector_source == "DEMO_STORAGE"
+    assert result.storage_selector_value == str(storage_root)
     assert result.local_env == storage_root.resolve() / ".env.demo"
 
 
@@ -168,7 +170,7 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
         env_file=explicit_env,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        registry_storage_name=None,
+        storage_name=None,
     )
 
     assert os.environ["DEMO_MODEL"] == "explicit-model"
@@ -201,7 +203,7 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
         env_file=explicit_env,
         env_file_overrides_os_environ=True,
         load_dotenv_layers=True,
-        registry_storage_name=None,
+        storage_name=None,
     )
 
     assert os.environ["DEMO_MODEL"] == "explicit-model"
@@ -225,7 +227,7 @@ def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=False,
-        registry_storage_name=None,
+        storage_name=None,
     )
 
     assert result.shared_env is None
@@ -245,7 +247,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
         r"D:\Training\demo-project",
     )
     monkeypatch.setattr(
-        "apprc.config.environment.normalize_storage_root_path",
+        "apprc.config.storage_selector.normalize_storage_root_path",
         lambda path: normalized_root,
     )
     package_name = _shared_env_package(
@@ -259,13 +261,13 @@ def test_bootstrap_env_normalizes_storage_root_env(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=False,
-        registry_storage_name=None,
+        storage_name=None,
     )
 
     assert result.storage_root == normalized_root
 
 
-def test_bootstrap_env_registry_storage_name_selects_active_root(
+def test_bootstrap_env_storage_name_selects_active_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -297,10 +299,12 @@ def test_bootstrap_env_registry_storage_name_selects_active_root(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        registry_storage_name="beta",
+        storage_name="beta",
     )
 
     assert result.storage_name == "beta"
+    assert result.storage_selector_source == "--storage"
+    assert result.storage_selector_value == "beta"
     assert result.storage_root == beta_root.resolve()
     assert result.local_env == beta_root.resolve() / ".env.demo"
     assert os.environ["DEMO_STORAGE"] == str(beta_root.resolve())
@@ -331,10 +335,12 @@ def test_bootstrap_env_storage_env_name_selects_registered_root(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        registry_storage_name=None,
+        storage_name=None,
     )
 
     assert result.storage_name == "beta"
+    assert result.storage_selector_source == "DEMO_STORAGE"
+    assert result.storage_selector_value == "beta"
     assert result.storage_root == beta_root.resolve()
     assert result.local_env == beta_root.resolve() / ".env.demo"
     assert os.environ["DEMO_STORAGE"] == str(beta_root.resolve())
@@ -365,7 +371,7 @@ def test_bootstrap_env_storage_env_bare_unknown_name_is_error(
             env_file=None,
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
-            registry_storage_name=None,
+            storage_name=None,
         )
 
 
@@ -387,7 +393,7 @@ def test_bootstrap_env_requires_storage_selector(
             env_file=None,
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
-            registry_storage_name=None,
+            storage_name=None,
         )
 
 
@@ -427,14 +433,15 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
         env_file=explicit_env,
         env_file_overrides_os_environ=True,
         load_dotenv_layers=False,
-        registry_storage_name=None,
+        storage_name=None,
     )
 
     assert result.shared_env is None
     assert result.local_env is None
     assert result.storage_name is None
     assert result.storage_root == explicit_root.resolve()
-    assert result.used_default_storage is False
+    assert result.storage_selector_source == "DEMO_STORAGE"
+    assert result.storage_selector_value == str(explicit_root)
     assert os.environ["DEMO_STORAGE"] == str(explicit_root.resolve())
     assert "DEMO_MODEL" not in os.environ
     assert "DEMO_LOCAL" not in os.environ

@@ -27,6 +27,7 @@ def test_storage_list_payload_reports_local_env_status(tmp_path: Path) -> None:
 
     payload = storage_list_payload(registry, local_env_filename=".env.demo")
 
+    assert payload["apprc_toml_path"] == str(registry_path)
     assert payload["default_storage"] == "alpha"
     assert payload["storages"] == [
         {

@@ -60,7 +60,7 @@ def confirm_existing_storage_root(
         "storage-local env",
         str(storage_root / kit.spec.local_env_filename),
     )
-    apprc_tomls.add_row("user registry", str(kit.registry_path()))
+    apprc_tomls.add_row("AppRC TOML", str(kit.apprc_toml_path()))
 
     panel_lines: list[RenderableType] = [
         Text("Directory exists and is not empty.", style="yellow"),

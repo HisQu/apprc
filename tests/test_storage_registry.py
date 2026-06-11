@@ -4,12 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.storage_registry import (
-    app_data_dir,
+from apprc.config.apprc_toml import (
     ApprcTomlEnvError,
     apprc_toml_env_key,
     configured_apprc_toml_path,
     default_apprc_toml_filename,
+)
+from apprc.config.storage_registry import (
+    app_data_dir,
     default_storage_data_root,
     default_storage_name,
     load_storage_registry,

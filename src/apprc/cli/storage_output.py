@@ -29,7 +29,7 @@ class StorageListRowPayload(TypedDict):
 class StorageListPayload(TypedDict):
     """Machine-readable data emitted by ``config list --json``."""
 
-    registry: str
+    apprc_toml_path: str
     default_storage: str | None
     storages: list[StorageListRowPayload]
 
@@ -60,7 +60,7 @@ def storage_list_payload(
             }
         )
     return {
-        "registry": str(registry.path),
+        "apprc_toml_path": str(registry.path),
         "default_storage": registry.default_storage,
         "storages": storages,
     }
@@ -72,7 +72,9 @@ def print_storage_list(payload: StorageListPayload) -> None:
     :param payload: Registry payload from :func:`storage_list_payload`.
     """
     console = Console(soft_wrap=True)
-    console.print(_storage_detail_text("registry", payload["registry"]))
+    console.print(
+        _storage_detail_text("apprc_toml_path", payload["apprc_toml_path"])
+    )
     console.print(
         _storage_detail_text(
             "default_storage",

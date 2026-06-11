@@ -85,7 +85,7 @@ def root_cmd(
         env_file=env_file,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         load_dotenv_layers=not skip_dotenv_layers,
-        registry_storage_name=storage,
+        storage_name=storage,
         log_level=log_level,
         setup_logging=setup_logging,
     )

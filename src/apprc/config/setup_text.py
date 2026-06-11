@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class ConfigSetupPaths:
-    """Important registry paths shown during setup.
+    """Important AppRC TOML paths shown during setup.
 
     :param active: AppRC TOML path selected by the environment.
     :param env_key: Environment variable that selects the AppRC TOML path.
@@ -27,13 +27,13 @@ class ConfigSetupPaths:
 
 
 def setup_paths(kit: "AppConfigKit") -> ConfigSetupPaths:
-    """Return the registry paths and override variable used by setup.
+    """Return the AppRC TOML paths and override variable used by setup.
 
     :param kit: Application config facade.
     :return: Paths and env var displayed by setup UIs.
     """
     return ConfigSetupPaths(
-        active=kit.optional_registry_path(),
+        active=kit.optional_apprc_toml_path(),
         env_key=kit.apprc_toml_env_key(),
     )
 
@@ -65,7 +65,7 @@ def apprc_toml_step_text(
     kit: "AppConfigKit",
     suggested: Path | None,
 ) -> str:
-    """Return the explanation shown before choosing a registry path.
+    """Return the explanation shown before choosing an AppRC TOML path.
 
     :param kit: Application config facade.
     :param suggested: Prefilled AppRC TOML path, if one is known.
@@ -97,8 +97,9 @@ def default_storage_step_text(kit: "AppConfigKit") -> str:
     return (
         "A storage root is where the application keeps user data and the "
         f"storage-local {kit.spec.local_env_filename} file. The registry can "
-        "remember many named storages, but setup makes one default so normal "
-        "commands work without --storage."
+        "remember many named storages, and setup makes one default for editor "
+        f"ordering and next-step guidance. {kit.spec.storage_env_key} remains "
+        "the runtime storage selector."
     )
 
 
@@ -181,10 +182,10 @@ def storage_root_reuse_text(
     :param storage_root: Existing non-empty storage directory.
     :param storage_name: Registry selector that will point at the directory.
     :param make_default: Whether the selector will become the default.
-    :param registry_path: Registry file that will be created or updated.
+    :param registry_path: AppRC TOML file that will be created or updated.
     :return: Plain text warning.
     """
-    active_registry_path = registry_path or kit.registry_path()
+    active_registry_path = registry_path or kit.apprc_toml_path()
     default_line = (
         f"\n\nDefault storage: {storage_name}" if make_default else ""
     )
@@ -195,7 +196,7 @@ def storage_root_reuse_text(
         f"{kit.spec.display_name} storage {storage_name!r}.\n\n"
         "Config files to create or update:\n"
         f"storage-local env: {storage_root / kit.spec.local_env_filename}\n"
-        f"user registry: {active_registry_path}\n\n"
+        f"AppRC TOML: {active_registry_path}\n\n"
         "No existing files will be deleted, moved, or overwritten."
         f"{default_line}"
     )
@@ -218,7 +219,7 @@ def next_steps_text(kit: "AppConfigKit", registry: StorageRegistry) -> str:
     default_storage = registry.default()
     if default_storage is not None:
         export_commands.append(
-            export_storage_root_command(kit, default_storage.root)
+            export_storage_selector_command(kit, default_storage.name)
         )
     export_label = (
         "these variables" if len(export_commands) > 1 else "this variable"
@@ -237,7 +238,7 @@ def export_apprc_toml_command(
     """Return the shell export command for one custom AppRC TOML path.
 
     :param kit: Application config facade.
-    :param registry_path: Custom registry path.
+    :param registry_path: Custom AppRC TOML path.
     :return: POSIX shell export command.
     """
     path_text = str(_normalized_apprc_toml_path(registry_path)).replace(
@@ -247,21 +248,21 @@ def export_apprc_toml_command(
     return f'export {kit.apprc_toml_env_key()}="{path_text}"'
 
 
-def export_storage_root_command(
+def export_storage_selector_command(
     kit: "AppConfigKit",
-    storage_root: Path,
+    storage_name: str,
 ) -> str:
-    """Return the shell export command for one active storage root.
+    """Return the shell export command for one active storage selector.
 
     :param kit: Application config facade.
-    :param storage_root: Storage root selected as active for future shells.
+    :param storage_name: Registered storage selected for future shells.
     :return: POSIX shell export command.
     """
-    path_text = str(Path(storage_root).expanduser().resolve()).replace(
+    selector_text = storage_name.replace(
         '"',
         '\\"',
     )
-    return f'export {kit.spec.storage_env_key}="{path_text}"'
+    return f'export {kit.spec.storage_env_key}="{selector_text}"'
 
 
 def _normalized_apprc_toml_path(path: str | Path) -> Path:

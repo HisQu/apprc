@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Mapping
 
 # == Internal ================================
-from apprc.config.environment import EnvBootstrapSpec
-from apprc.config.schema import ConfigOwner
-from apprc.config.storage_registry import (
+from apprc.config.apprc_toml import (
     apprc_toml_env_key,
     configured_apprc_toml_path,
     optional_apprc_toml_path,
 )
+from apprc.config.environment import EnvBootstrapSpec
+from apprc.config.schema import ConfigOwner
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class AppConfigSpec:
     """Complete reusable configuration contract for one application.
 
     Applications declare this once, then :class:`AppConfigKit` derives the
-    storage registry path, dotenv bootstrap spec, local-env behavior, config
+    AppRC TOML path, dotenv bootstrap spec, local-env behavior, config
     doctor diagnostics, and optional config CLI from it.
 
     :param app_name: Lowercase application name used in env var derivation.
@@ -31,7 +31,7 @@ class AppConfigSpec:
     :param owners: Config owner inventory for editable and documented fields.
     :param storage_env_key: Env key that stores the active storage selector.
     :param command_name: Optional executable name shown in generated CLI copy.
-    :param apprc_toml_filename: Per-user TOML registry filename.
+    :param apprc_toml_filename: Per-user AppRC TOML filename.
     :param shared_env_filename: Packaged shared dotenv filename.
     :param local_env_filename: Storage-local dotenv override filename.
     """
@@ -51,14 +51,14 @@ class AppConfigSpec:
         return self.command_name or self.app_name
 
     def apprc_toml_env_key(self) -> str:
-        """Return the env var that overrides the registry file path."""
+        """Return the env var that selects the AppRC TOML path."""
         return apprc_toml_env_key(self.app_name)
 
-    def registry_path(
+    def apprc_toml_path(
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path:
-        """Return the active user storage registry path.
+        """Return the active AppRC TOML path.
 
         :param proc_env: Optional environment mapping for tests.
         :return: ``<APP>_APPRC_TOML`` when set.
@@ -70,11 +70,11 @@ class AppConfigSpec:
             proc_env=proc_env,
         )
 
-    def optional_registry_path(
+    def optional_apprc_toml_path(
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path | None:
-        """Return the env-selected registry path when it is configured.
+        """Return the env-selected AppRC TOML path when configured.
 
         :param proc_env: Optional environment mapping for tests.
         :return: ``<APP>_APPRC_TOML`` path, or ``None``.

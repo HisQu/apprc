@@ -64,6 +64,23 @@ def pytest_configure(config: pytest.Config) -> None:
         sys.path.insert(0, example_src_text)
 
 
+@pytest.fixture(autouse=True)
+def _set_default_apprc_example_app_bootstrap(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Provide the common Example App bootstrap env for marked tests."""
+    if request.node.get_closest_marker("allow_missing_apprc_env") is not None:
+        return
+    if "APPRC_EXAMPLE_APP" not in _required_apprc_prefixes(request.node):
+        return
+
+    from tests.support_config import set_apprc_example_app_bootstrap
+
+    set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
+
+
 def pytest_runtest_call(item: pytest.Item) -> None:
     """Fail fast when test-body AppRC bootstrap environment is missing."""
     if item.get_closest_marker("allow_missing_apprc_env") is not None:

@@ -1,14 +1,14 @@
-"""Read and write application storage registries.
+"""Read and write the storage tables inside an AppRC TOML.
 
 CLI applications often run globally, but their data lives in user-chosen
-project or corpus directories. AppRC solves that with a tiny TOML registry
-selected by the app-specific ``<APP>_APPRC_TOML`` environment variable. The
-registry maps friendly storage names to absolute storage roots and records
-which one is the default.
+project or corpus directories. AppRC solves that with storage tables in the
+app-specific AppRC TOML. The storage registry maps friendly storage names to
+absolute storage roots and records which one setup/editor flows should treat as
+the default.
 
-This module owns the user-level TOML file and storage selector semantics.
-Storage-local dotenv value handling lives in :mod:`apprc.config.local_env`, and
-process environment bootstrapping lives in :mod:`apprc.config.environment`.
+AppRC TOML path selection lives in :mod:`apprc.config.apprc_toml`, storage
+selector resolution lives in :mod:`apprc.config.storage_selector`, and
+storage-local dotenv value handling lives in :mod:`apprc.config.local_env`.
 """
 
 from __future__ import annotations
@@ -29,13 +29,9 @@ from apprc.config.paths import normalize_storage_root_path
 _STORAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-class ApprcTomlEnvError(ValueError):
-    """Raised when an app registry path cannot be resolved from the env."""
-
-
 @dataclass(frozen=True, slots=True)
 class StorageRecord:
-    """One named storage root from the user registry.
+    """One named storage root from the AppRC TOML storage registry.
 
     :param name: Stable storage selector used by ``--storage``.
     :param root: Root directory that owns user data and ``.env.local``.
@@ -66,8 +62,9 @@ class ArchivedStorageRecord:
 class StorageRegistry:
     """Parsed storage registry.
 
-    :param path: Registry file location.
-    :param default_storage: Name used when no ``--storage`` is passed.
+    :param path: AppRC TOML location.
+    :param default_storage: Name setup and editor flows select first. Runtime
+        commands still require ``--storage`` or ``<APP>_STORAGE``.
     :param storages: Named live storage roots by selector.
     :param archived_storages: Last known archive paths by selector.
     """
@@ -140,101 +137,10 @@ def default_storage_name(app_name: str) -> str:
     return f"{base_name}_stor-1"
 
 
-def default_apprc_toml_filename(app_name: str) -> str:
-    """Return the conventional AppRC TOML basename for one application.
-
-    :param app_name: Application name from the AppRC integration spec.
-    :return: Host-specific TOML filename ending in ``_apprc.toml``.
-    """
-    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", app_name).strip("_-")
-    base_name = normalized or "app"
-    return f"{base_name}_apprc.toml"
-
-
-def apprc_toml_env_key(app_name: str) -> str:
-    """Return the environment variable that overrides the registry file.
-
-    :param app_name: Application name from the AppRC integration spec.
-    :return: Uppercase ``<APP>_APPRC_TOML`` variable name.
-    """
-    normalized = re.sub(r"[^A-Za-z0-9]+", "_", app_name).strip("_").upper()
-    if not normalized:
-        normalized = "APP"
-    return f"{normalized}_APPRC_TOML"
-
-
-def configured_apprc_toml_path(
-    *,
-    app_name: str,
-    apprc_toml_filename: str,
-    proc_env: Mapping[str, str] | None = None,
-) -> Path:
-    """Return the active registry path from the required env variable.
-
-    :param app_name: Application name from the AppRC integration spec.
-    :param apprc_toml_filename: Suggested TOML basename shown in setup guidance.
-    :param proc_env: Environment mapping used for tests and subprocess setup.
-    :return: The env-selected registry path.
-    :raises ApprcTomlEnvError: If the app-specific env var is missing.
-    """
-    path = optional_apprc_toml_path(
-        app_name=app_name,
-        proc_env=proc_env,
-    )
-    if path is not None:
-        return path
-    raise ApprcTomlEnvError(
-        missing_apprc_toml_env_message(
-            app_name=app_name,
-            apprc_toml_filename=apprc_toml_filename,
-        )
-    )
-
-
-def optional_apprc_toml_path(
-    *,
-    app_name: str,
-    proc_env: Mapping[str, str] | None = None,
-) -> Path | None:
-    """Return the env-selected registry path when the variable is set.
-
-    :param app_name: Application name from the AppRC integration spec.
-    :param proc_env: Environment mapping used for tests and subprocess setup.
-    :return: The env-selected registry path, or ``None``.
-    """
-    env = os.environ if proc_env is None else proc_env
-    raw_path = env.get(apprc_toml_env_key(app_name), "").strip()
-    if raw_path:
-        return Path(raw_path).expanduser().resolve()
-    return None
-
-
-def missing_apprc_toml_env_message(
-    *,
-    app_name: str,
-    apprc_toml_filename: str,
-) -> str:
-    """Return guidance for a missing registry-path env variable.
-
-    :param app_name: Application name from the AppRC integration spec.
-    :param apprc_toml_filename: Suggested TOML basename shown in setup guidance.
-    :return: Human-facing setup guidance.
-    """
-    env_key = apprc_toml_env_key(app_name)
-    command_name = app_name or "app"
-    return (
-        f"{env_key} is required and must point to this app's AppRC TOML. "
-        "Choose where that file should live, then run:\n"
-        f"  {command_name} config setup --yes --apprc-toml "
-        f"/absolute/path/to/{apprc_toml_filename}\n"
-        "Keep the variable exported for future commands."
-    )
-
-
 def load_storage_registry(path: Path) -> StorageRegistry:
     """Read a storage registry if it exists.
 
-    :param path: Registry file location.
+    :param path: AppRC TOML location.
     :return: Parsed registry, or an empty registry when the file is absent.
     :raises ValueError: If the registry schema is invalid.
     """
@@ -268,7 +174,7 @@ def register_storage(
     :param name: Storage selector to create or update.
     :param root: Storage root directory.
     :param make_default: Whether this storage should become the default.
-    :param path: Registry file location.
+    :param path: AppRC TOML location.
     :param local_env_filename: Storage-local dotenv filename to create.
     :return: Updated registry.
     """
@@ -301,7 +207,7 @@ def set_default_storage(
     """Set an existing storage as the default registry entry.
 
     :param name: Storage selector that should become the registry default.
-    :param path: Registry file location.
+    :param path: AppRC TOML location.
     :return: Updated registry.
     :raises ValueError: If the registry is invalid or ``name`` is unknown.
     """
@@ -325,7 +231,7 @@ def replace_default_storage(
 
     :param name: Existing live storage selector, or ``None`` to leave no
         default.
-    :param path: Registry file location.
+    :param path: AppRC TOML location.
     :return: Updated registry.
     :raises ValueError: If ``name`` is unknown.
     """
@@ -350,7 +256,7 @@ def unregister_storage(
     """Remove one live storage entry from the registry.
 
     :param name: Live storage selector to remove.
-    :param path: Registry file location.
+    :param path: AppRC TOML location.
     :param replacement_default: New default when the removed storage was the
         default. Pass ``None`` to leave no default.
     :return: Updated registry.
@@ -448,7 +354,7 @@ def write_storage_registry(registry: StorageRegistry) -> Path:
     """Write a deterministic TOML storage registry.
 
     :param registry: Registry object to serialize.
-    :return: Written registry path.
+    :return: Written AppRC TOML path.
     """
     registry.path.parent.mkdir(parents=True, exist_ok=True)
     registry.path.write_text(

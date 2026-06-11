@@ -22,10 +22,10 @@ import typer
 from rich import print as rich_print
 
 # == Internal ================================
-from apprc.cli.doctor import (
+from apprc.cli.doctor import print_config_doctor
+from apprc.config.diagnostics import (
     build_config_doctor_payload,
     config_setup_message,
-    print_config_doctor,
 )
 from apprc.cli.options import (
     COMMON_ROOT_FLAG_OPTIONS,
@@ -40,10 +40,12 @@ from apprc.cli.typer_utils import (
     state_from,
     strip_leading_options,
 )
+from apprc.config.apprc_toml import ApprcTomlEnvError
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.paths import StorageRootPathError
-from apprc.config.storage_registry import ApprcTomlEnvError, StorageRegistry
+from apprc.config.storage_selector import resolve_storage_selector_value
+from apprc.config.storage_registry import StorageRegistry
 import apprc.config.setup_flow as setup_flow
 
 StateT = TypeVar("StateT")
@@ -96,15 +98,32 @@ def active_storage_root_from_state(
         return state.env_bootstrap.storage_root
     env_storage = os.environ.get(kit.spec.storage_env_key)
     if env_storage:
-        return Path(env_storage).expanduser()
+        try:
+            registry = kit.load_registry()
+            return resolve_storage_selector_value(
+                registry=registry,
+                raw_value=env_storage,
+                storage_env_key=kit.spec.storage_env_key,
+            ).root
+        except (ApprcTomlEnvError, ValueError):
+            return Path(env_storage).expanduser()
     return None
 
 
-def initial_storage_from_state(state: ConfigCliState) -> str | None:
+def initial_storage_from_state(
+    kit: AppConfigKit,
+    state: ConfigCliState,
+    registry: StorageRegistry | None = None,
+) -> str | None:
     """Return the storage that should be selected first in editors."""
     if state.env_bootstrap is not None:
         return state.env_bootstrap.storage_name
-    return state.storage
+    if state.storage is not None:
+        return state.storage
+    env_storage = os.environ.get(kit.spec.storage_env_key, "").strip()
+    if registry is not None and env_storage in registry.storages:
+        return env_storage
+    return None
 
 
 def _load_config_registry_for_cli(kit: AppConfigKit) -> StorageRegistry:
@@ -175,11 +194,18 @@ def build_config_typer_app(
             return active_storage_root(state)
         return active_storage_root_from_state(kit, cast(ConfigCliState, state))
 
-    def _initial_storage(state: StateT) -> str | None:
+    def _initial_storage(
+        state: StateT,
+        registry: StorageRegistry | None = None,
+    ) -> str | None:
         """Return the storage name the editor should select on startup."""
         if initial_storage is not None:
             return initial_storage(state)
-        return initial_storage_from_state(cast(ConfigCliState, state))
+        return initial_storage_from_state(
+            kit,
+            cast(ConfigCliState, state),
+            registry=registry,
+        )
 
     def _required_storage_root(state: StateT) -> Path:
         """Return an active storage root or raise Typer's CLI error type."""
@@ -216,7 +242,7 @@ def build_config_typer_app(
         return {
             "app_name": kit.spec.app_name,
             "display_name": kit.spec.display_name,
-            "registry_path": str(kit.registry_path()),
+            "apprc_toml_path": str(kit.apprc_toml_path()),
             "storage_root": str(storage_root) if storage_root else None,
         }
 
@@ -342,7 +368,7 @@ def build_config_typer_app(
     ) -> None:
         """Register one storage root and create its local env file."""
         try:
-            kit.registry_path()
+            kit.apprc_toml_path()
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -378,7 +404,7 @@ def build_config_typer_app(
         typer.echo(f"registered_storage: {record.name}")
         typer.echo(f"storage_root: {record.root}")
         typer.echo(f"local_env: {record.root / kit.spec.local_env_filename}")
-        typer.echo(f"registry: {registry.path}")
+        typer.echo(f"apprc_toml_path: {registry.path}")
         typer.echo(f"default_storage: {registry.default_storage}")
 
     @app.command("setup")
@@ -421,7 +447,7 @@ def build_config_typer_app(
             ),
         ] = None,
     ) -> None:
-        """Interactively configure the registry and default storage."""
+        """Interactively configure the AppRC TOML and first storage."""
         run_config_setup(
             kit,
             assume_yes=assume_yes,
@@ -440,7 +466,7 @@ def build_config_typer_app(
             ),
         ],
     ) -> None:
-        """Set the default storage used when no ``--storage`` is passed."""
+        """Set the default storage used by setup and editor flows."""
         try:
             old_default = kit.load_registry().default_storage
             registry = kit.set_default_storage(name=name)
@@ -453,7 +479,7 @@ def build_config_typer_app(
             raise typer.BadParameter(str(exc), param_hint="NAME") from exc
         typer.echo(f"previous_default_storage: {old_default}")
         typer.echo(f"default_storage: {registry.default_storage}")
-        typer.echo(f"registry: {registry.path}")
+        typer.echo(f"apprc_toml_path: {registry.path}")
 
     @app.command("set")
     def config_set_cmd(
@@ -495,7 +521,7 @@ def build_config_typer_app(
         registry = _load_config_registry_for_cli(kit)
         current_state = ctx.obj if isinstance(ctx.obj, state_type) else None
         selected_storage = (
-            _initial_storage(current_state)
+            _initial_storage(current_state, registry=registry)
             if current_state is not None
             else None
         )

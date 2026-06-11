@@ -9,7 +9,8 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
-from apprc.cli.doctor import build_config_doctor_payload, print_config_doctor
+from apprc.cli.doctor import print_config_doctor
+from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
 import apprc.config.setup_flow as setup_flow
 import apprc.config.setup_text as setup_text
@@ -30,7 +31,7 @@ def run_config_setup(
 
     :param kit: Application config facade mounted by the host CLI.
     :param assume_yes: Whether to run without opening the Textual wizard.
-    :param apprc_toml: Optional registry path for non-interactive setup.
+    :param apprc_toml: Optional AppRC TOML path for non-interactive setup.
     :param storage_root: Optional default storage root for setup.
     :param storage_name: Optional default storage selector for setup.
     :param existing_action: Optional action for an existing registry.
@@ -56,7 +57,7 @@ def run_config_setup(
         result = ConfigSetupApp(kit=kit).run()
         if result is None:
             raise typer.Exit(code=1)
-        _raise_if_doctor_failed(kit, registry_path=result.registry.path)
+        _raise_if_doctor_failed(kit, apprc_toml_path=result.registry.path)
         return
 
     try:
@@ -89,13 +90,13 @@ def _print_setup_finish(
     :raises typer.Exit: If doctor reports that setup is incomplete.
     """
     typer.echo(f"{kit.spec.display_name} setup complete")
-    typer.echo(f"registry: {registry.path}")
+    typer.echo(f"AppRC TOML: {registry.path}")
     typer.echo(f"default_storage: {registry.default_storage or '<none>'}")
     typer.echo("")
     payload = build_config_doctor_payload(
         kit,
-        storage_name=None,
-        registry_path=registry.path,
+        storage_name=registry.default_storage,
+        apprc_toml_path=registry.path,
     )
     print_config_doctor(kit, payload)
     typer.echo("")
@@ -109,18 +110,18 @@ def _print_setup_finish(
 def _raise_if_doctor_failed(
     kit: AppConfigKit,
     *,
-    registry_path: Path,
+    apprc_toml_path: Path,
 ) -> None:
     """Exit when the setup wizard completed but diagnostics still fail.
 
     :param kit: Application config facade.
-    :param registry_path: Registry path setup selected.
+    :param apprc_toml_path: AppRC TOML path setup selected.
     :raises typer.Exit: If doctor reports that setup is incomplete.
     """
     payload = build_config_doctor_payload(
         kit,
-        storage_name=None,
-        registry_path=registry_path,
+        storage_name=kit.load_registry(path=apprc_toml_path).default_storage,
+        apprc_toml_path=apprc_toml_path,
     )
     if not payload["ok"]:
         raise typer.Exit(code=1)

@@ -34,9 +34,9 @@ from apprc.config.local_env import (
     write_local_env,
 )
 from apprc.config.schema import ConfigOwner
+from apprc.config.apprc_toml import default_apprc_toml_filename
 from apprc.config.storage_registry import (
     StorageRegistry,
-    default_apprc_toml_filename,
     default_storage_data_root,
     default_storage_name,
     load_storage_registry,
@@ -54,6 +54,7 @@ StateT = TypeVar("StateT")
 if TYPE_CHECKING:
     import typer
 
+    from apprc.config.diagnostics import ConfigDoctorPayload
     from apprc.config.setup_tui import ConfigSetupApp
     from apprc.config.tui import ConfigEditorApp
 
@@ -131,31 +132,31 @@ class AppConfigKit:
             local_env_filename=local_env_filename,
         )
 
-    def registry_path(
+    def apprc_toml_path(
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path:
-        """Return the active user storage registry path.
+        """Return the active AppRC TOML path.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: Env-selected registry path for this application.
+        :return: Env-selected AppRC TOML path for this application.
         :raises ApprcTomlEnvError: If the AppRC TOML env var is missing.
         """
-        return self.spec.registry_path(proc_env)
+        return self.spec.apprc_toml_path(proc_env)
 
-    def optional_registry_path(
+    def optional_apprc_toml_path(
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path | None:
-        """Return the active registry path when the env var is set.
+        """Return the active AppRC TOML path when the env var is set.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: Env-selected registry path, or ``None``.
+        :return: Env-selected AppRC TOML path, or ``None``.
         """
-        return self.spec.optional_registry_path(proc_env)
+        return self.spec.optional_apprc_toml_path(proc_env)
 
     def apprc_toml_env_key(self) -> str:
-        """Return the env var that overrides the registry file path."""
+        """Return the env var that selects the AppRC TOML path."""
         return self.spec.apprc_toml_env_key()
 
     def bootstrap(
@@ -164,7 +165,7 @@ class AppConfigKit:
         env_file: Path | None,
         env_file_overrides_os_environ: bool,
         load_dotenv_layers: bool,
-        registry_storage_name: str | None,
+        storage_name: str | None,
         logger: BootstrapLogger | None = None,
     ) -> EnvBootstrapResult:
         """Populate ``os.environ`` for this application.
@@ -177,12 +178,12 @@ class AppConfigKit:
             shell is never mutated.
         :param load_dotenv_layers: Whether packaged ``.env.shared``, active
             storage-local ``.env.local``, and explicit ``env_file`` values
-            should be merged into this process. Registry selection still runs
+            should be merged into this process. Storage selection still runs
             when this is ``False``, and explicit ``env_file`` values may still
-            provide the storage selector used for selection.
-        :param registry_storage_name: Optional ``--storage`` selector from the
-            user registry. When provided, that registry root becomes the active
-            storage root and determines the storage-local dotenv candidate.
+            provide the selector used for selection.
+        :param storage_name: Optional ``--storage`` selector from the
+            AppRC TOML. When provided, that storage root becomes active and
+            determines the storage-local dotenv candidate.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
         """
@@ -191,18 +192,18 @@ class AppConfigKit:
             env_file=env_file,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
-            registry_storage_name=registry_storage_name,
+            storage_name=storage_name,
             logger=logger,
         )
 
     def load_registry(self, path: Path | None = None) -> StorageRegistry:
         """Read this application's storage registry.
 
-        :param path: Optional explicit registry path for tests.
+        :param path: Optional explicit AppRC TOML path for tests.
         :return: Parsed storage registry, or an empty registry.
         """
         return load_storage_registry(
-            self.registry_path() if path is None else path
+            self.apprc_toml_path() if path is None else path
         )
 
     def register_storage(
@@ -218,7 +219,7 @@ class AppConfigKit:
             name=name,
             root=root,
             make_default=make_default,
-            path=self.registry_path() if path is None else path,
+            path=self.apprc_toml_path() if path is None else path,
             local_env_filename=self.spec.local_env_filename,
         )
         self._write_storage_root_local_value(registry.selected(name).root)
@@ -233,7 +234,7 @@ class AppConfigKit:
         """Set an existing storage as the default for this application."""
         registry = set_default_storage(
             name=name,
-            path=self.registry_path() if path is None else path,
+            path=self.apprc_toml_path() if path is None else path,
         )
         self._write_storage_root_local_value(registry.selected(name).root)
         return registry
@@ -247,7 +248,7 @@ class AppConfigKit:
         """Set or clear this application's default storage."""
         return replace_default_storage(
             name=name,
-            path=self.registry_path() if path is None else path,
+            path=self.apprc_toml_path() if path is None else path,
         )
 
     def unregister_storage(
@@ -261,7 +262,7 @@ class AppConfigKit:
         return unregister_storage(
             name=name,
             replacement_default=replacement_default,
-            path=self.registry_path() if path is None else path,
+            path=self.apprc_toml_path() if path is None else path,
         )
 
     def record_archived_storage(
@@ -277,7 +278,7 @@ class AppConfigKit:
             name=name,
             archive=archive,
             source_root=source_root,
-            path=self.registry_path() if path is None else path,
+            path=self.apprc_toml_path() if path is None else path,
         )
 
     def remove_archived_storage(
@@ -289,7 +290,7 @@ class AppConfigKit:
         """Remove one archived-storage convenience record."""
         return remove_archived_storage(
             name=name,
-            path=self.registry_path() if path is None else path,
+            path=self.apprc_toml_path() if path is None else path,
         )
 
     def prune_missing_archived_storages(
@@ -299,7 +300,7 @@ class AppConfigKit:
     ) -> StorageRegistry:
         """Drop archive records whose last known files are gone."""
         return prune_missing_archived_storages(
-            path=self.registry_path() if path is None else path
+            path=self.apprc_toml_path() if path is None else path
         )
 
     def default_storage_data_root(self) -> Path:
@@ -374,33 +375,33 @@ class AppConfigKit:
     def install_state(
         self,
         storage_name: str | None = None,
-        registry_path: Path | None = None,
+        apprc_toml_path: Path | None = None,
     ) -> ConfigInstallState:
         """Return this application's explicit local installation state.
 
         :param storage_name: Optional registry storage selected by ``--storage``.
-        :param registry_path: Optional explicit registry path used by setup.
+        :param apprc_toml_path: Optional explicit AppRC TOML path used by setup.
         :return: Coarse installation and health state.
         """
         return ConfigInstallState(
             self.doctor_payload(
                 storage_name=storage_name,
-                registry_path=registry_path,
+                apprc_toml_path=apprc_toml_path,
             )["install_state"]
         )
 
     def doctor_payload(
         self,
         storage_name: str | None = None,
-        registry_path: Path | None = None,
-    ) -> dict[str, Any]:
+        apprc_toml_path: Path | None = None,
+    ) -> ConfigDoctorPayload:
         """Return JSON-friendly local setup diagnostics."""
-        from apprc.cli.doctor import build_config_doctor_payload
+        from apprc.config.diagnostics import build_config_doctor_payload
 
         return build_config_doctor_payload(
             self,
             storage_name=storage_name,
-            registry_path=registry_path,
+            apprc_toml_path=apprc_toml_path,
         )
 
     def editor_app(

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from apprc.cli.doctor import config_command_text
+from apprc.config.diagnostics import config_command_text
 from apprc_example_app import APPRC_EXAMPLE_APP_KIT
 from apprc_example_app.cli import app
 from tests.support_config import (
@@ -46,7 +46,7 @@ def _set_demo_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
-    """Point the demo CLI at a test registry file."""
+    """Point the demo CLI at a test AppRC TOML file."""
     registry_path, _ = set_apprc_example_app_bootstrap(
         monkeypatch=monkeypatch,
         tmp_path=tmp_path,
@@ -154,7 +154,7 @@ def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
     )
     assert (storage_root / ".env.apprc_example_app").is_file()
     assert (
-        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
+        'export APPRC_EXAMPLE_APP_STORAGE="apprc_example_app_stor-1"'
         in result.output
     )
     assert "apprc config edit" in result.output

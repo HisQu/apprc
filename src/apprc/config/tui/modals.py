@@ -11,7 +11,7 @@ from typing import Literal
 # == 3rd Party ===============================
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, ProgressBar, Static
 
@@ -94,8 +94,24 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         padding: 1 2;
     }
 
-    #edit-metadata {
+    #edit-title {
+        height: 1;
+    }
+
+    #edit-env-key {
+        height: 1;
+    }
+
+    #edit-details-scroll {
+        height: 1fr;
         margin: 1 0;
+        min-height: 1;
+        scrollbar-size-vertical: 1;
+    }
+
+    #edit-metadata {
+        height: auto;
+        margin: 0 0 1 0;
     }
 
     .edit-metadata-row {
@@ -112,8 +128,9 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
 
     #edit-explanation-panel {
         border: solid $border;
+        height: auto;
         padding: 0 1;
-        margin: 1 0;
+        margin: 0;
     }
 
     #edit-explanation-title {
@@ -126,7 +143,8 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
     }
 
     #edit-source-panel {
-        margin: 1 0;
+        height: 4;
+        margin: 0;
     }
 
     .edit-source-row {
@@ -134,10 +152,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
     }
 
     #edit-source-effective {
-        border: solid $error;
-        height: 3;
-        margin-bottom: 1;
-        padding: 0 1;
+        height: 1;
     }
 
     .edit-source-label {
@@ -212,55 +227,57 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
                 id="edit-title",
             )
             yield Static(env_key_text(self.env_key), id="edit-env-key")
-            with Vertical(id="edit-metadata"):
-                with Horizontal(
-                    id="edit-metadata-type",
-                    classes="edit-metadata-row",
-                ):
+            with VerticalScroll(id="edit-details-scroll"):
+                with Vertical(id="edit-metadata"):
+                    with Horizontal(
+                        id="edit-metadata-type",
+                        classes="edit-metadata-row",
+                    ):
+                        yield Static(
+                            Text("Type", style=LABEL_STYLE),
+                            classes="edit-metadata-label",
+                        )
+                        yield Static(
+                            self._type_value_text(),
+                            id="edit-type-value",
+                            classes="edit-metadata-value",
+                        )
+                    with Horizontal(
+                        id="edit-metadata-possible-values",
+                        classes="edit-metadata-row",
+                    ):
+                        yield Static(
+                            Text("Possible values", style=LABEL_STYLE),
+                            classes="edit-metadata-label",
+                        )
+                        yield Static(
+                            self._possible_values_text(),
+                            id="edit-possible-values-value",
+                            classes="edit-metadata-value",
+                        )
+                    with Horizontal(
+                        id="edit-metadata-shell",
+                        classes="edit-metadata-row",
+                    ):
+                        yield Static(
+                            Text("Shell environment", style=LABEL_STYLE),
+                            classes="edit-metadata-label",
+                        )
+                        yield Static(
+                            self._shell_status_text(),
+                            id="edit-shell-value",
+                            classes="edit-metadata-value",
+                        )
+                with Vertical(id="edit-explanation-panel"):
                     yield Static(
-                        Text("Type", style=LABEL_STYLE),
-                        classes="edit-metadata-label",
+                        Text("Explanation", style="bold"),
+                        id="edit-explanation-title",
                     )
                     yield Static(
-                        self._type_value_text(),
-                        id="edit-type-value",
-                        classes="edit-metadata-value",
+                        self.spec.explanation_long
+                        or self.spec.explanation_short,
+                        id="edit-long-explanation",
                     )
-                with Horizontal(
-                    id="edit-metadata-possible-values",
-                    classes="edit-metadata-row",
-                ):
-                    yield Static(
-                        Text("Possible values", style=LABEL_STYLE),
-                        classes="edit-metadata-label",
-                    )
-                    yield Static(
-                        self._possible_values_text(),
-                        id="edit-possible-values-value",
-                        classes="edit-metadata-value",
-                    )
-                with Horizontal(
-                    id="edit-metadata-shell",
-                    classes="edit-metadata-row",
-                ):
-                    yield Static(
-                        Text("Shell environment", style=LABEL_STYLE),
-                        classes="edit-metadata-label",
-                    )
-                    yield Static(
-                        self._shell_status_text(),
-                        id="edit-shell-value",
-                        classes="edit-metadata-value",
-                    )
-            with Vertical(id="edit-explanation-panel"):
-                yield Static(
-                    Text("Explanation", style="bold"),
-                    id="edit-explanation-title",
-                )
-                yield Static(
-                    self.spec.explanation_long or self.spec.explanation_short,
-                    id="edit-long-explanation",
-                )
             with Vertical(id="edit-source-panel"):
                 for source in self.value_sources:
                     yield from self._compose_source_row(source)

@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 from rich.text import Text
+from textual.containers import VerticalScroll
 from textual.coordinate import Coordinate
+from textual.widget import Widget
 from textual.widgets import Button, DataTable, Input, ListView, Static
 
 from apprc.config.tui.modals import ArchiveOptionsScreen
@@ -35,6 +37,24 @@ def _static_text(static: Static) -> Text:
     content = static.content
     assert isinstance(content, Text)
     return content
+
+
+def _region_bottom(widget: Widget) -> int:
+    """Return the bottom terminal row occupied by a widget.
+
+    :param widget: Textual widget with a screen region.
+    :return: First row after the widget.
+    """
+    return widget.region.y + widget.region.height
+
+
+def _region_right(widget: Widget) -> int:
+    """Return the right terminal column occupied by a widget.
+
+    :param widget: Textual widget with a screen region.
+    :return: First column after the widget.
+    """
+    return widget.region.x + widget.region.width
 
 
 def test_kit_builds_generic_editor_with_spec_defaults(
@@ -536,8 +556,6 @@ async def test_editor_modal_copies_source_values_without_saving(
         local_copy = editor.screen.query_one("#edit-copy-local", Button)
         shared_row = editor.screen.query_one("#edit-source-shared")
         shared_copy = editor.screen.query_one("#edit-copy-shared", Button)
-        local_row_right = local_row.region.x + local_row.region.width
-        shared_row_right = shared_row.region.x + shared_row.region.width
 
         for widget in (
             local_label,
@@ -546,12 +564,94 @@ async def test_editor_modal_copies_source_values_without_saving(
             local_copy,
         ):
             assert widget.region.x >= local_row.region.x
-            assert widget.region.x + widget.region.width <= local_row_right
-        assert shared_copy.region.x + shared_copy.region.width <= (
-            shared_row_right
-        )
+            assert _region_right(widget) <= _region_right(local_row)
+        assert _region_right(shared_copy) <= _region_right(shared_row)
 
     assert "unsaved-profile" not in local_env.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_editor_modal_keeps_sources_visible_at_compact_height(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    registry = kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test(size=(120, 18)) as pilot:
+        table = editor.query_one("#field-table", DataTable)
+        table.cursor_coordinate = Coordinate(2, 0)
+        editor._open_selected_field_editor()
+        await pilot.pause()
+
+        dialog = editor.screen.query_one("#edit-dialog")
+        details = editor.screen.query_one("#edit-details-scroll")
+        source_panel = editor.screen.query_one("#edit-source-panel")
+        effective = editor.screen.query_one("#edit-source-effective")
+        shell = editor.screen.query_one("#edit-source-shell")
+        local = editor.screen.query_one("#edit-source-local")
+        shared = editor.screen.query_one("#edit-source-shared")
+        button_row = editor.screen.query_one("#edit-button-row")
+        local_input = editor.screen.query_one("#edit-value-input", Input)
+
+        dialog_bottom = _region_bottom(dialog)
+        for widget in (
+            source_panel,
+            effective,
+            shell,
+            local,
+            shared,
+            button_row,
+        ):
+            assert widget.region.y >= dialog.region.y
+            assert _region_bottom(widget) <= dialog_bottom
+        assert _region_bottom(details) <= source_panel.region.y
+        assert _region_bottom(source_panel) <= button_row.region.y
+        assert effective.region.height == 1
+        assert shell.region.height == 1
+        assert local.region.height == 1
+        assert shared.region.height == 1
+        assert local_input.region.y == local.region.y
+        assert local_input.region.x >= local.region.x
+        assert _region_right(local_input) <= _region_right(local)
+
+
+@pytest.mark.asyncio
+async def test_editor_modal_details_scroll_when_height_is_compact(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    registry = kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test(size=(120, 18)) as pilot:
+        table = editor.query_one("#field-table", DataTable)
+        table.cursor_coordinate = Coordinate(2, 0)
+        editor._open_selected_field_editor()
+        await pilot.pause()
+        details = editor.screen.query_one(
+            "#edit-details-scroll",
+            VerticalScroll,
+        )
+
+        assert details.allow_vertical_scroll is True
+        assert details.show_vertical_scrollbar is True
+        assert details.max_scroll_y > 0
+        assert details.region.height < details.scrollable_size.height + int(
+            details.max_scroll_y
+        )
 
 
 @pytest.mark.asyncio

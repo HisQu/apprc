@@ -11,6 +11,7 @@ from rich.markup import escape
 from rich.text import Text
 
 PATH_INPUT_CLASS = "path-input"
+MODAL_DIALOG_CLASS = "modal-dialog"
 
 PATH_STYLE = "cyan"
 STORAGE_NAME_STYLE = "bold"
@@ -20,12 +21,29 @@ DEFAULT_STYLE = "green"
 MISSING_STYLE = "yellow"
 ARCHIVE_STYLE = "magenta"
 ERROR_STYLE = "red"
+EFFECTIVE_SOURCE_STYLE = f"bold {ERROR_STYLE}"
+GENERIC_VALUE_STYLE = "dim italic"
 SECRET_STYLE = "dim italic"
 REQUIRED_STYLE = "bold white on red"
 BOOL_STYLE = "bold magenta"
 NUMBER_STYLE = "yellow"
 CHOICE_STYLE = "bold cyan"
 TEXT_STYLE = "white"
+
+MODAL_DIALOG_CSS = f"""
+.{MODAL_DIALOG_CLASS} {{
+    max-width: 95%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}}
+"""
+
+PATH_INPUT_CSS = f"""
+Input.{PATH_INPUT_CLASS} {{
+    color: {PATH_STYLE};
+}}
+"""
 
 
 def path_text(path: str | Path) -> Text:

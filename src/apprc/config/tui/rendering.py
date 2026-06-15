@@ -22,16 +22,24 @@ from rich.text import Text
 
 # == Internal ================================
 from apprc.config.schema import CONFIG_MISSING, ConfigField, ConfigOwner
+from apprc.config.storage.registry import ArchivedStorageRecord, StorageRecord
 from apprc.config.tui.styles import (
+    ARCHIVE_STYLE,
     BOOL_STYLE,
     CHOICE_STYLE,
     DEFAULT_STYLE,
+    GENERIC_VALUE_STYLE,
     LABEL_STYLE,
+    MISSING_STYLE,
     NUMBER_STYLE,
     PATH_STYLE,
     REQUIRED_STYLE,
     SECRET_STYLE,
     TEXT_STYLE,
+    label_value_text,
+    lines_text,
+    path_text,
+    storage_name_text,
 )
 
 FIELD_TABLE_COLUMNS = (
@@ -181,6 +189,18 @@ def value_style(spec: ConfigField) -> str:
         return SECRET_STYLE
     if spec.choices:
         return CHOICE_STYLE
+    return field_type_style(spec)
+
+
+def field_type_style(spec: ConfigField) -> str:
+    """Return the Rich style used for one declared Python type.
+
+    Unlike :func:`value_style`, this helper ignores choices and secret
+    redaction because it describes the type itself, not a concrete value.
+
+    :param spec: Field declaration that owns the Python type.
+    :return: Rich style string for the type metadata.
+    """
     if spec.python_type is bool:
         return BOOL_STYLE
     if spec.python_type in {int, float}:
@@ -188,6 +208,17 @@ def value_style(spec: ConfigField) -> str:
     if spec.python_type is Path:
         return PATH_STYLE
     return TEXT_STYLE
+
+
+def possible_values_style(spec: ConfigField) -> str:
+    """Return the Rich style used for accepted-value metadata.
+
+    :param spec: Field declaration whose accepted values are displayed.
+    :return: Choice styling for explicit choices, otherwise generic styling.
+    """
+    if spec.choices:
+        return CHOICE_STYLE
+    return GENERIC_VALUE_STYLE
 
 
 def section_separator_row() -> FieldTableRow:
@@ -235,3 +266,48 @@ def possible_values_label(spec: ConfigField) -> str:
     if spec.python_type is Path:
         return "filesystem path"
     return "free text"
+
+
+def live_storage_title(record: StorageRecord, local_env: Path) -> Text:
+    """Return the title shown for one editable live storage.
+
+    :param record: Registry storage record.
+    :param local_env: Storage-local dotenv path.
+    :return: Multi-line title for the selected storage.
+    """
+    title = storage_name_text(record.name)
+    title.append(": ")
+    title.append_text(path_text(record.root))
+    return lines_text(title, path_text(local_env))
+
+
+def missing_storage_title(record: StorageRecord) -> Text:
+    """Return the title shown when a registered storage root is missing.
+
+    :param record: Registry storage record whose root is unavailable.
+    :return: Multi-line title explaining the missing root.
+    """
+    title = storage_name_text(record.name)
+    title.append(": ")
+    title.append("Missing storage root", style=MISSING_STYLE)
+    return lines_text(
+        title,
+        label_value_text("Root", path_text(record.root)),
+        "No storage-local env file is available.",
+    )
+
+
+def archived_storage_title(record: ArchivedStorageRecord) -> Text:
+    """Return the title shown for an archived storage record.
+
+    :param record: Archived storage metadata from the registry.
+    :return: Multi-line title with archive and last source paths.
+    """
+    title = storage_name_text(record.name)
+    title.append(": ")
+    title.append("Last Archived", style=ARCHIVE_STYLE)
+    return lines_text(
+        title,
+        label_value_text("Archive", path_text(record.archive)),
+        label_value_text("Last source", path_text(record.source_root)),
+    )

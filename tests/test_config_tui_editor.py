@@ -6,16 +6,19 @@ from pathlib import Path
 import pytest
 from rich.text import Text
 from textual.containers import VerticalScroll
-from textual.coordinate import Coordinate
-from textual.widget import Widget
 from textual.widgets import Button, DataTable, Input, ListView, Static
 
 from apprc.config.tui.modals import ArchiveOptionsScreen
 from apprc.config.tui.styles import (
     CHOICE_STYLE,
+    EFFECTIVE_SOURCE_STYLE,
+    GENERIC_VALUE_STYLE,
     LABEL_STYLE,
+    NUMBER_STYLE,
     PATH_INPUT_CLASS,
     PATH_STYLE,
+    REQUIRED_STYLE,
+    SECRET_STYLE,
     TEXT_STYLE,
 )
 from tests.support_config import (
@@ -23,38 +26,15 @@ from tests.support_config import (
     build_apprc_example_app_kit,
     set_apprc_example_app_apprc_toml,
 )
-from tests.support_tui import text_has_span
+from tests.support_tui import (
+    open_field_editor,
+    region_bottom,
+    region_right,
+    static_text,
+    text_has_span,
+)
 
 pytestmark = [pytest.mark.requires_apprc_env("APPRC_EXAMPLE_APP")]
-
-
-def _static_text(static: Static) -> Text:
-    """Return Rich text content from a Static after narrowing its type.
-
-    :param static: Textual widget expected to contain styled Rich text.
-    :return: Styled Rich text content.
-    """
-    content = static.content
-    assert isinstance(content, Text)
-    return content
-
-
-def _region_bottom(widget: Widget) -> int:
-    """Return the bottom terminal row occupied by a widget.
-
-    :param widget: Textual widget with a screen region.
-    :return: First row after the widget.
-    """
-    return widget.region.y + widget.region.height
-
-
-def _region_right(widget: Widget) -> int:
-    """Return the right terminal column occupied by a widget.
-
-    :param widget: Textual widget with a screen region.
-    :return: First column after the widget.
-    """
-    return widget.region.x + widget.region.width
 
 
 def test_kit_builds_generic_editor_with_spec_defaults(
@@ -403,19 +383,21 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
     assert rich_rows_by_key["APPRC_EXAMPLE_APP_PROFILE"][5].style == "white"
     assert rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"][4] == "<secret>"
     assert rich_rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"][4].style == (
-        "dim italic"
+        SECRET_STYLE
     )
     assert rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"][5] == ""
     assert rows_by_key["APPRC_EXAMPLE_APP_MODE"][3] == "shell"
-    assert rich_rows_by_key["APPRC_EXAMPLE_APP_MODE"][5].style == "bold cyan"
+    assert rich_rows_by_key["APPRC_EXAMPLE_APP_MODE"][5].style == CHOICE_STYLE
     assert (
         rich_rows_by_key["APPRC_EXAMPLE_APP_ENABLED"][5].style == "bold magenta"
     )
     assert (
-        rich_rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"][4].style == "yellow"
+        rich_rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"][4].style
+        == NUMBER_STYLE
     )
     assert (
-        rich_rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"][5].style == "yellow"
+        rich_rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"][5].style
+        == NUMBER_STYLE
     )
     assert rich_rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][4].style == PATH_STYLE
     assert (
@@ -445,7 +427,7 @@ async def test_editor_table_required_missing_keeps_red_fill(
 
     assert str(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"][5]) == "<required>"
     assert rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"][5].style == (
-        "bold white on red"
+        REQUIRED_STYLE
     )
 
 
@@ -465,10 +447,11 @@ async def test_editor_modal_saves_local_value(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test() as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(1, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_PROFILE",
+            pilot,
+        )
         input_widget = editor.screen.query_one("#edit-value-input", Input)
         input_widget.value = "other-profile"
         editor.screen.query_one("#edit-save", Button).press()
@@ -501,10 +484,11 @@ async def test_editor_modal_copies_source_values_without_saving(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test() as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(1, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_PROFILE",
+            pilot,
+        )
 
         input_widget = editor.screen.query_one("#edit-value-input", Input)
         input_widget.value = "unsaved-profile"
@@ -564,8 +548,8 @@ async def test_editor_modal_copies_source_values_without_saving(
             local_copy,
         ):
             assert widget.region.x >= local_row.region.x
-            assert _region_right(widget) <= _region_right(local_row)
-        assert _region_right(shared_copy) <= _region_right(shared_row)
+            assert region_right(widget) <= region_right(local_row)
+        assert region_right(shared_copy) <= region_right(shared_row)
 
     assert "unsaved-profile" not in local_env.read_text(encoding="utf-8")
 
@@ -585,10 +569,11 @@ async def test_editor_modal_keeps_sources_visible_at_compact_height(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test(size=(120, 18)) as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(2, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_MODE",
+            pilot,
+        )
 
         dialog = editor.screen.query_one("#edit-dialog")
         details = editor.screen.query_one("#edit-details-scroll")
@@ -600,7 +585,7 @@ async def test_editor_modal_keeps_sources_visible_at_compact_height(
         button_row = editor.screen.query_one("#edit-button-row")
         local_input = editor.screen.query_one("#edit-value-input", Input)
 
-        dialog_bottom = _region_bottom(dialog)
+        dialog_bottom = region_bottom(dialog)
         for widget in (
             source_panel,
             effective,
@@ -610,16 +595,19 @@ async def test_editor_modal_keeps_sources_visible_at_compact_height(
             button_row,
         ):
             assert widget.region.y >= dialog.region.y
-            assert _region_bottom(widget) <= dialog_bottom
-        assert _region_bottom(details) <= source_panel.region.y
-        assert _region_bottom(source_panel) <= button_row.region.y
+            assert region_bottom(widget) <= dialog_bottom
+        assert region_bottom(details) <= source_panel.region.y
+        assert region_bottom(source_panel) <= button_row.region.y
+        assert source_panel.region.height == len(
+            list(editor.screen.query(".edit-source-row"))
+        )
         assert effective.region.height == 1
         assert shell.region.height == 1
         assert local.region.height == 1
         assert shared.region.height == 1
         assert local_input.region.y == local.region.y
         assert local_input.region.x >= local.region.x
-        assert _region_right(local_input) <= _region_right(local)
+        assert region_right(local_input) <= region_right(local)
 
 
 @pytest.mark.asyncio
@@ -637,10 +625,11 @@ async def test_editor_modal_details_scroll_when_height_is_compact(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test(size=(120, 18)) as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(2, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_MODE",
+            pilot,
+        )
         details = editor.screen.query_one(
             "#edit-details-scroll",
             VerticalScroll,
@@ -669,10 +658,11 @@ async def test_editor_modal_enables_local_copy_when_user_types(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test() as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(1, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_PROFILE",
+            pilot,
+        )
 
         local_copy = editor.screen.query_one("#edit-copy-local", Button)
         input_widget = editor.screen.query_one("#edit-value-input", Input)
@@ -708,21 +698,22 @@ async def test_editor_modal_redacts_secret_sources_but_copies_raw_value(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test() as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(6, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_ACCESS_TOKEN",
+            pilot,
+        )
 
-        effective_value = _static_text(
+        effective_value = static_text(
             editor.screen.query_one("#edit-source-effective-value", Static)
         )
-        effective_origin = _static_text(
+        effective_origin = static_text(
             editor.screen.query_one("#edit-source-effective-origin", Static)
         )
-        shell_value = _static_text(
+        shell_value = static_text(
             editor.screen.query_one("#edit-source-shell-value", Static)
         )
-        shared_value = _static_text(
+        shared_value = static_text(
             editor.screen.query_one("#edit-source-shared-value", Static)
         )
         input_widget = editor.screen.query_one("#edit-value-input", Input)
@@ -730,7 +721,7 @@ async def test_editor_modal_redacts_secret_sources_but_copies_raw_value(
         await pilot.pause()
 
         assert str(effective_value) == "<secret>"
-        assert effective_value.style == "bold red"
+        assert effective_value.style == EFFECTIVE_SOURCE_STYLE
         assert str(effective_origin) == "from Local"
         assert str(shell_value) == "unset"
         assert shell_value.style == LABEL_STYLE
@@ -754,27 +745,28 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test() as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(2, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
-        type_value = _static_text(
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_MODE",
+            pilot,
+        )
+        type_value = static_text(
             editor.screen.query_one("#edit-type-value", Static)
         )
-        possible_values = _static_text(
+        possible_values = static_text(
             editor.screen.query_one("#edit-possible-values-value", Static)
         )
-        explanation_title = _static_text(
+        explanation_title = static_text(
             editor.screen.query_one("#edit-explanation-title", Static)
         )
         long_explanation = editor.screen.query_one(
             "#edit-long-explanation",
             Static,
         ).content
-        effective_label = _static_text(
+        effective_label = static_text(
             editor.screen.query_one("#edit-source-effective-label", Static)
         )
-        effective_origin = _static_text(
+        effective_origin = static_text(
             editor.screen.query_one("#edit-source-effective-origin", Static)
         )
 
@@ -788,7 +780,7 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
         long_explanation
     )
     assert str(effective_label) == "Effective"
-    assert effective_label.style == "bold red"
+    assert effective_label.style == EFFECTIVE_SOURCE_STYLE
     assert str(effective_origin) == "from Shared default"
 
 
@@ -807,16 +799,17 @@ async def test_editor_modal_styles_generic_possible_values(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test() as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(6, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
-        possible_values = _static_text(
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_ACCESS_TOKEN",
+            pilot,
+        )
+        possible_values = static_text(
             editor.screen.query_one("#edit-possible-values-value", Static)
         )
 
     assert str(possible_values) == "free text"
-    assert possible_values.style == "dim italic"
+    assert possible_values.style == GENERIC_VALUE_STYLE
 
 
 @pytest.mark.asyncio
@@ -834,12 +827,13 @@ async def test_editor_modal_marks_path_inputs(
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test() as pilot:
-        table = editor.query_one("#field-table", DataTable)
-        table.cursor_coordinate = Coordinate(5, 0)
-        editor._open_selected_field_editor()
-        await pilot.pause()
+        await open_field_editor(
+            editor,
+            "APPRC_EXAMPLE_APP_CACHE_DIR",
+            pilot,
+        )
         input_widget = editor.screen.query_one("#edit-value-input", Input)
-        type_value = _static_text(
+        type_value = static_text(
             editor.screen.query_one("#edit-type-value", Static)
         )
 

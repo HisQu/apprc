@@ -5,11 +5,7 @@ from __future__ import annotations
 # == Standard Library ========================
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
-
-# == 3rd Party ===============================
-from rich.text import Text
 
 # == Internal ================================
 from apprc.config.local_env import normalize_env_value
@@ -18,15 +14,6 @@ from apprc.config.schema import (
     ConfigField,
     ConfigOwner,
     find_field_by_env_key,
-)
-from apprc.config.storage.registry import ArchivedStorageRecord, StorageRecord
-from apprc.config.tui.styles import (
-    ARCHIVE_STYLE,
-    MISSING_STYLE,
-    label_value_text,
-    lines_text,
-    path_text,
-    storage_name_text,
 )
 
 
@@ -50,13 +37,11 @@ class ConfigValueSource:
     values because users may intentionally set an env key to an empty value.
 
     :param key: Stable source identifier used by modal button IDs.
-    :param label: Reader-facing source name.
     :param raw_value: Raw string value copied to the clipboard, or ``None``.
     :param origin_key: Concrete source that provided the effective value.
     """
 
     key: ConfigValueSourceKey
-    label: str
     raw_value: str | None
     origin_key: ConfigResolvedSourceKey | None = None
 
@@ -129,46 +114,15 @@ def config_value_sources(
     return (
         ConfigValueSource(
             key="effective",
-            label="Effective",
             raw_value=effective_value,
             origin_key=origin_key,
         ),
-        ConfigValueSource(key="shell", label="Shell", raw_value=shell_value),
-        ConfigValueSource(key="local", label="Local", raw_value=local_value),
+        ConfigValueSource(key="shell", raw_value=shell_value),
+        ConfigValueSource(key="local", raw_value=local_value),
         ConfigValueSource(
             key="shared",
-            label="Shared default",
             raw_value=shared_value,
         ),
-    )
-
-
-def live_storage_title(record: StorageRecord, local_env: Path) -> Text:
-    """Return the title shown for one editable live storage.
-
-    :param record: Registry storage record.
-    :param local_env: Storage-local dotenv path.
-    :return: Multi-line title for the selected storage.
-    """
-    title = storage_name_text(record.name)
-    title.append(": ")
-    title.append_text(path_text(record.root))
-    return lines_text(title, path_text(local_env))
-
-
-def missing_storage_title(record: StorageRecord) -> Text:
-    """Return the title shown when a registered storage root is missing.
-
-    :param record: Registry storage record whose root is unavailable.
-    :return: Multi-line title explaining the missing root.
-    """
-    title = storage_name_text(record.name)
-    title.append(": ")
-    title.append("Missing storage root", style=MISSING_STYLE)
-    return lines_text(
-        title,
-        label_value_text("Root", path_text(record.root)),
-        "No storage-local env file is available.",
     )
 
 
@@ -198,19 +152,3 @@ def _first_available_source(
         if value is not None:
             return value, key
     return None, None
-
-
-def archived_storage_title(record: ArchivedStorageRecord) -> Text:
-    """Return the title shown for an archived storage record.
-
-    :param record: Archived storage metadata from the registry.
-    :return: Multi-line title with archive and last source paths.
-    """
-    title = storage_name_text(record.name)
-    title.append(": ")
-    title.append("Last Archived", style=ARCHIVE_STYLE)
-    return lines_text(
-        title,
-        label_value_text("Archive", path_text(record.archive)),
-        label_value_text("Last source", path_text(record.source_root)),
-    )

@@ -47,14 +47,14 @@ from apprc.config.tui.modals import (
 )
 from apprc.config.tui.rendering import (
     FIELD_TABLE_COLUMNS,
+    archived_storage_title,
     build_field_table_rows,
+    live_storage_title,
+    missing_storage_title,
 )
 from apprc.config.tui.field_state import (
     SelectedField,
-    archived_storage_title,
     config_value_sources,
-    live_storage_title,
-    missing_storage_title,
     selected_field_for_row,
 )
 from apprc.config.tui.storage.entries import (
@@ -209,11 +209,8 @@ class ConfigEditorApp(App[None]):
         env_key = selected.owner.env_key(selected.spec.name)
         self.push_screen(
             ConfigValueEditScreen(
-                owner=selected.owner,
                 spec=selected.spec,
                 env_key=env_key,
-                local_value=self.local_values.get(env_key, ""),
-                env_is_set=env_key in os.environ,
                 value_sources=config_value_sources(
                     spec=selected.spec,
                     env_key=env_key,

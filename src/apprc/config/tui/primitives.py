@@ -18,7 +18,12 @@ from textual.visual import VisualType
 from textual.widgets import Button, Input, Static
 
 # == Internal ================================
-from apprc.config.tui.styles import PATH_INPUT_CLASS
+from apprc.config.tui.styles import (
+    MODAL_DIALOG_CLASS,
+    MODAL_DIALOG_CSS,
+    PATH_INPUT_CLASS,
+    PATH_INPUT_CSS,
+)
 
 ButtonVariant = Literal["default", "primary", "success", "warning", "error"]
 
@@ -76,17 +81,14 @@ class PathSuggester(Suggester):
 class PathInputScreen(ModalScreen[PathInputResult | None]):
     """Modal path input with filesystem suggestions."""
 
-    CSS = """
+    CSS = (
+        """
     PathInputScreen {
         align: center middle;
     }
 
     #path-dialog {
         width: 82;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
     }
 
     #path-message {
@@ -97,11 +99,10 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
         height: 3;
         margin-top: 1;
     }
-
-    Input.path-input {
-        color: cyan;
-    }
     """
+        + MODAL_DIALOG_CSS
+        + PATH_INPUT_CSS
+    )
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
@@ -131,7 +132,7 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
 
         :return: Textual widgets for the modal.
         """
-        with Vertical(id="path-dialog"):
+        with Vertical(id="path-dialog", classes=MODAL_DIALOG_CLASS):
             yield Static(Text(self.dialog_title, style="bold"), id="path-title")
             yield Static(self.message, id="path-message")
             yield Input(
@@ -184,17 +185,14 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
 class StorageNameScreen(ModalScreen[StorageNameResult | None]):
     """Modal storage-name input."""
 
-    CSS = """
+    CSS = (
+        """
     StorageNameScreen {
         align: center middle;
     }
 
     #name-dialog {
         width: 64;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
     }
 
     #name-message {
@@ -206,6 +204,8 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
         margin-top: 1;
     }
     """
+        + MODAL_DIALOG_CSS
+    )
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
@@ -229,7 +229,7 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
 
         :return: Textual widgets for the modal.
         """
-        with Vertical(id="name-dialog"):
+        with Vertical(id="name-dialog", classes=MODAL_DIALOG_CLASS):
             yield Static(Text("Storage name", style="bold"), id="name-title")
             yield Static(self.message, id="name-message")
             yield Input(value=self.default_name, id="name-input")
@@ -276,17 +276,14 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
 class ConfirmScreen(ModalScreen[str | None]):
     """Generic confirmation dialog with caller-defined actions."""
 
-    CSS = """
+    CSS = (
+        """
     ConfirmScreen {
         align: center middle;
     }
 
     #confirm-dialog {
         width: 82;
-        max-width: 95%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
     }
 
     #confirm-message {
@@ -298,6 +295,8 @@ class ConfirmScreen(ModalScreen[str | None]):
         margin-top: 1;
     }
     """
+        + MODAL_DIALOG_CSS
+    )
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
@@ -325,7 +324,7 @@ class ConfirmScreen(ModalScreen[str | None]):
 
         :return: Textual widgets for the modal.
         """
-        with Vertical(id="confirm-dialog"):
+        with Vertical(id="confirm-dialog", classes=MODAL_DIALOG_CLASS):
             yield Static(
                 Text(self.dialog_title, style="bold"),
                 id="confirm-title",

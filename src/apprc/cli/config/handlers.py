@@ -198,7 +198,7 @@ class ConfigCommandHandlers:
         multi_storage: bool,
         existing_action: setup_flow.ExistingSetupAction | None,
     ) -> None:
-        """Interactively configure the AppRC TOML and first storage root."""
+        """Configure the active storage root and optional AppRC TOML."""
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,
@@ -228,11 +228,7 @@ class ConfigCommandHandlers:
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
         configured_registry = self.load_optional_config_registry()
-        registry = configured_registry or StorageRegistry(
-            path=Path(),
-            storages={},
-            archived_storages={},
-        )
+        registry = configured_registry or self.single_storage_editor_registry()
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
@@ -302,7 +298,7 @@ class ConfigCommandHandlers:
     def load_config_registry(self) -> StorageRegistry:
         """Load the registry and raise Typer's parse-error shape on failure."""
         try:
-            return self.kit.load_registry()
+            return self.kit.load_existing_registry()
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -320,12 +316,30 @@ class ConfigCommandHandlers:
         if registry_path is None:
             return None
         try:
-            return self.kit.load_registry(path=registry_path)
+            return self.kit.load_existing_registry()
+        except ApprcTomlEnvError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=self.kit.apprc_toml_env_key(),
+            ) from exc
         except ValueError as exc:
             raise typer.BadParameter(
                 str(exc),
                 param_hint=self.kit.spec.apprc_toml_filename,
             ) from exc
+
+    def single_storage_editor_registry(self) -> StorageRegistry:
+        """Return the empty registry object used by single-storage editing.
+
+        The Textual editor still expects a registry-shaped object for its list
+        model. Keeping this construction named prevents the placeholder path
+        from looking like a real AppRC TOML location.
+        """
+        return StorageRegistry(
+            path=Path(),
+            storages={},
+            archived_storages={},
+        )
 
     def active_storage_root_from_env(
         self,

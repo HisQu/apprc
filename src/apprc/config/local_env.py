@@ -1,11 +1,11 @@
 """Read and write storage-local dotenv overrides.
 
-AppRC has two managed file locations: the env-selected AppRC TOML and one local
-dotenv file inside each registered storage root. This module owns the second
-location. It validates values against the
-same ``ConfigField`` declarations used by runtime loading, writes keys in
-declaration order, and preserves unknown dotenv keys after the known AppRC
-keys.
+AppRC always has one active storage root selected by ``<APP>_STORAGE``. That
+root owns a storage-local dotenv file. Optional multi-storage registries may
+name several such roots in an AppRC TOML, but this module only owns local dotenv
+file handling. It validates values against the same ``ConfigField``
+declarations used by runtime loading, writes keys in declaration order, and
+preserves unknown dotenv keys after the known AppRC keys.
 
 It intentionally does not mutate ``os.environ``. Entrypoints use
 :mod:`apprc.config.environment` to decide which dotenv layers enter the current

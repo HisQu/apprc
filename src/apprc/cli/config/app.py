@@ -2,8 +2,8 @@
 
 Applications own their top-level command tree and domain commands. AppRC owns
 the repeatable config workflow that every app with ``AppConfigKit`` needs:
-show diagnostics, register storage roots, select defaults, write local
-overrides, and open the Textual editor.
+show diagnostics, create or register storage roots, write local overrides, and
+open the Textual editor.
 """
 
 from __future__ import annotations
@@ -218,7 +218,7 @@ def build_config_typer_app(
             ),
         ] = None,
     ) -> None:
-        """Interactively configure the AppRC TOML and first storage root."""
+        """Configure the active storage root and optional AppRC TOML."""
         handlers.setup(
             assume_yes=assume_yes,
             apprc_dir=apprc_dir,

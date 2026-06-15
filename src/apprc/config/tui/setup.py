@@ -74,7 +74,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self.registry: StorageRegistry | None = None
         self.existing_action: setup_flow.ExistingSetupAction | None = None
         self.result: setup_flow.ConfigSetupResult | None = None
-        self.pending_storage_root: Path | None = None
+        self.pending_multi_storage_root: Path | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the setup wizard shell.
@@ -156,12 +156,12 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             await self._finish_setup(result)
             return
 
-        self.pending_storage_root = root_result
+        self.pending_multi_storage_root = root_result
         existing_path = setup_flow.find_existing_apprc_toml_path(self.kit)
         if existing_path is None:
             registry = await self._choose_new_registry()
             if registry is not None:
-                await self._finish_storage_setup(registry)
+                await self._finish_multi_storage_setup(registry)
             return
         try:
             registry = setup_flow.load_registry(self.kit, existing_path)
@@ -222,7 +222,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 setup_flow.require_apprc_toml_path_available(
                     registry.path,
                 )
-                await self._finish_storage_setup(registry)
+                await self._finish_multi_storage_setup(registry)
                 return
             if action == setup_flow.ExistingSetupAction.RESET:
                 confirmed = await self.push_screen_wait(
@@ -243,14 +243,14 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 setup_flow.remove_apprc_toml_config_state(registry.path)
                 fresh = await self._choose_new_registry()
                 if fresh is not None:
-                    await self._finish_storage_setup(fresh)
+                    await self._finish_multi_storage_setup(fresh)
                 return
             moved = await self._move_existing_apprc_toml(registry)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
         if moved is not None:
-            await self._finish_storage_setup(moved)
+            await self._finish_multi_storage_setup(moved)
 
     async def _choose_new_registry(self) -> StorageRegistry | None:
         """Prompt for the AppRC directory and load the computed TOML file.
@@ -366,7 +366,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             return None
         return active_path.parent
 
-    async def _finish_storage_setup(
+    async def _finish_multi_storage_setup(
         self,
         registry: StorageRegistry,
     ) -> None:
@@ -375,7 +375,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :param registry: Registry selected by setup.
         """
         self.registry = registry
-        root_result = self.pending_storage_root
+        root_result = self.pending_multi_storage_root
         if root_result is None:
             return
         name_result = await self._choose_storage_name(registry)
@@ -388,12 +388,11 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         if guarded_root is None:
             return
         try:
-            result = setup_flow.ensure_setup_storage(
+            result = setup_flow.ensure_registered_storage(
                 self.kit,
                 registry,
                 storage_root=guarded_root,
                 storage_name=name_result,
-                multi_storage=True,
                 allow_non_empty_storage=True,
             )
         except setup_flow.ConfigSetupError as exc:

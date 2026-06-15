@@ -8,7 +8,7 @@ from apprc.config.setup.flow import (
     ExistingSetupAction,
     active_storage_root_from_env,
     default_existing_setup_action,
-    ensure_setup_storage,
+    ensure_registered_storage,
     find_existing_apprc_toml_path,
     load_registry,
     move_existing_apprc_toml,

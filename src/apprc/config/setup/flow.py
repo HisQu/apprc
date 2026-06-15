@@ -181,51 +181,32 @@ def _setup_existing_apprc_toml_path(
     return None
 
 
-def ensure_setup_storage(
+def ensure_registered_storage(
     kit: "AppConfigKit",
     registry: StorageRegistry,
     *,
     storage_root: Path | None,
     storage_name: str | None,
-    multi_storage: bool,
     allow_non_empty_storage: bool,
 ) -> ConfigSetupResult:
-    """Ensure the active storage root exists after registry setup.
+    """Ensure and register the active storage root after registry setup.
 
     :param kit: Application config facade.
     :param registry: Registry selected by setup.
     :param storage_root: Optional active storage root selected by setup.
     :param storage_name: Optional selector to register for multi-storage.
-    :param multi_storage: Whether to register the active root in the registry.
     :param allow_non_empty_storage: Whether non-empty roots may be reused.
-    :return: Setup result with active root and optional registered selector.
+    :return: Setup result with active root and registered selector.
     :raises ConfigSetupError: If the storage root is unsafe.
     """
-    active_root = storage_root or active_storage_root_from_env(kit)
-    if active_root is None:
-        raise ConfigSetupError(
-            f"{kit.spec.storage_env_key} or --storage-root is required for "
-            "non-interactive setup.",
-            param_hint="--storage-root",
-        )
     name = storage_name or kit.suggested_storage_name()
-    root = validate_storage_root_for_setup(
+    resolved_root = _ensure_setup_storage_root(
         kit,
-        active_root,
-        storage_name=name if multi_storage else None,
+        storage_root=storage_root,
+        storage_name=name,
         allow_non_empty_storage=allow_non_empty_storage,
     )
     try:
-        local_env = ensure_local_env_file(
-            root,
-            filename=kit.spec.local_env_filename,
-        )
-        resolved_root = local_env.parent
-        if not multi_storage:
-            return ConfigSetupResult(
-                registry=None,
-                active_storage_root=resolved_root,
-            )
         updated = kit.register_storage(
             name=name,
             root=resolved_root,
@@ -262,6 +243,34 @@ def ensure_single_storage(
     :return: Setup result with no AppRC TOML registry.
     :raises ConfigSetupError: If the storage root is unsafe.
     """
+    resolved_root = _ensure_setup_storage_root(
+        kit,
+        storage_root=storage_root,
+        storage_name=None,
+        allow_non_empty_storage=allow_non_empty_storage,
+    )
+    return ConfigSetupResult(
+        registry=None,
+        active_storage_root=resolved_root,
+    )
+
+
+def _ensure_setup_storage_root(
+    kit: "AppConfigKit",
+    *,
+    storage_root: Path | None,
+    storage_name: str | None,
+    allow_non_empty_storage: bool,
+) -> Path:
+    """Create or confirm the storage-local env file for setup.
+
+    :param kit: Application config facade.
+    :param storage_root: Optional active storage root selected by setup.
+    :param storage_name: Optional registry selector used in reuse prompts.
+    :param allow_non_empty_storage: Whether non-empty roots may be reused.
+    :return: Resolved active storage root.
+    :raises ConfigSetupError: If the storage root is unsafe.
+    """
     active_root = storage_root or active_storage_root_from_env(kit)
     if active_root is None:
         raise ConfigSetupError(
@@ -285,10 +294,7 @@ def ensure_single_storage(
             str(exc),
             param_hint="STORAGE_ROOT",
         ) from exc
-    return ConfigSetupResult(
-        registry=None,
-        active_storage_root=local_env.parent,
-    )
+    return local_env.parent
 
 
 def validate_storage_root_for_setup(

@@ -69,7 +69,7 @@ def active_storage_root_from_state(
     if env_storage:
         active_registry_path = kit.optional_apprc_toml_path()
         registry = (
-            kit.load_registry(path=active_registry_path)
+            kit.load_existing_registry()
             if active_registry_path is not None
             else None
         )

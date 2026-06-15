@@ -355,7 +355,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
     assert result.storage_root == normalized_root
 
 
-def test_bootstrap_env_storage_name_selects_active_root(
+def test_bootstrap_env_storage_selector_selects_active_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -396,7 +396,7 @@ def test_bootstrap_env_storage_name_selects_active_root(
     assert os.environ["DEMO_STORAGE"] == str(beta_root.resolve())
 
 
-def test_bootstrap_env_storage_name_wins_over_env_selector(
+def test_bootstrap_env_storage_option_wins_over_env_selector(
     monkeypatch,
     tmp_path: Path,
 ) -> None:

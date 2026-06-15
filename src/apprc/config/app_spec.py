@@ -22,8 +22,8 @@ class AppConfigSpec:
     """Complete reusable configuration contract for one application.
 
     Applications declare this once, then :class:`AppConfigKit` derives the
-    AppRC TOML path, dotenv bootstrap spec, local-env behavior, config
-    doctor diagnostics, and optional config CLI from it.
+    optional AppRC TOML registry path, dotenv bootstrap spec, local-env
+    behavior, config doctor diagnostics, and optional config CLI from it.
 
     :param app_name: Lowercase application name used in env var derivation.
     :param display_name: Human-readable application name for terminal output.
@@ -58,7 +58,7 @@ class AppConfigSpec:
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path:
-        """Return the active AppRC TOML path.
+        """Return the configured multi-storage AppRC TOML path.
 
         :param proc_env: Optional environment mapping for tests.
         :return: ``<APP>_APPRC_TOML`` when set.

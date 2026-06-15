@@ -36,6 +36,7 @@ from apprc.config.apprc_toml import (
 from apprc.config.storage.selector import (
     missing_storage_selector_error,
     resolve_active_storage_selection,
+    selected_storage_selector_value,
 )
 from apprc.config.storage.registry import StorageRegistry, load_storage_registry
 from apprc.logging import get_logger
@@ -158,11 +159,15 @@ def bootstrap_env(
     """
     original_env = dict(os.environ)
     explicit_values = _read_explicit_env_file(env_file)
-    if storage is None and not _storage_selector_value(
-        storage_env_key=spec.storage_env_key,
-        original_env=original_env,
-        explicit_values=explicit_values,
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
+    if (
+        selected_storage_selector_value(
+            storage=storage,
+            storage_env_key=spec.storage_env_key,
+            original_env=original_env,
+            explicit_values=explicit_values,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
+        )
+        is None
     ):
         raise missing_storage_selector_error(spec.storage_env_key)
     registry = _load_optional_registry(spec)
@@ -257,23 +262,6 @@ def _read_dotenv_file(path: Path | None) -> dict[str, str]:
         for key, value in raw_values.items()
         if isinstance(value, str)
     }
-
-
-def _storage_selector_value(
-    *,
-    storage_env_key: str,
-    original_env: Mapping[str, str],
-    explicit_values: Mapping[str, str],
-    env_file_overrides_os_environ: bool,
-) -> str | None:
-    """Return the selected storage env value using bootstrap precedence."""
-    if env_file_overrides_os_environ:
-        return explicit_values.get(storage_env_key) or original_env.get(
-            storage_env_key
-        )
-    return original_env.get(storage_env_key) or explicit_values.get(
-        storage_env_key
-    )
 
 
 def _merged_env_values(

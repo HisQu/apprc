@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from typer.testing import CliRunner
 
+from apprc.config.tui import ConfigEditorApp
 from apprc.config.diagnostics import (
     build_config_doctor_payload,
     config_setup_message,
@@ -107,6 +109,100 @@ def test_generated_config_registry_commands_require_apprc_toml(
     assert "required for multi-storage" in list_result.output
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in init_result.output
     assert "required for multi-storage" in init_result.output
+
+
+def test_generated_config_list_rejects_missing_configured_apprc_toml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    missing_registry = tmp_path / "missing.apprc.toml"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_registry))
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["list"])
+
+    assert result.exit_code == 2, result.output
+    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in result.output
+    assert "points to a missing AppRC TOML" in result.output
+    assert not missing_registry.exists()
+
+
+def test_generated_config_init_creates_missing_configured_apprc_toml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    missing_registry = tmp_path / "missing.apprc.toml"
+    storage_root = tmp_path / "storage"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_registry))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["init", str(storage_root), "--name", "alpha", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert missing_registry.is_file()
+    assert "registered_storage: alpha" in result.output
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_generated_config_edit_opens_single_storage_without_apprc_toml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class RecordingEditor:
+        instances: list["RecordingEditor"] = []
+
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+            self.ran = False
+            self.instances.append(self)
+
+        def run(self) -> None:
+            self.ran = True
+
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    storage_root = tmp_path / "single-storage"
+    storage_root.mkdir()
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        editor_app_cls=cast(type[ConfigEditorApp], RecordingEditor),
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["edit"])
+
+    assert result.exit_code == 0, result.output
+    assert len(RecordingEditor.instances) == 1
+    editor = RecordingEditor.instances[0]
+    assert editor.ran
+    assert editor.kwargs["active_storage_root"] == storage_root.resolve()
+
+
+def test_generated_config_edit_rejects_missing_configured_apprc_toml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    missing_registry = tmp_path / "missing.apprc.toml"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_registry))
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["edit"])
+
+    assert result.exit_code == 2, result.output
+    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in result.output
+    assert "points to a missing AppRC TOML" in result.output
 
 
 def test_generated_config_app_rejects_bare_unknown_storage_selector(

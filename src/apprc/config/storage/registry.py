@@ -1,9 +1,10 @@
-"""Read and write the storage tables inside an AppRC TOML.
+"""Read and write optional multi-storage tables inside an AppRC TOML.
 
 CLI applications often run globally, but their data lives in user-chosen
-project or corpus directories. AppRC solves that with storage tables in the
-app-specific AppRC TOML. The storage registry maps friendly storage names to
-absolute storage roots for optional multi-storage management.
+project or corpus directories. The required ``<APP>_STORAGE`` selector points
+at the active path. When users opt into ``<APP>_APPRC_TOML``, the storage
+registry maps friendly storage names to absolute storage roots for
+multi-storage management.
 
 AppRC TOML path selection lives in :mod:`apprc.config.apprc_toml`, storage
 selector resolution lives in :mod:`apprc.config.storage.selector`, and

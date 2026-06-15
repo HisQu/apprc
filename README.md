@@ -346,6 +346,9 @@ Installation state is explicit:
 | `installed_unhealthy` | The selected storage root or local env file is missing, the AppRC TOML is invalid, or a multi-storage selector cannot be resolved. |
 | `installed_healthy` | `<APP>_STORAGE` resolves to an existing storage root with a local env file; the AppRC TOML is either unset or valid. |
 
+In `config doctor --json`, `installed` means a minimum runnable storage setup
+exists; it does not mean an AppRC TOML is configured.
+
 For example:
 
 ```toml
@@ -519,7 +522,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
 | `apprc.config.paths` | Storage-root path normalization helpers. |
 | `apprc.config.storage.selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
-| `apprc.config.storage.registry` | Storage tables inside the AppRC TOML. |
+| `apprc.config.storage.registry` | Optional multi-storage tables inside the AppRC TOML. |
 | `apprc.config.storage.archive` | `*.apprc.tar.xz` storage compression and restore. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
 | `apprc.config.setup.flow` | Shared setup workflow rules. |

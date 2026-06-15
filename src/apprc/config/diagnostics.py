@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
@@ -46,6 +47,38 @@ class ConfigDoctorPayload(TypedDict):
     next_steps: list[str]
 
 
+@dataclass(frozen=True, slots=True)
+class _RegistryDiagnosis:
+    """AppRC TOML state discovered for one doctor run."""
+
+    active_toml_path: Path | None
+    toml_env_value: str | None
+    toml_exists: bool
+    toml_error: str | None
+    registry: StorageRegistry | None
+    storage_count: int
+    issues: list[str]
+
+    @property
+    def toml_parse_ok(self) -> bool:
+        """Return whether the optional TOML layer is absent or parseable."""
+        if self.active_toml_path is None:
+            return True
+        return self.toml_exists and self.toml_error is None
+
+
+@dataclass(frozen=True, slots=True)
+class _StorageDiagnosis:
+    """Active storage state discovered for one doctor run."""
+
+    selection: StorageSelection | None
+    storage_root_exists: bool | None
+    local_env: Path | None
+    local_env_exists: bool | None
+    missing_env_keys: list[str]
+    issues: list[str]
+
+
 def config_command_text(kit: "AppConfigKit", action: str) -> str:
     """Return one display command for this app's config group.
 
@@ -84,62 +117,191 @@ def build_config_doctor_payload(
     storage_root: Path | None = None,
     apprc_toml_path: Path | None = None,
 ) -> ConfigDoctorPayload:
-    """Return local setup diagnostics for one app's AppRC TOML.
+    """Return local setup diagnostics for one app's selected storage.
 
     :param kit: Application config facade.
     :param storage: Optional selector passed by ``--storage``.
     :param storage_root: Optional explicit storage root selected by setup.
     :param apprc_toml_path: Optional explicit AppRC TOML path used by setup.
+        ``None`` means "use the currently configured env value, if any."
     :return: Stable JSON-friendly diagnostic payload.
     """
-    toml_env_key = kit.apprc_toml_env_key()
-    storage_env_key = kit.spec.storage_env_key
-    raw_toml_env_value = os.environ.get(toml_env_key, "").strip()
-    raw_storage_env_value = os.environ.get(storage_env_key, "").strip()
-    toml_env_value = raw_toml_env_value or None
+    registry_diagnosis = _diagnose_registry(
+        kit,
+        apprc_toml_path=apprc_toml_path,
+    )
+    storage_diagnosis = _diagnose_storage(
+        kit,
+        registry=registry_diagnosis.registry,
+        storage=storage,
+        storage_root=storage_root,
+    )
+    issues = [*registry_diagnosis.issues, *storage_diagnosis.issues]
+    install_state = _install_state(
+        registry=registry_diagnosis,
+        storage=storage_diagnosis,
+        issues=issues,
+    )
+
+    healthy = install_state == ConfigInstallState.INSTALLED_HEALTHY
+    installed = registry_diagnosis.toml_exists or (
+        bool(storage_diagnosis.storage_root_exists)
+        and bool(storage_diagnosis.local_env_exists)
+    )
+    selection = storage_diagnosis.selection
+    selected_storage_root = selection.root if selection is not None else None
+    return {
+        "ok": healthy,
+        "install_state": install_state.value,
+        "installed": installed,
+        "healthy": healthy,
+        "apprc_toml_env_key": kit.apprc_toml_env_key(),
+        "apprc_toml_env_value": registry_diagnosis.toml_env_value,
+        "apprc_toml_path": (
+            str(registry_diagnosis.active_toml_path)
+            if registry_diagnosis.active_toml_path is not None
+            else None
+        ),
+        "apprc_toml_exists": registry_diagnosis.toml_exists,
+        "apprc_toml_parse_ok": registry_diagnosis.toml_parse_ok,
+        "apprc_toml_error": registry_diagnosis.toml_error,
+        "storage_count": registry_diagnosis.storage_count,
+        "selected_storage": (
+            selection.storage_name if selection is not None else None
+        ),
+        "selected_storage_source": (
+            selection.source if selection is not None else None
+        ),
+        "selected_storage_selector": (
+            selection.raw_value if selection is not None else None
+        ),
+        "selected_storage_root": (
+            str(selected_storage_root)
+            if selected_storage_root is not None
+            else None
+        ),
+        "selected_storage_root_exists": (storage_diagnosis.storage_root_exists),
+        "selected_local_env": (
+            str(storage_diagnosis.local_env)
+            if storage_diagnosis.local_env is not None
+            else None
+        ),
+        "selected_local_env_exists": storage_diagnosis.local_env_exists,
+        "missing_env_keys": storage_diagnosis.missing_env_keys,
+        "issues": issues,
+        "next_steps": []
+        if not issues
+        else [
+            config_command_text(
+                kit,
+                "setup --yes --storage-root /absolute/path/to/storage-root",
+            ),
+            config_command_text(kit, "doctor"),
+            config_command_text(kit, "show"),
+        ],
+    }
+
+
+def _diagnose_registry(
+    kit: "AppConfigKit",
+    *,
+    apprc_toml_path: Path | None,
+) -> _RegistryDiagnosis:
+    """Return optional multi-storage registry state for diagnostics.
+
+    :param kit: Application config facade.
+    :param apprc_toml_path: Optional explicit setup path.
+    :return: Registry diagnosis with parse or missing-file issues.
+    """
+    raw_toml_env_value = os.environ.get(kit.apprc_toml_env_key(), "").strip()
     active_toml_path = (
         Path(apprc_toml_path).expanduser().resolve()
         if apprc_toml_path is not None
         else kit.optional_apprc_toml_path()
     )
-    issues: list[str] = []
-    missing_env_keys: list[str] = []
-    selection: StorageSelection | None = None
-    toml_error: str | None = None
-    storage_count = 0
-    toml_exists = (
-        active_toml_path.is_file() if active_toml_path is not None else False
-    )
-    install_state = ConfigInstallState.INSTALLED_UNHEALTHY
-    registry: StorageRegistry | None = None
-
-    if active_toml_path is not None and not toml_exists:
-        issues.append(f"AppRC TOML does not exist: {active_toml_path}")
-        registry = StorageRegistry(
-            path=active_toml_path,
-            storages={},
-            archived_storages={},
+    if active_toml_path is None:
+        return _RegistryDiagnosis(
+            active_toml_path=None,
+            toml_env_value=raw_toml_env_value or None,
+            toml_exists=False,
+            toml_error=None,
+            registry=None,
+            storage_count=0,
+            issues=[],
         )
-    elif active_toml_path is not None:
-        try:
-            registry = kit.load_registry(path=active_toml_path)
-        except ValueError as exc:
-            toml_error = str(exc)
-            issues.append(f"AppRC TOML is invalid: {toml_error}")
-            registry = StorageRegistry(
+
+    toml_exists = active_toml_path.is_file()
+    if not toml_exists:
+        return _RegistryDiagnosis(
+            active_toml_path=active_toml_path,
+            toml_env_value=raw_toml_env_value or None,
+            toml_exists=False,
+            toml_error=None,
+            registry=StorageRegistry(
                 path=active_toml_path,
                 storages={},
                 archived_storages={},
-            )
-        else:
-            storage_count = len(registry.storages)
+            ),
+            storage_count=0,
+            issues=[f"AppRC TOML does not exist: {active_toml_path}"],
+        )
+
+    try:
+        registry = kit.load_registry(path=active_toml_path)
+    except ValueError as exc:
+        toml_error = str(exc)
+        return _RegistryDiagnosis(
+            active_toml_path=active_toml_path,
+            toml_env_value=raw_toml_env_value or None,
+            toml_exists=True,
+            toml_error=toml_error,
+            registry=StorageRegistry(
+                path=active_toml_path,
+                storages={},
+                archived_storages={},
+            ),
+            storage_count=0,
+            issues=[f"AppRC TOML is invalid: {toml_error}"],
+        )
+
+    return _RegistryDiagnosis(
+        active_toml_path=active_toml_path,
+        toml_env_value=raw_toml_env_value or None,
+        toml_exists=True,
+        toml_error=None,
+        registry=registry,
+        storage_count=len(registry.storages),
+        issues=[],
+    )
+
+
+def _diagnose_storage(
+    kit: "AppConfigKit",
+    *,
+    registry: StorageRegistry | None,
+    storage: str | None,
+    storage_root: Path | None,
+) -> _StorageDiagnosis:
+    """Return active storage state for diagnostics.
+
+    :param kit: Application config facade.
+    :param registry: Optional multi-storage registry diagnosis result.
+    :param storage: Optional selector passed by ``--storage``.
+    :param storage_root: Optional explicit storage root selected by setup.
+    :return: Storage diagnosis with missing-env and local-env issues.
+    """
+    storage_env_key = kit.spec.storage_env_key
+    raw_storage_env_value = os.environ.get(storage_env_key, "").strip()
+    issues: list[str] = []
+    missing_env_keys: list[str] = []
+    selection: StorageSelection | None = None
 
     if storage_root is not None:
         selected_root = Path(storage_root).expanduser().resolve()
         selection = StorageSelection(
             source=storage_env_key,
             raw_value=str(storage_root),
-            storage_name=storage if active_toml_path is not None else None,
+            storage_name=storage if registry is not None else None,
             root=selected_root,
         )
     elif storage is None and not raw_storage_env_value:
@@ -176,64 +338,36 @@ def build_config_doctor_payload(
         issues.append(
             f"Selected storage local env file does not exist: {local_env}"
         )
-
-    if missing_env_keys:
-        install_state = ConfigInstallState.ENV_NOT_SET
-    elif active_toml_path is not None and not toml_exists:
-        install_state = ConfigInstallState.NOT_INSTALLED
-    elif not issues:
-        install_state = ConfigInstallState.INSTALLED_HEALTHY
-
-    healthy = install_state == ConfigInstallState.INSTALLED_HEALTHY
-    installed = toml_exists or (
-        bool(storage_root_exists) and bool(local_env_exists)
+    return _StorageDiagnosis(
+        selection=selection,
+        storage_root_exists=storage_root_exists,
+        local_env=local_env,
+        local_env_exists=local_env_exists,
+        missing_env_keys=missing_env_keys,
+        issues=issues,
     )
-    return {
-        "ok": healthy,
-        "install_state": install_state.value,
-        "installed": installed,
-        "healthy": healthy,
-        "apprc_toml_env_key": toml_env_key,
-        "apprc_toml_env_value": toml_env_value,
-        "apprc_toml_path": (
-            str(active_toml_path) if active_toml_path is not None else None
-        ),
-        "apprc_toml_exists": toml_exists,
-        "apprc_toml_parse_ok": (
-            active_toml_path is None or toml_exists and toml_error is None
-        ),
-        "apprc_toml_error": toml_error,
-        "storage_count": storage_count,
-        "selected_storage": (
-            selection.storage_name if selection is not None else None
-        ),
-        "selected_storage_source": (
-            selection.source if selection is not None else None
-        ),
-        "selected_storage_selector": (
-            selection.raw_value if selection is not None else None
-        ),
-        "selected_storage_root": (
-            str(selected_storage_root)
-            if selected_storage_root is not None
-            else None
-        ),
-        "selected_storage_root_exists": storage_root_exists,
-        "selected_local_env": str(local_env) if local_env is not None else None,
-        "selected_local_env_exists": local_env_exists,
-        "missing_env_keys": missing_env_keys,
-        "issues": issues,
-        "next_steps": []
-        if not issues
-        else [
-            config_command_text(
-                kit,
-                "setup --yes --storage-root /absolute/path/to/storage-root",
-            ),
-            config_command_text(kit, "doctor"),
-            config_command_text(kit, "show"),
-        ],
-    }
+
+
+def _install_state(
+    *,
+    registry: _RegistryDiagnosis,
+    storage: _StorageDiagnosis,
+    issues: list[str],
+) -> ConfigInstallState:
+    """Return the setup state while keeping missing storage env decisive.
+
+    :param registry: Optional registry diagnosis.
+    :param storage: Active storage diagnosis.
+    :param issues: All collected issues.
+    :return: Public install-state enum.
+    """
+    if storage.missing_env_keys:
+        return ConfigInstallState.ENV_NOT_SET
+    if registry.active_toml_path is not None and not registry.toml_exists:
+        return ConfigInstallState.NOT_INSTALLED
+    if not issues:
+        return ConfigInstallState.INSTALLED_HEALTHY
+    return ConfigInstallState.INSTALLED_UNHEALTHY
 
 
 def _missing_env_issue(

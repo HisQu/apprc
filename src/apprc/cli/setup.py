@@ -92,12 +92,11 @@ def run_config_setup(
                 existing_action=existing_action,
                 replace_existing_file=True,
             )
-            result = setup_flow.ensure_setup_storage(
+            result = setup_flow.ensure_registered_storage(
                 kit,
                 setup_result.registry,
                 storage_root=storage_root,
                 storage_name=storage_name,
-                multi_storage=True,
                 allow_non_empty_storage=True,
             )
         else:

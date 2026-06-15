@@ -140,7 +140,7 @@ class ConfigEditorApp(App[None]):
             if active_storage_root is not None
             else None
         )
-        self.registry_enabled = (
+        self.registry_actions_enabled = (
             kit is None or kit.optional_apprc_toml_path() is not None
         )
         self.shared_values = _read_packaged_shared_values(kit)
@@ -275,7 +275,7 @@ class ConfigEditorApp(App[None]):
                 severity="error",
             )
             return None
-        if not self.registry_enabled:
+        if not self.registry_actions_enabled:
             self.notify(
                 "Storage management requires an AppRC TOML.",
                 severity="error",
@@ -332,18 +332,9 @@ class ConfigEditorApp(App[None]):
                 self._select_active_storage()
                 return
             self._clear_selection()
-            message = (
-                "No storages registered. Use New storage to add one, or set "
-                f"{self.kit.spec.storage_env_key if self.kit else '<APP>_STORAGE'} "
-                "to edit an active path.\n"
-                f"CLI: {self.init_command}"
-                if self.registry_enabled
-                else "No active storage path is selected. Set "
-                f"{self.kit.spec.storage_env_key if self.kit else '<APP>_STORAGE'} "
-                "to edit a storage-local env file. Configure the AppRC TOML "
-                "to enable registry actions."
+            self.query_one("#storage-title", Static).update(
+                self._no_storage_message()
             )
-            self.query_one("#storage-title", Static).update(message)
             self._clear_field_table()
             self._set_live_controls_enabled(False)
             return
@@ -388,7 +379,7 @@ class ConfigEditorApp(App[None]):
         self._populate_field_table()
         self._set_storage_controls_enabled(
             fields=True,
-            register_active=self.registry_enabled,
+            register_active=self.registry_actions_enabled,
             delete=False,
             archive=False,
         )
@@ -524,7 +515,7 @@ class ConfigEditorApp(App[None]):
         self._set_controls_enabled(fields)
         self.query_one(
             "#storage-new", Button
-        ).disabled = not self.registry_enabled
+        ).disabled = not self.registry_actions_enabled
         self.query_one(
             "#storage-register-active", Button
         ).disabled = not register_active
@@ -560,6 +551,23 @@ class ConfigEditorApp(App[None]):
         if self.kit is not None:
             return self.kit.suggested_storage_name()
         return "apprc_stor-1"
+
+    def _no_storage_message(self) -> str:
+        """Return empty-list guidance for the current registry capability."""
+        storage_env_key = (
+            self.kit.spec.storage_env_key if self.kit else "<APP>_STORAGE"
+        )
+        if self.registry_actions_enabled:
+            return (
+                "No storages registered. Use New storage to add one, or set "
+                f"{storage_env_key} to edit an active path.\n"
+                f"CLI: {self.init_command}"
+            )
+        return (
+            "No active storage path is selected. Set "
+            f"{storage_env_key} to edit a storage-local env file. Configure "
+            "the AppRC TOML to enable registry actions."
+        )
 
 
 def _read_packaged_shared_values(

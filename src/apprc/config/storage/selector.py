@@ -51,6 +51,19 @@ class StorageSelection:
     root: Path
 
 
+@dataclass(frozen=True, slots=True)
+class StorageSelectorValue:
+    """Raw storage selector chosen before path or registry resolution.
+
+    :param source: User-visible selector source, such as ``--storage`` or the
+        app-specific storage env key.
+    :param raw_value: Selector text before it is interpreted.
+    """
+
+    source: str
+    raw_value: str
+
+
 def resolve_registered_storage_name(
     *,
     registry: StorageRegistry,
@@ -104,24 +117,19 @@ def resolve_active_storage_selection(
     :return: Resolved selection, or ``None`` when no selector was provided.
     :raises StorageSelectorError: If the selected value is invalid.
     """
-    if storage is not None:
-        return resolve_storage_selector_value(
-            registry=registry,
-            raw_value=storage,
-            storage_env_key=storage_env_key,
-            source="--storage",
-        )
-    storage_selector = _storage_selector_value(
+    storage_selector = selected_storage_selector_value(
+        storage=storage,
         original_env=original_env,
         explicit_values=explicit_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         storage_env_key=storage_env_key,
     )
-    if storage_selector:
+    if storage_selector is not None:
         return resolve_storage_selector_value(
             registry=registry,
-            raw_value=storage_selector,
+            raw_value=storage_selector.raw_value,
             storage_env_key=storage_env_key,
+            source=storage_selector.source,
         )
     return None
 
@@ -195,21 +203,44 @@ def missing_storage_selector_error(
     )
 
 
-def _storage_selector_value(
+def selected_storage_selector_value(
     *,
+    storage: str | None,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
     env_file_overrides_os_environ: bool,
     storage_env_key: str,
-) -> str | None:
-    """Return the storage selector implied by env-file precedence."""
+) -> StorageSelectorValue | None:
+    """Return the raw selector selected by CLI and env precedence.
+
+    ``--storage`` always wins. Env-file precedence then decides whether an
+    explicit dotenv value or the already-exported process environment supplies
+    ``<APP>_STORAGE``.
+
+    :param storage: Optional root CLI ``--storage`` value.
+    :param original_env: Process environment captured before dotenv loading.
+    :param explicit_values: Values read from ``--env-file``.
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+        already exported process values.
+    :param storage_env_key: Env key that stores the active storage selector.
+    :return: Raw selector value and its source, or ``None`` when unset.
+    """
+    if storage is not None:
+        return StorageSelectorValue(source="--storage", raw_value=storage)
     if env_file_overrides_os_environ:
-        return explicit_values.get(storage_env_key) or original_env.get(
+        raw_value = explicit_values.get(storage_env_key) or original_env.get(
             storage_env_key
         )
-    return original_env.get(storage_env_key) or explicit_values.get(
-        storage_env_key
-    )
+    else:
+        raw_value = original_env.get(storage_env_key) or explicit_values.get(
+            storage_env_key
+        )
+    if raw_value:
+        return StorageSelectorValue(
+            source=storage_env_key,
+            raw_value=raw_value,
+        )
+    return None
 
 
 def _is_storage_path_like(value: str) -> bool:

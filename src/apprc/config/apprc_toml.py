@@ -1,10 +1,10 @@
-"""Resolve the AppRC TOML file selected for one application.
+"""Resolve the optional AppRC TOML registry selected for one application.
 
-The AppRC TOML is the user-level state file selected by
-``<APP>_APPRC_TOML``. Its storage tables are parsed by
-:mod:`apprc.config.storage.registry`, while this module owns the file naming and
-environment-variable contract so future non-storage AppRC settings can reuse the
-same file without living in storage-specific code.
+``<APP>_APPRC_TOML`` opts an app into multi-storage registry behavior. Its
+storage tables are parsed by :mod:`apprc.config.storage.registry`, while this
+module owns the file naming and environment-variable contract so future
+non-storage AppRC settings can reuse the same file without living in
+storage-specific code.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ def configured_apprc_toml_path(
     apprc_toml_filename: str,
     proc_env: Mapping[str, str] | None = None,
 ) -> Path:
-    """Return the required AppRC TOML path selected by the environment.
+    """Return the required multi-storage TOML path from the environment.
 
     :param app_name: Application name from the AppRC integration spec.
     :param apprc_toml_filename: Suggested TOML basename shown in setup guidance.

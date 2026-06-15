@@ -32,7 +32,10 @@ from apprc.config.local_env import (
     set_local_env_value,
 )
 from apprc.config.schema import ConfigOwner
-from apprc.config.apprc_toml import default_apprc_toml_filename
+from apprc.config.apprc_toml import (
+    ApprcTomlEnvError,
+    default_apprc_toml_filename,
+)
 from apprc.config.storage.registry import (
     StorageRegistry,
     load_storage_registry,
@@ -201,6 +204,40 @@ class AppConfigKit:
         return load_storage_registry(
             self.apprc_toml_path() if path is None else path
         )
+
+    def load_existing_registry(
+        self,
+        path: Path | None = None,
+    ) -> StorageRegistry:
+        """Read an already-installed multi-storage registry.
+
+        Creation flows use :meth:`load_registry` because a missing TOML can be
+        created there. Runtime registry features use this stricter helper so a
+        configured but missing ``<APP>_APPRC_TOML`` is reported as an unhealthy
+        multi-storage setup.
+
+        :param path: Optional explicit AppRC TOML path for tests.
+        :return: Parsed storage registry.
+        :raises ApprcTomlEnvError: If the TOML env var is missing or points at
+            a missing file.
+        :raises ValueError: If the registry cannot be parsed.
+        """
+        registry_path = self.apprc_toml_path() if path is None else path
+        resolved_path = Path(registry_path).expanduser().resolve()
+        if not resolved_path.is_file():
+            env_key = self.apprc_toml_env_key()
+            path_context = (
+                f"{env_key} points to a missing AppRC TOML"
+                if path is None
+                else "AppRC TOML does not exist"
+            )
+            raise ApprcTomlEnvError(
+                f"{path_context}: {resolved_path}. Remove {env_key} for "
+                "single-storage mode, or create the registry with "
+                f"{self.spec.config_command_name()} config setup --yes "
+                "--multi-storage."
+            )
+        return load_storage_registry(resolved_path)
 
     def register_storage(
         self,

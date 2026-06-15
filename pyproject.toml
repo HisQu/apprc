@@ -10,7 +10,7 @@ build-backend = "uv_build"
 # =====================================================================
 [project]
 name        = "apprc"
-version     = "0.8.0"
+version     = "0.9.0"
 description = "Reusable runtime configuration, config CLI, and logging helpers for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
 readme      = { file = "README.pypi.md", content-type = "text/markdown" }

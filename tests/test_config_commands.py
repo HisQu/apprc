@@ -63,7 +63,6 @@ def test_generated_config_app_rejects_bare_unknown_storage_selector(
     kit.register_storage(
         name="alpha",
         root=tmp_path / "alpha-storage",
-        make_default=True,
     )
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "beta")
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -117,7 +116,7 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
 
     result = runner.invoke(
         app,
-        ["init", str(storage_root), "--name", "alpha", "--default"],
+        ["init", str(storage_root), "--name", "alpha"],
         input="l\ny\n",
     )
 
@@ -134,15 +133,15 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     assert "AppRC TOML" in result.output
     assert "Existing files inside the storage root" in result.output
     assert "will not be deleted" in result.output
-    assert "Setup/editor default storage: 'alpha'" in result.output
     assert (
         "Choices: y continue  n abort  l list first-level contents"
         in result.output
     )
     assert "payload.txt" in result.output
-    assert f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"\n' in (
-        storage_root / ".env.apprc_example_app"
-    ).read_text(encoding="utf-8")
+    local_env = (storage_root / ".env.apprc_example_app").read_text(
+        encoding="utf-8"
+    )
+    assert "APPRC_EXAMPLE_APP_STORAGE" not in local_env
 
 
 def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
@@ -158,7 +157,7 @@ def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
 
     result = runner.invoke(
         app,
-        ["init", malformed, "--name", "alpha", "--default"],
+        ["init", malformed, "--name", "alpha"],
     )
 
     assert result.exit_code == 2, result.output
@@ -169,6 +168,33 @@ def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
     assert "C:/Projects/demo-storage" in result.output
     assert not Path(malformed).exists()
     assert not kit.apprc_toml_path().exists()
+
+
+def test_generated_config_app_rejects_removed_default_commands(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    init_result = runner.invoke(
+        app,
+        [
+            "init",
+            str(tmp_path / "storage"),
+            "--name",
+            "alpha",
+            "--default",
+        ],
+    )
+    set_default_result = runner.invoke(app, ["set-default", "alpha"])
+
+    assert init_result.exit_code == 2, init_result.output
+    assert "--default" in init_result.output
+    assert set_default_result.exit_code == 2, set_default_result.output
+    assert "set-default" in set_default_result.output
 
 
 def test_generated_config_app_aborts_existing_storage_when_user_says_no(
@@ -225,8 +251,9 @@ def test_generated_config_app_lists_registered_storages_as_rich_tree(
     kit = build_apprc_example_app_kit()
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
-    kit.register_storage(name="alpha", root=alpha_root, make_default=True)
-    kit.register_storage(name="beta", root=beta_root, make_default=False)
+    kit.register_storage(name="alpha", root=alpha_root)
+    kit.register_storage(name="beta", root=beta_root)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(alpha_root.resolve()))
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
 
@@ -234,9 +261,9 @@ def test_generated_config_app_lists_registered_storages_as_rich_tree(
 
     assert result.exit_code == 0, result.output
     assert "apprc_toml_path:" in result.output
-    assert "default_storage:" in result.output
+    assert "default_storage:" not in result.output
     assert "storages:" in result.output
-    assert "alpha [setup/editor default]" in result.output
+    assert "alpha [active]" in result.output
     assert "beta" in result.output
     assert "root:" in result.output
     assert "root_exists:" in result.output
@@ -259,8 +286,9 @@ def test_generated_config_app_lists_registered_storages_as_json(
     kit = build_apprc_example_app_kit()
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
-    kit.register_storage(name="alpha", root=alpha_root, make_default=True)
-    kit.register_storage(name="beta", root=beta_root, make_default=False)
+    kit.register_storage(name="alpha", root=alpha_root)
+    kit.register_storage(name="beta", root=beta_root)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(alpha_root.resolve()))
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
 
@@ -275,10 +303,9 @@ def test_generated_config_app_lists_registered_storages_as_json(
             / "apprc_example_app"
             / "apprc_example_app.apprc.toml"
         ),
-        "default_storage": "alpha",
         "storages": [
             {
-                "default": True,
+                "active": True,
                 "local_env": str(
                     alpha_root.resolve() / ".env.apprc_example_app"
                 ),
@@ -288,7 +315,7 @@ def test_generated_config_app_lists_registered_storages_as_json(
                 "root_exists": True,
             },
             {
-                "default": False,
+                "active": False,
                 "local_env": str(
                     beta_root.resolve() / ".env.apprc_example_app"
                 ),
@@ -301,7 +328,7 @@ def test_generated_config_app_lists_registered_storages_as_json(
     }
 
 
-def test_config_doctor_guidance_uses_host_default_storage_name(
+def test_config_doctor_guidance_describes_active_storage_selector(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:

@@ -143,12 +143,12 @@ def set_apprc_example_app_bootstrap(
         / "apprc_example_app"
         / "apprc_example_app.apprc.toml"
     )
-    default_storage_root = (
+    active_storage_root = (
         storage_root
         if storage_root is not None
         else tmp_path / "default-storage"
     )
-    default_storage_root.mkdir(parents=True, exist_ok=True)
+    active_storage_root.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_APPRC_TOML",
@@ -156,9 +156,9 @@ def set_apprc_example_app_bootstrap(
     )
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
-        str(default_storage_root.resolve()),
+        str(active_storage_root.resolve()),
     )
-    return registry_path, default_storage_root
+    return registry_path, active_storage_root
 
 
 def apprc_example_app_state(

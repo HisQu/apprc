@@ -65,14 +65,6 @@ class ArchiveOptionsResult:
     delete_source: bool
 
 
-@dataclass(frozen=True, slots=True)
-class DefaultPathResult:
-    """Result returned when no live setup/editor default storage remains."""
-
-    action: Literal["create", "leave"]
-    path: Path | None = None
-
-
 class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
     """Modal editor for one storage-local value."""
 
@@ -526,99 +518,6 @@ class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
 
     def action_cancel(self) -> None:
         """Dismiss without archiving."""
-        self.dismiss(None)
-
-
-class DefaultPathScreen(ModalScreen[DefaultPathResult | None]):
-    """Prompt for a new default path when no live storages remain."""
-
-    CSS = (
-        """
-    DefaultPathScreen {
-        align: center middle;
-    }
-
-    #default-path-dialog {
-        width: 82;
-    }
-
-    #default-path-message {
-        margin: 1 0;
-    }
-
-    #default-path-button-row {
-        height: 3;
-        margin-top: 1;
-    }
-    """
-        + MODAL_DIALOG_CSS
-        + PATH_INPUT_CSS
-    )
-
-    BINDINGS = [("escape", "cancel", "Cancel")]
-
-    def __init__(
-        self,
-        *,
-        default_path: Path,
-        display_name: str,
-    ) -> None:
-        """Store the suggested default data directory."""
-        super().__init__()
-        self.default_path = default_path
-        self.display_name = display_name
-
-    def compose(self) -> ComposeResult:
-        """Compose the no-live-default dialog."""
-        with Vertical(id="default-path-dialog", classes=MODAL_DIALOG_CLASS):
-            yield Static(
-                Text("No setup/editor default storage remains", style="bold")
-            )
-            yield Static(
-                "Choose a replacement setup/editor default storage, or leave "
-                f"{self.display_name} in an uninitialized state like a "
-                "fresh install.",
-                id="default-path-message",
-            )
-            yield Input(
-                value=str(self.default_path),
-                placeholder="Setup/editor default storage directory",
-                suggester=PathSuggester(case_sensitive=True),
-                id="default-path-input",
-                classes=PATH_INPUT_CLASS,
-            )
-            with Horizontal(id="default-path-button-row"):
-                yield Button(
-                    "Create default", variant="primary", id="default-create"
-                )
-                yield Button("Leave no default", id="default-leave")
-                yield Button("Cancel", id="default-cancel")
-
-    def on_mount(self) -> None:
-        """Focus the default path input."""
-        self.query_one("#default-path-input", Input).focus()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle default replacement buttons."""
-        if event.button.id == "default-create":
-            path_text = self.query_one(
-                "#default-path-input", Input
-            ).value.strip()
-            if not path_text:
-                self.notify("Enter a default path first.", severity="warning")
-                return
-            self.dismiss(
-                DefaultPathResult(action="create", path=Path(path_text))
-            )
-            return
-        if event.button.id == "default-leave":
-            self.dismiss(DefaultPathResult(action="leave"))
-            return
-        if event.button.id == "default-cancel":
-            self.action_cancel()
-
-    def action_cancel(self) -> None:
-        """Dismiss without changing the default."""
         self.dismiss(None)
 
 

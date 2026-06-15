@@ -29,23 +29,19 @@ from apprc.config.local_env import (
     LocalEnvUpdate,
     clear_local_env_value,
     local_env_path,
-    read_local_env,
     set_local_env_value,
-    write_local_env,
 )
 from apprc.config.schema import ConfigOwner
 from apprc.config.apprc_toml import default_apprc_toml_filename
 from apprc.config.storage.registry import (
     StorageRegistry,
-    default_storage_data_root,
-    default_storage_name,
     load_storage_registry,
     prune_missing_archived_storages,
     record_archived_storage,
     register_storage,
     remove_archived_storage,
-    replace_default_storage,
-    set_default_storage,
+    suggested_storage_name,
+    suggested_storage_root,
     unregister_storage,
 )
 
@@ -211,57 +207,25 @@ class AppConfigKit:
         *,
         name: str,
         root: Path,
-        make_default: bool,
         path: Path | None = None,
     ) -> StorageRegistry:
         """Add or update one storage entry for this application."""
-        registry = register_storage(
+        return register_storage(
             name=name,
             root=root,
-            make_default=make_default,
             path=self.apprc_toml_path() if path is None else path,
             local_env_filename=self.spec.local_env_filename,
-        )
-        self._write_storage_root_local_value(registry.selected(name).root)
-        return registry
-
-    def set_default_storage(
-        self,
-        *,
-        name: str,
-        path: Path | None = None,
-    ) -> StorageRegistry:
-        """Set an existing storage as the default for this application."""
-        registry = set_default_storage(
-            name=name,
-            path=self.apprc_toml_path() if path is None else path,
-        )
-        self._write_storage_root_local_value(registry.selected(name).root)
-        return registry
-
-    def replace_default_storage(
-        self,
-        *,
-        name: str | None,
-        path: Path | None = None,
-    ) -> StorageRegistry:
-        """Set or clear this application's default storage."""
-        return replace_default_storage(
-            name=name,
-            path=self.apprc_toml_path() if path is None else path,
         )
 
     def unregister_storage(
         self,
         *,
         name: str,
-        replacement_default: str | None = None,
         path: Path | None = None,
     ) -> StorageRegistry:
         """Remove one live storage from this application's registry."""
         return unregister_storage(
             name=name,
-            replacement_default=replacement_default,
             path=self.apprc_toml_path() if path is None else path,
         )
 
@@ -303,26 +267,13 @@ class AppConfigKit:
             path=self.apprc_toml_path() if path is None else path
         )
 
-    def default_storage_data_root(self) -> Path:
-        """Return this app's conventional default storage directory."""
-        return default_storage_data_root(self.spec.app_name)
+    def suggested_storage_root(self) -> Path:
+        """Return this app's conventional active storage directory."""
+        return suggested_storage_root(self.spec.app_name)
 
-    def default_storage_name(self) -> str:
+    def suggested_storage_name(self) -> str:
         """Return this app's conventional first storage selector."""
-        return default_storage_name(self.spec.app_name)
-
-    def _write_storage_root_local_value(self, storage_root: Path) -> Path:
-        """Persist the registry-managed storage root in local dotenv form.
-
-        :param storage_root: Resolved root of the registered storage.
-        :return: Path to the storage-local dotenv file.
-        """
-        path = self.local_env_path(storage_root)
-        values = read_local_env(path)
-        values[self.spec.storage_env_key] = str(
-            Path(storage_root).expanduser().resolve()
-        )
-        return write_local_env(path, values, owners=self.spec.owners)
+        return suggested_storage_name(self.spec.app_name)
 
     def local_env_path(self, storage_root: Path) -> Path:
         """Return this application's storage-local dotenv path."""
@@ -409,6 +360,7 @@ class AppConfigKit:
         *,
         registry: StorageRegistry,
         initial_storage: str | None = None,
+        active_storage_root: Path | None = None,
     ) -> ConfigEditorApp:
         """Build the generic Textual config editor for this application."""
         from apprc.config.tui import ConfigEditorApp
@@ -417,6 +369,7 @@ class AppConfigKit:
             kit=self,
             registry=registry,
             initial_storage=initial_storage,
+            active_storage_root=active_storage_root,
         )
 
     def setup_app(self) -> ConfigSetupApp:

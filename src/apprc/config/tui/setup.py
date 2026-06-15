@@ -30,7 +30,6 @@ from apprc.config.tui.styles import (
     lines_text,
     path_markup,
     path_text,
-    storage_name_text,
     style_literals,
 )
 
@@ -39,7 +38,7 @@ if TYPE_CHECKING:
 
 
 class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
-    """Textual wizard for registry and default-storage setup."""
+    """Textual wizard for AppRC setup and optional storage registration."""
 
     CSS = """
     #setup-pane {
@@ -135,7 +134,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         if existing_path is None:
             registry = await self._choose_new_registry()
             if registry is not None:
-                await self._ensure_default_storage(registry)
+                await self._finish_storage_setup(registry)
             return
         try:
             registry = setup_flow.load_registry(self.kit, existing_path)
@@ -196,7 +195,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 setup_flow.require_apprc_toml_path_available(
                     registry.path,
                 )
-                await self._ensure_default_storage(registry)
+                await self._finish_storage_setup(registry)
                 return
             if action == setup_flow.ExistingSetupAction.RESET:
                 confirmed = await self.push_screen_wait(
@@ -217,14 +216,14 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 setup_flow.remove_apprc_toml_config_state(registry.path)
                 fresh = await self._choose_new_registry()
                 if fresh is not None:
-                    await self._ensure_default_storage(fresh)
+                    await self._finish_storage_setup(fresh)
                 return
             moved = await self._move_existing_apprc_toml(registry)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
         if moved is not None:
-            await self._ensure_default_storage(moved)
+            await self._finish_storage_setup(moved)
 
     async def _choose_new_registry(self) -> StorageRegistry | None:
         """Prompt for the AppRC directory and load the computed TOML file.
@@ -340,91 +339,125 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             return None
         return active_path.parent
 
-    async def _ensure_default_storage(
+    async def _finish_storage_setup(
         self,
         registry: StorageRegistry,
     ) -> None:
-        """Ensure the chosen registry has a live setup/editor default storage.
+        """Choose the active root and optional multi-storage registration.
 
         :param registry: Registry selected by setup.
         """
         self.registry = registry
-        current_default = registry.default()
-        if current_default is not None and current_default.root.is_dir():
-            action = await self.push_screen_wait(
-                ConfirmScreen(
-                    title="Setup/editor default storage",
-                    message=lines_text(
-                        "Current setup/editor default storage:",
-                        Text.assemble(
-                            storage_name_text(current_default.name),
-                            " -> ",
-                            path_text(current_default.root),
-                        ),
-                        "",
-                        "Keep this setup/editor default?",
-                    ),
-                    actions=(
-                        ("keep", "Keep default", "primary"),
-                        ("replace", "Choose new default", "default"),
-                    ),
-                )
-            )
-            if action == "keep":
-                await self._finish_setup(registry)
-                return
-            if action != "replace":
-                return
-
-        name_result = await self.push_screen_wait(
-            StorageNameScreen(
-                default_name=registry.default_storage
-                or self.kit.default_storage_name(),
-                message="Choose the registry name used by --storage.",
-            )
-        )
-        if name_result is None:
-            return
-        root_result = await self.push_screen_wait(
-            PathInputScreen(
-                title="Setup/editor default storage root",
-                message=self._style_setup_text(
-                    setup_text.default_storage_step_text(self.kit),
-                ),
-                placeholder="Storage root directory",
-                value=str(self.kit.default_storage_data_root()),
-            )
-        )
+        root_result = await self._choose_active_storage_root()
         if root_result is None:
             return
+        multi_storage = await self._choose_multi_storage()
+        if multi_storage is None:
+            return
+        storage_name: str | None = None
+        if multi_storage:
+            name_result = await self._choose_storage_name(registry)
+            if name_result is None:
+                return
+            storage_name = name_result
         guarded_root = await self._guard_storage_root(
-            root_result.path,
-            storage_name=name_result.name,
+            root_result,
+            storage_name=storage_name,
         )
         if guarded_root is None:
             return
         try:
-            updated = self.kit.register_storage(
-                name=name_result.name,
-                root=guarded_root,
-                make_default=True,
-                path=registry.path,
+            result = setup_flow.ensure_setup_storage(
+                self.kit,
+                registry,
+                storage_root=guarded_root,
+                storage_name=storage_name,
+                multi_storage=multi_storage,
+                allow_non_empty_storage=True,
             )
-        except ValueError as exc:
+        except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
-        await self._finish_setup(updated)
+        await self._finish_setup(result)
+
+    async def _choose_active_storage_root(self) -> Path | None:
+        """Prompt for the active runtime storage root.
+
+        :return: User-selected root, or ``None`` when canceled.
+        """
+        try:
+            default_root = setup_flow.active_storage_root_from_env(self.kit)
+        except setup_flow.ConfigSetupError as exc:
+            self.notify(str(exc), severity="error", markup=False)
+            default_root = None
+        if default_root is None:
+            default_root = self.kit.suggested_storage_root()
+        root_result = await self.push_screen_wait(
+            PathInputScreen(
+                title="Active storage root",
+                message=self._style_setup_text(
+                    setup_text.storage_root_step_text(self.kit),
+                    paths=(default_root,),
+                ),
+                placeholder="Storage root directory",
+                value=str(default_root),
+            )
+        )
+        return None if root_result is None else root_result.path
+
+    async def _choose_multi_storage(self) -> bool | None:
+        """Ask whether the active root should be registered by name.
+
+        :return: Whether multi-storage should be enabled, or ``None``.
+        """
+        action = await self.push_screen_wait(
+            ConfirmScreen(
+                title="Multi-storage management",
+                message=(
+                    "Register the active storage under a short name for "
+                    "listing, switching, archiving, and restoring?"
+                ),
+                actions=(
+                    ("single", "Active path only", "primary"),
+                    ("multi", "Enable multi-storage", "default"),
+                ),
+            )
+        )
+        if action == "single":
+            return False
+        if action == "multi":
+            return True
+        return None
+
+    async def _choose_storage_name(
+        self,
+        registry: StorageRegistry,
+    ) -> str | None:
+        """Prompt for the multi-storage registry selector.
+
+        :param registry: Registry selected by setup.
+        :return: Storage name, or ``None`` when canceled.
+        """
+        name_result = await self.push_screen_wait(
+            StorageNameScreen(
+                default_name=self.kit.suggested_storage_name(),
+                message="Choose the registry name used by --storage.",
+            )
+        )
+        if name_result is None:
+            return None
+        return name_result.name
 
     async def _guard_storage_root(
         self,
         storage_root: Path,
         *,
-        storage_name: str,
+        storage_name: str | None,
     ) -> Path | None:
         """Validate and confirm a storage root before registry writes.
 
         :param storage_root: User-entered storage path.
-        :param storage_name: Registry selector that will point at the path.
+        :param storage_name: Optional selector that will point at the path.
         :return: Safe path, or ``None`` when canceled.
         """
         try:
@@ -432,7 +465,6 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 self.kit,
                 storage_root,
                 storage_name=storage_name,
-                make_default=True,
                 allow_non_empty_storage=True,
             )
         except setup_flow.ConfigSetupError as exc:
@@ -453,22 +485,35 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 return None
         return root
 
-    async def _finish_setup(self, registry: StorageRegistry) -> None:
+    async def _finish_setup(
+        self,
+        result: setup_flow.ConfigSetupResult,
+    ) -> None:
         """Render setup diagnostics and final next steps.
 
-        :param registry: Registry selected by setup.
+        :param result: Setup files and active storage selected by setup.
         """
-        self.registry = registry
+        self.registry = result.registry
         self.result = setup_flow.ConfigSetupResult(
-            registry=registry,
+            registry=result.registry,
+            active_storage_root=result.active_storage_root,
+            registered_storage_name=result.registered_storage_name,
             existing_action=self.existing_action,
         )
-        body = setup_text.setup_finish_text(self.kit, registry)
+        body = setup_text.setup_finish_text(
+            self.kit,
+            result.registry,
+            result.active_storage_root,
+        )
         await self._set_screen(
             title="Done",
             body=self._style_setup_text(
                 body,
-                paths=(registry.path, registry.path.expanduser().resolve()),
+                paths=(
+                    result.registry.path,
+                    result.registry.path.expanduser().resolve(),
+                    result.active_storage_root,
+                ),
             ),
             buttons=(("finish-close", "Close", "success"),),
         )
@@ -560,12 +605,12 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self,
         root: Path,
         *,
-        storage_name: str,
+        storage_name: str | None,
     ) -> Text:
         """Return the non-empty storage-root warning with paths styled.
 
         :param root: Existing storage root selected by setup.
-        :param storage_name: Registry selector that will point at ``root``.
+        :param storage_name: Optional selector that will point at ``root``.
         :return: Rich setup warning.
         """
         registry_path = (
@@ -575,7 +620,6 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             self.kit,
             root,
             storage_name=storage_name,
-            make_default=True,
             registry_path=registry_path,
         )
         active_registry_path = registry_path or self.kit.apprc_toml_path()

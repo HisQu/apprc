@@ -76,5 +76,5 @@ def test_config_request_skips_bootstrap_for_setup_only_commands() -> None:
         is True
     )
     assert config_request_skips_bootstrap(["doctor"]) is True
-    assert config_request_skips_bootstrap(["set-default", "alpha"]) is True
+    assert config_request_skips_bootstrap(["init", "/tmp/storage"]) is True
     assert config_request_skips_bootstrap(["show"]) is False

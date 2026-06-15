@@ -6,6 +6,7 @@ import pytest
 from rich.text import Text
 from textual.widgets import Button, Input, Static
 
+from apprc.config.setup.flow import ConfigSetupResult
 from apprc.config.tui.primitives import PathSuggester
 from apprc.config.tui.styles import ENV_KEY_STYLE, PATH_INPUT_CLASS, PATH_STYLE
 from tests.support_config import (
@@ -33,7 +34,8 @@ async def test_config_setup_wizard_launches_with_host_overview(
 
     assert "Example App config setup" in str(title)
     assert "Example App uses one small AppRC TOML" in str(body)
-    assert "setup/editor default storage" in str(body)
+    assert "optional multi-storage management" in str(body)
+    assert "active storage selector" in str(body)
     assert "Example App directory (AppRC)" in str(body)
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in str(body)
     assert "AppRC TOML" in str(body)
@@ -115,7 +117,6 @@ async def test_config_setup_wizard_shows_existing_registry_actions(
     kit.register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        make_default=True,
     )
     setup_app = kit.setup_app()
 
@@ -131,7 +132,7 @@ async def test_config_setup_wizard_shows_existing_registry_actions(
         move_disabled = move_button.disabled
 
     assert "The current AppRC TOML has these storages registered:" in str(body)
-    assert "alpha [setup/editor default]" in str(body)
+    assert "1. alpha:" in str(body)
     assert keep_disabled is False
     assert reset_disabled is False
     assert move_disabled is False
@@ -152,12 +153,17 @@ async def test_config_setup_wizard_finish_shows_doctor_and_next_steps(
     registry = kit.register_storage(
         name="alpha",
         root=storage_root,
-        make_default=True,
     )
     setup_app = kit.setup_app()
 
     async with setup_app.run_test():
-        await setup_app._finish_setup(registry)
+        await setup_app._finish_setup(
+            ConfigSetupResult(
+                registry=registry,
+                active_storage_root=storage_root.resolve(),
+                registered_storage_name="alpha",
+            )
+        )
         title = setup_app.query_one("#setup-title", Static).content
         body = setup_app.query_one("#setup-body", Static).content
 
@@ -174,8 +180,13 @@ async def test_config_setup_wizard_finish_shows_doctor_and_next_steps(
     assert "apprc_example_app config show" in str(body)
     assert "apprc_example_app config doctor" in str(body)
     assert "export APPRC_EXAMPLE_APP_APPRC_TOML" in str(body)
-    assert 'export APPRC_EXAMPLE_APP_STORAGE="alpha"' in str(body)
-    assert 'APPRC_EXAMPLE_APP_STORAGE="alpha"' in str(body)
+    assert (
+        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
+        in str(body)
+    )
+    assert f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"' in (
+        str(body)
+    )
     assert isinstance(body, Text)
     assert text_has_span(body, "Shell:", "bold")
     assert text_has_span(body, "Or Dotenv:", "bold")

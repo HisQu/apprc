@@ -46,7 +46,6 @@ def test_kit_builds_generic_editor_with_spec_defaults(
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
 
     editor = kit.editor_app(registry=registry)
@@ -72,16 +71,50 @@ async def test_editor_launches_with_empty_registry_and_new_storage_button(
         title = editor.query_one("#storage-title", Static).content
         table = editor.query_one("#field-table", DataTable)
         new_button = editor.query_one("#storage-new", Button)
-        default_button = editor.query_one("#storage-set-default", Button)
+        register_button = editor.query_one(
+            "#storage-register-active",
+            Button,
+        )
 
     assert "No storages registered" in str(title)
     assert table.disabled is True
     assert new_button.disabled is False
-    assert default_button.disabled is True
+    assert register_button.disabled is True
 
 
 @pytest.mark.asyncio
-async def test_editor_launches_with_missing_default_storage(
+async def test_editor_launches_with_active_path_without_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "active"
+    editor = kit.editor_app(
+        registry=kit.load_registry(),
+        active_storage_root=storage_root,
+    )
+
+    async with editor.run_test():
+        title = editor.query_one("#storage-title", Static).content
+        table = editor.query_one("#field-table", DataTable)
+        register_button = editor.query_one(
+            "#storage-register-active",
+            Button,
+        )
+        rows = [table.get_row_at(i) for i in range(table.row_count)]
+
+    row_keys = {str(row[2]) for row in rows}
+    assert "Active storage" in str(title)
+    assert str(storage_root.resolve()) in str(title)
+    assert table.disabled is False
+    assert register_button.disabled is False
+    assert "APPRC_EXAMPLE_APP_STORAGE" not in row_keys
+    assert (storage_root / ".env.apprc_example_app").is_file()
+
+
+@pytest.mark.asyncio
+async def test_editor_launches_with_missing_registered_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -91,7 +124,6 @@ async def test_editor_launches_with_missing_default_storage(
     registry = kit.register_storage(
         name="alpha",
         root=storage_root,
-        make_default=True,
     )
     shutil.rmtree(storage_root)
     editor = kit.editor_app(registry=registry)
@@ -99,7 +131,10 @@ async def test_editor_launches_with_missing_default_storage(
     async with editor.run_test():
         title = editor.query_one("#storage-title", Static).content
         table = editor.query_one("#field-table", DataTable)
-        default_button = editor.query_one("#storage-set-default", Button)
+        register_button = editor.query_one(
+            "#storage-register-active",
+            Button,
+        )
         delete_button = editor.query_one("#storage-delete", Button)
         archive_button = editor.query_one("#storage-archive", Button)
 
@@ -109,7 +144,7 @@ async def test_editor_launches_with_missing_default_storage(
     assert isinstance(title, Text)
     assert text_has_span(title, str(storage_root.resolve()), PATH_STYLE)
     assert table.disabled is True
-    assert default_button.disabled is True
+    assert register_button.disabled is True
     assert delete_button.disabled is False
     assert archive_button.disabled is True
     assert not storage_root.exists()
@@ -139,13 +174,12 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
         await worker.wait()
 
     registry = kit.load_registry()
-    assert registry.default_storage == "alpha"
     assert registry.selected("alpha").root == storage_root.resolve()
     assert (storage_root / ".env.apprc_example_app").is_file()
 
 
 @pytest.mark.asyncio
-async def test_editor_unregisters_missing_non_default_storage(
+async def test_editor_unregisters_missing_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -153,11 +187,10 @@ async def test_editor_unregisters_missing_non_default_storage(
     kit = build_apprc_example_app_kit()
     beta_root = tmp_path / "beta"
     alpha_root = tmp_path / "alpha"
-    kit.register_storage(name="beta", root=beta_root, make_default=True)
+    kit.register_storage(name="beta", root=beta_root)
     registry = kit.register_storage(
         name="alpha",
         root=alpha_root,
-        make_default=False,
     )
     shutil.rmtree(alpha_root)
     editor = kit.editor_app(registry=registry, initial_storage="alpha")
@@ -174,32 +207,26 @@ async def test_editor_unregisters_missing_non_default_storage(
         await worker.wait()
 
     registry = kit.load_registry()
-    assert registry.default_storage == "beta"
     assert sorted(registry.storages) == ["beta"]
     assert registry.selected("beta").root == beta_root.resolve()
     assert not alpha_root.exists()
 
 
 @pytest.mark.asyncio
-async def test_editor_set_default_and_unregister_non_default_storage(
+async def test_editor_unregisters_live_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    kit.register_storage(
-        name="alpha", root=tmp_path / "alpha", make_default=True
-    )
+    kit.register_storage(name="alpha", root=tmp_path / "alpha")
     registry = kit.register_storage(
         name="beta",
         root=tmp_path / "beta",
-        make_default=False,
     )
     editor = kit.editor_app(registry=registry)
 
     async with editor.run_test():
-        editor._select_storage("beta")
-        await editor.storage_workflows.set_current_as_default()
         editor._select_storage("alpha")
         removed = await editor.storage_workflows.remove_live_storage(
             "alpha",
@@ -208,13 +235,12 @@ async def test_editor_set_default_and_unregister_non_default_storage(
 
     registry = kit.load_registry()
     assert removed is True
-    assert registry.default_storage == "beta"
     assert sorted(registry.storages) == ["beta"]
     assert (tmp_path / "alpha").is_dir()
 
 
 @pytest.mark.asyncio
-async def test_editor_default_replacement_skips_missing_storages(
+async def test_editor_unregisters_live_storage_without_replacement_prompt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -223,80 +249,57 @@ async def test_editor_default_replacement_skips_missing_storages(
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
     gamma_root = tmp_path / "gamma"
-    kit.register_storage(name="alpha", root=alpha_root, make_default=True)
-    kit.register_storage(name="beta", root=beta_root, make_default=False)
+    kit.register_storage(name="alpha", root=alpha_root)
+    kit.register_storage(name="beta", root=beta_root)
     registry = kit.register_storage(
         name="gamma",
         root=gamma_root,
-        make_default=False,
     )
     shutil.rmtree(beta_root)
     editor = kit.editor_app(registry=registry)
 
-    async with editor.run_test() as pilot:
-        worker = editor.run_worker(
-            editor.storage_workflows.remove_live_storage(
-                "alpha",
-                delete_content=False,
-            )
+    async with editor.run_test():
+        removed = await editor.storage_workflows.remove_live_storage(
+            "alpha",
+            delete_content=False,
         )
-        await pilot.pause()
-        assert list(editor.screen.query("#default-beta")) == []
-        editor.screen.query_one("#default-gamma", Button).press()
-        await pilot.pause()
-        removed = await worker.wait()
 
     registry = kit.load_registry()
     assert removed is True
-    assert registry.default_storage == "gamma"
     assert sorted(registry.storages) == ["beta", "gamma"]
     assert registry.selected("gamma").root == gamma_root.resolve()
 
 
 @pytest.mark.asyncio
-async def test_editor_recreates_last_default_with_host_storage_name(
+async def test_editor_registers_active_storage_from_button_flow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
-        name="alpha",
-        root=tmp_path / "alpha",
-        make_default=True,
+    storage_root = tmp_path / "active"
+    storage_root.mkdir()
+    editor = kit.editor_app(
+        registry=kit.load_registry(),
+        active_storage_root=storage_root,
     )
-    editor = kit.editor_app(registry=registry)
 
     async with editor.run_test() as pilot:
         worker = editor.run_worker(
-            editor.storage_workflows.remove_live_storage(
-                "alpha",
-                delete_content=False,
-            )
+            editor.storage_workflows.register_active_storage_flow()
         )
         await pilot.pause()
-        message = editor.screen.query_one(
-            "#default-path-message", Static
-        ).content
-        path_input = editor.screen.query_one("#default-path-input", Input)
-        assert "Example App" in str(message)
-        assert "AppRC" not in str(message)
-        assert path_input.has_class(PATH_INPUT_CLASS)
-        editor.screen.query_one("#default-create", Button).press()
+        editor.screen.query_one("#proceed", Button).press()
         await pilot.pause()
-        removed = await worker.wait()
+        name_input = editor.screen.query_one("#name-input", Input)
+        assert name_input.value == "active"
+        editor.screen.query_one("#name-continue", Button).press()
+        await pilot.pause()
+        await worker.wait()
 
-    new_storage_root = (
-        tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
-    )
     registry = kit.load_registry()
-    assert removed is True
-    assert registry.default_storage == "apprc_example_app_stor-1"
-    assert sorted(registry.storages) == ["apprc_example_app_stor-1"]
-    assert registry.selected("apprc_example_app_stor-1").root == (
-        new_storage_root.resolve()
-    )
+    assert sorted(registry.storages) == ["active"]
+    assert registry.selected("active").root == storage_root.resolve()
 
 
 @pytest.mark.asyncio
@@ -332,12 +335,14 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_PROFILE", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_RETRY_COUNT", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_ACCESS_TOKEN", raising=False)
     monkeypatch.setenv("APPRC_EXAMPLE_APP_MODE", "MANUAL")
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     local_env = tmp_path / "storage" / ".env.apprc_example_app"
     local_env.write_text(
@@ -367,12 +372,9 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
         "Default",
         "Explanation",
     ]
-    assert rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][3] == "unset"
-    assert rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][4] == str(
-        (tmp_path / "storage").resolve()
-    )
+    assert "APPRC_EXAMPLE_APP_STORAGE" not in rows_by_key
     assert rows_by_key["APPRC_EXAMPLE_APP_PROFILE"][:6] == [
-        "2",
+        "1",
         "App",
         "APPRC_EXAMPLE_APP_PROFILE",
         "unset",
@@ -399,11 +401,9 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
         rich_rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"][5].style
         == NUMBER_STYLE
     )
-    assert rich_rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][4].style == PATH_STYLE
     assert (
         rich_rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"][5].style == PATH_STYLE
     )
-    assert rich_rows_by_key["APPRC_EXAMPLE_APP_STORAGE"][6].style == "dim"
 
 
 @pytest.mark.asyncio
@@ -416,7 +416,6 @@ async def test_editor_table_required_missing_keeps_red_fill(
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
 
@@ -442,7 +441,6 @@ async def test_editor_modal_saves_local_value(
     registry = kit.register_storage(
         name="alpha",
         root=storage_root,
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
 
@@ -474,7 +472,6 @@ async def test_editor_modal_copies_source_values_without_saving(
     registry = kit.register_storage(
         name="alpha",
         root=storage_root,
-        make_default=True,
     )
     local_env = storage_root / ".env.apprc_example_app"
     local_env.write_text(
@@ -564,7 +561,6 @@ async def test_editor_modal_keeps_sources_visible_at_compact_height(
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
 
@@ -620,7 +616,6 @@ async def test_editor_modal_details_scroll_when_height_is_compact(
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
 
@@ -653,7 +648,6 @@ async def test_editor_modal_enables_local_copy_when_user_types(
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
 
@@ -689,7 +683,6 @@ async def test_editor_modal_redacts_secret_sources_but_copies_raw_value(
     registry = kit.register_storage(
         name="alpha",
         root=storage_root,
-        make_default=True,
     )
     (storage_root / ".env.apprc_example_app").write_text(
         'APPRC_EXAMPLE_APP_ACCESS_TOKEN="super-secret"\n',
@@ -736,11 +729,11 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
     tmp_path: Path,
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_MODE", raising=False)
     kit = build_apprc_example_app_kit()
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
 
@@ -794,7 +787,6 @@ async def test_editor_modal_styles_generic_possible_values(
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
 
@@ -822,7 +814,6 @@ async def test_editor_modal_marks_path_inputs(
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
 
@@ -852,7 +843,6 @@ async def test_archive_options_marks_path_input_and_source_path(
     registry = kit.register_storage(
         name="alpha",
         root=tmp_path / "storage",
-        make_default=True,
     )
     editor = kit.editor_app(registry=registry)
     source_root = registry.selected("alpha").root

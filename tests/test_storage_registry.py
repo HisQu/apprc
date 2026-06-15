@@ -12,16 +12,14 @@ from apprc.config.apprc_toml import (
 )
 from apprc.config.storage.registry import (
     app_data_dir,
-    default_storage_data_root,
-    default_storage_name,
     load_storage_registry,
     ordered_storage_names,
     prune_missing_archived_storages,
     record_archived_storage,
     register_storage,
     remove_archived_storage,
-    replace_default_storage,
-    set_default_storage,
+    suggested_storage_name,
+    suggested_storage_root,
     unregister_storage,
 )
 from apprc.config.paths import (
@@ -39,16 +37,16 @@ def test_app_data_dir_uses_xdg_data_home(
 
     assert app_data_dir("demo") == tmp_path / "data" / "demo"
     assert (
-        default_storage_data_root("demo")
+        suggested_storage_root("demo")
         == tmp_path / "data" / "demo" / "demo_stor-1"
     )
 
 
-def test_default_storage_name_uses_valid_host_specific_selector() -> None:
-    assert default_storage_name("demo") == "demo_stor-1"
-    assert default_storage_name("my-app.rc") == "my-app_rc_stor-1"
-    assert default_storage_name("") == "apprc_stor-1"
-    assert default_storage_name("???") == "apprc_stor-1"
+def test_suggested_storage_name_uses_valid_host_specific_selector() -> None:
+    assert suggested_storage_name("demo") == "demo_stor-1"
+    assert suggested_storage_name("my-app.rc") == "my-app_rc_stor-1"
+    assert suggested_storage_name("") == "apprc_stor-1"
+    assert suggested_storage_name("???") == "apprc_stor-1"
 
 
 def test_default_apprc_toml_filename_uses_host_app_name() -> None:
@@ -96,23 +94,18 @@ def test_register_storage_writes_sorted_toml_and_local_env(
     register_storage(
         name="zeta",
         root=second_root,
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
-    registry = register_storage(
+    register_storage(
         name="alpha",
         root=first_root,
-        make_default=False,
         path=registry_path,
         local_env_filename=".env.demo",
     )
 
-    assert registry.default_storage == "zeta"
     assert (first_root / ".env.demo").is_file()
     assert registry_path.read_text(encoding="utf-8") == (
-        'default_storage = "zeta"\n'
-        "\n"
         "[storages.alpha]\n"
         f'root = "{first_root.resolve()}"\n'
         "\n"
@@ -121,22 +114,20 @@ def test_register_storage_writes_sorted_toml_and_local_env(
     )
 
 
-def test_ordered_storage_names_places_default_first(tmp_path: Path) -> None:
+def test_ordered_storage_names_are_sorted(tmp_path: Path) -> None:
     registry_path = tmp_path / "config" / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        make_default=False,
         path=registry_path,
     )
     registry = register_storage(
         name="zeta",
         root=tmp_path / "zeta",
-        make_default=True,
         path=registry_path,
     )
 
-    assert ordered_storage_names(registry) == ["zeta", "alpha"]
+    assert ordered_storage_names(registry) == ["alpha", "zeta"]
 
 
 def test_load_storage_registry_keeps_old_toml_compatible(
@@ -153,12 +144,11 @@ def test_load_storage_registry_keeps_old_toml_compatible(
 
     registry = load_storage_registry(registry_path)
 
-    assert registry.default_storage == "alpha"
     assert sorted(registry.storages) == ["alpha"]
     assert registry.archived_storages == {}
 
 
-def test_load_storage_registry_keeps_old_default_name_compatible(
+def test_load_storage_registry_ignores_stale_default_storage_key(
     tmp_path: Path,
 ) -> None:
     registry_path = tmp_path / "demo.apprc.toml"
@@ -172,7 +162,6 @@ def test_load_storage_registry_keeps_old_default_name_compatible(
 
     registry = load_storage_registry(registry_path)
 
-    assert registry.default_storage == "default"
     assert sorted(registry.storages) == ["default"]
 
 
@@ -183,7 +172,6 @@ def test_archived_storage_records_round_trip_sorted_toml(
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -230,44 +218,40 @@ def test_remove_and_prune_archived_storage_records(tmp_path: Path) -> None:
     assert "beta" not in load_storage_registry(registry_path).archived_storages
 
 
-def test_unregister_storage_repairs_or_clears_default(tmp_path: Path) -> None:
+def test_unregister_storage_removes_rows_without_default_repair(
+    tmp_path: Path,
+) -> None:
     registry_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        make_default=True,
         path=registry_path,
     )
     register_storage(
         name="beta",
         root=tmp_path / "beta",
-        make_default=False,
         path=registry_path,
     )
 
     registry = unregister_storage(
         name="alpha",
-        replacement_default="beta",
         path=registry_path,
     )
     registry = unregister_storage(name="beta", path=registry_path)
 
-    assert registry.default_storage is None
     assert registry.storages == {}
 
 
-def test_replace_default_storage_can_clear_default(tmp_path: Path) -> None:
+def test_unregister_storage_requires_existing_name(tmp_path: Path) -> None:
     registry_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        make_default=True,
         path=registry_path,
     )
 
-    registry = replace_default_storage(name=None, path=registry_path)
-
-    assert registry.default_storage is None
+    with pytest.raises(ValueError, match="Unknown storage 'beta'"):
+        unregister_storage(name="beta", path=registry_path)
 
 
 def test_register_storage_normalizes_windows_root(
@@ -285,7 +269,6 @@ def test_register_storage_normalizes_windows_root(
     registry = register_storage(
         name="demo",
         root=Path(r"D:\Training\demo-project"),
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -330,27 +313,15 @@ def test_normalize_storage_root_path_rejects_damaged_windows_path() -> None:
     )
 
 
-def test_set_default_storage_requires_existing_name(tmp_path: Path) -> None:
-    registry_path = tmp_path / "demo.apprc.toml"
-    register_storage(
-        name="alpha",
-        root=tmp_path / "storage",
-        make_default=True,
-        path=registry_path,
-    )
-
-    with pytest.raises(ValueError, match="Unknown storage 'beta'"):
-        set_default_storage(name="beta", path=registry_path)
-
-
-def test_load_storage_registry_rejects_invalid_default(
+def test_load_storage_registry_ignores_missing_default_storage_name(
     tmp_path: Path,
 ) -> None:
     registry_path = tmp_path / "demo.apprc.toml"
     registry_path.write_text('default_storage = "missing"\n', encoding="utf-8")
 
-    with pytest.raises(ValueError, match="default_storage 'missing'"):
-        load_storage_registry(registry_path)
+    registry = load_storage_registry(registry_path)
+
+    assert registry.storages == {}
 
 
 def test_load_storage_registry_rejects_invalid_storage_tables(
@@ -399,6 +370,5 @@ def test_register_storage_rejects_names_that_cannot_be_toml_keys(
             register_storage(
                 name=name,
                 root=tmp_path / "storage",
-                make_default=True,
                 path=tmp_path / "demo.apprc.toml",
             )

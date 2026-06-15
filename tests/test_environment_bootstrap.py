@@ -111,7 +111,6 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
     register_storage(
         name="alpha",
         root=storage_root,
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -154,7 +153,6 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
     register_storage(
         name="alpha",
         root=storage_root,
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -191,7 +189,6 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
     register_storage(
         name="alpha",
         root=storage_root,
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -282,14 +279,12 @@ def test_bootstrap_env_storage_name_selects_active_root(
     register_storage(
         name="alpha",
         root=alpha_root,
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
     register_storage(
         name="beta",
         root=beta_root,
-        make_default=False,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -325,14 +320,12 @@ def test_bootstrap_env_storage_name_wins_over_env_selector(
     register_storage(
         name="alpha",
         root=alpha_root,
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
     register_storage(
         name="beta",
         root=beta_root,
-        make_default=False,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -366,7 +359,6 @@ def test_bootstrap_env_storage_env_name_selects_registered_root(
     register_storage(
         name="beta",
         root=beta_root,
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -401,7 +393,6 @@ def test_bootstrap_env_storage_env_bare_unknown_name_is_error(
     register_storage(
         name="alpha",
         root=tmp_path / "alpha-storage",
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )
@@ -455,7 +446,6 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     register_storage(
         name="alpha",
         root=default_root,
-        make_default=True,
         path=registry_path,
         local_env_filename=".env.demo",
     )

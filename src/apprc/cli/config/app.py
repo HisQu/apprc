@@ -153,13 +153,6 @@ def build_config_typer_app(
                 help="Storage selector name written to the registry.",
             ),
         ],
-        make_default: Annotated[
-            bool,
-            typer.Option(
-                "--default/--no-default",
-                help="Make this storage the setup/editor default.",
-            ),
-        ] = False,
         assume_yes: Annotated[
             bool,
             typer.Option(
@@ -173,7 +166,6 @@ def build_config_typer_app(
         handlers.init(
             storage_root=storage_root,
             name=name,
-            make_default=make_default,
             assume_yes=assume_yes,
         )
 
@@ -199,10 +191,7 @@ def build_config_typer_app(
             Path | None,
             typer.Option(
                 "--storage-root",
-                help=(
-                    "Setup/editor default storage root for non-interactive "
-                    "setup."
-                ),
+                help="Active storage root for non-interactive setup.",
             ),
         ] = None,
         storage_name: Annotated[
@@ -210,11 +199,17 @@ def build_config_typer_app(
             typer.Option(
                 "--name",
                 help=(
-                    "Setup/editor default storage selector for "
-                    "non-interactive setup."
+                    "Storage selector for non-interactive multi-storage setup."
                 ),
             ),
         ] = None,
+        multi_storage: Annotated[
+            bool,
+            typer.Option(
+                "--multi-storage/--single-storage",
+                help="Register the active storage for multi-storage management.",
+            ),
+        ] = False,
         existing_action: Annotated[
             setup_flow.ExistingSetupAction | None,
             typer.Option(
@@ -229,20 +224,9 @@ def build_config_typer_app(
             apprc_dir=apprc_dir,
             storage_root=storage_root,
             storage_name=storage_name,
+            multi_storage=multi_storage,
             existing_action=existing_action,
         )
-
-    @app.command("set-default")
-    def config_set_default_cmd(
-        name: Annotated[
-            str,
-            typer.Argument(
-                help="Existing storage selector to make the setup/editor default."
-            ),
-        ],
-    ) -> None:
-        """Set the setup/editor default storage."""
-        handlers.set_default(name=name)
 
     @app.command("set")
     def config_set_cmd(

@@ -35,6 +35,7 @@ from textual.widgets import (
 # == Internal ================================
 from apprc.config.local_env import (
     clear_local_env_value,
+    ensure_local_env_file,
     local_env_path,
     read_local_env,
     set_local_env_value,
@@ -47,6 +48,7 @@ from apprc.config.tui.modals import (
 )
 from apprc.config.tui.rendering import (
     FIELD_TABLE_COLUMNS,
+    active_storage_title,
     archived_storage_title,
     build_field_table_rows,
     live_storage_title,
@@ -109,10 +111,12 @@ class ConfigEditorApp(App[None]):
         init_command: str = "app config init STORAGE_ROOT --name NAME",
         registry_label: str = "storage registry",
         hidden_env_keys: tuple[str, ...] = (),
+        active_storage_root: Path | None = None,
     ) -> None:
         """Keep registry and field metadata while editing storage state."""
         super().__init__()
         self.kit = kit
+        hidden_keys = set(hidden_env_keys)
         if kit is not None:
             owners = kit.spec.owners
             local_env_filename = kit.spec.local_env_filename
@@ -121,6 +125,7 @@ class ConfigEditorApp(App[None]):
                 "STORAGE_ROOT --name NAME"
             )
             registry_label = kit.spec.apprc_toml_filename
+            hidden_keys.add(kit.spec.storage_env_key)
         if owners is None:
             raise TypeError("ConfigEditorApp requires kit or owners.")
         self.registry = registry
@@ -129,7 +134,12 @@ class ConfigEditorApp(App[None]):
         self.local_env_filename = local_env_filename
         self.init_command = init_command
         self.registry_label = registry_label
-        self.hidden_env_keys = frozenset(hidden_env_keys)
+        self.hidden_env_keys = frozenset(hidden_keys)
+        self.active_storage_root = (
+            Path(active_storage_root).expanduser().resolve()
+            if active_storage_root is not None
+            else None
+        )
         self.shared_values = _read_packaged_shared_values(kit)
         self.storage_entries = ordered_storage_entries(self.registry)
         self.current_storage_name: str | None = None
@@ -150,8 +160,8 @@ class ConfigEditorApp(App[None]):
                         "New storage", variant="primary", id="storage-new"
                     )
                     yield Button(
-                        "Set as setup/editor default",
-                        id="storage-set-default",
+                        "Register active storage",
+                        id="storage-register-active",
                         disabled=True,
                     )
                     yield Button(
@@ -230,8 +240,8 @@ class ConfigEditorApp(App[None]):
                 exclusive=True,
             )
             return
-        if event.button.id == "storage-set-default":
-            await self.storage_workflows.set_current_as_default()
+        if event.button.id == "storage-register-active":
+            await self.storage_workflows.register_active_storage_flow()
             return
         if event.button.id == "storage-delete":
             self.run_worker(
@@ -247,7 +257,7 @@ class ConfigEditorApp(App[None]):
 
     def _handle_edit_result(self, result: ValueEditResult | None) -> None:
         """Persist the value returned by the edit modal."""
-        if result is None or self.current_storage_name is None:
+        if result is None or self.current_storage_kind is None:
             return
         if result.action == "clear":
             self._clear_env_key(result.env_key)
@@ -268,7 +278,7 @@ class ConfigEditorApp(App[None]):
         """Validate and persist one local env value."""
         try:
             update = set_local_env_value(
-                storage_root=self._current_storage().root,
+                storage_root=self._current_storage_root(),
                 reference=env_key,
                 raw_value=raw_value,
                 owners=self.owners,
@@ -285,7 +295,7 @@ class ConfigEditorApp(App[None]):
         """Remove one key from the active local env file."""
         try:
             update = clear_local_env_value(
-                storage_root=self._current_storage().root,
+                storage_root=self._current_storage_root(),
                 reference=env_key,
                 owners=self.owners,
                 local_env_filename=self.local_env_filename,
@@ -309,11 +319,14 @@ class ConfigEditorApp(App[None]):
         storage_list = self.query_one("#storage-list", ListView)
         await storage_list.clear()
         if not self.storage_entries:
-            self.current_storage_name = None
-            self.current_storage_kind = None
-            self.local_values = {}
+            if self.active_storage_root is not None:
+                self._select_active_storage()
+                return
+            self._clear_selection()
             self.query_one("#storage-title", Static).update(
-                "No storages registered. Use New storage to add one.\n"
+                "No storages registered. Use New storage to add one, or set "
+                f"{self.kit.spec.storage_env_key if self.kit else '<APP>_STORAGE'} "
+                "to edit an active path.\n"
                 f"CLI: {self.init_command}"
             )
             self._clear_field_table()
@@ -326,8 +339,12 @@ class ConfigEditorApp(App[None]):
 
         selected_index = storage_entry_index(self.storage_entries, select_name)
         if selected_index is None:
+            active_name = self._registered_active_storage_name()
+            if active_name is None and self.active_storage_root is not None:
+                self._select_active_storage()
+                return
             selected_index = storage_entry_index(
-                self.storage_entries, self.registry.default_storage
+                self.storage_entries, active_name
             )
         if selected_index is None:
             selected_index = 0
@@ -341,13 +358,35 @@ class ConfigEditorApp(App[None]):
             return
         self._select_archived_storage(entry.name)
 
+    def _select_active_storage(self) -> None:
+        """Load the env-selected active path without requiring a registry row."""
+        root = self.active_storage_root
+        if root is None:
+            return
+        self.current_storage_name = None
+        self.current_storage_kind = "live"
+        path = ensure_local_env_file(root, filename=self.local_env_filename)
+        self.local_values = read_local_env(path)
+        self.query_one("#storage-title", Static).update(
+            active_storage_title(root, path)
+        )
+        self._populate_field_table()
+        self._set_storage_controls_enabled(
+            fields=True,
+            register_active=True,
+            delete=False,
+            archive=False,
+        )
+
     def _select_storage(self, name: str) -> None:
         """Load one storage-local env file and refresh the field table."""
         self.current_storage_name = name
         self.current_storage_kind = "live"
         record = self.registry.selected(name)
-        path = local_env_path(record.root, filename=self.local_env_filename)
-        path.touch(exist_ok=True)
+        path = ensure_local_env_file(
+            record.root,
+            filename=self.local_env_filename,
+        )
         self.local_values = read_local_env(path)
         self.query_one("#storage-title", Static).update(
             live_storage_title(record, path)
@@ -367,7 +406,7 @@ class ConfigEditorApp(App[None]):
         self._clear_field_table()
         self._set_storage_controls_enabled(
             fields=False,
-            set_default=False,
+            register_active=False,
             delete=True,
             archive=False,
         )
@@ -424,10 +463,18 @@ class ConfigEditorApp(App[None]):
             raise RuntimeError("No storage is selected.")
         return self.registry.selected(self.current_storage_name)
 
+    def _current_storage_root(self) -> Path:
+        """Return the selected storage root, registered or active-path only."""
+        if self.current_storage_name is not None:
+            return self._current_storage().root
+        if self.active_storage_root is None:
+            raise RuntimeError("No storage is selected.")
+        return self.active_storage_root
+
     def _current_local_env_path(self) -> Path:
         """Return the active storage-local env path."""
         return local_env_path(
-            self._current_storage().root,
+            self._current_storage_root(),
             filename=self.local_env_filename,
         )
 
@@ -439,7 +486,7 @@ class ConfigEditorApp(App[None]):
         """Enable storage-specific controls only for live storages."""
         self._set_storage_controls_enabled(
             fields=enabled,
-            set_default=enabled,
+            register_active=False,
             delete=enabled,
             archive=enabled,
         )
@@ -448,23 +495,40 @@ class ConfigEditorApp(App[None]):
         self,
         *,
         fields: bool,
-        set_default: bool,
+        register_active: bool,
         delete: bool,
         archive: bool,
     ) -> None:
         """Enable or disable each storage-scoped editor control.
 
         :param fields: Whether config field rows may be edited.
-        :param set_default: Whether the current storage may become default.
+        :param register_active: Whether the active path may be registered.
         :param delete: Whether the current registry row may be removed.
         :param archive: Whether the current storage directory may be archived.
         """
         self._set_controls_enabled(fields)
         self.query_one(
-            "#storage-set-default", Button
-        ).disabled = not set_default
+            "#storage-register-active", Button
+        ).disabled = not register_active
         self.query_one("#storage-delete", Button).disabled = not delete
         self.query_one("#storage-archive", Button).disabled = not archive
+
+    def _clear_selection(self) -> None:
+        """Clear storage selection and local values."""
+        self.current_storage_name = None
+        self.current_storage_kind = None
+        self.local_values = {}
+
+    def _registered_active_storage_name(self) -> str | None:
+        """Return the registry row that matches the active path, if any."""
+        if self.active_storage_root is None:
+            return None
+        for name in sorted(self.registry.storages):
+            record = self.registry.storages[name]
+            record_root = Path(record.root).expanduser().resolve()
+            if record_root == self.active_storage_root:
+                return name
+        return None
 
     def _suggest_storage_name(self, path: Path) -> str:
         """Return a simple registry-name suggestion from a path."""
@@ -476,7 +540,7 @@ class ConfigEditorApp(App[None]):
     def _fallback_storage_name(self) -> str:
         """Return a storage selector when no path name is available."""
         if self.kit is not None:
-            return self.kit.default_storage_name()
+            return self.kit.suggested_storage_name()
         return "apprc_stor-1"
 
 

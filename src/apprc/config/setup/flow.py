@@ -6,14 +6,19 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from enum import Enum
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 # == Internal ================================
 from apprc.config.apprc_toml import normalized_apprc_toml_path
+from apprc.config.local_env import ensure_local_env_file
 from apprc.config.paths import StorageRootPathError, normalize_storage_root_path
 import apprc.config.setup.text as setup_text
-from apprc.config.storage.registry import StorageRegistry
+from apprc.config.storage.registry import (
+    StorageRegistry,
+    write_storage_registry,
+)
 
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit
@@ -50,7 +55,23 @@ class ConfigSetupError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ConfigSetupResult:
-    """Result returned after setup writes or confirms a registry.
+    """Result returned after setup writes or confirms setup state.
+
+    :param registry: Registry selected by setup.
+    :param active_storage_root: Explicit storage path selected for runtime.
+    :param registered_storage_name: Optional registry selector created by setup.
+    :param existing_action: Existing-registry action that was applied.
+    """
+
+    registry: StorageRegistry
+    active_storage_root: Path
+    registered_storage_name: str | None = None
+    existing_action: ExistingSetupAction | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedSetupRegistry:
+    """Registry chosen before the active storage step runs.
 
     :param registry: Registry selected by setup.
     :param existing_action: Existing-registry action that was applied.
@@ -86,7 +107,7 @@ def prepare_setup_registry(
     apprc_dir: Path | None,
     existing_action: ExistingSetupAction | None,
     replace_existing_file: bool,
-) -> ConfigSetupResult:
+) -> PreparedSetupRegistry:
     """Select, reset, or move the registry used by setup.
 
     :param kit: Application config facade.
@@ -107,19 +128,19 @@ def prepare_setup_registry(
     )
     if existing_path is None:
         require_apprc_toml_path_available(target_path)
-        return ConfigSetupResult(registry=load_registry(kit, target_path))
+        return PreparedSetupRegistry(registry=load_registry(kit, target_path))
 
     action = existing_action or default_existing_setup_action()
     if action == ExistingSetupAction.KEEP:
         require_apprc_toml_path_available(existing_path)
-        return ConfigSetupResult(
+        return PreparedSetupRegistry(
             registry=load_registry(kit, existing_path),
             existing_action=action,
         )
     if action == ExistingSetupAction.RESET:
         remove_apprc_toml_config_state(existing_path)
         require_apprc_toml_path_available(target_path)
-        return ConfigSetupResult(
+        return PreparedSetupRegistry(
             registry=load_registry(kit, target_path),
             existing_action=action,
         )
@@ -131,7 +152,7 @@ def prepare_setup_registry(
         target_path=target_path,
         replace_existing_file=replace_existing_file,
     )
-    return ConfigSetupResult(registry=registry, existing_action=action)
+    return PreparedSetupRegistry(registry=registry, existing_action=action)
 
 
 def _setup_existing_apprc_toml_path(
@@ -161,49 +182,61 @@ def _setup_existing_apprc_toml_path(
     return None
 
 
-def ensure_default_storage(
+def ensure_setup_storage(
     kit: "AppConfigKit",
     registry: StorageRegistry,
     *,
-    storage_name: str | None,
     storage_root: Path | None,
+    storage_name: str | None,
+    multi_storage: bool,
     allow_non_empty_storage: bool,
-) -> StorageRegistry:
-    """Ensure a live setup/editor default storage exists after registry setup.
+) -> ConfigSetupResult:
+    """Ensure the active storage root exists after registry setup.
 
     :param kit: Application config facade.
     :param registry: Registry selected by setup.
-    :param storage_name: Optional selector to register as setup/editor default.
-    :param storage_root: Optional storage root to register as setup/editor default.
+    :param storage_root: Optional active storage root selected by setup.
+    :param storage_name: Optional selector to register for multi-storage.
+    :param multi_storage: Whether to register the active root in the registry.
     :param allow_non_empty_storage: Whether non-empty roots may be reused.
-    :return: Registry with a live setup/editor default storage.
+    :return: Setup result with active root and optional registered selector.
     :raises ConfigSetupError: If the storage root is unsafe.
     """
-    current_default = registry.default()
-    explicit_storage = storage_name is not None or storage_root is not None
-    if (
-        current_default is not None
-        and current_default.root.is_dir()
-        and not explicit_storage
-    ):
-        return registry
-
-    name = (
-        storage_name or registry.default_storage or kit.default_storage_name()
-    )
+    active_root = storage_root or active_storage_root_from_env(kit)
+    if active_root is None:
+        raise ConfigSetupError(
+            f"{kit.spec.storage_env_key} or --storage-root is required for "
+            "non-interactive setup.",
+            param_hint="--storage-root",
+        )
+    name = storage_name or kit.suggested_storage_name()
     root = validate_storage_root_for_setup(
         kit,
-        storage_root or kit.default_storage_data_root(),
-        storage_name=name,
-        make_default=True,
+        active_root,
+        storage_name=name if multi_storage else None,
         allow_non_empty_storage=allow_non_empty_storage,
     )
     try:
-        return kit.register_storage(
+        local_env = ensure_local_env_file(
+            root,
+            filename=kit.spec.local_env_filename,
+        )
+        resolved_root = local_env.parent
+        if not multi_storage:
+            write_storage_registry(registry)
+            return ConfigSetupResult(
+                registry=registry,
+                active_storage_root=resolved_root,
+            )
+        updated = kit.register_storage(
             name=name,
-            root=root,
-            make_default=True,
+            root=resolved_root,
             path=registry.path,
+        )
+        return ConfigSetupResult(
+            registry=updated,
+            active_storage_root=resolved_root,
+            registered_storage_name=name,
         )
     except StorageRootPathError as exc:
         raise ConfigSetupError(
@@ -221,16 +254,14 @@ def validate_storage_root_for_setup(
     kit: "AppConfigKit",
     storage_root: Path,
     *,
-    storage_name: str,
-    make_default: bool,
+    storage_name: str | None,
     allow_non_empty_storage: bool,
 ) -> Path:
     """Return a safe storage root path before registration writes.
 
     :param kit: Application config facade.
     :param storage_root: User-provided storage root path.
-    :param storage_name: Registry selector that will point at the directory.
-    :param make_default: Whether the selector will become the default.
+    :param storage_name: Optional selector that will point at the directory.
     :param allow_non_empty_storage: Whether to reuse non-empty directories.
     :return: Normalized storage root path.
     :raises ConfigSetupError: If the path cannot be safely used.
@@ -257,10 +288,31 @@ def validate_storage_root_for_setup(
             kit,
             resolved_root,
             storage_name=storage_name,
-            make_default=make_default,
         ),
         param_hint="STORAGE_ROOT",
     )
+
+
+def active_storage_root_from_env(kit: "AppConfigKit") -> Path | None:
+    """Return the active storage root from the setup-time env selector.
+
+    During setup, the storage env value is path-preferred. A bare value such as
+    ``alpha`` is treated as a relative path, not as a registry selector.
+
+    :param kit: Application config facade.
+    :return: Normalized storage path, or ``None`` when unset.
+    :raises ConfigSetupError: If the path cannot be safely interpreted.
+    """
+    raw_value = os.environ.get(kit.spec.storage_env_key, "").strip()
+    if not raw_value:
+        return None
+    try:
+        return normalize_storage_root_path(raw_value)
+    except StorageRootPathError as exc:
+        raise ConfigSetupError(
+            str(exc),
+            param_hint=kit.spec.storage_env_key,
+        ) from exc
 
 
 def setup_apprc_toml_path(

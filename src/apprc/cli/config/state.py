@@ -46,7 +46,6 @@ def config_request_skips_bootstrap(args: list[str]) -> bool:
         "edit",
         "init",
         "list",
-        "set-default",
         "setup",
     }
 

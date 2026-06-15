@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -29,6 +30,7 @@ from apprc.config.paths import StorageRootPathError
 import apprc.config.setup.flow as setup_flow
 from apprc.config.storage.registry import StorageRegistry
 from apprc.config.storage.selector import StorageSelectorError
+from apprc.config.storage.selector import resolve_active_storage_selection
 
 if TYPE_CHECKING:
     from apprc.config.tui import ConfigEditorApp
@@ -95,6 +97,7 @@ class ConfigCommandHandlers:
         payload = storage_list_payload(
             registry,
             local_env_filename=self.kit.spec.local_env_filename,
+            active_storage_root=self.active_storage_root_from_env(registry),
         )
         if json_output:
             dump_json(payload)
@@ -143,7 +146,6 @@ class ConfigCommandHandlers:
         *,
         storage_root: Path,
         name: str,
-        make_default: bool,
         assume_yes: bool,
     ) -> None:
         """Register one storage root and create its local env file."""
@@ -158,14 +160,12 @@ class ConfigCommandHandlers:
             self.kit,
             storage_root,
             storage_name=name,
-            make_default=make_default,
             assume_yes=assume_yes,
         )
         try:
             registry = self.kit.register_storage(
                 name=name,
                 root=normalized_root,
-                make_default=make_default,
             )
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
@@ -187,7 +187,6 @@ class ConfigCommandHandlers:
             f"local_env: {record.root / self.kit.spec.local_env_filename}"
         )
         typer.echo(f"apprc_toml_path: {registry.path}")
-        typer.echo(f"default_storage: {registry.default_storage}")
 
     def setup(
         self,
@@ -196,6 +195,7 @@ class ConfigCommandHandlers:
         apprc_dir: Path | None,
         storage_root: Path | None,
         storage_name: str | None,
+        multi_storage: bool,
         existing_action: setup_flow.ExistingSetupAction | None,
     ) -> None:
         """Interactively configure the AppRC TOML and first storage root."""
@@ -205,24 +205,9 @@ class ConfigCommandHandlers:
             apprc_dir=apprc_dir,
             storage_root=storage_root,
             storage_name=storage_name,
+            multi_storage=multi_storage,
             existing_action=existing_action,
         )
-
-    def set_default(self, *, name: str) -> None:
-        """Set the setup/editor default storage."""
-        try:
-            old_default = self.kit.load_registry().default_storage
-            registry = self.kit.set_default_storage(name=name)
-        except ApprcTomlEnvError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=self.kit.apprc_toml_env_key(),
-            ) from exc
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc), param_hint="NAME") from exc
-        typer.echo(f"previous_default_storage: {old_default}")
-        typer.echo(f"default_storage: {registry.default_storage}")
-        typer.echo(f"apprc_toml_path: {registry.path}")
 
     def set(self, ctx: typer.Context, *, key: str, value: str) -> None:
         """Write one active storage-local config override."""
@@ -255,11 +240,13 @@ class ConfigCommandHandlers:
             editor_app = self.editor_app_cls(
                 registry=registry,
                 initial_storage=selected_storage,
+                active_storage_root=self.active_storage_root_from_env(registry),
             )
         else:
             editor_app = self.kit.editor_app(
                 registry=registry,
                 initial_storage=selected_storage,
+                active_storage_root=self.active_storage_root_from_env(registry),
             )
         editor_app.run()
 
@@ -317,6 +304,25 @@ class ConfigCommandHandlers:
                 str(exc),
                 param_hint=self.kit.spec.apprc_toml_filename,
             ) from exc
+
+    def active_storage_root_from_env(
+        self,
+        registry: StorageRegistry,
+    ) -> Path | None:
+        """Return the active storage root selected by the current environment."""
+        env_storage = os.environ.get(self.kit.spec.storage_env_key, "").strip()
+        if not env_storage:
+            return None
+        try:
+            selection = resolve_active_storage_selection(
+                registry=registry,
+                storage_name=None,
+                storage_env_key=self.kit.spec.storage_env_key,
+                original_env=os.environ,
+            )
+        except StorageSelectorError:
+            return None
+        return selection.root if selection is not None else None
 
     def required_storage_root(self, state: Any) -> Path:
         """Return an active storage root or raise Typer's CLI error type."""

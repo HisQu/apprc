@@ -67,12 +67,6 @@ def print_config_doctor(
     )
     console.print(
         label_value_text(
-            "default_storage",
-            _optional_text(payload["default_storage"]),
-        )
-    )
-    console.print(
-        label_value_text(
             "selected_storage",
             _optional_text(payload["selected_storage"]),
         )

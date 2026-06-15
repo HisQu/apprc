@@ -6,8 +6,9 @@ from apprc.config.setup.flow import (
     ConfigSetupError,
     ConfigSetupResult,
     ExistingSetupAction,
+    active_storage_root_from_env,
     default_existing_setup_action,
-    ensure_default_storage,
+    ensure_setup_storage,
     find_existing_apprc_toml_path,
     load_registry,
     move_existing_apprc_toml,
@@ -22,7 +23,6 @@ from apprc.config.setup.flow import (
 from apprc.config.setup.text import (
     apprc_dir_label,
     apprc_dir_step_text,
-    default_storage_step_text,
     dotenv_apprc_toml_assignment,
     dotenv_assignment_commands,
     dotenv_storage_selector_assignment,
@@ -35,5 +35,6 @@ from apprc.config.setup.text import (
     setup_overview_text,
     shell_export_commands,
     storage_root_reuse_text,
+    storage_root_step_text,
     verification_commands,
 )

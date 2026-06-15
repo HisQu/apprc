@@ -5,7 +5,6 @@ from __future__ import annotations
 # == Standard Library ========================
 import shutil
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,7 +24,6 @@ from apprc.config.storage.archive import (
 )
 from apprc.config.tui.modals import (
     ArchiveOptionsScreen,
-    DefaultPathScreen,
     ProgressScreen,
 )
 from apprc.config.tui.primitives import (
@@ -34,7 +32,6 @@ from apprc.config.tui.primitives import (
     PathInputScreen,
     StorageNameScreen,
 )
-from apprc.config.tui.storage.entries import ordered_existing_storage_names
 from apprc.config.tui.styles import (
     label_value_text,
     lines_text,
@@ -45,18 +42,6 @@ from apprc.config.tui.styles import (
 
 if TYPE_CHECKING:
     from apprc.config.tui import ConfigEditorApp
-
-
-@dataclass(frozen=True, slots=True)
-class RemovalDefaultChoice:
-    """Default replacement chosen before removing a live storage.
-
-    :param replacement_name: Existing storage to promote to default.
-    :param create_default_path: New storage root to create as default.
-    """
-
-    replacement_name: str | None = None
-    create_default_path: Path | None = None
 
 
 class ConfigEditorStorageWorkflows:
@@ -95,6 +80,22 @@ class ConfigEditorStorageWorkflows:
         await self.register_storage_directory_flow(
             path,
             default_name=self.editor._suggest_storage_name(path),
+        )
+
+    async def register_active_storage_flow(self) -> None:
+        """Register the env-selected active storage path by name."""
+        if self.editor._require_kit() is None:
+            return
+        root = self.editor.active_storage_root
+        if root is None:
+            self.editor.notify(
+                "No active storage path is selected.",
+                severity="warning",
+            )
+            return
+        await self.register_storage_directory_flow(
+            root,
+            default_name=self.editor._suggest_storage_name(root),
         )
 
     async def open_archive_import_flow(
@@ -217,7 +218,6 @@ class ConfigEditorStorageWorkflows:
             self.editor.registry = kit.register_storage(
                 name=name,
                 root=guarded_root,
-                make_default=self.editor.registry.default_storage is None,
             )
         except (TypeError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -293,40 +293,6 @@ class ConfigEditorStorageWorkflows:
             )
         )
         return resolved_root if action == "proceed" else None
-
-    async def set_current_as_default(self) -> None:
-        """Set the selected live storage as the registry default."""
-        kit = self.editor._require_kit()
-        if kit is None or self.editor.current_storage_name is None:
-            return
-        if self.editor.current_storage_kind != "live":
-            self.editor.notify(
-                "Select a live storage first.",
-                severity="warning",
-            )
-            return
-        if self.editor.registry.default_storage == (
-            self.editor.current_storage_name
-        ):
-            self.editor.notify(
-                f"{self.editor.current_storage_name!r} is already the "
-                "setup/editor default."
-            )
-            return
-        try:
-            self.editor.registry = kit.set_default_storage(
-                name=self.editor.current_storage_name
-            )
-        except ValueError as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
-            return
-        await self.editor._refresh_storage_list(
-            select_name=self.editor.current_storage_name
-        )
-        self.editor.notify(
-            "Setup/editor default storage set to "
-            f"{self.editor.current_storage_name!r}"
-        )
 
     async def open_delete_storage_flow(self) -> None:
         """Prompt for unregister/delete behavior for the current storage."""
@@ -434,7 +400,7 @@ class ConfigEditorStorageWorkflows:
         *,
         delete_content: bool,
     ) -> bool:
-        """Remove one live storage and repair the default if needed.
+        """Remove one live storage registry row.
 
         :param name: Storage registry selector to remove.
         :param delete_content: Whether to delete the storage directory too.
@@ -448,9 +414,6 @@ class ConfigEditorStorageWorkflows:
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return False
-        replacement = await self.default_choice_before_removal(name)
-        if replacement is None:
-            return False
         if delete_content and record.root.exists():
             try:
                 shutil.rmtree(record.root)
@@ -460,78 +423,14 @@ class ConfigEditorStorageWorkflows:
         try:
             self.editor.registry = kit.unregister_storage(
                 name=name,
-                replacement_default=replacement.replacement_name,
             )
-            if replacement.create_default_path is not None:
-                replacement_name = kit.default_storage_name()
-                self.editor.registry = kit.register_storage(
-                    name=replacement_name,
-                    root=replacement.create_default_path,
-                    make_default=True,
-                )
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return False
-        select_name = replacement.replacement_name
-        if select_name is None and replacement.create_default_path is not None:
-            select_name = kit.default_storage_name()
+        select_name = self.editor._registered_active_storage_name()
         await self.editor._refresh_storage_list(select_name=select_name)
         self.editor.notify(f"Removed storage {name!r}")
         return True
-
-    async def default_choice_before_removal(
-        self,
-        removed_name: str,
-    ) -> RemovalDefaultChoice | None:
-        """Return how the default should look after removing a storage.
-
-        :param removed_name: Storage selector about to be removed.
-        :return: Default repair decision, or ``None`` when canceled.
-        """
-        if self.editor.registry.default_storage != removed_name:
-            return RemovalDefaultChoice()
-        remaining = [
-            name
-            for name in ordered_existing_storage_names(self.editor.registry)
-            if name != removed_name
-        ]
-        if remaining:
-            actions: list[tuple[str, str, ButtonVariant]] = []
-            for index, name in enumerate(remaining):
-                variant: ButtonVariant = "primary" if index == 0 else "default"
-                actions.append((f"default-{name}", name, variant))
-            action = await self.editor.push_screen_wait(
-                ConfirmScreen(
-                    title="Choose setup/editor default",
-                    message=(
-                        f"{removed_name!r} is the setup/editor default "
-                        "storage. "
-                        "Choose the new setup/editor default before "
-                        "removing it."
-                    ),
-                    actions=tuple(actions),
-                )
-            )
-            if action is None or not action.startswith("default-"):
-                return None
-            return RemovalDefaultChoice(
-                replacement_name=action.removeprefix("default-")
-            )
-
-        kit = self.editor._require_kit()
-        if kit is None:
-            return None
-        result = await self.editor.push_screen_wait(
-            DefaultPathScreen(
-                default_path=kit.default_storage_data_root(),
-                display_name=kit.spec.display_name,
-            )
-        )
-        if result is None:
-            return None
-        if result.action == "leave":
-            return RemovalDefaultChoice()
-        return RemovalDefaultChoice(create_default_path=result.path)
 
     async def restore_or_prune_archived_storage(self, name: str) -> None:
         """Restore an archived row or delete it when its file is gone.

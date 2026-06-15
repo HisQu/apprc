@@ -42,14 +42,12 @@ def confirm_existing_storage_root(
     storage_root: Path,
     *,
     storage_name: str,
-    make_default: bool,
 ) -> None:
     """Ask whether a non-empty existing storage root may be reused.
 
     :param kit: Application config facade.
     :param storage_root: Existing non-empty storage directory.
     :param storage_name: Registry selector that will point at the directory.
-    :param make_default: Whether the selector will become the default.
     :raises typer.Exit: If the user refuses or input cannot be read.
     """
     console = Console(soft_wrap=True)
@@ -86,16 +84,6 @@ def confirm_existing_storage_root(
             style="green",
         ),
     ]
-    if make_default:
-        panel_lines.extend(
-            [
-                Text(""),
-                Text.assemble(
-                    ("Setup/editor default storage: ", "dim"),
-                    (repr(storage_name), "bold"),
-                ),
-            ]
-        )
     panel_lines.extend(
         [
             Text(""),
@@ -148,7 +136,6 @@ def guard_storage_root_init(
     storage_root: Path,
     *,
     storage_name: str,
-    make_default: bool,
     assume_yes: bool,
 ) -> Path:
     """Return a safe storage root path before registration writes.
@@ -156,7 +143,6 @@ def guard_storage_root_init(
     :param kit: Application config facade.
     :param storage_root: User-provided storage root path.
     :param storage_name: Registry selector that will point at the directory.
-    :param make_default: Whether the selector will become the default.
     :param assume_yes: Whether to skip the non-empty directory confirmation.
     :return: Normalized storage root path.
     :raises typer.BadParameter: If the path cannot represent a directory.
@@ -167,7 +153,6 @@ def guard_storage_root_init(
             kit,
             storage_root,
             storage_name=storage_name,
-            make_default=make_default,
             allow_non_empty_storage=True,
         )
     except setup_flow.ConfigSetupError as exc:
@@ -184,6 +169,5 @@ def guard_storage_root_init(
             kit,
             root,
             storage_name=storage_name,
-            make_default=make_default,
         )
     return root

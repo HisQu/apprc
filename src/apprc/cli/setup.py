@@ -16,7 +16,6 @@ from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
 import apprc.config.setup.flow as setup_flow
 import apprc.config.setup.text as setup_text
-from apprc.config.storage.registry import StorageRegistry
 from apprc.config.tui.setup import ConfigSetupApp
 from apprc.config.tui.styles import (
     ENV_KEY_STYLE,
@@ -33,6 +32,7 @@ def run_config_setup(
     apprc_dir: Path | None = None,
     storage_root: Path | None = None,
     storage_name: str | None = None,
+    multi_storage: bool = False,
     existing_action: setup_flow.ExistingSetupAction | None = None,
 ) -> None:
     """Run the Textual setup wizard or a non-interactive setup command.
@@ -40,8 +40,9 @@ def run_config_setup(
     :param kit: Application config facade mounted by the host CLI.
     :param assume_yes: Whether to run without opening the Textual wizard.
     :param apprc_dir: Optional AppRC directory for non-interactive setup.
-    :param storage_root: Optional setup/editor default storage root.
-    :param storage_name: Optional setup/editor default storage selector.
+    :param storage_root: Optional active storage root.
+    :param storage_name: Optional selector for multi-storage registration.
+    :param multi_storage: Whether setup should register the active storage.
     :param existing_action: Optional action for an existing registry.
     :raises typer.Exit: If the user cancels or setup diagnostics fail.
     :raises typer.BadParameter: If setup inputs are invalid.
@@ -55,17 +56,22 @@ def run_config_setup(
             existing_action,
         )
     )
-    if has_setup_options and not assume_yes:
+    if (has_setup_options or multi_storage) and not assume_yes:
         raise typer.BadParameter(
             "Setup options run non-interactively and require --yes.",
             param_hint="--yes",
+        )
+    if storage_name is not None and not multi_storage:
+        raise typer.BadParameter(
+            "--name is only used with --multi-storage.",
+            param_hint="--multi-storage",
         )
 
     if not assume_yes:
         result = ConfigSetupApp(kit=kit).run()
         if result is None:
             raise typer.Exit(code=1)
-        _raise_if_doctor_failed(kit, apprc_toml_path=result.registry.path)
+        _raise_if_doctor_failed(kit, result)
         return
 
     try:
@@ -75,35 +81,37 @@ def run_config_setup(
             existing_action=existing_action,
             replace_existing_file=True,
         )
-        registry = setup_flow.ensure_default_storage(
+        result = setup_flow.ensure_setup_storage(
             kit,
             setup_result.registry,
-            storage_name=storage_name,
             storage_root=storage_root,
+            storage_name=storage_name,
+            multi_storage=multi_storage,
             allow_non_empty_storage=True,
         )
     except setup_flow.ConfigSetupError as exc:
         _raise_setup_error(exc)
-    _print_setup_finish(kit, registry)
+    _print_setup_finish(kit, result)
 
 
 def _print_setup_finish(
     kit: AppConfigKit,
-    registry: StorageRegistry,
+    result: setup_flow.ConfigSetupResult,
 ) -> None:
     """Print environment handoff text after non-interactive setup.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup.
+    :param result: Setup files and active storage selected by setup.
     :raises typer.Exit: If doctor reports that setup is incomplete.
     """
     payload = build_config_doctor_payload(
         kit,
-        storage_name=registry.default_storage,
-        apprc_toml_path=registry.path,
+        storage_name=result.registered_storage_name,
+        storage_root=result.active_storage_root,
+        apprc_toml_path=result.registry.path,
     )
     console = Console(soft_wrap=True)
-    console.print(_style_setup_finish_text(kit, registry))
+    console.print(_style_setup_finish_text(kit, result))
     if not payload["ok"]:
         typer.echo("")
         print_config_doctor(kit, payload)
@@ -112,19 +120,19 @@ def _print_setup_finish(
 
 def _raise_if_doctor_failed(
     kit: AppConfigKit,
-    *,
-    apprc_toml_path: Path,
+    result: setup_flow.ConfigSetupResult,
 ) -> None:
     """Exit when the setup wizard completed but diagnostics still fail.
 
     :param kit: Application config facade.
-    :param apprc_toml_path: AppRC TOML path setup selected.
+    :param result: Setup files and active storage selected by setup.
     :raises typer.Exit: If doctor reports that setup is incomplete.
     """
     payload = build_config_doctor_payload(
         kit,
-        storage_name=kit.load_registry(path=apprc_toml_path).default_storage,
-        apprc_toml_path=apprc_toml_path,
+        storage_name=result.registered_storage_name,
+        storage_root=result.active_storage_root,
+        apprc_toml_path=result.registry.path,
     )
     if not payload["ok"]:
         raise typer.Exit(code=1)
@@ -146,17 +154,18 @@ def _raise_setup_error(exc: setup_flow.ConfigSetupError) -> None:
 
 def _style_setup_finish_text(
     kit: AppConfigKit,
-    registry: StorageRegistry,
+    result: setup_flow.ConfigSetupResult,
 ) -> Text:
     """Return styled setup completion text for the CLI.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup.
+    :param result: Setup files and active storage selected by setup.
     :return: Rich text with semantic setup spans.
     """
     paths = {
-        str(registry.path): PATH_STYLE,
-        str(registry.path.expanduser().resolve()): PATH_STYLE,
+        str(result.registry.path): PATH_STYLE,
+        str(result.registry.path.expanduser().resolve()): PATH_STYLE,
+        str(result.active_storage_root): PATH_STYLE,
     }
     styles = {
         "Shell:": "bold",
@@ -166,4 +175,11 @@ def _style_setup_finish_text(
         kit.spec.storage_env_key: ENV_KEY_STYLE,
         **paths,
     }
-    return style_literals(setup_text.setup_finish_text(kit, registry), styles)
+    return style_literals(
+        setup_text.setup_finish_text(
+            kit,
+            result.registry,
+            result.active_storage_root,
+        ),
+        styles,
+    )

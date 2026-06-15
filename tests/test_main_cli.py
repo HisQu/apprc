@@ -148,13 +148,10 @@ def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
     registry = APPRC_EXAMPLE_APP_KIT.load_registry()
     assert result.exit_code == 0, result.output
     assert registry.path == registry_path
-    assert registry.default_storage == "apprc_example_app_stor-1"
-    assert registry.selected("apprc_example_app_stor-1").root == (
-        storage_root.resolve()
-    )
+    assert registry.storages == {}
     assert (storage_root / ".env.apprc_example_app").is_file()
     assert (
-        'export APPRC_EXAMPLE_APP_STORAGE="apprc_example_app_stor-1"'
+        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
         in result.output
     )
     assert "apprc config edit" in result.output

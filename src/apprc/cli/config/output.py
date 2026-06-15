@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+from pathlib import Path
 from typing import TypedDict
 
 # == 3rd Party ===============================
@@ -19,7 +20,7 @@ class StorageListRowPayload(TypedDict):
     """Machine-readable data for one registered storage row."""
 
     name: str
-    default: bool
+    active: bool
     root: str
     root_exists: bool
     local_env: str
@@ -30,7 +31,6 @@ class StorageListPayload(TypedDict):
     """Machine-readable data emitted by ``config list --json``."""
 
     apprc_toml_path: str
-    default_storage: str | None
     storages: list[StorageListRowPayload]
 
 
@@ -38,21 +38,29 @@ def storage_list_payload(
     registry: StorageRegistry,
     *,
     local_env_filename: str,
+    active_storage_root: Path | None = None,
 ) -> StorageListPayload:
     """Return JSON-friendly registry rows for ``config list``.
 
     :param registry: User storage registry to serialize.
     :param local_env_filename: Dotenv filename expected inside each root.
+    :param active_storage_root: Root selected by ``<APP>_STORAGE``, if known.
     :return: Machine-readable registry summary.
     """
     storages: list[StorageListRowPayload] = []
+    active_root = (
+        Path(active_storage_root).expanduser().resolve()
+        if active_storage_root is not None
+        else None
+    )
     for name in ordered_storage_names(registry):
         record = registry.selected(name)
+        record_root = Path(record.root).expanduser().resolve()
         local_env = record.root / local_env_filename
         storages.append(
             {
                 "name": record.name,
-                "default": record.name == registry.default_storage,
+                "active": active_root == record_root,
                 "root": str(record.root),
                 "root_exists": record.root.is_dir(),
                 "local_env": str(local_env),
@@ -61,7 +69,6 @@ def storage_list_payload(
         )
     return {
         "apprc_toml_path": str(registry.path),
-        "default_storage": registry.default_storage,
         "storages": storages,
     }
 
@@ -74,12 +81,6 @@ def print_storage_list(payload: StorageListPayload) -> None:
     console = Console(soft_wrap=True)
     console.print(
         _storage_detail_text("apprc_toml_path", payload["apprc_toml_path"])
-    )
-    console.print(
-        _storage_detail_text(
-            "default_storage",
-            payload["default_storage"] or "<none>",
-        )
     )
     storages = payload["storages"]
     if not storages:
@@ -134,9 +135,9 @@ def _storage_name_text(storage: StorageListRowPayload) -> Text:
     """Return the display label for one storage tree branch.
 
     :param storage: JSON-friendly storage payload row.
-    :return: Rich text with the storage name and optional default marker.
+    :return: Rich text with the storage name and optional active marker.
     """
     label = Text(str(storage["name"]), style="bold")
-    if storage["default"]:
-        label.append(" [setup/editor default]", style="green")
+    if storage["active"]:
+        label.append(" [active]", style="green")
     return label

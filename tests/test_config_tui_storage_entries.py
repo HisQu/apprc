@@ -9,12 +9,10 @@ from apprc.config.storage.registry import (
 )
 from apprc.config.tui.styles import (
     ARCHIVE_STYLE,
-    DEFAULT_STYLE,
     MISSING_STYLE,
     PATH_STYLE,
 )
 from apprc.config.tui.storage.entries import (
-    ordered_existing_storage_names,
     ordered_storage_entries,
     storage_entry_index,
     storage_entry_label,
@@ -34,13 +32,11 @@ def test_config_textual_storage_entries_order_live_missing_and_archived(
     register_storage(
         name="beta",
         root=beta_root,
-        make_default=False,
         path=registry_path,
     )
     registry = register_storage(
         name="alpha",
         root=alpha_root,
-        make_default=True,
         path=registry_path,
     )
     registry = record_archived_storage(
@@ -58,16 +54,14 @@ def test_config_textual_storage_entries_order_live_missing_and_archived(
         ("beta", "missing"),
         ("zeta", "archived"),
     ]
-    assert ordered_existing_storage_names(registry) == ["alpha"]
     assert storage_entry_index(entries, "beta") == 1
     assert storage_entry_index(entries, "missing") is None
     alpha_label = storage_entry_label(registry, entries[0])
     beta_label = storage_entry_label(registry, entries[1])
     zeta_label = storage_entry_label(registry, entries[2])
-    assert "alpha [setup/editor default]" in alpha_label.plain
+    assert "alpha" in alpha_label.plain
     assert "beta [missing]" in beta_label.plain
     assert "zeta [Last Archived]" in zeta_label.plain
-    assert text_has_span(alpha_label, "[setup/editor default]", DEFAULT_STYLE)
     assert text_has_span(
         alpha_label,
         str(registry.selected("alpha").root),

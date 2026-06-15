@@ -160,7 +160,7 @@ The executable is `apprc`, but its disposable example files live under the
 |---|---|
 | AppRC TOML selector | `APPRC_EXAMPLE_APP_APPRC_TOML` |
 | Storage selector | `APPRC_EXAMPLE_APP_STORAGE` |
-| Setup/editor default storage root | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
+| Suggested active storage root | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
 | Local env | `~/.local/share/apprc_example_app/apprc_example_app_stor-1/.env.apprc_example_app` |
 
 <br>
@@ -239,10 +239,11 @@ Users then get:
 
 ```shell
 export MYAPP_APPRC_TOML="/absolute/path/to/config-dir/myapp.apprc.toml"
-export MYAPP_STORAGE="/absolute/path/to/default/storage"
+export MYAPP_STORAGE="/absolute/path/to/storage"
 myapp config setup
-myapp config setup --yes --apprc-dir "/absolute/path/to/config-dir" --storage-root "$MYAPP_STORAGE" --name myapp_stor-1
-myapp config init /absolute/path/to/storage --name myapp_stor-1 --default
+myapp config setup --yes --apprc-dir "/absolute/path/to/config-dir" --storage-root "$MYAPP_STORAGE"
+myapp config setup --yes --apprc-dir "/absolute/path/to/config-dir" --storage-root "$MYAPP_STORAGE" --multi-storage --name myapp_stor-1
+myapp config init /absolute/path/to/storage --name myapp_stor-1
 myapp config doctor
 myapp config show --json
 myapp config set app.profile other-profile
@@ -253,11 +254,13 @@ Use `myapp config setup` for normal first-time installation. With no options it
 opens a Textual wizard with path autocomplete, explains the AppRC TOML and
 storage root locations, asks for the app directory (AppRC) when
 `MYAPP_APPRC_TOML` is not set, explains that `<APP>_STORAGE` must be set after
-setup, asks for a setup/editor default storage root, and shows next steps. For CI or
-scripted bootstrap, pass `--yes` with `--apprc-dir`, `--storage-root`,
-`--name`, and `--existing-action keep|reset|move` as needed. `config init`
-remains available as the lower-level command for scripts or manual storage
-registration after `MYAPP_APPRC_TOML` is exported.
+setup, asks for an active storage root, optionally registers it for
+multi-storage management, and shows next steps. For CI or scripted bootstrap,
+pass `--yes` with `--apprc-dir`, `--storage-root`, and
+`--existing-action keep|reset|move` as needed. Add `--multi-storage --name NAME`
+when setup should also register the active root. `config init` remains
+available as the lower-level command for scripts or manual storage registration
+after `MYAPP_APPRC_TOML` is exported.
 
 ### Bootstrap Recommendation
 
@@ -297,7 +300,7 @@ Runtime behavior when keys are missing:
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
 | `os.environ` | current process | Highest-priority values by default. |
-| `<APP>_APPRC_TOML -> <app>.apprc.toml` | AppRC TOML | Named storage roots and setup/editor default storage. |
+| `<APP>_APPRC_TOML -> <app>.apprc.toml` | AppRC TOML | Optional named storage roots and archive restore metadata. |
 | `<APP>_STORAGE` | Bootstrap selector | Active storage name or storage path for current shell context. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
@@ -352,8 +355,6 @@ Installation state is explicit:
 For example:
 
 ```toml
-default_storage = "myapp_stor-1"
-
 [storages.myapp_stor-1]
 root = "/absolute/path/to/storage"
 
@@ -366,6 +367,9 @@ Each storage root owns its own local override file, such as `.env.local`.
 Archived storage records are only last-known restore shortcuts for the
 terminal editor; runtime bootstrap still selects live directory entries from
 `[storages]`.
+
+Older AppRC TOMLs may contain a top-level `default_storage` key. Current AppRC
+ignores that key and never writes it; you can delete it during cleanup.
 On POSIX/WSL hosts, Windows drive paths such as `D:\Training\demo-project` are
 normalized to usable local paths before AppRC writes the registry or reads a
 storage-root environment value.
@@ -378,9 +382,9 @@ If you type `C:\Projects\demo-storage` without quotes, AppRC may receive
 Use one of these forms instead:
 
 ```shell
-myapp config init 'C:\Projects\demo-storage' --name myapp_stor-1 --default
-myapp config init C:/Projects/demo-storage --name myapp_stor-1 --default
-myapp config init /mnt/c/Projects/demo-storage --name myapp_stor-1 --default
+myapp config init 'C:\Projects\demo-storage' --name myapp_stor-1
+myapp config init C:/Projects/demo-storage --name myapp_stor-1
+myapp config init /mnt/c/Projects/demo-storage --name myapp_stor-1
 ```
 
 ### Logging
@@ -421,7 +425,7 @@ STORAGE_OWNER = ConfigOwner(
             editable=False,
             required=True,
             explanation_short="Active storage root.",
-            explanation_long="Selected through the AppRC TOML.",
+            explanation_long="Selected by the <APP>_STORAGE bootstrap value.",
         ),
     ),
 )
@@ -466,8 +470,8 @@ app.add_typer(config_app, name="config")
 
 `config setup` opens a Textual wizard for first-time setup unless `--yes` is
 passed for non-interactive use. The wizard handles existing registries, custom
-app directories (AppRC), setup/editor default storage creation, and final
-diagnostics.
+app directories (AppRC), active storage root creation, optional multi-storage
+registration, and final diagnostics.
 
 `config edit` opens a Textual editor. The editor shows:
 
@@ -488,16 +492,12 @@ values show `<required>`.
 The editor also manages storage lifecycle:
 
 - `New storage` registers a directory or restores a `*.apprc.tar.xz` archive.
-- `Set as setup/editor default` changes the registry default.
+- `Register active storage` registers an unregistered `<APP>_STORAGE` path.
 - `Delete storage` can unregister only or delete the directory too.
 - `Archive storage` writes `*.apprc.tar.xz` and can optionally remove the
   source directory after compression.
 - Missing registered roots stay visible and can be unregistered without
   recreating their directories.
-
-If the last live default is removed, the editor prompts for a replacement path
-prefilled with `~/.local/share/<app>/<app>_stor-1` or offers to leave the app
-in the fresh-install state with no setup/editor default storage.
 
 ### Use Logging
 
@@ -560,10 +560,9 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | Command | Purpose |
 |---|---|
 | `config setup` | Open the setup wizard, or run non-interactively with `--yes`. |
-| `config init STORAGE_ROOT --name NAME --default` | Register a storage root. |
+| `config init STORAGE_ROOT --name NAME` | Register a storage root. |
 | `config doctor` | Diagnose registry and selected storage state. |
 | `config show --json` | Print resolved runtime config payload. |
-| `config set-default NAME` | Change setup/editor default storage. |
 | `config set KEY VALUE` | Write one local override. |
 | `config edit` | Open the Textual editor. |
 

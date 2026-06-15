@@ -22,7 +22,6 @@ from apprc.config.storage.registry import (
 )
 from apprc.config.tui.styles import (
     ARCHIVE_STYLE,
-    DEFAULT_STYLE,
     MISSING_STYLE,
     path_text,
     storage_name_text,
@@ -61,19 +60,6 @@ def ordered_storage_entries(
         if name not in live_names
     )
     return entries
-
-
-def ordered_existing_storage_names(registry: StorageRegistry) -> list[str]:
-    """Return registered storages whose roots are existing directories.
-
-    :param registry: User storage registry to inspect.
-    :return: Default-first storage names with existing roots.
-    """
-    return [
-        name
-        for name in ordered_storage_names(registry)
-        if registry.selected(name).root.is_dir()
-    ]
 
 
 def storage_entry_kind(
@@ -121,8 +107,6 @@ def storage_entry_label(
     if entry.kind in {"live", "missing"}:
         record = registry.selected(entry.name)
         label = storage_name_text(record.name)
-        if record.name == registry.default_storage:
-            label.append(" [setup/editor default]", style=DEFAULT_STYLE)
         if entry.kind == "missing":
             label.append(" [missing]", style=MISSING_STYLE)
         label.append("\n")

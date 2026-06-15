@@ -33,7 +33,6 @@ class ConfigDoctorPayload(TypedDict):
     apprc_toml_parse_ok: bool
     apprc_toml_error: str | None
     storage_count: int
-    default_storage: str | None
     selected_storage: str | None
     selected_storage_source: str | None
     selected_storage_selector: str | None
@@ -81,12 +80,14 @@ def build_config_doctor_payload(
     kit: "AppConfigKit",
     *,
     storage_name: str | None,
+    storage_root: Path | None = None,
     apprc_toml_path: Path | None = None,
 ) -> ConfigDoctorPayload:
     """Return local setup diagnostics for one app's AppRC TOML.
 
     :param kit: Application config facade.
     :param storage_name: Optional registered storage selected by ``--storage``.
+    :param storage_root: Optional explicit storage root selected by setup.
     :param apprc_toml_path: Optional explicit AppRC TOML path used by setup.
     :return: Stable JSON-friendly diagnostic payload.
     """
@@ -105,7 +106,6 @@ def build_config_doctor_payload(
     selection: StorageSelection | None = None
     toml_error: str | None = None
     storage_count = 0
-    default_storage: str | None = None
     toml_exists = (
         active_toml_path.is_file() if active_toml_path is not None else False
     )
@@ -128,20 +128,15 @@ def build_config_doctor_payload(
             issues.append(f"AppRC TOML is invalid: {toml_error}")
         else:
             storage_count = len(registry.storages)
-            default_storage = registry.default_storage
-            if not registry.storages:
-                issues.append(
-                    f"No {kit.spec.display_name} storage is registered yet."
+            if storage_root is not None:
+                selected_root = Path(storage_root).expanduser().resolve()
+                selection = StorageSelection(
+                    source=storage_env_key,
+                    raw_value=str(storage_root),
+                    storage_name=storage_name,
+                    root=selected_root,
                 )
-            elif registry.default_storage is None:
-                issues.append(
-                    f"No setup/editor default {kit.spec.display_name} "
-                    "storage is configured. This default is used as the first "
-                    "setup/editor selection, not as a runtime fallback. "
-                    f"Run {config_command_text(kit, 'set-default NAME')}."
-                )
-
-            if storage_name is None and not raw_storage_env_value:
+            elif storage_name is None and not raw_storage_env_value:
                 missing_env_keys.append(storage_env_key)
                 issues.append(_missing_env_issue(kit, missing_env_keys))
             else:
@@ -157,9 +152,7 @@ def build_config_doctor_payload(
                 if selection is None and registry.storages:
                     issues.append(
                         f"{storage_env_key} is not set. Export a registered "
-                        "storage name or explicit storage path; the "
-                        "setup/editor default is not used as a runtime "
-                        "fallback."
+                        "storage name or explicit storage path."
                     )
 
     selected_storage_root = selection.root if selection is not None else None
@@ -205,7 +198,6 @@ def build_config_doctor_payload(
         "apprc_toml_parse_ok": toml_exists and toml_error is None,
         "apprc_toml_error": toml_error,
         "storage_count": storage_count,
-        "default_storage": default_storage,
         "selected_storage": (
             selection.storage_name if selection is not None else None
         ),

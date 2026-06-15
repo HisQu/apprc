@@ -281,6 +281,19 @@ def live_storage_title(record: StorageRecord, local_env: Path) -> Text:
     return lines_text(title, path_text(local_env))
 
 
+def active_storage_title(storage_root: Path, local_env: Path) -> Text:
+    """Return the title shown for an unregistered active storage path.
+
+    :param storage_root: Active storage root selected by ``<APP>_STORAGE``.
+    :param local_env: Storage-local dotenv path.
+    :return: Multi-line title for the selected path.
+    """
+    title = Text("Active storage", style="bold")
+    title.append(": ")
+    title.append_text(path_text(storage_root))
+    return lines_text(title, path_text(local_env))
+
+
 def missing_storage_title(record: StorageRecord) -> Text:
     """Return the title shown when a registered storage root is missing.
 

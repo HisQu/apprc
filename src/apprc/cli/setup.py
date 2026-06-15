@@ -66,6 +66,16 @@ def run_config_setup(
             "--name is only used with --multi-storage.",
             param_hint="--multi-storage",
         )
+    if apprc_dir is not None and not multi_storage:
+        raise typer.BadParameter(
+            "--apprc-dir is only used with --multi-storage.",
+            param_hint="--multi-storage",
+        )
+    if existing_action is not None and not multi_storage:
+        raise typer.BadParameter(
+            "--existing-action is only used with --multi-storage.",
+            param_hint="--multi-storage",
+        )
 
     if not assume_yes:
         result = ConfigSetupApp(kit=kit).run()
@@ -75,20 +85,27 @@ def run_config_setup(
         return
 
     try:
-        setup_result = setup_flow.prepare_setup_registry(
-            kit,
-            apprc_dir=apprc_dir,
-            existing_action=existing_action,
-            replace_existing_file=True,
-        )
-        result = setup_flow.ensure_setup_storage(
-            kit,
-            setup_result.registry,
-            storage_root=storage_root,
-            storage_name=storage_name,
-            multi_storage=multi_storage,
-            allow_non_empty_storage=True,
-        )
+        if multi_storage:
+            setup_result = setup_flow.prepare_setup_registry(
+                kit,
+                apprc_dir=apprc_dir,
+                existing_action=existing_action,
+                replace_existing_file=True,
+            )
+            result = setup_flow.ensure_setup_storage(
+                kit,
+                setup_result.registry,
+                storage_root=storage_root,
+                storage_name=storage_name,
+                multi_storage=True,
+                allow_non_empty_storage=True,
+            )
+        else:
+            result = setup_flow.ensure_single_storage(
+                kit,
+                storage_root=storage_root,
+                allow_non_empty_storage=True,
+            )
     except setup_flow.ConfigSetupError as exc:
         _raise_setup_error(exc)
     _print_setup_finish(kit, result)
@@ -106,9 +123,11 @@ def _print_setup_finish(
     """
     payload = build_config_doctor_payload(
         kit,
-        storage_name=result.registered_storage_name,
+        storage=result.registered_storage_name,
         storage_root=result.active_storage_root,
-        apprc_toml_path=result.registry.path,
+        apprc_toml_path=(
+            result.registry.path if result.registry is not None else None
+        ),
     )
     console = Console(soft_wrap=True)
     console.print(_style_setup_finish_text(kit, result))
@@ -130,9 +149,11 @@ def _raise_if_doctor_failed(
     """
     payload = build_config_doctor_payload(
         kit,
-        storage_name=result.registered_storage_name,
+        storage=result.registered_storage_name,
         storage_root=result.active_storage_root,
-        apprc_toml_path=result.registry.path,
+        apprc_toml_path=(
+            result.registry.path if result.registry is not None else None
+        ),
     )
     if not payload["ok"]:
         raise typer.Exit(code=1)
@@ -163,10 +184,15 @@ def _style_setup_finish_text(
     :return: Rich text with semantic setup spans.
     """
     paths = {
-        str(result.registry.path): PATH_STYLE,
-        str(result.registry.path.expanduser().resolve()): PATH_STYLE,
         str(result.active_storage_root): PATH_STYLE,
     }
+    if result.registry is not None:
+        paths.update(
+            {
+                str(result.registry.path): PATH_STYLE,
+                str(result.registry.path.expanduser().resolve()): PATH_STYLE,
+            }
+        )
     styles = {
         "Shell:": "bold",
         "Or Dotenv:": "bold",

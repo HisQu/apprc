@@ -17,35 +17,34 @@ def _required_apprc_prefixes(item: pytest.Item) -> list[str]:
     return sorted(prefixes)
 
 
-def _missing_bootstrap_env_for(prefix: str) -> tuple[str, str]:
-    """Return the required env var pair for one AppRC bootstrap prefix."""
+def _bootstrap_env_keys_for(prefix: str) -> tuple[str, str]:
+    """Return the optional registry key and required storage key."""
     return f"{prefix}_APPRC_TOML", f"{prefix}_STORAGE"
 
 
 def _format_bootstrap_usage(prefix: str) -> str:
     """Build concise guidance for one required bootstrap prefix."""
-    config_key, storage_key = _missing_bootstrap_env_for(prefix)
+    config_key, storage_key = _bootstrap_env_keys_for(prefix)
     apprc_toml_name = f"{prefix.lower()}.apprc.toml"
     return (
-        f"{prefix}: set these two variables in your shell startup (or env):\n"
-        f'  export {config_key}="/absolute/path/to/{apprc_toml_name}"\n'
+        f"{prefix}: set the storage variable in your shell startup (or env):\n"
         f'  export {storage_key}="/path/to/{prefix.lower()}-storage"\n'
+        f"Optional multi-storage registry:\n"
+        f'  export {config_key}="/absolute/path/to/{apprc_toml_name}"\n'
     )
 
 
 def _bootstrap_contract_is_complete(prefix: str) -> bool:
     """Return whether required AppRC bootstrap variables are present."""
-    config_key, storage_key = _missing_bootstrap_env_for(prefix)
-    return bool(os.environ.get(config_key)) and bool(
-        os.environ.get(storage_key)
-    )
+    _, storage_key = _bootstrap_env_keys_for(prefix)
+    return bool(os.environ.get(storage_key))
 
 
 def pytest_configure(config: pytest.Config) -> None:
     """Expose the example package and register AppRC test markers."""
     config.addinivalue_line(
         "markers",
-        "requires_apprc_env(prefix): requires APP_APPRC_TOML and APP_STORAGE "
+        "requires_apprc_env(prefix): requires APP_STORAGE "
         "to be available before the test body runs.",
     )
     config.addinivalue_line(

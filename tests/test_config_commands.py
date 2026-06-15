@@ -54,6 +54,61 @@ def test_generated_config_app_sets_local_values_and_shows_payload(
     assert json.loads(show_result.output) == {"storage": str(storage_root)}
 
 
+@pytest.mark.allow_missing_apprc_env
+def test_generated_config_app_sets_and_shows_with_storage_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    storage_root = tmp_path / "single-storage"
+    storage_root.mkdir()
+    (storage_root / ".env.apprc_example_app").write_text("", encoding="utf-8")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    state = ApprcExampleAppConfigState(env_bootstrap=None)
+    runner = CliRunner()
+
+    set_result = runner.invoke(
+        app,
+        ["set", "app.profile", "single-profile"],
+        obj=state,
+    )
+    show_result = runner.invoke(app, ["show", "--json"], obj=state)
+
+    assert set_result.exit_code == 0, set_result.output
+    assert show_result.exit_code == 0, show_result.output
+    assert 'APPRC_EXAMPLE_APP_PROFILE="single-profile"\n' in (
+        storage_root / ".env.apprc_example_app"
+    ).read_text(encoding="utf-8")
+    assert json.loads(show_result.output)["apprc_toml_path"] is None
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_generated_config_registry_commands_require_apprc_toml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    list_result = runner.invoke(app, ["list"])
+    init_result = runner.invoke(
+        app,
+        ["init", str(tmp_path / "storage"), "--name", "alpha"],
+    )
+
+    assert list_result.exit_code == 2, list_result.output
+    assert init_result.exit_code == 2, init_result.output
+    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in list_result.output
+    assert "required for multi-storage" in list_result.output
+    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in init_result.output
+    assert "required for multi-storage" in init_result.output
+
+
 def test_generated_config_app_rejects_bare_unknown_storage_selector(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -69,7 +124,7 @@ def test_generated_config_app_rejects_bare_unknown_storage_selector(
     state = ApprcExampleAppConfigState(env_bootstrap=None)
     runner = CliRunner()
 
-    payload = build_config_doctor_payload(kit, storage_name=None)
+    payload = build_config_doctor_payload(kit, storage=None)
     result = runner.invoke(app, ["show"], obj=state)
 
     assert result.exit_code == 2, result.output
@@ -336,12 +391,12 @@ def test_config_doctor_guidance_describes_active_storage_selector(
     kit = build_apprc_example_app_kit()
 
     message = config_setup_message(kit)
-    payload = build_config_doctor_payload(kit, storage_name=None)
+    payload = build_config_doctor_payload(kit, storage=None)
 
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in message
-    assert "Example App directory (AppRC)" in message
-    assert "active storage selector" in message
-    assert "setup --yes --apprc-dir" in message
+    assert "optional" in message
+    assert "active storage root" in message
+    assert "setup --yes --storage-root" in message
     assert payload["next_steps"][0].endswith(
-        "setup --yes --apprc-dir /absolute/path/to/config-dir"
+        "setup --yes --storage-root /absolute/path/to/storage-root"
     )

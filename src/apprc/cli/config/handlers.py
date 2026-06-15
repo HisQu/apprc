@@ -129,10 +129,10 @@ class ConfigCommandHandlers:
     def doctor(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Check local storage setup and print suggested fixes."""
         storage = self.root_context_param(ctx, "storage")
-        storage_name = storage if isinstance(storage, str) else None
+        storage_selector = storage if isinstance(storage, str) else None
         payload = build_config_doctor_payload(
             self.kit,
-            storage_name=storage_name,
+            storage=storage_selector,
         )
         if json_output:
             dump_json(payload)
@@ -227,7 +227,12 @@ class ConfigCommandHandlers:
 
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
-        registry = self.load_config_registry()
+        configured_registry = self.load_optional_config_registry()
+        registry = configured_registry or StorageRegistry(
+            path=Path(),
+            storages={},
+            archived_storages={},
+        )
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
@@ -240,13 +245,17 @@ class ConfigCommandHandlers:
             editor_app = self.editor_app_cls(
                 registry=registry,
                 initial_storage=selected_storage,
-                active_storage_root=self.active_storage_root_from_env(registry),
+                active_storage_root=self.active_storage_root_from_env(
+                    configured_registry
+                ),
             )
         else:
             editor_app = self.kit.editor_app(
                 registry=registry,
                 initial_storage=selected_storage,
-                active_storage_root=self.active_storage_root_from_env(registry),
+                active_storage_root=self.active_storage_root_from_env(
+                    configured_registry
+                ),
             )
         editor_app.run()
 
@@ -305,9 +314,22 @@ class ConfigCommandHandlers:
                 param_hint=self.kit.spec.apprc_toml_filename,
             ) from exc
 
+    def load_optional_config_registry(self) -> StorageRegistry | None:
+        """Load the optional registry when multi-storage is configured."""
+        registry_path = self.kit.optional_apprc_toml_path()
+        if registry_path is None:
+            return None
+        try:
+            return self.kit.load_registry(path=registry_path)
+        except ValueError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=self.kit.spec.apprc_toml_filename,
+            ) from exc
+
     def active_storage_root_from_env(
         self,
-        registry: StorageRegistry,
+        registry: StorageRegistry | None,
     ) -> Path | None:
         """Return the active storage root selected by the current environment."""
         env_storage = os.environ.get(self.kit.spec.storage_env_key, "").strip()
@@ -316,7 +338,7 @@ class ConfigCommandHandlers:
         try:
             selection = resolve_active_storage_selection(
                 registry=registry,
-                storage_name=None,
+                storage=None,
                 storage_env_key=self.kit.spec.storage_env_key,
                 original_env=os.environ,
             )
@@ -331,9 +353,8 @@ class ConfigCommandHandlers:
             return storage_root
         raise typer.BadParameter(
             f"No active {self.kit.spec.display_name} storage root. Run "
-            f"`{self.kit.spec.config_command_name()} config init "
-            "STORAGE_ROOT --name NAME` "
-            "or pass --storage.",
+            f"`{self.kit.spec.config_command_name()} config setup --yes "
+            "--storage-root /absolute/path/to/storage` or pass --storage.",
             param_hint="--storage",
         )
 
@@ -360,9 +381,12 @@ class ConfigCommandHandlers:
     def default_runtime_payload(self, state: Any) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
         storage_root = self.active_storage_root(state)
+        apprc_toml_path = self.kit.optional_apprc_toml_path()
         return {
             "app_name": self.kit.spec.app_name,
             "display_name": self.kit.spec.display_name,
-            "apprc_toml_path": str(self.kit.apprc_toml_path()),
+            "apprc_toml_path": (
+                str(apprc_toml_path) if apprc_toml_path is not None else None
+            ),
             "storage_root": str(storage_root) if storage_root else None,
         }

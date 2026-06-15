@@ -8,7 +8,7 @@ from textual.widgets import Button, Input, Static
 
 from apprc.config.setup.flow import ConfigSetupResult
 from apprc.config.tui.primitives import PathSuggester
-from apprc.config.tui.styles import ENV_KEY_STYLE, PATH_INPUT_CLASS, PATH_STYLE
+from apprc.config.tui.styles import ENV_KEY_STYLE, PATH_INPUT_CLASS
 from tests.support_config import (
     build_apprc_example_app_kit,
     set_apprc_example_app_apprc_toml,
@@ -33,12 +33,10 @@ async def test_config_setup_wizard_launches_with_host_overview(
         body = setup_app.query_one("#setup-body", Static).content
 
     assert "Example App config setup" in str(title)
-    assert "Example App uses one small AppRC TOML" in str(body)
-    assert "optional multi-storage management" in str(body)
-    assert "active storage selector" in str(body)
-    assert "Example App directory (AppRC)" in str(body)
+    assert "Example App needs one active storage root" in str(body)
+    assert "Optional multi-storage management" in str(body)
+    assert "Setup starts by choosing the active storage root" in str(body)
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in str(body)
-    assert "AppRC TOML" in str(body)
     assert isinstance(body, Text)
     assert text_has_span(body, "APPRC_EXAMPLE_APP_APPRC_TOML", ENV_KEY_STYLE)
 
@@ -61,33 +59,24 @@ async def test_config_setup_wizard_opens_prefilled_path_input(
         title = setup_app.screen.query_one("#path-title", Static).content
         message = setup_app.screen.query_one("#path-message", Static).content
 
-    assert path_value == str(tmp_path / "config" / "apprc_example_app")
+    assert path_value == str(tmp_path / "default-storage")
     assert isinstance(suggester, PathSuggester)
     assert path_input.has_class(PATH_INPUT_CLASS)
-    assert "Example App directory (AppRC)" in str(title)
-    assert "Choose the Example App directory (AppRC)." in str(message)
-    assert "This TOML file" not in str(message)
-    assert "Derived AppRC TOML path:" in str(message)
-    assert "apprc_example_app.apprc.toml" in str(message)
-    assert isinstance(message, Text)
-    assert text_has_span(message, path_value, PATH_STYLE)
-    assert text_has_span(
-        message,
-        str(
-            tmp_path
-            / "config"
-            / "apprc_example_app"
-            / "apprc_example_app.apprc.toml"
-        ),
-        PATH_STYLE,
+    assert "Active storage root" in str(title)
+    assert "A storage root is where the application keeps user data" in (
+        str(message)
     )
+    assert "Optional multi-storage management" in str(message)
+    assert isinstance(message, Text)
 
 
 @pytest.mark.asyncio
 @pytest.mark.allow_missing_apprc_env
 async def test_config_setup_wizard_asks_for_path_without_env(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
     setup_app = kit.setup_app()
 
@@ -97,14 +86,14 @@ async def test_config_setup_wizard_asks_for_path_without_env(
         path_input = setup_app.screen.query_one("#path-input", Input)
         message = setup_app.screen.query_one("#path-message", Static).content
 
-    assert path_input.value == ""
+    assert path_input.value == str(
+        tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
+    )
     assert path_input.has_class(PATH_INPUT_CLASS)
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in str(message)
-    assert "Choose the Example App directory (AppRC)." in str(message)
-    assert "This TOML file" not in str(message)
-    assert "apprc_example_app.apprc.toml inside this directory" in str(message)
+    assert "APPRC_EXAMPLE_APP_STORAGE" in str(message)
+    assert "storage-local .env.apprc_example_app" in str(message)
     assert isinstance(message, Text)
-    assert text_has_span(message, "APPRC_EXAMPLE_APP_APPRC_TOML", ENV_KEY_STYLE)
+    assert text_has_span(message, "APPRC_EXAMPLE_APP_STORAGE", ENV_KEY_STYLE)
 
 
 @pytest.mark.asyncio
@@ -122,6 +111,10 @@ async def test_config_setup_wizard_shows_existing_registry_actions(
 
     async with setup_app.run_test() as pilot:
         setup_app.query_one("#setup-start", Button).press()
+        await pilot.pause()
+        setup_app.screen.query_one("#path-continue", Button).press()
+        await pilot.pause()
+        setup_app.screen.query_one("#multi", Button).press()
         await pilot.pause()
         body = setup_app.query_one("#setup-body", Static).content
         keep_button = setup_app.query_one("#existing-keep", Button)
@@ -172,10 +165,7 @@ async def test_config_setup_wizard_finish_shows_doctor_and_next_steps(
     assert "Add these to your environment:" in str(body)
     assert "Shell:" in str(body)
     assert "Or Dotenv:" in str(body)
-    assert (
-        "Without them, apprc_example_app will report env_not_set "
-        "in config doctor."
-    ) in str(body)
+    assert "Without APPRC_EXAMPLE_APP_STORAGE" in str(body)
     assert "apprc_example_app config edit" in str(body)
     assert "apprc_example_app config show" in str(body)
     assert "apprc_example_app config doctor" in str(body)

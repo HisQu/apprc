@@ -17,7 +17,6 @@ from apprc.config.paths import StorageRootPathError, normalize_storage_root_path
 import apprc.config.setup.text as setup_text
 from apprc.config.storage.registry import (
     StorageRegistry,
-    write_storage_registry,
 )
 
 if TYPE_CHECKING:
@@ -57,13 +56,13 @@ class ConfigSetupError(ValueError):
 class ConfigSetupResult:
     """Result returned after setup writes or confirms setup state.
 
-    :param registry: Registry selected by setup.
+    :param registry: Registry selected by setup when multi-storage is enabled.
     :param active_storage_root: Explicit storage path selected for runtime.
     :param registered_storage_name: Optional registry selector created by setup.
     :param existing_action: Existing-registry action that was applied.
     """
 
-    registry: StorageRegistry
+    registry: StorageRegistry | None
     active_storage_root: Path
     registered_storage_name: str | None = None
     existing_action: ExistingSetupAction | None = None
@@ -223,9 +222,8 @@ def ensure_setup_storage(
         )
         resolved_root = local_env.parent
         if not multi_storage:
-            write_storage_registry(registry)
             return ConfigSetupResult(
-                registry=registry,
+                registry=None,
                 active_storage_root=resolved_root,
             )
         updated = kit.register_storage(
@@ -248,6 +246,49 @@ def ensure_setup_storage(
             str(exc),
             param_hint="Storage name",
         ) from exc
+
+
+def ensure_single_storage(
+    kit: "AppConfigKit",
+    *,
+    storage_root: Path | None,
+    allow_non_empty_storage: bool,
+) -> ConfigSetupResult:
+    """Create or confirm the active storage root without a registry.
+
+    :param kit: Application config facade.
+    :param storage_root: Optional active storage root selected by setup.
+    :param allow_non_empty_storage: Whether non-empty roots may be reused.
+    :return: Setup result with no AppRC TOML registry.
+    :raises ConfigSetupError: If the storage root is unsafe.
+    """
+    active_root = storage_root or active_storage_root_from_env(kit)
+    if active_root is None:
+        raise ConfigSetupError(
+            f"{kit.spec.storage_env_key} or --storage-root is required for "
+            "non-interactive setup.",
+            param_hint="--storage-root",
+        )
+    root = validate_storage_root_for_setup(
+        kit,
+        active_root,
+        storage_name=None,
+        allow_non_empty_storage=allow_non_empty_storage,
+    )
+    try:
+        local_env = ensure_local_env_file(
+            root,
+            filename=kit.spec.local_env_filename,
+        )
+    except StorageRootPathError as exc:
+        raise ConfigSetupError(
+            str(exc),
+            param_hint="STORAGE_ROOT",
+        ) from exc
+    return ConfigSetupResult(
+        registry=None,
+        active_storage_root=local_env.parent,
+    )
 
 
 def validate_storage_root_for_setup(

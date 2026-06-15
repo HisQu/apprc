@@ -28,14 +28,16 @@ from dotenv import dotenv_values
 
 # == Internal ================================
 from apprc.config.apprc_toml import (
+    ApprcTomlEnvError,
     apprc_toml_env_key,
     configured_apprc_toml_path,
+    optional_apprc_toml_path,
 )
 from apprc.config.storage.selector import (
     missing_storage_selector_error,
     resolve_active_storage_selection,
 )
-from apprc.config.storage.registry import load_storage_registry
+from apprc.config.storage.registry import StorageRegistry, load_storage_registry
 from apprc.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -80,6 +82,10 @@ class EnvBootstrapSpec:
             apprc_toml_filename=self.apprc_toml_filename,
         )
 
+    def optional_apprc_toml_path(self) -> Path | None:
+        """Return the env-selected AppRC TOML path when multi-storage is on."""
+        return optional_apprc_toml_path(app_name=self.app_name)
+
 
 @dataclass(frozen=True, slots=True)
 class EnvBootstrapResult:
@@ -92,7 +98,8 @@ class EnvBootstrapResult:
         is known. The path may not exist because missing local files are
         optional.
     :param env_file: Explicit dotenv file passed through the CLI.
-    :param apprc_toml_path: Env-selected AppRC TOML path.
+    :param apprc_toml_path: Env-selected AppRC TOML path, or ``None`` when
+        single-storage path mode is active.
     :param storage_selector_source: Source that selected the active storage,
         such as ``--storage`` or the app-specific storage env key.
     :param storage_selector_value: Selector value before it was resolved to a
@@ -106,7 +113,7 @@ class EnvBootstrapResult:
     shared_env: Path | None
     local_env: Path | None
     env_file: Path | None
-    apprc_toml_path: Path
+    apprc_toml_path: Path | None
     storage_selector_source: str | None
     storage_selector_value: str | None
     storage_name: str | None
@@ -120,7 +127,7 @@ def bootstrap_env(
     env_file: Path | None = None,
     env_file_overrides_os_environ: bool = False,
     load_dotenv_layers: bool = True,
-    storage_name: str | None = None,
+    storage: str | None = None,
     logger: BootstrapLogger | None = None,
 ) -> EnvBootstrapResult:
     """Populate ``os.environ`` for one application CLI process.
@@ -143,18 +150,25 @@ def bootstrap_env(
         storage-local ``.env.local``, and explicit dotenv values should be
         merged into this process. AppRC TOML and storage selection still run
         when this is ``False``.
-    :param storage_name: Optional ``--storage`` selector from the storage
-        registry. When provided, that registry root becomes the active storage
-        root and determines the storage-local dotenv candidate.
+    :param storage: Optional ``--storage`` selector. When a registry is
+        configured, exact registered names resolve through TOML. Otherwise
+        every non-empty selector is interpreted as a path.
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
     """
     original_env = dict(os.environ)
     explicit_values = _read_explicit_env_file(env_file)
-    registry = load_storage_registry(spec.apprc_toml_path())
+    if storage is None and not _storage_selector_value(
+        storage_env_key=spec.storage_env_key,
+        original_env=original_env,
+        explicit_values=explicit_values,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+    ):
+        raise missing_storage_selector_error(spec.storage_env_key)
+    registry = _load_optional_registry(spec)
     selection = resolve_active_storage_selection(
         registry=registry,
-        storage_name=storage_name,
+        storage=storage,
         storage_env_key=spec.storage_env_key,
         original_env=original_env,
         explicit_values=explicit_values,
@@ -190,13 +204,28 @@ def bootstrap_env(
         shared_env=shared_env_path,
         local_env=loaded_local_env,
         env_file=env_file,
-        apprc_toml_path=registry.path,
+        apprc_toml_path=registry.path if registry is not None else None,
         storage_selector_source=selection.source,
         storage_selector_value=selection.raw_value,
         storage_name=selection.storage_name,
         storage_root=active_storage_root,
-        storage_count=len(registry.storages),
+        storage_count=len(registry.storages) if registry is not None else 0,
     )
+
+
+def _load_optional_registry(spec: EnvBootstrapSpec) -> StorageRegistry | None:
+    """Load the multi-storage registry when the optional selector is set."""
+    active_path = spec.optional_apprc_toml_path()
+    if active_path is None:
+        return None
+    if not active_path.is_file():
+        raise ApprcTomlEnvError(
+            f"{spec.apprc_toml_env_key()} points to a missing AppRC TOML: "
+            f"{active_path}. Remove {spec.apprc_toml_env_key()} for "
+            "single-storage mode, or create the registry with "
+            f"{spec.app_name} config setup --yes --multi-storage."
+        )
+    return load_storage_registry(active_path)
 
 
 def _shared_env_resource(spec: EnvBootstrapSpec) -> Traversable:
@@ -228,6 +257,23 @@ def _read_dotenv_file(path: Path | None) -> dict[str, str]:
         for key, value in raw_values.items()
         if isinstance(value, str)
     }
+
+
+def _storage_selector_value(
+    *,
+    storage_env_key: str,
+    original_env: Mapping[str, str],
+    explicit_values: Mapping[str, str],
+    env_file_overrides_os_environ: bool,
+) -> str | None:
+    """Return the selected storage env value using bootstrap precedence."""
+    if env_file_overrides_os_environ:
+        return explicit_values.get(storage_env_key) or original_env.get(
+            storage_env_key
+        )
+    return original_env.get(storage_env_key) or explicit_values.get(
+        storage_env_key
+    )
 
 
 def _merged_env_values(

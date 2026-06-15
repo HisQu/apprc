@@ -64,7 +64,7 @@ def root_cmd(
         str | None,
         typer.Option(
             "--storage",
-            help="Registered Example App storage selector to use for this command.",
+            help="Example App storage path or registered selector for this command.",
         ),
     ] = None,
     log_level: Annotated[
@@ -85,7 +85,7 @@ def root_cmd(
         env_file=env_file,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         load_dotenv_layers=not skip_dotenv_layers,
-        storage_name=storage,
+        storage=storage,
         log_level=log_level,
         setup_logging=setup_logging,
     )

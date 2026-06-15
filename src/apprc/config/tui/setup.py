@@ -74,6 +74,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self.registry: StorageRegistry | None = None
         self.existing_action: setup_flow.ExistingSetupAction | None = None
         self.result: setup_flow.ConfigSetupResult | None = None
+        self.pending_storage_root: Path | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the setup wizard shell.
@@ -129,7 +130,33 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         )
 
     async def _start_setup(self) -> None:
-        """Load any existing registry or start fresh AppRC TOML selection."""
+        """Choose storage mode, then load registry state when needed."""
+        root_result = await self._choose_active_storage_root()
+        if root_result is None:
+            return
+        multi_storage = await self._choose_multi_storage()
+        if multi_storage is None:
+            return
+        if not multi_storage:
+            guarded_root = await self._guard_storage_root(
+                root_result,
+                storage_name=None,
+            )
+            if guarded_root is None:
+                return
+            try:
+                result = setup_flow.ensure_single_storage(
+                    self.kit,
+                    storage_root=guarded_root,
+                    allow_non_empty_storage=True,
+                )
+            except setup_flow.ConfigSetupError as exc:
+                self.notify(str(exc), severity="error", markup=False)
+                return
+            await self._finish_setup(result)
+            return
+
+        self.pending_storage_root = root_result
         existing_path = setup_flow.find_existing_apprc_toml_path(self.kit)
         if existing_path is None:
             registry = await self._choose_new_registry()
@@ -343,26 +370,20 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self,
         registry: StorageRegistry,
     ) -> None:
-        """Choose the active root and optional multi-storage registration.
+        """Register the pending active root in a multi-storage registry.
 
         :param registry: Registry selected by setup.
         """
         self.registry = registry
-        root_result = await self._choose_active_storage_root()
+        root_result = self.pending_storage_root
         if root_result is None:
             return
-        multi_storage = await self._choose_multi_storage()
-        if multi_storage is None:
+        name_result = await self._choose_storage_name(registry)
+        if name_result is None:
             return
-        storage_name: str | None = None
-        if multi_storage:
-            name_result = await self._choose_storage_name(registry)
-            if name_result is None:
-                return
-            storage_name = name_result
         guarded_root = await self._guard_storage_root(
             root_result,
-            storage_name=storage_name,
+            storage_name=name_result,
         )
         if guarded_root is None:
             return
@@ -371,8 +392,8 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 self.kit,
                 registry,
                 storage_root=guarded_root,
-                storage_name=storage_name,
-                multi_storage=multi_storage,
+                storage_name=name_result,
+                multi_storage=True,
                 allow_non_empty_storage=True,
             )
         except setup_flow.ConfigSetupError as exc:
@@ -505,15 +526,18 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             result.registry,
             result.active_storage_root,
         )
+        paths: tuple[Path | str, ...] = (result.active_storage_root,)
+        if result.registry is not None:
+            paths = (
+                result.registry.path,
+                result.registry.path.expanduser().resolve(),
+                result.active_storage_root,
+            )
         await self._set_screen(
             title="Done",
             body=self._style_setup_text(
                 body,
-                paths=(
-                    result.registry.path,
-                    result.registry.path.expanduser().resolve(),
-                    result.active_storage_root,
-                ),
+                paths=paths,
             ),
             buttons=(("finish-close", "Close", "success"),),
         )
@@ -622,12 +646,17 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             storage_name=storage_name,
             registry_path=registry_path,
         )
-        active_registry_path = registry_path or self.kit.apprc_toml_path()
-        return self._style_setup_text(
-            text,
-            paths=(
+        paths: tuple[Path | str, ...] = (
+            root,
+            root / self.kit.spec.local_env_filename,
+        )
+        if registry_path is not None:
+            paths = (
                 root,
                 root / self.kit.spec.local_env_filename,
-                active_registry_path,
-            ),
+                registry_path,
+            )
+        return self._style_setup_text(
+            text,
+            paths=paths,
         )

@@ -140,6 +140,9 @@ class ConfigEditorApp(App[None]):
             if active_storage_root is not None
             else None
         )
+        self.registry_enabled = (
+            kit is None or kit.optional_apprc_toml_path() is not None
+        )
         self.shared_values = _read_packaged_shared_values(kit)
         self.storage_entries = ordered_storage_entries(self.registry)
         self.current_storage_name: str | None = None
@@ -272,6 +275,12 @@ class ConfigEditorApp(App[None]):
                 severity="error",
             )
             return None
+        if not self.registry_enabled:
+            self.notify(
+                "Storage management requires an AppRC TOML.",
+                severity="error",
+            )
+            return None
         return self.kit
 
     def _save_env_key(self, env_key: str, raw_value: str) -> None:
@@ -323,12 +332,18 @@ class ConfigEditorApp(App[None]):
                 self._select_active_storage()
                 return
             self._clear_selection()
-            self.query_one("#storage-title", Static).update(
+            message = (
                 "No storages registered. Use New storage to add one, or set "
                 f"{self.kit.spec.storage_env_key if self.kit else '<APP>_STORAGE'} "
                 "to edit an active path.\n"
                 f"CLI: {self.init_command}"
+                if self.registry_enabled
+                else "No active storage path is selected. Set "
+                f"{self.kit.spec.storage_env_key if self.kit else '<APP>_STORAGE'} "
+                "to edit a storage-local env file. Configure the AppRC TOML "
+                "to enable registry actions."
             )
+            self.query_one("#storage-title", Static).update(message)
             self._clear_field_table()
             self._set_live_controls_enabled(False)
             return
@@ -373,7 +388,7 @@ class ConfigEditorApp(App[None]):
         self._populate_field_table()
         self._set_storage_controls_enabled(
             fields=True,
-            register_active=True,
+            register_active=self.registry_enabled,
             delete=False,
             archive=False,
         )
@@ -507,6 +522,9 @@ class ConfigEditorApp(App[None]):
         :param archive: Whether the current storage directory may be archived.
         """
         self._set_controls_enabled(fields)
+        self.query_one(
+            "#storage-new", Button
+        ).disabled = not self.registry_enabled
         self.query_one(
             "#storage-register-active", Button
         ).disabled = not register_active

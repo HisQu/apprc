@@ -48,16 +48,14 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     paths = setup_paths(kit)
     active_text = str(paths.active) if paths.active is not None else "<not set>"
     return (
-        f"{kit.spec.display_name} uses one small AppRC TOML to remember "
-        "named storage roots when optional multi-storage management is "
-        "enabled. The AppRC TOML does not contain storage data.\n\n"
-        f"{paths.env_key} must point at that AppRC TOML file.\n\n"
-        f"{kit.spec.storage_env_key} is the active storage selector for each "
-        "shell; it may be a registered storage name or an explicit storage "
-        "path.\n\n"
-        f"If {paths.env_key} is not set, setup will ask for the "
-        f"{apprc_dir_label(kit)} and derive the TOML path as "
-        f"<directory>/{kit.spec.apprc_toml_filename}.\n\n"
+        f"{kit.spec.display_name} needs one active storage root selected by "
+        f"{kit.spec.storage_env_key}. Optional multi-storage management adds "
+        "one small AppRC TOML to remember named storage roots. The AppRC TOML "
+        "does not contain storage data.\n\n"
+        f"{paths.env_key} is optional. When it is set, AppRC uses it for "
+        "registry-backed listing, switching, archiving, and restoring.\n\n"
+        "Setup starts by choosing the active storage root, then asks whether "
+        "to enable multi-storage.\n\n"
         f"Current AppRC TOML value:\n{active_text}"
     )
 
@@ -89,8 +87,8 @@ def apprc_dir_step_text(
         "The derived AppRC TOML stores AppRC state: registered storage names, "
         "storage root paths, and archive restore metadata.\n\n"
         f"{kit.apprc_toml_env_key()} must point at the full AppRC TOML path "
-        "in future shells. Setup asks for the directory so the file name stays "
-        "consistent."
+        "in future shells only when multi-storage management is enabled. "
+        "Setup asks for the directory so the file name stays consistent."
         f"{suggested_text}{computed}\n\n"
         f"After setup, keep {kit.spec.storage_env_key} exported as the active "
         "storage selector. It may be a registered storage name or an explicit "
@@ -193,7 +191,6 @@ def storage_root_reuse_text(
     :param registry_path: AppRC TOML file that will be created or updated.
     :return: Plain text warning.
     """
-    active_registry_path = registry_path or kit.apprc_toml_path()
     storage_context = (
         f"{kit.spec.display_name} will reuse this directory for "
         f"{kit.spec.display_name} storage {storage_name!r}."
@@ -201,13 +198,18 @@ def storage_root_reuse_text(
         else f"{kit.spec.display_name} will reuse this directory as the "
         "active storage root."
     )
+    managed_lines = [
+        f"storage-local env: {storage_root / kit.spec.local_env_filename}",
+    ]
+    if registry_path is not None:
+        managed_lines.append(f"AppRC TOML: {registry_path}")
+    managed_text = "\n".join(managed_lines)
     return (
         "Storage root exists and is not empty.\n\n"
         f"Storage root:\n{storage_root}\n\n"
         f"{storage_context}\n\n"
         "AppRC-managed files to create or update:\n"
-        f"storage-local env: {storage_root / kit.spec.local_env_filename}\n"
-        f"AppRC TOML: {active_registry_path}\n\n"
+        f"{managed_text}\n\n"
         "Existing files inside the storage root will not be deleted, moved, "
         "or overwritten."
     )
@@ -215,13 +217,13 @@ def storage_root_reuse_text(
 
 def next_steps_text(
     kit: "AppConfigKit",
-    registry: StorageRegistry,
+    registry: StorageRegistry | None,
     active_storage_root: Path,
 ) -> str:
     """Return the environment handoff shown after setup finishes.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup.
+    :param registry: Registry selected by setup when multi-storage is enabled.
     :param active_storage_root: Explicit storage path selected for runtime.
     :return: Newline-delimited setup finish guidance.
     """
@@ -230,13 +232,13 @@ def next_steps_text(
 
 def setup_finish_text(
     kit: "AppConfigKit",
-    registry: StorageRegistry,
+    registry: StorageRegistry | None,
     active_storage_root: Path,
 ) -> str:
     """Return setup completion text with shell and dotenv handoff.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup.
+    :param registry: Registry selected by setup when multi-storage is enabled.
     :param active_storage_root: Explicit storage path selected for runtime.
     :return: Human-facing setup completion guidance.
     """
@@ -265,8 +267,8 @@ def setup_finish_text(
             )
         ],
         "",
-        f"Without them, {kit.spec.app_name} will report env_not_set in "
-        "config doctor.",
+        f"Without {kit.spec.storage_env_key}, {kit.spec.app_name} will report "
+        "env_not_set in config doctor.",
         "",
         "Then verify:",
         *[f"  {command}" for command in verification_commands(kit)],
@@ -290,38 +292,44 @@ def verification_commands(kit: "AppConfigKit") -> list[str]:
 
 def shell_export_commands(
     kit: "AppConfigKit",
-    registry: StorageRegistry,
+    registry: StorageRegistry | None,
     active_storage_root: Path,
 ) -> list[str]:
     """Return POSIX shell exports needed to activate this setup.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup.
+    :param registry: Registry selected by setup when multi-storage is enabled.
     :param active_storage_root: Explicit storage path selected for runtime.
     :return: Ordered shell export commands.
     """
-    return [
-        export_apprc_toml_command(kit, registry.path),
-        export_storage_selector_command(kit, str(active_storage_root)),
-    ]
+    commands: list[str] = []
+    if registry is not None:
+        commands.append(export_apprc_toml_command(kit, registry.path))
+    commands.append(
+        export_storage_selector_command(kit, str(active_storage_root))
+    )
+    return commands
 
 
 def dotenv_assignment_commands(
     kit: "AppConfigKit",
-    registry: StorageRegistry,
+    registry: StorageRegistry | None,
     active_storage_root: Path,
 ) -> list[str]:
     """Return dotenv assignments needed to activate this setup.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup.
+    :param registry: Registry selected by setup when multi-storage is enabled.
     :param active_storage_root: Explicit storage path selected for runtime.
     :return: Ordered dotenv assignment lines.
     """
-    return [
-        dotenv_apprc_toml_assignment(kit, registry.path),
-        dotenv_storage_selector_assignment(kit, str(active_storage_root)),
-    ]
+    assignments: list[str] = []
+    if registry is not None:
+        assignments.append(dotenv_apprc_toml_assignment(kit, registry.path))
+    assignments.append(
+        dotenv_storage_selector_assignment(kit, str(active_storage_root))
+    )
+    return assignments
 
 
 def export_apprc_toml_command(

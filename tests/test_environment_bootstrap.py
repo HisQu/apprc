@@ -75,24 +75,115 @@ def _set_demo_apprc_toml(monkeypatch, tmp_path: Path) -> Path:
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_bootstrap_env_requires_apprc_toml_env(
+def test_bootstrap_env_uses_storage_without_apprc_toml_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
+    storage_root = tmp_path / "storage"
+    monkeypatch.setenv("DEMO_STORAGE", str(storage_root))
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
         'DEMO_MODEL="shared-model"\n',
     )
 
-    with pytest.raises(ApprcTomlEnvError, match="DEMO_APPRC_TOML"):
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=None,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.apprc_toml_path is None
+    assert result.storage_name is None
+    assert result.storage_root == storage_root.resolve()
+    assert result.local_env == storage_root.resolve() / ".env.demo"
+    assert os.environ["DEMO_STORAGE"] == str(storage_root.resolve())
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_bootstrap_env_bare_storage_without_apprc_toml_is_relative_path(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
+    monkeypatch.setenv("DEMO_STORAGE", "alpha")
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=None,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=False,
+        storage=None,
+    )
+
+    assert result.apprc_toml_path is None
+    assert result.storage_name is None
+    assert result.storage_selector_value == "alpha"
+    assert result.storage_root == (tmp_path / "alpha").resolve()
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_bootstrap_env_explicit_env_file_can_select_single_storage(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
+    monkeypatch.delenv("DEMO_STORAGE", raising=False)
+    storage_root = tmp_path / "explicit-storage"
+    explicit_env = tmp_path / "override.env"
+    explicit_env.write_text(
+        f'DEMO_STORAGE="{storage_root}"\nDEMO_MODEL="explicit-model"\n',
+        encoding="utf-8",
+    )
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=explicit_env,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.apprc_toml_path is None
+    assert result.storage_selector_source == "DEMO_STORAGE"
+    assert result.storage_root == storage_root.resolve()
+    assert os.environ["DEMO_MODEL"] == "explicit-model"
+
+
+def test_bootstrap_env_configured_apprc_toml_must_exist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    missing_registry = tmp_path / "missing.toml"
+    monkeypatch.setenv("DEMO_APPRC_TOML", str(missing_registry))
+    monkeypatch.setenv("DEMO_STORAGE", str(tmp_path / "storage"))
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+
+    with pytest.raises(ApprcTomlEnvError, match="missing AppRC TOML"):
         bootstrap_env(
             spec=_spec(package_name),
             env_file=None,
             env_file_overrides_os_environ=False,
-            load_dotenv_layers=True,
-            storage_name=None,
+            load_dotenv_layers=False,
+            storage=None,
         )
 
 
@@ -127,7 +218,7 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
         env_file=explicit_env,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        storage_name=None,
+        storage=None,
     )
 
     assert os.environ["DEMO_MODEL"] == "shell-model"
@@ -168,7 +259,7 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
         env_file=explicit_env,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        storage_name=None,
+        storage=None,
     )
 
     assert os.environ["DEMO_MODEL"] == "explicit-model"
@@ -200,7 +291,7 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
         env_file=explicit_env,
         env_file_overrides_os_environ=True,
         load_dotenv_layers=True,
-        storage_name=None,
+        storage=None,
     )
 
     assert os.environ["DEMO_MODEL"] == "explicit-model"
@@ -210,7 +301,7 @@ def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _set_demo_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
     storage_root = tmp_path / "from-shell"
     monkeypatch.setenv("DEMO_STORAGE", str(storage_root))
     package_name = _shared_env_package(
@@ -224,7 +315,7 @@ def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=False,
-        storage_name=None,
+        storage=None,
     )
 
     assert result.shared_env is None
@@ -237,7 +328,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _set_demo_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
     normalized_root = tmp_path / "demo-storage"
     monkeypatch.setenv(
         "DEMO_STORAGE",
@@ -258,7 +349,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=False,
-        storage_name=None,
+        storage=None,
     )
 
     assert result.storage_root == normalized_root
@@ -294,7 +385,7 @@ def test_bootstrap_env_storage_name_selects_active_root(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        storage_name="beta",
+        storage="beta",
     )
 
     assert result.storage_name == "beta"
@@ -336,7 +427,7 @@ def test_bootstrap_env_storage_name_wins_over_env_selector(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        storage_name="beta",
+        storage="beta",
     )
 
     assert result.storage_name == "beta"
@@ -369,7 +460,7 @@ def test_bootstrap_env_storage_env_name_selects_registered_root(
         env_file=None,
         env_file_overrides_os_environ=False,
         load_dotenv_layers=True,
-        storage_name=None,
+        storage=None,
     )
 
     assert result.storage_name == "beta"
@@ -404,7 +495,7 @@ def test_bootstrap_env_storage_env_bare_unknown_name_is_error(
             env_file=None,
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
-            storage_name=None,
+            storage=None,
         )
 
 
@@ -426,7 +517,7 @@ def test_bootstrap_env_requires_storage_selector(
             env_file=None,
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
-            storage_name=None,
+            storage=None,
         )
 
 
@@ -465,7 +556,7 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
         env_file=explicit_env,
         env_file_overrides_os_environ=True,
         load_dotenv_layers=False,
-        storage_name=None,
+        storage=None,
     )
 
     assert result.shared_env is None

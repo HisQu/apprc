@@ -161,7 +161,7 @@ class AppConfigKit:
         env_file: Path | None,
         env_file_overrides_os_environ: bool,
         load_dotenv_layers: bool,
-        storage_name: str | None,
+        storage: str | None,
         logger: BootstrapLogger | None = None,
     ) -> EnvBootstrapResult:
         """Populate ``os.environ`` for this application.
@@ -177,9 +177,9 @@ class AppConfigKit:
             should be merged into this process. Storage selection still runs
             when this is ``False``, and explicit ``env_file`` values may still
             provide the selector used for selection.
-        :param storage_name: Optional ``--storage`` selector from the
-            AppRC TOML. When provided, that storage root becomes active and
-            determines the storage-local dotenv candidate.
+        :param storage: Optional ``--storage`` selector. With an AppRC TOML it
+            may be a registered storage name or path. Without an AppRC TOML it
+            is always interpreted as a path.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
         """
@@ -188,7 +188,7 @@ class AppConfigKit:
             env_file=env_file,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
-            storage_name=storage_name,
+            storage=storage,
             logger=logger,
         )
 
@@ -325,25 +325,25 @@ class AppConfigKit:
 
     def install_state(
         self,
-        storage_name: str | None = None,
+        storage: str | None = None,
         apprc_toml_path: Path | None = None,
     ) -> ConfigInstallState:
         """Return this application's explicit local installation state.
 
-        :param storage_name: Optional registry storage selected by ``--storage``.
+        :param storage: Optional selector passed by ``--storage``.
         :param apprc_toml_path: Optional explicit AppRC TOML path used by setup.
         :return: Coarse installation and health state.
         """
         return ConfigInstallState(
             self.doctor_payload(
-                storage_name=storage_name,
+                storage=storage,
                 apprc_toml_path=apprc_toml_path,
             )["install_state"]
         )
 
     def doctor_payload(
         self,
-        storage_name: str | None = None,
+        storage: str | None = None,
         apprc_toml_path: Path | None = None,
     ) -> ConfigDoctorPayload:
         """Return JSON-friendly local setup diagnostics."""
@@ -351,7 +351,7 @@ class AppConfigKit:
 
         return build_config_doctor_payload(
             self,
-            storage_name=storage_name,
+            storage=storage,
             apprc_toml_path=apprc_toml_path,
         )
 

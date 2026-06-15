@@ -33,8 +33,8 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             title="Storage root",
             explanation_short="Active storage root.",
             explanation_long=(
-                "Selected through the AppRC TOML for Example App and written "
-                "automatically when a storage root is registered."
+                "Selected through APPRC_EXAMPLE_APP_STORAGE and written "
+                "automatically during runtime bootstrap."
             ),
             editable=False,
             required=True,
@@ -158,7 +158,7 @@ def _bootstrap_payload(
         "shared_env": _path_text(bootstrap.shared_env),
         "local_env": _path_text(bootstrap.local_env),
         "env_file": _path_text(bootstrap.env_file),
-        "apprc_toml_path": str(bootstrap.apprc_toml_path),
+        "apprc_toml_path": _path_text(bootstrap.apprc_toml_path),
         "storage_selector_source": bootstrap.storage_selector_source,
         "storage_selector_value": bootstrap.storage_selector_value,
         "storage_name": bootstrap.storage_name,

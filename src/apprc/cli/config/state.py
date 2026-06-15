@@ -67,10 +67,15 @@ def active_storage_root_from_state(
         return state.env_bootstrap.storage_root
     env_storage = os.environ.get(kit.spec.storage_env_key, "").strip()
     if env_storage:
-        registry = kit.load_registry()
+        active_registry_path = kit.optional_apprc_toml_path()
+        registry = (
+            kit.load_registry(path=active_registry_path)
+            if active_registry_path is not None
+            else None
+        )
         selection = resolve_active_storage_selection(
             registry=registry,
-            storage_name=None,
+            storage=None,
             storage_env_key=kit.spec.storage_env_key,
             original_env=os.environ,
         )

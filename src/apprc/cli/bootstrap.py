@@ -32,7 +32,7 @@ def bootstrap_cli_env(
     env_file: Path | None,
     env_file_overrides_os_environ: bool,
     load_dotenv_layers: bool,
-    storage_name: str | None,
+    storage: str | None,
     log_level: str | None = None,
     setup_logging: Callable[..., Any] | None = None,
     logger: BootstrapLogger | None = None,
@@ -50,9 +50,9 @@ def bootstrap_cli_env(
         be merged into this process. Registry selection still runs when this
         is ``False``, and explicit ``env_file`` values may still provide the
         storage selector used for selection.
-    :param storage_name: Optional ``--storage`` selector from the storage
-        registry. When provided, that registry root becomes the active storage
-        root and determines the storage-local dotenv candidate.
+    :param storage: Optional ``--storage`` selector. With an AppRC TOML it may
+        be a registered storage name or path. Without an AppRC TOML it is
+        always interpreted as a path.
     :param log_level: Optional CLI log-level token.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status messages.
@@ -67,7 +67,7 @@ def bootstrap_cli_env(
             env_file=env_file,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
-            storage_name=storage_name,
+            storage=storage,
             logger=logger,
         )
     except FileNotFoundError as exc:

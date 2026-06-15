@@ -126,7 +126,7 @@ def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     storage_root = tmp_path / ".demo" / "storage"
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
@@ -145,11 +145,10 @@ def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
         ],
     )
 
-    registry = APPRC_EXAMPLE_APP_KIT.load_registry()
     assert result.exit_code == 0, result.output
-    assert registry.path == registry_path
-    assert registry.storages == {}
+    assert APPRC_EXAMPLE_APP_KIT.optional_apprc_toml_path() is None
     assert (storage_root / ".env.apprc_example_app").is_file()
+    assert "export APPRC_EXAMPLE_APP_APPRC_TOML" not in result.output
     assert (
         f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
         in result.output
@@ -164,7 +163,7 @@ def test_demo_config_set_and_show_payload(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    _set_demo_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
@@ -220,7 +219,7 @@ def test_demo_root_env_file_option_before_config_show(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    _set_demo_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",

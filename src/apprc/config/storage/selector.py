@@ -79,8 +79,8 @@ def resolve_registered_storage_name(
 
 def resolve_active_storage_selection(
     *,
-    registry: StorageRegistry,
-    storage_name: str | None,
+    registry: StorageRegistry | None,
+    storage: str | None,
     storage_env_key: str,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str] | None = None,
@@ -88,13 +88,14 @@ def resolve_active_storage_selection(
 ) -> StorageSelection | None:
     """Return the active storage selected by CLI, env, or explicit dotenv.
 
-    ``--storage`` always wins and is intentionally a registered-name selector.
-    Without it, AppRC reads ``storage_env_key`` from the process environment
-    and optional explicit dotenv values using the same precedence policy as the
-    dotenv merge step.
+    ``--storage`` always wins. With a registry, selectors keep the
+    multi-storage rules: exact registered names resolve through TOML,
+    path-like values resolve as paths, and bare unknown names fail. Without a
+    registry, every non-empty selector resolves as a storage path.
 
-    :param registry: Parsed AppRC TOML storage registry.
-    :param storage_name: Optional ``--storage`` selector.
+    :param registry: Parsed AppRC TOML storage registry, or ``None`` for
+        single-storage path mode.
+    :param storage: Optional ``--storage`` selector.
     :param storage_env_key: Env key that stores the active storage selector.
     :param original_env: Process environment captured before dotenv loading.
     :param explicit_values: Values read from ``--env-file``.
@@ -103,10 +104,12 @@ def resolve_active_storage_selection(
     :return: Resolved selection, or ``None`` when no selector was provided.
     :raises StorageSelectorError: If the selected value is invalid.
     """
-    if storage_name is not None:
-        return resolve_registered_storage_name(
+    if storage is not None:
+        return resolve_storage_selector_value(
             registry=registry,
-            name=storage_name,
+            raw_value=storage,
+            storage_env_key=storage_env_key,
+            source="--storage",
         )
     storage_selector = _storage_selector_value(
         original_env=original_env,
@@ -125,14 +128,15 @@ def resolve_active_storage_selection(
 
 def resolve_storage_selector_value(
     *,
-    registry: StorageRegistry,
+    registry: StorageRegistry | None,
     raw_value: str,
     storage_env_key: str,
     source: str | None = None,
 ) -> StorageSelection:
     """Resolve one storage env value to a registered name or path.
 
-    :param registry: Parsed AppRC TOML storage registry.
+    :param registry: Parsed AppRC TOML storage registry, or ``None`` for
+        single-storage path mode.
     :param raw_value: Value from ``<APP>_STORAGE`` or an explicit env file.
     :param storage_env_key: Env key used in human-facing errors.
     :param source: User-visible source shown in diagnostics.
@@ -141,6 +145,15 @@ def resolve_storage_selector_value(
     """
     selector = raw_value.strip()
     selection_source = source or storage_env_key
+    if not selector:
+        raise missing_storage_selector_error(storage_env_key)
+    if registry is None:
+        return StorageSelection(
+            source=selection_source,
+            raw_value=selector,
+            storage_name=None,
+            root=normalize_storage_root_path(selector).resolve(),
+        )
     if selector in registry.storages:
         record = registry.selected(selector)
         return StorageSelection(
@@ -174,9 +187,10 @@ def missing_storage_selector_error(
     :return: Error carrying CLI parameter context.
     """
     return StorageSelectorError(
-        f"{storage_env_key} is required and must be either a registered "
-        "storage name or an explicit storage path. Pass --storage NAME or "
-        f'export {storage_env_key}="/path/to/storage".',
+        f"{storage_env_key} is required and must select a storage path. "
+        "When the optional AppRC TOML is configured, it may also select a "
+        "registered storage name. Pass --storage PATH or export "
+        f'{storage_env_key}="/path/to/storage".',
         param_hint=storage_env_key,
     )
 

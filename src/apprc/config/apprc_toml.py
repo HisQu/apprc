@@ -103,13 +103,14 @@ def missing_apprc_toml_env_message(
     env_key = apprc_toml_env_key(app_name)
     command_name = app_name or "app"
     return (
-        f"{env_key} is required and must point to this app's AppRC TOML. "
-        "Choose this app's directory (AppRC), then run:\n"
+        f"{env_key} is required for multi-storage registry commands and must "
+        "point to this app's AppRC TOML. Choose this app's directory (AppRC), "
+        "then run:\n"
         f"  {command_name} config setup --yes --apprc-dir "
-        "/absolute/path/to/config-dir\n"
+        "/absolute/path/to/config-dir --multi-storage\n"
         "Setup will derive the AppRC TOML path:\n"
         f"  /absolute/path/to/config-dir/{apprc_toml_filename}\n"
-        "Keep the variable exported for future commands."
+        "For single-storage runtime commands, export only the storage env var."
     )
 
 

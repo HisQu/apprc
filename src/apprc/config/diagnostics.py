@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
 from apprc.config.install_state import ConfigInstallState
+from apprc.config.storage.registry import StorageRegistry
 from apprc.config.storage.selector import (
     StorageSelection,
     StorageSelectorError,
@@ -58,20 +59,20 @@ def config_command_text(kit: "AppConfigKit", action: str) -> str:
 def config_setup_message(kit: "AppConfigKit") -> str:
     """Return setup text shown when no storage is registered."""
     storage_key = kit.spec.storage_env_key
-    setup_action = "setup --yes --apprc-dir /absolute/path/to/config-dir"
+    setup_action = "setup --yes --storage-root /absolute/path/to/storage-root"
     return (
-        f"No {kit.spec.display_name} AppRC TOML is installed yet.\n\n"
-        f"{kit.apprc_toml_env_key()} must point at the AppRC TOML file. "
-        f"{storage_key} is the active storage selector: a registered storage "
-        "name or an explicit storage path.\n"
-        f"Choose the {kit.spec.display_name} directory (AppRC); setup will "
-        "derive the TOML file path and print the export command:\n"
+        f"No active {kit.spec.display_name} storage is selected.\n\n"
+        f"{storage_key} is required and points at the active storage root. "
+        f"{kit.apprc_toml_env_key()} is optional; set it only when you want "
+        "multi-storage registry features.\n"
+        "Choose the storage root; setup will create the storage-local env "
+        "file and print the export command:\n"
         f"  {config_command_text(kit, setup_action)}\n\n"
-        "Keep both variables exported for future commands, then inspect the setup:\n"
+        "Keep the storage variable exported for future commands, then inspect "
+        "the setup:\n"
         f"  {config_command_text(kit, 'doctor')}\n"
         f"  {config_command_text(kit, 'show')}\n\n"
         "Setup creates or checks:\n"
-        f"  /absolute/path/to/config-dir/{kit.spec.apprc_toml_filename}\n"
         f"  /absolute/path/to/storage-root/{kit.spec.local_env_filename}"
     )
 
@@ -79,14 +80,14 @@ def config_setup_message(kit: "AppConfigKit") -> str:
 def build_config_doctor_payload(
     kit: "AppConfigKit",
     *,
-    storage_name: str | None,
+    storage: str | None,
     storage_root: Path | None = None,
     apprc_toml_path: Path | None = None,
 ) -> ConfigDoctorPayload:
     """Return local setup diagnostics for one app's AppRC TOML.
 
     :param kit: Application config facade.
-    :param storage_name: Optional registered storage selected by ``--storage``.
+    :param storage: Optional selector passed by ``--storage``.
     :param storage_root: Optional explicit storage root selected by setup.
     :param apprc_toml_path: Optional explicit AppRC TOML path used by setup.
     :return: Stable JSON-friendly diagnostic payload.
@@ -109,51 +110,51 @@ def build_config_doctor_payload(
     toml_exists = (
         active_toml_path.is_file() if active_toml_path is not None else False
     )
-    install_state = ConfigInstallState.NOT_INSTALLED
+    install_state = ConfigInstallState.INSTALLED_UNHEALTHY
+    registry: StorageRegistry | None = None
 
-    if active_toml_path is None:
-        missing_env_keys.append(toml_env_key)
-        if storage_name is None and not raw_storage_env_value:
-            missing_env_keys.append(storage_env_key)
-        issues.append(_missing_env_issue(kit, missing_env_keys))
-        install_state = ConfigInstallState.ENV_NOT_SET
-    elif not toml_exists:
+    if active_toml_path is not None and not toml_exists:
         issues.append(f"AppRC TOML does not exist: {active_toml_path}")
-    else:
-        install_state = ConfigInstallState.INSTALLED_UNHEALTHY
+        registry = StorageRegistry(
+            path=active_toml_path,
+            storages={},
+            archived_storages={},
+        )
+    elif active_toml_path is not None:
         try:
             registry = kit.load_registry(path=active_toml_path)
         except ValueError as exc:
             toml_error = str(exc)
             issues.append(f"AppRC TOML is invalid: {toml_error}")
+            registry = StorageRegistry(
+                path=active_toml_path,
+                storages={},
+                archived_storages={},
+            )
         else:
             storage_count = len(registry.storages)
-            if storage_root is not None:
-                selected_root = Path(storage_root).expanduser().resolve()
-                selection = StorageSelection(
-                    source=storage_env_key,
-                    raw_value=str(storage_root),
-                    storage_name=storage_name,
-                    root=selected_root,
-                )
-            elif storage_name is None and not raw_storage_env_value:
-                missing_env_keys.append(storage_env_key)
-                issues.append(_missing_env_issue(kit, missing_env_keys))
-            else:
-                try:
-                    selection = resolve_active_storage_selection(
-                        registry=registry,
-                        storage_name=storage_name,
-                        storage_env_key=storage_env_key,
-                        original_env=os.environ,
-                    )
-                except StorageSelectorError as exc:
-                    issues.append(str(exc))
-                if selection is None and registry.storages:
-                    issues.append(
-                        f"{storage_env_key} is not set. Export a registered "
-                        "storage name or explicit storage path."
-                    )
+
+    if storage_root is not None:
+        selected_root = Path(storage_root).expanduser().resolve()
+        selection = StorageSelection(
+            source=storage_env_key,
+            raw_value=str(storage_root),
+            storage_name=storage if active_toml_path is not None else None,
+            root=selected_root,
+        )
+    elif storage is None and not raw_storage_env_value:
+        missing_env_keys.append(storage_env_key)
+        issues.append(_missing_env_issue(kit, missing_env_keys))
+    else:
+        try:
+            selection = resolve_active_storage_selection(
+                registry=registry,
+                storage=storage,
+                storage_env_key=storage_env_key,
+                original_env=os.environ,
+            )
+        except StorageSelectorError as exc:
+            issues.append(str(exc))
 
     selected_storage_root = selection.root if selection is not None else None
     local_env = (
@@ -178,16 +179,19 @@ def build_config_doctor_payload(
 
     if missing_env_keys:
         install_state = ConfigInstallState.ENV_NOT_SET
-    elif toml_exists and not issues:
+    elif active_toml_path is not None and not toml_exists:
+        install_state = ConfigInstallState.NOT_INSTALLED
+    elif not issues:
         install_state = ConfigInstallState.INSTALLED_HEALTHY
-    elif toml_exists:
-        install_state = ConfigInstallState.INSTALLED_UNHEALTHY
 
     healthy = install_state == ConfigInstallState.INSTALLED_HEALTHY
+    installed = toml_exists or (
+        bool(storage_root_exists) and bool(local_env_exists)
+    )
     return {
         "ok": healthy,
         "install_state": install_state.value,
-        "installed": toml_exists,
+        "installed": installed,
         "healthy": healthy,
         "apprc_toml_env_key": toml_env_key,
         "apprc_toml_env_value": toml_env_value,
@@ -195,7 +199,9 @@ def build_config_doctor_payload(
             str(active_toml_path) if active_toml_path is not None else None
         ),
         "apprc_toml_exists": toml_exists,
-        "apprc_toml_parse_ok": toml_exists and toml_error is None,
+        "apprc_toml_parse_ok": (
+            active_toml_path is None or toml_exists and toml_error is None
+        ),
         "apprc_toml_error": toml_error,
         "storage_count": storage_count,
         "selected_storage": (
@@ -222,7 +228,7 @@ def build_config_doctor_payload(
         else [
             config_command_text(
                 kit,
-                "setup --yes --apprc-dir /absolute/path/to/config-dir",
+                "setup --yes --storage-root /absolute/path/to/storage-root",
             ),
             config_command_text(kit, "doctor"),
             config_command_text(kit, "show"),

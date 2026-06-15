@@ -87,7 +87,9 @@ def test_kit_registry_path_requires_apprc_toml_env(
         kit.apprc_toml_path()
 
     message = str(exc_info.value)
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML is required" in message
+    assert (
+        "APPRC_EXAMPLE_APP_APPRC_TOML is required for multi-storage" in message
+    )
     assert "config setup --yes --apprc-dir" in message
 
 
@@ -101,16 +103,13 @@ def test_config_doctor_reports_env_not_set_without_env(
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
 
-    payload = build_config_doctor_payload(kit, storage_name=None)
+    payload = build_config_doctor_payload(kit, storage=None)
     result = runner.invoke(app, ["doctor", "--json"])
 
     assert payload["install_state"] == ConfigInstallState.ENV_NOT_SET.value
     assert payload["installed"] is False
     assert payload["healthy"] is False
-    assert payload["missing_env_keys"] == [
-        "APPRC_EXAMPLE_APP_APPRC_TOML",
-        "APPRC_EXAMPLE_APP_STORAGE",
-    ]
+    assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
     assert result.exit_code == 1, result.output
     assert json.loads(result.output)["install_state"] == "env_not_set"
 
@@ -129,24 +128,29 @@ def test_config_doctor_prints_env_not_set_status(
 
     assert result.exit_code == 1, result.output
     assert "Example App config doctor: env not set" in result.output
-    assert (
-        "missing_env_keys: APPRC_EXAMPLE_APP_APPRC_TOML, "
-        "APPRC_EXAMPLE_APP_STORAGE"
-    ) in result.output
+    assert "missing_env_keys: APPRC_EXAMPLE_APP_STORAGE" in result.output
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_config_doctor_reports_env_not_set_for_missing_apprc_toml_env(
+def test_config_doctor_reports_healthy_single_storage_without_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
+    storage_root = tmp_path / "alpha"
+    storage_root.mkdir()
+    (storage_root / ".env.apprc_example_app").write_text("", encoding="utf-8")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
 
-    payload = build_config_doctor_payload(kit, storage_name=None)
+    payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["install_state"] == ConfigInstallState.ENV_NOT_SET.value
-    assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_APPRC_TOML"]
+    assert (
+        payload["install_state"] == ConfigInstallState.INSTALLED_HEALTHY.value
+    )
+    assert payload["apprc_toml_path"] is None
+    assert payload["missing_env_keys"] == []
+    assert payload["selected_storage_root"] == str(storage_root.resolve())
 
 
 def test_config_doctor_reports_env_not_set_for_missing_storage_env(
@@ -161,7 +165,7 @@ def test_config_doctor_reports_env_not_set_for_missing_storage_env(
     )
     monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
 
-    payload = build_config_doctor_payload(kit, storage_name=None)
+    payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["install_state"] == ConfigInstallState.ENV_NOT_SET.value
     assert payload["installed"] is True
@@ -169,7 +173,7 @@ def test_config_doctor_reports_env_not_set_for_missing_storage_env(
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_generated_config_setup_yes_requires_apprc_toml_without_env(
+def test_generated_config_setup_yes_requires_storage_without_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
@@ -181,8 +185,8 @@ def test_generated_config_setup_yes_requires_apprc_toml_without_env(
     result = runner.invoke(app, ["setup", "--yes"])
 
     assert result.exit_code == 2, result.output
-    assert "--apprc-dir" in result.output
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML is not set" in result.output
+    assert "--storage-root" in result.output
+    assert "APPRC_EXAMPLE_APP_STORAGE" in result.output
 
 
 def test_install_state_reports_not_installed_for_missing_file(
@@ -190,7 +194,11 @@ def test_install_state_reports_not_installed_for_missing_file(
     tmp_path: Path,
 ) -> None:
     missing_registry = tmp_path / "missing.toml"
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / ".env.apprc_example_app").write_text("", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_registry))
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
 
     assert kit.install_state() == ConfigInstallState.NOT_INSTALLED

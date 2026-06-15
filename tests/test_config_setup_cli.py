@@ -18,7 +18,7 @@ def test_generated_config_setup_creates_single_storage_files(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
@@ -33,28 +33,17 @@ def test_generated_config_setup_creates_single_storage_files(
     storage_root = (
         tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
     )
-    registry = kit.load_registry()
     assert result.exit_code == 0, result.output
-    assert (
-        registry.path
-        == tmp_path
-        / "config"
-        / "apprc_example_app"
-        / "apprc_example_app.apprc.toml"
-    )
-    assert registry.storages == {}
+    assert kit.optional_apprc_toml_path() is None
     assert "APPRC_EXAMPLE_APP_STORAGE" not in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
-    assert (
-        f'export APPRC_EXAMPLE_APP_APPRC_TOML="{registry.path}"'
-        in result.output
-    )
+    assert "export APPRC_EXAMPLE_APP_APPRC_TOML" not in result.output
     assert (
         f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
         in result.output
     )
-    assert f'APPRC_EXAMPLE_APP_APPRC_TOML="{registry.path}"' in result.output
+    assert "APPRC_EXAMPLE_APP_APPRC_TOML=" not in result.output
     assert (
         f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"' in result.output
     )
@@ -62,10 +51,7 @@ def test_generated_config_setup_creates_single_storage_files(
     assert "Add these to your environment:" in result.output
     assert "Shell:" in result.output
     assert "Or Dotenv:" in result.output
-    assert (
-        "Without them, apprc_example_app will report env_not_set "
-        "in config doctor."
-    ) in result.output
+    assert "Without APPRC_EXAMPLE_APP_STORAGE" in result.output
     assert "apprc_example_app config edit" in result.output
     assert "apprc_example_app config show" in result.output
     assert "apprc_example_app config doctor" in result.output
@@ -93,6 +79,7 @@ def test_generated_config_setup_accepts_apprc_dir_without_env(
             str(custom_dir),
             "--storage-root",
             str(storage_root),
+            "--multi-storage",
         ],
     )
 
@@ -137,7 +124,7 @@ def test_generated_config_setup_accepts_apprc_dir_env_mismatch(
 
     result = runner.invoke(
         app,
-        ["setup", "--yes", "--apprc-dir", str(custom_dir)],
+        ["setup", "--yes", "--apprc-dir", str(custom_dir), "--multi-storage"],
     )
 
     registry = kit.load_registry(path=custom_registry)
@@ -167,7 +154,7 @@ def test_generated_config_setup_accepts_matching_custom_registry_env(
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
 
-    result = runner.invoke(app, ["setup", "--yes"])
+    result = runner.invoke(app, ["setup", "--yes", "--multi-storage"])
 
     registry = kit.load_registry()
     assert result.exit_code == 0, result.output
@@ -280,7 +267,7 @@ def test_generated_config_setup_rejects_apprc_dir_that_is_file(
 
     result = runner.invoke(
         app,
-        ["setup", "--yes", "--apprc-dir", str(file_path)],
+        ["setup", "--yes", "--apprc-dir", str(file_path), "--multi-storage"],
     )
 
     assert result.exit_code == 2, result.output
@@ -336,7 +323,7 @@ def test_generated_config_setup_reset_orphans_registered_storage(
 
     result = runner.invoke(
         app,
-        ["setup", "--yes", "--existing-action", "reset"],
+        ["setup", "--yes", "--existing-action", "reset", "--multi-storage"],
     )
 
     new_storage_root = (
@@ -345,7 +332,9 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     registry = kit.load_registry()
     assert result.exit_code == 0, result.output
     assert old_storage_root.is_dir()
-    assert registry.storages == {}
+    assert registry.selected("apprc_example_app_stor-1").root == (
+        new_storage_root.resolve()
+    )
     assert (new_storage_root / ".env.apprc_example_app").is_file()
     assert "Example App setup files are ready." in result.output
     assert (
@@ -381,6 +370,7 @@ def test_generated_config_setup_moves_existing_registry_to_apprc_dir_target(
             str(custom_dir),
             "--existing-action",
             "move",
+            "--multi-storage",
         ],
     )
 

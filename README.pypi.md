@@ -478,9 +478,11 @@ diagnostics.
 - default value
 - short explanation
 
-Selecting a row opens a modal with type information, possible values, and the
-long explanation. Secret values are redacted. Required missing values show
-`<required>`.
+Selecting a row opens a modal with type information, possible values, the long
+explanation, and copy buttons for the effective, shell, local, and shared
+default values that are currently available. Secret values are redacted on
+screen, but an explicit copy action copies the raw value. Required missing
+values show `<required>`.
 
 The editor also manages storage lifecycle:
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
+from importlib.resources import as_file, files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -51,6 +52,7 @@ from apprc.config.tui.rendering import (
 from apprc.config.tui.field_state import (
     SelectedField,
     archived_storage_title,
+    config_value_sources,
     live_storage_title,
     missing_storage_title,
     selected_field_for_row,
@@ -128,6 +130,7 @@ class ConfigEditorApp(App[None]):
         self.init_command = init_command
         self.registry_label = registry_label
         self.hidden_env_keys = frozenset(hidden_env_keys)
+        self.shared_values = _read_packaged_shared_values(kit)
         self.storage_entries = ordered_storage_entries(self.registry)
         self.current_storage_name: str | None = None
         self.current_storage_kind: StorageEntryKind | None = None
@@ -211,6 +214,13 @@ class ConfigEditorApp(App[None]):
                 env_key=env_key,
                 local_value=self.local_values.get(env_key, ""),
                 env_is_set=env_key in os.environ,
+                value_sources=config_value_sources(
+                    spec=selected.spec,
+                    env_key=env_key,
+                    local_values=self.local_values,
+                    shell_env=os.environ,
+                    shared_values=self.shared_values,
+                ),
             ),
             self._handle_edit_result,
         )
@@ -471,3 +481,20 @@ class ConfigEditorApp(App[None]):
         if self.kit is not None:
             return self.kit.default_storage_name()
         return "apprc_stor-1"
+
+
+def _read_packaged_shared_values(
+    kit: AppConfigKit | None,
+) -> dict[str, str] | None:
+    """Return packaged shared dotenv values for a kit-backed editor.
+
+    :param kit: Application facade that owns the shared dotenv resource.
+    :return: Parsed shared values, or ``None`` for owners-only editors.
+    """
+    if kit is None:
+        return None
+    resource = files(kit.spec.config_package).joinpath(
+        kit.spec.shared_env_filename
+    )
+    with as_file(resource) as path:
+        return read_local_env(path)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -17,10 +18,17 @@ from textual.widgets import Button, Input, ProgressBar, Static
 # == Internal ================================
 from apprc.config.schema import ConfigField, ConfigOwner
 from apprc.config.storage.archive import StorageArchiveProgress
+from apprc.config.tui.field_state import ConfigValueSource
 from apprc.config.tui.primitives import PathSuggester
-from apprc.config.tui.rendering import field_type_label, possible_values_label
+from apprc.config.tui.rendering import (
+    field_type_label,
+    possible_values_label,
+    value_style,
+)
 from apprc.config.tui.styles import (
+    LABEL_STYLE,
     PATH_INPUT_CLASS,
+    SECRET_STYLE,
     env_key_text,
     label_value_text,
     lines_text,
@@ -74,6 +82,26 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         margin: 1 0;
     }
 
+    #edit-source-panel {
+        margin: 1 0;
+    }
+
+    .edit-source-row {
+        height: 3;
+    }
+
+    .edit-source-label {
+        width: 16;
+    }
+
+    .edit-source-value {
+        width: 1fr;
+    }
+
+    .edit-source-copy {
+        width: 9;
+    }
+
     #edit-button-row {
         height: 3;
         margin-top: 1;
@@ -97,6 +125,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         env_key: str,
         local_value: str,
         env_is_set: bool,
+        value_sources: Sequence[ConfigValueSource],
     ) -> None:
         """Store field metadata for modal rendering."""
         super().__init__()
@@ -105,6 +134,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         self.env_key = env_key
         self.local_value = local_value
         self.env_is_set = env_is_set
+        self.value_sources = tuple(value_sources)
 
     def compose(self) -> ComposeResult:
         """Compose field metadata, value input, and modal actions."""
@@ -132,6 +162,27 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
                 self.spec.explanation_long or self.spec.explanation_short,
                 id="edit-long-explanation",
             )
+            with Vertical(id="edit-source-panel"):
+                for source in self.value_sources:
+                    with Horizontal(
+                        id=f"edit-source-{source.key}",
+                        classes="edit-source-row",
+                    ):
+                        yield Static(
+                            source.label,
+                            classes="edit-source-label",
+                        )
+                        yield Static(
+                            self._source_value_text(source),
+                            id=f"edit-source-{source.key}-value",
+                            classes="edit-source-value",
+                        )
+                        yield Button(
+                            "Copy",
+                            id=f"edit-copy-{source.key}",
+                            disabled=not source.is_available,
+                            classes="edit-source-copy",
+                        )
             yield Input(
                 value=self.local_value,
                 placeholder="Local override value",
@@ -151,7 +202,12 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         self.query_one("#edit-value-input", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Dismiss the modal with the selected action."""
+        """Handle copy, save, clear, and cancel button actions."""
+        if event.button.id is not None and event.button.id.startswith(
+            "edit-copy-"
+        ):
+            self._copy_source(event.button.id.removeprefix("edit-copy-"))
+            return
         if event.button.id == "edit-save":
             self.action_save()
             return
@@ -186,6 +242,34 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
     def action_cancel(self) -> None:
         """Dismiss without applying a change."""
         self.dismiss(None)
+
+    def _copy_source(self, source_key: str) -> None:
+        """Copy one source value without dismissing the modal."""
+        source = next(
+            (
+                candidate
+                for candidate in self.value_sources
+                if candidate.key == source_key
+            ),
+            None,
+        )
+        if source is None or source.raw_value is None:
+            self.notify("No value to copy.", severity="warning")
+            return
+        self.app.copy_to_clipboard(source.raw_value)
+        self.notify(f"Copied {source.label}")
+
+    def _source_value_text(self, source: ConfigValueSource) -> Text:
+        """Return redacted or styled text for one source row."""
+        if source.raw_value is None:
+            if source.key in {"effective", "shared"}:
+                return Text("missing", style=LABEL_STYLE)
+            return Text("unset", style=LABEL_STYLE)
+        if source.raw_value == "":
+            return Text("<empty>", style=LABEL_STYLE)
+        if self.spec.secret:
+            return Text("<secret>", style=SECRET_STYLE)
+        return Text(source.raw_value, style=value_style(self.spec))
 
 
 class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):

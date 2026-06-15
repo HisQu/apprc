@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 # == 3rd Party ===============================
 from rich.text import Text
 
 # == Internal ================================
+from apprc.config.local_env import normalize_env_value
 from apprc.config.schema import (
+    CONFIG_MISSING,
     ConfigField,
     ConfigOwner,
     find_field_by_env_key,
@@ -33,6 +36,31 @@ class SelectedField:
 
     owner: ConfigOwner
     spec: ConfigField
+
+
+type ConfigValueSourceKey = Literal["effective", "shell", "local", "shared"]
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigValueSource:
+    """One raw value source shown in the config value modal.
+
+    ``raw_value=None`` means the source is absent. Empty strings are real
+    values because users may intentionally set an env key to an empty value.
+
+    :param key: Stable source identifier used by modal button IDs.
+    :param label: Reader-facing source name.
+    :param raw_value: Raw string value copied to the clipboard, or ``None``.
+    """
+
+    key: ConfigValueSourceKey
+    label: str
+    raw_value: str | None
+
+    @property
+    def is_available(self) -> bool:
+        """Return whether this source can be copied."""
+        return self.raw_value is not None
 
 
 def selected_field_for_row(
@@ -62,6 +90,55 @@ def selected_field_for_row(
     return SelectedField(owner=owner, spec=spec)
 
 
+def config_value_sources(
+    *,
+    spec: ConfigField,
+    env_key: str,
+    local_values: Mapping[str, str],
+    shell_env: Mapping[str, str],
+    shared_values: Mapping[str, str] | None,
+) -> tuple[ConfigValueSource, ...]:
+    """Return copyable values for one config field in precedence order.
+
+    The effective source mirrors AppRC runtime precedence for layers the
+    editor can inspect without running full CLI bootstrap: shell, selected
+    storage-local dotenv, then packaged or declared shared default.
+
+    :param spec: Field declaration that owns defaults and type metadata.
+    :param env_key: Full env key for the selected row.
+    :param local_values: Parsed storage-local dotenv values.
+    :param shell_env: Current process environment.
+    :param shared_values: Parsed packaged shared dotenv values, when known.
+    :return: Effective, shell, local, and shared source rows.
+    """
+    shell_value = shell_env[env_key] if env_key in shell_env else None
+    local_value = local_values[env_key] if env_key in local_values else None
+    shared_value = _shared_source_value(
+        spec=spec,
+        env_key=env_key,
+        shared_values=shared_values,
+    )
+    effective_value = _first_available_value(
+        shell_value,
+        local_value,
+        shared_value,
+    )
+    return (
+        ConfigValueSource(
+            key="effective",
+            label="Effective",
+            raw_value=effective_value,
+        ),
+        ConfigValueSource(key="shell", label="Shell", raw_value=shell_value),
+        ConfigValueSource(key="local", label="Local", raw_value=local_value),
+        ConfigValueSource(
+            key="shared",
+            label="Shared default",
+            raw_value=shared_value,
+        ),
+    )
+
+
 def live_storage_title(record: StorageRecord, local_env: Path) -> Text:
     """Return the title shown for one editable live storage.
 
@@ -89,6 +166,32 @@ def missing_storage_title(record: StorageRecord) -> Text:
         label_value_text("Root", path_text(record.root)),
         "No storage-local env file is available.",
     )
+
+
+def _shared_source_value(
+    *,
+    spec: ConfigField,
+    env_key: str,
+    shared_values: Mapping[str, str] | None,
+) -> str | None:
+    """Return a packaged or declared shared-default value."""
+    if shared_values is not None and env_key in shared_values:
+        return shared_values[env_key]
+    value = spec.shared_env_value()
+    if value is CONFIG_MISSING:
+        return None
+    try:
+        return normalize_env_value(spec, str(value))
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _first_available_value(*values: str | None) -> str | None:
+    """Return the first present value while preserving empty strings."""
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 def archived_storage_title(record: ArchivedStorageRecord) -> Text:

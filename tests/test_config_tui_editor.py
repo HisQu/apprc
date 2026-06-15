@@ -443,6 +443,103 @@ async def test_editor_modal_saves_local_value(
 
 
 @pytest.mark.asyncio
+async def test_editor_modal_copies_source_values_without_saving(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_PROFILE", "shell-profile")
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "storage"
+    registry = kit.register_storage(
+        name="alpha",
+        root=storage_root,
+        make_default=True,
+    )
+    local_env = storage_root / ".env.apprc_example_app"
+    local_env.write_text(
+        'APPRC_EXAMPLE_APP_PROFILE="local-profile"\n',
+        encoding="utf-8",
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test() as pilot:
+        table = editor.query_one("#field-table", DataTable)
+        table.cursor_coordinate = Coordinate(1, 0)
+        editor._open_selected_field_editor()
+        await pilot.pause()
+
+        input_widget = editor.screen.query_one("#edit-value-input", Input)
+        input_widget.value = "unsaved-profile"
+        effective_value = editor.screen.query_one(
+            "#edit-source-effective-value",
+            Static,
+        ).content
+        shared_value = editor.screen.query_one(
+            "#edit-source-shared-value",
+            Static,
+        ).content
+
+        editor.screen.query_one("#edit-copy-effective", Button).press()
+        await pilot.pause()
+        assert editor.clipboard == "shell-profile"
+        editor.screen.query_one("#edit-copy-local", Button).press()
+        await pilot.pause()
+        assert editor.clipboard == "local-profile"
+        editor.screen.query_one("#edit-copy-shared", Button).press()
+        await pilot.pause()
+
+        assert editor.clipboard == "default"
+        assert str(effective_value) == "shell-profile"
+        assert str(shared_value) == "default"
+        assert editor.screen.query_one("#edit-value-input", Input).value == (
+            "unsaved-profile"
+        )
+
+    assert "unsaved-profile" not in local_env.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_editor_modal_redacts_secret_sources_but_copies_raw_value(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_ACCESS_TOKEN", raising=False)
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "storage"
+    registry = kit.register_storage(
+        name="alpha",
+        root=storage_root,
+        make_default=True,
+    )
+    (storage_root / ".env.apprc_example_app").write_text(
+        'APPRC_EXAMPLE_APP_ACCESS_TOKEN="super-secret"\n',
+        encoding="utf-8",
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test() as pilot:
+        table = editor.query_one("#field-table", DataTable)
+        table.cursor_coordinate = Coordinate(6, 0)
+        editor._open_selected_field_editor()
+        await pilot.pause()
+
+        local_value = editor.screen.query_one(
+            "#edit-source-local-value",
+            Static,
+        ).content
+        editor.screen.query_one("#edit-copy-local", Button).press()
+        await pilot.pause()
+
+        assert str(local_value) == "<secret>"
+        assert editor.clipboard == "super-secret"
+        assert editor.screen.query_one("#edit-value-input", Input).value == (
+            "super-secret"
+        )
+
+
+@pytest.mark.asyncio
 async def test_editor_modal_shows_type_choices_and_long_explanation(
     monkeypatch,
     tmp_path: Path,

@@ -10,8 +10,8 @@ from typing import Mapping
 # == Internal ================================
 from apprc.config.apprc_toml import (
     apprc_toml_env_key,
-    configured_apprc_toml_path,
     optional_apprc_toml_path,
+    required_apprc_toml_path,
 )
 from apprc.config.environment import EnvBootstrapSpec
 from apprc.config.schema import ConfigOwner
@@ -64,7 +64,7 @@ class AppConfigSpec:
         :return: ``<APP>_APPRC_TOML`` when set.
         :raises ApprcTomlEnvError: If the AppRC TOML env var is missing.
         """
-        return configured_apprc_toml_path(
+        return required_apprc_toml_path(
             app_name=self.app_name,
             apprc_toml_filename=self.apprc_toml_filename,
             proc_env=proc_env,
@@ -74,7 +74,7 @@ class AppConfigSpec:
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path | None:
-        """Return the env-selected AppRC TOML path when configured.
+        """Return the env-selected multi-storage registry path when set.
 
         :param proc_env: Optional environment mapping for tests.
         :return: ``<APP>_APPRC_TOML`` path, or ``None``.

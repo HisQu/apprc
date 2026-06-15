@@ -30,15 +30,16 @@ from dotenv import dotenv_values
 from apprc.config.apprc_toml import (
     ApprcTomlEnvError,
     apprc_toml_env_key,
-    configured_apprc_toml_path,
+    missing_configured_apprc_toml_message,
     optional_apprc_toml_path,
+    required_apprc_toml_path,
 )
+from apprc.config.storage.registry import StorageRegistry, load_storage_registry
 from apprc.config.storage.selector import (
     missing_storage_selector_error,
     resolve_active_storage_selection,
     selected_storage_selector_value,
 )
-from apprc.config.storage.registry import StorageRegistry, load_storage_registry
 from apprc.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -78,7 +79,7 @@ class EnvBootstrapSpec:
 
     def apprc_toml_path(self) -> Path:
         """Return the env-selected AppRC TOML path for this application."""
-        return configured_apprc_toml_path(
+        return required_apprc_toml_path(
             app_name=self.app_name,
             apprc_toml_filename=self.apprc_toml_filename,
         )
@@ -225,10 +226,11 @@ def _load_optional_registry(spec: EnvBootstrapSpec) -> StorageRegistry | None:
         return None
     if not active_path.is_file():
         raise ApprcTomlEnvError(
-            f"{spec.apprc_toml_env_key()} points to a missing AppRC TOML: "
-            f"{active_path}. Remove {spec.apprc_toml_env_key()} for "
-            "single-storage mode, or create the registry with "
-            f"{spec.app_name} config setup --yes --multi-storage."
+            missing_configured_apprc_toml_message(
+                app_name=spec.app_name,
+                command_name=spec.app_name,
+                path=active_path,
+            )
         )
     return load_storage_registry(active_path)
 

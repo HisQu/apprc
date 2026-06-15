@@ -27,7 +27,11 @@ class ConfigDoctorPayload(TypedDict):
     ok: bool
     install_state: str
     installed: bool
+    runnable: bool
     healthy: bool
+    storage_ready: bool
+    registry_configured: bool
+    registry_ready: bool
     apprc_toml_env_key: str
     apprc_toml_env_value: str | None
     apprc_toml_path: str | None
@@ -142,30 +146,62 @@ def build_config_doctor_payload(
         storage=storage_diagnosis,
         issues=issues,
     )
-
-    healthy = install_state == ConfigInstallState.INSTALLED_HEALTHY
-    installed = registry_diagnosis.toml_exists or (
-        bool(storage_diagnosis.storage_root_exists)
-        and bool(storage_diagnosis.local_env_exists)
+    return _doctor_payload(
+        kit,
+        registry=registry_diagnosis,
+        storage=storage_diagnosis,
+        install_state=install_state,
+        issues=issues,
     )
-    selection = storage_diagnosis.selection
+
+
+def _doctor_payload(
+    kit: "AppConfigKit",
+    *,
+    registry: _RegistryDiagnosis,
+    storage: _StorageDiagnosis,
+    install_state: ConfigInstallState,
+    issues: list[str],
+) -> ConfigDoctorPayload:
+    """Serialize diagnosis objects into the public doctor payload.
+
+    :param kit: Application config facade.
+    :param registry: Optional registry diagnosis.
+    :param storage: Active storage diagnosis.
+    :param install_state: Public install-state enum.
+    :param issues: All collected issues.
+    :return: Stable JSON-friendly diagnostic payload.
+    """
+    healthy = install_state == ConfigInstallState.INSTALLED_HEALTHY
+    storage_ready = bool(storage.storage_root_exists) and bool(
+        storage.local_env_exists
+    )
+    registry_configured = registry.active_toml_path is not None
+    registry_ready = registry.toml_parse_ok
+    runnable = healthy
+    installed = registry.toml_exists or storage_ready
+    selection = storage.selection
     selected_storage_root = selection.root if selection is not None else None
     return {
         "ok": healthy,
         "install_state": install_state.value,
         "installed": installed,
+        "runnable": runnable,
         "healthy": healthy,
+        "storage_ready": storage_ready,
+        "registry_configured": registry_configured,
+        "registry_ready": registry_ready,
         "apprc_toml_env_key": kit.apprc_toml_env_key(),
-        "apprc_toml_env_value": registry_diagnosis.toml_env_value,
+        "apprc_toml_env_value": registry.toml_env_value,
         "apprc_toml_path": (
-            str(registry_diagnosis.active_toml_path)
-            if registry_diagnosis.active_toml_path is not None
+            str(registry.active_toml_path)
+            if registry.active_toml_path is not None
             else None
         ),
-        "apprc_toml_exists": registry_diagnosis.toml_exists,
-        "apprc_toml_parse_ok": registry_diagnosis.toml_parse_ok,
-        "apprc_toml_error": registry_diagnosis.toml_error,
-        "storage_count": registry_diagnosis.storage_count,
+        "apprc_toml_exists": registry.toml_exists,
+        "apprc_toml_parse_ok": registry.toml_parse_ok,
+        "apprc_toml_error": registry.toml_error,
+        "storage_count": registry.storage_count,
         "selected_storage": (
             selection.storage_name if selection is not None else None
         ),
@@ -180,14 +216,14 @@ def build_config_doctor_payload(
             if selected_storage_root is not None
             else None
         ),
-        "selected_storage_root_exists": (storage_diagnosis.storage_root_exists),
+        "selected_storage_root_exists": storage.storage_root_exists,
         "selected_local_env": (
-            str(storage_diagnosis.local_env)
-            if storage_diagnosis.local_env is not None
+            str(storage.local_env)
+            if storage.local_env is not None
             else None
         ),
-        "selected_local_env_exists": storage_diagnosis.local_env_exists,
-        "missing_env_keys": storage_diagnosis.missing_env_keys,
+        "selected_local_env_exists": storage.local_env_exists,
+        "missing_env_keys": storage.missing_env_keys,
         "issues": issues,
         "next_steps": []
         if not issues

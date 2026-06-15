@@ -16,7 +16,7 @@ from apprc.cli.typer_utils import strip_leading_options
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.storage.registry import StorageRegistry
-from apprc.config.storage.selector import resolve_active_storage_selection
+from apprc.config.storage.selector import resolve_env_storage_selection
 
 
 class ConfigCliState(Protocol):
@@ -73,11 +73,10 @@ def active_storage_root_from_state(
             if active_registry_path is not None
             else None
         )
-        selection = resolve_active_storage_selection(
+        selection = resolve_env_storage_selection(
             registry=registry,
-            storage=None,
             storage_env_key=kit.spec.storage_env_key,
-            original_env=os.environ,
+            proc_env=os.environ,
         )
         return selection.root if selection is not None else None
     return None

@@ -103,7 +103,7 @@ class ConfigEditorApp(App[None]):
     def __init__(
         self,
         *,
-        registry: StorageRegistry,
+        registry: StorageRegistry | None,
         kit: AppConfigKit | None = None,
         owners: tuple[ConfigOwner, ...] | None = None,
         initial_storage: str | None = None,
@@ -112,6 +112,7 @@ class ConfigEditorApp(App[None]):
         registry_label: str = "storage registry",
         hidden_env_keys: tuple[str, ...] = (),
         active_storage_root: Path | None = None,
+        registry_actions_enabled: bool | None = None,
     ) -> None:
         """Keep registry and field metadata while editing storage state."""
         super().__init__()
@@ -141,10 +142,14 @@ class ConfigEditorApp(App[None]):
             else None
         )
         self.registry_actions_enabled = (
-            kit is None or kit.optional_apprc_toml_path() is not None
+            registry is not None
+            if registry_actions_enabled is None
+            else registry_actions_enabled
         )
         self.shared_values = _read_packaged_shared_values(kit)
-        self.storage_entries = ordered_storage_entries(self.registry)
+        self.storage_entries = (
+            ordered_storage_entries(registry) if registry is not None else []
+        )
         self.current_storage_name: str | None = None
         self.current_storage_kind: StorageEntryKind | None = None
         self.local_values: dict[str, str] = {}
@@ -281,7 +286,23 @@ class ConfigEditorApp(App[None]):
                 severity="error",
             )
             return None
+        if self.registry is None:
+            self.notify(
+                "Storage management requires a loaded AppRC TOML registry.",
+                severity="error",
+            )
+            return None
         return self.kit
+
+    def _require_registry(self) -> StorageRegistry | None:
+        """Return the registry required for registry-only editor actions."""
+        if self.registry is None:
+            self.notify(
+                "Storage management requires an AppRC TOML.",
+                severity="error",
+            )
+            return None
+        return self.registry
 
     def _save_env_key(self, env_key: str, raw_value: str) -> None:
         """Validate and persist one local env value."""
@@ -324,7 +345,10 @@ class ConfigEditorApp(App[None]):
         select_name: str | None = None,
     ) -> None:
         """Reload registry rows and select the requested storage."""
-        self.storage_entries = ordered_storage_entries(self.registry)
+        registry = self.registry
+        self.storage_entries = (
+            ordered_storage_entries(registry) if registry is not None else []
+        )
         storage_list = self.query_one("#storage-list", ListView)
         await storage_list.clear()
         if not self.storage_entries:
@@ -339,8 +363,10 @@ class ConfigEditorApp(App[None]):
             self._set_live_controls_enabled(False)
             return
         for entry in self.storage_entries:
+            if registry is None:
+                return
             await storage_list.append(
-                ListItem(Label(storage_entry_label(self.registry, entry)))
+                ListItem(Label(storage_entry_label(registry, entry)))
             )
 
         selected_index = storage_entry_index(self.storage_entries, select_name)
@@ -386,9 +412,12 @@ class ConfigEditorApp(App[None]):
 
     def _select_storage(self, name: str) -> None:
         """Load one storage-local env file and refresh the field table."""
+        registry = self._require_registry()
+        if registry is None:
+            return
         self.current_storage_name = name
         self.current_storage_kind = "live"
-        record = self.registry.selected(name)
+        record = registry.selected(name)
         path = ensure_local_env_file(
             record.root,
             filename=self.local_env_filename,
@@ -402,9 +431,12 @@ class ConfigEditorApp(App[None]):
 
     def _select_missing_storage(self, name: str) -> None:
         """Show a registered storage whose root no longer exists."""
+        registry = self._require_registry()
+        if registry is None:
+            return
         self.current_storage_name = name
         self.current_storage_kind = "missing"
-        record = self.registry.selected(name)
+        record = registry.selected(name)
         self.local_values = {}
         self.query_one("#storage-title", Static).update(
             missing_storage_title(record)
@@ -419,9 +451,12 @@ class ConfigEditorApp(App[None]):
 
     def _select_archived_storage(self, name: str) -> None:
         """Show archived metadata without enabling field editing."""
+        registry = self._require_registry()
+        if registry is None:
+            return
         self.current_storage_name = name
         self.current_storage_kind = "archived"
-        record = self.registry.archived_storages[name]
+        record = registry.archived_storages[name]
         self.local_values = {}
         self.query_one("#storage-title", Static).update(
             archived_storage_title(record)
@@ -465,9 +500,12 @@ class ConfigEditorApp(App[None]):
 
     def _current_storage(self) -> StorageRecord:
         """Return the active storage record."""
+        registry = self._require_registry()
+        if registry is None:
+            raise RuntimeError("No registry is loaded.")
         if self.current_storage_name is None:
             raise RuntimeError("No storage is selected.")
-        return self.registry.selected(self.current_storage_name)
+        return registry.selected(self.current_storage_name)
 
     def _current_storage_root(self) -> Path:
         """Return the selected storage root, registered or active-path only."""
@@ -530,7 +568,7 @@ class ConfigEditorApp(App[None]):
 
     def _registered_active_storage_name(self) -> str | None:
         """Return the registry row that matches the active path, if any."""
-        if self.active_storage_root is None:
+        if self.active_storage_root is None or self.registry is None:
             return None
         for name in sorted(self.registry.storages):
             record = self.registry.storages[name]

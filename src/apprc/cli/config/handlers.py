@@ -29,8 +29,10 @@ from apprc.config.kit import AppConfigKit
 from apprc.config.paths import StorageRootPathError
 import apprc.config.setup.flow as setup_flow
 from apprc.config.storage.registry import StorageRegistry
-from apprc.config.storage.selector import StorageSelectorError
-from apprc.config.storage.selector import resolve_active_storage_selection
+from apprc.config.storage.selector import (
+    StorageSelectorError,
+    resolve_env_storage_selection,
+)
 
 if TYPE_CHECKING:
     from apprc.config.tui import ConfigEditorApp
@@ -93,7 +95,7 @@ class ConfigCommandHandlers:
 
     def list(self, *, json_output: bool) -> None:
         """List registered storage roots from the user registry."""
-        registry = self.load_config_registry()
+        registry = self.load_required_registry()
         payload = storage_list_payload(
             registry,
             local_env_filename=self.kit.spec.local_env_filename,
@@ -227,31 +229,32 @@ class ConfigCommandHandlers:
 
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
-        configured_registry = self.load_optional_config_registry()
-        registry = configured_registry or self.single_storage_editor_registry()
+        configured_registry = self.load_optional_existing_registry()
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         selected_storage = (
-            self.initial_storage(current_state, registry=registry)
+            self.initial_storage(current_state, registry=configured_registry)
             if current_state is not None
             else None
         )
+        active_storage_root = self.active_storage_root_from_env(
+            configured_registry
+        )
+        registry_actions_enabled = configured_registry is not None
         if self.editor_app_cls is not None:
             editor_app = self.editor_app_cls(
-                registry=registry,
+                registry=configured_registry,
                 initial_storage=selected_storage,
-                active_storage_root=self.active_storage_root_from_env(
-                    configured_registry
-                ),
+                active_storage_root=active_storage_root,
+                registry_actions_enabled=registry_actions_enabled,
             )
         else:
             editor_app = self.kit.editor_app(
-                registry=registry,
+                registry=configured_registry,
                 initial_storage=selected_storage,
-                active_storage_root=self.active_storage_root_from_env(
-                    configured_registry
-                ),
+                active_storage_root=active_storage_root,
+                registry_actions_enabled=registry_actions_enabled,
             )
         editor_app.run()
 
@@ -295,8 +298,8 @@ class ConfigCommandHandlers:
             registry=registry,
         )
 
-    def load_config_registry(self) -> StorageRegistry:
-        """Load the registry and raise Typer's parse-error shape on failure."""
+    def load_required_registry(self) -> StorageRegistry:
+        """Load the required registry for registry-only commands."""
         try:
             return self.kit.load_existing_registry()
         except ApprcTomlEnvError as exc:
@@ -310,8 +313,8 @@ class ConfigCommandHandlers:
                 param_hint=self.kit.spec.apprc_toml_filename,
             ) from exc
 
-    def load_optional_config_registry(self) -> StorageRegistry | None:
-        """Load the optional registry when multi-storage is configured."""
+    def load_optional_existing_registry(self) -> StorageRegistry | None:
+        """Load the optional existing registry when multi-storage is set."""
         registry_path = self.kit.optional_apprc_toml_path()
         if registry_path is None:
             return None
@@ -328,19 +331,6 @@ class ConfigCommandHandlers:
                 param_hint=self.kit.spec.apprc_toml_filename,
             ) from exc
 
-    def single_storage_editor_registry(self) -> StorageRegistry:
-        """Return the empty registry object used by single-storage editing.
-
-        The Textual editor still expects a registry-shaped object for its list
-        model. Keeping this construction named prevents the placeholder path
-        from looking like a real AppRC TOML location.
-        """
-        return StorageRegistry(
-            path=Path(),
-            storages={},
-            archived_storages={},
-        )
-
     def active_storage_root_from_env(
         self,
         registry: StorageRegistry | None,
@@ -350,11 +340,10 @@ class ConfigCommandHandlers:
         if not env_storage:
             return None
         try:
-            selection = resolve_active_storage_selection(
+            selection = resolve_env_storage_selection(
                 registry=registry,
-                storage=None,
                 storage_env_key=self.kit.spec.storage_env_key,
-                original_env=os.environ,
+                proc_env=os.environ,
             )
         except StorageSelectorError:
             return None

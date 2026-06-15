@@ -35,6 +35,7 @@ from apprc.config.schema import ConfigOwner
 from apprc.config.apprc_toml import (
     ApprcTomlEnvError,
     default_apprc_toml_filename,
+    missing_configured_apprc_toml_message,
 )
 from apprc.config.storage.registry import (
     StorageRegistry,
@@ -135,7 +136,7 @@ class AppConfigKit:
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path:
-        """Return the active AppRC TOML path.
+        """Return the configured multi-storage AppRC TOML path.
 
         :param proc_env: Optional environment mapping for tests.
         :return: Env-selected AppRC TOML path for this application.
@@ -147,7 +148,7 @@ class AppConfigKit:
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path | None:
-        """Return the active AppRC TOML path when the env var is set.
+        """Return the active AppRC TOML path when multi-storage is configured.
 
         :param proc_env: Optional environment mapping for tests.
         :return: Env-selected AppRC TOML path, or ``None``.
@@ -225,18 +226,14 @@ class AppConfigKit:
         registry_path = self.apprc_toml_path() if path is None else path
         resolved_path = Path(registry_path).expanduser().resolve()
         if not resolved_path.is_file():
-            env_key = self.apprc_toml_env_key()
-            path_context = (
-                f"{env_key} points to a missing AppRC TOML"
-                if path is None
-                else "AppRC TOML does not exist"
+            message = missing_configured_apprc_toml_message(
+                app_name=self.spec.app_name,
+                command_name=self.spec.config_command_name(),
+                path=resolved_path,
             )
-            raise ApprcTomlEnvError(
-                f"{path_context}: {resolved_path}. Remove {env_key} for "
-                "single-storage mode, or create the registry with "
-                f"{self.spec.config_command_name()} config setup --yes "
-                "--multi-storage."
-            )
+            if path is None:
+                raise ApprcTomlEnvError(message)
+            raise ValueError(message)
         return load_storage_registry(resolved_path)
 
     def register_storage(
@@ -395,9 +392,10 @@ class AppConfigKit:
     def editor_app(
         self,
         *,
-        registry: StorageRegistry,
+        registry: StorageRegistry | None,
         initial_storage: str | None = None,
         active_storage_root: Path | None = None,
+        registry_actions_enabled: bool | None = None,
     ) -> ConfigEditorApp:
         """Build the generic Textual config editor for this application."""
         from apprc.config.tui import ConfigEditorApp
@@ -407,6 +405,7 @@ class AppConfigKit:
             registry=registry,
             initial_storage=initial_storage,
             active_storage_root=active_storage_root,
+            registry_actions_enabled=registry_actions_enabled,
         )
 
     def setup_app(self) -> ConfigSetupApp:

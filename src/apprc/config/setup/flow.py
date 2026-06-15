@@ -18,6 +18,7 @@ import apprc.config.setup.text as setup_text
 from apprc.config.storage.registry import (
     StorageRegistry,
 )
+from apprc.config.storage.selector import resolve_env_storage_root_path
 
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit
@@ -271,7 +272,7 @@ def _ensure_setup_storage_root(
     :return: Resolved active storage root.
     :raises ConfigSetupError: If the storage root is unsafe.
     """
-    active_root = storage_root or active_storage_root_from_env(kit)
+    active_root = storage_root or storage_root_path_from_env(kit)
     if active_root is None:
         raise ConfigSetupError(
             f"{kit.spec.storage_env_key} or --storage-root is required for "
@@ -340,7 +341,7 @@ def validate_storage_root_for_setup(
     )
 
 
-def active_storage_root_from_env(kit: "AppConfigKit") -> Path | None:
+def storage_root_path_from_env(kit: "AppConfigKit") -> Path | None:
     """Return the active storage root from the setup-time env selector.
 
     During setup, the storage env value is path-preferred. A bare value such as
@@ -350,11 +351,11 @@ def active_storage_root_from_env(kit: "AppConfigKit") -> Path | None:
     :return: Normalized storage path, or ``None`` when unset.
     :raises ConfigSetupError: If the path cannot be safely interpreted.
     """
-    raw_value = os.environ.get(kit.spec.storage_env_key, "").strip()
-    if not raw_value:
-        return None
     try:
-        return normalize_storage_root_path(raw_value)
+        return resolve_env_storage_root_path(
+            storage_env_key=kit.spec.storage_env_key,
+            proc_env=os.environ,
+        )
     except StorageRootPathError as exc:
         raise ConfigSetupError(
             str(exc),

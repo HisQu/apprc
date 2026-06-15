@@ -134,6 +134,57 @@ def resolve_active_storage_selection(
     return None
 
 
+def resolve_env_storage_selection(
+    *,
+    registry: StorageRegistry | None,
+    storage_env_key: str,
+    proc_env: Mapping[str, str],
+) -> StorageSelection | None:
+    """Resolve the active runtime storage from the process environment.
+
+    Runtime env selection is registry-aware: a configured registry allows exact
+    registered names, while single-storage mode treats every non-empty value as
+    a path.
+
+    :param registry: Parsed AppRC TOML storage registry, or ``None``.
+    :param storage_env_key: Env key that stores the active storage selector.
+    :param proc_env: Process environment to inspect.
+    :return: Resolved selection, or ``None`` when the env key is unset.
+    :raises StorageSelectorError: If the env value cannot be resolved.
+    """
+    if not proc_env.get(storage_env_key, "").strip():
+        return None
+    return resolve_active_storage_selection(
+        registry=registry,
+        storage=None,
+        storage_env_key=storage_env_key,
+        original_env=proc_env,
+    )
+
+
+def resolve_env_storage_root_path(
+    *,
+    storage_env_key: str,
+    proc_env: Mapping[str, str],
+) -> Path | None:
+    """Return setup's path-first active storage root from the environment.
+
+    Setup uses the storage env var as a filesystem path even when the value is
+    a bare name such as ``alpha``. This is intentionally different from
+    registry-aware runtime selection.
+
+    :param storage_env_key: Env key that stores the active storage selector.
+    :param proc_env: Process environment to inspect.
+    :return: Normalized storage path, or ``None`` when unset.
+    :raises StorageRootPathError: If the value cannot be interpreted as a safe
+        storage root.
+    """
+    raw_value = proc_env.get(storage_env_key, "").strip()
+    if not raw_value:
+        return None
+    return normalize_storage_root_path(raw_value)
+
+
 def resolve_storage_selector_value(
     *,
     registry: StorageRegistry | None,

@@ -194,8 +194,11 @@ class ConfigEditorStorageWorkflows:
         if name_result is None:
             return
         name = name_result.name
-        if name in self.editor.registry.storages:
-            existing = self.editor.registry.selected(name)
+        registry = self.editor._require_registry()
+        if registry is None:
+            return
+        if name in registry.storages:
+            existing = registry.selected(name)
             action = await self.editor.push_screen_wait(
                 ConfirmScreen(
                     title="Replace storage entry?",
@@ -410,7 +413,10 @@ class ConfigEditorStorageWorkflows:
         if kit is None:
             return False
         try:
-            record = self.editor.registry.selected(name)
+            registry = self.editor._require_registry()
+            if registry is None:
+                return False
+            record = registry.selected(name)
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return False
@@ -440,7 +446,10 @@ class ConfigEditorStorageWorkflows:
         kit = self.editor._require_kit()
         if kit is None:
             return
-        record = self.editor.registry.archived_storages.get(name)
+        registry = self.editor._require_registry()
+        if registry is None:
+            return
+        record = registry.archived_storages.get(name)
         if record is None:
             return
         if not record.archive.is_file():

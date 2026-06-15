@@ -43,7 +43,7 @@ def apprc_toml_env_key(app_name: str) -> str:
     return f"{normalized}_APPRC_TOML"
 
 
-def configured_apprc_toml_path(
+def required_apprc_toml_path(
     *,
     app_name: str,
     apprc_toml_filename: str,
@@ -76,7 +76,7 @@ def optional_apprc_toml_path(
     app_name: str,
     proc_env: Mapping[str, str] | None = None,
 ) -> Path | None:
-    """Return the AppRC TOML path when the selector variable is set.
+    """Return the multi-storage registry path when the selector is set.
 
     :param app_name: Application name from the AppRC integration spec.
     :param proc_env: Environment mapping used for tests and subprocess setup.
@@ -87,6 +87,28 @@ def optional_apprc_toml_path(
     if raw_path:
         return normalized_apprc_toml_path(raw_path)
     return None
+
+
+def missing_configured_apprc_toml_message(
+    *,
+    app_name: str,
+    command_name: str,
+    path: Path,
+) -> str:
+    """Return guidance when configured multi-storage state is missing.
+
+    :param app_name: Application name from the AppRC integration spec.
+    :param command_name: Executable name shown in generated CLI copy.
+    :param path: Missing AppRC TOML path.
+    :return: Human-facing setup guidance.
+    """
+    env_key = apprc_toml_env_key(app_name)
+    resolved_path = normalized_apprc_toml_path(path)
+    return (
+        f"{env_key} points to a missing AppRC TOML: {resolved_path}. "
+        f"Remove {env_key} for single-storage mode, or create the registry "
+        f"with {command_name} config setup --yes --multi-storage."
+    )
 
 
 def missing_apprc_toml_env_message(

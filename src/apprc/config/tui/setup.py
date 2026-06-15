@@ -406,7 +406,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :return: User-selected root, or ``None`` when canceled.
         """
         try:
-            default_root = setup_flow.active_storage_root_from_env(self.kit)
+            default_root = setup_flow.storage_root_path_from_env(self.kit)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             default_root = None

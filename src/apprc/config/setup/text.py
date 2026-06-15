@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -221,32 +222,95 @@ def storage_root_reuse_text(
 
 
 def next_steps_text(kit: "AppConfigKit", registry: StorageRegistry) -> str:
-    """Return commands to show after setup finishes.
+    """Return the environment handoff shown after setup finishes.
 
     :param kit: Application config facade.
     :param registry: Registry selected by setup.
-    :return: Newline-delimited commands and export guidance.
+    :return: Newline-delimited setup finish guidance.
+    """
+    return setup_finish_text(kit, registry)
+
+
+def setup_finish_text(kit: "AppConfigKit", registry: StorageRegistry) -> str:
+    """Return setup completion text with shell and dotenv handoff.
+
+    :param kit: Application config facade.
+    :param registry: Registry selected by setup.
+    :return: Human-facing setup completion guidance.
+    """
+    lines = [
+        f"{kit.spec.display_name} setup files are ready.",
+        "",
+        "Add these to your environment:",
+        "",
+        "Shell:",
+        *[f"  {command}" for command in shell_export_commands(kit, registry)],
+        "",
+        "Or Dotenv:",
+        *[
+            f"  {assignment}"
+            for assignment in dotenv_assignment_commands(kit, registry)
+        ],
+        "",
+        f"Without them, {kit.spec.app_name} will report env_not_set in "
+        "config doctor.",
+        "",
+        "Then verify:",
+        *[f"  {command}" for command in verification_commands(kit)],
+    ]
+    return "\n".join(lines)
+
+
+def verification_commands(kit: "AppConfigKit") -> list[str]:
+    """Return commands users can run after exporting setup env vars.
+
+    :param kit: Application config facade.
+    :return: Ordered verification and editor commands.
     """
     command_name = kit.spec.config_command_name()
-    lines = [
+    return [
         f"{command_name} config edit",
         f"{command_name} config show",
         f"{command_name} config doctor",
     ]
-    export_commands = [export_apprc_toml_command(kit, registry.path)]
+
+
+def shell_export_commands(
+    kit: "AppConfigKit",
+    registry: StorageRegistry,
+) -> list[str]:
+    """Return POSIX shell exports needed to activate this setup.
+
+    :param kit: Application config facade.
+    :param registry: Registry selected by setup.
+    :return: Ordered shell export commands.
+    """
+    commands = [export_apprc_toml_command(kit, registry.path)]
     default_storage = registry.default()
     if default_storage is not None:
-        export_commands.append(
+        commands.append(
             export_storage_selector_command(kit, default_storage.name)
         )
-    export_label = (
-        "these variables" if len(export_commands) > 1 else "this variable"
-    )
-    lines.append(
-        f"Keep {export_label} exported for future shells:\n"
-        + "\n".join(export_commands)
-    )
-    return "\n".join(lines)
+    return commands
+
+
+def dotenv_assignment_commands(
+    kit: "AppConfigKit",
+    registry: StorageRegistry,
+) -> list[str]:
+    """Return dotenv assignments needed to activate this setup.
+
+    :param kit: Application config facade.
+    :param registry: Registry selected by setup.
+    :return: Ordered dotenv assignment lines.
+    """
+    commands = [dotenv_apprc_toml_assignment(kit, registry.path)]
+    default_storage = registry.default()
+    if default_storage is not None:
+        commands.append(
+            dotenv_storage_selector_assignment(kit, default_storage.name)
+        )
+    return commands
 
 
 def export_apprc_toml_command(
@@ -264,6 +328,22 @@ def export_apprc_toml_command(
         '\\"',
     )
     return f'export {kit.apprc_toml_env_key()}="{path_text}"'
+
+
+def dotenv_apprc_toml_assignment(
+    kit: "AppConfigKit",
+    registry_path: Path,
+) -> str:
+    """Return the dotenv assignment for one custom AppRC TOML path.
+
+    :param kit: Application config facade.
+    :param registry_path: Custom AppRC TOML path.
+    :return: Dotenv assignment with a quoted path value.
+    """
+    return _dotenv_assignment(
+        kit.apprc_toml_env_key(),
+        str(_normalized_apprc_toml_path(registry_path)),
+    )
 
 
 def apprc_dir_label(kit: "AppConfigKit") -> str:
@@ -290,6 +370,24 @@ def export_storage_selector_command(
         '\\"',
     )
     return f'export {kit.spec.storage_env_key}="{selector_text}"'
+
+
+def dotenv_storage_selector_assignment(
+    kit: "AppConfigKit",
+    storage_name: str,
+) -> str:
+    """Return the dotenv assignment for one active storage selector.
+
+    :param kit: Application config facade.
+    :param storage_name: Registered storage selected for future shells.
+    :return: Dotenv assignment with a quoted selector value.
+    """
+    return _dotenv_assignment(kit.spec.storage_env_key, storage_name)
+
+
+def _dotenv_assignment(key: str, value: str) -> str:
+    """Return one deterministic dotenv key/value assignment."""
+    return f"{key}={json.dumps(value)}"
 
 
 def _normalized_apprc_toml_path(path: str | Path) -> Path:

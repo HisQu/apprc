@@ -58,11 +58,21 @@ def test_generated_config_setup_creates_default_registry_and_storage(
         'export APPRC_EXAMPLE_APP_STORAGE="apprc_example_app_stor-1"'
         in result.output
     )
+    assert f'APPRC_EXAMPLE_APP_APPRC_TOML="{registry.path}"' in result.output
+    assert (
+        'APPRC_EXAMPLE_APP_STORAGE="apprc_example_app_stor-1"' in result.output
+    )
+    assert "Example App setup files are ready." in result.output
+    assert "Add these to your environment:" in result.output
+    assert "Shell:" in result.output
+    assert "Or Dotenv:" in result.output
+    assert (
+        "Without them, apprc_example_app will report env_not_set "
+        "in config doctor."
+    ) in result.output
     assert "apprc_example_app config edit" in result.output
     assert "apprc_example_app config show" in result.output
     assert "apprc_example_app config doctor" in result.output
-    assert "Example App setup complete" in result.output
-    assert "AppRC TOML" in result.output
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -93,6 +103,10 @@ def test_generated_config_setup_accepts_apprc_dir_without_env(
     assert (
         'export APPRC_EXAMPLE_APP_STORAGE="apprc_example_app_stor-1"'
         in result.output
+    )
+    assert f'APPRC_EXAMPLE_APP_APPRC_TOML="{custom_registry}"' in result.output
+    assert (
+        'APPRC_EXAMPLE_APP_STORAGE="apprc_example_app_stor-1"' in result.output
     )
     assert kit.optional_apprc_toml_path() is None
 
@@ -262,9 +276,9 @@ def test_generated_config_setup_keeps_existing_default_storage(
     assert result.exit_code == 0, result.output
     assert registry.default_storage == "alpha"
     assert registry.selected("alpha").root == storage_root.resolve()
-    assert "Example App setup complete" in result.output
-    assert "default_storage: alpha" in result.output
-    assert "AppRC TOML" in result.output
+    assert "Example App setup files are ready." in result.output
+    assert 'export APPRC_EXAMPLE_APP_STORAGE="alpha"' in result.output
+    assert 'APPRC_EXAMPLE_APP_STORAGE="alpha"' in result.output
 
 
 def test_generated_config_setup_reset_orphans_registered_storage(
@@ -299,8 +313,10 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     assert registry.selected("apprc_example_app_stor-1").root == (
         new_storage_root.resolve()
     )
-    assert "Example App setup complete" in result.output
-    assert "AppRC TOML" in result.output
+    assert "Example App setup files are ready." in result.output
+    assert (
+        'APPRC_EXAMPLE_APP_STORAGE="apprc_example_app_stor-1"' in result.output
+    )
 
 
 def test_generated_config_setup_moves_existing_registry_to_apprc_dir_target(

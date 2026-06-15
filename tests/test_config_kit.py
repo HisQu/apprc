@@ -92,7 +92,7 @@ def test_kit_registry_path_requires_apprc_toml_env(
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_config_doctor_reports_not_installed_without_env(
+def test_config_doctor_reports_env_not_set_without_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
@@ -104,11 +104,69 @@ def test_config_doctor_reports_not_installed_without_env(
     payload = build_config_doctor_payload(kit, storage_name=None)
     result = runner.invoke(app, ["doctor", "--json"])
 
-    assert payload["install_state"] == ConfigInstallState.NOT_INSTALLED.value
+    assert payload["install_state"] == ConfigInstallState.ENV_NOT_SET.value
     assert payload["installed"] is False
     assert payload["healthy"] is False
+    assert payload["missing_env_keys"] == [
+        "APPRC_EXAMPLE_APP_APPRC_TOML",
+        "APPRC_EXAMPLE_APP_STORAGE",
+    ]
     assert result.exit_code == 1, result.output
-    assert json.loads(result.output)["install_state"] == "not_installed"
+    assert json.loads(result.output)["install_state"] == "env_not_set"
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_config_doctor_prints_env_not_set_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 1, result.output
+    assert "Example App config doctor: env not set" in result.output
+    assert (
+        "missing_env_keys: APPRC_EXAMPLE_APP_APPRC_TOML, "
+        "APPRC_EXAMPLE_APP_STORAGE"
+    ) in result.output
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_config_doctor_reports_env_not_set_for_missing_apprc_toml_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
+    kit = build_apprc_example_app_kit()
+
+    payload = build_config_doctor_payload(kit, storage_name=None)
+
+    assert payload["install_state"] == ConfigInstallState.ENV_NOT_SET.value
+    assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_APPRC_TOML"]
+
+
+def test_config_doctor_reports_env_not_set_for_missing_storage_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+
+    payload = build_config_doctor_payload(kit, storage_name=None)
+
+    assert payload["install_state"] == ConfigInstallState.ENV_NOT_SET.value
+    assert payload["installed"] is True
+    assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
 
 
 @pytest.mark.allow_missing_apprc_env

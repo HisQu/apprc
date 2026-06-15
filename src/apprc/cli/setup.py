@@ -7,6 +7,8 @@ from pathlib import Path
 
 # == 3rd Party ===============================
 import typer
+from rich.console import Console
+from rich.text import Text
 
 # == Internal ================================
 from apprc.cli.doctor import print_config_doctor
@@ -16,6 +18,12 @@ import apprc.config.setup.flow as setup_flow
 import apprc.config.setup.text as setup_text
 from apprc.config.storage.registry import StorageRegistry
 from apprc.config.tui.setup import ConfigSetupApp
+from apprc.config.tui.styles import (
+    ENV_KEY_STYLE,
+    MISSING_STYLE,
+    PATH_STYLE,
+    style_literals,
+)
 
 
 def run_config_setup(
@@ -83,27 +91,22 @@ def _print_setup_finish(
     kit: AppConfigKit,
     registry: StorageRegistry,
 ) -> None:
-    """Print diagnostics and next commands after non-interactive setup.
+    """Print environment handoff text after non-interactive setup.
 
     :param kit: Application config facade.
     :param registry: Registry selected by setup.
     :raises typer.Exit: If doctor reports that setup is incomplete.
     """
-    typer.echo(f"{kit.spec.display_name} setup complete")
-    typer.echo(f"AppRC TOML: {registry.path}")
-    typer.echo(f"default_storage: {registry.default_storage or '<none>'}")
-    typer.echo("")
     payload = build_config_doctor_payload(
         kit,
         storage_name=registry.default_storage,
         apprc_toml_path=registry.path,
     )
-    print_config_doctor(kit, payload)
-    typer.echo("")
-    typer.echo("Next steps:")
-    for line in setup_text.next_steps_text(kit, registry).splitlines():
-        typer.echo(f"  {line}" if line else "")
+    console = Console(soft_wrap=True)
+    console.print(_style_setup_finish_text(kit, registry))
     if not payload["ok"]:
+        typer.echo("")
+        print_config_doctor(kit, payload)
         raise typer.Exit(code=1)
 
 
@@ -139,3 +142,28 @@ def _raise_setup_error(exc: setup_flow.ConfigSetupError) -> None:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=exit_code)
     raise typer.BadParameter(str(exc), param_hint=exc.param_hint) from exc
+
+
+def _style_setup_finish_text(
+    kit: AppConfigKit,
+    registry: StorageRegistry,
+) -> Text:
+    """Return styled setup completion text for the CLI.
+
+    :param kit: Application config facade.
+    :param registry: Registry selected by setup.
+    :return: Rich text with semantic setup spans.
+    """
+    paths = {
+        str(registry.path): PATH_STYLE,
+        str(registry.path.expanduser().resolve()): PATH_STYLE,
+    }
+    styles = {
+        "Shell:": "bold",
+        "Or Dotenv:": "bold",
+        "env_not_set": MISSING_STYLE,
+        kit.apprc_toml_env_key(): ENV_KEY_STYLE,
+        kit.spec.storage_env_key: ENV_KEY_STYLE,
+        **paths,
+    }
+    return style_literals(setup_text.setup_finish_text(kit, registry), styles)

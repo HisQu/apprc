@@ -343,8 +343,9 @@ Installation state is explicit:
 
 | State | Meaning |
 |---|---|
-| `not_installed` | `<APP>_APPRC_TOML` is missing, points nowhere, or points to a missing file. |
-| `installed_unhealthy` | The AppRC TOML exists, but the TOML is invalid, `<APP>_STORAGE` is missing or invalid, or storage setup is incomplete. |
+| `env_not_set` | One or both bootstrap env vars are missing: `<APP>_APPRC_TOML` and `<APP>_STORAGE`. |
+| `not_installed` | `<APP>_APPRC_TOML` points nowhere or points to a missing file. |
+| `installed_unhealthy` | The AppRC TOML exists, but the TOML is invalid, `<APP>_STORAGE` is invalid, or storage setup is incomplete. |
 | `installed_healthy` | The AppRC TOML exists, `<APP>_STORAGE` selects a registered name or path, and the storage root plus local env file exist. |
 
 For example:
@@ -545,7 +546,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `AppConfigSpec` | Frozen declaration behind the kit. |
 | `ConfigOwner` | One config section, env prefix, runtime path, and fields. |
 | `ConfigField` | One editable or read-only env-backed setting. |
-| `ConfigInstallState` | `not_installed`, `installed_unhealthy`, or `installed_healthy`. |
+| `ConfigInstallState` | `env_not_set`, `not_installed`, `installed_unhealthy`, or `installed_healthy`. |
 | `BaseEnv` | Runtime dataclass base that binds values from env. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
 | `StorageRegistry` | Parsed TOML registry. |

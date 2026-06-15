@@ -41,6 +41,7 @@ class ConfigDoctorPayload(TypedDict):
     selected_storage_root_exists: bool | None
     selected_local_env: str | None
     selected_local_env_exists: bool | None
+    missing_env_keys: list[str]
     issues: list[str]
     next_steps: list[str]
 
@@ -90,7 +91,9 @@ def build_config_doctor_payload(
     :return: Stable JSON-friendly diagnostic payload.
     """
     toml_env_key = kit.apprc_toml_env_key()
+    storage_env_key = kit.spec.storage_env_key
     raw_toml_env_value = os.environ.get(toml_env_key, "").strip()
+    raw_storage_env_value = os.environ.get(storage_env_key, "").strip()
     toml_env_value = raw_toml_env_value or None
     active_toml_path = (
         Path(apprc_toml_path).expanduser().resolve()
@@ -98,6 +101,7 @@ def build_config_doctor_payload(
         else kit.optional_apprc_toml_path()
     )
     issues: list[str] = []
+    missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
     toml_error: str | None = None
     storage_count = 0
@@ -108,12 +112,11 @@ def build_config_doctor_payload(
     install_state = ConfigInstallState.NOT_INSTALLED
 
     if active_toml_path is None:
-        issues.append(
-            f"{toml_env_key} is not set. Run "
-            f"{config_command_text(kit, 'setup --yes --apprc-dir /absolute/path/to/config-dir')}"
-            f" to choose the {kit.spec.display_name} directory (AppRC), then "
-            "keep the printed AppRC TOML export command in your shell setup."
-        )
+        missing_env_keys.append(toml_env_key)
+        if storage_name is None and not raw_storage_env_value:
+            missing_env_keys.append(storage_env_key)
+        issues.append(_missing_env_issue(kit, missing_env_keys))
+        install_state = ConfigInstallState.ENV_NOT_SET
     elif not toml_exists:
         issues.append(f"AppRC TOML does not exist: {active_toml_path}")
     else:
@@ -138,21 +141,26 @@ def build_config_doctor_payload(
                     f"Run {config_command_text(kit, 'set-default NAME')}."
                 )
 
-            try:
-                selection = resolve_active_storage_selection(
-                    registry=registry,
-                    storage_name=storage_name,
-                    storage_env_key=kit.spec.storage_env_key,
-                    original_env=os.environ,
-                )
-            except StorageSelectorError as exc:
-                issues.append(str(exc))
-            if selection is None and registry.storages:
-                issues.append(
-                    f"{kit.spec.storage_env_key} is not set. Export a "
-                    "registered storage name or explicit storage path; the "
-                    "setup/editor default is not used as a runtime fallback."
-                )
+            if storage_name is None and not raw_storage_env_value:
+                missing_env_keys.append(storage_env_key)
+                issues.append(_missing_env_issue(kit, missing_env_keys))
+            else:
+                try:
+                    selection = resolve_active_storage_selection(
+                        registry=registry,
+                        storage_name=storage_name,
+                        storage_env_key=storage_env_key,
+                        original_env=os.environ,
+                    )
+                except StorageSelectorError as exc:
+                    issues.append(str(exc))
+                if selection is None and registry.storages:
+                    issues.append(
+                        f"{storage_env_key} is not set. Export a registered "
+                        "storage name or explicit storage path; the "
+                        "setup/editor default is not used as a runtime "
+                        "fallback."
+                    )
 
     selected_storage_root = selection.root if selection is not None else None
     local_env = (
@@ -175,7 +183,9 @@ def build_config_doctor_payload(
             f"Selected storage local env file does not exist: {local_env}"
         )
 
-    if toml_exists and not issues:
+    if missing_env_keys:
+        install_state = ConfigInstallState.ENV_NOT_SET
+    elif toml_exists and not issues:
         install_state = ConfigInstallState.INSTALLED_HEALTHY
     elif toml_exists:
         install_state = ConfigInstallState.INSTALLED_UNHEALTHY
@@ -184,7 +194,7 @@ def build_config_doctor_payload(
     return {
         "ok": healthy,
         "install_state": install_state.value,
-        "installed": install_state != ConfigInstallState.NOT_INSTALLED,
+        "installed": toml_exists,
         "healthy": healthy,
         "apprc_toml_env_key": toml_env_key,
         "apprc_toml_env_value": toml_env_value,
@@ -213,6 +223,7 @@ def build_config_doctor_payload(
         "selected_storage_root_exists": storage_root_exists,
         "selected_local_env": str(local_env) if local_env is not None else None,
         "selected_local_env_exists": local_env_exists,
+        "missing_env_keys": missing_env_keys,
         "issues": issues,
         "next_steps": []
         if not issues
@@ -225,3 +236,21 @@ def build_config_doctor_payload(
             config_command_text(kit, "show"),
         ],
     }
+
+
+def _missing_env_issue(
+    kit: "AppConfigKit",
+    missing_env_keys: list[str],
+) -> str:
+    """Return one readable issue for missing bootstrap env keys.
+
+    :param kit: Application config facade.
+    :param missing_env_keys: Required env keys absent from this process.
+    :return: Human-facing doctor issue.
+    """
+    keys = ", ".join(missing_env_keys)
+    return (
+        f"Env not set. {kit.spec.display_name} requires {keys}. Add the setup "
+        "handoff values to your shell or dotenv file, then run "
+        f"{config_command_text(kit, 'doctor')}."
+    )

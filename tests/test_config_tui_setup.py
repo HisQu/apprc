@@ -162,9 +162,20 @@ async def test_config_setup_wizard_finish_shows_doctor_and_next_steps(
         body = setup_app.query_one("#setup-body", Static).content
 
     assert "Done" in str(title)
-    assert "doctor: ok" in str(body)
+    assert "Example App setup files are ready." in str(body)
+    assert "Add these to your environment:" in str(body)
+    assert "Shell:" in str(body)
+    assert "Or Dotenv:" in str(body)
+    assert (
+        "Without them, apprc_example_app will report env_not_set "
+        "in config doctor."
+    ) in str(body)
     assert "apprc_example_app config edit" in str(body)
     assert "apprc_example_app config show" in str(body)
     assert "apprc_example_app config doctor" in str(body)
     assert "export APPRC_EXAMPLE_APP_APPRC_TOML" in str(body)
     assert 'export APPRC_EXAMPLE_APP_STORAGE="alpha"' in str(body)
+    assert 'APPRC_EXAMPLE_APP_STORAGE="alpha"' in str(body)
+    assert isinstance(body, Text)
+    assert text_has_span(body, "Shell:", "bold")
+    assert text_has_span(body, "Or Dotenv:", "bold")

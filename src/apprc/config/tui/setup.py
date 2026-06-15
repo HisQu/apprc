@@ -25,6 +25,7 @@ from apprc.config.tui.primitives import (
 )
 from apprc.config.tui.styles import (
     ENV_KEY_STYLE,
+    MISSING_STYLE,
     PATH_STYLE,
     lines_text,
     path_markup,
@@ -462,20 +463,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             registry=registry,
             existing_action=self.existing_action,
         )
-        payload = self.kit.doctor_payload(
-            storage_name=registry.default_storage,
-            apprc_toml_path=registry.path,
-        )
-        status = "ok" if payload["ok"] else "needs setup"
-        default = registry.default_storage or "<none>"
-        body = (
-            "Setup wrote or reused the AppRC TOML.\n\n"
-            f"apprc_toml_path: {registry.path}\n"
-            f"default_storage: {default}\n"
-            f"doctor: {status}\n\n"
-            "Next steps:\n"
-            f"{setup_text.next_steps_text(self.kit, registry)}"
-        )
+        body = setup_text.setup_finish_text(self.kit, registry)
         await self._set_screen(
             title="Done",
             body=self._style_setup_text(
@@ -522,6 +510,9 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :return: Rich text with semantic spans.
         """
         styles = {
+            "Shell:": "bold",
+            "Or Dotenv:": "bold",
+            "env_not_set": MISSING_STYLE,
             self.kit.apprc_toml_env_key(): ENV_KEY_STYLE,
             self.kit.spec.storage_env_key: ENV_KEY_STYLE,
         }

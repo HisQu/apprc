@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 # == 3rd Party ===============================
-import typer
+from rich.console import Console
+from rich.text import Text
 
 # == Internal ================================
 from apprc.config.diagnostics import ConfigDoctorPayload
 from apprc.config.install_state import ConfigInstallState
 from apprc.config.kit import AppConfigKit
+from apprc.config.tui.styles import (
+    DEFAULT_STYLE,
+    ENV_KEY_STYLE,
+    ERROR_STYLE,
+    LABEL_STYLE,
+    MISSING_STYLE,
+    PATH_STYLE,
+    env_key_text,
+    label_value_text,
+    path_text,
+    style_literals,
+)
 
 
 def print_config_doctor(
@@ -16,45 +29,192 @@ def print_config_doctor(
     payload: ConfigDoctorPayload,
 ) -> None:
     """Print a human-readable ``config doctor`` report."""
-    status_labels = {
-        ConfigInstallState.NOT_INSTALLED.value: "not installed",
-        ConfigInstallState.INSTALLED_UNHEALTHY.value: (
-            "installed but unhealthy"
-        ),
-        ConfigInstallState.INSTALLED_HEALTHY.value: "installed and healthy",
-    }
-    status = status_labels[str(payload["install_state"])]
-    typer.echo(f"{kit.spec.display_name} config doctor: {status}")
-    typer.echo("")
-    typer.echo(f"apprc_toml_env_key: {payload['apprc_toml_env_key']}")
-    typer.echo(
-        f"apprc_toml_env_value: {payload['apprc_toml_env_value'] or '<none>'}"
+    console = Console(soft_wrap=True)
+    console.print(_doctor_status_text(kit, payload))
+    console.print("")
+    console.print(
+        label_value_text(
+            "apprc_toml_env_key",
+            env_key_text(payload["apprc_toml_env_key"]),
+        )
     )
-    typer.echo(f"apprc_toml_path: {payload['apprc_toml_path'] or '<none>'}")
-    typer.echo(f"apprc_toml_exists: {payload['apprc_toml_exists']}")
-    typer.echo(f"apprc_toml_parse_ok: {payload['apprc_toml_parse_ok']}")
-    typer.echo(f"storage_count: {payload['storage_count']}")
-    typer.echo(f"default_storage: {payload['default_storage'] or '<none>'}")
-    typer.echo(f"selected_storage: {payload['selected_storage'] or '<none>'}")
-    typer.echo(
-        "selected_storage_source: "
-        f"{payload['selected_storage_source'] or '<none>'}"
+    console.print(
+        label_value_text(
+            "apprc_toml_env_value",
+            _path_or_none_text(payload["apprc_toml_env_value"]),
+        )
     )
-    typer.echo(
-        f"selected_storage_root: {payload['selected_storage_root'] or '<none>'}"
+    console.print(
+        label_value_text(
+            "apprc_toml_path",
+            _path_or_none_text(payload["apprc_toml_path"]),
+        )
     )
-    typer.echo(
-        f"selected_local_env: {payload['selected_local_env'] or '<none>'}"
+    console.print(
+        label_value_text(
+            "apprc_toml_exists",
+            _bool_text(payload["apprc_toml_exists"]),
+        )
     )
+    console.print(
+        label_value_text(
+            "apprc_toml_parse_ok",
+            _bool_text(payload["apprc_toml_parse_ok"]),
+        )
+    )
+    console.print(
+        label_value_text("storage_count", str(payload["storage_count"]))
+    )
+    console.print(
+        label_value_text(
+            "default_storage",
+            _optional_text(payload["default_storage"]),
+        )
+    )
+    console.print(
+        label_value_text(
+            "selected_storage",
+            _optional_text(payload["selected_storage"]),
+        )
+    )
+    console.print(
+        label_value_text(
+            "selected_storage_source",
+            _optional_text(payload["selected_storage_source"]),
+        )
+    )
+    console.print(
+        label_value_text(
+            "selected_storage_root",
+            _path_or_none_text(payload["selected_storage_root"]),
+        )
+    )
+    console.print(
+        label_value_text(
+            "selected_local_env",
+            _path_or_none_text(payload["selected_local_env"]),
+        )
+    )
+    if payload["missing_env_keys"]:
+        console.print(
+            label_value_text(
+                "missing_env_keys",
+                _env_key_list_text(payload["missing_env_keys"]),
+            )
+        )
 
     issues = payload["issues"]
     if issues:
-        typer.echo("")
-        typer.echo("Issues:")
+        console.print("")
+        console.print(Text("Issues:", style="bold"))
         for issue in issues:
-            typer.echo(f"- {issue}")
+            console.print(_styled_issue_text(kit, payload, issue))
 
-        typer.echo("")
-        typer.echo("Next steps:")
+        console.print("")
+        console.print(Text("Next steps:", style="bold"))
         for step in payload["next_steps"]:
-            typer.echo(f"  {step}")
+            console.print(Text(f"  {step}"))
+
+
+def _doctor_status_text(
+    kit: AppConfigKit,
+    payload: ConfigDoctorPayload,
+) -> Text:
+    """Return the styled headline for one doctor payload.
+
+    :param kit: Application config facade.
+    :param payload: Doctor payload to summarize.
+    :return: Rich text status line.
+    """
+    status_labels = {
+        ConfigInstallState.ENV_NOT_SET.value: ("env not set", MISSING_STYLE),
+        ConfigInstallState.NOT_INSTALLED.value: (
+            "not installed",
+            MISSING_STYLE,
+        ),
+        ConfigInstallState.INSTALLED_UNHEALTHY.value: (
+            "installed but unhealthy",
+            ERROR_STYLE,
+        ),
+        ConfigInstallState.INSTALLED_HEALTHY.value: (
+            "installed and healthy",
+            DEFAULT_STYLE,
+        ),
+    }
+    label, style = status_labels[str(payload["install_state"])]
+    return Text.assemble(
+        (f"{kit.spec.display_name} config doctor", "bold"),
+        ": ",
+        (label, style),
+    )
+
+
+def _optional_text(value: object | None) -> Text:
+    """Return a displayed optional scalar value."""
+    if value is None:
+        return Text("<none>", style=LABEL_STYLE)
+    return Text(str(value))
+
+
+def _path_or_none_text(value: str | None) -> Text:
+    """Return a styled path value or a dim unset marker.
+
+    :param value: Optional path-like string.
+    :return: Rich text path or ``<none>`` marker.
+    """
+    if value is None:
+        return Text("<none>", style=LABEL_STYLE)
+    return path_text(value)
+
+
+def _bool_text(value: bool) -> Text:
+    """Return a styled boolean value for doctor output."""
+    style = DEFAULT_STYLE if value else ERROR_STYLE
+    return Text(str(value).lower(), style=style)
+
+
+def _env_key_list_text(env_keys: list[str]) -> Text:
+    """Return a comma-delimited env key list with semantic styling.
+
+    :param env_keys: Missing env keys from the doctor payload.
+    :return: Rich text list.
+    """
+    rendered = Text()
+    for index, env_key in enumerate(env_keys):
+        if index:
+            rendered.append(", ")
+        rendered.append_text(env_key_text(env_key))
+    return rendered
+
+
+def _styled_issue_text(
+    kit: AppConfigKit,
+    payload: ConfigDoctorPayload,
+    issue: str,
+) -> Text:
+    """Return one issue line with known env keys and paths styled.
+
+    :param kit: Application config facade.
+    :param payload: Doctor payload containing known literals.
+    :param issue: Plain issue text.
+    :return: Rich issue text.
+    """
+    styles = {
+        kit.apprc_toml_env_key(): ENV_KEY_STYLE,
+        kit.spec.storage_env_key: ENV_KEY_STYLE,
+        "env_not_set": MISSING_STYLE,
+    }
+    styles.update(
+        {
+            str(value): PATH_STYLE
+            for value in (
+                payload["apprc_toml_env_value"],
+                payload["apprc_toml_path"],
+                payload["selected_storage_root"],
+                payload["selected_local_env"],
+            )
+            if value
+        }
+    )
+    styled = style_literals(issue, styles)
+    return Text.assemble("- ", styled)

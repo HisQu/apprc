@@ -39,6 +39,7 @@ class SelectedField:
 
 
 type ConfigValueSourceKey = Literal["effective", "shell", "local", "shared"]
+type ConfigResolvedSourceKey = Literal["shell", "local", "shared"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,11 +52,13 @@ class ConfigValueSource:
     :param key: Stable source identifier used by modal button IDs.
     :param label: Reader-facing source name.
     :param raw_value: Raw string value copied to the clipboard, or ``None``.
+    :param origin_key: Concrete source that provided the effective value.
     """
 
     key: ConfigValueSourceKey
     label: str
     raw_value: str | None
+    origin_key: ConfigResolvedSourceKey | None = None
 
     @property
     def is_available(self) -> bool:
@@ -118,16 +121,17 @@ def config_value_sources(
         env_key=env_key,
         shared_values=shared_values,
     )
-    effective_value = _first_available_value(
-        shell_value,
-        local_value,
-        shared_value,
+    effective_value, origin_key = _first_available_source(
+        ("shell", shell_value),
+        ("local", local_value),
+        ("shared", shared_value),
     )
     return (
         ConfigValueSource(
             key="effective",
             label="Effective",
             raw_value=effective_value,
+            origin_key=origin_key,
         ),
         ConfigValueSource(key="shell", label="Shell", raw_value=shell_value),
         ConfigValueSource(key="local", label="Local", raw_value=local_value),
@@ -186,12 +190,14 @@ def _shared_source_value(
         return str(value)
 
 
-def _first_available_value(*values: str | None) -> str | None:
-    """Return the first present value while preserving empty strings."""
-    for value in values:
+def _first_available_source(
+    *sources: tuple[ConfigResolvedSourceKey, str | None],
+) -> tuple[str | None, ConfigResolvedSourceKey | None]:
+    """Return the first present source while preserving empty strings."""
+    for key, value in sources:
         if value is not None:
-            return value
-    return None
+            return value, key
+    return None, None
 
 
 def archived_storage_title(record: ArchivedStorageRecord) -> Text:

@@ -71,6 +71,7 @@ def test_config_value_sources_prefer_shell_over_local_and_shared() -> None:
     sources_by_key = {source.key: source for source in sources}
 
     assert sources_by_key["effective"].raw_value == "shell-profile"
+    assert sources_by_key["effective"].origin_key == "shell"
     assert sources_by_key["shell"].raw_value == "shell-profile"
     assert sources_by_key["local"].raw_value == "local-profile"
     assert sources_by_key["shared"].raw_value == "shared-profile"
@@ -90,6 +91,7 @@ def test_config_value_sources_keep_empty_local_values_copyable() -> None:
     sources_by_key = {source.key: source for source in sources}
 
     assert sources_by_key["effective"].raw_value == ""
+    assert sources_by_key["effective"].origin_key == "local"
     assert sources_by_key["local"].raw_value == ""
     assert sources_by_key["local"].is_available is True
 
@@ -124,6 +126,7 @@ def test_config_value_sources_fall_back_to_declared_shared_default() -> None:
 
     assert sources_by_key["shared"].raw_value == "true"
     assert sources_by_key["effective"].raw_value == "true"
+    assert sources_by_key["effective"].origin_key == "shared"
 
 
 def test_storage_titles_match_editor_text() -> None:

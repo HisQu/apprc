@@ -18,22 +18,39 @@ from textual.widgets import Button, Input, ProgressBar, Static
 # == Internal ================================
 from apprc.config.schema import ConfigField, ConfigOwner
 from apprc.config.storage.archive import StorageArchiveProgress
-from apprc.config.tui.field_state import ConfigValueSource
+from apprc.config.tui.field_state import (
+    ConfigResolvedSourceKey,
+    ConfigValueSource,
+)
 from apprc.config.tui.primitives import PathSuggester
 from apprc.config.tui.rendering import (
     field_type_label,
     possible_values_label,
-    value_style,
 )
 from apprc.config.tui.styles import (
+    BOOL_STYLE,
+    CHOICE_STYLE,
+    DEFAULT_STYLE,
+    ERROR_STYLE,
     LABEL_STYLE,
+    NUMBER_STYLE,
     PATH_INPUT_CLASS,
+    PATH_STYLE,
     SECRET_STYLE,
+    TEXT_STYLE,
     env_key_text,
     label_value_text,
     lines_text,
     path_text,
 )
+
+EFFECTIVE_SOURCE_STYLE = f"bold {ERROR_STYLE}"
+GENERIC_VALUE_STYLE = "dim italic"
+SOURCE_ORIGIN_LABELS: dict[ConfigResolvedSourceKey, str] = {
+    "shell": "Shell",
+    "local": "Local",
+    "shared": "Shared default",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,16 +87,42 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
     }
 
     #edit-dialog {
-        width: 78;
+        width: 84;
         max-width: 95%;
         border: thick $primary;
         background: $surface;
         padding: 1 2;
     }
 
-    #edit-long-explanation {
-        height: 5;
+    #edit-metadata {
         margin: 1 0;
+    }
+
+    .edit-metadata-row {
+        height: 1;
+    }
+
+    .edit-metadata-label {
+        width: 18;
+    }
+
+    .edit-metadata-value {
+        width: 1fr;
+    }
+
+    #edit-explanation-panel {
+        border: solid $border;
+        padding: 0 1;
+        margin: 1 0;
+    }
+
+    #edit-explanation-title {
+        height: 1;
+    }
+
+    #edit-long-explanation {
+        height: auto;
+        margin: 0;
     }
 
     #edit-source-panel {
@@ -87,7 +130,14 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
     }
 
     .edit-source-row {
+        height: 1;
+    }
+
+    #edit-source-effective {
+        border: solid $error;
         height: 3;
+        margin-bottom: 1;
+        padding: 0 1;
     }
 
     .edit-source-label {
@@ -98,8 +148,23 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         width: 1fr;
     }
 
-    .edit-source-copy {
-        width: 9;
+    .edit-source-origin {
+        width: 16;
+    }
+
+    Button.edit-source-copy {
+        border: none;
+        height: 1;
+        min-width: 8;
+        padding: 0 1;
+        width: 8;
+    }
+
+    Input.edit-local-input {
+        border: none;
+        height: 1;
+        padding: 0 1;
+        width: 1fr;
     }
 
     #edit-button-row {
@@ -147,51 +212,58 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
                 id="edit-title",
             )
             yield Static(env_key_text(self.env_key), id="edit-env-key")
-            yield Static(
-                "\n".join(
-                    (
-                        f"Type: {field_type_label(self.spec)}",
-                        f"Possible values: {possible_values_label(self.spec)}",
-                        "Shell environment: "
-                        + ("set" if self.env_is_set else "unset"),
+            with Vertical(id="edit-metadata"):
+                with Horizontal(
+                    id="edit-metadata-type",
+                    classes="edit-metadata-row",
+                ):
+                    yield Static(
+                        Text("Type", style=LABEL_STYLE),
+                        classes="edit-metadata-label",
                     )
-                ),
-                id="edit-metadata",
-            )
-            yield Static(
-                self.spec.explanation_long or self.spec.explanation_short,
-                id="edit-long-explanation",
-            )
+                    yield Static(
+                        self._type_value_text(),
+                        id="edit-type-value",
+                        classes="edit-metadata-value",
+                    )
+                with Horizontal(
+                    id="edit-metadata-possible-values",
+                    classes="edit-metadata-row",
+                ):
+                    yield Static(
+                        Text("Possible values", style=LABEL_STYLE),
+                        classes="edit-metadata-label",
+                    )
+                    yield Static(
+                        self._possible_values_text(),
+                        id="edit-possible-values-value",
+                        classes="edit-metadata-value",
+                    )
+                with Horizontal(
+                    id="edit-metadata-shell",
+                    classes="edit-metadata-row",
+                ):
+                    yield Static(
+                        Text("Shell environment", style=LABEL_STYLE),
+                        classes="edit-metadata-label",
+                    )
+                    yield Static(
+                        self._shell_status_text(),
+                        id="edit-shell-value",
+                        classes="edit-metadata-value",
+                    )
+            with Vertical(id="edit-explanation-panel"):
+                yield Static(
+                    Text("Explanation", style="bold"),
+                    id="edit-explanation-title",
+                )
+                yield Static(
+                    self.spec.explanation_long or self.spec.explanation_short,
+                    id="edit-long-explanation",
+                )
             with Vertical(id="edit-source-panel"):
                 for source in self.value_sources:
-                    with Horizontal(
-                        id=f"edit-source-{source.key}",
-                        classes="edit-source-row",
-                    ):
-                        yield Static(
-                            source.label,
-                            classes="edit-source-label",
-                        )
-                        yield Static(
-                            self._source_value_text(source),
-                            id=f"edit-source-{source.key}-value",
-                            classes="edit-source-value",
-                        )
-                        yield Button(
-                            "Copy",
-                            id=f"edit-copy-{source.key}",
-                            disabled=not source.is_available,
-                            classes="edit-source-copy",
-                        )
-            yield Input(
-                value=self.local_value,
-                placeholder="Local override value",
-                password=self.spec.secret,
-                id="edit-value-input",
-                classes=(
-                    PATH_INPUT_CLASS if self.spec.python_type is Path else None
-                ),
-            )
+                    yield from self._compose_source_row(source)
             with Horizontal(id="edit-button-row"):
                 yield Button("Save", variant="primary", id="edit-save")
                 yield Button("Clear Local", id="edit-clear")
@@ -200,6 +272,46 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
     def on_mount(self) -> None:
         """Focus the value input when the modal opens."""
         self.query_one("#edit-value-input", Input).focus()
+
+    def _compose_source_row(
+        self,
+        source: ConfigValueSource,
+    ) -> ComposeResult:
+        """Compose one source-resolution row."""
+        with Horizontal(
+            id=f"edit-source-{source.key}",
+            classes="edit-source-row",
+        ):
+            yield Static(
+                self._source_label_text(source),
+                id=f"edit-source-{source.key}-label",
+                classes="edit-source-label",
+            )
+            if source.key == "local":
+                yield Input(
+                    value=self.local_value,
+                    placeholder="Local override value",
+                    password=self.spec.secret,
+                    id="edit-value-input",
+                    classes=self._local_input_classes(),
+                )
+            else:
+                yield Static(
+                    self._source_value_text(source),
+                    id=f"edit-source-{source.key}-value",
+                    classes="edit-source-value",
+                )
+            yield Static(
+                self._source_origin_text(source),
+                id=f"edit-source-{source.key}-origin",
+                classes="edit-source-origin",
+            )
+            yield Button(
+                "Copy",
+                id=f"edit-copy-{source.key}",
+                disabled=self._copy_button_is_disabled(source),
+                classes="edit-source-copy",
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle copy, save, clear, and cancel button actions."""
@@ -228,6 +340,17 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         if event.input.id == "edit-value-input":
             self.action_save()
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Enable local copy once a new local value is visible."""
+        if event.input.id != "edit-value-input":
+            return
+        local = self._source_by_key("local")
+        if local is None:
+            return
+        self.query_one("#edit-copy-local", Button).disabled = (
+            event.value == "" and not local.is_available
+        )
+
     def action_save(self) -> None:
         """Dismiss with the current input value."""
         raw_value = self.query_one("#edit-value-input", Input).value
@@ -245,7 +368,105 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
 
     def _copy_source(self, source_key: str) -> None:
         """Copy one source value without dismissing the modal."""
-        source = next(
+        source = self._source_by_key(source_key)
+        if source is None:
+            self.notify("No value to copy.", severity="warning")
+            return
+        if source.key == "local":
+            self._copy_local_source(source)
+            return
+        if source.raw_value is None:
+            self.notify("No value to copy.", severity="warning")
+            return
+        self.app.copy_to_clipboard(source.raw_value)
+        self.notify(f"Copied {source.label}")
+
+    def _copy_local_source(self, source: ConfigValueSource) -> None:
+        """Copy the visible local input value."""
+        raw_value = self.query_one("#edit-value-input", Input).value
+        if raw_value == "" and not source.is_available:
+            self.notify("No value to copy.", severity="warning")
+            return
+        self.app.copy_to_clipboard(raw_value)
+        self.notify(f"Copied {source.label}")
+
+    def _source_value_text(self, source: ConfigValueSource) -> Text:
+        """Return redacted or styled text for one source row."""
+        if source.raw_value is None:
+            return Text(
+                "missing" if source.key in {"effective", "shared"} else "unset",
+                style=(
+                    EFFECTIVE_SOURCE_STYLE
+                    if source.key == "effective"
+                    else LABEL_STYLE
+                ),
+            )
+        if source.raw_value == "":
+            return Text(
+                "<empty>",
+                style=(
+                    EFFECTIVE_SOURCE_STYLE
+                    if source.key == "effective"
+                    else LABEL_STYLE
+                ),
+            )
+        if self.spec.secret:
+            return Text(
+                "<secret>",
+                style=(
+                    EFFECTIVE_SOURCE_STYLE
+                    if source.key == "effective"
+                    else SECRET_STYLE
+                ),
+            )
+        return Text(
+            source.raw_value,
+            style=(
+                EFFECTIVE_SOURCE_STYLE
+                if source.key == "effective"
+                else self._type_style()
+            ),
+        )
+
+    def _type_value_text(self) -> Text:
+        """Return the field type with type-specific color."""
+        return Text(field_type_label(self.spec), style=self._type_style())
+
+    def _possible_values_text(self) -> Text:
+        """Return accepted values with literal and choice styling."""
+        style = CHOICE_STYLE if self.spec.choices else GENERIC_VALUE_STYLE
+        return Text(possible_values_label(self.spec), style=style)
+
+    def _shell_status_text(self) -> Text:
+        """Return current shell status with quiet or active styling."""
+        if self.env_is_set:
+            return Text("set", style=DEFAULT_STYLE)
+        return Text("unset", style=LABEL_STYLE)
+
+    def _source_label_text(self, source: ConfigValueSource) -> Text:
+        """Return the source label with Effective emphasized."""
+        if source.key == "effective":
+            return Text(source.label, style=EFFECTIVE_SOURCE_STYLE)
+        return Text(source.label, style=LABEL_STYLE)
+
+    def _source_origin_text(self, source: ConfigValueSource) -> Text:
+        """Return the concrete origin for the effective source row."""
+        if source.key != "effective" or source.origin_key is None:
+            return Text("")
+        return Text(
+            f"from {SOURCE_ORIGIN_LABELS[source.origin_key]}",
+            style=LABEL_STYLE,
+        )
+
+    def _copy_button_is_disabled(self, source: ConfigValueSource) -> bool:
+        """Return whether a copy button should start disabled."""
+        if source.key == "local":
+            return not source.is_available and self.local_value == ""
+        return not source.is_available
+
+    def _source_by_key(self, source_key: str) -> ConfigValueSource | None:
+        """Return one modal source by stable key."""
+        return next(
             (
                 candidate
                 for candidate in self.value_sources
@@ -253,23 +474,23 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
             ),
             None,
         )
-        if source is None or source.raw_value is None:
-            self.notify("No value to copy.", severity="warning")
-            return
-        self.app.copy_to_clipboard(source.raw_value)
-        self.notify(f"Copied {source.label}")
 
-    def _source_value_text(self, source: ConfigValueSource) -> Text:
-        """Return redacted or styled text for one source row."""
-        if source.raw_value is None:
-            if source.key in {"effective", "shared"}:
-                return Text("missing", style=LABEL_STYLE)
-            return Text("unset", style=LABEL_STYLE)
-        if source.raw_value == "":
-            return Text("<empty>", style=LABEL_STYLE)
-        if self.spec.secret:
-            return Text("<secret>", style=SECRET_STYLE)
-        return Text(source.raw_value, style=value_style(self.spec))
+    def _local_input_classes(self) -> str:
+        """Return CSS classes for the embedded local override input."""
+        classes = ["edit-local-input"]
+        if self.spec.python_type is Path:
+            classes.append(PATH_INPUT_CLASS)
+        return " ".join(classes)
+
+    def _type_style(self) -> str:
+        """Return the color used for values governed by the declared type."""
+        if self.spec.python_type is bool:
+            return BOOL_STYLE
+        if self.spec.python_type in {int, float}:
+            return NUMBER_STYLE
+        if self.spec.python_type is Path:
+            return PATH_STYLE
+        return TEXT_STYLE
 
 
 class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):

@@ -9,7 +9,13 @@ from textual.coordinate import Coordinate
 from textual.widgets import Button, DataTable, Input, ListView, Static
 
 from apprc.config.tui.modals import ArchiveOptionsScreen
-from apprc.config.tui.styles import PATH_INPUT_CLASS, PATH_STYLE
+from apprc.config.tui.styles import (
+    CHOICE_STYLE,
+    LABEL_STYLE,
+    PATH_INPUT_CLASS,
+    PATH_STYLE,
+    TEXT_STYLE,
+)
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     build_apprc_example_app_kit,
@@ -18,6 +24,17 @@ from tests.support_config import (
 from tests.support_tui import text_has_span
 
 pytestmark = [pytest.mark.requires_apprc_env("APPRC_EXAMPLE_APP")]
+
+
+def _static_text(static: Static) -> Text:
+    """Return Rich text content from a Static after narrowing its type.
+
+    :param static: Textual widget expected to contain styled Rich text.
+    :return: Styled Rich text content.
+    """
+    content = static.content
+    assert isinstance(content, Text)
+    return content
 
 
 def test_kit_builds_generic_editor_with_spec_defaults(
@@ -475,6 +492,10 @@ async def test_editor_modal_copies_source_values_without_saving(
             "#edit-source-effective-value",
             Static,
         ).content
+        effective_origin = editor.screen.query_one(
+            "#edit-source-effective-origin",
+            Static,
+        ).content
         shared_value = editor.screen.query_one(
             "#edit-source-shared-value",
             Static,
@@ -485,18 +506,85 @@ async def test_editor_modal_copies_source_values_without_saving(
         assert editor.clipboard == "shell-profile"
         editor.screen.query_one("#edit-copy-local", Button).press()
         await pilot.pause()
-        assert editor.clipboard == "local-profile"
+        assert editor.clipboard == "unsaved-profile"
         editor.screen.query_one("#edit-copy-shared", Button).press()
         await pilot.pause()
 
         assert editor.clipboard == "default"
         assert str(effective_value) == "shell-profile"
+        assert str(effective_origin) == "from Shell"
         assert str(shared_value) == "default"
         assert editor.screen.query_one("#edit-value-input", Input).value == (
             "unsaved-profile"
         )
+        assert (
+            editor.screen.query_one(
+                "#edit-source-local #edit-value-input",
+                Input,
+            ).value
+            == "unsaved-profile"
+        )
+        local_row = editor.screen.query_one("#edit-source-local")
+        local_label = editor.screen.query_one(
+            "#edit-source-local-label",
+            Static,
+        )
+        local_origin = editor.screen.query_one(
+            "#edit-source-local-origin",
+            Static,
+        )
+        local_copy = editor.screen.query_one("#edit-copy-local", Button)
+        shared_row = editor.screen.query_one("#edit-source-shared")
+        shared_copy = editor.screen.query_one("#edit-copy-shared", Button)
+        local_row_right = local_row.region.x + local_row.region.width
+        shared_row_right = shared_row.region.x + shared_row.region.width
+
+        for widget in (
+            local_label,
+            input_widget,
+            local_origin,
+            local_copy,
+        ):
+            assert widget.region.x >= local_row.region.x
+            assert widget.region.x + widget.region.width <= local_row_right
+        assert shared_copy.region.x + shared_copy.region.width <= (
+            shared_row_right
+        )
 
     assert "unsaved-profile" not in local_env.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_editor_modal_enables_local_copy_when_user_types(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    registry = kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test() as pilot:
+        table = editor.query_one("#field-table", DataTable)
+        table.cursor_coordinate = Coordinate(1, 0)
+        editor._open_selected_field_editor()
+        await pilot.pause()
+
+        local_copy = editor.screen.query_one("#edit-copy-local", Button)
+        input_widget = editor.screen.query_one("#edit-value-input", Input)
+
+        assert local_copy.disabled is True
+        input_widget.value = "draft-profile"
+        await pilot.pause()
+        assert local_copy.disabled is False
+        local_copy.press()
+        await pilot.pause()
+
+    assert editor.clipboard == "draft-profile"
 
 
 @pytest.mark.asyncio
@@ -525,18 +613,30 @@ async def test_editor_modal_redacts_secret_sources_but_copies_raw_value(
         editor._open_selected_field_editor()
         await pilot.pause()
 
-        local_value = editor.screen.query_one(
-            "#edit-source-local-value",
-            Static,
-        ).content
+        effective_value = _static_text(
+            editor.screen.query_one("#edit-source-effective-value", Static)
+        )
+        effective_origin = _static_text(
+            editor.screen.query_one("#edit-source-effective-origin", Static)
+        )
+        shell_value = _static_text(
+            editor.screen.query_one("#edit-source-shell-value", Static)
+        )
+        shared_value = _static_text(
+            editor.screen.query_one("#edit-source-shared-value", Static)
+        )
+        input_widget = editor.screen.query_one("#edit-value-input", Input)
         editor.screen.query_one("#edit-copy-local", Button).press()
         await pilot.pause()
 
-        assert str(local_value) == "<secret>"
+        assert str(effective_value) == "<secret>"
+        assert effective_value.style == "bold red"
+        assert str(effective_origin) == "from Local"
+        assert str(shell_value) == "unset"
+        assert shell_value.style == LABEL_STYLE
+        assert str(shared_value) == "missing"
+        assert input_widget.value == "super-secret"
         assert editor.clipboard == "super-secret"
-        assert editor.screen.query_one("#edit-value-input", Input).value == (
-            "super-secret"
-        )
 
 
 @pytest.mark.asyncio
@@ -558,17 +658,65 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
         table.cursor_coordinate = Coordinate(2, 0)
         editor._open_selected_field_editor()
         await pilot.pause()
-        metadata = editor.screen.query_one("#edit-metadata", Static).content
+        type_value = _static_text(
+            editor.screen.query_one("#edit-type-value", Static)
+        )
+        possible_values = _static_text(
+            editor.screen.query_one("#edit-possible-values-value", Static)
+        )
+        explanation_title = _static_text(
+            editor.screen.query_one("#edit-explanation-title", Static)
+        )
         long_explanation = editor.screen.query_one(
             "#edit-long-explanation",
             Static,
         ).content
+        effective_label = _static_text(
+            editor.screen.query_one("#edit-source-effective-label", Static)
+        )
+        effective_origin = _static_text(
+            editor.screen.query_one("#edit-source-effective-origin", Static)
+        )
 
-    assert "Type: str" in str(metadata)
-    assert "Possible values: AUTO, MANUAL" in str(metadata)
+    assert str(type_value) == "str"
+    assert type_value.style == TEXT_STYLE
+    assert str(possible_values) == "AUTO, MANUAL"
+    assert possible_values.style == CHOICE_STYLE
+    assert str(explanation_title) == "Explanation"
+    assert explanation_title.style == "bold"
     assert "Operating mode used by Example App commands." in str(
         long_explanation
     )
+    assert str(effective_label) == "Effective"
+    assert effective_label.style == "bold red"
+    assert str(effective_origin) == "from Shared default"
+
+
+@pytest.mark.asyncio
+async def test_editor_modal_styles_generic_possible_values(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    kit = build_apprc_example_app_kit()
+    registry = kit.register_storage(
+        name="alpha",
+        root=tmp_path / "storage",
+        make_default=True,
+    )
+    editor = kit.editor_app(registry=registry)
+
+    async with editor.run_test() as pilot:
+        table = editor.query_one("#field-table", DataTable)
+        table.cursor_coordinate = Coordinate(6, 0)
+        editor._open_selected_field_editor()
+        await pilot.pause()
+        possible_values = _static_text(
+            editor.screen.query_one("#edit-possible-values-value", Static)
+        )
+
+    assert str(possible_values) == "free text"
+    assert possible_values.style == "dim italic"
 
 
 @pytest.mark.asyncio
@@ -591,10 +739,13 @@ async def test_editor_modal_marks_path_inputs(
         editor._open_selected_field_editor()
         await pilot.pause()
         input_widget = editor.screen.query_one("#edit-value-input", Input)
-        metadata = editor.screen.query_one("#edit-metadata", Static).content
+        type_value = _static_text(
+            editor.screen.query_one("#edit-type-value", Static)
+        )
 
     assert input_widget.has_class(PATH_INPUT_CLASS)
-    assert "Type: Path" in str(metadata)
+    assert str(type_value) == "Path"
+    assert type_value.style == PATH_STYLE
 
 
 @pytest.mark.asyncio

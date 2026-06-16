@@ -40,7 +40,6 @@ from apprc.config.local_env import (
     read_local_env,
     set_local_env_value,
 )
-from apprc.config.schema import ConfigOwner
 from apprc.config.storage.registry import StorageRecord, StorageRegistry
 from apprc.config.tui.modals import (
     ConfigValueEditScreen,
@@ -103,39 +102,25 @@ class ConfigEditorApp(App[None]):
     def __init__(
         self,
         *,
+        kit: AppConfigKit,
         registry: StorageRegistry | None,
-        kit: AppConfigKit | None = None,
-        owners: tuple[ConfigOwner, ...] | None = None,
         initial_storage: str | None = None,
-        local_env_filename: str = ".env.local",
-        init_command: str = "app config init STORAGE_ROOT --name NAME",
-        registry_label: str = "storage registry",
-        hidden_env_keys: tuple[str, ...] = (),
         active_storage_root: Path | None = None,
         registry_actions_enabled: bool | None = None,
     ) -> None:
         """Keep registry and field metadata while editing storage state."""
         super().__init__()
         self.kit = kit
-        hidden_keys = set(hidden_env_keys)
-        if kit is not None:
-            owners = kit.spec.owners
-            local_env_filename = kit.spec.local_env_filename
-            init_command = (
-                f"{kit.spec.config_command_name()} config init "
-                "STORAGE_ROOT --name NAME"
-            )
-            registry_label = kit.spec.apprc_toml_filename
-            hidden_keys.add(kit.spec.storage_env_key)
-        if owners is None:
-            raise TypeError("ConfigEditorApp requires kit or owners.")
         self.registry = registry
-        self.owners = owners
+        self.owners = kit.spec.owners
         self.initial_storage = initial_storage
-        self.local_env_filename = local_env_filename
-        self.init_command = init_command
-        self.registry_label = registry_label
-        self.hidden_env_keys = frozenset(hidden_keys)
+        self.local_env_filename = kit.spec.local_env_filename
+        self.init_command = (
+            f"{kit.spec.config_command_name()} config init "
+            "STORAGE_ROOT --name NAME"
+        )
+        self.registry_label = kit.spec.apprc_toml_filename
+        self.hidden_env_keys = frozenset({kit.spec.storage_env_key})
         self.active_storage_root = (
             Path(active_storage_root).expanduser().resolve()
             if active_storage_root is not None
@@ -274,12 +259,6 @@ class ConfigEditorApp(App[None]):
 
     def _require_kit(self) -> AppConfigKit | None:
         """Return the kit required for registry mutations."""
-        if self.kit is None:
-            self.notify(
-                "Storage management requires ConfigEditorApp(kit=...).",
-                severity="error",
-            )
-            return None
         if not self.registry_actions_enabled:
             self.notify(
                 "Storage management requires an AppRC TOML.",
@@ -586,15 +565,11 @@ class ConfigEditorApp(App[None]):
 
     def _fallback_storage_name(self) -> str:
         """Return a storage selector when no path name is available."""
-        if self.kit is not None:
-            return self.kit.suggested_storage_name()
-        return "apprc_stor-1"
+        return self.kit.suggested_storage_name()
 
     def _no_storage_message(self) -> str:
         """Return empty-list guidance for the current registry capability."""
-        storage_env_key = (
-            self.kit.spec.storage_env_key if self.kit else "<APP>_STORAGE"
-        )
+        storage_env_key = self.kit.spec.storage_env_key
         if self.registry_actions_enabled:
             return (
                 "No storages registered. Use New storage to add one, or set "
@@ -608,16 +583,12 @@ class ConfigEditorApp(App[None]):
         )
 
 
-def _read_packaged_shared_values(
-    kit: AppConfigKit | None,
-) -> dict[str, str] | None:
+def _read_packaged_shared_values(kit: AppConfigKit) -> dict[str, str]:
     """Return packaged shared dotenv values for a kit-backed editor.
 
     :param kit: Application facade that owns the shared dotenv resource.
-    :return: Parsed shared values, or ``None`` for owners-only editors.
+    :return: Parsed shared values.
     """
-    if kit is None:
-        return None
     resource = files(kit.spec.config_package).joinpath(
         kit.spec.shared_env_filename
     )

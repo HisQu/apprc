@@ -32,14 +32,15 @@ from apprc.config.apprc_toml import (
     missing_configured_apprc_toml_message,
     optional_apprc_toml_path,
 )
+from apprc.config.app_spec import AppConfigSpec
 from apprc.config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
 )
 from apprc.config.storage.selector import (
+    _selected_storage_selector_value,
     missing_storage_selector_error,
-    resolve_active_storage_selection,
-    selected_storage_selector_value,
+    resolve_storage_selector_value,
 )
 from apprc.logging import get_logger
 
@@ -51,28 +52,6 @@ class BootstrapLogger(Protocol):
 
     def info(self, msg: Any, *args: Any, **kwargs: Any) -> Any:
         """Emit one informational message."""
-
-
-@dataclass(frozen=True, slots=True)
-class EnvBootstrapSpec:
-    """Application-specific bootstrap contract.
-
-    :param app_name: Lowercase application name used in env var derivation.
-    :param display_name: Human-readable application name in log messages.
-    :param config_package: Package containing the shared dotenv resource.
-    :param storage_env_key: Env key that stores the active storage selector.
-    :param apprc_toml_filename: Per-user AppRC TOML filename.
-    :param shared_env_filename: Packaged shared dotenv filename.
-    :param local_env_filename: Storage-local dotenv override filename.
-    """
-
-    app_name: str
-    display_name: str
-    config_package: str
-    storage_env_key: str
-    apprc_toml_filename: str
-    shared_env_filename: str = ".env.shared"
-    local_env_filename: str = ".env.local"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +90,7 @@ class EnvBootstrapResult:
 
 def bootstrap_env(
     *,
-    spec: EnvBootstrapSpec,
+    spec: AppConfigSpec,
     env_file: Path | None = None,
     env_file_overrides_os_environ: bool = False,
     load_dotenv_layers: bool = True,
@@ -146,28 +125,23 @@ def bootstrap_env(
     """
     original_env = dict(os.environ)
     explicit_values = _read_explicit_env_file(env_file)
-    if (
-        selected_storage_selector_value(
-            storage=storage,
-            storage_env_key=spec.storage_env_key,
-            original_env=original_env,
-            explicit_values=explicit_values,
-            env_file_overrides_os_environ=env_file_overrides_os_environ,
-        )
-        is None
-    ):
-        raise missing_storage_selector_error(spec.storage_env_key)
-    registry = _load_optional_registry(spec)
-    selection = resolve_active_storage_selection(
-        registry=registry,
+    storage_selector = _selected_storage_selector_value(
         storage=storage,
         storage_env_key=spec.storage_env_key,
         original_env=original_env,
         explicit_values=explicit_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
-    if selection is None:
+    if storage_selector is None:
         raise missing_storage_selector_error(spec.storage_env_key)
+    registry = _load_optional_registry(spec)
+    selector_source, selector_value = storage_selector
+    selection = resolve_storage_selector_value(
+        registry=registry,
+        raw_value=selector_value,
+        storage_env_key=spec.storage_env_key,
+        source=selector_source,
+    )
 
     active_storage_root = selection.root
     active_local_env = active_storage_root / spec.local_env_filename
@@ -205,7 +179,7 @@ def bootstrap_env(
     )
 
 
-def _load_optional_registry(spec: EnvBootstrapSpec) -> StorageRegistry | None:
+def _load_optional_registry(spec: AppConfigSpec) -> StorageRegistry | None:
     """Load the multi-storage registry when the optional selector is set."""
     active_path = optional_apprc_toml_path(app_name=spec.app_name)
     if active_path is None:
@@ -221,7 +195,7 @@ def _load_optional_registry(spec: EnvBootstrapSpec) -> StorageRegistry | None:
     return load_storage_registry_or_empty(active_path)
 
 
-def _shared_env_resource(spec: EnvBootstrapSpec) -> Traversable:
+def _shared_env_resource(spec: AppConfigSpec) -> Traversable:
     """Return the packaged shared dotenv resource."""
     return files(spec.config_package).joinpath(spec.shared_env_filename)
 

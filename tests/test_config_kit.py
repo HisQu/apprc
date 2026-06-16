@@ -107,8 +107,8 @@ def test_config_doctor_reports_env_not_set_without_env(
     result = runner.invoke(app, ["doctor", "--json"])
 
     assert payload["install_state"] == ConfigInstallState.ENV_NOT_SET.value
-    assert payload["installed"] is False
-    assert payload["healthy"] is False
+    assert payload["ok"] is False
+    assert payload["apprc_toml_exists"] is False
     assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
     assert result.exit_code == 1, result.output
     assert json.loads(result.output)["install_state"] == "env_not_set"
@@ -168,7 +168,7 @@ def test_config_doctor_reports_env_not_set_for_missing_storage_env(
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["install_state"] == ConfigInstallState.ENV_NOT_SET.value
-    assert payload["installed"] is True
+    assert payload["apprc_toml_exists"] is True
     assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
 
 
@@ -220,8 +220,8 @@ def test_install_state_reports_healthy_for_empty_registry_with_active_path(
     payload = kit.doctor_payload()
 
     assert kit.install_state() == ConfigInstallState.INSTALLED_HEALTHY
-    assert payload["installed"] is True
-    assert payload["healthy"] is True
+    assert payload["ok"] is True
+    assert payload["apprc_toml_exists"] is True
     assert payload["storage_count"] == 0
     assert payload["selected_storage"] is None
 
@@ -278,7 +278,7 @@ def test_install_state_reports_healthy_for_active_storage_path(
 
     assert kit.install_state() == ConfigInstallState.INSTALLED_HEALTHY
     assert payload["ok"] is True
-    assert payload["healthy"] is True
+    assert payload["apprc_toml_exists"] is True
 
 
 def test_install_state_tracks_selected_storage_source_from_env(

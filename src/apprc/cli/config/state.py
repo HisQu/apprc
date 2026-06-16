@@ -16,7 +16,7 @@ from apprc.cli.typer_utils import strip_leading_options
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.storage.registry import StorageRegistry
-from apprc.config.storage.selector import resolve_env_storage_selection
+from apprc.config.storage.selector import resolve_active_storage_selection
 
 
 class ConfigCliState(Protocol):
@@ -65,19 +65,36 @@ def active_storage_root_from_state(
         and state.env_bootstrap.storage_root is not None
     ):
         return state.env_bootstrap.storage_root
+    if not os.environ.get(kit.spec.storage_env_key, "").strip():
+        return None
+    active_registry_path = kit.optional_apprc_toml_path()
+    registry = kit.load_registry() if active_registry_path is not None else None
+    return active_storage_root_from_env(kit, registry=registry)
+
+
+def active_storage_root_from_env(
+    kit: AppConfigKit,
+    *,
+    registry: StorageRegistry | None,
+) -> Path | None:
+    """Return the active storage root selected by the current environment.
+
+    :param kit: Application config facade.
+    :param registry: Parsed AppRC TOML storage registry, or ``None`` for
+        single-storage path mode.
+    :return: Resolved storage root, or ``None`` when no env selector is set.
+    :raises StorageSelectorError: If the env selector cannot be resolved.
+    """
     env_storage = os.environ.get(kit.spec.storage_env_key, "").strip()
-    if env_storage:
-        active_registry_path = kit.optional_apprc_toml_path()
-        registry = (
-            kit.load_registry() if active_registry_path is not None else None
-        )
-        selection = resolve_env_storage_selection(
-            registry=registry,
-            storage_env_key=kit.spec.storage_env_key,
-            proc_env=os.environ,
-        )
-        return selection.root if selection is not None else None
-    return None
+    if not env_storage:
+        return None
+    selection = resolve_active_storage_selection(
+        registry=registry,
+        storage=None,
+        storage_env_key=kit.spec.storage_env_key,
+        original_env=os.environ,
+    )
+    return selection.root if selection is not None else None
 
 
 def initial_storage_from_state(

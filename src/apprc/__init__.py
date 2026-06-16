@@ -10,7 +10,6 @@ from apprc.config import (
     ConfigField,
     ConfigInstallState,
     ConfigOwner,
-    EnvBootstrapSpec,
 )
 from apprc.logging import (
     AppLogger,

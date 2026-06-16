@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
-import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -17,6 +15,7 @@ from apprc.cli.config.output import print_storage_list, storage_list_payload
 from apprc.cli.config.prompts import guard_storage_root_init
 from apprc.cli.config.state import (
     ConfigCliState,
+    active_storage_root_from_env,
     active_storage_root_from_state,
     initial_storage_from_state,
 )
@@ -29,10 +28,7 @@ from apprc.config.kit import AppConfigKit
 from apprc.config.paths import StorageRootPathError
 import apprc.config.setup.flow as setup_flow
 from apprc.config.storage.registry import StorageRegistry
-from apprc.config.storage.selector import (
-    StorageSelectorError,
-    resolve_env_storage_selection,
-)
+from apprc.config.storage.selector import StorageSelectorError
 
 if TYPE_CHECKING:
     from apprc.config.tui import ConfigEditorApp
@@ -99,7 +95,9 @@ class ConfigCommandHandlers:
         payload = storage_list_payload(
             registry,
             local_env_filename=self.kit.spec.local_env_filename,
-            active_storage_root=self.active_storage_root_from_env(registry),
+            active_storage_root=self.optional_active_storage_root_from_env(
+                registry
+            ),
         )
         if json_output:
             dump_json(payload)
@@ -238,12 +236,13 @@ class ConfigCommandHandlers:
             if current_state is not None
             else None
         )
-        active_storage_root = self.active_storage_root_from_env(
+        active_storage_root = self.optional_active_storage_root_from_env(
             configured_registry
         )
         registry_actions_enabled = configured_registry is not None
         if self.editor_app_cls is not None:
             editor_app = self.editor_app_cls(
+                kit=self.kit,
                 registry=configured_registry,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
@@ -331,23 +330,18 @@ class ConfigCommandHandlers:
                 param_hint=self.kit.spec.apprc_toml_filename,
             ) from exc
 
-    def active_storage_root_from_env(
+    def optional_active_storage_root_from_env(
         self,
         registry: StorageRegistry | None,
     ) -> Path | None:
-        """Return the active storage root selected by the current environment."""
-        env_storage = os.environ.get(self.kit.spec.storage_env_key, "").strip()
-        if not env_storage:
-            return None
+        """Return the env-selected storage root when it is displayable."""
         try:
-            selection = resolve_env_storage_selection(
+            return active_storage_root_from_env(
+                self.kit,
                 registry=registry,
-                storage_env_key=self.kit.spec.storage_env_key,
-                proc_env=os.environ,
             )
         except StorageSelectorError:
             return None
-        return selection.root if selection is not None else None
 
     def required_storage_root(self, state: Any) -> Path:
         """Return an active storage root or raise Typer's CLI error type."""

@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from apprc.config.apprc_toml import ApprcTomlEnvError
-from apprc.config.environment import EnvBootstrapSpec, bootstrap_env
+from apprc.config.app_spec import AppConfigSpec
+from apprc.config.environment import bootstrap_env
 from apprc.config.storage.registry import register_storage
 
 
@@ -54,12 +55,13 @@ def _shared_env_package(
     return package_name
 
 
-def _spec(package_name: str) -> EnvBootstrapSpec:
+def _spec(package_name: str) -> AppConfigSpec:
     """Return a bootstrap spec for the demo test package."""
-    return EnvBootstrapSpec(
+    return AppConfigSpec(
         app_name="demo",
         display_name="Demo",
         config_package=package_name,
+        owners=(),
         storage_env_key="DEMO_STORAGE",
         apprc_toml_filename="demo.apprc.toml",
         shared_env_filename=".env.shared",

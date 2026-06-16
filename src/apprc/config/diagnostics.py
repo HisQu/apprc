@@ -26,12 +26,6 @@ class ConfigDoctorPayload(TypedDict):
 
     ok: bool
     install_state: str
-    installed: bool
-    runnable: bool
-    healthy: bool
-    storage_ready: bool
-    registry_configured: bool
-    registry_ready: bool
     apprc_toml_env_key: str
     apprc_toml_env_value: str | None
     apprc_toml_path: str | None
@@ -172,25 +166,12 @@ def _doctor_payload(
     :param issues: All collected issues.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    healthy = install_state == ConfigInstallState.INSTALLED_HEALTHY
-    storage_ready = bool(storage.storage_root_exists) and bool(
-        storage.local_env_exists
-    )
-    registry_configured = registry.active_toml_path is not None
-    registry_ready = registry.toml_parse_ok
-    runnable = healthy
-    installed = registry.toml_exists or storage_ready
+    ok = install_state == ConfigInstallState.INSTALLED_HEALTHY
     selection = storage.selection
     selected_storage_root = selection.root if selection is not None else None
     return {
-        "ok": healthy,
+        "ok": ok,
         "install_state": install_state.value,
-        "installed": installed,
-        "runnable": runnable,
-        "healthy": healthy,
-        "storage_ready": storage_ready,
-        "registry_configured": registry_configured,
-        "registry_ready": registry_ready,
         "apprc_toml_env_key": kit.apprc_toml_env_key(),
         "apprc_toml_env_value": registry.toml_env_value,
         "apprc_toml_path": (

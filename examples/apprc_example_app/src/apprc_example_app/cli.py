@@ -78,8 +78,13 @@ def root_cmd(
     """Bootstrap Example App config state for commands that need runtime values."""
     state = ApprcExampleAppState(storage=storage)
     ctx.obj = state
-    if _config_request_skips_runtime_bootstrap():
-        return
+    config_args = args_after_command(
+        "config",
+        root_value_options=COMMON_ROOT_VALUE_OPTIONS,
+    )
+    if config_args is not None:
+        if config_request_skips_bootstrap(config_args):
+            return
     state.env_bootstrap = bootstrap_cli_env(
         APPRC_EXAMPLE_APP_KIT,
         env_file=env_file,
@@ -89,17 +94,6 @@ def root_cmd(
         log_level=log_level,
         setup_logging=setup_logging,
     )
-
-
-def _config_request_skips_runtime_bootstrap() -> bool:
-    """Return whether the active ``config`` command can run pre-bootstrap."""
-    config_args = args_after_command(
-        "config",
-        root_value_options=COMMON_ROOT_VALUE_OPTIONS,
-    )
-    if config_args is None:
-        return False
-    return config_request_skips_bootstrap(config_args)
 
 
 config_app = APPRC_EXAMPLE_APP_KIT.typer_app(

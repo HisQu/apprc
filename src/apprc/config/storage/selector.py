@@ -51,19 +51,6 @@ class StorageSelection:
     root: Path
 
 
-@dataclass(frozen=True, slots=True)
-class StorageSelectorValue:
-    """Raw storage selector chosen before path or registry resolution.
-
-    :param source: User-visible selector source, such as ``--storage`` or the
-        app-specific storage env key.
-    :param raw_value: Selector text before it is interpreted.
-    """
-
-    source: str
-    raw_value: str
-
-
 def resolve_registered_storage_name(
     *,
     registry: StorageRegistry,
@@ -117,7 +104,7 @@ def resolve_active_storage_selection(
     :return: Resolved selection, or ``None`` when no selector was provided.
     :raises StorageSelectorError: If the selected value is invalid.
     """
-    storage_selector = selected_storage_selector_value(
+    storage_selector = _selected_storage_selector_value(
         storage=storage,
         original_env=original_env,
         explicit_values=explicit_values or {},
@@ -125,41 +112,14 @@ def resolve_active_storage_selection(
         storage_env_key=storage_env_key,
     )
     if storage_selector is not None:
+        source, raw_value = storage_selector
         return resolve_storage_selector_value(
             registry=registry,
-            raw_value=storage_selector.raw_value,
+            raw_value=raw_value,
             storage_env_key=storage_env_key,
-            source=storage_selector.source,
+            source=source,
         )
     return None
-
-
-def resolve_env_storage_selection(
-    *,
-    registry: StorageRegistry | None,
-    storage_env_key: str,
-    proc_env: Mapping[str, str],
-) -> StorageSelection | None:
-    """Resolve the active runtime storage from the process environment.
-
-    Runtime env selection is registry-aware: a configured registry allows exact
-    registered names, while single-storage mode treats every non-empty value as
-    a path.
-
-    :param registry: Parsed AppRC TOML storage registry, or ``None``.
-    :param storage_env_key: Env key that stores the active storage selector.
-    :param proc_env: Process environment to inspect.
-    :return: Resolved selection, or ``None`` when the env key is unset.
-    :raises StorageSelectorError: If the env value cannot be resolved.
-    """
-    if not proc_env.get(storage_env_key, "").strip():
-        return None
-    return resolve_active_storage_selection(
-        registry=registry,
-        storage=None,
-        storage_env_key=storage_env_key,
-        original_env=proc_env,
-    )
 
 
 def resolve_env_storage_root_path(
@@ -254,14 +214,14 @@ def missing_storage_selector_error(
     )
 
 
-def selected_storage_selector_value(
+def _selected_storage_selector_value(
     *,
     storage: str | None,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
     env_file_overrides_os_environ: bool,
     storage_env_key: str,
-) -> StorageSelectorValue | None:
+) -> tuple[str, str] | None:
     """Return the raw selector selected by CLI and env precedence.
 
     ``--storage`` always wins. Env-file precedence then decides whether an
@@ -277,7 +237,7 @@ def selected_storage_selector_value(
     :return: Raw selector value and its source, or ``None`` when unset.
     """
     if storage is not None:
-        return StorageSelectorValue(source="--storage", raw_value=storage)
+        return "--storage", storage
     if env_file_overrides_os_environ:
         raw_value = explicit_values.get(storage_env_key) or original_env.get(
             storage_env_key
@@ -287,10 +247,7 @@ def selected_storage_selector_value(
             storage_env_key
         )
     if raw_value:
-        return StorageSelectorValue(
-            source=storage_env_key,
-            raw_value=raw_value,
-        )
+        return storage_env_key, raw_value
     return None
 
 

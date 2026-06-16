@@ -25,7 +25,6 @@ from apprc.config.diagnostics import (
 )
 from apprc.config.environment import (
     EnvBootstrapResult,
-    EnvBootstrapSpec,
     bootstrap_env,
 )
 from apprc.config.install_state import ConfigInstallState
@@ -82,7 +81,6 @@ from apprc.config.storage.selector import (
     missing_storage_selector_error,
     resolve_active_storage_selection,
     resolve_env_storage_root_path,
-    resolve_env_storage_selection,
     resolve_registered_storage_name,
     resolve_storage_selector_value,
 )

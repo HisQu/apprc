@@ -198,7 +198,7 @@ class AppConfigKit:
         :return: Bootstrap summary for diagnostics and tests.
         """
         return bootstrap_env(
-            spec=self.spec.env_bootstrap_spec(),
+            spec=self.spec,
             env_file=env_file,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,

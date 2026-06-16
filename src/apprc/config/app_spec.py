@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # == Internal ================================
-from apprc.config.environment import EnvBootstrapSpec
 from apprc.config.schema import ConfigOwner
 
 
@@ -41,15 +40,3 @@ class AppConfigSpec:
     def config_command_name(self) -> str:
         """Return the executable name shown in generated config commands."""
         return self.command_name or self.app_name
-
-    def env_bootstrap_spec(self) -> EnvBootstrapSpec:
-        """Return the narrower dotenv bootstrap contract."""
-        return EnvBootstrapSpec(
-            app_name=self.app_name,
-            display_name=self.display_name,
-            config_package=self.config_package,
-            storage_env_key=self.storage_env_key,
-            apprc_toml_filename=self.apprc_toml_filename,
-            shared_env_filename=self.shared_env_filename,
-            local_env_filename=self.local_env_filename,
-        )

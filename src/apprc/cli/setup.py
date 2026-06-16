@@ -11,8 +11,6 @@ from rich.console import Console
 from rich.text import Text
 
 # == Internal ================================
-from apprc.cli.doctor import print_config_doctor
-from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
 import apprc.config.setup.flow as setup_flow
 import apprc.config.setup.text as setup_text
@@ -78,10 +76,8 @@ def run_config_setup(
         )
 
     if not assume_yes:
-        result = ConfigSetupApp(kit=kit).run()
-        if result is None:
+        if ConfigSetupApp(kit=kit).run() is None:
             raise typer.Exit(code=1)
-        _raise_if_doctor_failed(kit, result)
         return
 
     try:
@@ -118,44 +114,9 @@ def _print_setup_finish(
 
     :param kit: Application config facade.
     :param result: Setup files and active storage selected by setup.
-    :raises typer.Exit: If doctor reports that setup is incomplete.
     """
-    payload = build_config_doctor_payload(
-        kit,
-        storage=result.registered_storage_name,
-        storage_root=result.active_storage_root,
-        apprc_toml_path=(
-            result.registry.path if result.registry is not None else None
-        ),
-    )
     console = Console(soft_wrap=True)
     console.print(_style_setup_finish_text(kit, result))
-    if not payload["runnable"]:
-        typer.echo("")
-        print_config_doctor(kit, payload)
-        raise typer.Exit(code=1)
-
-
-def _raise_if_doctor_failed(
-    kit: AppConfigKit,
-    result: setup_flow.ConfigSetupResult,
-) -> None:
-    """Exit when the setup wizard completed but diagnostics still fail.
-
-    :param kit: Application config facade.
-    :param result: Setup files and active storage selected by setup.
-    :raises typer.Exit: If doctor reports that setup is incomplete.
-    """
-    payload = build_config_doctor_payload(
-        kit,
-        storage=result.registered_storage_name,
-        storage_root=result.active_storage_root,
-        apprc_toml_path=(
-            result.registry.path if result.registry is not None else None
-        ),
-    )
-    if not payload["runnable"]:
-        raise typer.Exit(code=1)
 
 
 def _raise_setup_error(exc: setup_flow.ConfigSetupError) -> None:

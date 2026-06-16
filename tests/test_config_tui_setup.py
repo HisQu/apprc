@@ -127,7 +127,7 @@ async def test_config_setup_wizard_shows_existing_registry_actions(
         reset_disabled = reset_button.disabled
         move_disabled = move_button.disabled
 
-    assert "The current AppRC TOML has these storages registered:" in str(body)
+    assert "The current registry has these storages registered:" in str(body)
     assert "1. alpha:" in str(body)
     assert keep_disabled is False
     assert reset_disabled is False

@@ -27,7 +27,7 @@ from typing import Any, Mapping, Protocol
 from dotenv import dotenv_values
 
 # == Internal ================================
-from apprc.config.app_spec import AppConfigSpec, ApprcTomlEnvError
+from apprc.config.app_spec import AppConfigSpec, RegistryEnvError
 from apprc.config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
@@ -60,7 +60,7 @@ class EnvBootstrapResult:
         is known. The path may not exist because missing local files are
         optional.
     :param env_file: Explicit dotenv file passed through the CLI.
-    :param apprc_toml_path: Env-selected AppRC TOML path, or ``None`` when
+    :param registry_path: Env-selected registry path, or ``None`` when
         single-storage path mode is active.
     :param storage_selector_source: Source that selected the active storage,
         such as ``--storage`` or the app-specific storage env key.
@@ -69,13 +69,13 @@ class EnvBootstrapResult:
     :param storage_name: Registry storage record selected for this bootstrap,
         when the selector matched a registered storage.
     :param storage_root: Active storage root, when known.
-    :param storage_count: Number of configured registry storages.
+    :param storage_count: Number of loaded registry storages.
     """
 
     shared_env: Path | None
     local_env: Path | None
     env_file: Path | None
-    apprc_toml_path: Path | None
+    registry_path: Path | None
     storage_selector_source: str | None
     storage_selector_value: str | None
     storage_name: str | None
@@ -112,9 +112,9 @@ def bootstrap_env(
         storage-local ``.env.local``, and explicit dotenv values should be
         merged into this process. AppRC TOML and storage selection still run
         when this is ``False``.
-    :param storage: Optional ``--storage`` selector. When a registry is
-        configured, exact registered names resolve through TOML. Otherwise
-        every non-empty selector is interpreted as a path.
+    :param storage: Optional ``--storage`` selector. When a registry is loaded,
+        exact registered names resolve through TOML. Otherwise every non-empty
+        selector is interpreted as a path.
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
     """
@@ -165,7 +165,7 @@ def bootstrap_env(
         shared_env=shared_env_path,
         local_env=loaded_local_env,
         env_file=env_file,
-        apprc_toml_path=registry.path if registry is not None else None,
+        registry_path=registry.path if registry is not None else None,
         storage_selector_source=selection.source,
         storage_selector_value=selection.raw_value,
         storage_name=selection.storage_name,
@@ -180,7 +180,7 @@ def _load_optional_registry(spec: AppConfigSpec) -> StorageRegistry | None:
     if active_path is None:
         return None
     if not active_path.is_file():
-        raise ApprcTomlEnvError(
+        raise RegistryEnvError(
             spec.missing_apprc_toml_file_message(active_path)
         )
     return load_storage_registry_or_empty(active_path)

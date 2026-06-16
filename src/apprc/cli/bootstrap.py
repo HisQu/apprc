@@ -11,7 +11,7 @@ from typing import Any
 import typer
 
 # == Internal ================================
-from apprc.config.app_spec import ApprcTomlEnvError
+from apprc.config.app_spec import RegistryEnvError
 from apprc.config.environment import BootstrapLogger, EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.storage.selector import StorageSelectorError
@@ -50,9 +50,9 @@ def bootstrap_cli_env(
         be merged into this process. Registry selection still runs when this
         is ``False``, and explicit ``env_file`` values may still provide the
         storage selector used for selection.
-    :param storage: Optional ``--storage`` selector. With an AppRC TOML it may
-        be a registered storage name or path. Without an AppRC TOML it is
-        always interpreted as a path.
+    :param storage: Optional ``--storage`` selector. With a registry it may be
+        a registered storage name or path. Without a registry it is always
+        interpreted as a path.
     :param log_level: Optional CLI log-level token.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status messages.
@@ -72,7 +72,7 @@ def bootstrap_cli_env(
         )
     except FileNotFoundError as exc:
         raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
-    except ApprcTomlEnvError as exc:
+    except RegistryEnvError as exc:
         raise typer.BadParameter(
             str(exc),
             param_hint=kit.spec.apprc_toml_env_key,

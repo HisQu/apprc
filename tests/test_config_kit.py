@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from apprc.cli.config import config_request_skips_runtime_bootstrap
 from apprc.config import (
     AppConfigKit,
-    ApprcTomlEnvError,
+    RegistryEnvError,
     ConfigDoctorStatus,
     ConfigField,
     ConfigOwner,
@@ -77,7 +77,7 @@ def test_kit_registry_path_requires_apprc_toml_env(
     monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
 
-    with pytest.raises(ApprcTomlEnvError) as exc_info:
+    with pytest.raises(RegistryEnvError) as exc_info:
         kit.spec.required_apprc_toml_path()
 
     message = str(exc_info.value)
@@ -102,7 +102,7 @@ def test_config_doctor_reports_env_not_set_without_env(
 
     assert payload["status"] == ConfigDoctorStatus.ENV_NOT_SET.value
     assert payload["runnable"] is False
-    assert payload["apprc_toml_exists"] is False
+    assert payload["registry_exists"] is False
     assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
     assert result.exit_code == 1, result.output
     assert json.loads(result.output)["status"] == "env_not_set"
@@ -140,7 +140,7 @@ def test_config_doctor_reports_runnable_single_storage_without_apprc_toml(
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
-    assert payload["apprc_toml_path"] is None
+    assert payload["registry_path"] is None
     assert payload["missing_env_keys"] == []
     assert payload["selected_storage_root"] == str(storage_root.resolve())
 
@@ -161,7 +161,7 @@ def test_config_doctor_reports_env_not_set_for_missing_storage_env(
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["status"] == ConfigDoctorStatus.ENV_NOT_SET.value
-    assert payload["apprc_toml_exists"] is True
+    assert payload["registry_exists"] is True
     assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
 
 
@@ -216,7 +216,7 @@ def test_doctor_payload_reports_runnable_for_empty_registry_with_active_path(
 
     assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
     assert payload["runnable"] is True
-    assert payload["apprc_toml_exists"] is True
+    assert payload["registry_exists"] is True
     assert payload["storage_count"] == 0
     assert payload["selected_storage"] is None
 
@@ -233,8 +233,8 @@ def test_doctor_payload_reports_registry_not_ready_for_invalid_registry(
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["status"] == ConfigDoctorStatus.REGISTRY_NOT_READY.value
-    assert payload["apprc_toml_parse_ok"] is False
-    assert payload["apprc_toml_error"] is not None
+    assert payload["registry_parse_ok"] is False
+    assert payload["registry_error"] is not None
 
 
 def test_doctor_payload_reports_storage_not_ready_for_missing_local_env(
@@ -274,7 +274,7 @@ def test_doctor_payload_reports_runnable_for_active_storage_path(
 
     assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
     assert payload["runnable"] is True
-    assert payload["apprc_toml_exists"] is True
+    assert payload["registry_exists"] is True
 
 
 def test_doctor_payload_tracks_selected_storage_source_from_env(

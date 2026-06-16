@@ -188,7 +188,7 @@ def apprc_example_app_state(
             shared_env=None,
             local_env=storage_root / ".env.apprc_example_app",
             env_file=None,
-            apprc_toml_path=kit.spec.required_apprc_toml_path(),
+            registry_path=kit.spec.required_apprc_toml_path(),
             storage_selector_source="--storage",
             storage_selector_value="alpha",
             storage_name="alpha",

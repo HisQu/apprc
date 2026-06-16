@@ -142,15 +142,13 @@ def _bootstrap_payload(
     bootstrap: EnvBootstrapResult | None,
 ) -> dict[str, object]:
     """Return JSON-friendly bootstrap state for the current invocation."""
-    apprc_toml_path = APPRC_EXAMPLE_APP_KIT.spec.optional_apprc_toml_path()
+    registry_path = APPRC_EXAMPLE_APP_KIT.spec.optional_apprc_toml_path()
     if bootstrap is None:
         return {
             "shared_env": None,
             "local_env": None,
             "env_file": None,
-            "apprc_toml_path": str(apprc_toml_path)
-            if apprc_toml_path
-            else None,
+            "registry_path": str(registry_path) if registry_path else None,
             "storage_selector_source": None,
             "storage_selector_value": None,
             "storage_name": None,
@@ -161,7 +159,7 @@ def _bootstrap_payload(
         "shared_env": _path_text(bootstrap.shared_env),
         "local_env": _path_text(bootstrap.local_env),
         "env_file": _path_text(bootstrap.env_file),
-        "apprc_toml_path": _path_text(bootstrap.apprc_toml_path),
+        "registry_path": _path_text(bootstrap.registry_path),
         "storage_selector_source": bootstrap.storage_selector_source,
         "storage_selector_value": bootstrap.storage_selector_value,
         "storage_name": bootstrap.storage_name,

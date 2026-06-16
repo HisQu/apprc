@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.app_spec import AppConfigSpec, ApprcTomlEnvError
+from apprc.config.app_spec import AppConfigSpec, RegistryEnvError
 from apprc.config.environment import bootstrap_env
 from apprc.config.storage.registry import register_storage
 
@@ -97,7 +97,7 @@ def test_bootstrap_env_uses_storage_without_apprc_toml_env(
         storage=None,
     )
 
-    assert result.apprc_toml_path is None
+    assert result.registry_path is None
     assert result.storage_name is None
     assert result.storage_root == storage_root.resolve()
     assert result.local_env == storage_root.resolve() / ".env.demo"
@@ -126,7 +126,7 @@ def test_bootstrap_env_bare_storage_without_apprc_toml_is_relative_path(
         storage=None,
     )
 
-    assert result.apprc_toml_path is None
+    assert result.registry_path is None
     assert result.storage_name is None
     assert result.storage_selector_value == "alpha"
     assert result.storage_root == (tmp_path / "alpha").resolve()
@@ -159,7 +159,7 @@ def test_bootstrap_env_explicit_env_file_can_select_single_storage(
         storage=None,
     )
 
-    assert result.apprc_toml_path is None
+    assert result.registry_path is None
     assert result.storage_selector_source == "DEMO_STORAGE"
     assert result.storage_root == storage_root.resolve()
     assert os.environ["DEMO_MODEL"] == "explicit-model"
@@ -178,7 +178,7 @@ def test_bootstrap_env_configured_apprc_toml_must_exist(
         'DEMO_MODEL="shared-model"\n',
     )
 
-    with pytest.raises(ApprcTomlEnvError, match="missing AppRC TOML"):
+    with pytest.raises(RegistryEnvError, match="missing AppRC TOML"):
         bootstrap_env(
             spec=_spec(package_name),
             env_file=None,

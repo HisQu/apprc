@@ -27,11 +27,12 @@ from apprc.config.local_env import ensure_local_env_file
 from apprc.config.paths import normalize_storage_root_path
 
 _STORAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+_REGISTRY_TOP_LEVEL_KEYS = frozenset({"archived_storages", "storages"})
 
 
 @dataclass(frozen=True, slots=True)
 class StorageRecord:
-    """One named storage root from the AppRC TOML storage registry.
+    """One named storage root from the multi-storage registry.
 
     :param name: Stable storage selector used by ``--storage``.
     :param root: Root directory that owns user data and ``.env.local``.
@@ -300,6 +301,15 @@ def _registry_from_toml(
     path: Path,
 ) -> StorageRegistry:
     """Build a typed registry from parsed TOML data."""
+    unknown_keys = sorted(set(data) - _REGISTRY_TOP_LEVEL_KEYS)
+    if unknown_keys:
+        unknown_text = ", ".join(unknown_keys)
+        supported_text = ", ".join(sorted(_REGISTRY_TOP_LEVEL_KEYS))
+        raise ValueError(
+            f"{path}: unsupported top-level registry key(s): {unknown_text}. "
+            f"Supported keys: {supported_text}."
+        )
+
     raw_storages = _toml_table(data=data, key="storages", path=path)
     storages: dict[str, StorageRecord] = {}
     for name, raw_record in raw_storages.items():

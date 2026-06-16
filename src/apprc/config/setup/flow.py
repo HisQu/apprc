@@ -87,11 +87,11 @@ class PreparedSetupRegistry:
     existing_action: ExistingSetupAction | None = None
 
 
-def find_existing_apprc_toml_path(kit: "AppConfigKit") -> Path | None:
-    """Return the AppRC TOML path setup should treat as already configured.
+def find_existing_registry_path(kit: "AppConfigKit") -> Path | None:
+    """Return the env-selected registry path when setup can reuse it.
 
     :param kit: Application config facade.
-    :return: Existing env-selected AppRC TOML path, or ``None``.
+    :return: Existing env-selected registry path, or ``None``.
     """
     active_path = kit.spec.optional_apprc_toml_path()
     if active_path is not None and active_path.is_file():
@@ -116,35 +116,35 @@ def prepare_setup_registry(
     :return: Selected registry and action metadata.
     :raises ConfigSetupError: If the requested path cannot be rediscovered.
     """
-    target_path = setup_apprc_toml_path(kit, apprc_dir)
-    env_existing_path = find_existing_apprc_toml_path(kit)
-    existing_path = _setup_existing_apprc_toml_path(
+    target_path = setup_registry_path(kit, apprc_dir)
+    env_existing_path = find_existing_registry_path(kit)
+    existing_path = _existing_setup_registry_path(
         target_path=target_path,
         env_existing_path=env_existing_path,
         explicit_apprc_dir=apprc_dir is not None,
         existing_action=existing_action,
     )
     if existing_path is None:
-        require_apprc_toml_path_available(target_path)
+        require_registry_path_available(target_path)
         return PreparedSetupRegistry(registry=load_setup_registry(target_path))
 
     action = existing_action or ExistingSetupAction.KEEP
     if action == ExistingSetupAction.KEEP:
-        require_apprc_toml_path_available(existing_path)
+        require_registry_path_available(existing_path)
         return PreparedSetupRegistry(
             registry=load_setup_registry(existing_path),
             existing_action=action,
         )
     if action == ExistingSetupAction.RESET:
-        remove_apprc_toml_config_state(existing_path)
-        require_apprc_toml_path_available(target_path)
+        remove_registry_file(existing_path)
+        require_registry_path_available(target_path)
         return PreparedSetupRegistry(
             registry=load_setup_registry(target_path),
             existing_action=action,
         )
 
-    require_apprc_toml_path_available(target_path)
-    registry = move_existing_apprc_toml(
+    require_registry_path_available(target_path)
+    registry = move_existing_registry(
         kit,
         source_path=existing_path,
         target_path=target_path,
@@ -153,20 +153,20 @@ def prepare_setup_registry(
     return PreparedSetupRegistry(registry=registry, existing_action=action)
 
 
-def _setup_existing_apprc_toml_path(
+def _existing_setup_registry_path(
     *,
     target_path: Path,
     env_existing_path: Path | None,
     explicit_apprc_dir: bool,
     existing_action: ExistingSetupAction | None,
 ) -> Path | None:
-    """Return the existing AppRC TOML setup should operate on.
+    """Return the existing registry path setup should operate on.
 
-    :param target_path: AppRC TOML path selected for this setup run.
-    :param env_existing_path: Existing env-selected AppRC TOML, if any.
+    :param target_path: Registry path selected for this setup run.
+    :param env_existing_path: Existing env-selected registry path, if any.
     :param explicit_apprc_dir: Whether ``--apprc-dir`` selected the target.
-    :param existing_action: Optional action for an existing AppRC TOML.
-    :return: Existing AppRC TOML path, or ``None``.
+    :param existing_action: Optional action for an existing registry file.
+    :return: Existing registry path, or ``None``.
     """
     if target_path.is_file():
         return target_path
@@ -240,7 +240,7 @@ def ensure_single_storage(
     :param kit: Application config facade.
     :param storage_root: Optional active storage root selected by setup.
     :param allow_non_empty_storage: Whether non-empty roots may be reused.
-    :return: Setup result with no AppRC TOML registry.
+    :return: Setup result without a registry.
     :raises ConfigSetupError: If the storage root is unsafe.
     """
     resolved_root = _ensure_setup_storage_root(
@@ -362,19 +362,19 @@ def setup_storage_root_from_env(kit: "AppConfigKit") -> Path | None:
         ) from exc
 
 
-def setup_apprc_toml_path(
+def setup_registry_path(
     kit: "AppConfigKit",
     apprc_dir: Path | None,
 ) -> Path:
-    """Return the AppRC TOML path selected by setup directory input.
+    """Return the registry path selected by setup directory input.
 
     :param kit: Application config facade.
     :param apprc_dir: Optional setup ``--apprc-dir`` value.
-    :return: Normalized AppRC TOML path setup should write.
+    :return: Normalized registry path setup should write.
     :raises ConfigSetupError: If no path was provided or exported.
     """
     if apprc_dir is not None:
-        return setup_apprc_toml_path_from_dir(kit, apprc_dir)
+        return setup_registry_path_from_dir(kit, apprc_dir)
     active_path = kit.spec.optional_apprc_toml_path()
     if active_path is not None:
         return normalize_apprc_toml_path(active_path)
@@ -389,8 +389,8 @@ def setup_apprc_toml_path(
     )
 
 
-def setup_apprc_toml_dir(apprc_dir: Path) -> Path:
-    """Return a normalized setup directory after validating its type.
+def setup_registry_dir(apprc_dir: Path) -> Path:
+    """Return the directory that should contain the setup registry file.
 
     :param apprc_dir: User-provided AppRC directory.
     :return: Absolute, user-expanded directory path.
@@ -405,58 +405,58 @@ def setup_apprc_toml_dir(apprc_dir: Path) -> Path:
     return path
 
 
-def setup_apprc_toml_path_from_dir(
+def setup_registry_path_from_dir(
     kit: "AppConfigKit",
     apprc_dir: Path,
 ) -> Path:
-    """Return the enforced AppRC TOML file inside a setup directory.
+    """Return the enforced registry file inside a setup directory.
 
     :param kit: Application config facade.
     :param apprc_dir: User-provided AppRC directory.
-    :return: Computed AppRC TOML path.
+    :return: Computed registry path.
     :raises ConfigSetupError: If the directory path is invalid.
     """
-    return setup_apprc_toml_dir(apprc_dir) / kit.spec.apprc_toml_filename
+    return setup_registry_dir(apprc_dir) / kit.spec.apprc_toml_filename
 
 
-def require_apprc_toml_path_available(
-    apprc_toml_path: Path,
+def require_registry_path_available(
+    registry_path: Path,
 ) -> None:
-    """Reject AppRC TOML targets that cannot be written as files.
+    """Reject registry targets that cannot be written as files.
 
-    :param apprc_toml_path: Requested AppRC TOML path.
+    :param registry_path: Requested registry path.
     :raises ConfigSetupError: If the path is an existing directory.
     """
-    path = normalize_apprc_toml_path(apprc_toml_path)
+    path = normalize_apprc_toml_path(registry_path)
     if not path.exists() or path.is_file():
         return
     raise ConfigSetupError(
-        f"AppRC TOML target is not a file: {path}",
+        f"Registry target is not a file: {path}",
         param_hint="APPRC_TOML",
     )
 
 
-def remove_apprc_toml_config_state(apprc_toml_path: Path) -> None:
-    """Delete only AppRC TOML state, never registered storage roots.
+def remove_registry_file(registry_path: Path) -> None:
+    """Delete only registry state, never registered storage roots.
 
-    :param apprc_toml_path: AppRC TOML file to remove.
+    :param registry_path: Registry file to remove.
     """
-    resolved_apprc_toml_path = normalize_apprc_toml_path(apprc_toml_path)
-    resolved_apprc_toml_path.unlink(missing_ok=True)
+    resolved_path = normalize_apprc_toml_path(registry_path)
+    resolved_path.unlink(missing_ok=True)
 
 
-def move_existing_apprc_toml(
+def move_existing_registry(
     kit: "AppConfigKit",
     *,
     source_path: Path,
     target_path: Path,
     replace_existing_file: bool,
 ) -> StorageRegistry:
-    """Move an existing AppRC TOML file and load it from its new path.
+    """Move an existing registry file and load it from its new path.
 
     :param kit: Application config facade.
-    :param source_path: Existing AppRC TOML file.
-    :param target_path: Destination AppRC TOML file.
+    :param source_path: Existing registry file.
+    :param target_path: Destination registry file.
     :param replace_existing_file: Whether an existing file may be replaced.
     :return: Loaded registry at the target path.
     :raises ConfigSetupError: If the target cannot be replaced.
@@ -468,12 +468,12 @@ def move_existing_apprc_toml(
     if target.exists():
         if target.is_dir():
             raise ConfigSetupError(
-                f"AppRC TOML target is a directory: {target}",
+                f"Registry target is a directory: {target}",
                 param_hint="APPRC_TOML",
             )
         if not replace_existing_file:
             raise ConfigSetupError(
-                f"AppRC TOML target already exists: {target}",
+                f"Registry target already exists: {target}",
                 param_hint="APPRC_TOML",
             )
         target.unlink()
@@ -487,7 +487,7 @@ def load_setup_registry(
 ) -> StorageRegistry:
     """Load a registry and convert parse failures to setup errors.
 
-    :param registry_path: AppRC TOML path to load.
+    :param registry_path: Registry path to load.
     :return: Parsed or empty registry.
     :raises ConfigSetupError: If the registry cannot be parsed.
     """

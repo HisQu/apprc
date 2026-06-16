@@ -29,7 +29,7 @@ def test_storage_list_payload_reports_local_env_status(tmp_path: Path) -> None:
         active_storage_root=alpha_root,
     )
 
-    assert payload["apprc_toml_path"] == str(registry_path)
+    assert payload["registry_path"] == str(registry_path)
     assert payload["storages"] == [
         {
             "active": True,

@@ -84,7 +84,7 @@ def test_generated_config_app_sets_and_shows_with_storage_only(
     assert 'APPRC_EXAMPLE_APP_PROFILE="single-profile"\n' in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
-    assert json.loads(show_result.output)["apprc_toml_path"] is None
+    assert json.loads(show_result.output)["registry_path"] is None
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -258,7 +258,7 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     )
     assert "AppRC-managed files to create or update:" in result.output
     assert "storage-local env" in result.output
-    assert "AppRC TOML" in result.output
+    assert "registry file" in result.output
     assert "Existing files inside the storage root" in result.output
     assert "will not be deleted" in result.output
     assert (
@@ -388,8 +388,7 @@ def test_generated_config_app_lists_registered_storages_as_rich_tree(
     result = runner.invoke(app, ["list"])
 
     assert result.exit_code == 0, result.output
-    assert "apprc_toml_path:" in result.output
-    assert "default_storage:" not in result.output
+    assert "registry_path:" in result.output
     assert "storages:" in result.output
     assert "alpha [active]" in result.output
     assert "beta" in result.output
@@ -425,7 +424,7 @@ def test_generated_config_app_lists_registered_storages_as_json(
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload == {
-        "apprc_toml_path": str(
+        "registry_path": str(
             tmp_path
             / "config"
             / "apprc_example_app"

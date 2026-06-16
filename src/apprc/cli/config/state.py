@@ -81,7 +81,7 @@ def active_storage_root_from_state(
         return state.env_bootstrap.storage_root
     if not os.environ.get(kit.spec.storage_env_key, "").strip():
         return None
-    registry = kit.load_configured_registry()
+    registry = kit.load_optional_registry()
     return active_storage_root_from_env(kit, registry=registry)
 
 
@@ -93,8 +93,8 @@ def active_storage_root_from_env(
     """Return the active storage root selected by the current environment.
 
     :param kit: Application config facade.
-    :param registry: Parsed AppRC TOML storage registry, or ``None`` for
-        single-storage path mode.
+    :param registry: Parsed storage registry, or ``None`` for single-storage
+        path mode.
     :return: Resolved storage root, or ``None`` when no env selector is set.
     :raises StorageSelectorError: If the env selector cannot be resolved.
     """

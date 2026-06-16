@@ -169,7 +169,7 @@ def build_config_typer_app(
             typer.Option(
                 "--apprc-dir",
                 "-d",
-                help="Directory that will contain the AppRC TOML for this app.",
+                help="Directory that will contain the registry file.",
             ),
         ] = None,
         storage_root: Annotated[
@@ -203,7 +203,7 @@ def build_config_typer_app(
             ),
         ] = None,
     ) -> None:
-        """Configure the active storage root and optional AppRC TOML."""
+        """Configure the active storage root and optional registry."""
         handlers.setup(
             assume_yes=assume_yes,
             apprc_dir=apprc_dir,

@@ -30,7 +30,7 @@ class StorageListRowPayload(TypedDict):
 class StorageListPayload(TypedDict):
     """Machine-readable data emitted by ``config list --json``."""
 
-    apprc_toml_path: str
+    registry_path: str
     storages: list[StorageListRowPayload]
 
 
@@ -68,7 +68,7 @@ def storage_list_payload(
             }
         )
     return {
-        "apprc_toml_path": str(registry.path),
+        "registry_path": str(registry.path),
         "storages": storages,
     }
 
@@ -80,7 +80,7 @@ def print_storage_list(payload: StorageListPayload) -> None:
     """
     console = Console(soft_wrap=True)
     console.print(
-        _storage_detail_text("apprc_toml_path", payload["apprc_toml_path"])
+        _storage_detail_text("registry_path", payload["registry_path"])
     )
     storages = payload["storages"]
     if not storages:

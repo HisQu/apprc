@@ -13,8 +13,8 @@ from apprc.config.paths import normalize_apprc_toml_path
 from apprc.config.schema import ConfigOwner
 
 
-class ApprcTomlEnvError(ValueError):
-    """Raised when an app's AppRC TOML path cannot be resolved from the env."""
+class RegistryEnvError(ValueError):
+    """Raised when the optional registry env contract is missing or unusable."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +78,7 @@ class AppConfigSpec:
         path = self.optional_apprc_toml_path(proc_env=proc_env)
         if path is not None:
             return path
-        raise ApprcTomlEnvError(self._missing_apprc_toml_env_message())
+        raise RegistryEnvError(self._missing_apprc_toml_env_message())
 
     def optional_apprc_toml_path(
         self,

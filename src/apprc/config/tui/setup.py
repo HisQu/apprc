@@ -111,8 +111,10 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
 
     async def _show_overview(self) -> None:
         """Render the first setup screen."""
-        active_apprc_toml = self.kit.spec.optional_apprc_toml_path()
-        active_paths = () if active_apprc_toml is None else (active_apprc_toml,)
+        active_registry_path = self.kit.spec.optional_apprc_toml_path()
+        active_paths = (
+            () if active_registry_path is None else (active_registry_path,)
+        )
         await self._set_screen(
             title=f"{self.kit.spec.display_name} config setup",
             body=self._style_setup_text(
@@ -152,7 +154,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             await self._finish_setup(result)
             return
 
-        existing_path = setup_flow.find_existing_apprc_toml_path(self.kit)
+        existing_path = setup_flow.find_existing_registry_path(self.kit)
         if existing_path is None:
             registry = await self._choose_new_registry()
             if registry is not None:
@@ -226,7 +228,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self.existing_action = action
         try:
             if action == setup_flow.ExistingSetupAction.KEEP:
-                setup_flow.require_apprc_toml_path_available(
+                setup_flow.require_registry_path_available(
                     registry.path,
                 )
                 await self._finish_multi_storage_setup(registry, storage_root)
@@ -247,7 +249,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 )
                 if confirmed != "reset":
                     return
-                setup_flow.remove_apprc_toml_config_state(registry.path)
+                setup_flow.remove_registry_file(registry.path)
                 fresh = await self._choose_new_registry()
                 if fresh is not None:
                     await self._finish_multi_storage_setup(
@@ -255,7 +257,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                         storage_root,
                     )
                 return
-            moved = await self._move_existing_apprc_toml(registry)
+            moved = await self._move_existing_registry(registry)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
@@ -263,9 +265,9 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             await self._finish_multi_storage_setup(moved, storage_root)
 
     async def _choose_new_registry(self) -> StorageRegistry | None:
-        """Prompt for the AppRC directory and load the computed TOML file.
+        """Prompt for the AppRC directory and load the computed registry file.
 
-        :return: Empty or parsed registry at the selected AppRC TOML path.
+        :return: Empty or parsed registry at the selected path.
         """
         apprc_dir = await self._choose_apprc_dir(
             default_dir=self._default_apprc_dir(),
@@ -273,32 +275,32 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         )
         if apprc_dir is None:
             return None
-        apprc_toml_path = setup_flow.setup_apprc_toml_path_from_dir(
+        registry_path = setup_flow.setup_registry_path_from_dir(
             self.kit,
             apprc_dir,
         )
         try:
-            return setup_flow.load_setup_registry(apprc_toml_path)
+            return setup_flow.load_setup_registry(registry_path)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return None
 
-    async def _move_existing_apprc_toml(
+    async def _move_existing_registry(
         self,
         registry: StorageRegistry,
     ) -> StorageRegistry | None:
-        """Prompt for a move target and move the AppRC TOML file.
+        """Prompt for a move target and move the registry file.
 
         :param registry: Existing registry to move.
         :return: Registry loaded from the move target, or ``None``.
         """
         target_dir = await self._choose_apprc_dir(
             default_dir=registry.path.parent,
-            title="Move AppRC TOML",
+            title="Move registry",
         )
         if target_dir is None:
             return None
-        target_path = setup_flow.setup_apprc_toml_path_from_dir(
+        target_path = setup_flow.setup_registry_path_from_dir(
             self.kit,
             target_dir,
         )
@@ -309,16 +311,16 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         ):
             if target_path.is_dir():
                 self.notify(
-                    "AppRC TOML target is a directory: "
+                    "Registry target is a directory: "
                     f"{path_markup(target_path)}",
                     severity="error",
                 )
                 return None
             action = await self.push_screen_wait(
                 ConfirmScreen(
-                    title="Replace AppRC TOML?",
+                    title="Replace registry?",
                     message=lines_text(
-                        "Replace existing AppRC TOML?",
+                        "Replace existing registry file?",
                         path_text(target_path),
                     ),
                     actions=(("replace", "Replace", "warning"),),
@@ -328,7 +330,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             if not replace:
                 return None
         try:
-            return setup_flow.move_existing_apprc_toml(
+            return setup_flow.move_existing_registry(
                 self.kit,
                 source_path=registry.path,
                 target_path=target_path,
@@ -364,13 +366,13 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             if result is None:
                 return None
             try:
-                return setup_flow.setup_apprc_toml_dir(result.path)
+                return setup_flow.setup_registry_dir(result.path)
             except setup_flow.ConfigSetupError as exc:
                 self.notify(str(exc), severity="error", markup=False)
                 continue
 
     def _default_apprc_dir(self) -> Path | None:
-        """Return the env-selected AppRC TOML parent directory, if known."""
+        """Return the env-selected registry parent directory, if known."""
         active_path = self.kit.spec.optional_apprc_toml_path()
         if active_path is None:
             return None

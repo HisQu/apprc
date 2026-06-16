@@ -278,7 +278,7 @@ Runtime behavior when keys are missing:
 
 - `<APP>_APPRC_TOML` missing: single-storage mode is active. Runtime commands
   use `<APP>_STORAGE` as a path. Registry commands such as `config list` and
-  `config init` are unavailable until the TOML env var is exported.
+  `config init` are unavailable until <APP>_APPRC_TOML is exported.
 - `<APP>_STORAGE` missing: runtime bootstrap fails. Setup and doctor commands
   can still run in partial setup states to help fix the missing variable.
 
@@ -366,8 +366,6 @@ Archived storage records are only last-known restore shortcuts for the
 terminal editor; runtime bootstrap still selects live directory entries from
 `[storages]`.
 
-Older AppRC TOMLs may contain a top-level `default_storage` key. Current AppRC
-ignores that key and never writes it; you can delete it during cleanup.
 On POSIX/WSL hosts, Windows drive paths such as `D:\Training\demo-project` are
 normalized to usable local paths before AppRC writes the registry or reads a
 storage-root environment value.
@@ -487,7 +485,7 @@ default values that are currently available. Secret values are redacted on
 screen, but an explicit copy action copies the raw value. Required missing
 values show `<required>`.
 
-When `<APP>_APPRC_TOML` is configured, the editor also manages registry-backed
+When `<APP>_APPRC_TOML` is set, the editor also manages registry-backed
 storage lifecycle:
 
 - `New storage` registers a directory or restores a `*.apprc.tar.xz` archive.

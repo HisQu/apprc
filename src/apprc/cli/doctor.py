@@ -34,32 +34,32 @@ def print_config_doctor(
     console.print("")
     console.print(
         label_value_text(
-            "apprc_toml_env_key",
-            env_key_text(payload["apprc_toml_env_key"]),
+            "registry_env_key",
+            env_key_text(payload["registry_env_key"]),
         )
     )
     console.print(
         label_value_text(
-            "apprc_toml_env_value",
-            _path_or_none_text(payload["apprc_toml_env_value"]),
+            "registry_env_value",
+            _path_or_none_text(payload["registry_env_value"]),
         )
     )
     console.print(
         label_value_text(
-            "apprc_toml_path",
-            _path_or_none_text(payload["apprc_toml_path"]),
+            "registry_path",
+            _path_or_none_text(payload["registry_path"]),
         )
     )
     console.print(
         label_value_text(
-            "apprc_toml_exists",
-            _bool_text(payload["apprc_toml_exists"]),
+            "registry_exists",
+            _bool_text(payload["registry_exists"]),
         )
     )
     console.print(
         label_value_text(
-            "apprc_toml_parse_ok",
-            _bool_text(payload["apprc_toml_parse_ok"]),
+            "registry_parse_ok",
+            _bool_text(payload["registry_parse_ok"]),
         )
     )
     console.print(
@@ -202,8 +202,8 @@ def _styled_issue_text(
         {
             str(value): PATH_STYLE
             for value in (
-                payload["apprc_toml_env_value"],
-                payload["apprc_toml_path"],
+                payload["registry_env_value"],
+                payload["registry_path"],
                 payload["selected_storage_root"],
                 payload["selected_local_env"],
             )

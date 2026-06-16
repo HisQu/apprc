@@ -59,7 +59,7 @@ def resolve_registered_storage_name(
 ) -> StorageSelection:
     """Resolve one registered storage selector.
 
-    :param registry: Parsed AppRC TOML storage registry.
+    :param registry: Parsed storage registry.
     :param name: Storage name selected by a CLI option.
     :param source: User-visible source shown in diagnostics.
     :return: Resolved storage selection.
@@ -93,8 +93,8 @@ def resolve_active_storage_selection(
     path-like values resolve as paths, and bare unknown names fail. Without a
     registry, every non-empty selector resolves as a storage path.
 
-    :param registry: Parsed AppRC TOML storage registry, or ``None`` for
-        single-storage path mode.
+    :param registry: Parsed storage registry, or ``None`` for single-storage
+        path mode.
     :param storage: Optional ``--storage`` selector.
     :param storage_env_key: Env key that stores the active storage selector.
     :param original_env: Process environment captured before dotenv loading.
@@ -154,8 +154,8 @@ def resolve_storage_selector_value(
 ) -> StorageSelection:
     """Resolve one storage env value to a registered name or path.
 
-    :param registry: Parsed AppRC TOML storage registry, or ``None`` for
-        single-storage path mode.
+    :param registry: Parsed storage registry, or ``None`` for single-storage
+        path mode.
     :param raw_value: Value from ``<APP>_STORAGE`` or an explicit env file.
     :param storage_env_key: Env key used in human-facing errors.
     :param source: User-visible source shown in diagnostics.
@@ -207,7 +207,7 @@ def missing_storage_selector_error(
     """
     return StorageSelectorError(
         f"{storage_env_key} is required and must select a storage path. "
-        "When the optional AppRC TOML is configured, it may also select a "
+        "When the optional registry is enabled, it may also select a "
         "registered storage name. Pass --storage PATH or export "
         f'{storage_env_key}="/path/to/storage".',
         param_hint=storage_env_key,

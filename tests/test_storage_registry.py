@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.app_spec import AppConfigSpec, ApprcTomlEnvError
+from apprc.config.app_spec import AppConfigSpec, RegistryEnvError
 from apprc.config.storage.registry import (
     app_data_dir,
     load_storage_registry_or_empty,
@@ -77,7 +77,7 @@ def test_app_config_spec_required_apprc_toml_path_uses_env_override(
     custom_registry = tmp_path / "custom" / "demo.apprc.toml"
     spec = _app_spec("demo")
 
-    with pytest.raises(ApprcTomlEnvError, match="DEMO_APPRC_TOML"):
+    with pytest.raises(RegistryEnvError, match="DEMO_APPRC_TOML"):
         spec.required_apprc_toml_path()
 
     monkeypatch.setenv("DEMO_APPRC_TOML", str(custom_registry))
@@ -131,7 +131,7 @@ def test_ordered_storage_names_are_sorted(tmp_path: Path) -> None:
     assert ordered_storage_names(registry) == ["alpha", "zeta"]
 
 
-def test_load_storage_registry_or_empty_keeps_old_toml_compatible(
+def test_load_storage_registry_or_empty_rejects_unknown_top_level_keys(
     tmp_path: Path,
 ) -> None:
     registry_path = tmp_path / "demo.apprc.toml"
@@ -143,27 +143,8 @@ def test_load_storage_registry_or_empty_keeps_old_toml_compatible(
         encoding="utf-8",
     )
 
-    registry = load_storage_registry_or_empty(registry_path)
-
-    assert sorted(registry.storages) == ["alpha"]
-    assert registry.archived_storages == {}
-
-
-def test_load_storage_registry_or_empty_ignores_stale_default_storage_key(
-    tmp_path: Path,
-) -> None:
-    registry_path = tmp_path / "demo.apprc.toml"
-    registry_path.write_text(
-        'default_storage = "default"\n'
-        "\n"
-        "[storages.default]\n"
-        f'root = "{tmp_path / "default"}"\n',
-        encoding="utf-8",
-    )
-
-    registry = load_storage_registry_or_empty(registry_path)
-
-    assert sorted(registry.storages) == ["default"]
+    with pytest.raises(ValueError, match="unsupported top-level registry key"):
+        load_storage_registry_or_empty(registry_path)
 
 
 def test_archived_storage_records_round_trip_sorted_toml(
@@ -315,17 +296,6 @@ def test_normalize_storage_root_path_rejects_damaged_windows_path() -> None:
     assert normalize_storage_root_path("./C:Projectsdemo-storage") == Path(
         "C:Projectsdemo-storage"
     )
-
-
-def test_load_storage_registry_or_empty_ignores_missing_default_storage_name(
-    tmp_path: Path,
-) -> None:
-    registry_path = tmp_path / "demo.apprc.toml"
-    registry_path.write_text('default_storage = "missing"\n', encoding="utf-8")
-
-    registry = load_storage_registry_or_empty(registry_path)
-
-    assert registry.storages == {}
 
 
 def test_load_storage_registry_or_empty_rejects_invalid_storage_tables(

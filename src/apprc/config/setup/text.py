@@ -21,21 +21,21 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     :param kit: Application config facade.
     :return: Host-app-specific setup explanation.
     """
-    apprc_toml_path = kit.spec.optional_apprc_toml_path()
-    apprc_toml_text = (
-        str(apprc_toml_path) if apprc_toml_path is not None else "<not set>"
+    registry_path = kit.spec.optional_apprc_toml_path()
+    registry_path_text = (
+        str(registry_path) if registry_path is not None else "<not set>"
     )
     return (
         f"{kit.spec.display_name} needs one active storage root selected by "
         f"{kit.spec.storage_env_key}. Optional multi-storage management adds "
-        "one small AppRC TOML to remember named storage roots. The AppRC TOML "
+        "one small registry file to remember named storage roots. The registry "
         "does not contain storage data.\n\n"
         f"{kit.spec.apprc_toml_env_key} is optional. When it is set, AppRC "
         "uses it for registry-backed listing, switching, archiving, and "
         "restoring.\n\n"
         "Setup starts by choosing the active storage root, then asks whether "
         "to enable multi-storage.\n\n"
-        f"Current AppRC TOML value:\n{apprc_toml_text}"
+        f"Current multi-storage registry value:\n{registry_path_text}"
     )
 
 
@@ -50,7 +50,7 @@ def apprc_dir_step_text(
     :return: Plain text for CLI and Textual setup UIs.
     """
     computed = (
-        "\n\nDerived AppRC TOML path:\n"
+        "\n\nDerived registry path:\n"
         f"{suggested / kit.spec.apprc_toml_filename}"
         if suggested is not None
         else ""
@@ -63,9 +63,9 @@ def apprc_dir_step_text(
     return (
         f"Choose the {apprc_dir_label(kit)}. Setup will create or reuse "
         f"{kit.spec.apprc_toml_filename} inside this directory.\n\n"
-        "The derived AppRC TOML stores AppRC state: registered storage names, "
+        "The derived registry file stores AppRC state: registered storage names, "
         "storage root paths, and archive restore metadata.\n\n"
-        f"{kit.spec.apprc_toml_env_key} must point at the full AppRC TOML path "
+        f"{kit.spec.apprc_toml_env_key} must point at the full registry path "
         "in future shells only when multi-storage management is enabled. "
         "Setup asks for the directory so the file name stays consistent."
         f"{suggested_text}{computed}\n\n"
@@ -102,17 +102,17 @@ def existing_registry_text(
     :return: Plain text summary of available actions.
     """
     body = (
-        f"{kit.spec.display_name} found an existing AppRC TOML:\n"
+        f"{kit.spec.display_name} found an existing multi-storage registry:\n"
         f"{registry.path}\n\n"
         "Keeping it preserves the registered storage roots. Resetting removes "
         f"only {kit.spec.display_name} AppRC state, not storage directories. "
-        "Moving it preserves the registry contents at a new AppRC TOML path."
+        "Moving it preserves the registry contents at a new path."
     )
     rows = existing_registry_rows_text(registry)
     if rows:
         return (
             f"{body}\n\n"
-            "The current AppRC TOML has these storages registered:\n"
+            "The current registry has these storages registered:\n"
             f"{rows}"
         )
     return f"{body}\n\nNo live storages are registered yet."
@@ -142,7 +142,7 @@ def reset_warning_text(
     :return: Plain text warning.
     """
     lines = [
-        "Storage directories are left untouched. Only the AppRC TOML is "
+        "Storage directories are left untouched. Only the registry file is "
         f"removed. {kit.spec.display_name} storage directories are not "
         "deleted."
     ]
@@ -167,7 +167,7 @@ def storage_root_reuse_text(
     :param kit: Application config facade.
     :param storage_root: Existing non-empty storage directory.
     :param storage_name: Optional selector that will point at the directory.
-    :param registry_path: AppRC TOML file that will be created or updated.
+    :param registry_path: Registry file that will be created or updated.
     :return: Plain text warning.
     """
     storage_context = (
@@ -181,7 +181,7 @@ def storage_root_reuse_text(
         f"storage-local env: {storage_root / kit.spec.local_env_filename}",
     ]
     if registry_path is not None:
-        managed_lines.append(f"AppRC TOML: {registry_path}")
+        managed_lines.append(f"registry file: {registry_path}")
     managed_text = "\n".join(managed_lines)
     return (
         "Storage root exists and is not empty.\n\n"

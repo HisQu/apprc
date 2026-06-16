@@ -51,14 +51,17 @@ def confirm_existing_storage_root(
     :raises typer.Exit: If the user refuses or input cannot be read.
     """
     console = Console(soft_wrap=True)
-    apprc_tomls = Table.grid(padding=(0, 2))
-    apprc_tomls.add_column(style="dim", no_wrap=True)
-    apprc_tomls.add_column(style="cyan")
-    apprc_tomls.add_row(
+    managed_files = Table.grid(padding=(0, 2))
+    managed_files.add_column(style="dim", no_wrap=True)
+    managed_files.add_column(style="cyan")
+    managed_files.add_row(
         "storage-local env",
         str(storage_root / kit.spec.local_env_filename),
     )
-    apprc_tomls.add_row("AppRC TOML", str(kit.spec.required_apprc_toml_path()))
+    managed_files.add_row(
+        "registry file",
+        str(kit.spec.required_apprc_toml_path()),
+    )
 
     panel_lines: list[RenderableType] = [
         Text("Storage root exists and is not empty.", style="yellow"),
@@ -76,7 +79,7 @@ def confirm_existing_storage_root(
         ),
         Text(""),
         Text("AppRC-managed files to create or update:", style="dim"),
-        apprc_tomls,
+        managed_files,
         Text(""),
         Text(
             "Existing files inside the storage root will not be deleted, "

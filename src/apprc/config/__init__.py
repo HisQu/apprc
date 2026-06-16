@@ -4,7 +4,7 @@
 
 from apprc.config.app_spec import (
     AppConfigSpec,
-    ApprcTomlEnvError,
+    RegistryEnvError,
 )
 from apprc.config.base_config import (
     BaseConfig,

@@ -22,7 +22,7 @@ from apprc.cli.config.state import (
 from apprc.cli.doctor import print_config_doctor
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
-from apprc.config.app_spec import ApprcTomlEnvError
+from apprc.config.app_spec import RegistryEnvError
 from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
 from apprc.config.local_env import set_local_env_value
@@ -145,7 +145,7 @@ class ConfigCommandHandlers:
         """Register one storage root and create its local env file."""
         try:
             registry_path = self.kit.spec.required_apprc_toml_path()
-        except ApprcTomlEnvError as exc:
+        except RegistryEnvError as exc:
             raise self._registry_bad_parameter(exc) from exc
         normalized_root = guard_storage_root_init(
             self.kit,
@@ -174,7 +174,7 @@ class ConfigCommandHandlers:
         typer.echo(
             f"local_env: {record.root / self.kit.spec.local_env_filename}"
         )
-        typer.echo(f"apprc_toml_path: {registry.path}")
+        typer.echo(f"registry_path: {registry.path}")
 
     def setup(
         self,
@@ -186,7 +186,7 @@ class ConfigCommandHandlers:
         multi_storage: bool,
         existing_action: setup_flow.ExistingSetupAction | None,
     ) -> None:
-        """Configure the active storage root and optional AppRC TOML."""
+        """Configure the active storage root and optional registry."""
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,
@@ -217,22 +217,22 @@ class ConfigCommandHandlers:
 
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
-        configured_registry = self.configured_registry()
+        optional_registry = self.optional_registry()
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         selected_storage = (
-            self.initial_storage(current_state, registry=configured_registry)
+            self.initial_storage(current_state, registry=optional_registry)
             if current_state is not None
             else None
         )
         active_storage_root = self.optional_active_storage_root_from_env(
-            configured_registry
+            optional_registry
         )
         if self.editor_app_cls is not None:
             editor_app = self.editor_app_cls(
                 kit=self.kit,
-                registry=configured_registry,
+                registry=optional_registry,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
             )
@@ -241,7 +241,7 @@ class ConfigCommandHandlers:
 
             editor_app = ConfigEditorApp(
                 kit=self.kit,
-                registry=configured_registry,
+                registry=optional_registry,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
             )
@@ -260,7 +260,7 @@ class ConfigCommandHandlers:
                 self.kit,
                 cast(ConfigCliState, state),
             )
-        except ApprcTomlEnvError as exc:
+        except RegistryEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
                 param_hint=self.kit.spec.apprc_toml_env_key,
@@ -291,24 +291,24 @@ class ConfigCommandHandlers:
         """Return the registry required by registry-only CLI commands."""
         try:
             return self.kit.load_required_registry()
-        except (ApprcTomlEnvError, ValueError) as exc:
+        except (RegistryEnvError, ValueError) as exc:
             raise self._registry_bad_parameter(exc) from exc
 
-    def configured_registry(self) -> StorageRegistry | None:
-        """Return the registry only when multi-storage is configured."""
+    def optional_registry(self) -> StorageRegistry | None:
+        """Return the registry only when multi-storage is enabled."""
         try:
-            return self.kit.load_configured_registry()
-        except (ApprcTomlEnvError, ValueError) as exc:
+            return self.kit.load_optional_registry()
+        except (RegistryEnvError, ValueError) as exc:
             raise self._registry_bad_parameter(exc) from exc
 
     def _registry_bad_parameter(
         self,
-        exc: ApprcTomlEnvError | ValueError,
+        exc: RegistryEnvError | ValueError,
     ) -> typer.BadParameter:
         """Return Typer's error type for registry loading failures."""
         param_hint = (
             self.kit.spec.apprc_toml_env_key
-            if isinstance(exc, ApprcTomlEnvError)
+            if isinstance(exc, RegistryEnvError)
             else self.kit.spec.apprc_toml_filename
         )
         return typer.BadParameter(str(exc), param_hint=param_hint)
@@ -361,12 +361,12 @@ class ConfigCommandHandlers:
     def default_runtime_payload(self, state: Any) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
         storage_root = self.active_storage_root(state)
-        apprc_toml_path = self.kit.spec.optional_apprc_toml_path()
+        registry_path = self.kit.spec.optional_apprc_toml_path()
         return {
             "app_name": self.kit.spec.app_name,
             "display_name": self.kit.spec.display_name,
-            "apprc_toml_path": (
-                str(apprc_toml_path) if apprc_toml_path is not None else None
+            "registry_path": (
+                str(registry_path) if registry_path is not None else None
             ),
             "storage_root": str(storage_root) if storage_root else None,
         }

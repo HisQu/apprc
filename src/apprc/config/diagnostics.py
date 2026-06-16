@@ -29,12 +29,12 @@ class ConfigDoctorPayload(TypedDict):
 
     runnable: bool
     status: str
-    apprc_toml_env_key: str
-    apprc_toml_env_value: str | None
-    apprc_toml_path: str | None
-    apprc_toml_exists: bool
-    apprc_toml_parse_ok: bool
-    apprc_toml_error: str | None
+    registry_env_key: str
+    registry_env_value: str | None
+    registry_path: str | None
+    registry_exists: bool
+    registry_parse_ok: bool
+    registry_error: str | None
     storage_count: int
     selected_storage: str | None
     selected_storage_source: str | None
@@ -50,22 +50,22 @@ class ConfigDoctorPayload(TypedDict):
 
 @dataclass(frozen=True, slots=True)
 class _RegistryDiagnosis:
-    """AppRC TOML state discovered for one doctor run."""
+    """Registry state discovered for one doctor run."""
 
-    active_toml_path: Path | None
-    toml_env_value: str | None
-    toml_exists: bool
-    toml_error: str | None
+    path: Path | None
+    env_value: str | None
+    exists: bool
+    error: str | None
     registry: StorageRegistry | None
     storage_count: int
     issues: list[str]
 
     @property
-    def toml_parse_ok(self) -> bool:
-        """Return whether the optional TOML layer is absent or parseable."""
-        if self.active_toml_path is None:
+    def parse_ok(self) -> bool:
+        """Return whether the optional registry is absent or parseable."""
+        if self.path is None:
             return True
-        return self.toml_exists and self.toml_error is None
+        return self.exists and self.error is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,27 +115,18 @@ def build_config_doctor_payload(
     kit: "AppConfigKit",
     *,
     storage: str | None,
-    storage_root: Path | None = None,
-    apprc_toml_path: Path | None = None,
 ) -> ConfigDoctorPayload:
     """Return local setup diagnostics for one app's selected storage.
 
     :param kit: Application config facade.
     :param storage: Optional selector passed by ``--storage``.
-    :param storage_root: Optional explicit storage root selected by setup.
-    :param apprc_toml_path: Optional explicit AppRC TOML path used by setup.
-        ``None`` means "use the currently configured env value, if any."
     :return: Stable JSON-friendly diagnostic payload.
     """
-    registry_diagnosis = _diagnose_registry(
-        kit,
-        apprc_toml_path=apprc_toml_path,
-    )
+    registry_diagnosis = _diagnose_registry(kit)
     storage_diagnosis = _diagnose_storage(
         kit,
         registry=registry_diagnosis.registry,
         storage=storage,
-        storage_root=storage_root,
     )
     issues = [*registry_diagnosis.issues, *storage_diagnosis.issues]
     status = _doctor_status(
@@ -174,16 +165,14 @@ def _doctor_payload(
     return {
         "runnable": runnable,
         "status": status.value,
-        "apprc_toml_env_key": kit.spec.apprc_toml_env_key,
-        "apprc_toml_env_value": registry.toml_env_value,
-        "apprc_toml_path": (
-            str(registry.active_toml_path)
-            if registry.active_toml_path is not None
-            else None
-        ),
-        "apprc_toml_exists": registry.toml_exists,
-        "apprc_toml_parse_ok": registry.toml_parse_ok,
-        "apprc_toml_error": registry.toml_error,
+        "registry_env_key": kit.spec.apprc_toml_env_key,
+        "registry_env_value": registry.env_value,
+        "registry_path": str(registry.path)
+        if registry.path is not None
+        else None,
+        "registry_exists": registry.exists,
+        "registry_parse_ok": registry.parse_ok,
+        "registry_error": registry.error,
         "storage_count": registry.storage_count,
         "selected_storage": (
             selection.storage_name if selection is not None else None
@@ -219,65 +208,59 @@ def _doctor_payload(
     }
 
 
-def _diagnose_registry(
-    kit: "AppConfigKit",
-    *,
-    apprc_toml_path: Path | None,
-) -> _RegistryDiagnosis:
+def _diagnose_registry(kit: "AppConfigKit") -> _RegistryDiagnosis:
     """Return optional multi-storage registry state for diagnostics.
 
     :param kit: Application config facade.
-    :param apprc_toml_path: Optional explicit setup path.
     :return: Registry diagnosis with parse or missing-file issues.
     """
-    raw_toml_env_value = os.environ.get(kit.spec.apprc_toml_env_key, "").strip()
-    active_toml_path = (
-        Path(apprc_toml_path).expanduser().resolve()
-        if apprc_toml_path is not None
-        else kit.spec.optional_apprc_toml_path()
-    )
-    if active_toml_path is None:
+    raw_registry_env_value = os.environ.get(
+        kit.spec.apprc_toml_env_key,
+        "",
+    ).strip()
+    registry_path = kit.spec.optional_apprc_toml_path()
+    if registry_path is None:
         return _RegistryDiagnosis(
-            active_toml_path=None,
-            toml_env_value=raw_toml_env_value or None,
-            toml_exists=False,
-            toml_error=None,
+            path=None,
+            env_value=raw_registry_env_value or None,
+            exists=False,
+            error=None,
             registry=None,
             storage_count=0,
             issues=[],
         )
 
-    toml_exists = active_toml_path.is_file()
-    if not toml_exists:
+    registry_exists = registry_path.is_file()
+    if not registry_exists:
         return _RegistryDiagnosis(
-            active_toml_path=active_toml_path,
-            toml_env_value=raw_toml_env_value or None,
-            toml_exists=False,
-            toml_error=None,
+            path=registry_path,
+            env_value=raw_registry_env_value or None,
+            exists=False,
+            error=None,
             registry=None,
             storage_count=0,
-            issues=[f"AppRC TOML does not exist: {active_toml_path}"],
+            issues=[f"Registry file does not exist: {registry_path}"],
         )
 
     try:
-        registry = load_storage_registry_or_empty(active_toml_path)
+        registry = load_storage_registry_or_empty(registry_path)
     except ValueError as exc:
-        toml_error = str(exc)
+        registry_error = str(exc)
         return _RegistryDiagnosis(
-            active_toml_path=active_toml_path,
-            toml_env_value=raw_toml_env_value or None,
-            toml_exists=True,
-            toml_error=toml_error,
+            path=registry_path,
+            env_value=raw_registry_env_value or None,
+            exists=True,
+            error=registry_error,
             registry=None,
             storage_count=0,
-            issues=[f"AppRC TOML is invalid: {toml_error}"],
+            issues=[f"Registry file is invalid: {registry_error}"],
         )
 
     return _RegistryDiagnosis(
-        active_toml_path=active_toml_path,
-        toml_env_value=raw_toml_env_value or None,
-        toml_exists=True,
-        toml_error=None,
+        path=registry_path,
+        env_value=raw_registry_env_value or None,
+        exists=True,
+        error=None,
         registry=registry,
         storage_count=len(registry.storages),
         issues=[],
@@ -289,14 +272,12 @@ def _diagnose_storage(
     *,
     registry: StorageRegistry | None,
     storage: str | None,
-    storage_root: Path | None,
 ) -> _StorageDiagnosis:
     """Return active storage state for diagnostics.
 
     :param kit: Application config facade.
     :param registry: Optional multi-storage registry diagnosis result.
     :param storage: Optional selector passed by ``--storage``.
-    :param storage_root: Optional explicit storage root selected by setup.
     :return: Storage diagnosis with missing-env and local-env issues.
     """
     storage_env_key = kit.spec.storage_env_key
@@ -305,15 +286,7 @@ def _diagnose_storage(
     missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
 
-    if storage_root is not None:
-        selected_root = Path(storage_root).expanduser().resolve()
-        selection = StorageSelection(
-            source=storage_env_key,
-            raw_value=str(storage_root),
-            storage_name=storage if registry is not None else None,
-            root=selected_root,
-        )
-    elif storage is None and not raw_storage_env_value:
+    if storage is None and not raw_storage_env_value:
         missing_env_keys.append(storage_env_key)
         issues.append(_missing_env_issue(kit, missing_env_keys))
     else:

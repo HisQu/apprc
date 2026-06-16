@@ -152,9 +152,9 @@ def guard_storage_root_init(
     :raises typer.BadParameter: If the path cannot represent a directory.
     :raises typer.Exit: If the user declines reuse of a non-empty directory.
     """
+    flow = setup_flow.ConfigSetupFlow(kit)
     try:
-        root = setup_flow.validate_storage_root_for_setup(
-            kit,
+        root = flow.validate_storage_root(
             storage_root,
             storage_name=storage_name,
             allow_non_empty_storage=True,

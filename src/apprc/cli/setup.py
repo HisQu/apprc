@@ -80,40 +80,36 @@ def run_config_setup(
             raise typer.Exit(code=1)
         return
 
+    flow = setup_flow.ConfigSetupFlow(kit)
     try:
         if multi_storage:
             registered_name = (
-                setup_flow.setup_storage_name(kit)
+                flow.default_storage_name()
                 if storage_name is None
                 else storage_name
             )
-            setup_result = setup_flow.prepare_setup_registry(
-                kit,
+            setup_result = flow.prepare_registry(
                 registry_dir=registry_dir,
                 existing_action=existing_action,
                 replace_existing_file=True,
             )
-            root = setup_flow.prepare_setup_storage_root(
-                kit,
+            root = flow.prepare_storage_root(
                 storage_root=storage_root,
                 storage_name=registered_name,
                 allow_non_empty_storage=True,
             )
-            result = setup_flow.ensure_registered_storage(
-                kit,
+            result = flow.ensure_registered_storage(
                 setup_result.registry,
                 storage_root=root,
                 storage_name=registered_name,
             )
         else:
-            root = setup_flow.prepare_setup_storage_root(
-                kit,
+            root = flow.prepare_storage_root(
                 storage_root=storage_root,
                 storage_name=None,
                 allow_non_empty_storage=True,
             )
-            result = setup_flow.ensure_single_storage(
-                kit,
+            result = flow.ensure_single_storage(
                 storage_root=root,
             )
     except setup_flow.ConfigSetupError as exc:

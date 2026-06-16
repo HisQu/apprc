@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import os
 import shutil
 from dataclasses import dataclass
 from enum import Enum
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -87,436 +87,318 @@ class PreparedSetupRegistry:
     existing_action: ExistingSetupAction | None = None
 
 
-def find_existing_registry_path(kit: "AppConfigKit") -> Path | None:
-    """Return the env-selected registry path when setup can reuse it.
+class ConfigSetupFlow:
+    """Own setup operations for one AppRC application integration.
 
-    :param kit: Application config facade.
-    :return: Existing env-selected registry path, or ``None``.
+    :param kit: Application config facade mounted by the host CLI.
     """
-    active_path = kit.spec.optional_apprc_toml_path()
-    if active_path is not None and active_path.is_file():
-        return normalize_apprc_toml_path(active_path)
-    return None
 
+    def __init__(self, kit: "AppConfigKit") -> None:
+        """Store the app facade used by setup decisions."""
+        self.kit = kit
 
-def prepare_setup_registry(
-    kit: "AppConfigKit",
-    *,
-    registry_dir: Path | None,
-    existing_action: ExistingSetupAction | None,
-    replace_existing_file: bool,
-) -> PreparedSetupRegistry:
-    """Select, reset, or move the registry used by setup.
+    def find_existing_registry_path(self) -> Path | None:
+        """Return the env-selected registry path when setup can reuse it."""
+        active_path = self.kit.spec.optional_apprc_toml_path()
+        if active_path is not None and active_path.is_file():
+            return normalize_apprc_toml_path(active_path)
+        return None
 
-    :param kit: Application config facade.
-    :param registry_dir: Optional explicit target registry directory.
-    :param existing_action: Optional action for a discovered registry.
-    :param replace_existing_file: Whether an existing move target may be
-        replaced.
-    :return: Selected registry and action metadata.
-    :raises ConfigSetupError: If the requested path cannot be rediscovered.
-    """
-    target_path = setup_registry_path(kit, registry_dir)
-    env_existing_path = find_existing_registry_path(kit)
-    existing_path = _existing_setup_registry_path(
-        target_path=target_path,
-        env_existing_path=env_existing_path,
-        explicit_registry_dir=registry_dir is not None,
-        existing_action=existing_action,
-    )
-    if existing_path is None:
-        require_registry_path_available(target_path)
-        return PreparedSetupRegistry(registry=load_setup_registry(target_path))
+    def prepare_registry(
+        self,
+        *,
+        registry_dir: Path | None,
+        existing_action: ExistingSetupAction | None,
+        replace_existing_file: bool,
+    ) -> PreparedSetupRegistry:
+        """Select, reset, or move the registry used by setup.
 
-    action = existing_action or ExistingSetupAction.KEEP
-    if action == ExistingSetupAction.KEEP:
-        require_registry_path_available(existing_path)
-        return PreparedSetupRegistry(
-            registry=load_setup_registry(existing_path),
-            existing_action=action,
+        :param registry_dir: Optional explicit target registry directory.
+        :param existing_action: Optional action for a discovered registry.
+        :param replace_existing_file: Whether an existing move target may be
+            replaced.
+        :return: Selected registry and action metadata.
+        :raises ConfigSetupError: If the requested path cannot be rediscovered.
+        """
+        target_path = self.registry_path(registry_dir)
+        env_existing_path = self.find_existing_registry_path()
+        existing_path = self._existing_registry_path(
+            target_path=target_path,
+            env_existing_path=env_existing_path,
+            explicit_registry_dir=registry_dir is not None,
+            existing_action=existing_action,
         )
-    if action == ExistingSetupAction.RESET:
-        remove_registry_file(existing_path)
-        require_registry_path_available(target_path)
-        return PreparedSetupRegistry(
-            registry=load_setup_registry(target_path),
-            existing_action=action,
+        if existing_path is None:
+            self.require_registry_path_available(target_path)
+            return PreparedSetupRegistry(
+                registry=self.load_registry(target_path)
+            )
+
+        action = existing_action or ExistingSetupAction.KEEP
+        if action == ExistingSetupAction.KEEP:
+            self.require_registry_path_available(existing_path)
+            return PreparedSetupRegistry(
+                registry=self.load_registry(existing_path),
+                existing_action=action,
+            )
+        if action == ExistingSetupAction.RESET:
+            self.remove_registry_file(existing_path)
+            self.require_registry_path_available(target_path)
+            return PreparedSetupRegistry(
+                registry=self.load_registry(target_path),
+                existing_action=action,
+            )
+
+        self.require_registry_path_available(target_path)
+        registry = self.move_existing_registry(
+            source_path=existing_path,
+            target_path=target_path,
+            replace_existing_file=replace_existing_file,
         )
+        return PreparedSetupRegistry(registry=registry, existing_action=action)
 
-    require_registry_path_available(target_path)
-    registry = move_existing_registry(
-        kit,
-        source_path=existing_path,
-        target_path=target_path,
-        replace_existing_file=replace_existing_file,
-    )
-    return PreparedSetupRegistry(registry=registry, existing_action=action)
+    @staticmethod
+    def _existing_registry_path(
+        *,
+        target_path: Path,
+        env_existing_path: Path | None,
+        explicit_registry_dir: bool,
+        existing_action: ExistingSetupAction | None,
+    ) -> Path | None:
+        """Return the existing registry path setup should operate on."""
+        if target_path.is_file():
+            return target_path
+        if not explicit_registry_dir:
+            return env_existing_path
+        if existing_action in {
+            ExistingSetupAction.MOVE,
+            ExistingSetupAction.RESET,
+        }:
+            return env_existing_path
+        return None
 
+    def ensure_registered_storage(
+        self,
+        registry: StorageRegistry,
+        *,
+        storage_root: Path,
+        storage_name: str,
+    ) -> ConfigSetupResult:
+        """Ensure and register the active storage root after registry setup."""
+        try:
+            updated = register_storage(
+                name=storage_name,
+                root=storage_root,
+                path=registry.path,
+                local_env_filename=self.kit.spec.local_env_filename,
+            )
+            record = updated.selected(storage_name)
+            return ConfigSetupResult(
+                registry=updated,
+                active_storage_root=record.root,
+                registered_storage_name=storage_name,
+            )
+        except StorageRootPathError as exc:
+            raise ConfigSetupError(
+                str(exc),
+                param_hint="STORAGE_ROOT",
+            ) from exc
+        except ValueError as exc:
+            raise ConfigSetupError(
+                str(exc),
+                param_hint="Storage name",
+            ) from exc
 
-def _existing_setup_registry_path(
-    *,
-    target_path: Path,
-    env_existing_path: Path | None,
-    explicit_registry_dir: bool,
-    existing_action: ExistingSetupAction | None,
-) -> Path | None:
-    """Return the existing registry path setup should operate on.
-
-    :param target_path: Registry path selected for this setup run.
-    :param env_existing_path: Existing env-selected registry path, if any.
-    :param explicit_registry_dir: Whether ``--apprc-dir`` selected the target.
-    :param existing_action: Optional action for an existing registry file.
-    :return: Existing registry path, or ``None``.
-    """
-    if target_path.is_file():
-        return target_path
-    if not explicit_registry_dir:
-        return env_existing_path
-    if existing_action in {
-        ExistingSetupAction.MOVE,
-        ExistingSetupAction.RESET,
-    }:
-        return env_existing_path
-    return None
-
-
-def ensure_registered_storage(
-    kit: "AppConfigKit",
-    registry: StorageRegistry,
-    *,
-    storage_root: Path,
-    storage_name: str,
-) -> ConfigSetupResult:
-    """Ensure and register the active storage root after registry setup.
-
-    :param kit: Application config facade.
-    :param registry: Registry selected by setup.
-    :param storage_root: Prepared active storage root selected by setup.
-    :param storage_name: Selector to register for multi-storage.
-    :return: Setup result with active root and registered selector.
-    :raises ConfigSetupError: If the storage root is unsafe.
-    """
-    try:
-        updated = register_storage(
-            name=storage_name,
-            root=storage_root,
-            path=registry.path,
-            local_env_filename=kit.spec.local_env_filename,
-        )
-        record = updated.selected(storage_name)
+    def ensure_single_storage(
+        self,
+        *,
+        storage_root: Path,
+    ) -> ConfigSetupResult:
+        """Create or confirm the active storage root without a registry."""
+        resolved_root = self.ensure_storage_local_env(storage_root)
         return ConfigSetupResult(
-            registry=updated,
-            active_storage_root=record.root,
-            registered_storage_name=storage_name,
+            registry=None,
+            active_storage_root=resolved_root,
         )
-    except StorageRootPathError as exc:
-        raise ConfigSetupError(
-            str(exc),
-            param_hint="STORAGE_ROOT",
-        ) from exc
-    except ValueError as exc:
-        raise ConfigSetupError(
-            str(exc),
-            param_hint="Storage name",
-        ) from exc
 
+    def default_storage_name(self) -> str:
+        """Return the conventional registry selector for setup when unset."""
+        return suggested_storage_name(self.kit.spec.app_name)
 
-def ensure_single_storage(
-    kit: "AppConfigKit",
-    *,
-    storage_root: Path,
-) -> ConfigSetupResult:
-    """Create or confirm the active storage root without a registry.
-
-    :param kit: Application config facade.
-    :param storage_root: Prepared active storage root selected by setup.
-    :return: Setup result without a registry.
-    :raises ConfigSetupError: If the storage root is unsafe.
-    """
-    resolved_root = ensure_storage_local_env(
-        kit,
-        storage_root,
-    )
-    return ConfigSetupResult(
-        registry=None,
-        active_storage_root=resolved_root,
-    )
-
-
-def setup_storage_name(
-    kit: "AppConfigKit",
-) -> str:
-    """Return the conventional registry selector for setup when unset.
-
-    :param kit: Application config facade.
-    :return: Host-specific default storage selector.
-    """
-    return suggested_storage_name(kit.spec.app_name)
-
-
-def prepare_setup_storage_root(
-    kit: "AppConfigKit",
-    *,
-    storage_root: Path | None,
-    storage_name: str | None,
-    allow_non_empty_storage: bool,
-) -> Path:
-    """Resolve and validate the active storage root before setup writes.
-
-    :param kit: Application config facade.
-    :param storage_root: Optional active storage root selected by setup.
-    :param storage_name: Optional registry selector used in reuse prompts.
-    :param allow_non_empty_storage: Whether non-empty roots may be reused.
-    :return: Validated active storage root.
-    :raises ConfigSetupError: If the storage root is unsafe.
-    """
-    active_root = storage_root or setup_storage_root_from_env(kit)
-    if active_root is None:
-        raise ConfigSetupError(
-            f"{kit.spec.storage_env_key} or --storage-root is required for "
-            "non-interactive setup.",
-            param_hint="--storage-root",
-        )
-    return validate_storage_root_for_setup(
-        kit,
-        active_root,
-        storage_name=storage_name,
-        allow_non_empty_storage=allow_non_empty_storage,
-    )
-
-
-def ensure_storage_local_env(
-    kit: "AppConfigKit",
-    storage_root: Path,
-) -> Path:
-    """Create or confirm the storage-local dotenv file after validation.
-
-    :param kit: Application config facade.
-    :param storage_root: Validated storage root.
-    :return: Resolved active storage root.
-    :raises ConfigSetupError: If the local env file cannot be created.
-    """
-    try:
-        local_env = ensure_local_env_file(
-            storage_root,
-            filename=kit.spec.local_env_filename,
-        )
-    except StorageRootPathError as exc:
-        raise ConfigSetupError(
-            str(exc),
-            param_hint="STORAGE_ROOT",
-        ) from exc
-    return local_env.parent
-
-
-def validate_storage_root_for_setup(
-    kit: "AppConfigKit",
-    storage_root: Path,
-    *,
-    storage_name: str | None,
-    allow_non_empty_storage: bool,
-) -> Path:
-    """Return a safe storage root path before registration writes.
-
-    :param kit: Application config facade.
-    :param storage_root: User-provided storage root path.
-    :param storage_name: Optional selector that will point at the directory.
-    :param allow_non_empty_storage: Whether to reuse non-empty directories.
-    :return: Normalized storage root path.
-    :raises ConfigSetupError: If the path cannot be safely used.
-    """
-    try:
-        root = normalize_storage_root_path(storage_root)
-    except StorageRootPathError as exc:
-        raise ConfigSetupError(
-            str(exc),
-            param_hint="STORAGE_ROOT",
-        ) from exc
-    if not root.exists():
-        return root
-    resolved_root = root.resolve()
-    if not resolved_root.is_dir():
-        raise ConfigSetupError(
-            f"Storage root exists but is not a directory: {resolved_root}",
-            param_hint="STORAGE_ROOT",
-        )
-    if allow_non_empty_storage or not any(resolved_root.iterdir()):
-        return resolved_root
-    raise ConfigSetupError(
-        setup_text.storage_root_reuse_text(
-            kit,
-            resolved_root,
+    def prepare_storage_root(
+        self,
+        *,
+        storage_root: Path | None,
+        storage_name: str | None,
+        allow_non_empty_storage: bool,
+    ) -> Path:
+        """Resolve and validate the active storage root before setup writes."""
+        active_root = storage_root or self.storage_root_from_env()
+        if active_root is None:
+            raise ConfigSetupError(
+                f"{self.kit.spec.storage_env_key} or --storage-root is "
+                "required for non-interactive setup.",
+                param_hint="--storage-root",
+            )
+        return self.validate_storage_root(
+            active_root,
             storage_name=storage_name,
-        ),
-        param_hint="STORAGE_ROOT",
-    )
-
-
-def setup_storage_root_from_env(kit: "AppConfigKit") -> Path | None:
-    """Return the active storage root from the setup-time env selector.
-
-    During setup, the storage env value is path-preferred. A bare value such as
-    ``alpha`` is treated as a relative path, not as a registry selector.
-
-    :param kit: Application config facade.
-    :return: Normalized storage path, or ``None`` when unset.
-    :raises ConfigSetupError: If the path cannot be safely interpreted.
-    """
-    try:
-        return resolve_setup_storage_root_from_env(
-            storage_env_key=kit.spec.storage_env_key,
-            proc_env=os.environ,
+            allow_non_empty_storage=allow_non_empty_storage,
         )
-    except StorageRootPathError as exc:
+
+    def ensure_storage_local_env(self, storage_root: Path) -> Path:
+        """Create or confirm the storage-local dotenv file after validation."""
+        try:
+            local_env = ensure_local_env_file(
+                storage_root,
+                filename=self.kit.spec.local_env_filename,
+            )
+        except StorageRootPathError as exc:
+            raise ConfigSetupError(
+                str(exc),
+                param_hint="STORAGE_ROOT",
+            ) from exc
+        return local_env.parent
+
+    def validate_storage_root(
+        self,
+        storage_root: Path,
+        *,
+        storage_name: str | None,
+        allow_non_empty_storage: bool,
+    ) -> Path:
+        """Return a safe storage root path before registration writes."""
+        try:
+            root = normalize_storage_root_path(storage_root)
+        except StorageRootPathError as exc:
+            raise ConfigSetupError(
+                str(exc),
+                param_hint="STORAGE_ROOT",
+            ) from exc
+        if not root.exists():
+            return root
+        resolved_root = root.resolve()
+        if not resolved_root.is_dir():
+            raise ConfigSetupError(
+                f"Storage root exists but is not a directory: {resolved_root}",
+                param_hint="STORAGE_ROOT",
+            )
+        if allow_non_empty_storage or not any(resolved_root.iterdir()):
+            return resolved_root
         raise ConfigSetupError(
-            str(exc),
-            param_hint=kit.spec.storage_env_key,
-        ) from exc
-
-
-def setup_registry_path(
-    kit: "AppConfigKit",
-    registry_dir: Path | None,
-) -> Path:
-    """Return the registry path selected by setup directory input.
-
-    :param kit: Application config facade.
-    :param registry_dir: Optional setup ``--apprc-dir`` value.
-    :return: Normalized registry path setup should write.
-    :raises ConfigSetupError: If no path was provided or exported.
-    """
-    if registry_dir is not None:
-        return setup_registry_path_from_dir(kit, registry_dir)
-    active_path = kit.spec.optional_apprc_toml_path()
-    if active_path is not None:
-        return normalize_apprc_toml_path(active_path)
-    raise ConfigSetupError(
-        f"{kit.spec.display_name} setup needs the "
-        f"{kit.spec.display_name} directory (AppRC) because "
-        f"{kit.spec.apprc_toml_env_key} is not set.\n"
-        "Run setup again with an explicit directory:\n"
-        f"{kit.spec.config_command_name()} config setup --yes "
-        "--apprc-dir /absolute/path/to/config-dir",
-        param_hint="--apprc-dir",
-    )
-
-
-def setup_registry_dir(registry_dir: Path) -> Path:
-    """Return the directory that should contain the setup registry file.
-
-    :param registry_dir: User-provided registry directory.
-    :return: Absolute, user-expanded directory path.
-    :raises ConfigSetupError: If the path exists but is not a directory.
-    """
-    path = Path(registry_dir).expanduser().resolve()
-    if path.exists() and not path.is_dir():
-        raise ConfigSetupError(
-            f"AppRC directory is not a directory: {path}",
-            param_hint="APPRC_DIR",
+            setup_text.storage_root_reuse_text(
+                self.kit,
+                resolved_root,
+                storage_name=storage_name,
+            ),
+            param_hint="STORAGE_ROOT",
         )
-    return path
 
-
-def setup_registry_path_from_dir(
-    kit: "AppConfigKit",
-    registry_dir: Path,
-) -> Path:
-    """Return the enforced registry file inside a setup directory.
-
-    :param kit: Application config facade.
-    :param registry_dir: User-provided registry directory.
-    :return: Computed registry path.
-    :raises ConfigSetupError: If the directory path is invalid.
-    """
-    return setup_registry_dir(registry_dir) / kit.spec.apprc_toml_filename
-
-
-def require_registry_path_available(
-    registry_path: Path,
-) -> None:
-    """Reject registry targets that cannot be written as files.
-
-    :param registry_path: Requested registry path.
-    :raises ConfigSetupError: If the path is an existing directory.
-    """
-    path = normalize_apprc_toml_path(registry_path)
-    if not path.exists() or path.is_file():
-        return
-    raise ConfigSetupError(
-        f"Registry target is not a file: {path}",
-        param_hint="APPRC_TOML",
-    )
-
-
-def remove_registry_file(registry_path: Path) -> None:
-    """Delete only registry state, never registered storage roots.
-
-    :param registry_path: Registry file to remove.
-    """
-    resolved_path = normalize_apprc_toml_path(registry_path)
-    resolved_path.unlink(missing_ok=True)
-
-
-def move_existing_registry(
-    kit: "AppConfigKit",
-    *,
-    source_path: Path,
-    target_path: Path,
-    replace_existing_file: bool,
-) -> StorageRegistry:
-    """Move an existing registry file and load it from its new path.
-
-    :param kit: Application config facade.
-    :param source_path: Existing registry file.
-    :param target_path: Destination registry file.
-    :param replace_existing_file: Whether an existing file may be replaced.
-    :return: Loaded registry at the target path.
-    :raises ConfigSetupError: If the target cannot be replaced.
-    """
-    source = normalize_apprc_toml_path(source_path)
-    target = normalize_apprc_toml_path(target_path)
-    if same_path(source, target):
-        return load_setup_registry(target)
-    if target.exists():
-        if target.is_dir():
-            raise ConfigSetupError(
-                f"Registry target is a directory: {target}",
-                param_hint="APPRC_TOML",
+    def storage_root_from_env(self) -> Path | None:
+        """Return the active storage root from the setup-time env selector."""
+        try:
+            return resolve_setup_storage_root_from_env(
+                storage_env_key=self.kit.spec.storage_env_key,
+                proc_env=os.environ,
             )
-        if not replace_existing_file:
+        except StorageRootPathError as exc:
             raise ConfigSetupError(
-                f"Registry target already exists: {target}",
-                param_hint="APPRC_TOML",
-            )
-        target.unlink()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(source), str(target))
-    return load_setup_registry(target)
+                str(exc),
+                param_hint=self.kit.spec.storage_env_key,
+            ) from exc
 
-
-def load_setup_registry(
-    registry_path: Path,
-) -> StorageRegistry:
-    """Load a registry and convert parse failures to setup errors.
-
-    :param registry_path: Registry path to load.
-    :return: Parsed or empty registry.
-    :raises ConfigSetupError: If the registry cannot be parsed.
-    """
-    try:
-        return load_create_or_empty_registry(registry_path)
-    except ValueError as exc:
+    def registry_path(self, registry_dir: Path | None) -> Path:
+        """Return the registry path selected by setup directory input."""
+        if registry_dir is not None:
+            return self.registry_path_from_dir(registry_dir)
+        active_path = self.kit.spec.optional_apprc_toml_path()
+        if active_path is not None:
+            return normalize_apprc_toml_path(active_path)
         raise ConfigSetupError(
-            str(exc),
-            param_hint=str(registry_path),
-        ) from exc
+            f"{self.kit.spec.display_name} setup needs the "
+            f"{self.kit.spec.display_name} directory (AppRC) because "
+            f"{self.kit.spec.apprc_toml_env_key} is not set.\n"
+            "Run setup again with an explicit directory:\n"
+            f"{self.kit.spec.config_command_name()} config setup --yes "
+            "--apprc-dir /absolute/path/to/config-dir",
+            param_hint="--apprc-dir",
+        )
 
+    def registry_dir(self, registry_dir: Path) -> Path:
+        """Return the directory that should contain the setup registry file."""
+        path = Path(registry_dir).expanduser().resolve()
+        if path.exists() and not path.is_dir():
+            raise ConfigSetupError(
+                f"AppRC directory is not a directory: {path}",
+                param_hint="APPRC_DIR",
+            )
+        return path
 
-def same_path(left: str | Path, right: str | Path) -> bool:
-    """Return whether two path spellings identify the same filesystem path.
+    def registry_path_from_dir(self, registry_dir: Path) -> Path:
+        """Return the enforced registry file inside a setup directory."""
+        return (
+            self.registry_dir(registry_dir) / self.kit.spec.apprc_toml_filename
+        )
 
-    :param left: First path spelling.
-    :param right: Second path spelling.
-    :return: Whether both normalize to the same absolute path.
-    """
-    return normalize_apprc_toml_path(left) == normalize_apprc_toml_path(right)
+    @staticmethod
+    def require_registry_path_available(registry_path: Path) -> None:
+        """Reject registry targets that cannot be written as files."""
+        path = normalize_apprc_toml_path(registry_path)
+        if not path.exists() or path.is_file():
+            return
+        raise ConfigSetupError(
+            f"Registry target is not a file: {path}",
+            param_hint="APPRC_TOML",
+        )
+
+    @staticmethod
+    def remove_registry_file(registry_path: Path) -> None:
+        """Delete only registry state, never registered storage roots."""
+        resolved_path = normalize_apprc_toml_path(registry_path)
+        resolved_path.unlink(missing_ok=True)
+
+    def move_existing_registry(
+        self,
+        *,
+        source_path: Path,
+        target_path: Path,
+        replace_existing_file: bool,
+    ) -> StorageRegistry:
+        """Move an existing registry file and load it from its new path."""
+        source = normalize_apprc_toml_path(source_path)
+        target = normalize_apprc_toml_path(target_path)
+        if self.same_path(source, target):
+            return self.load_registry(target)
+        if target.exists():
+            if target.is_dir():
+                raise ConfigSetupError(
+                    f"Registry target is a directory: {target}",
+                    param_hint="APPRC_TOML",
+                )
+            if not replace_existing_file:
+                raise ConfigSetupError(
+                    f"Registry target already exists: {target}",
+                    param_hint="APPRC_TOML",
+                )
+            target.unlink()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+        return self.load_registry(target)
+
+    @staticmethod
+    def load_registry(registry_path: Path) -> StorageRegistry:
+        """Load a registry and convert parse failures to setup errors."""
+        try:
+            return load_create_or_empty_registry(registry_path)
+        except ValueError as exc:
+            raise ConfigSetupError(
+                str(exc),
+                param_hint=str(registry_path),
+            ) from exc
+
+    @staticmethod
+    def same_path(left: str | Path, right: str | Path) -> bool:
+        """Return whether two path spellings identify the same filesystem path."""
+        return normalize_apprc_toml_path(left) == normalize_apprc_toml_path(
+            right
+        )

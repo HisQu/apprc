@@ -19,7 +19,6 @@ import apprc.config.setup.text as setup_text
 from apprc.config.storage.registry import (
     StorageRegistry,
     ordered_storage_names,
-    suggested_storage_name,
     suggested_storage_root,
 )
 from apprc.config.tui.primitives import (
@@ -76,6 +75,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         """
         super().__init__()
         self.kit = kit
+        self.flow = setup_flow.ConfigSetupFlow(kit)
         self.registry: StorageRegistry | None = None
         self.existing_action: setup_flow.ExistingSetupAction | None = None
         self.result: setup_flow.ConfigSetupResult | None = None
@@ -143,8 +143,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             if guarded_root is None:
                 return
             try:
-                result = setup_flow.ensure_single_storage(
-                    self.kit,
+                result = self.flow.ensure_single_storage(
                     storage_root=guarded_root,
                 )
             except setup_flow.ConfigSetupError as exc:
@@ -153,14 +152,14 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             await self._finish_setup(result)
             return
 
-        existing_path = setup_flow.find_existing_registry_path(self.kit)
+        existing_path = self.flow.find_existing_registry_path()
         if existing_path is None:
             registry = await self._choose_new_registry()
             if registry is not None:
                 await self._finish_multi_storage_setup(registry, root_result)
             return
         try:
-            registry = setup_flow.load_setup_registry(existing_path)
+            registry = self.flow.load_registry(existing_path)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
@@ -227,7 +226,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self.existing_action = action
         try:
             if action == setup_flow.ExistingSetupAction.KEEP:
-                setup_flow.require_registry_path_available(
+                self.flow.require_registry_path_available(
                     registry.path,
                 )
                 await self._finish_multi_storage_setup(registry, storage_root)
@@ -248,7 +247,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 )
                 if confirmed != "reset":
                     return
-                setup_flow.remove_registry_file(registry.path)
+                self.flow.remove_registry_file(registry.path)
                 fresh = await self._choose_new_registry()
                 if fresh is not None:
                     await self._finish_multi_storage_setup(
@@ -274,12 +273,11 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         )
         if registry_dir is None:
             return None
-        registry_path = setup_flow.setup_registry_path_from_dir(
-            self.kit,
+        registry_path = self.flow.registry_path_from_dir(
             registry_dir,
         )
         try:
-            return setup_flow.load_setup_registry(registry_path)
+            return self.flow.load_registry(registry_path)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return None
@@ -299,12 +297,11 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         )
         if target_dir is None:
             return None
-        target_path = setup_flow.setup_registry_path_from_dir(
-            self.kit,
+        target_path = self.flow.registry_path_from_dir(
             target_dir,
         )
         replace = False
-        if target_path.exists() and not setup_flow.same_path(
+        if target_path.exists() and not self.flow.same_path(
             registry.path,
             target_path,
         ):
@@ -329,8 +326,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             if not replace:
                 return None
         try:
-            return setup_flow.move_existing_registry(
-                self.kit,
+            return self.flow.move_existing_registry(
                 source_path=registry.path,
                 target_path=target_path,
                 replace_existing_file=replace,
@@ -365,7 +361,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             if result is None:
                 return None
             try:
-                return setup_flow.setup_registry_dir(result.path)
+                return self.flow.registry_dir(result.path)
             except setup_flow.ConfigSetupError as exc:
                 self.notify(str(exc), severity="error", markup=False)
                 continue
@@ -398,8 +394,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         if guarded_root is None:
             return
         try:
-            result = setup_flow.ensure_registered_storage(
-                self.kit,
+            result = self.flow.ensure_registered_storage(
                 registry,
                 storage_root=guarded_root,
                 storage_name=name_result,
@@ -415,7 +410,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :return: User-selected root, or ``None`` when canceled.
         """
         try:
-            default_root = setup_flow.setup_storage_root_from_env(self.kit)
+            default_root = self.flow.storage_root_from_env()
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             default_root = None
@@ -465,7 +460,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         """
         name_result = await self.push_screen_wait(
             StorageNameScreen(
-                default_name=suggested_storage_name(self.kit.spec.app_name),
+                default_name=self.flow.default_storage_name(),
                 message="Choose the registry name used by --storage.",
             )
         )
@@ -486,8 +481,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :return: Safe path, or ``None`` when canceled.
         """
         try:
-            root = setup_flow.prepare_setup_storage_root(
-                self.kit,
+            root = self.flow.prepare_storage_root(
                 storage_root=storage_root,
                 storage_name=storage_name,
                 allow_non_empty_storage=True,

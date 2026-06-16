@@ -22,7 +22,7 @@ from apprc.cli.config.state import (
 from apprc.cli.doctor import print_config_doctor
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
-from apprc.config.apprc_toml import ApprcTomlEnvError
+from apprc.config.app_spec import ApprcTomlEnvError
 from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
 from apprc.config.local_env import set_local_env_value
@@ -144,11 +144,11 @@ class ConfigCommandHandlers:
     ) -> None:
         """Register one storage root and create its local env file."""
         try:
-            self.kit.spec.apprc_toml_path()
+            self.kit.spec.required_apprc_toml_path()
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key,
             ) from exc
         normalized_root = guard_storage_root_init(
             self.kit,
@@ -160,13 +160,13 @@ class ConfigCommandHandlers:
             registry = register_storage(
                 name=name,
                 root=normalized_root,
-                path=self.kit.spec.apprc_toml_path(),
+                path=self.kit.spec.required_apprc_toml_path(),
                 local_env_filename=self.kit.spec.local_env_filename,
             )
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key,
             ) from exc
         except StorageRootPathError as exc:
             raise typer.BadParameter(
@@ -271,7 +271,7 @@ class ConfigCommandHandlers:
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key,
             ) from exc
         except StorageSelectorError as exc:
             raise typer.BadParameter(
@@ -302,7 +302,7 @@ class ConfigCommandHandlers:
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key,
             ) from exc
         except ValueError as exc:
             raise typer.BadParameter(
@@ -320,7 +320,7 @@ class ConfigCommandHandlers:
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key,
             ) from exc
         except ValueError as exc:
             raise typer.BadParameter(

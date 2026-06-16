@@ -9,11 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # == Internal ================================
-from apprc.config.apprc_toml import (
-    ApprcTomlEnvError,
-    normalized_apprc_toml_path,
-)
+from apprc.config.paths import normalize_apprc_toml_path
 from apprc.config.schema import ConfigOwner
+
+
+class ApprcTomlEnvError(ValueError):
+    """Raised when an app's AppRC TOML path cannot be resolved from the env."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +53,7 @@ class AppConfigSpec:
             object.__setattr__(
                 self,
                 "apprc_toml_filename",
-                _default_apprc_toml_filename(self.app_name),
+                _derive_apprc_toml_filename(self.app_name),
             )
 
     def config_command_name(self) -> str:
@@ -90,17 +91,30 @@ class AppConfigSpec:
         env = os.environ if proc_env is None else proc_env
         raw_path = env.get(self.apprc_toml_env_key, "").strip()
         if raw_path:
-            return normalized_apprc_toml_path(raw_path)
+            return normalize_apprc_toml_path(raw_path)
         return None
+
+    def missing_apprc_toml_file_message(self, path: str | Path) -> str:
+        """Return guidance when configured multi-storage state is missing.
+
+        :param path: Missing AppRC TOML path.
+        :return: Human-facing setup guidance.
+        """
+        resolved_path = normalize_apprc_toml_path(path)
+        return (
+            f"{self.apprc_toml_env_key} points to a missing AppRC TOML: "
+            f"{resolved_path}. Remove {self.apprc_toml_env_key} for "
+            "single-storage mode, or create the registry with "
+            f"{self.config_command_name()} config setup --yes --multi-storage."
+        )
 
     def _missing_apprc_toml_env_message(self) -> str:
         """Return guidance for registry commands without a TOML env var."""
-        command_name = self.app_name or "app"
         return (
             f"{self.apprc_toml_env_key} is required for multi-storage registry "
             "commands and must point to this app's AppRC TOML. Choose this "
             "app's directory (AppRC), then run:\n"
-            f"  {command_name} config setup --yes --apprc-dir "
+            f"  {self.config_command_name()} config setup --yes --apprc-dir "
             "/absolute/path/to/config-dir --multi-storage\n"
             "Setup will derive the AppRC TOML path:\n"
             f"  /absolute/path/to/config-dir/{self.apprc_toml_filename}\n"
@@ -109,7 +123,7 @@ class AppConfigSpec:
         )
 
 
-def _default_apprc_toml_filename(app_name: str) -> str:
+def _derive_apprc_toml_filename(app_name: str) -> str:
     """Return the conventional AppRC TOML basename for one application."""
     normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", app_name).strip("_-")
     base_name = normalized or "app"

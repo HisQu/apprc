@@ -1,4 +1,4 @@
-"""Path normalization helpers for AppRC-owned storage roots."""
+"""Path normalization helpers for AppRC-owned files and storage roots."""
 
 from __future__ import annotations
 
@@ -16,6 +16,15 @@ class StorageRootPathError(ValueError):
 
     :param message: Human-readable explanation for CLI and API callers.
     """
+
+
+def normalize_apprc_toml_path(path: str | Path) -> Path:
+    """Return an absolute, user-expanded AppRC TOML path.
+
+    :param path: User-provided TOML path.
+    :return: Absolute path spelling.
+    """
+    return Path(path).expanduser().resolve()
 
 
 def normalize_storage_root_path(path: str | Path) -> Path:

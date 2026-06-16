@@ -11,9 +11,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 # == Internal ================================
-from apprc.config.apprc_toml import normalized_apprc_toml_path
 from apprc.config.local_env import ensure_local_env_file
-from apprc.config.paths import StorageRootPathError, normalize_storage_root_path
+from apprc.config.paths import (
+    StorageRootPathError,
+    normalize_apprc_toml_path,
+    normalize_storage_root_path,
+)
 import apprc.config.setup.text as setup_text
 from apprc.config.storage.registry import (
     StorageRegistry,
@@ -92,7 +95,7 @@ def find_existing_apprc_toml_path(kit: "AppConfigKit") -> Path | None:
     """
     active_path = kit.spec.optional_apprc_toml_path()
     if active_path is not None and active_path.is_file():
-        return normalized_apprc_toml_path(active_path)
+        return normalize_apprc_toml_path(active_path)
     return None
 
 
@@ -374,11 +377,11 @@ def setup_apprc_toml_path(
         return setup_apprc_toml_path_from_dir(kit, apprc_dir)
     active_path = kit.spec.optional_apprc_toml_path()
     if active_path is not None:
-        return normalized_apprc_toml_path(active_path)
+        return normalize_apprc_toml_path(active_path)
     raise ConfigSetupError(
         f"{kit.spec.display_name} setup needs the "
         f"{kit.spec.display_name} directory (AppRC) because "
-        f"{kit.spec.apprc_toml_env_key()} is not set.\n"
+        f"{kit.spec.apprc_toml_env_key} is not set.\n"
         "Run setup again with an explicit directory:\n"
         f"{kit.spec.config_command_name()} config setup --yes "
         "--apprc-dir /absolute/path/to/config-dir",
@@ -424,7 +427,7 @@ def require_apprc_toml_path_available(
     :param apprc_toml_path: Requested AppRC TOML path.
     :raises ConfigSetupError: If the path is an existing directory.
     """
-    path = normalized_apprc_toml_path(apprc_toml_path)
+    path = normalize_apprc_toml_path(apprc_toml_path)
     if not path.exists() or path.is_file():
         return
     raise ConfigSetupError(
@@ -438,7 +441,7 @@ def remove_apprc_toml_config_state(apprc_toml_path: Path) -> None:
 
     :param apprc_toml_path: AppRC TOML file to remove.
     """
-    resolved_apprc_toml_path = normalized_apprc_toml_path(apprc_toml_path)
+    resolved_apprc_toml_path = normalize_apprc_toml_path(apprc_toml_path)
     resolved_apprc_toml_path.unlink(missing_ok=True)
 
 
@@ -458,8 +461,8 @@ def move_existing_apprc_toml(
     :return: Loaded registry at the target path.
     :raises ConfigSetupError: If the target cannot be replaced.
     """
-    source = normalized_apprc_toml_path(source_path)
-    target = normalized_apprc_toml_path(target_path)
+    source = normalize_apprc_toml_path(source_path)
+    target = normalize_apprc_toml_path(target_path)
     if same_path(source, target):
         return load_setup_registry(target)
     if target.exists():
@@ -504,4 +507,4 @@ def same_path(left: str | Path, right: str | Path) -> bool:
     :param right: Second path spelling.
     :return: Whether both normalize to the same absolute path.
     """
-    return normalized_apprc_toml_path(left) == normalized_apprc_toml_path(right)
+    return normalize_apprc_toml_path(left) == normalize_apprc_toml_path(right)

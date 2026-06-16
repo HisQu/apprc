@@ -4,12 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.apprc_toml import (
-    ApprcTomlEnvError,
-    apprc_toml_env_key,
-    apprc_toml_path,
-    default_apprc_toml_filename,
-)
+from apprc.config.app_spec import AppConfigSpec, ApprcTomlEnvError
 from apprc.config.storage.registry import (
     app_data_dir,
     load_storage_registry_or_empty,
@@ -49,39 +44,42 @@ def test_suggested_storage_name_uses_valid_host_specific_selector() -> None:
     assert suggested_storage_name("???") == "apprc_stor-1"
 
 
-def test_default_apprc_toml_filename_uses_host_app_name() -> None:
-    assert default_apprc_toml_filename("demo") == "demo.apprc.toml"
-    assert default_apprc_toml_filename("my-app.rc") == "my-app_rc.apprc.toml"
-    assert default_apprc_toml_filename("") == "app.apprc.toml"
-    assert default_apprc_toml_filename("???") == "app.apprc.toml"
+def _app_spec(app_name: str) -> AppConfigSpec:
+    """Return the smallest spec needed for AppRC TOML naming tests."""
+    return AppConfigSpec(
+        app_name=app_name,
+        display_name="Demo",
+        config_package="apprc.config",
+        owners=(),
+        storage_env_key="DEMO_STORAGE",
+    )
 
 
-def test_apprc_toml_env_key_normalizes_app_name() -> None:
-    assert apprc_toml_env_key("demo") == "DEMO_APPRC_TOML"
-    assert apprc_toml_env_key("my-app.rc") == "MY_APP_RC_APPRC_TOML"
+def test_app_config_spec_derives_apprc_toml_filename() -> None:
+    assert _app_spec("demo").apprc_toml_filename == "demo.apprc.toml"
+    assert _app_spec("my-app.rc").apprc_toml_filename == "my-app_rc.apprc.toml"
+    assert _app_spec("").apprc_toml_filename == "app.apprc.toml"
+    assert _app_spec("???").apprc_toml_filename == "app.apprc.toml"
 
 
-def test_apprc_toml_path_uses_env_override(
+def test_app_config_spec_derives_apprc_toml_env_key() -> None:
+    assert _app_spec("demo").apprc_toml_env_key == "DEMO_APPRC_TOML"
+    assert _app_spec("my-app.rc").apprc_toml_env_key == "MY_APP_RC_APPRC_TOML"
+
+
+def test_app_config_spec_required_apprc_toml_path_uses_env_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     custom_registry = tmp_path / "custom" / "demo.apprc.toml"
+    spec = _app_spec("demo")
 
     with pytest.raises(ApprcTomlEnvError, match="DEMO_APPRC_TOML"):
-        apprc_toml_path(
-            app_name="demo",
-            apprc_toml_filename="demo.apprc.toml",
-        )
+        spec.required_apprc_toml_path()
 
     monkeypatch.setenv("DEMO_APPRC_TOML", str(custom_registry))
 
-    assert (
-        apprc_toml_path(
-            app_name="demo",
-            apprc_toml_filename="demo.apprc.toml",
-        )
-        == custom_registry
-    )
+    assert spec.required_apprc_toml_path() == custom_registry
 
 
 def test_register_storage_writes_sorted_toml_and_local_env(

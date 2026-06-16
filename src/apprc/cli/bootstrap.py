@@ -11,7 +11,7 @@ from typing import Any
 import typer
 
 # == Internal ================================
-from apprc.config.apprc_toml import ApprcTomlEnvError
+from apprc.config.app_spec import ApprcTomlEnvError
 from apprc.config.environment import BootstrapLogger, EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.storage.selector import StorageSelectorError
@@ -75,7 +75,7 @@ def bootstrap_cli_env(
     except ApprcTomlEnvError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=kit.spec.apprc_toml_env_key(),
+            param_hint=kit.spec.apprc_toml_env_key,
         ) from exc
     except StorageSelectorError as exc:
         raise typer.BadParameter(

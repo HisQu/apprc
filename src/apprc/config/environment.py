@@ -8,7 +8,7 @@ explicit ``--env-file``, and the values already present in ``os.environ``.
 
 The helper mutates only the current Python process. It never writes dotenv
 files and never changes the parent shell. AppRC TOML path lookup is delegated
-to :mod:`apprc.config.apprc_toml`, active storage selection is delegated to
+to :mod:`apprc.config.app_spec`, active storage selection is delegated to
 :mod:`apprc.config.storage.selector`, and storage-local editing is delegated to
 :mod:`apprc.config.local_env`.
 """
@@ -27,11 +27,7 @@ from typing import Any, Mapping, Protocol
 from dotenv import dotenv_values
 
 # == Internal ================================
-from apprc.config.apprc_toml import (
-    ApprcTomlEnvError,
-    missing_configured_apprc_toml_message,
-)
-from apprc.config.app_spec import AppConfigSpec
+from apprc.config.app_spec import AppConfigSpec, ApprcTomlEnvError
 from apprc.config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
@@ -185,11 +181,7 @@ def _load_optional_registry(spec: AppConfigSpec) -> StorageRegistry | None:
         return None
     if not active_path.is_file():
         raise ApprcTomlEnvError(
-            missing_configured_apprc_toml_message(
-                app_name=spec.app_name,
-                command_name=spec.config_command_name(),
-                path=active_path,
-            )
+            spec.missing_apprc_toml_file_message(active_path)
         )
     return load_storage_registry_or_empty(active_path)
 

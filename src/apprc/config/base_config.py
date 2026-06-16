@@ -12,7 +12,7 @@ modules so beginners can look up one problem at a time:
 
 * :mod:`apprc.config.schema` owns field/owner declarations.
 * :mod:`apprc.config.environment` owns entrypoint dotenv bootstrap.
-* :mod:`apprc.config.apprc_toml` owns the optional registry env contract.
+* :mod:`apprc.config.app_spec` owns the optional registry env contract.
 * :mod:`apprc.config.storage.registry` owns optional multi-storage tables.
 * :mod:`apprc.config.local_env` owns storage-local dotenv overrides.
 """

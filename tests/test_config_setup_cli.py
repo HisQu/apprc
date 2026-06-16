@@ -231,7 +231,7 @@ def test_generated_config_setup_options_require_yes(
 
     assert result.exit_code == 2, result.output
     assert "Setup options run non-interactively" in result.output
-    assert not kit.spec.apprc_toml_path().exists()
+    assert not kit.spec.required_apprc_toml_path().exists()
 
 
 def test_generated_config_setup_name_requires_multi_storage(
@@ -257,7 +257,7 @@ def test_generated_config_setup_name_requires_multi_storage(
 
     assert result.exit_code == 2, result.output
     assert "--name is only used with --multi-storage" in result.output
-    assert not kit.spec.apprc_toml_path().exists()
+    assert not kit.spec.required_apprc_toml_path().exists()
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -360,7 +360,7 @@ def test_generated_config_setup_moves_existing_registry_to_apprc_dir_target(
         "APPRC_EXAMPLE_APP_STORAGE",
         str(storage_root.resolve()),
     )
-    original_registry = kit.spec.apprc_toml_path()
+    original_registry = kit.spec.required_apprc_toml_path()
     custom_dir = tmp_path / "custom"
     custom_registry = custom_dir / "apprc_example_app.apprc.toml"
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)

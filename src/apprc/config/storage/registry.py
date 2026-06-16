@@ -6,7 +6,7 @@ at the active path. When users opt into ``<APP>_APPRC_TOML``, the storage
 registry maps friendly storage names to absolute storage roots for
 multi-storage management.
 
-AppRC TOML path selection lives in :mod:`apprc.config.apprc_toml`, storage
+AppRC TOML path selection lives in :mod:`apprc.config.app_spec`, storage
 selector resolution lives in :mod:`apprc.config.storage.selector`, and
 storage-local dotenv value handling lives in :mod:`apprc.config.local_env`.
 """

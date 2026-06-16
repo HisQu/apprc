@@ -57,7 +57,7 @@ def test_config_owner_builds_env_keys_and_config_paths() -> None:
     assert owner.config_path_text("profile") == "app.profile"
 
 
-def test_kit_computes_default_apprc_toml_filename() -> None:
+def test_kit_derives_apprc_toml_filename() -> None:
     kit = AppConfigKit(
         app_name="my-app.rc",
         display_name="My App",
@@ -78,7 +78,7 @@ def test_kit_registry_path_requires_apprc_toml_env(
     kit = build_apprc_example_app_kit()
 
     with pytest.raises(ApprcTomlEnvError) as exc_info:
-        kit.spec.apprc_toml_path()
+        kit.spec.required_apprc_toml_path()
 
     message = str(exc_info.value)
     assert (

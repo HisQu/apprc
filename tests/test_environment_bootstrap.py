@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.apprc_toml import ApprcTomlEnvError
-from apprc.config.app_spec import AppConfigSpec
+from apprc.config.app_spec import AppConfigSpec, ApprcTomlEnvError
 from apprc.config.environment import bootstrap_env
 from apprc.config.storage.registry import register_storage
 

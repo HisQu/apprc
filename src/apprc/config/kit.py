@@ -17,18 +17,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 # == Internal ================================
-from apprc.config.app_spec import AppConfigSpec
+from apprc.config.app_spec import AppConfigSpec, ApprcTomlEnvError
 from apprc.config.environment import (
     BootstrapLogger,
     EnvBootstrapResult,
     bootstrap_env,
 )
 from apprc.config.schema import ConfigOwner
-from apprc.config.apprc_toml import (
-    ApprcTomlEnvError,
-    default_apprc_toml_filename,
-    missing_configured_apprc_toml_message,
-)
 from apprc.config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
@@ -106,11 +101,7 @@ class AppConfigKit:
             owners=owners,
             storage_env_key=storage_env_key,
             command_name=command_name,
-            apprc_toml_filename=(
-                apprc_toml_filename
-                if apprc_toml_filename is not None
-                else default_apprc_toml_filename(app_name)
-            ),
+            apprc_toml_filename=apprc_toml_filename or "",
             shared_env_filename=shared_env_filename,
             local_env_filename=local_env_filename,
         )
@@ -160,13 +151,9 @@ class AppConfigKit:
             a missing file.
         :raises ValueError: If the registry cannot be parsed.
         """
-        resolved_path = self.spec.apprc_toml_path()
+        resolved_path = self.spec.required_apprc_toml_path()
         if not resolved_path.is_file():
-            message = missing_configured_apprc_toml_message(
-                app_name=self.spec.app_name,
-                command_name=self.spec.config_command_name(),
-                path=resolved_path,
-            )
+            message = self.spec.missing_apprc_toml_file_message(resolved_path)
             raise ApprcTomlEnvError(message)
         return load_storage_registry_or_empty(resolved_path)
 

@@ -97,7 +97,7 @@ def config_setup_message(kit: "AppConfigKit") -> str:
     return (
         f"No active {kit.spec.display_name} storage is selected.\n\n"
         f"{storage_key} is required and points at the active storage root. "
-        f"{kit.spec.apprc_toml_env_key()} is optional; set it only when you want "
+        f"{kit.spec.apprc_toml_env_key} is optional; set it only when you want "
         "multi-storage registry features.\n"
         "Choose the storage root; setup will create the storage-local env "
         "file and print the export command:\n"
@@ -174,7 +174,7 @@ def _doctor_payload(
     return {
         "runnable": runnable,
         "status": status.value,
-        "apprc_toml_env_key": kit.spec.apprc_toml_env_key(),
+        "apprc_toml_env_key": kit.spec.apprc_toml_env_key,
         "apprc_toml_env_value": registry.toml_env_value,
         "apprc_toml_path": (
             str(registry.active_toml_path)
@@ -230,9 +230,7 @@ def _diagnose_registry(
     :param apprc_toml_path: Optional explicit setup path.
     :return: Registry diagnosis with parse or missing-file issues.
     """
-    raw_toml_env_value = os.environ.get(
-        kit.spec.apprc_toml_env_key(), ""
-    ).strip()
+    raw_toml_env_value = os.environ.get(kit.spec.apprc_toml_env_key, "").strip()
     active_toml_path = (
         Path(apprc_toml_path).expanduser().resolve()
         if apprc_toml_path is not None

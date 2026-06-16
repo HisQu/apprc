@@ -295,7 +295,7 @@ def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
     assert "backslashes are consumed" in result.output
     assert "C:/Projects/demo-storage" in result.output
     assert not Path(malformed).exists()
-    assert not kit.spec.apprc_toml_path().exists()
+    assert not kit.spec.required_apprc_toml_path().exists()
 
 
 def test_generated_config_app_rejects_removed_default_commands(
@@ -345,7 +345,7 @@ def test_generated_config_app_aborts_existing_storage_when_user_says_no(
 
     assert result.exit_code == 1, result.output
     assert "Aborted." in result.output
-    assert not kit.spec.apprc_toml_path().exists()
+    assert not kit.spec.required_apprc_toml_path().exists()
     assert not (storage_root / ".env.apprc_example_app").exists()
 
 

@@ -188,7 +188,7 @@ def apprc_example_app_state(
             shared_env=None,
             local_env=storage_root / ".env.apprc_example_app",
             env_file=None,
-            apprc_toml_path=kit.spec.apprc_toml_path(),
+            apprc_toml_path=kit.spec.required_apprc_toml_path(),
             storage_selector_source="--storage",
             storage_selector_value="alpha",
             storage_name="alpha",
@@ -215,7 +215,7 @@ def register_storage_for_kit(
     return register_storage(
         name=name,
         root=root,
-        path=kit.spec.apprc_toml_path(),
+        path=kit.spec.required_apprc_toml_path(),
         local_env_filename=kit.spec.local_env_filename,
     )
 
@@ -239,5 +239,5 @@ def record_archived_storage_for_kit(
         name=name,
         archive=archive,
         source_root=source_root,
-        path=kit.spec.apprc_toml_path(),
+        path=kit.spec.required_apprc_toml_path(),
     )

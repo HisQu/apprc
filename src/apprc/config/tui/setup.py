@@ -586,7 +586,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             "Shell:": "bold",
             "Or Dotenv:": "bold",
             "env_not_set": MISSING_STYLE,
-            self.kit.spec.apprc_toml_env_key(): ENV_KEY_STYLE,
+            self.kit.spec.apprc_toml_env_key: ENV_KEY_STYLE,
             self.kit.spec.storage_env_key: ENV_KEY_STYLE,
         }
         styles.update({str(path): PATH_STYLE for path in paths if str(path)})

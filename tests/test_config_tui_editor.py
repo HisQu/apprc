@@ -11,6 +11,11 @@ from textual.widgets import Button, DataTable, Input, ListView, Static
 from apprc.config.registry_loading import load_existing_registry
 from apprc.config.tui import ConfigEditorApp
 from apprc.config.tui.modals import ArchiveOptionsScreen
+from apprc.config.tui.storage.selection import (
+    ActivePathStorageSelection,
+    ArchivedStorageSelection,
+    MissingStorageSelection,
+)
 from apprc.config.tui.styles import (
     CHOICE_STYLE,
     EFFECTIVE_SOURCE_STYLE,
@@ -113,6 +118,7 @@ async def test_editor_launches_with_active_path_without_registry(
 
     row_keys = {str(row[2]) for row in rows}
     assert "Active storage" in str(title)
+    assert isinstance(editor.selection, ActivePathStorageSelection)
     assert str(storage_root.resolve()) in str(title)
     assert table.disabled is False
     assert register_button.disabled is True
@@ -146,7 +152,7 @@ async def test_editor_launches_with_missing_registered_storage(
         delete_button = editor.query_one("#storage-delete", Button)
         archive_button = editor.query_one("#storage-archive", Button)
 
-    assert editor.current_storage_kind == "missing"
+    assert isinstance(editor.selection, MissingStorageSelection)
     assert "Missing storage root" in str(title)
     assert str(storage_root.resolve()) in str(title)
     assert isinstance(title, Text)
@@ -211,7 +217,7 @@ async def test_editor_unregisters_missing_storage(
             editor.storage_workflows.open_delete_storage_flow()
         )
         await pilot.pause()
-        assert editor.current_storage_kind == "missing"
+        assert isinstance(editor.selection, MissingStorageSelection)
         assert list(editor.screen.query("#delete-content")) == []
         editor.screen.query_one("#unregister", Button).press()
         await pilot.pause()
@@ -334,7 +340,7 @@ async def test_editor_shows_and_prunes_stale_archived_rows(
     async with editor.run_test():
         storage_list = editor.query_one("#storage-list", ListView)
         assert storage_list.index == 0
-        assert editor.current_storage_kind == "archived"
+        assert isinstance(editor.selection, ArchivedStorageSelection)
         await editor.storage_workflows.restore_or_prune_archived_storage(
             "alpha"
         )

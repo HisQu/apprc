@@ -36,12 +36,10 @@ from textual.widgets import (
 from apprc.config.local_env import (
     clear_local_env_value,
     ensure_local_env_file,
-    local_env_path,
     read_local_env,
     set_local_env_value,
 )
 from apprc.config.storage.registry import (
-    StorageRecord,
     StorageRegistry,
     suggested_storage_name,
 )
@@ -63,11 +61,18 @@ from apprc.config.tui.field_state import (
     selected_field_for_row,
 )
 from apprc.config.tui.storage.entries import (
-    StorageEntryKind,
     ordered_storage_entries,
     storage_entry_index,
     storage_entry_label,
     suggest_storage_name,
+)
+from apprc.config.tui.storage.selection import (
+    ActivePathStorageSelection,
+    ArchivedStorageSelection,
+    EditorStorageSelection,
+    LiveStorageSelection,
+    MissingStorageSelection,
+    NoStorageSelection,
 )
 from apprc.config.tui.workflows import ConfigEditorStorageWorkflows
 
@@ -133,8 +138,7 @@ class ConfigEditorApp(App[None]):
         self.storage_entries = (
             ordered_storage_entries(registry) if registry is not None else []
         )
-        self.current_storage_name: str | None = None
-        self.current_storage_kind: StorageEntryKind | None = None
+        self.selection: EditorStorageSelection = NoStorageSelection()
         self.local_values: dict[str, str] = {}
         self.row_env_keys: list[str | None] = []
         self.storage_workflows = ConfigEditorStorageWorkflows(self)
@@ -184,6 +188,7 @@ class ConfigEditorApp(App[None]):
         if entry.kind == "missing":
             self._select_missing_storage(entry.name)
             return
+        self._select_archived_storage(entry.name)
         self.run_worker(
             self.storage_workflows.restore_or_prune_archived_storage(
                 entry.name
@@ -248,7 +253,10 @@ class ConfigEditorApp(App[None]):
 
     def _handle_edit_result(self, result: ValueEditResult | None) -> None:
         """Persist the value returned by the edit modal."""
-        if result is None or self.current_storage_kind is None:
+        if result is None or not isinstance(
+            self.selection,
+            ActivePathStorageSelection | LiveStorageSelection,
+        ):
             return
         if result.action == "clear":
             self._clear_env_key(result.env_key)
@@ -356,8 +364,7 @@ class ConfigEditorApp(App[None]):
         root = self.active_storage_root
         if root is None:
             return
-        self.current_storage_name = None
-        self.current_storage_kind = "live"
+        self.selection = ActivePathStorageSelection(root=root)
         path = ensure_local_env_file(root, filename=self.local_env_filename)
         self.local_values = read_local_env(path)
         self.query_one("#storage-title", Static).update(
@@ -376,9 +383,8 @@ class ConfigEditorApp(App[None]):
         registry = self._require_registry()
         if registry is None:
             return
-        self.current_storage_name = name
-        self.current_storage_kind = "live"
         record = registry.selected(name)
+        self.selection = LiveStorageSelection(record=record)
         path = ensure_local_env_file(
             record.root,
             filename=self.local_env_filename,
@@ -395,9 +401,8 @@ class ConfigEditorApp(App[None]):
         registry = self._require_registry()
         if registry is None:
             return
-        self.current_storage_name = name
-        self.current_storage_kind = "missing"
         record = registry.selected(name)
+        self.selection = MissingStorageSelection(record=record)
         self.local_values = {}
         self.query_one("#storage-title", Static).update(
             missing_storage_title(record)
@@ -415,9 +420,8 @@ class ConfigEditorApp(App[None]):
         registry = self._require_registry()
         if registry is None:
             return
-        self.current_storage_name = name
-        self.current_storage_kind = "archived"
         record = registry.archived_storages[name]
+        self.selection = ArchivedStorageSelection(record=record)
         self.local_values = {}
         self.query_one("#storage-title", Static).update(
             archived_storage_title(record)
@@ -459,29 +463,14 @@ class ConfigEditorApp(App[None]):
             row_index=table.cursor_row,
         )
 
-    def _current_storage(self) -> StorageRecord:
-        """Return the active storage record."""
-        registry = self._require_registry()
-        if registry is None:
-            raise RuntimeError("No registry is loaded.")
-        if self.current_storage_name is None:
-            raise RuntimeError("No storage is selected.")
-        return registry.selected(self.current_storage_name)
-
     def _current_storage_root(self) -> Path:
-        """Return the selected storage root, registered or active-path only."""
-        if self.current_storage_name is not None:
-            return self._current_storage().root
-        if self.active_storage_root is None:
-            raise RuntimeError("No storage is selected.")
-        return self.active_storage_root
-
-    def _current_local_env_path(self) -> Path:
-        """Return the active storage-local env path."""
-        return local_env_path(
-            self._current_storage_root(),
-            filename=self.local_env_filename,
-        )
+        """Return the selected editable storage root."""
+        selection = self.selection
+        if isinstance(selection, ActivePathStorageSelection):
+            return selection.root
+        if isinstance(selection, LiveStorageSelection):
+            return selection.record.root
+        raise RuntimeError("No editable storage is selected.")
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable editor controls."""
@@ -521,8 +510,7 @@ class ConfigEditorApp(App[None]):
 
     def _clear_selection(self) -> None:
         """Clear storage selection and local values."""
-        self.current_storage_name = None
-        self.current_storage_kind = None
+        self.selection = NoStorageSelection()
         self.local_values = {}
 
     def _registered_active_storage_name(self) -> str | None:

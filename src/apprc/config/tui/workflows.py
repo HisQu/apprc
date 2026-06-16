@@ -38,6 +38,11 @@ from apprc.config.tui.primitives import (
     PathInputScreen,
     StorageNameScreen,
 )
+from apprc.config.tui.storage.selection import (
+    ActivePathStorageSelection,
+    LiveStorageSelection,
+    MissingStorageSelection,
+)
 from apprc.config.tui.styles import (
     label_value_text,
     lines_text,
@@ -92,16 +97,16 @@ class ConfigEditorStorageWorkflows:
         """Register the env-selected active storage path by name."""
         if self.editor._require_registry() is None:
             return
-        root = self.editor.active_storage_root
-        if root is None:
+        selection = self.editor.selection
+        if not isinstance(selection, ActivePathStorageSelection):
             self.editor.notify(
                 "No active storage path is selected.",
                 severity="warning",
             )
             return
         await self.register_storage_directory_flow(
-            root,
-            default_name=self.editor._suggest_storage_name(root),
+            selection.root,
+            default_name=self.editor._suggest_storage_name(selection.root),
         )
 
     async def open_archive_import_flow(
@@ -304,12 +309,13 @@ class ConfigEditorStorageWorkflows:
 
     async def open_delete_storage_flow(self) -> None:
         """Prompt for unregister/delete behavior for the current storage."""
-        if (
-            self.editor.current_storage_kind not in {"live", "missing"}
-            or self.editor.current_storage_name is None
+        selection = self.editor.selection
+        if not isinstance(
+            selection,
+            LiveStorageSelection | MissingStorageSelection,
         ):
             return
-        record = self.editor._current_storage()
+        record = selection.record
         can_delete_content = record.root.is_dir()
         message = (
             lines_text(
@@ -355,13 +361,10 @@ class ConfigEditorStorageWorkflows:
     async def open_archive_storage_flow(self) -> None:
         """Prompt for archive options and compress the selected storage."""
         registry = self.editor._require_registry()
-        if (
-            registry is None
-            or self.editor.current_storage_kind != "live"
-            or self.editor.current_storage_name is None
-        ):
+        selection = self.editor.selection
+        if registry is None or not isinstance(selection, LiveStorageSelection):
             return
-        record = self.editor._current_storage()
+        record = selection.record
         options = await self.editor.push_screen_wait(
             ArchiveOptionsScreen(
                 storage_name=record.name,

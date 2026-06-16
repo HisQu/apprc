@@ -128,8 +128,8 @@ def suggested_storage_name(app_name: str) -> str:
     return f"{base_name}_stor-1"
 
 
-def load_storage_registry(path: Path) -> StorageRegistry:
-    """Read a storage registry if it exists.
+def load_storage_registry_or_empty(path: Path) -> StorageRegistry:
+    """Read a storage registry, or return an empty registry when absent.
 
     :param path: AppRC TOML location.
     :return: Parsed registry, or an empty registry when the file is absent.
@@ -171,7 +171,7 @@ def register_storage(
     resolved_root.mkdir(parents=True, exist_ok=True)
     ensure_local_env_file(resolved_root, filename=local_env_filename)
 
-    current = load_storage_registry(path)
+    current = load_storage_registry_or_empty(path)
     storages = dict(current.storages)
     storages[name] = StorageRecord(name=name, root=resolved_root)
 
@@ -196,7 +196,7 @@ def unregister_storage(
     :raises ValueError: If ``name`` is unknown.
     """
     _validate_storage_name(name)
-    current = load_storage_registry(path)
+    current = load_storage_registry_or_empty(path)
     current.selected(name)
     storages = dict(current.storages)
     storages.pop(name)
@@ -218,7 +218,7 @@ def record_archived_storage(
 ) -> StorageRegistry:
     """Remember the last archive path for one storage selector."""
     _validate_storage_name(name)
-    current = load_storage_registry(path)
+    current = load_storage_registry_or_empty(path)
     archived_storages = dict(current.archived_storages)
     archived_storages[name] = ArchivedStorageRecord(
         name=name,
@@ -240,7 +240,7 @@ def remove_archived_storage(
 ) -> StorageRegistry:
     """Remove one stale or restored archive convenience entry."""
     _validate_storage_name(name)
-    current = load_storage_registry(path)
+    current = load_storage_registry_or_empty(path)
     archived_storages = dict(current.archived_storages)
     archived_storages.pop(name, None)
     updated = replace(
@@ -256,7 +256,7 @@ def prune_missing_archived_storages(
     path: Path,
 ) -> StorageRegistry:
     """Drop archive records whose last known file no longer exists."""
-    current = load_storage_registry(path)
+    current = load_storage_registry_or_empty(path)
     archived_storages = {
         name: record
         for name, record in current.archived_storages.items()

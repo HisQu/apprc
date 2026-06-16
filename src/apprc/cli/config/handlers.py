@@ -85,7 +85,7 @@ class ConfigCommandHandlers:
 
     def list(self, *, json_output: bool) -> None:
         """List registered storage roots from the user registry."""
-        registry = self.load_required_registry()
+        registry = self.required_registry()
         payload = storage_list_payload(
             registry,
             local_env_filename=self.kit.spec.local_env_filename,
@@ -144,12 +144,9 @@ class ConfigCommandHandlers:
     ) -> None:
         """Register one storage root and create its local env file."""
         try:
-            self.kit.spec.required_apprc_toml_path()
+            registry_path = self.kit.spec.required_apprc_toml_path()
         except ApprcTomlEnvError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key,
-            ) from exc
+            raise self._registry_bad_parameter(exc) from exc
         normalized_root = guard_storage_root_init(
             self.kit,
             storage_root,
@@ -160,14 +157,9 @@ class ConfigCommandHandlers:
             registry = register_storage(
                 name=name,
                 root=normalized_root,
-                path=self.kit.spec.required_apprc_toml_path(),
+                path=registry_path,
                 local_env_filename=self.kit.spec.local_env_filename,
             )
-        except ApprcTomlEnvError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key,
-            ) from exc
         except StorageRootPathError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -225,7 +217,7 @@ class ConfigCommandHandlers:
 
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
-        configured_registry = self.load_optional_registry()
+        configured_registry = self.configured_registry()
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
@@ -295,38 +287,31 @@ class ConfigCommandHandlers:
             registry=registry,
         )
 
-    def load_required_registry(self) -> StorageRegistry:
-        """Load the required registry for registry-only commands."""
+    def required_registry(self) -> StorageRegistry:
+        """Return the registry required by registry-only CLI commands."""
         try:
-            return self.kit.load_storage_registry()
-        except ApprcTomlEnvError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key,
-            ) from exc
-        except ValueError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=self.kit.spec.apprc_toml_filename,
-            ) from exc
+            return self.kit.load_required_registry()
+        except (ApprcTomlEnvError, ValueError) as exc:
+            raise self._registry_bad_parameter(exc) from exc
 
-    def load_optional_registry(self) -> StorageRegistry | None:
-        """Load the optional registry when multi-storage is set."""
-        registry_path = self.kit.spec.optional_apprc_toml_path()
-        if registry_path is None:
-            return None
+    def configured_registry(self) -> StorageRegistry | None:
+        """Return the registry only when multi-storage is configured."""
         try:
-            return self.kit.load_storage_registry()
-        except ApprcTomlEnvError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key,
-            ) from exc
-        except ValueError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=self.kit.spec.apprc_toml_filename,
-            ) from exc
+            return self.kit.load_configured_registry()
+        except (ApprcTomlEnvError, ValueError) as exc:
+            raise self._registry_bad_parameter(exc) from exc
+
+    def _registry_bad_parameter(
+        self,
+        exc: ApprcTomlEnvError | ValueError,
+    ) -> typer.BadParameter:
+        """Return Typer's error type for registry loading failures."""
+        param_hint = (
+            self.kit.spec.apprc_toml_env_key
+            if isinstance(exc, ApprcTomlEnvError)
+            else self.kit.spec.apprc_toml_filename
+        )
+        return typer.BadParameter(str(exc), param_hint=param_hint)
 
     def optional_active_storage_root_from_env(
         self,

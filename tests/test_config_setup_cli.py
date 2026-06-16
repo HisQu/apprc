@@ -161,7 +161,7 @@ def test_generated_config_setup_accepts_matching_custom_registry_env(
 
     result = runner.invoke(app, ["setup", "--yes", "--multi-storage"])
 
-    registry = kit.load_storage_registry()
+    registry = kit.load_required_registry()
     assert result.exit_code == 0, result.output
     assert registry.path == custom_registry
     assert custom_registry.is_file()
@@ -196,7 +196,7 @@ def test_generated_config_setup_accepts_custom_multi_storage_name(
         ],
     )
 
-    registry = kit.load_storage_registry()
+    registry = kit.load_required_registry()
     assert result.exit_code == 0, result.output
     assert registry.selected("alpha").root == storage_root.resolve()
     assert (storage_root / ".env.apprc_example_app").is_file()
@@ -297,7 +297,7 @@ def test_generated_config_setup_keeps_existing_registry_rows(
 
     result = runner.invoke(app, ["setup", "--yes"])
 
-    registry = kit.load_storage_registry()
+    registry = kit.load_required_registry()
     assert result.exit_code == 0, result.output
     assert registry.selected("alpha").root == storage_root.resolve()
     assert "Example App setup files are ready." in result.output
@@ -334,7 +334,7 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     new_storage_root = (
         tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
     )
-    registry = kit.load_storage_registry()
+    registry = kit.load_required_registry()
     assert result.exit_code == 0, result.output
     assert old_storage_root.is_dir()
     assert registry.selected("apprc_example_app_stor-1").root == (

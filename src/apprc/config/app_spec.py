@@ -31,8 +31,7 @@ class AppConfigSpec:
     :param owners: Config owner inventory for editable and documented fields.
     :param storage_env_key: Env key that stores the active storage selector.
     :param command_name: Optional executable name shown in generated CLI copy.
-    :param apprc_toml_filename: Per-user AppRC TOML filename. Empty values use
-        the host-specific ``<app>.apprc.toml`` default.
+    :param apprc_toml_filename: Per-user AppRC TOML filename.
     :param shared_env_filename: Packaged shared dotenv filename.
     :param local_env_filename: Storage-local dotenv override filename.
     """
@@ -42,23 +41,25 @@ class AppConfigSpec:
     config_package: str
     owners: tuple[ConfigOwner, ...]
     storage_env_key: str
+    apprc_toml_filename: str
     command_name: str | None = None
-    apprc_toml_filename: str = ""
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
-
-    def __post_init__(self) -> None:
-        """Fill derived app-specific defaults after dataclass initialization."""
-        if not self.apprc_toml_filename:
-            object.__setattr__(
-                self,
-                "apprc_toml_filename",
-                _derive_apprc_toml_filename(self.app_name),
-            )
 
     def config_command_name(self) -> str:
         """Return the executable name shown in generated config commands."""
         return self.command_name or self.app_name
+
+    @staticmethod
+    def derive_apprc_toml_filename(app_name: str) -> str:
+        """Return the conventional AppRC TOML basename for one application.
+
+        :param app_name: Application name from the AppRC integration spec.
+        :return: Host-specific TOML filename ending in ``.apprc.toml``.
+        """
+        normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", app_name).strip("_-")
+        base_name = normalized or "app"
+        return f"{base_name}.apprc.toml"
 
     @property
     def apprc_toml_env_key(self) -> str:
@@ -121,13 +122,6 @@ class AppConfigSpec:
             "For single-storage runtime commands, export only the storage env "
             "var."
         )
-
-
-def _derive_apprc_toml_filename(app_name: str) -> str:
-    """Return the conventional AppRC TOML basename for one application."""
-    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", app_name).strip("_-")
-    base_name = normalized or "app"
-    return f"{base_name}.apprc.toml"
 
 
 def _apprc_toml_env_key(app_name: str) -> str:

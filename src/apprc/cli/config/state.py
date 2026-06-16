@@ -81,12 +81,7 @@ def active_storage_root_from_state(
         return state.env_bootstrap.storage_root
     if not os.environ.get(kit.spec.storage_env_key, "").strip():
         return None
-    active_registry_path = kit.spec.optional_apprc_toml_path()
-    registry = (
-        kit.load_storage_registry()
-        if active_registry_path is not None
-        else None
-    )
+    registry = kit.load_configured_registry()
     return active_storage_root_from_env(kit, registry=registry)
 
 

@@ -52,14 +52,17 @@ def _app_spec(app_name: str) -> AppConfigSpec:
         config_package="apprc.config",
         owners=(),
         storage_env_key="DEMO_STORAGE",
+        apprc_toml_filename="demo.apprc.toml",
     )
 
 
-def test_app_config_spec_derives_apprc_toml_filename() -> None:
-    assert _app_spec("demo").apprc_toml_filename == "demo.apprc.toml"
-    assert _app_spec("my-app.rc").apprc_toml_filename == "my-app_rc.apprc.toml"
-    assert _app_spec("").apprc_toml_filename == "app.apprc.toml"
-    assert _app_spec("???").apprc_toml_filename == "app.apprc.toml"
+def test_app_config_spec_derives_apprc_toml_filename_text() -> None:
+    derive = AppConfigSpec.derive_apprc_toml_filename
+
+    assert derive("demo") == "demo.apprc.toml"
+    assert derive("my-app.rc") == "my-app_rc.apprc.toml"
+    assert derive("") == "app.apprc.toml"
+    assert derive("???") == "app.apprc.toml"
 
 
 def test_app_config_spec_derives_apprc_toml_env_key() -> None:

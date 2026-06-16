@@ -101,7 +101,11 @@ class AppConfigKit:
             owners=owners,
             storage_env_key=storage_env_key,
             command_name=command_name,
-            apprc_toml_filename=apprc_toml_filename or "",
+            apprc_toml_filename=(
+                apprc_toml_filename
+                if apprc_toml_filename is not None
+                else AppConfigSpec.derive_apprc_toml_filename(app_name)
+            ),
             shared_env_filename=shared_env_filename,
             local_env_filename=local_env_filename,
         )
@@ -143,8 +147,8 @@ class AppConfigKit:
             logger=logger,
         )
 
-    def load_storage_registry(self) -> StorageRegistry:
-        """Read this application's installed multi-storage registry.
+    def load_required_registry(self) -> StorageRegistry:
+        """Read this application's required multi-storage registry.
 
         :return: Parsed storage registry.
         :raises ApprcTomlEnvError: If the TOML env var is missing or points at
@@ -156,6 +160,17 @@ class AppConfigKit:
             message = self.spec.missing_apprc_toml_file_message(resolved_path)
             raise ApprcTomlEnvError(message)
         return load_storage_registry_or_empty(resolved_path)
+
+    def load_configured_registry(self) -> StorageRegistry | None:
+        """Read the registry only when the optional TOML env var is set.
+
+        :return: Parsed storage registry, or ``None`` in single-storage mode.
+        :raises ApprcTomlEnvError: If the TOML env var points at a missing file.
+        :raises ValueError: If the registry cannot be parsed.
+        """
+        if self.spec.optional_apprc_toml_path() is None:
+            return None
+        return self.load_required_registry()
 
     def typer_app(
         self,

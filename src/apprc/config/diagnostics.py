@@ -218,9 +218,7 @@ def _doctor_payload(
         ),
         "selected_storage_root_exists": storage.storage_root_exists,
         "selected_local_env": (
-            str(storage.local_env)
-            if storage.local_env is not None
-            else None
+            str(storage.local_env) if storage.local_env is not None else None
         ),
         "selected_local_env_exists": storage.local_env_exists,
         "missing_env_keys": storage.missing_env_keys,
@@ -273,11 +271,7 @@ def _diagnose_registry(
             toml_env_value=raw_toml_env_value or None,
             toml_exists=False,
             toml_error=None,
-            registry=StorageRegistry(
-                path=active_toml_path,
-                storages={},
-                archived_storages={},
-            ),
+            registry=None,
             storage_count=0,
             issues=[f"AppRC TOML does not exist: {active_toml_path}"],
         )
@@ -291,11 +285,7 @@ def _diagnose_registry(
             toml_env_value=raw_toml_env_value or None,
             toml_exists=True,
             toml_error=toml_error,
-            registry=StorageRegistry(
-                path=active_toml_path,
-                storages={},
-                archived_storages={},
-            ),
+            registry=None,
             storage_count=0,
             issues=[f"AppRC TOML is invalid: {toml_error}"],
         )

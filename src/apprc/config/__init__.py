@@ -6,11 +6,11 @@ from apprc.config.app_spec import AppConfigSpec
 from apprc.config.apprc_toml import (
     ApprcTomlEnvError,
     apprc_toml_env_key,
+    apprc_toml_path,
     default_apprc_toml_filename,
     missing_apprc_toml_env_message,
     missing_configured_apprc_toml_message,
     optional_apprc_toml_path,
-    required_apprc_toml_path,
 )
 from apprc.config.base_config import (
     BaseConfig,
@@ -65,7 +65,7 @@ from apprc.config.storage.registry import (
     StorageRecord,
     StorageRegistry,
     app_data_dir,
-    load_storage_registry,
+    load_storage_registry_or_empty,
     ordered_storage_names,
     prune_missing_archived_storages,
     record_archived_storage,

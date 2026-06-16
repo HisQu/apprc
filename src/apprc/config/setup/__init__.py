@@ -9,7 +9,7 @@ from apprc.config.setup.flow import (
     default_existing_setup_action,
     ensure_registered_storage,
     find_existing_apprc_toml_path,
-    load_registry,
+    load_setup_registry,
     move_existing_apprc_toml,
     prepare_setup_registry,
     remove_apprc_toml_config_state,

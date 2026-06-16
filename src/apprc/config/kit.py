@@ -34,12 +34,15 @@ from apprc.config.local_env import (
 from apprc.config.schema import ConfigOwner
 from apprc.config.apprc_toml import (
     ApprcTomlEnvError,
+    apprc_toml_env_key,
+    apprc_toml_path,
     default_apprc_toml_filename,
     missing_configured_apprc_toml_message,
+    optional_apprc_toml_path,
 )
 from apprc.config.storage.registry import (
     StorageRegistry,
-    load_storage_registry,
+    load_storage_registry_or_empty,
     prune_missing_archived_storages,
     record_archived_storage,
     register_storage,
@@ -142,7 +145,11 @@ class AppConfigKit:
         :return: Env-selected AppRC TOML path for this application.
         :raises ApprcTomlEnvError: If the AppRC TOML env var is missing.
         """
-        return self.spec.apprc_toml_path(proc_env)
+        return apprc_toml_path(
+            app_name=self.spec.app_name,
+            apprc_toml_filename=self.spec.apprc_toml_filename,
+            proc_env=proc_env,
+        )
 
     def optional_apprc_toml_path(
         self,
@@ -153,11 +160,14 @@ class AppConfigKit:
         :param proc_env: Optional environment mapping for tests.
         :return: Env-selected AppRC TOML path, or ``None``.
         """
-        return self.spec.optional_apprc_toml_path(proc_env)
+        return optional_apprc_toml_path(
+            app_name=self.spec.app_name,
+            proc_env=proc_env,
+        )
 
     def apprc_toml_env_key(self) -> str:
         """Return the env var that selects the AppRC TOML path."""
-        return self.spec.apprc_toml_env_key()
+        return apprc_toml_env_key(self.spec.app_name)
 
     def bootstrap(
         self,
@@ -197,25 +207,7 @@ class AppConfigKit:
         )
 
     def load_registry(self, path: Path | None = None) -> StorageRegistry:
-        """Read this application's storage registry.
-
-        :param path: Optional explicit AppRC TOML path for tests.
-        :return: Parsed storage registry, or an empty registry.
-        """
-        return load_storage_registry(
-            self.apprc_toml_path() if path is None else path
-        )
-
-    def load_existing_registry(
-        self,
-        path: Path | None = None,
-    ) -> StorageRegistry:
-        """Read an already-installed multi-storage registry.
-
-        Creation flows use :meth:`load_registry` because a missing TOML can be
-        created there. Runtime registry features use this stricter helper so a
-        configured but missing ``<APP>_APPRC_TOML`` is reported as an unhealthy
-        multi-storage setup.
+        """Read this application's installed multi-storage registry.
 
         :param path: Optional explicit AppRC TOML path for tests.
         :return: Parsed storage registry.
@@ -234,7 +226,7 @@ class AppConfigKit:
             if path is None:
                 raise ApprcTomlEnvError(message)
             raise ValueError(message)
-        return load_storage_registry(resolved_path)
+        return load_storage_registry_or_empty(resolved_path)
 
     def register_storage(
         self,

@@ -29,12 +29,13 @@ from dotenv import dotenv_values
 # == Internal ================================
 from apprc.config.apprc_toml import (
     ApprcTomlEnvError,
-    apprc_toml_env_key,
     missing_configured_apprc_toml_message,
     optional_apprc_toml_path,
-    required_apprc_toml_path,
 )
-from apprc.config.storage.registry import StorageRegistry, load_storage_registry
+from apprc.config.storage.registry import (
+    StorageRegistry,
+    load_storage_registry_or_empty,
+)
 from apprc.config.storage.selector import (
     missing_storage_selector_error,
     resolve_active_storage_selection,
@@ -72,21 +73,6 @@ class EnvBootstrapSpec:
     apprc_toml_filename: str
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
-
-    def apprc_toml_env_key(self) -> str:
-        """Return the env var that selects the AppRC TOML path."""
-        return apprc_toml_env_key(self.app_name)
-
-    def apprc_toml_path(self) -> Path:
-        """Return the env-selected AppRC TOML path for this application."""
-        return required_apprc_toml_path(
-            app_name=self.app_name,
-            apprc_toml_filename=self.apprc_toml_filename,
-        )
-
-    def optional_apprc_toml_path(self) -> Path | None:
-        """Return the env-selected AppRC TOML path when multi-storage is on."""
-        return optional_apprc_toml_path(app_name=self.app_name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,7 +207,7 @@ def bootstrap_env(
 
 def _load_optional_registry(spec: EnvBootstrapSpec) -> StorageRegistry | None:
     """Load the multi-storage registry when the optional selector is set."""
-    active_path = spec.optional_apprc_toml_path()
+    active_path = optional_apprc_toml_path(app_name=spec.app_name)
     if active_path is None:
         return None
     if not active_path.is_file():
@@ -232,7 +218,7 @@ def _load_optional_registry(spec: EnvBootstrapSpec) -> StorageRegistry | None:
                 path=active_path,
             )
         )
-    return load_storage_registry(active_path)
+    return load_storage_registry_or_empty(active_path)
 
 
 def _shared_env_resource(spec: EnvBootstrapSpec) -> Traversable:

@@ -43,13 +43,13 @@ def apprc_toml_env_key(app_name: str) -> str:
     return f"{normalized}_APPRC_TOML"
 
 
-def required_apprc_toml_path(
+def apprc_toml_path(
     *,
     app_name: str,
     apprc_toml_filename: str,
     proc_env: Mapping[str, str] | None = None,
 ) -> Path:
-    """Return the required multi-storage TOML path from the environment.
+    """Return the configured multi-storage TOML path from the environment.
 
     :param app_name: Application name from the AppRC integration spec.
     :param apprc_toml_filename: Suggested TOML basename shown in setup guidance.

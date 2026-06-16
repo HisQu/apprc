@@ -127,6 +127,17 @@ def set_apprc_example_app_apprc_toml(
     return registry_path
 
 
+def create_empty_apprc_example_app_registry(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> Path:
+    """Point the example app at an empty AppRC TOML registry."""
+    registry_path = set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text("", encoding="utf-8")
+    return registry_path
+
+
 def set_apprc_example_app_bootstrap(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,

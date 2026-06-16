@@ -229,7 +229,7 @@ class ConfigCommandHandlers:
 
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
-        configured_registry = self.load_optional_existing_registry()
+        configured_registry = self.load_optional_registry()
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
@@ -301,7 +301,7 @@ class ConfigCommandHandlers:
     def load_required_registry(self) -> StorageRegistry:
         """Load the required registry for registry-only commands."""
         try:
-            return self.kit.load_existing_registry()
+            return self.kit.load_registry()
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -313,13 +313,13 @@ class ConfigCommandHandlers:
                 param_hint=self.kit.spec.apprc_toml_filename,
             ) from exc
 
-    def load_optional_existing_registry(self) -> StorageRegistry | None:
-        """Load the optional existing registry when multi-storage is set."""
+    def load_optional_registry(self) -> StorageRegistry | None:
+        """Load the optional registry when multi-storage is set."""
         registry_path = self.kit.optional_apprc_toml_path()
         if registry_path is None:
             return None
         try:
-            return self.kit.load_existing_registry()
+            return self.kit.load_registry()
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),

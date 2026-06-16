@@ -2,17 +2,9 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Mapping
 
 # == Internal ================================
-from apprc.config.apprc_toml import (
-    apprc_toml_env_key,
-    optional_apprc_toml_path,
-    required_apprc_toml_path,
-)
 from apprc.config.environment import EnvBootstrapSpec
 from apprc.config.schema import ConfigOwner
 
@@ -49,40 +41,6 @@ class AppConfigSpec:
     def config_command_name(self) -> str:
         """Return the executable name shown in generated config commands."""
         return self.command_name or self.app_name
-
-    def apprc_toml_env_key(self) -> str:
-        """Return the env var that selects the AppRC TOML path."""
-        return apprc_toml_env_key(self.app_name)
-
-    def apprc_toml_path(
-        self,
-        proc_env: Mapping[str, str] | None = None,
-    ) -> Path:
-        """Return the configured multi-storage AppRC TOML path.
-
-        :param proc_env: Optional environment mapping for tests.
-        :return: ``<APP>_APPRC_TOML`` when set.
-        :raises ApprcTomlEnvError: If the AppRC TOML env var is missing.
-        """
-        return required_apprc_toml_path(
-            app_name=self.app_name,
-            apprc_toml_filename=self.apprc_toml_filename,
-            proc_env=proc_env,
-        )
-
-    def optional_apprc_toml_path(
-        self,
-        proc_env: Mapping[str, str] | None = None,
-    ) -> Path | None:
-        """Return the env-selected multi-storage registry path when set.
-
-        :param proc_env: Optional environment mapping for tests.
-        :return: ``<APP>_APPRC_TOML`` path, or ``None``.
-        """
-        return optional_apprc_toml_path(
-            app_name=self.app_name,
-            proc_env=proc_env,
-        )
 
     def env_bootstrap_spec(self) -> EnvBootstrapSpec:
         """Return the narrower dotenv bootstrap contract."""

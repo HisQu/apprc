@@ -74,7 +74,6 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         self.registry: StorageRegistry | None = None
         self.existing_action: setup_flow.ExistingSetupAction | None = None
         self.result: setup_flow.ConfigSetupResult | None = None
-        self.pending_multi_storage_root: Path | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the setup wizard shell.
@@ -104,14 +103,6 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         if button_id == "setup-start":
             self.run_worker(self._start_setup(), exclusive=True)
             return
-        if button_id in {"existing-keep", "existing-reset", "existing-move"}:
-            action = setup_flow.ExistingSetupAction(
-                str(button_id).removeprefix("existing-")
-            )
-            self.run_worker(
-                self._handle_existing_registry(action),
-                exclusive=True,
-            )
 
     async def _show_overview(self) -> None:
         """Render the first setup screen."""
@@ -156,33 +147,37 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             await self._finish_setup(result)
             return
 
-        self.pending_multi_storage_root = root_result
         existing_path = setup_flow.find_existing_apprc_toml_path(self.kit)
         if existing_path is None:
             registry = await self._choose_new_registry()
             if registry is not None:
-                await self._finish_multi_storage_setup(registry)
+                await self._finish_multi_storage_setup(registry, root_result)
             return
         try:
-            registry = setup_flow.load_registry(self.kit, existing_path)
+            registry = setup_flow.load_setup_registry(existing_path)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
-        self.registry = registry
         default_action = setup_flow.default_existing_setup_action()
-        await self._show_existing_registry(registry, default_action)
+        action = await self._choose_existing_registry_action(
+            registry,
+            default_action,
+        )
+        if action is not None:
+            await self._handle_existing_registry(action, registry, root_result)
 
-    async def _show_existing_registry(
+    async def _choose_existing_registry_action(
         self,
         registry: StorageRegistry,
         default_action: setup_flow.ExistingSetupAction,
-    ) -> None:
-        """Render existing-registry choices.
+    ) -> setup_flow.ExistingSetupAction | None:
+        """Prompt for the action to apply to an existing registry.
 
         :param registry: Registry discovered by setup.
         :param default_action: Action that mirrors legacy setup defaults.
+        :return: Selected action, or ``None`` when canceled.
         """
-        buttons: list[tuple[str, str, ButtonVariant]] = []
+        actions: list[tuple[str, str, ButtonVariant]] = []
         labels = {
             setup_flow.ExistingSetupAction.KEEP: "Keep",
             setup_flow.ExistingSetupAction.RESET: "Reset",
@@ -192,37 +187,45 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             variant: ButtonVariant = (
                 "primary" if action == default_action else "default"
             )
-            buttons.append(
+            actions.append(
                 (f"existing-{action.value}", labels[action], variant)
             )
-        buttons.append(("setup-cancel", "Cancel", "default"))
-        await self._set_screen(
-            title="Existing setup",
-            body=self._style_registry_text(
-                setup_text.existing_registry_text(self.kit, registry),
-                registry,
-            ),
-            buttons=tuple(buttons),
+        selected = await self.push_screen_wait(
+            ConfirmScreen(
+                title="Existing setup",
+                message=self._style_registry_text(
+                    setup_text.existing_registry_text(self.kit, registry),
+                    registry,
+                ),
+                actions=tuple(actions),
+            )
+        )
+        if selected is None:
+            return None
+        return setup_flow.ExistingSetupAction(
+            str(selected).removeprefix("existing-")
         )
 
     async def _handle_existing_registry(
         self,
         action: setup_flow.ExistingSetupAction,
+        registry: StorageRegistry,
+        storage_root: Path,
     ) -> None:
         """Apply one existing-registry action.
 
         :param action: User-selected existing setup behavior.
+        :param registry: Registry discovered by setup.
+        :param storage_root: Active storage root selected earlier in setup.
         """
-        registry = self.registry
-        if registry is None:
-            return
+        self.registry = registry
         self.existing_action = action
         try:
             if action == setup_flow.ExistingSetupAction.KEEP:
                 setup_flow.require_apprc_toml_path_available(
                     registry.path,
                 )
-                await self._finish_multi_storage_setup(registry)
+                await self._finish_multi_storage_setup(registry, storage_root)
                 return
             if action == setup_flow.ExistingSetupAction.RESET:
                 confirmed = await self.push_screen_wait(
@@ -243,14 +246,17 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 setup_flow.remove_apprc_toml_config_state(registry.path)
                 fresh = await self._choose_new_registry()
                 if fresh is not None:
-                    await self._finish_multi_storage_setup(fresh)
+                    await self._finish_multi_storage_setup(
+                        fresh,
+                        storage_root,
+                    )
                 return
             moved = await self._move_existing_apprc_toml(registry)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
         if moved is not None:
-            await self._finish_multi_storage_setup(moved)
+            await self._finish_multi_storage_setup(moved, storage_root)
 
     async def _choose_new_registry(self) -> StorageRegistry | None:
         """Prompt for the AppRC directory and load the computed TOML file.
@@ -268,7 +274,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             apprc_dir,
         )
         try:
-            return setup_flow.load_registry(self.kit, apprc_toml_path)
+            return setup_flow.load_setup_registry(apprc_toml_path)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return None
@@ -369,20 +375,19 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
     async def _finish_multi_storage_setup(
         self,
         registry: StorageRegistry,
+        storage_root: Path,
     ) -> None:
-        """Register the pending active root in a multi-storage registry.
+        """Register the active root in a multi-storage registry.
 
         :param registry: Registry selected by setup.
+        :param storage_root: Active storage root selected earlier in setup.
         """
         self.registry = registry
-        root_result = self.pending_multi_storage_root
-        if root_result is None:
-            return
         name_result = await self._choose_storage_name(registry)
         if name_result is None:
             return
         guarded_root = await self._guard_storage_root(
-            root_result,
+            storage_root,
             storage_name=name_result,
         )
         if guarded_root is None:

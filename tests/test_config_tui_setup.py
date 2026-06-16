@@ -116,10 +116,10 @@ async def test_config_setup_wizard_shows_existing_registry_actions(
         await pilot.pause()
         setup_app.screen.query_one("#multi", Button).press()
         await pilot.pause()
-        body = setup_app.query_one("#setup-body", Static).content
-        keep_button = setup_app.query_one("#existing-keep", Button)
-        reset_button = setup_app.query_one("#existing-reset", Button)
-        move_button = setup_app.query_one("#existing-move", Button)
+        body = setup_app.screen.query_one("#confirm-message", Static).content
+        keep_button = setup_app.screen.query_one("#existing-keep", Button)
+        reset_button = setup_app.screen.query_one("#existing-reset", Button)
+        move_button = setup_app.screen.query_one("#existing-move", Button)
         keep_disabled = keep_button.disabled
         reset_disabled = reset_button.disabled
         move_disabled = move_button.disabled

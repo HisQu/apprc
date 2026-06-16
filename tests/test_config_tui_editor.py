@@ -24,6 +24,7 @@ from apprc.config.tui.styles import (
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     build_apprc_example_app_kit,
+    create_empty_apprc_example_app_registry,
     set_apprc_example_app_apprc_toml,
 )
 from tests.support_tui import (
@@ -63,7 +64,7 @@ async def test_editor_launches_with_empty_registry_and_new_storage_button(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    create_empty_apprc_example_app_registry(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     editor = kit.editor_app(registry=kit.load_registry())
 
@@ -87,11 +88,11 @@ async def test_editor_launches_with_active_path_without_registry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "active"
     editor = kit.editor_app(
-        registry=kit.load_registry(),
+        registry=None,
         active_storage_root=storage_root,
     )
 
@@ -108,7 +109,7 @@ async def test_editor_launches_with_active_path_without_registry(
     assert "Active storage" in str(title)
     assert str(storage_root.resolve()) in str(title)
     assert table.disabled is False
-    assert register_button.disabled is False
+    assert register_button.disabled is True
     assert "APPRC_EXAMPLE_APP_STORAGE" not in row_keys
     assert (storage_root / ".env.apprc_example_app").is_file()
 
@@ -155,7 +156,7 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    create_empty_apprc_example_app_registry(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     editor = kit.editor_app(registry=kit.load_registry())
     storage_root = tmp_path / "alpha"
@@ -275,7 +276,7 @@ async def test_editor_registers_active_storage_from_button_flow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    create_empty_apprc_example_app_registry(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "active"
     storage_root.mkdir()

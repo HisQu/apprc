@@ -17,7 +17,7 @@ from apprc.config.storage.registry import (
     StorageRecord,
     StorageRegistry,
     app_data_dir,
-    load_storage_registry,
+    load_storage_registry_or_empty,
     ordered_storage_names,
     prune_missing_archived_storages,
     record_archived_storage,

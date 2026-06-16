@@ -17,6 +17,7 @@ from apprc.config.paths import StorageRootPathError, normalize_storage_root_path
 import apprc.config.setup.text as setup_text
 from apprc.config.storage.registry import (
     StorageRegistry,
+    load_storage_registry_or_empty,
 )
 from apprc.config.storage.selector import resolve_env_storage_root_path
 
@@ -128,20 +129,20 @@ def prepare_setup_registry(
     )
     if existing_path is None:
         require_apprc_toml_path_available(target_path)
-        return PreparedSetupRegistry(registry=load_registry(kit, target_path))
+        return PreparedSetupRegistry(registry=load_setup_registry(target_path))
 
     action = existing_action or default_existing_setup_action()
     if action == ExistingSetupAction.KEEP:
         require_apprc_toml_path_available(existing_path)
         return PreparedSetupRegistry(
-            registry=load_registry(kit, existing_path),
+            registry=load_setup_registry(existing_path),
             existing_action=action,
         )
     if action == ExistingSetupAction.RESET:
         remove_apprc_toml_config_state(existing_path)
         require_apprc_toml_path_available(target_path)
         return PreparedSetupRegistry(
-            registry=load_registry(kit, target_path),
+            registry=load_setup_registry(target_path),
             existing_action=action,
         )
 
@@ -465,7 +466,7 @@ def move_existing_apprc_toml(
     source = normalized_apprc_toml_path(source_path)
     target = normalized_apprc_toml_path(target_path)
     if same_path(source, target):
-        return load_registry(kit, target)
+        return load_setup_registry(target)
     if target.exists():
         if target.is_dir():
             raise ConfigSetupError(
@@ -480,22 +481,20 @@ def move_existing_apprc_toml(
         target.unlink()
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source), str(target))
-    return load_registry(kit, target)
+    return load_setup_registry(target)
 
 
-def load_registry(
-    kit: "AppConfigKit",
+def load_setup_registry(
     registry_path: Path,
 ) -> StorageRegistry:
     """Load a registry and convert parse failures to setup errors.
 
-    :param kit: Application config facade.
     :param registry_path: AppRC TOML path to load.
     :return: Parsed or empty registry.
     :raises ConfigSetupError: If the registry cannot be parsed.
     """
     try:
-        return kit.load_registry(path=registry_path)
+        return load_storage_registry_or_empty(registry_path)
     except ValueError as exc:
         raise ConfigSetupError(
             str(exc),

@@ -23,15 +23,7 @@ from apprc.config.environment import (
     EnvBootstrapResult,
     bootstrap_env,
 )
-from apprc.config.registry_env import (
-    RegistryEnvError,
-    missing_registry_file_message,
-)
 from apprc.config.schema import ConfigOwner
-from apprc.config.storage.registry import (
-    StorageRegistry,
-    load_storage_registry_or_empty,
-)
 
 StateT = TypeVar("StateT")
 
@@ -150,35 +142,6 @@ class AppConfigKit:
             storage=storage,
             logger=logger,
         )
-
-    def load_required_registry(self) -> StorageRegistry:
-        """Read this application's required multi-storage registry.
-
-        :return: Parsed storage registry.
-        :raises RegistryEnvError: If the registry env var is missing or points at
-            a missing file.
-        :raises ValueError: If the registry cannot be parsed.
-        """
-        resolved_path = self.spec.required_apprc_toml_path()
-        if not resolved_path.is_file():
-            message = missing_registry_file_message(
-                apprc_toml_env_key=self.spec.apprc_toml_env_key,
-                command_name=self.spec.config_command_name(),
-                path=resolved_path,
-            )
-            raise RegistryEnvError(message)
-        return load_storage_registry_or_empty(resolved_path)
-
-    def load_optional_registry(self) -> StorageRegistry | None:
-        """Read the registry only when ``<APP>_APPRC_TOML`` is set.
-
-        :return: Parsed storage registry, or ``None`` in single-storage mode.
-        :raises RegistryEnvError: If the registry env var points at a missing file.
-        :raises ValueError: If the registry cannot be parsed.
-        """
-        if self.spec.optional_apprc_toml_path() is None:
-            return None
-        return self.load_required_registry()
 
     def typer_app(
         self,

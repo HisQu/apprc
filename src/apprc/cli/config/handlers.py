@@ -28,6 +28,11 @@ from apprc.config.kit import AppConfigKit
 from apprc.config.local_env import set_local_env_value
 from apprc.config.paths import StorageRootPathError
 from apprc.config.registry_env import RegistryEnvError
+from apprc.config.registry_loading import (
+    load_existing_registry,
+    load_optional_runtime_registry,
+    registry_path_for_create,
+)
 import apprc.config.setup.flow as setup_flow
 from apprc.config.storage.registry import StorageRegistry, register_storage
 from apprc.config.storage.selector import StorageSelectorError
@@ -145,7 +150,7 @@ class ConfigCommandHandlers:
     ) -> None:
         """Register one storage root and create its local env file."""
         try:
-            registry_path = self.kit.spec.required_apprc_toml_path()
+            registry_path = registry_path_for_create(self.kit.spec)
         except RegistryEnvError as exc:
             raise self._registry_bad_parameter(exc) from exc
         normalized_root = guard_storage_root_init(
@@ -291,14 +296,14 @@ class ConfigCommandHandlers:
     def required_registry(self) -> StorageRegistry:
         """Return the registry required by registry-only CLI commands."""
         try:
-            return self.kit.load_required_registry()
+            return load_existing_registry(self.kit.spec)
         except (RegistryEnvError, ValueError) as exc:
             raise self._registry_bad_parameter(exc) from exc
 
     def optional_registry(self) -> StorageRegistry | None:
         """Return the registry only when multi-storage is enabled."""
         try:
-            return self.kit.load_optional_registry()
+            return load_optional_runtime_registry(self.kit.spec)
         except (RegistryEnvError, ValueError) as exc:
             raise self._registry_bad_parameter(exc) from exc
 

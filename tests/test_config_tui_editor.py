@@ -8,6 +8,7 @@ from rich.text import Text
 from textual.containers import VerticalScroll
 from textual.widgets import Button, DataTable, Input, ListView, Static
 
+from apprc.config.registry_loading import load_existing_registry
 from apprc.config.tui import ConfigEditorApp
 from apprc.config.tui.modals import ArchiveOptionsScreen
 from apprc.config.tui.styles import (
@@ -70,7 +71,7 @@ async def test_editor_launches_with_empty_registry_and_new_storage_button(
 ) -> None:
     create_empty_apprc_example_app_registry(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    editor = ConfigEditorApp(kit=kit, registry=kit.load_required_registry())
+    editor = ConfigEditorApp(kit=kit, registry=load_existing_registry(kit.spec))
 
     async with editor.run_test():
         title = editor.query_one("#storage-title", Static).content
@@ -164,7 +165,7 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
 ) -> None:
     create_empty_apprc_example_app_registry(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    editor = ConfigEditorApp(kit=kit, registry=kit.load_required_registry())
+    editor = ConfigEditorApp(kit=kit, registry=load_existing_registry(kit.spec))
     storage_root = tmp_path / "alpha"
 
     async with editor.run_test() as pilot:
@@ -180,7 +181,7 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
         editor.screen.query_one("#name-continue", Button).press()
         await worker.wait()
 
-    registry = kit.load_required_registry()
+    registry = load_existing_registry(kit.spec)
     assert registry.selected("alpha").root == storage_root.resolve()
     assert (storage_root / ".env.apprc_example_app").is_file()
 
@@ -216,7 +217,7 @@ async def test_editor_unregisters_missing_storage(
         await pilot.pause()
         await worker.wait()
 
-    registry = kit.load_required_registry()
+    registry = load_existing_registry(kit.spec)
     assert sorted(registry.storages) == ["beta"]
     assert registry.selected("beta").root == beta_root.resolve()
     assert not alpha_root.exists()
@@ -244,7 +245,7 @@ async def test_editor_unregisters_live_storage(
             delete_content=False,
         )
 
-    registry = kit.load_required_registry()
+    registry = load_existing_registry(kit.spec)
     assert removed is True
     assert sorted(registry.storages) == ["beta"]
     assert (tmp_path / "alpha").is_dir()
@@ -276,7 +277,7 @@ async def test_editor_unregisters_live_storage_without_replacement_prompt(
             delete_content=False,
         )
 
-    registry = kit.load_required_registry()
+    registry = load_existing_registry(kit.spec)
     assert removed is True
     assert sorted(registry.storages) == ["beta", "gamma"]
     assert registry.selected("gamma").root == gamma_root.resolve()
@@ -293,7 +294,7 @@ async def test_editor_registers_active_storage_from_button_flow(
     storage_root.mkdir()
     editor = ConfigEditorApp(
         kit=kit,
-        registry=kit.load_required_registry(),
+        registry=load_existing_registry(kit.spec),
         active_storage_root=storage_root,
     )
 
@@ -310,7 +311,7 @@ async def test_editor_registers_active_storage_from_button_flow(
         await pilot.pause()
         await worker.wait()
 
-    registry = kit.load_required_registry()
+    registry = load_existing_registry(kit.spec)
     assert sorted(registry.storages) == ["active"]
     assert registry.selected("active").root == storage_root.resolve()
 
@@ -338,7 +339,7 @@ async def test_editor_shows_and_prunes_stale_archived_rows(
             "alpha"
         )
 
-    assert kit.load_required_registry().archived_storages == {}
+    assert load_existing_registry(kit.spec).archived_storages == {}
 
 
 @pytest.mark.allow_missing_apprc_env

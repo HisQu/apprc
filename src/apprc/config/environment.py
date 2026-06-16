@@ -28,14 +28,7 @@ from dotenv import dotenv_values
 
 # == Internal ================================
 from apprc.config.app_spec import AppConfigSpec
-from apprc.config.registry_env import (
-    RegistryEnvError,
-    missing_registry_file_message,
-)
-from apprc.config.storage.registry import (
-    StorageRegistry,
-    load_storage_registry_or_empty,
-)
+from apprc.config.registry_loading import load_optional_runtime_registry
 from apprc.config.storage.selector import (
     missing_storage_selector_error,
     resolve_storage_selector_value,
@@ -133,7 +126,7 @@ def bootstrap_env(
     )
     if storage_selector is None:
         raise missing_storage_selector_error(spec.storage_env_key)
-    registry = _load_optional_registry(spec)
+    registry = load_optional_runtime_registry(spec)
     selector_source, selector_value = storage_selector
     selection = resolve_storage_selector_value(
         registry=registry,
@@ -176,22 +169,6 @@ def bootstrap_env(
         storage_root=active_storage_root,
         storage_count=len(registry.storages) if registry is not None else 0,
     )
-
-
-def _load_optional_registry(spec: AppConfigSpec) -> StorageRegistry | None:
-    """Load the multi-storage registry when the optional selector is set."""
-    active_path = spec.optional_apprc_toml_path()
-    if active_path is None:
-        return None
-    if not active_path.is_file():
-        raise RegistryEnvError(
-            missing_registry_file_message(
-                apprc_toml_env_key=spec.apprc_toml_env_key,
-                command_name=spec.config_command_name(),
-                path=active_path,
-            )
-        )
-    return load_storage_registry_or_empty(active_path)
 
 
 def _shared_env_resource(spec: AppConfigSpec) -> Traversable:

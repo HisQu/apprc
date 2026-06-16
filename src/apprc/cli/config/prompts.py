@@ -14,6 +14,7 @@ import typer
 
 # == Internal ================================
 from apprc.config.kit import AppConfigKit
+from apprc.config.registry_loading import registry_path_for_create
 import apprc.config.setup.flow as setup_flow
 
 
@@ -60,7 +61,7 @@ def confirm_existing_storage_root(
     )
     managed_files.add_row(
         "registry file",
-        str(kit.spec.required_apprc_toml_path()),
+        str(registry_path_for_create(kit.spec)),
     )
 
     panel_lines: list[RenderableType] = [

@@ -17,10 +17,10 @@ from apprc.config.paths import (
     normalize_apprc_toml_path,
     normalize_storage_root_path,
 )
+from apprc.config.registry_loading import load_create_or_empty_registry
 import apprc.config.setup.text as setup_text
 from apprc.config.storage.registry import (
     StorageRegistry,
-    load_storage_registry_or_empty,
     register_storage,
     suggested_storage_name,
 )
@@ -492,7 +492,7 @@ def load_setup_registry(
     :raises ConfigSetupError: If the registry cannot be parsed.
     """
     try:
-        return load_storage_registry_or_empty(registry_path)
+        return load_create_or_empty_registry(registry_path)
     except ValueError as exc:
         raise ConfigSetupError(
             str(exc),

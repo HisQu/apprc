@@ -10,10 +10,8 @@ from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
 from apprc.config.doctor_status import ConfigDoctorStatus
-from apprc.config.storage.registry import (
-    StorageRegistry,
-    load_storage_registry_or_empty,
-)
+from apprc.config.registry_loading import RegistryInspection, inspect_registry
+from apprc.config.storage.registry import StorageRegistry
 from apprc.config.storage.selector import (
     StorageSelection,
     StorageSelectorError,
@@ -45,26 +43,6 @@ class ConfigDoctorPayload(TypedDict):
     missing_env_keys: list[str]
     issues: list[str]
     next_steps: list[str]
-
-
-@dataclass(frozen=True, slots=True)
-class _RegistryDiagnosis:
-    """Registry state discovered for one doctor run."""
-
-    path: Path | None
-    env_value: str | None
-    exists: bool
-    error: str | None
-    registry: StorageRegistry | None
-    storage_count: int
-    issues: list[str]
-
-    @property
-    def parse_ok(self) -> bool:
-        """Return whether the optional registry is absent or parseable."""
-        if self.path is None:
-            return True
-        return self.exists and self.error is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,7 +99,7 @@ def build_config_doctor_payload(
     :param storage: Optional selector passed by ``--storage``.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    registry_diagnosis = _diagnose_registry(kit)
+    registry_diagnosis = inspect_registry(kit.spec)
     storage_diagnosis = _diagnose_storage(
         kit,
         registry=registry_diagnosis.registry,
@@ -144,7 +122,7 @@ def build_config_doctor_payload(
 def _doctor_payload(
     kit: "AppConfigKit",
     *,
-    registry: _RegistryDiagnosis,
+    registry: RegistryInspection,
     storage: _StorageDiagnosis,
     status: ConfigDoctorStatus,
     issues: list[str],
@@ -194,65 +172,6 @@ def _doctor_payload(
         "issues": issues,
         "next_steps": _doctor_next_steps(kit, status),
     }
-
-
-def _diagnose_registry(kit: "AppConfigKit") -> _RegistryDiagnosis:
-    """Return optional multi-storage registry state for diagnostics.
-
-    :param kit: Application config facade.
-    :return: Registry diagnosis with parse or missing-file issues.
-    """
-    raw_registry_env_value = os.environ.get(
-        kit.spec.apprc_toml_env_key,
-        "",
-    ).strip()
-    registry_path = kit.spec.optional_apprc_toml_path()
-    if registry_path is None:
-        return _RegistryDiagnosis(
-            path=None,
-            env_value=raw_registry_env_value or None,
-            exists=False,
-            error=None,
-            registry=None,
-            storage_count=0,
-            issues=[],
-        )
-
-    registry_exists = registry_path.is_file()
-    if not registry_exists:
-        return _RegistryDiagnosis(
-            path=registry_path,
-            env_value=raw_registry_env_value or None,
-            exists=False,
-            error=None,
-            registry=None,
-            storage_count=0,
-            issues=[f"Registry file does not exist: {registry_path}"],
-        )
-
-    try:
-        registry = load_storage_registry_or_empty(registry_path)
-    except ValueError as exc:
-        registry_error = str(exc)
-        return _RegistryDiagnosis(
-            path=registry_path,
-            env_value=raw_registry_env_value or None,
-            exists=True,
-            error=registry_error,
-            registry=None,
-            storage_count=0,
-            issues=[f"Registry file is invalid: {registry_error}"],
-        )
-
-    return _RegistryDiagnosis(
-        path=registry_path,
-        env_value=raw_registry_env_value or None,
-        exists=True,
-        error=None,
-        registry=registry,
-        storage_count=len(registry.storages),
-        issues=[],
-    )
 
 
 def _diagnose_storage(
@@ -320,7 +239,7 @@ def _diagnose_storage(
 
 def _doctor_status(
     *,
-    registry: _RegistryDiagnosis,
+    registry: RegistryInspection,
     storage: _StorageDiagnosis,
 ) -> ConfigDoctorStatus:
     """Return readiness status while keeping missing storage env decisive.

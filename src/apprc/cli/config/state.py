@@ -16,6 +16,7 @@ from apprc.cli.options import (
 from apprc.cli.typer_utils import args_after_command, strip_leading_options
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
+from apprc.config.registry_loading import load_optional_runtime_registry
 from apprc.config.storage.registry import StorageRegistry
 from apprc.config.storage.selector import resolve_active_storage_selection
 
@@ -81,7 +82,7 @@ def active_storage_root_from_state(
         return state.env_bootstrap.storage_root
     if not os.environ.get(kit.spec.storage_env_key, "").strip():
         return None
-    registry = kit.load_optional_registry()
+    registry = load_optional_runtime_registry(kit.spec)
     return active_storage_root_from_env(kit, registry=registry)
 
 

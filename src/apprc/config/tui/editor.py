@@ -255,16 +255,6 @@ class ConfigEditorApp(App[None]):
             return
         self._save_env_key(result.env_key, result.raw_value)
 
-    def _require_registry_actions(self) -> StorageRegistry | None:
-        """Return the registry only when mutation actions are available."""
-        if self.registry is None:
-            self.notify(
-                "Storage management requires an AppRC TOML.",
-                severity="error",
-            )
-            return None
-        return self.registry
-
     def _require_registry(self) -> StorageRegistry | None:
         """Return the registry required for registry-only editor actions."""
         if self.registry is None:

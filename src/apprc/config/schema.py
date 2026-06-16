@@ -32,7 +32,7 @@ from typed_settings.types import LoadedSettings, LoaderMeta
 CONFIG_MISSING: Final = object()
 
 
-@dataclass(frozen=True, slots=True, init=False)
+@dataclass(frozen=True, slots=True)
 class ConfigField:
     """Metadata for one env-backed runtime setting.
 
@@ -64,51 +64,6 @@ class ConfigField:
     required: bool = False
     choices: tuple[str, ...] = ()
 
-    def __init__(
-        self,
-        name: str,
-        env_var: str,
-        python_type: type[Any],
-        *,
-        default: Any = CONFIG_MISSING,
-        shared_default: Any = CONFIG_MISSING,
-        title: str = "",
-        explanation: str = "",
-        explanation_short: str = "",
-        explanation_long: str = "",
-        secret: bool = False,
-        editable: bool = True,
-        required: bool = False,
-        choices: tuple[str, ...] = (),
-    ) -> None:
-        """Store one field spec and normalize legacy explanation text."""
-        if explanation:
-            if not explanation_long:
-                explanation_long = explanation
-            if not explanation_short:
-                explanation_short = _first_sentence(explanation)
-        attrs = {
-            "name": name,
-            "env_var": env_var,
-            "python_type": python_type,
-            "default": default,
-            "shared_default": shared_default,
-            "title": title,
-            "explanation_short": explanation_short,
-            "explanation_long": explanation_long,
-            "secret": secret,
-            "editable": editable,
-            "required": required,
-            "choices": choices,
-        }
-        for attr_name, attr_value in attrs.items():
-            object.__setattr__(self, attr_name, attr_value)
-
-    @property
-    def explanation(self) -> str:
-        """Return the full explanation for older call sites."""
-        return self.explanation_long or self.explanation_short
-
     def shared_env_value(self) -> Any:
         """Return the expected packaged shared-env value."""
         if self.shared_default is not CONFIG_MISSING:
@@ -125,8 +80,6 @@ class ConfigOwner:
     :param env_prefix: Env key prefix for all owned fields.
     :param rc_path: Runtime config path components from the application root
         config object.
-    :param runtime_cls: Compatibility slot from older declaration APIs. AppRC
-        no longer reads this value.
     :param fields: Owner-local field specs.
     """
 
@@ -134,7 +87,6 @@ class ConfigOwner:
     title: str
     env_prefix: str
     rc_path: tuple[str, ...]
-    runtime_cls: type[Any] | None = None
     fields: tuple[ConfigField, ...] = ()
 
     def field(self, name: str) -> ConfigField:
@@ -224,7 +176,6 @@ def config_field(
     default: Any = CONFIG_MISSING,
     shared_default: Any = CONFIG_MISSING,
     title: str = "",
-    explanation: str = "",
     explanation_short: str = "",
     explanation_long: str = "",
     secret: bool = False,
@@ -240,7 +191,6 @@ def config_field(
         default=default,
         shared_default=shared_default,
         title=title,
-        explanation=explanation,
         explanation_short=explanation_short,
         explanation_long=explanation_long,
         secret=secret,
@@ -248,16 +198,6 @@ def config_field(
         required=required,
         choices=choices,
     )
-
-
-def _first_sentence(text: str) -> str:
-    """Return compact text for table display."""
-    normalized = " ".join(text.split())
-    for marker in (". ", "! ", "? "):
-        if marker in normalized:
-            end = normalized.index(marker) + 1
-            return normalized[:end]
-    return normalized
 
 
 def load_owner_from_sources(

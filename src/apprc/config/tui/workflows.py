@@ -66,7 +66,7 @@ class ConfigEditorStorageWorkflows:
 
     async def open_new_storage_flow(self) -> None:
         """Prompt for a new directory or archive path and register it."""
-        if self.editor._require_registry_actions() is None:
+        if self.editor._require_registry() is None:
             return
         result = await self.editor.push_screen_wait(
             PathInputScreen(
@@ -90,7 +90,7 @@ class ConfigEditorStorageWorkflows:
 
     async def register_active_storage_flow(self) -> None:
         """Register the env-selected active storage path by name."""
-        if self.editor._require_registry_actions() is None:
+        if self.editor._require_registry() is None:
             return
         root = self.editor.active_storage_root
         if root is None:
@@ -185,7 +185,7 @@ class ConfigEditorStorageWorkflows:
         :param storage_root: Directory selected by the user.
         :param default_name: Suggested registry selector.
         """
-        registry = self.editor._require_registry_actions()
+        registry = self.editor._require_registry()
         if registry is None:
             return
         guarded_root = await self.guard_storage_directory(storage_root)
@@ -354,7 +354,7 @@ class ConfigEditorStorageWorkflows:
 
     async def open_archive_storage_flow(self) -> None:
         """Prompt for archive options and compress the selected storage."""
-        registry = self.editor._require_registry_actions()
+        registry = self.editor._require_registry()
         if (
             registry is None
             or self.editor.current_storage_kind != "live"
@@ -415,7 +415,7 @@ class ConfigEditorStorageWorkflows:
         :param delete_content: Whether to delete the storage directory too.
         :return: Whether the removal completed.
         """
-        registry = self.editor._require_registry_actions()
+        registry = self.editor._require_registry()
         if registry is None:
             return False
         try:
@@ -447,7 +447,7 @@ class ConfigEditorStorageWorkflows:
 
         :param name: Archived storage selector.
         """
-        registry = self.editor._require_registry_actions()
+        registry = self.editor._require_registry()
         if registry is None:
             return
         record = registry.archived_storages.get(name)

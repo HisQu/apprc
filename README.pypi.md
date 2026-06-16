@@ -190,7 +190,7 @@ APP_OWNER = ConfigOwner(
             str,
             default="default",
             title="Profile",
-            explanation="Named profile used by the application.",
+            explanation_short="Named profile used by the application.",
         ),
     ),
 )
@@ -338,16 +338,17 @@ selector as a path. When it is set, AppRC runs in multi-storage mode and uses
 the TOML as a registry for named storage roots, archive metadata, and register
 active workflows.
 
-Installation state is explicit:
+Doctor status is explicit:
 
 | State | Meaning |
 |---|---|
 | `env_not_set` | `<APP>_STORAGE` is missing. |
-| `not_installed` | `<APP>_APPRC_TOML` is set for multi-storage mode but points to a missing file. |
-| `installed_unhealthy` | The selected storage root or local env file is missing, the AppRC TOML is invalid, or a multi-storage selector cannot be resolved. |
-| `installed_healthy` | `<APP>_STORAGE` resolves to an existing storage root with a local env file; the AppRC TOML is either unset or valid. |
+| `registry_not_ready` | `<APP>_APPRC_TOML` is set for multi-storage mode but points to a missing or invalid file. |
+| `storage_not_ready` | The selected storage root or local env file is missing, or a multi-storage selector cannot be resolved. |
+| `runnable` | `<APP>_STORAGE` resolves to an existing storage root with a local env file; the AppRC TOML is either unset or valid. |
 
-In `config doctor --json`, `ok` is true only for `installed_healthy`.
+In `config doctor --json`, the `runnable` boolean is true only when `status`
+is `runnable`.
 
 For example:
 
@@ -546,7 +547,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `AppConfigSpec` | Frozen declaration behind the kit. |
 | `ConfigOwner` | One config section, env prefix, runtime path, and fields. |
 | `ConfigField` | One editable or read-only env-backed setting. |
-| `ConfigInstallState` | `env_not_set`, `not_installed`, `installed_unhealthy`, or `installed_healthy`. |
+| `ConfigDoctorStatus` | `env_not_set`, `registry_not_ready`, `storage_not_ready`, or `runnable`. |
 | `BaseEnv` | Runtime dataclass base that binds values from env. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
 | `StorageRegistry` | Parsed TOML registry. |

@@ -8,7 +8,7 @@ from rich.text import Text
 
 # == Internal ================================
 from apprc.config.diagnostics import ConfigDoctorPayload
-from apprc.config.install_state import ConfigInstallState
+from apprc.config.doctor_status import ConfigDoctorStatus
 from apprc.config.kit import AppConfigKit
 from apprc.config.tui.styles import (
     DEFAULT_STYLE,
@@ -121,21 +121,21 @@ def _doctor_status_text(
     :return: Rich text status line.
     """
     status_labels = {
-        ConfigInstallState.ENV_NOT_SET.value: ("env not set", MISSING_STYLE),
-        ConfigInstallState.NOT_INSTALLED.value: (
-            "not installed",
+        ConfigDoctorStatus.ENV_NOT_SET.value: ("env not set", MISSING_STYLE),
+        ConfigDoctorStatus.REGISTRY_NOT_READY.value: (
+            "registry not ready",
             MISSING_STYLE,
         ),
-        ConfigInstallState.INSTALLED_UNHEALTHY.value: (
-            "installed but unhealthy",
+        ConfigDoctorStatus.STORAGE_NOT_READY.value: (
+            "storage not ready",
             ERROR_STYLE,
         ),
-        ConfigInstallState.INSTALLED_HEALTHY.value: (
-            "installed and healthy",
+        ConfigDoctorStatus.RUNNABLE.value: (
+            "runnable",
             DEFAULT_STYLE,
         ),
     }
-    label, style = status_labels[str(payload["install_state"])]
+    label, style = status_labels[str(payload["status"])]
     return Text.assemble(
         (f"{kit.spec.display_name} config doctor", "bold"),
         ": ",

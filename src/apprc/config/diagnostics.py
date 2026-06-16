@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
-from apprc.config.install_state import ConfigInstallState
+from apprc.config.doctor_status import ConfigDoctorStatus
 from apprc.config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 class ConfigDoctorPayload(TypedDict):
     """Machine-readable diagnostics emitted by ``config doctor``."""
 
-    ok: bool
-    install_state: str
+    runnable: bool
+    status: str
     apprc_toml_env_key: str
     apprc_toml_env_value: str | None
     apprc_toml_path: str | None
@@ -138,16 +138,15 @@ def build_config_doctor_payload(
         storage_root=storage_root,
     )
     issues = [*registry_diagnosis.issues, *storage_diagnosis.issues]
-    install_state = _install_state(
+    status = _doctor_status(
         registry=registry_diagnosis,
         storage=storage_diagnosis,
-        issues=issues,
     )
     return _doctor_payload(
         kit,
         registry=registry_diagnosis,
         storage=storage_diagnosis,
-        install_state=install_state,
+        status=status,
         issues=issues,
     )
 
@@ -157,7 +156,7 @@ def _doctor_payload(
     *,
     registry: _RegistryDiagnosis,
     storage: _StorageDiagnosis,
-    install_state: ConfigInstallState,
+    status: ConfigDoctorStatus,
     issues: list[str],
 ) -> ConfigDoctorPayload:
     """Serialize diagnosis objects into the public doctor payload.
@@ -165,16 +164,16 @@ def _doctor_payload(
     :param kit: Application config facade.
     :param registry: Optional registry diagnosis.
     :param storage: Active storage diagnosis.
-    :param install_state: Public install-state enum.
+    :param status: Public readiness status.
     :param issues: All collected issues.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    ok = install_state == ConfigInstallState.INSTALLED_HEALTHY
+    runnable = status == ConfigDoctorStatus.RUNNABLE
     selection = storage.selection
     selected_storage_root = selection.root if selection is not None else None
     return {
-        "ok": ok,
-        "install_state": install_state.value,
+        "runnable": runnable,
+        "status": status.value,
         "apprc_toml_env_key": kit.spec.apprc_toml_env_key(),
         "apprc_toml_env_value": registry.toml_env_value,
         "apprc_toml_path": (
@@ -360,26 +359,24 @@ def _diagnose_storage(
     )
 
 
-def _install_state(
+def _doctor_status(
     *,
     registry: _RegistryDiagnosis,
     storage: _StorageDiagnosis,
-    issues: list[str],
-) -> ConfigInstallState:
-    """Return the setup state while keeping missing storage env decisive.
+) -> ConfigDoctorStatus:
+    """Return readiness status while keeping missing storage env decisive.
 
     :param registry: Optional registry diagnosis.
     :param storage: Active storage diagnosis.
-    :param issues: All collected issues.
-    :return: Public install-state enum.
+    :return: Public doctor status.
     """
     if storage.missing_env_keys:
-        return ConfigInstallState.ENV_NOT_SET
-    if registry.active_toml_path is not None and not registry.toml_exists:
-        return ConfigInstallState.NOT_INSTALLED
-    if not issues:
-        return ConfigInstallState.INSTALLED_HEALTHY
-    return ConfigInstallState.INSTALLED_UNHEALTHY
+        return ConfigDoctorStatus.ENV_NOT_SET
+    if registry.issues:
+        return ConfigDoctorStatus.REGISTRY_NOT_READY
+    if storage.issues:
+        return ConfigDoctorStatus.STORAGE_NOT_READY
+    return ConfigDoctorStatus.RUNNABLE
 
 
 def _missing_env_issue(

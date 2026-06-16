@@ -111,8 +111,8 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
 
     async def _show_overview(self) -> None:
         """Render the first setup screen."""
-        paths = setup_text.setup_paths(self.kit)
-        active_paths = () if paths.active is None else (paths.active,)
+        active_apprc_toml = self.kit.spec.optional_apprc_toml_path()
+        active_paths = () if active_apprc_toml is None else (active_apprc_toml,)
         await self._set_screen(
             title=f"{self.kit.spec.display_name} config setup",
             body=self._style_setup_text(
@@ -163,10 +163,9 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
-        default_action = setup_flow.default_existing_setup_action()
         action = await self._choose_existing_registry_action(
             registry,
-            default_action,
+            setup_flow.ExistingSetupAction.KEEP,
         )
         if action is not None:
             await self._handle_existing_registry(action, registry, root_result)
@@ -179,7 +178,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         """Prompt for the action to apply to an existing registry.
 
         :param registry: Registry discovered by setup.
-        :param default_action: Action that mirrors legacy setup defaults.
+        :param default_action: Action highlighted for the first prompt.
         :return: Selected action, or ``None`` when canceled.
         """
         actions: list[tuple[str, str, ButtonVariant]] = []

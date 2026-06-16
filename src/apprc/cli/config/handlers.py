@@ -132,7 +132,7 @@ class ConfigCommandHandlers:
             dump_json(payload)
         else:
             print_config_doctor(self.kit, payload)
-        if not payload["ok"]:
+        if not payload["runnable"]:
             raise typer.Exit(code=1)
 
     def init(

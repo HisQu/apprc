@@ -27,7 +27,7 @@ from apprc.config.environment import (
     EnvBootstrapResult,
     bootstrap_env,
 )
-from apprc.config.install_state import ConfigInstallState
+from apprc.config.doctor_status import ConfigDoctorStatus
 from apprc.config.kit import AppConfigKit
 from apprc.config.local_env import (
     LocalEnvUpdate,

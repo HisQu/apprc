@@ -8,7 +8,7 @@ from apprc.config import (
     BaseConfig,
     BaseEnv,
     ConfigField,
-    ConfigInstallState,
+    ConfigDoctorStatus,
     ConfigOwner,
 )
 from apprc.logging import (

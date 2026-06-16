@@ -130,7 +130,7 @@ def _print_setup_finish(
     )
     console = Console(soft_wrap=True)
     console.print(_style_setup_finish_text(kit, result))
-    if not payload["ok"]:
+    if not payload["runnable"]:
         typer.echo("")
         print_config_doctor(kit, payload)
         raise typer.Exit(code=1)
@@ -154,7 +154,7 @@ def _raise_if_doctor_failed(
             result.registry.path if result.registry is not None else None
         ),
     )
-    if not payload["ok"]:
+    if not payload["runnable"]:
         raise typer.Exit(code=1)
 
 

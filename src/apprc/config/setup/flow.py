@@ -96,14 +96,6 @@ def find_existing_apprc_toml_path(kit: "AppConfigKit") -> Path | None:
     return None
 
 
-def default_existing_setup_action() -> ExistingSetupAction:
-    """Return the safest existing-registry action for default setup.
-
-    :return: ``KEEP`` because setup no longer has an automatic move target.
-    """
-    return ExistingSetupAction.KEEP
-
-
 def prepare_setup_registry(
     kit: "AppConfigKit",
     *,
@@ -133,7 +125,7 @@ def prepare_setup_registry(
         require_apprc_toml_path_available(target_path)
         return PreparedSetupRegistry(registry=load_setup_registry(target_path))
 
-    action = existing_action or default_existing_setup_action()
+    action = existing_action or ExistingSetupAction.KEEP
     if action == ExistingSetupAction.KEEP:
         require_apprc_toml_path_available(existing_path)
         return PreparedSetupRegistry(

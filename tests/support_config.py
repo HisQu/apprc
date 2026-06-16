@@ -45,7 +45,8 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             str,
             default="default",
             title="Profile",
-            explanation=(
+            explanation_short="Named profile used by the example app.",
+            explanation_long=(
                 "Named profile used by the example app. Longer context "
                 "appears in the modal editor."
             ),
@@ -56,7 +57,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             str,
             default="AUTO",
             title="Mode",
-            explanation="Operating mode used by Example App commands.",
+            explanation_short="Operating mode used by Example App commands.",
             choices=("AUTO", "MANUAL"),
         ),
         config_field(
@@ -65,7 +66,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             bool,
             default=True,
             title="Enabled",
-            explanation="Turns the example app on or off.",
+            explanation_short="Turns the example app on or off.",
         ),
         config_field(
             "retry_count",
@@ -73,7 +74,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             int,
             default=3,
             title="Retry count",
-            explanation="Maximum number of retry attempts.",
+            explanation_short="Maximum number of retry attempts.",
         ),
         config_field(
             "cache_dir",
@@ -81,7 +82,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             Path,
             default=Path("cache"),
             title="Cache directory",
-            explanation="Storage-local cache path.",
+            explanation_short="Storage-local cache path.",
         ),
         config_field(
             "access_token",

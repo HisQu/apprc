@@ -4,39 +4,15 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 # == Internal ================================
+from apprc.config.apprc_toml import normalized_apprc_toml_path
 from apprc.config.storage.registry import StorageRegistry, ordered_storage_names
 
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit
-
-
-@dataclass(frozen=True, slots=True)
-class ConfigSetupPaths:
-    """Important AppRC TOML paths shown during setup.
-
-    :param active: AppRC TOML path selected by the environment.
-    :param env_key: Environment variable that selects the AppRC TOML path.
-    """
-
-    active: Path | None
-    env_key: str
-
-
-def setup_paths(kit: "AppConfigKit") -> ConfigSetupPaths:
-    """Return the AppRC TOML paths and override variable used by setup.
-
-    :param kit: Application config facade.
-    :return: Paths and env var displayed by setup UIs.
-    """
-    return ConfigSetupPaths(
-        active=kit.spec.optional_apprc_toml_path(),
-        env_key=kit.spec.apprc_toml_env_key(),
-    )
 
 
 def setup_overview_text(kit: "AppConfigKit") -> str:
@@ -45,18 +21,21 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     :param kit: Application config facade.
     :return: Host-app-specific setup explanation.
     """
-    paths = setup_paths(kit)
-    active_text = str(paths.active) if paths.active is not None else "<not set>"
+    apprc_toml_path = kit.spec.optional_apprc_toml_path()
+    apprc_toml_text = (
+        str(apprc_toml_path) if apprc_toml_path is not None else "<not set>"
+    )
     return (
         f"{kit.spec.display_name} needs one active storage root selected by "
         f"{kit.spec.storage_env_key}. Optional multi-storage management adds "
         "one small AppRC TOML to remember named storage roots. The AppRC TOML "
         "does not contain storage data.\n\n"
-        f"{paths.env_key} is optional. When it is set, AppRC uses it for "
-        "registry-backed listing, switching, archiving, and restoring.\n\n"
+        f"{kit.spec.apprc_toml_env_key()} is optional. When it is set, AppRC "
+        "uses it for registry-backed listing, switching, archiving, and "
+        "restoring.\n\n"
         "Setup starts by choosing the active storage root, then asks whether "
         "to enable multi-storage.\n\n"
-        f"Current AppRC TOML value:\n{active_text}"
+        f"Current AppRC TOML value:\n{apprc_toml_text}"
     )
 
 
@@ -215,21 +194,6 @@ def storage_root_reuse_text(
     )
 
 
-def next_steps_text(
-    kit: "AppConfigKit",
-    registry: StorageRegistry | None,
-    active_storage_root: Path,
-) -> str:
-    """Return the environment handoff shown after setup finishes.
-
-    :param kit: Application config facade.
-    :param registry: Registry selected by setup when multi-storage is enabled.
-    :param active_storage_root: Explicit storage path selected for runtime.
-    :return: Newline-delimited setup finish guidance.
-    """
-    return setup_finish_text(kit, registry, active_storage_root)
-
-
 def setup_finish_text(
     kit: "AppConfigKit",
     registry: StorageRegistry | None,
@@ -342,7 +306,7 @@ def export_apprc_toml_command(
     :param registry_path: Custom AppRC TOML path.
     :return: POSIX shell export command.
     """
-    path_text = str(_normalized_apprc_toml_path(registry_path)).replace(
+    path_text = str(normalized_apprc_toml_path(registry_path)).replace(
         '"',
         '\\"',
     )
@@ -361,7 +325,7 @@ def dotenv_apprc_toml_assignment(
     """
     return _dotenv_assignment(
         kit.spec.apprc_toml_env_key(),
-        str(_normalized_apprc_toml_path(registry_path)),
+        str(normalized_apprc_toml_path(registry_path)),
     )
 
 
@@ -407,8 +371,3 @@ def dotenv_storage_selector_assignment(
 def _dotenv_assignment(key: str, value: str) -> str:
     """Return one deterministic dotenv key/value assignment."""
     return f"{key}={json.dumps(value)}"
-
-
-def _normalized_apprc_toml_path(path: str | Path) -> Path:
-    """Return an absolute, user-expanded AppRC TOML path."""
-    return Path(path).expanduser().resolve()

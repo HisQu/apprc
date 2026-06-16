@@ -168,38 +168,6 @@ class OwnerMappingLoader:
         )
 
 
-def config_field(
-    name: str,
-    env_var: str,
-    python_type: type[Any],
-    *,
-    default: Any = CONFIG_MISSING,
-    shared_default: Any = CONFIG_MISSING,
-    title: str = "",
-    explanation_short: str = "",
-    explanation_long: str = "",
-    secret: bool = False,
-    editable: bool = True,
-    required: bool = False,
-    choices: tuple[str, ...] = (),
-) -> ConfigField:
-    """Build one config field with compact call sites."""
-    return ConfigField(
-        name=name,
-        env_var=env_var,
-        python_type=python_type,
-        default=default,
-        shared_default=shared_default,
-        title=title,
-        explanation_short=explanation_short,
-        explanation_long=explanation_long,
-        secret=secret,
-        editable=editable,
-        required=required,
-        choices=choices,
-    )
-
-
 def load_owner_from_sources(
     owner: ConfigOwner,
     sources: tuple[OwnerMappingLoader, ...],

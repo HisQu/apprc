@@ -14,7 +14,6 @@ from apprc.config import (
     ConfigField,
     ConfigOwner,
     EnvBootstrapResult,
-    config_field,
     iter_config_fields,
 )
 
@@ -25,7 +24,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
     env_prefix="APPRC_EXAMPLE_APP_",
     rc_path=("app",),
     fields=(
-        config_field(
+        ConfigField(
             "storage_root",
             "STORAGE",
             Path,
@@ -39,7 +38,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             editable=False,
             required=True,
         ),
-        config_field(
+        ConfigField(
             "profile",
             "PROFILE",
             str,
@@ -47,7 +46,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             title="Profile",
             explanation_short="Named profile used by the example app.",
         ),
-        config_field(
+        ConfigField(
             "mode",
             "MODE",
             str,
@@ -58,7 +57,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             ),
             choices=("AUTO", "MANUAL"),
         ),
-        config_field(
+        ConfigField(
             "enabled",
             "ENABLED",
             bool,
@@ -66,7 +65,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             title="Enabled",
             explanation_short="Turns the example app on or off.",
         ),
-        config_field(
+        ConfigField(
             "retry_count",
             "RETRY_COUNT",
             int,
@@ -74,7 +73,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
             title="Retry count",
             explanation_short="Maximum number of retry attempts.",
         ),
-        config_field(
+        ConfigField(
             "cache_dir",
             "CACHE_DIR",
             Path,
@@ -84,7 +83,7 @@ APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
                 "Storage-local cache directory used by the example app."
             ),
         ),
-        config_field(
+        ConfigField(
             "access_token",
             "ACCESS_TOKEN",
             str,

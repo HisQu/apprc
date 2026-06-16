@@ -174,7 +174,7 @@ from dataclasses import dataclass
 import typer
 
 from apprc import AppConfigKit
-from apprc.config import ConfigOwner, config_field
+from apprc.config import ConfigField, ConfigOwner
 
 # 1) Declare the config fields your app owns.
 APP_OWNER = ConfigOwner(
@@ -183,7 +183,7 @@ APP_OWNER = ConfigOwner(
     env_prefix="MYAPP_",
     rc_path=("app",),
     fields=(
-        config_field(
+        ConfigField(
             "profile",
             "PROFILE",
             str,
@@ -405,7 +405,7 @@ Put config declarations in your application package, usually
 ```python
 from pathlib import Path
 
-from apprc.config import CONFIG_MISSING, ConfigOwner, config_field
+from apprc.config import CONFIG_MISSING, ConfigField, ConfigOwner
 
 STORAGE_OWNER = ConfigOwner(
     key="storage",
@@ -413,7 +413,7 @@ STORAGE_OWNER = ConfigOwner(
     env_prefix="MYAPP_",
     rc_path=("storage",),
     fields=(
-        config_field(
+        ConfigField(
             "root",
             "STORAGE",
             Path,

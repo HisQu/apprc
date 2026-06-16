@@ -11,8 +11,8 @@ from apprc.config import (
     AppConfigKit,
     ApprcTomlEnvError,
     ConfigDoctorStatus,
+    ConfigField,
     ConfigOwner,
-    config_field,
 )
 from apprc.config.diagnostics import build_config_doctor_payload
 from tests.support_config import (
@@ -43,7 +43,7 @@ def test_config_owner_builds_env_keys_and_config_paths() -> None:
         env_prefix="APPRC_EXAMPLE_APP_",
         rc_path=("app",),
         fields=(
-            config_field(
+            ConfigField(
                 "profile",
                 "PROFILE",
                 str,
@@ -364,7 +364,7 @@ def test_registry_storage_setup_reports_doctor_payload(
 
 
 def test_config_field_stores_explicit_short_and_long_explanations() -> None:
-    spec = config_field(
+    spec = ConfigField(
         "demo",
         "DEMO",
         str,

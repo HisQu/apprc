@@ -44,7 +44,6 @@ from apprc.config.schema import (
     ConfigField,
     ConfigOwner,
     OwnerMappingLoader,
-    config_field,
     find_field_by_config_path,
     find_field_by_env_key,
     iter_config_fields,

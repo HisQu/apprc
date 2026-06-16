@@ -27,7 +27,7 @@ def run_config_setup(
     kit: AppConfigKit,
     *,
     assume_yes: bool = False,
-    registry_dir: Path | None = None,
+    apprc_dir: Path | None = None,
     storage_root: Path | None = None,
     storage_name: str | None = None,
     multi_storage: bool = False,
@@ -37,18 +37,18 @@ def run_config_setup(
 
     :param kit: Application config facade mounted by the host CLI.
     :param assume_yes: Whether to run without opening the Textual wizard.
-    :param registry_dir: Optional registry directory for non-interactive setup.
+    :param apprc_dir: Optional AppRC directory for non-interactive setup.
     :param storage_root: Optional active storage root.
     :param storage_name: Optional selector for multi-storage registration.
     :param multi_storage: Whether setup should register the active storage.
-    :param existing_action: Optional action for an existing registry.
+    :param existing_action: Optional action for an existing AppRC TOML file.
     :raises typer.Exit: If the user cancels or setup diagnostics fail.
     :raises typer.BadParameter: If setup inputs are invalid.
     """
     has_setup_options = any(
         option is not None
         for option in (
-            registry_dir,
+            apprc_dir,
             storage_root,
             storage_name,
             existing_action,
@@ -64,7 +64,7 @@ def run_config_setup(
             "--name is only used with --multi-storage.",
             param_hint="--multi-storage",
         )
-    if registry_dir is not None and not multi_storage:
+    if apprc_dir is not None and not multi_storage:
         raise typer.BadParameter(
             "--apprc-dir is only used with --multi-storage.",
             param_hint="--multi-storage",
@@ -88,8 +88,8 @@ def run_config_setup(
                 if storage_name is None
                 else storage_name
             )
-            setup_result = flow.prepare_registry(
-                registry_dir=registry_dir,
+            setup_result = flow.prepare_storage_registry(
+                apprc_dir=apprc_dir,
                 existing_action=existing_action,
                 replace_existing_file=True,
             )

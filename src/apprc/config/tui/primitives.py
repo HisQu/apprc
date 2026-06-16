@@ -217,7 +217,7 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
     ) -> None:
         """Store the suggested storage name and helper text.
 
-        :param default_name: Prefilled registry selector.
+        :param default_name: Prefilled storage selector.
         :param message: Help text or Rich renderable shown above the input.
         """
         super().__init__()

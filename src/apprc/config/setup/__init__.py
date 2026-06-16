@@ -7,7 +7,7 @@ from apprc.config.setup.flow import (
     ConfigSetupFlow,
     ConfigSetupResult,
     ExistingSetupAction,
-    PreparedSetupRegistry,
+    PreparedStorageRegistry,
 )
 from apprc.config.setup.text import (
     apprc_dir_label,
@@ -15,7 +15,7 @@ from apprc.config.setup.text import (
     dotenv_apprc_toml_assignment,
     dotenv_assignment_commands,
     dotenv_storage_selector_assignment,
-    existing_registry_text,
+    existing_apprc_toml_text,
     export_apprc_toml_command,
     export_storage_selector_command,
     reset_warning_text,

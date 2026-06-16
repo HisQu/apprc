@@ -34,32 +34,32 @@ def print_config_doctor(
     console.print("")
     console.print(
         label_value_text(
-            "registry_env_key",
-            env_key_text(payload["registry_env_key"]),
+            "apprc_toml_env_key",
+            env_key_text(payload["apprc_toml_env_key"]),
         )
     )
     console.print(
         label_value_text(
-            "registry_env_value",
-            _path_or_none_text(payload["registry_env_value"]),
+            "apprc_toml_env_value",
+            _path_or_none_text(payload["apprc_toml_env_value"]),
         )
     )
     console.print(
         label_value_text(
-            "registry_path",
-            _path_or_none_text(payload["registry_path"]),
+            "apprc_toml_path",
+            _path_or_none_text(payload["apprc_toml_path"]),
         )
     )
     console.print(
         label_value_text(
-            "registry_exists",
-            _bool_text(payload["registry_exists"]),
+            "apprc_toml_exists",
+            _bool_text(payload["apprc_toml_exists"]),
         )
     )
     console.print(
         label_value_text(
-            "registry_parse_ok",
-            _bool_text(payload["registry_parse_ok"]),
+            "apprc_toml_parse_ok",
+            _bool_text(payload["apprc_toml_parse_ok"]),
         )
     )
     console.print(
@@ -122,8 +122,8 @@ def _doctor_status_text(
     """
     status_labels = {
         ConfigDoctorStatus.ENV_NOT_SET.value: ("env not set", MISSING_STYLE),
-        ConfigDoctorStatus.REGISTRY_NOT_READY.value: (
-            "registry not ready",
+        ConfigDoctorStatus.MULTI_STORAGE_NOT_READY.value: (
+            "multi-storage not ready",
             MISSING_STYLE,
         ),
         ConfigDoctorStatus.STORAGE_NOT_READY.value: (
@@ -202,8 +202,8 @@ def _styled_issue_text(
         {
             str(value): PATH_STYLE
             for value in (
-                payload["registry_env_value"],
-                payload["registry_path"],
+                payload["apprc_toml_env_value"],
+                payload["apprc_toml_path"],
                 payload["selected_storage_root"],
                 payload["selected_local_env"],
             )

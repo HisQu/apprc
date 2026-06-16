@@ -7,12 +7,12 @@ then uses the owner to bind environment variables, serialize public config
 state, and log surprising runtime mutations.
 
 Keep this module focused on runtime config object behavior. File discovery,
-storage registries, dotenv layer precedence, and CLI editing live in sibling
+multi-storage tables, dotenv layer precedence, and CLI editing live in sibling
 modules so beginners can look up one problem at a time:
 
 * :mod:`apprc.config.schema` owns field/owner declarations.
 * :mod:`apprc.config.environment` owns entrypoint dotenv bootstrap.
-* :mod:`apprc.config.app_spec` owns the optional registry env contract.
+* :mod:`apprc.config.app_spec` owns the optional AppRC TOML env contract.
 * :mod:`apprc.config.storage.registry` owns optional multi-storage tables.
 * :mod:`apprc.config.local_env` owns storage-local dotenv overrides.
 """

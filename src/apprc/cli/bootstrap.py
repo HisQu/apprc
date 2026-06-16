@@ -13,7 +13,7 @@ import typer
 # == Internal ================================
 from apprc.config.environment import BootstrapLogger, EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
-from apprc.config.registry_env import RegistryEnvError
+from apprc.config.apprc_toml_env import ApprcTomlEnvError
 from apprc.config.storage.selector import StorageSelectorError
 
 
@@ -72,7 +72,7 @@ def bootstrap_cli_env(
         )
     except FileNotFoundError as exc:
         raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
-    except RegistryEnvError as exc:
+    except ApprcTomlEnvError as exc:
         raise typer.BadParameter(
             str(exc),
             param_hint=kit.spec.apprc_toml_env_key,

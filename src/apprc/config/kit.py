@@ -1,8 +1,8 @@
 """High-level facade for one application's AppRC integration.
 
 ``AppConfigKit`` is the convenient entrypoint for applications. It stores one
-``AppConfigSpec`` and delegates to the focused lower-level modules for storage
-registries, dotenv bootstrapping, diagnostics, and Typer command generation.
+``AppConfigSpec`` and delegates to the focused lower-level modules for AppRC
+TOML loading, dotenv bootstrapping, diagnostics, and Typer command generation.
 
 Use this module when wiring a host application. Use the sibling modules
 directly when testing one layer in isolation or when building a custom workflow
@@ -128,8 +128,8 @@ class AppConfigKit:
             should be merged into this process. Storage selection still runs
             when this is ``False``, and explicit ``env_file`` values may still
             provide the selector used for selection.
-        :param storage: Optional ``--storage`` selector. With a registry it may
-            be a registered storage name or path. Without a registry it is
+        :param storage: Optional ``--storage`` selector. With AppRC TOML it may
+            be a registered storage name or path. Without AppRC TOML it is
             always interpreted as a path.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.

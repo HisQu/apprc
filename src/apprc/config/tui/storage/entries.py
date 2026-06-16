@@ -125,11 +125,11 @@ def suggest_storage_name(
     *,
     fallback_name: str,
 ) -> str:
-    """Return a simple registry-name suggestion from a path.
+    """Return a simple storage-name suggestion from a path.
 
     :param path: Directory or archive path entered by the user.
     :param fallback_name: Selector used when no readable path name exists.
-    :return: Registry-safe selector suggestion.
+    :return: Storage selector suggestion.
     """
     name = path.name or fallback_name
     if is_storage_archive_path(path):

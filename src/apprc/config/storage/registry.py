@@ -118,7 +118,7 @@ def suggested_storage_root(
 
 
 def suggested_storage_name(app_name: str) -> str:
-    """Return the conventional registry name for a first storage.
+    """Return the conventional name for a first storage.
 
     :param app_name: Application name from the AppRC integration spec.
     :return: Host-specific selector that does not reuse the UI term
@@ -136,20 +136,20 @@ def load_storage_registry_or_empty(path: Path) -> StorageRegistry:
     :return: Parsed registry, or an empty registry when the file is absent.
     :raises ValueError: If the registry schema is invalid.
     """
-    registry_path = Path(path).expanduser()
-    if not registry_path.is_file():
+    apprc_toml_path = Path(path).expanduser()
+    if not apprc_toml_path.is_file():
         return StorageRegistry(
-            path=registry_path,
+            path=apprc_toml_path,
             storages={},
             archived_storages={},
         )
     try:
-        data = tomllib.loads(registry_path.read_text(encoding="utf-8"))
+        data = tomllib.loads(apprc_toml_path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ValueError(
-            f"Failed to parse storage registry {registry_path}: {exc}"
+            f"Failed to parse storage registry {apprc_toml_path}: {exc}"
         ) from exc
-    return _registry_from_toml(data=data, path=registry_path)
+    return _registry_from_toml(data=data, path=apprc_toml_path)
 
 
 def register_storage(

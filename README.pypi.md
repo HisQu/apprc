@@ -158,7 +158,7 @@ The executable is `apprc`, but its disposable example files live under the
 | Item | Default |
 |---|---|
 | Storage selector | `APPRC_EXAMPLE_APP_STORAGE` (required) |
-| AppRC TOML selector | `APPRC_EXAMPLE_APP_APPRC_TOML` (optional multi-storage registry) |
+| AppRC TOML selector | `APPRC_EXAMPLE_APP_APPRC_TOML` (optional multi-storage file) |
 | Suggested active storage root | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
 | Local env | `~/.local/share/apprc_example_app/apprc_example_app_stor-1/.env.apprc_example_app` |
 
@@ -254,9 +254,9 @@ opens a Textual wizard with path autocomplete, asks for an active storage root,
 asks whether to enable multi-storage management, and shows next steps. For CI
 or scripted single-storage bootstrap, pass `--yes --storage-root PATH`. Add
 `--multi-storage --apprc-dir /absolute/path/to/config-dir --name NAME` when
-setup should also create or reuse a registry file and register the active
+setup should also create or reuse an AppRC TOML file and register the active
 root. `config init`, `config list`, archive, restore, and register-active
-workflows remain multi-storage registry features after `MYAPP_APPRC_TOML` is
+workflows remain multi-storage features after `MYAPP_APPRC_TOML` is
 exported.
 
 ### Bootstrap Recommendation
@@ -269,7 +269,7 @@ For AppRC-backed apps, keep the storage selector in startup:
 is interpreted as a path when `<APP>_APPRC_TOML` is unset, including bare
 relative values such as `alpha`. Set
 `export <APP>_APPRC_TOML="/absolute/path/to/<app>.apprc.toml"` only when the app
-should use multi-storage registry features. In multi-storage mode, exact
+should use multi-storage features. In multi-storage mode, exact
 registered names resolve through the TOML, path-like values such as
 `./project`, `/data/project`, `~/project`, and `C:/Projects/project` resolve as
 paths, and bare unknown names fail with guidance.
@@ -277,7 +277,7 @@ paths, and bare unknown names fail with guidance.
 Runtime behavior when keys are missing:
 
 - `<APP>_APPRC_TOML` missing: single-storage mode is active. Runtime commands
-  use `<APP>_STORAGE` as a path. Registry commands such as `config list` and
+  use `<APP>_STORAGE` as a path. Multi-storage commands such as `config list` and
   `config init` are unavailable until `<APP>_APPRC_TOML` is exported.
 - `<APP>_STORAGE` missing: runtime bootstrap fails. Setup and doctor commands
   can still run in partial setup states to help fix the missing variable.
@@ -335,17 +335,17 @@ variable is `MYAPP_STORAGE`.
 The app-specific `<APP>_APPRC_TOML` environment variable is optional. When it is
 unset, AppRC runs in single-storage mode and treats every non-empty storage
 selector as a path. When it is set, AppRC runs in multi-storage mode and uses
-the TOML as a registry for named storage roots, archive metadata, and register
-active workflows.
+the TOML for named storage roots, archive metadata, and register-active
+workflows.
 
 Doctor status is explicit:
 
 | State | Meaning |
 |---|---|
 | `env_not_set` | `<APP>_STORAGE` is missing. |
-| `registry_not_ready` | `<APP>_APPRC_TOML` is set for multi-storage mode but points to a missing or invalid file. |
+| `multi_storage_not_ready` | `<APP>_APPRC_TOML` is set for multi-storage mode but points to a missing or invalid file. |
 | `storage_not_ready` | The selected storage root or local env file is missing, or a multi-storage selector cannot be resolved. |
-| `runnable` | `<APP>_STORAGE` resolves to an existing storage root with a local env file; the optional registry is either unset or valid. |
+| `runnable` | `<APP>_STORAGE` resolves to an existing storage root with a local env file; the optional AppRC TOML is either unset or valid. |
 
 In `config doctor --json`, use `status == "runnable"` as the readiness check.
 
@@ -366,7 +366,7 @@ terminal editor; runtime bootstrap still selects live directory entries from
 `[storages]`.
 
 On POSIX/WSL hosts, Windows drive paths such as `D:\Training\demo-project` are
-normalized to usable local paths before AppRC writes the registry or reads a
+normalized to usable local paths before AppRC writes the AppRC TOML or reads a
 storage-root environment value.
 
 **Important**
@@ -426,7 +426,7 @@ STORAGE_OWNER = ConfigOwner(
 )
 ```
 
-Use `editable=False` for values owned by the registry instead of `.env.local`.
+Use `editable=False` for values owned by the AppRC TOML instead of `.env.local`.
 
 ### Bootstrap a CLI
 
@@ -484,7 +484,7 @@ default values that are currently available. Secret values are redacted on
 screen, but an explicit copy action copies the raw value. Required missing
 values show `<required>`.
 
-When `<APP>_APPRC_TOML` is set, the editor also manages registry-backed
+When `<APP>_APPRC_TOML` is set, the editor also manages multi-storage
 storage lifecycle:
 
 - `New storage` registers a directory or restores a `*.apprc.tar.xz` archive.
@@ -518,12 +518,12 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.config.schema` | `ConfigField`, `ConfigOwner`, field lookup, typed loading. |
 | `apprc.config.kit` | `AppConfigKit`, the high-level app integration facade. |
 | `apprc.config.app_spec` | App-specific env keys, literal AppRC TOML path derivation, and config contract metadata. |
-| `apprc.config.registry_env` | Registry env validation and setup guidance. |
-| `apprc.config.registry_loading` | Registry loading paths by setup, runtime, and diagnostic intent. |
+| `apprc.config.apprc_toml_env` | AppRC TOML env validation and setup guidance. |
+| `apprc.config.storage_registry_loading` | Storage table loading paths by setup, runtime, and diagnostic intent. |
 | `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
 | `apprc.config.paths` | Storage-root path normalization helpers. |
 | `apprc.config.storage.selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
-| `apprc.config.storage.registry` | Optional multi-storage registry tables. |
+| `apprc.config.storage.registry` | Optional multi-storage tables in AppRC TOML. |
 | `apprc.config.storage.archive` | `*.apprc.tar.xz` storage compression and restore. |
 | `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
 | `apprc.config.setup.flow` | Shared setup workflow rules. |
@@ -546,10 +546,10 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `AppConfigSpec` | Frozen declaration behind the kit. |
 | `ConfigOwner` | One config section, env prefix, runtime path, and fields. |
 | `ConfigField` | One editable or read-only env-backed setting. |
-| `ConfigDoctorStatus` | `env_not_set`, `registry_not_ready`, `storage_not_ready`, or `runnable`. |
+| `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
 | `BaseEnv` | Runtime dataclass base that binds values from env. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
-| `StorageRegistry` | Parsed TOML registry. |
+| `StorageRegistry` | Parsed AppRC TOML storage table. |
 | `ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |
 | `LocalEnvUpdate` | Result of writing one local dotenv override. |
 
@@ -559,7 +559,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 |---|---|
 | `config setup` | Open the setup wizard, or run non-interactively with `--yes`. |
 | `config init STORAGE_ROOT --name NAME` | Register a storage root in multi-storage mode. |
-| `config doctor` | Diagnose the selected storage and optional registry state. |
+| `config doctor` | Diagnose the selected storage and optional AppRC TOML state. |
 | `config show --json` | Print resolved runtime config payload. |
 | `config set KEY VALUE` | Write one local override. |
 | `config edit` | Open the Textual editor. |

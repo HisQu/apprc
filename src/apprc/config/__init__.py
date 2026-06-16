@@ -38,7 +38,7 @@ from apprc.config.paths import (
     normalize_storage_root_path,
     windows_drive_path_to_posix,
 )
-from apprc.config.registry_env import RegistryEnvError
+from apprc.config.apprc_toml_env import ApprcTomlEnvError
 from apprc.config.schema import (
     CONFIG_MISSING,
     ConfigField,

@@ -10,6 +10,6 @@ class ConfigDoctorStatus(StrEnum):
     """Readiness status for one AppRC-backed application."""
 
     ENV_NOT_SET = "env_not_set"
-    REGISTRY_NOT_READY = "registry_not_ready"
+    MULTI_STORAGE_NOT_READY = "multi_storage_not_ready"
     STORAGE_NOT_READY = "storage_not_ready"
     RUNNABLE = "runnable"

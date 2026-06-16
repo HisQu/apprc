@@ -24,7 +24,7 @@ from tests.support_tui import text_has_span
 def test_config_textual_storage_entries_order_live_missing_and_archived(
     tmp_path: Path,
 ) -> None:
-    registry_path = tmp_path / "config" / "demo.apprc.toml"
+    apprc_toml_path = tmp_path / "config" / "demo.apprc.toml"
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
     archive_path = tmp_path / "zeta.apprc.tar.xz"
@@ -32,18 +32,18 @@ def test_config_textual_storage_entries_order_live_missing_and_archived(
     register_storage(
         name="beta",
         root=beta_root,
-        path=registry_path,
+        path=apprc_toml_path,
     )
     registry = register_storage(
         name="alpha",
         root=alpha_root,
-        path=registry_path,
+        path=apprc_toml_path,
     )
     registry = record_archived_storage(
         name="zeta",
         archive=archive_path,
         source_root=tmp_path / "zeta",
-        path=registry_path,
+        path=apprc_toml_path,
     )
     shutil.rmtree(beta_root)
 

@@ -16,7 +16,9 @@ from apprc.cli.options import (
 from apprc.cli.typer_utils import args_after_command, strip_leading_options
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
-from apprc.config.registry_loading import load_optional_runtime_registry
+from apprc.config.storage_registry_loading import (
+    load_optional_runtime_storage_registry,
+)
 from apprc.config.storage.registry import StorageRegistry
 from apprc.config.storage.selector import resolve_active_storage_selection
 
@@ -82,7 +84,7 @@ def active_storage_root_from_state(
         return state.env_bootstrap.storage_root
     if not os.environ.get(kit.spec.storage_env_key, "").strip():
         return None
-    registry = load_optional_runtime_registry(kit.spec)
+    registry = load_optional_runtime_storage_registry(kit.spec)
     return active_storage_root_from_env(kit, registry=registry)
 
 
@@ -94,7 +96,7 @@ def active_storage_root_from_env(
     """Return the active storage root selected by the current environment.
 
     :param kit: Application config facade.
-    :param registry: Parsed storage registry, or ``None`` for single-storage
+    :param registry: Parsed storage table, or ``None`` for single-storage
         path mode.
     :return: Resolved storage root, or ``None`` when no env selector is set.
     :raises StorageSelectorError: If the env selector cannot be resolved.
@@ -120,7 +122,7 @@ def initial_storage_from_state(
 
     :param kit: Application config facade.
     :param state: Root CLI state object.
-    :param registry: Optional already-loaded registry.
+    :param registry: Optional already-loaded storage table.
     :return: Storage selector to preselect, or ``None``.
     """
     if state.env_bootstrap is not None:

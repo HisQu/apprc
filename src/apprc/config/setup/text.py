@@ -21,21 +21,21 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     :param kit: Application config facade.
     :return: Host-app-specific setup explanation.
     """
-    registry_path = kit.spec.optional_apprc_toml_path()
-    registry_path_text = (
-        str(registry_path) if registry_path is not None else "<not set>"
+    apprc_toml_path = kit.spec.optional_apprc_toml_path()
+    apprc_toml_path_text = (
+        str(apprc_toml_path) if apprc_toml_path is not None else "<not set>"
     )
     return (
         f"{kit.spec.display_name} needs one active storage root selected by "
         f"{kit.spec.storage_env_key}. Optional multi-storage management adds "
-        "one small registry file to remember named storage roots. The registry "
-        "does not contain storage data.\n\n"
+        "one small AppRC TOML file to remember named storage roots. The AppRC "
+        "TOML file does not contain storage data.\n\n"
         f"{kit.spec.apprc_toml_env_key} is optional. When it is set, AppRC "
-        "uses it for registry-backed listing, switching, archiving, and "
+        "uses it for multi-storage listing, switching, archiving, and "
         "restoring.\n\n"
         "Setup starts by choosing the active storage root, then asks whether "
         "to enable multi-storage.\n\n"
-        f"Current multi-storage registry value:\n{registry_path_text}"
+        f"Current AppRC TOML value:\n{apprc_toml_path_text}"
     )
 
 
@@ -50,7 +50,7 @@ def apprc_dir_step_text(
     :return: Plain text for CLI and Textual setup UIs.
     """
     computed = (
-        "\n\nDerived registry path:\n"
+        "\n\nDerived AppRC TOML path:\n"
         f"{suggested / kit.spec.apprc_toml_filename}"
         if suggested is not None
         else ""
@@ -63,9 +63,9 @@ def apprc_dir_step_text(
     return (
         f"Choose the {apprc_dir_label(kit)}. Setup will create or reuse "
         f"{kit.spec.apprc_toml_filename} inside this directory.\n\n"
-        "The derived registry file stores AppRC state: registered storage names, "
+        "The derived AppRC TOML file stores AppRC state: registered storage names, "
         "storage root paths, and archive restore metadata.\n\n"
-        f"{kit.spec.apprc_toml_env_key} must point at the full registry path "
+        f"{kit.spec.apprc_toml_env_key} must point at the full AppRC TOML path "
         "in future shells only when multi-storage management is enabled. "
         "Setup asks for the directory so the file name stays consistent."
         f"{suggested_text}{computed}\n\n"
@@ -91,37 +91,37 @@ def storage_root_step_text(kit: "AppConfigKit") -> str:
     )
 
 
-def existing_registry_text(
+def existing_apprc_toml_text(
     kit: "AppConfigKit",
     registry: StorageRegistry,
 ) -> str:
-    """Return the explanation shown when setup finds a registry.
+    """Return the explanation shown when setup finds an AppRC TOML file.
 
     :param kit: Application config facade.
-    :param registry: Existing registry.
+    :param registry: Existing storage table.
     :return: Plain text summary of available actions.
     """
     body = (
-        f"{kit.spec.display_name} found an existing multi-storage registry:\n"
+        f"{kit.spec.display_name} found an existing AppRC TOML file:\n"
         f"{registry.path}\n\n"
         "Keeping it preserves the registered storage roots. Resetting removes "
         f"only {kit.spec.display_name} AppRC state, not storage directories. "
-        "Moving it preserves the registry contents at a new path."
+        "Moving it preserves the multi-storage contents at a new path."
     )
-    rows = existing_registry_rows_text(registry)
+    rows = existing_storage_rows_text(registry)
     if rows:
         return (
             f"{body}\n\n"
-            "The current registry has these storages registered:\n"
+            "The current AppRC TOML has these storages registered:\n"
             f"{rows}"
         )
     return f"{body}\n\nNo live storages are registered yet."
 
 
-def existing_registry_rows_text(registry: StorageRegistry) -> str:
+def existing_storage_rows_text(registry: StorageRegistry) -> str:
     """Return a compact storage list for setup screens.
 
-    :param registry: Registry whose live storages should be listed.
+    :param registry: Storage table whose live storages should be listed.
     :return: Newline-delimited storage rows.
     """
     rows: list[str] = []
@@ -138,11 +138,11 @@ def reset_warning_text(
     """Return the reset warning shown before deleting config state.
 
     :param kit: Application config facade.
-    :param registry: Registry that would be removed.
+    :param registry: Storage table that would be removed.
     :return: Plain text warning.
     """
     lines = [
-        "Storage directories are left untouched. Only the registry file is "
+        "Storage directories are left untouched. Only the AppRC TOML file is "
         f"removed. {kit.spec.display_name} storage directories are not "
         "deleted."
     ]
@@ -150,7 +150,7 @@ def reset_warning_text(
         lines.insert(
             0,
             "Resetting will orphan these registered storages:\n"
-            + existing_registry_rows_text(registry),
+            + existing_storage_rows_text(registry),
         )
     return "\n\n".join(lines)
 
@@ -160,14 +160,14 @@ def storage_root_reuse_text(
     storage_root: Path,
     *,
     storage_name: str | None,
-    registry_path: Path | None = None,
+    apprc_toml_path: Path | None = None,
 ) -> str:
     """Return the warning for reusing a non-empty storage root.
 
     :param kit: Application config facade.
     :param storage_root: Existing non-empty storage directory.
     :param storage_name: Optional selector that will point at the directory.
-    :param registry_path: Registry file that will be created or updated.
+    :param apprc_toml_path: AppRC TOML file that will be created or updated.
     :return: Plain text warning.
     """
     storage_context = (
@@ -180,8 +180,8 @@ def storage_root_reuse_text(
     managed_lines = [
         f"storage-local env: {storage_root / kit.spec.local_env_filename}",
     ]
-    if registry_path is not None:
-        managed_lines.append(f"registry file: {registry_path}")
+    if apprc_toml_path is not None:
+        managed_lines.append(f"AppRC TOML file: {apprc_toml_path}")
     managed_text = "\n".join(managed_lines)
     return (
         "Storage root exists and is not empty.\n\n"
@@ -202,7 +202,7 @@ def setup_finish_text(
     """Return setup completion text with shell and dotenv handoff.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup when multi-storage is enabled.
+    :param registry: Storage table selected when multi-storage is enabled.
     :param active_storage_root: Explicit storage path selected for runtime.
     :return: Human-facing setup completion guidance.
     """
@@ -262,7 +262,7 @@ def shell_export_commands(
     """Return POSIX shell exports needed to activate this setup.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup when multi-storage is enabled.
+    :param registry: Storage table selected when multi-storage is enabled.
     :param active_storage_root: Explicit storage path selected for runtime.
     :return: Ordered shell export commands.
     """
@@ -283,7 +283,7 @@ def dotenv_assignment_commands(
     """Return dotenv assignments needed to activate this setup.
 
     :param kit: Application config facade.
-    :param registry: Registry selected by setup when multi-storage is enabled.
+    :param registry: Storage table selected when multi-storage is enabled.
     :param active_storage_root: Explicit storage path selected for runtime.
     :return: Ordered dotenv assignment lines.
     """
@@ -298,15 +298,15 @@ def dotenv_assignment_commands(
 
 def export_apprc_toml_command(
     kit: "AppConfigKit",
-    registry_path: Path,
+    apprc_toml_path: Path,
 ) -> str:
     """Return the shell export command for one custom AppRC TOML path.
 
     :param kit: Application config facade.
-    :param registry_path: Custom AppRC TOML path.
+    :param apprc_toml_path: Custom AppRC TOML path.
     :return: POSIX shell export command.
     """
-    path_text = str(normalize_apprc_toml_path(registry_path)).replace(
+    path_text = str(normalize_apprc_toml_path(apprc_toml_path)).replace(
         '"',
         '\\"',
     )
@@ -315,17 +315,17 @@ def export_apprc_toml_command(
 
 def dotenv_apprc_toml_assignment(
     kit: "AppConfigKit",
-    registry_path: Path,
+    apprc_toml_path: Path,
 ) -> str:
     """Return the dotenv assignment for one custom AppRC TOML path.
 
     :param kit: Application config facade.
-    :param registry_path: Custom AppRC TOML path.
+    :param apprc_toml_path: Custom AppRC TOML path.
     :return: Dotenv assignment with a quoted path value.
     """
     return _dotenv_assignment(
         kit.spec.apprc_toml_env_key,
-        str(normalize_apprc_toml_path(registry_path)),
+        str(normalize_apprc_toml_path(apprc_toml_path)),
     )
 
 

@@ -28,11 +28,11 @@ from apprc.config.doctor_status import ConfigDoctorStatus
 from apprc.config.kit import AppConfigKit
 from apprc.config.local_env import set_local_env_value
 from apprc.config.paths import StorageRootPathError
-from apprc.config.registry_env import RegistryEnvError
-from apprc.config.registry_loading import (
-    load_existing_registry,
-    load_optional_runtime_registry,
-    registry_path_for_create,
+from apprc.config.apprc_toml_env import ApprcTomlEnvError
+from apprc.config.storage_registry_loading import (
+    load_existing_storage_registry,
+    load_optional_runtime_storage_registry,
+    apprc_toml_path_for_create,
 )
 import apprc.config.setup.flow as setup_flow
 from apprc.config.storage.registry import StorageRegistry, register_storage
@@ -46,7 +46,7 @@ class ConfigCommandBase:
     """Shared dependencies and adapters for generated config commands.
 
     The Typer app owns parsing. Command handlers own AppRC behavior. Keeping
-    common runtime, registry, and editor adapters on one base class avoids
+    common runtime, multi-storage, and editor adapters on one base class avoids
     helper modules that only shuttle ``kit`` and app hooks around.
     """
 
@@ -98,28 +98,28 @@ class ConfigCommandBase:
             return None
         return ctx.parent.params.get(name)
 
-    def load_required_registry(self) -> StorageRegistry:
-        """Return the registry required by registry-only CLI commands."""
+    def load_required_storage_registry(self) -> StorageRegistry:
+        """Return the storage table required by multi-storage CLI commands."""
         try:
-            return load_existing_registry(self.kit.spec)
-        except (RegistryEnvError, ValueError) as exc:
-            raise self.registry_bad_parameter(exc) from exc
+            return load_existing_storage_registry(self.kit.spec)
+        except (ApprcTomlEnvError, ValueError) as exc:
+            raise self.apprc_toml_bad_parameter(exc) from exc
 
-    def load_optional_registry(self) -> StorageRegistry | None:
-        """Return the registry only when multi-storage mode is enabled."""
+    def load_optional_storage_registry(self) -> StorageRegistry | None:
+        """Return the storage table only when multi-storage mode is enabled."""
         try:
-            return load_optional_runtime_registry(self.kit.spec)
-        except (RegistryEnvError, ValueError) as exc:
-            raise self.registry_bad_parameter(exc) from exc
+            return load_optional_runtime_storage_registry(self.kit.spec)
+        except (ApprcTomlEnvError, ValueError) as exc:
+            raise self.apprc_toml_bad_parameter(exc) from exc
 
-    def registry_bad_parameter(
+    def apprc_toml_bad_parameter(
         self,
-        exc: RegistryEnvError | ValueError,
+        exc: ApprcTomlEnvError | ValueError,
     ) -> typer.BadParameter:
-        """Return Typer's error type for registry loading failures."""
+        """Return Typer's error type for AppRC TOML loading failures."""
         param_hint = (
             self.kit.spec.apprc_toml_env_key
-            if isinstance(exc, RegistryEnvError)
+            if isinstance(exc, ApprcTomlEnvError)
             else self.kit.spec.apprc_toml_filename
         )
         return typer.BadParameter(str(exc), param_hint=param_hint)
@@ -133,7 +133,7 @@ class ConfigCommandBase:
                 self.kit,
                 cast(ConfigCliState, state),
             )
-        except RegistryEnvError as exc:
+        except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
                 param_hint=self.kit.spec.apprc_toml_env_key,
@@ -171,13 +171,13 @@ class ConfigCommandBase:
     def best_effort_active_storage_root_from_env(
         self,
         *,
-        registry: StorageRegistry | None,
+        storage_registry: StorageRegistry | None,
     ) -> Path | None:
         """Return the env-selected storage root, suppressing selector errors."""
         try:
             return active_storage_root_from_env(
                 self.kit,
-                registry=registry,
+                registry=storage_registry,
             )
         except StorageSelectorError:
             return None
@@ -188,12 +188,12 @@ class ConfigCommandBase:
         storage_root: Path | None,
     ) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
-        registry_path = self.kit.spec.optional_apprc_toml_path()
+        apprc_toml_path = self.kit.spec.optional_apprc_toml_path()
         return {
             "app_name": self.kit.spec.app_name,
             "display_name": self.kit.spec.display_name,
-            "registry_path": (
-                str(registry_path) if registry_path is not None else None
+            "apprc_toml_path": (
+                str(apprc_toml_path) if apprc_toml_path is not None else None
             ),
             "storage_root": str(storage_root) if storage_root else None,
         }
@@ -202,19 +202,22 @@ class ConfigCommandBase:
         self,
         *,
         current_state: Any | None,
-        registry: StorageRegistry | None,
+        storage_registry: StorageRegistry | None,
         active_storage_root: Path | None,
     ) -> None:
         """Create and run the Textual config editor."""
         selected_storage = (
-            self.initial_storage_for_editor(current_state, registry=registry)
+            self.initial_storage_for_editor(
+                current_state,
+                storage_registry=storage_registry,
+            )
             if current_state is not None
             else None
         )
         if self.editor_app_cls is not None:
             editor_app = self.editor_app_cls(
                 kit=self.kit,
-                registry=registry,
+                storage_registry=storage_registry,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
             )
@@ -223,7 +226,7 @@ class ConfigCommandBase:
 
             editor_app = ConfigEditorApp(
                 kit=self.kit,
-                registry=registry,
+                storage_registry=storage_registry,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
             )
@@ -233,7 +236,7 @@ class ConfigCommandBase:
         self,
         state: Any,
         *,
-        registry: StorageRegistry | None,
+        storage_registry: StorageRegistry | None,
     ) -> str | None:
         """Return the storage name the editor should select on startup."""
         if self.initial_storage_hook is not None:
@@ -241,21 +244,21 @@ class ConfigCommandBase:
         return initial_storage_from_state(
             self.kit,
             cast(ConfigCliState, state),
-            registry=registry,
+            registry=storage_registry,
         )
 
 
-class RegistryConfigCommands(ConfigCommandBase):
-    """Registry-only config command implementations."""
+class MultiStorageConfigCommands(ConfigCommandBase):
+    """Multi-storage config command implementations."""
 
     def list(self, *, json_output: bool) -> None:
-        """List registered storage roots from the user registry."""
-        registry = self.load_required_registry()
+        """List named storage roots from the AppRC TOML file."""
+        registry = self.load_required_storage_registry()
         payload = storage_list_payload(
             registry,
             local_env_filename=self.kit.spec.local_env_filename,
             active_storage_root=self.best_effort_active_storage_root_from_env(
-                registry=registry,
+                storage_registry=registry,
             ),
         )
         if json_output:
@@ -272,9 +275,9 @@ class RegistryConfigCommands(ConfigCommandBase):
     ) -> None:
         """Register one storage root and create its local env file."""
         try:
-            registry_path = registry_path_for_create(self.kit.spec)
-        except RegistryEnvError as exc:
-            raise self.registry_bad_parameter(exc) from exc
+            apprc_toml_path = apprc_toml_path_for_create(self.kit.spec)
+        except ApprcTomlEnvError as exc:
+            raise self.apprc_toml_bad_parameter(exc) from exc
         normalized_root = guard_storage_root_init(
             self.kit,
             storage_root,
@@ -285,7 +288,7 @@ class RegistryConfigCommands(ConfigCommandBase):
             registry = register_storage(
                 name=name,
                 root=normalized_root,
-                path=registry_path,
+                path=apprc_toml_path,
                 local_env_filename=self.kit.spec.local_env_filename,
             )
         except StorageRootPathError as exc:
@@ -302,7 +305,7 @@ class RegistryConfigCommands(ConfigCommandBase):
         typer.echo(
             f"local_env: {record.root / self.kit.spec.local_env_filename}"
         )
-        typer.echo(f"registry_path: {registry.path}")
+        typer.echo(f"apprc_toml_path: {registry.path}")
 
 
 class RuntimeConfigCommands(ConfigCommandBase):
@@ -368,23 +371,23 @@ class EditorConfigCommands(ConfigCommandBase):
 
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for registered storage-local env files."""
-        optional_registry = self.load_optional_registry()
+        optional_registry = self.load_optional_storage_registry()
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         active_storage_root = self.best_effort_active_storage_root_from_env(
-            registry=optional_registry,
+            storage_registry=optional_registry,
         )
         self.launch_config_editor(
             current_state=current_state,
-            registry=optional_registry,
+            storage_registry=optional_registry,
             active_storage_root=active_storage_root,
         )
 
 
 class ConfigCommandHandlers(
     RuntimeConfigCommands,
-    RegistryConfigCommands,
+    MultiStorageConfigCommands,
     EditorConfigCommands,
 ):
     """Command implementations for the generated ``config`` Typer group.
@@ -404,17 +407,17 @@ class ConfigCommandHandlers(
         self,
         *,
         assume_yes: bool,
-        registry_dir: Path | None,
+        apprc_dir: Path | None,
         storage_root: Path | None,
         storage_name: str | None,
         multi_storage: bool,
         existing_action: setup_flow.ExistingSetupAction | None,
     ) -> None:
-        """Configure the active storage root and optional registry."""
+        """Configure the active storage root and optional multi-storage."""
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,
-            registry_dir=registry_dir,
+            apprc_dir=apprc_dir,
             storage_root=storage_root,
             storage_name=storage_name,
             multi_storage=multi_storage,

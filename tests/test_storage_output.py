@@ -7,19 +7,19 @@ from apprc.config.storage.registry import register_storage
 
 
 def test_storage_list_payload_reports_local_env_status(tmp_path: Path) -> None:
-    registry_path = tmp_path / "config" / "demo.apprc.toml"
+    apprc_toml_path = tmp_path / "config" / "demo.apprc.toml"
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
     register_storage(
         name="beta",
         root=beta_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     registry = register_storage(
         name="alpha",
         root=alpha_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
 
@@ -29,7 +29,7 @@ def test_storage_list_payload_reports_local_env_status(tmp_path: Path) -> None:
         active_storage_root=alpha_root,
     )
 
-    assert payload["registry_path"] == str(registry_path)
+    assert payload["apprc_toml_path"] == str(apprc_toml_path)
     assert payload["storages"] == [
         {
             "active": True,

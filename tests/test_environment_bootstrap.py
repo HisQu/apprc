@@ -8,7 +8,7 @@ import pytest
 
 from apprc.config.app_spec import AppConfigSpec
 from apprc.config.environment import bootstrap_env
-from apprc.config.registry_env import RegistryEnvError
+from apprc.config.apprc_toml_env import ApprcTomlEnvError
 from apprc.config.storage.registry import register_storage
 
 
@@ -22,10 +22,10 @@ def _restore_demo_env(
     tmp_path: Path,
 ) -> Iterator[None]:
     if request.node.get_closest_marker("allow_missing_apprc_env") is None:
-        registry_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
+        apprc_toml_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
         storage_root = tmp_path / "demo-storage"
         storage_root.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setenv("DEMO_APPRC_TOML", str(registry_path))
+        monkeypatch.setenv("DEMO_APPRC_TOML", str(apprc_toml_path))
         monkeypatch.setenv("DEMO_STORAGE", str(storage_root.resolve()))
 
     original = {
@@ -70,14 +70,14 @@ def _spec(package_name: str) -> AppConfigSpec:
 
 
 def _set_demo_apprc_toml(monkeypatch, tmp_path: Path) -> Path:
-    """Point the demo bootstrap spec at a test registry file."""
-    registry_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
-    monkeypatch.setenv("DEMO_APPRC_TOML", str(registry_path))
-    return registry_path
+    """Point the demo bootstrap spec at a test AppRC TOML file."""
+    apprc_toml_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
+    monkeypatch.setenv("DEMO_APPRC_TOML", str(apprc_toml_path))
+    return apprc_toml_path
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_bootstrap_env_uses_storage_without_registry_env(
+def test_bootstrap_env_uses_storage_without_apprc_toml_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -98,7 +98,7 @@ def test_bootstrap_env_uses_storage_without_registry_env(
         storage=None,
     )
 
-    assert result.registry_path is None
+    assert result.apprc_toml_path is None
     assert result.storage_name is None
     assert result.storage_root == storage_root.resolve()
     assert result.local_env == storage_root.resolve() / ".env.demo"
@@ -106,7 +106,7 @@ def test_bootstrap_env_uses_storage_without_registry_env(
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_bootstrap_env_bare_storage_without_registry_is_relative_path(
+def test_bootstrap_env_bare_storage_without_apprc_toml_is_relative_path(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -127,7 +127,7 @@ def test_bootstrap_env_bare_storage_without_registry_is_relative_path(
         storage=None,
     )
 
-    assert result.registry_path is None
+    assert result.apprc_toml_path is None
     assert result.storage_name is None
     assert result.storage_selector_value == "alpha"
     assert result.storage_root == (tmp_path / "alpha").resolve()
@@ -160,18 +160,18 @@ def test_bootstrap_env_explicit_env_file_can_select_single_storage(
         storage=None,
     )
 
-    assert result.registry_path is None
+    assert result.apprc_toml_path is None
     assert result.storage_selector_source == "DEMO_STORAGE"
     assert result.storage_root == storage_root.resolve()
     assert os.environ["DEMO_MODEL"] == "explicit-model"
 
 
-def test_bootstrap_env_configured_registry_must_exist(
+def test_bootstrap_env_configured_apprc_toml_must_exist(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    missing_registry = tmp_path / "missing.toml"
-    monkeypatch.setenv("DEMO_APPRC_TOML", str(missing_registry))
+    missing_apprc_toml = tmp_path / "missing.toml"
+    monkeypatch.setenv("DEMO_APPRC_TOML", str(missing_apprc_toml))
     monkeypatch.setenv("DEMO_STORAGE", str(tmp_path / "storage"))
     package_name = _shared_env_package(
         monkeypatch,
@@ -179,7 +179,7 @@ def test_bootstrap_env_configured_registry_must_exist(
         'DEMO_MODEL="shared-model"\n',
     )
 
-    with pytest.raises(RegistryEnvError, match="missing registry file"):
+    with pytest.raises(ApprcTomlEnvError, match="missing AppRC TOML file"):
         bootstrap_env(
             spec=_spec(package_name),
             env_file=None,
@@ -193,7 +193,7 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     monkeypatch.setenv("DEMO_MODEL", "shell-model")
     package_name = _shared_env_package(
         monkeypatch,
@@ -204,7 +204,7 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
     register_storage(
         name="alpha",
         root=storage_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     monkeypatch.setenv("DEMO_STORAGE", str(storage_root))
@@ -236,7 +236,7 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -246,7 +246,7 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
     register_storage(
         name="alpha",
         root=storage_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     (storage_root / ".env.demo").write_text(
@@ -271,7 +271,7 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     monkeypatch.setenv("DEMO_MODEL", "shell-model")
     package_name = _shared_env_package(
         monkeypatch,
@@ -282,7 +282,7 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
     register_storage(
         name="alpha",
         root=storage_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     explicit_env = tmp_path / "override.env"
@@ -361,7 +361,7 @@ def test_bootstrap_env_storage_selector_selects_active_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -372,13 +372,13 @@ def test_bootstrap_env_storage_selector_selects_active_root(
     register_storage(
         name="alpha",
         root=alpha_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     register_storage(
         name="beta",
         root=beta_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
 
@@ -402,7 +402,7 @@ def test_bootstrap_env_storage_option_wins_over_env_selector(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -413,13 +413,13 @@ def test_bootstrap_env_storage_option_wins_over_env_selector(
     register_storage(
         name="alpha",
         root=alpha_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     register_storage(
         name="beta",
         root=beta_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     monkeypatch.setenv("DEMO_STORAGE", "alpha")
@@ -442,7 +442,7 @@ def test_bootstrap_env_storage_env_name_selects_registered_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -452,7 +452,7 @@ def test_bootstrap_env_storage_env_name_selects_registered_root(
     register_storage(
         name="beta",
         root=beta_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     monkeypatch.setenv("DEMO_STORAGE", "beta")
@@ -477,7 +477,7 @@ def test_bootstrap_env_storage_env_bare_unknown_name_is_error(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -486,7 +486,7 @@ def test_bootstrap_env_storage_env_bare_unknown_name_is_error(
     register_storage(
         name="alpha",
         root=tmp_path / "alpha-storage",
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     monkeypatch.setenv("DEMO_STORAGE", "beta")
@@ -528,7 +528,7 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    registry_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
     package_name = _shared_env_package(
         monkeypatch,
         tmp_path,
@@ -539,7 +539,7 @@ def test_bootstrap_env_without_dotenv_layers_keeps_explicit_storage_selection(
     register_storage(
         name="alpha",
         root=default_root,
-        path=registry_path,
+        path=apprc_toml_path,
         local_env_filename=".env.demo",
     )
     explicit_root.mkdir()

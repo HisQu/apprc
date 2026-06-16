@@ -23,7 +23,7 @@ class NoStorageSelection:
 
 @dataclass(frozen=True, slots=True)
 class ActivePathStorageSelection:
-    """Env-selected storage root that is not backed by a registry row."""
+    """Env-selected storage root that is not backed by a named row."""
 
     root: Path
     kind: Literal["active_path"] = "active_path"

@@ -84,11 +84,11 @@ def test_generated_config_app_sets_and_shows_with_storage_only(
     assert 'APPRC_EXAMPLE_APP_PROFILE="single-profile"\n' in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
-    assert json.loads(show_result.output)["registry_path"] is None
+    assert json.loads(show_result.output)["apprc_toml_path"] is None
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_generated_config_registry_commands_require_registry_env(
+def test_generated_config_multi_storage_commands_require_apprc_toml_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -112,12 +112,12 @@ def test_generated_config_registry_commands_require_registry_env(
     assert "required for multi-storage" in init_result.output
 
 
-def test_generated_config_list_rejects_missing_registry_file(
+def test_generated_config_list_rejects_missing_apprc_toml_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    missing_registry = tmp_path / "missing.apprc.toml"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_registry))
+    missing_apprc_toml = tmp_path / "missing.apprc.toml"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_apprc_toml))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -127,17 +127,17 @@ def test_generated_config_list_rejects_missing_registry_file(
 
     assert result.exit_code == 2, result.output
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in result.output
-    assert "points to a missing registry file" in result.output
-    assert not missing_registry.exists()
+    assert "points to a missing AppRC TOML file" in result.output
+    assert not missing_apprc_toml.exists()
 
 
-def test_generated_config_init_creates_missing_registry_file(
+def test_generated_config_init_creates_missing_apprc_toml_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    missing_registry = tmp_path / "missing.apprc.toml"
+    missing_apprc_toml = tmp_path / "missing.apprc.toml"
     storage_root = tmp_path / "storage"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_registry))
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_apprc_toml))
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -148,12 +148,12 @@ def test_generated_config_init_creates_missing_registry_file(
     )
 
     assert result.exit_code == 0, result.output
-    assert missing_registry.is_file()
+    assert missing_apprc_toml.is_file()
     assert "registered_storage: alpha" in result.output
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_generated_config_edit_opens_single_storage_without_registry(
+def test_generated_config_edit_opens_single_storage_without_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -188,12 +188,12 @@ def test_generated_config_edit_opens_single_storage_without_registry(
     assert editor.kwargs["active_storage_root"] == storage_root.resolve()
 
 
-def test_generated_config_edit_rejects_missing_registry_file(
+def test_generated_config_edit_rejects_missing_apprc_toml_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    missing_registry = tmp_path / "missing.apprc.toml"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_registry))
+    missing_apprc_toml = tmp_path / "missing.apprc.toml"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_apprc_toml))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -203,7 +203,7 @@ def test_generated_config_edit_rejects_missing_registry_file(
 
     assert result.exit_code == 2, result.output
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in result.output
-    assert "points to a missing registry file" in result.output
+    assert "points to a missing AppRC TOML file" in result.output
 
 
 def test_generated_config_app_rejects_bare_unknown_storage_selector(
@@ -258,7 +258,7 @@ def test_generated_config_app_inits_existing_storage_after_list_prompt(
     )
     assert "AppRC-managed files to create or update:" in result.output
     assert "storage-local env" in result.output
-    assert "registry file" in result.output
+    assert "AppRC TOML file" in result.output
     assert "Existing files inside the storage root" in result.output
     assert "will not be deleted" in result.output
     assert (
@@ -388,7 +388,7 @@ def test_generated_config_app_lists_registered_storages_as_rich_tree(
     result = runner.invoke(app, ["list"])
 
     assert result.exit_code == 0, result.output
-    assert "registry_path:" in result.output
+    assert "apprc_toml_path:" in result.output
     assert "storages:" in result.output
     assert "alpha [active]" in result.output
     assert "beta" in result.output
@@ -424,7 +424,7 @@ def test_generated_config_app_lists_registered_storages_as_json(
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload == {
-        "registry_path": str(
+        "apprc_toml_path": str(
             tmp_path
             / "config"
             / "apprc_example_app"

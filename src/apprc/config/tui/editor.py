@@ -112,14 +112,14 @@ class ConfigEditorApp(App[None]):
         self,
         *,
         kit: AppConfigKit,
-        registry: StorageRegistry | None,
+        storage_registry: StorageRegistry | None,
         initial_storage: str | None = None,
         active_storage_root: Path | None = None,
     ) -> None:
-        """Keep registry and field metadata while editing storage state."""
+        """Keep storage table and field metadata while editing storage state."""
         super().__init__()
         self.kit = kit
-        self.registry = registry
+        self.storage_registry = storage_registry
         self.owners = kit.spec.owners
         self.initial_storage = initial_storage
         self.local_env_filename = kit.spec.local_env_filename
@@ -127,7 +127,7 @@ class ConfigEditorApp(App[None]):
             f"{kit.spec.config_command_name()} config init "
             "STORAGE_ROOT --name NAME"
         )
-        self.registry_label = kit.spec.apprc_toml_filename
+        self.apprc_toml_label = kit.spec.apprc_toml_filename
         self.hidden_env_keys = frozenset({kit.spec.storage_env_key})
         self.active_storage_root = (
             Path(active_storage_root).expanduser().resolve()
@@ -136,7 +136,9 @@ class ConfigEditorApp(App[None]):
         )
         self.shared_values = _read_packaged_shared_values(kit)
         self.storage_entries = (
-            ordered_storage_entries(registry) if registry is not None else []
+            ordered_storage_entries(storage_registry)
+            if storage_registry is not None
+            else []
         )
         self.selection: EditorStorageSelection = NoStorageSelection()
         self.local_values: dict[str, str] = {}
@@ -208,7 +210,7 @@ class ConfigEditorApp(App[None]):
             return
         if not selected.spec.editable:
             self.notify(
-                f"This setting is managed by {self.registry_label}.",
+                f"This setting is managed by {self.apprc_toml_label}.",
                 severity="warning",
             )
             return
@@ -263,15 +265,15 @@ class ConfigEditorApp(App[None]):
             return
         self._save_env_key(result.env_key, result.raw_value)
 
-    def _require_registry(self) -> StorageRegistry | None:
-        """Return the registry required for registry-only editor actions."""
-        if self.registry is None:
+    def _require_storage_registry(self) -> StorageRegistry | None:
+        """Return the storage table required for multi-storage editor actions."""
+        if self.storage_registry is None:
             self.notify(
-                "Storage management requires a registry file.",
+                "Storage management requires an AppRC TOML file.",
                 severity="error",
             )
             return None
-        return self.registry
+        return self.storage_registry
 
     def _save_env_key(self, env_key: str, raw_value: str) -> None:
         """Validate and persist one local env value."""
@@ -313,8 +315,8 @@ class ConfigEditorApp(App[None]):
         *,
         select_name: str | None = None,
     ) -> None:
-        """Reload registry rows and select the requested storage."""
-        registry = self.registry
+        """Reload storage rows and select the requested storage."""
+        registry = self.storage_registry
         self.storage_entries = (
             ordered_storage_entries(registry) if registry is not None else []
         )
@@ -360,7 +362,7 @@ class ConfigEditorApp(App[None]):
         self._select_archived_storage(entry.name)
 
     def _select_active_storage(self) -> None:
-        """Load the env-selected active path without requiring a registry row."""
+        """Load the env-selected active path without requiring a named row."""
         root = self.active_storage_root
         if root is None:
             return
@@ -373,14 +375,14 @@ class ConfigEditorApp(App[None]):
         self._populate_field_table()
         self._set_storage_controls_enabled(
             fields=True,
-            register_active=self.registry is not None,
+            register_active=self.storage_registry is not None,
             delete=False,
             archive=False,
         )
 
     def _select_storage(self, name: str) -> None:
         """Load one storage-local env file and refresh the field table."""
-        registry = self._require_registry()
+        registry = self._require_storage_registry()
         if registry is None:
             return
         record = registry.selected(name)
@@ -398,7 +400,7 @@ class ConfigEditorApp(App[None]):
 
     def _select_missing_storage(self, name: str) -> None:
         """Show a registered storage whose root no longer exists."""
-        registry = self._require_registry()
+        registry = self._require_storage_registry()
         if registry is None:
             return
         record = registry.selected(name)
@@ -417,7 +419,7 @@ class ConfigEditorApp(App[None]):
 
     def _select_archived_storage(self, name: str) -> None:
         """Show archived metadata without enabling field editing."""
-        registry = self._require_registry()
+        registry = self._require_storage_registry()
         if registry is None:
             return
         record = registry.archived_storages[name]
@@ -497,11 +499,13 @@ class ConfigEditorApp(App[None]):
 
         :param fields: Whether config field rows may be edited.
         :param register_active: Whether the active path may be registered.
-        :param delete: Whether the current registry row may be removed.
+        :param delete: Whether the current named storage may be removed.
         :param archive: Whether the current storage directory may be archived.
         """
         self._set_controls_enabled(fields)
-        self.query_one("#storage-new", Button).disabled = self.registry is None
+        self.query_one("#storage-new", Button).disabled = (
+            self.storage_registry is None
+        )
         self.query_one(
             "#storage-register-active", Button
         ).disabled = not register_active
@@ -514,18 +518,18 @@ class ConfigEditorApp(App[None]):
         self.local_values = {}
 
     def _registered_active_storage_name(self) -> str | None:
-        """Return the registry row that matches the active path, if any."""
-        if self.active_storage_root is None or self.registry is None:
+        """Return the named storage that matches the active path, if any."""
+        if self.active_storage_root is None or self.storage_registry is None:
             return None
-        for name in sorted(self.registry.storages):
-            record = self.registry.storages[name]
+        for name in sorted(self.storage_registry.storages):
+            record = self.storage_registry.storages[name]
             record_root = Path(record.root).expanduser().resolve()
             if record_root == self.active_storage_root:
                 return name
         return None
 
     def _suggest_storage_name(self, path: Path) -> str:
-        """Return a simple registry-name suggestion from a path."""
+        """Return a simple storage-name suggestion from a path."""
         return suggest_storage_name(
             path,
             fallback_name=self._fallback_storage_name(),
@@ -536,9 +540,9 @@ class ConfigEditorApp(App[None]):
         return suggested_storage_name(self.kit.spec.app_name)
 
     def _no_storage_message(self) -> str:
-        """Return empty-list guidance for the current registry capability."""
+        """Return empty-list guidance for current multi-storage capability."""
         storage_env_key = self.kit.spec.storage_env_key
-        if self.registry is not None:
+        if self.storage_registry is not None:
             return (
                 "No storages registered. Use New storage to add one, or set "
                 f"{storage_env_key} to edit an active path.\n"
@@ -547,7 +551,7 @@ class ConfigEditorApp(App[None]):
         return (
             "No active storage path is selected. Set "
             f"{storage_env_key} to edit a storage-local env file. Configure "
-            "the registry file to enable registry actions."
+            "the AppRC TOML file to enable multi-storage actions."
         )
 
 

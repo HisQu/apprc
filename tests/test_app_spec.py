@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from apprc.config.app_spec import AppConfigSpec
-from apprc.config.registry_env import RegistryEnvError
+from apprc.config.apprc_toml_env import ApprcTomlEnvError
 
 
 def _app_spec(app_name: str) -> AppConfigSpec:
@@ -41,7 +41,7 @@ def test_app_config_spec_required_apprc_toml_path_uses_env_override(
     custom_registry = tmp_path / "custom" / "demo.apprc.toml"
     spec = _app_spec("demo")
 
-    with pytest.raises(RegistryEnvError, match="DEMO_APPRC_TOML"):
+    with pytest.raises(ApprcTomlEnvError, match="DEMO_APPRC_TOML"):
         spec.required_apprc_toml_path()
 
     monkeypatch.setenv("DEMO_APPRC_TOML", str(custom_registry))

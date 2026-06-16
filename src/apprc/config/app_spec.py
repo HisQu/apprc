@@ -10,9 +10,9 @@ from pathlib import Path
 
 # == Internal ================================
 from apprc.config.paths import normalize_apprc_toml_path
-from apprc.config.registry_env import (
-    RegistryEnvError,
-    missing_registry_env_message,
+from apprc.config.apprc_toml_env import (
+    ApprcTomlEnvError,
+    missing_apprc_toml_env_message,
 )
 from apprc.config.schema import ConfigOwner
 
@@ -78,8 +78,8 @@ class AppConfigSpec:
         path = self.optional_apprc_toml_path(proc_env=proc_env)
         if path is not None:
             return path
-        raise RegistryEnvError(
-            missing_registry_env_message(
+        raise ApprcTomlEnvError(
+            missing_apprc_toml_env_message(
                 apprc_toml_env_key=self.apprc_toml_env_key,
                 apprc_toml_filename=self.apprc_toml_filename,
                 command_name=self.config_command_name(),

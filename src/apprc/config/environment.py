@@ -28,7 +28,9 @@ from dotenv import dotenv_values
 
 # == Internal ================================
 from apprc.config.app_spec import AppConfigSpec
-from apprc.config.registry_loading import load_optional_runtime_registry
+from apprc.config.storage_registry_loading import (
+    load_optional_runtime_storage_registry,
+)
 from apprc.config.storage.selector import (
     missing_storage_selector_error,
     resolve_storage_selector_value,
@@ -57,22 +59,22 @@ class EnvBootstrapResult:
         is known. The path may not exist because missing local files are
         optional.
     :param env_file: Explicit dotenv file passed through the CLI.
-    :param registry_path: Env-selected registry path, or ``None`` when
+    :param apprc_toml_path: Env-selected AppRC TOML path, or ``None`` when
         single-storage path mode is active.
     :param storage_selector_source: Source that selected the active storage,
         such as ``--storage`` or the app-specific storage env key.
     :param storage_selector_value: Selector value before it was resolved to a
         concrete storage root.
-    :param storage_name: Registry storage record selected for this bootstrap,
-        when the selector matched a registered storage.
+    :param storage_name: Named storage selected for this bootstrap when the
+        selector matched an AppRC TOML entry.
     :param storage_root: Active storage root, when known.
-    :param storage_count: Number of loaded registry storages.
+    :param storage_count: Number of loaded named storages.
     """
 
     shared_env: Path | None
     local_env: Path | None
     env_file: Path | None
-    registry_path: Path | None
+    apprc_toml_path: Path | None
     storage_selector_source: str | None
     storage_selector_value: str | None
     storage_name: str | None
@@ -107,10 +109,10 @@ def bootstrap_env(
         is never mutated.
     :param load_dotenv_layers: Whether packaged ``.env.shared``,
         storage-local ``.env.local``, and explicit dotenv values should be
-        merged into this process. Registry and storage selection still run
+        merged into this process. Multi-storage and storage selection still run
         when this is ``False``.
-    :param storage: Optional ``--storage`` selector. When a registry is loaded,
-        exact registered names resolve through TOML. Otherwise every non-empty
+    :param storage: Optional ``--storage`` selector. When AppRC TOML is loaded,
+        exact registered names resolve through it. Otherwise every non-empty
         selector is interpreted as a path.
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
@@ -126,7 +128,7 @@ def bootstrap_env(
     )
     if storage_selector is None:
         raise missing_storage_selector_error(spec.storage_env_key)
-    registry = load_optional_runtime_registry(spec)
+    registry = load_optional_runtime_storage_registry(spec)
     selector_source, selector_value = storage_selector
     selection = resolve_storage_selector_value(
         registry=registry,
@@ -162,7 +164,7 @@ def bootstrap_env(
         shared_env=shared_env_path,
         local_env=loaded_local_env,
         env_file=env_file,
-        registry_path=registry.path if registry is not None else None,
+        apprc_toml_path=registry.path if registry is not None else None,
         storage_selector_source=selection.source,
         storage_selector_value=selection.raw_value,
         storage_name=selection.storage_name,

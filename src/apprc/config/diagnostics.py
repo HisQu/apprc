@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
 from apprc.config.doctor_status import ConfigDoctorStatus
-from apprc.config.registry_loading import RegistryInspection, inspect_registry
+from apprc.config.storage_registry_loading import (
+    StorageRegistryInspection,
+    inspect_storage_registry,
+)
 from apprc.config.storage.registry import StorageRegistry
 from apprc.config.storage.selector import (
     StorageSelection,
@@ -26,12 +29,12 @@ class ConfigDoctorPayload(TypedDict):
     """Machine-readable diagnostics emitted by ``config doctor``."""
 
     status: str
-    registry_env_key: str
-    registry_env_value: str | None
-    registry_path: str | None
-    registry_exists: bool
-    registry_parse_ok: bool
-    registry_error: str | None
+    apprc_toml_env_key: str
+    apprc_toml_env_value: str | None
+    apprc_toml_path: str | None
+    apprc_toml_exists: bool
+    apprc_toml_parse_ok: bool
+    apprc_toml_error: str | None
     storage_count: int
     selected_storage: str | None
     selected_storage_source: str | None
@@ -75,7 +78,7 @@ def config_setup_message(kit: "AppConfigKit") -> str:
         f"No active {kit.spec.display_name} storage is selected.\n\n"
         f"{storage_key} is required and points at the active storage root. "
         f"{kit.spec.apprc_toml_env_key} is optional; set it only when you want "
-        "multi-storage registry features.\n"
+        "multi-storage features.\n"
         "Choose the storage root; setup will create the storage-local env "
         "file and print the export command:\n"
         f"  {config_command_text(kit, setup_action)}\n\n"
@@ -99,20 +102,20 @@ def build_config_doctor_payload(
     :param storage: Optional selector passed by ``--storage``.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    registry_diagnosis = inspect_registry(kit.spec)
+    storage_registry_diagnosis = inspect_storage_registry(kit.spec)
     storage_diagnosis = _diagnose_storage(
         kit,
-        registry=registry_diagnosis.registry,
+        registry=storage_registry_diagnosis.registry,
         storage=storage,
     )
-    issues = [*registry_diagnosis.issues, *storage_diagnosis.issues]
+    issues = [*storage_registry_diagnosis.issues, *storage_diagnosis.issues]
     status = _doctor_status(
-        registry=registry_diagnosis,
+        registry=storage_registry_diagnosis,
         storage=storage_diagnosis,
     )
     return _doctor_payload(
         kit,
-        registry=registry_diagnosis,
+        registry=storage_registry_diagnosis,
         storage=storage_diagnosis,
         status=status,
         issues=issues,
@@ -122,7 +125,7 @@ def build_config_doctor_payload(
 def _doctor_payload(
     kit: "AppConfigKit",
     *,
-    registry: RegistryInspection,
+    registry: StorageRegistryInspection,
     storage: _StorageDiagnosis,
     status: ConfigDoctorStatus,
     issues: list[str],
@@ -130,7 +133,7 @@ def _doctor_payload(
     """Serialize diagnosis objects into the public doctor payload.
 
     :param kit: Application config facade.
-    :param registry: Optional registry diagnosis.
+    :param registry: Optional AppRC TOML and storage-table diagnosis.
     :param storage: Active storage diagnosis.
     :param status: Public readiness status.
     :param issues: All collected issues.
@@ -140,14 +143,14 @@ def _doctor_payload(
     selected_storage_root = selection.root if selection is not None else None
     return {
         "status": status.value,
-        "registry_env_key": kit.spec.apprc_toml_env_key,
-        "registry_env_value": registry.env_value,
-        "registry_path": str(registry.path)
+        "apprc_toml_env_key": kit.spec.apprc_toml_env_key,
+        "apprc_toml_env_value": registry.env_value,
+        "apprc_toml_path": str(registry.path)
         if registry.path is not None
         else None,
-        "registry_exists": registry.exists,
-        "registry_parse_ok": registry.parse_ok,
-        "registry_error": registry.error,
+        "apprc_toml_exists": registry.exists,
+        "apprc_toml_parse_ok": registry.parse_ok,
+        "apprc_toml_error": registry.error,
         "storage_count": registry.storage_count,
         "selected_storage": (
             selection.storage_name if selection is not None else None
@@ -183,7 +186,7 @@ def _diagnose_storage(
     """Return active storage state for diagnostics.
 
     :param kit: Application config facade.
-    :param registry: Optional multi-storage registry diagnosis result.
+    :param registry: Optional multi-storage table diagnosis result.
     :param storage: Optional selector passed by ``--storage``.
     :return: Storage diagnosis with missing-env and local-env issues.
     """
@@ -239,19 +242,19 @@ def _diagnose_storage(
 
 def _doctor_status(
     *,
-    registry: RegistryInspection,
+    registry: StorageRegistryInspection,
     storage: _StorageDiagnosis,
 ) -> ConfigDoctorStatus:
     """Return readiness status while keeping missing storage env decisive.
 
-    :param registry: Optional registry diagnosis.
+    :param registry: Optional AppRC TOML and storage-table diagnosis.
     :param storage: Active storage diagnosis.
     :return: Public doctor status.
     """
     if storage.missing_env_keys:
         return ConfigDoctorStatus.ENV_NOT_SET
     if registry.issues:
-        return ConfigDoctorStatus.REGISTRY_NOT_READY
+        return ConfigDoctorStatus.MULTI_STORAGE_NOT_READY
     if storage.issues:
         return ConfigDoctorStatus.STORAGE_NOT_READY
     return ConfigDoctorStatus.RUNNABLE
@@ -278,10 +281,10 @@ def _doctor_next_steps(
             config_command_text(kit, "doctor"),
             config_command_text(kit, "show"),
         ]
-    if status == ConfigDoctorStatus.REGISTRY_NOT_READY:
+    if status == ConfigDoctorStatus.MULTI_STORAGE_NOT_READY:
         return [
             f"Unset {kit.spec.apprc_toml_env_key} for single-storage mode, "
-            "or create the registry:",
+            "or create the AppRC TOML file:",
             config_command_text(
                 kit,
                 "setup --yes --apprc-dir /absolute/path/to/config-dir "

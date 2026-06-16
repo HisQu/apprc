@@ -1,4 +1,4 @@
-"""Output helpers for storage registry CLI commands."""
+"""Output helpers for ``config list`` storage rows."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class StorageListRowPayload(TypedDict):
 class StorageListPayload(TypedDict):
     """Machine-readable data emitted by ``config list --json``."""
 
-    registry_path: str
+    apprc_toml_path: str
     storages: list[StorageListRowPayload]
 
 
@@ -40,12 +40,12 @@ def storage_list_payload(
     local_env_filename: str,
     active_storage_root: Path | None = None,
 ) -> StorageListPayload:
-    """Return JSON-friendly registry rows for ``config list``.
+    """Return JSON-friendly named storage rows for ``config list``.
 
-    :param registry: User storage registry to serialize.
+    :param registry: Storage table to serialize.
     :param local_env_filename: Dotenv filename expected inside each root.
     :param active_storage_root: Root selected by ``<APP>_STORAGE``, if known.
-    :return: Machine-readable registry summary.
+    :return: Machine-readable storage summary.
     """
     storages: list[StorageListRowPayload] = []
     active_root = (
@@ -68,19 +68,19 @@ def storage_list_payload(
             }
         )
     return {
-        "registry_path": str(registry.path),
+        "apprc_toml_path": str(registry.path),
         "storages": storages,
     }
 
 
 def print_storage_list(payload: StorageListPayload) -> None:
-    """Print storage registry rows in a readable text format.
+    """Print named storage rows in a readable text format.
 
-    :param payload: Registry payload from :func:`storage_list_payload`.
+    :param payload: Storage payload from :func:`storage_list_payload`.
     """
     console = Console(soft_wrap=True)
     console.print(
-        _storage_detail_text("registry_path", payload["registry_path"])
+        _storage_detail_text("apprc_toml_path", payload["apprc_toml_path"])
     )
     storages = payload["storages"]
     if not storages:

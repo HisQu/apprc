@@ -129,19 +129,19 @@ def set_apprc_example_app_apprc_toml(
     tmp_path: Path,
 ) -> Path:
     """Point the example app at a test AppRC TOML file."""
-    registry_path, _ = set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
-    return registry_path
+    apprc_toml_path, _ = set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
+    return apprc_toml_path
 
 
-def create_empty_apprc_example_app_registry(
+def create_empty_apprc_example_app_apprc_toml(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
-    """Point the example app at an empty registry file."""
-    registry_path = set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
-    registry_path.write_text("", encoding="utf-8")
-    return registry_path
+    """Point the example app at an empty AppRC TOML file."""
+    apprc_toml_path = set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    apprc_toml_path.parent.mkdir(parents=True, exist_ok=True)
+    apprc_toml_path.write_text("", encoding="utf-8")
+    return apprc_toml_path
 
 
 def set_apprc_example_app_bootstrap(
@@ -152,7 +152,7 @@ def set_apprc_example_app_bootstrap(
     storage_root: Path | None = None,
 ) -> tuple[Path, Path]:
     """Point the example app at explicit bootstrap environment variables."""
-    registry_path = (
+    apprc_toml_path = (
         apprc_toml
         if apprc_toml is not None
         else tmp_path
@@ -169,13 +169,13 @@ def set_apprc_example_app_bootstrap(
 
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_APPRC_TOML",
-        str(registry_path),
+        str(apprc_toml_path),
     )
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
         str(active_storage_root.resolve()),
     )
-    return registry_path, active_storage_root
+    return apprc_toml_path, active_storage_root
 
 
 def apprc_example_app_state(
@@ -188,7 +188,7 @@ def apprc_example_app_state(
             shared_env=None,
             local_env=storage_root / ".env.apprc_example_app",
             env_file=None,
-            registry_path=kit.spec.required_apprc_toml_path(),
+            apprc_toml_path=kit.spec.required_apprc_toml_path(),
             storage_selector_source="--storage",
             storage_selector_value="alpha",
             storage_name="alpha",

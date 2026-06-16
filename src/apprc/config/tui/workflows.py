@@ -59,8 +59,8 @@ class ConfigEditorStorageWorkflows:
     """Run storage-management workflows for :class:`ConfigEditorApp`.
 
     The editor owns widgets, selection, and field-table rendering. This helper
-    owns multi-step storage flows that mutate the registry or filesystem, then
-    asks the editor to refresh its visible state.
+    owns multi-step storage flows that mutate the storage table or filesystem,
+    then asks the editor to refresh its visible state.
 
     :param editor: Mounted config editor app.
     """
@@ -71,7 +71,7 @@ class ConfigEditorStorageWorkflows:
 
     async def open_new_storage_flow(self) -> None:
         """Prompt for a new directory or archive path and register it."""
-        if self.editor._require_registry() is None:
+        if self.editor._require_storage_registry() is None:
             return
         result = await self.editor.push_screen_wait(
             PathInputScreen(
@@ -95,7 +95,7 @@ class ConfigEditorStorageWorkflows:
 
     async def register_active_storage_flow(self) -> None:
         """Register the env-selected active storage path by name."""
-        if self.editor._require_registry() is None:
+        if self.editor._require_storage_registry() is None:
             return
         selection = self.editor.selection
         if not isinstance(selection, ActivePathStorageSelection):
@@ -188,9 +188,9 @@ class ConfigEditorStorageWorkflows:
         """Prompt for confirmation and register one live storage root.
 
         :param storage_root: Directory selected by the user.
-        :param default_name: Suggested registry selector.
+        :param default_name: Suggested storage selector.
         """
-        registry = self.editor._require_registry()
+        registry = self.editor._require_storage_registry()
         if registry is None:
             return
         guarded_root = await self.guard_storage_directory(storage_root)
@@ -199,7 +199,7 @@ class ConfigEditorStorageWorkflows:
         name_result = await self.editor.push_screen_wait(
             StorageNameScreen(
                 default_name=default_name,
-                message="Choose the registry name used by --storage.",
+                message="Choose the storage name used by --storage.",
             )
         )
         if name_result is None:
@@ -226,7 +226,7 @@ class ConfigEditorStorageWorkflows:
             if action != "replace":
                 return
         try:
-            self.editor.registry = register_storage(
+            self.editor.storage_registry = register_storage(
                 name=name,
                 root=guarded_root,
                 path=registry.path,
@@ -331,7 +331,7 @@ class ConfigEditorStorageWorkflows:
                 label_value_text("Root", path_text(record.root)),
                 "",
                 "The storage root is missing or is not a directory. "
-                "Only the registry entry will be removed.",
+                "Only the named storage entry will be removed.",
             )
         )
         actions: tuple[tuple[str, str, ButtonVariant], ...] = (
@@ -360,7 +360,7 @@ class ConfigEditorStorageWorkflows:
 
     async def open_archive_storage_flow(self) -> None:
         """Prompt for archive options and compress the selected storage."""
-        registry = self.editor._require_registry()
+        registry = self.editor._require_storage_registry()
         selection = self.editor.selection
         if registry is None or not isinstance(selection, LiveStorageSelection):
             return
@@ -382,7 +382,7 @@ class ConfigEditorStorageWorkflows:
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        self.editor.registry = record_archived_storage(
+        self.editor.storage_registry = record_archived_storage(
             name=record.name,
             archive=archive_path,
             source_root=record.root,
@@ -412,13 +412,13 @@ class ConfigEditorStorageWorkflows:
         *,
         delete_content: bool,
     ) -> bool:
-        """Remove one live storage registry row.
+        """Remove one live named-storage row.
 
-        :param name: Storage registry selector to remove.
+        :param name: Storage selector to remove.
         :param delete_content: Whether to delete the storage directory too.
         :return: Whether the removal completed.
         """
-        registry = self.editor._require_registry()
+        registry = self.editor._require_storage_registry()
         if registry is None:
             return False
         try:
@@ -433,7 +433,7 @@ class ConfigEditorStorageWorkflows:
                 self.editor.notify(str(exc), severity="error", markup=False)
                 return False
         try:
-            self.editor.registry = unregister_storage(
+            self.editor.storage_registry = unregister_storage(
                 name=name,
                 path=registry.path,
             )
@@ -450,14 +450,14 @@ class ConfigEditorStorageWorkflows:
 
         :param name: Archived storage selector.
         """
-        registry = self.editor._require_registry()
+        registry = self.editor._require_storage_registry()
         if registry is None:
             return
         record = registry.archived_storages.get(name)
         if record is None:
             return
         if not record.archive.is_file():
-            self.editor.registry = remove_archived_storage(
+            self.editor.storage_registry = remove_archived_storage(
                 name=name,
                 path=registry.path,
             )

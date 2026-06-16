@@ -47,7 +47,7 @@ def _set_demo_apprc_toml(
     tmp_path: Path,
 ) -> Path:
     """Point the demo CLI at a test AppRC TOML file."""
-    registry_path, _ = set_apprc_example_app_bootstrap(
+    apprc_toml_path, _ = set_apprc_example_app_bootstrap(
         monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         apprc_toml=tmp_path
@@ -55,7 +55,7 @@ def _set_demo_apprc_toml(
         / "apprc_example_app"
         / "apprc_example_app.apprc.toml",
     )
-    return registry_path
+    return apprc_toml_path
 
 
 def test_standalone_cli_help_shows_config_command() -> None:

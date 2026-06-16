@@ -95,7 +95,7 @@ def build_config_typer_app(
             typer.Option("--json", help="Emit machine-readable JSON."),
         ] = False,
     ) -> None:
-        """List registered storage roots from the user registry."""
+        """List named storage roots from the AppRC TOML file."""
         handlers.list(json_output=json_output)
 
     @app.command("show")
@@ -135,7 +135,7 @@ def build_config_typer_app(
             str,
             typer.Option(
                 "--name",
-                help="Storage selector name written to the registry.",
+                help="Storage selector name written to the AppRC TOML file.",
             ),
         ],
         assume_yes: Annotated[
@@ -164,12 +164,12 @@ def build_config_typer_app(
                 help="Run setup non-interactively with the selected values.",
             ),
         ] = False,
-        registry_dir: Annotated[
+        apprc_dir: Annotated[
             Path | None,
             typer.Option(
                 "--apprc-dir",
                 "-d",
-                help="Directory that will contain the registry file.",
+                help="Directory that will contain the AppRC TOML file.",
             ),
         ] = None,
         storage_root: Annotated[
@@ -199,14 +199,14 @@ def build_config_typer_app(
             setup_flow.ExistingSetupAction | None,
             typer.Option(
                 "--existing-action",
-                help="How to handle an existing registry.",
+                help="How to handle an existing AppRC TOML file.",
             ),
         ] = None,
     ) -> None:
-        """Configure the active storage root and optional registry."""
+        """Configure the active storage root and optional multi-storage."""
         handlers.setup(
             assume_yes=assume_yes,
-            registry_dir=registry_dir,
+            apprc_dir=apprc_dir,
             storage_root=storage_root,
             storage_name=storage_name,
             multi_storage=multi_storage,

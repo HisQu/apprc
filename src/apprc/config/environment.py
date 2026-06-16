@@ -110,7 +110,7 @@ def bootstrap_env(
         is never mutated.
     :param load_dotenv_layers: Whether packaged ``.env.shared``,
         storage-local ``.env.local``, and explicit dotenv values should be
-        merged into this process. AppRC TOML and storage selection still run
+        merged into this process. Registry and storage selection still run
         when this is ``False``.
     :param storage: Optional ``--storage`` selector. When a registry is loaded,
         exact registered names resolve through TOML. Otherwise every non-empty

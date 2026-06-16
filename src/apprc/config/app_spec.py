@@ -98,26 +98,26 @@ class AppConfigSpec:
     def missing_apprc_toml_file_message(self, path: str | Path) -> str:
         """Return guidance when configured multi-storage state is missing.
 
-        :param path: Missing AppRC TOML path.
+        :param path: Missing registry file path.
         :return: Human-facing setup guidance.
         """
         resolved_path = normalize_apprc_toml_path(path)
         return (
-            f"{self.apprc_toml_env_key} points to a missing AppRC TOML: "
+            f"{self.apprc_toml_env_key} points to a missing registry file: "
             f"{resolved_path}. Remove {self.apprc_toml_env_key} for "
             "single-storage mode, or create the registry with "
             f"{self.config_command_name()} config setup --yes --multi-storage."
         )
 
     def _missing_apprc_toml_env_message(self) -> str:
-        """Return guidance for registry commands without a TOML env var."""
+        """Return guidance for registry commands without a registry env var."""
         return (
             f"{self.apprc_toml_env_key} is required for multi-storage registry "
-            "commands and must point to this app's AppRC TOML. Choose this "
-            "app's directory (AppRC), then run:\n"
+            "commands and must point to this app's registry file. Choose this "
+            "app's registry directory, then run:\n"
             f"  {self.config_command_name()} config setup --yes --apprc-dir "
             "/absolute/path/to/config-dir --multi-storage\n"
-            "Setup will derive the AppRC TOML path:\n"
+            "Setup will derive the registry file path:\n"
             f"  /absolute/path/to/config-dir/{self.apprc_toml_filename}\n"
             "For single-storage runtime commands, export only the storage env "
             "var."

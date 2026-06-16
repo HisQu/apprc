@@ -69,14 +69,14 @@ def _spec(package_name: str) -> AppConfigSpec:
 
 
 def _set_demo_apprc_toml(monkeypatch, tmp_path: Path) -> Path:
-    """Point the demo bootstrap spec at a test AppRC TOML file."""
+    """Point the demo bootstrap spec at a test registry file."""
     registry_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
     monkeypatch.setenv("DEMO_APPRC_TOML", str(registry_path))
     return registry_path
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_bootstrap_env_uses_storage_without_apprc_toml_env(
+def test_bootstrap_env_uses_storage_without_registry_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -105,7 +105,7 @@ def test_bootstrap_env_uses_storage_without_apprc_toml_env(
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_bootstrap_env_bare_storage_without_apprc_toml_is_relative_path(
+def test_bootstrap_env_bare_storage_without_registry_is_relative_path(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -165,7 +165,7 @@ def test_bootstrap_env_explicit_env_file_can_select_single_storage(
     assert os.environ["DEMO_MODEL"] == "explicit-model"
 
 
-def test_bootstrap_env_configured_apprc_toml_must_exist(
+def test_bootstrap_env_configured_registry_must_exist(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -178,7 +178,7 @@ def test_bootstrap_env_configured_apprc_toml_must_exist(
         'DEMO_MODEL="shared-model"\n',
     )
 
-    with pytest.raises(RegistryEnvError, match="missing AppRC TOML"):
+    with pytest.raises(RegistryEnvError, match="missing registry file"):
         bootstrap_env(
             spec=_spec(package_name),
             env_file=None,

@@ -259,7 +259,7 @@ class ConfigEditorApp(App[None]):
         """Return the registry required for registry-only editor actions."""
         if self.registry is None:
             self.notify(
-                "Storage management requires an AppRC TOML.",
+                "Storage management requires a registry file.",
                 severity="error",
             )
             return None
@@ -559,7 +559,7 @@ class ConfigEditorApp(App[None]):
         return (
             "No active storage path is selected. Set "
             f"{storage_env_key} to edit a storage-local env file. Configure "
-            "the AppRC TOML to enable registry actions."
+            "the registry file to enable registry actions."
         )
 
 

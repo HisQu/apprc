@@ -88,7 +88,7 @@ def test_generated_config_app_sets_and_shows_with_storage_only(
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_generated_config_registry_commands_require_apprc_toml(
+def test_generated_config_registry_commands_require_registry_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -112,7 +112,7 @@ def test_generated_config_registry_commands_require_apprc_toml(
     assert "required for multi-storage" in init_result.output
 
 
-def test_generated_config_list_rejects_missing_configured_apprc_toml(
+def test_generated_config_list_rejects_missing_registry_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -127,11 +127,11 @@ def test_generated_config_list_rejects_missing_configured_apprc_toml(
 
     assert result.exit_code == 2, result.output
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in result.output
-    assert "points to a missing AppRC TOML" in result.output
+    assert "points to a missing registry file" in result.output
     assert not missing_registry.exists()
 
 
-def test_generated_config_init_creates_missing_configured_apprc_toml(
+def test_generated_config_init_creates_missing_registry_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -153,7 +153,7 @@ def test_generated_config_init_creates_missing_configured_apprc_toml(
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_generated_config_edit_opens_single_storage_without_apprc_toml(
+def test_generated_config_edit_opens_single_storage_without_registry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -188,7 +188,7 @@ def test_generated_config_edit_opens_single_storage_without_apprc_toml(
     assert editor.kwargs["active_storage_root"] == storage_root.resolve()
 
 
-def test_generated_config_edit_rejects_missing_configured_apprc_toml(
+def test_generated_config_edit_rejects_missing_registry_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -203,7 +203,7 @@ def test_generated_config_edit_rejects_missing_configured_apprc_toml(
 
     assert result.exit_code == 2, result.output
     assert "APPRC_EXAMPLE_APP_APPRC_TOML" in result.output
-    assert "points to a missing AppRC TOML" in result.output
+    assert "points to a missing registry file" in result.output
 
 
 def test_generated_config_app_rejects_bare_unknown_storage_selector(

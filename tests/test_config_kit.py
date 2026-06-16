@@ -70,7 +70,7 @@ def test_kit_derives_apprc_toml_filename() -> None:
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_kit_registry_path_requires_apprc_toml_env(
+def test_kit_registry_path_requires_registry_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
@@ -126,7 +126,7 @@ def test_config_doctor_prints_env_not_set_status(
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_config_doctor_reports_runnable_single_storage_without_apprc_toml(
+def test_config_doctor_reports_runnable_single_storage_without_registry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:

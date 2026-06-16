@@ -137,7 +137,7 @@ def create_empty_apprc_example_app_registry(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
-    """Point the example app at an empty AppRC TOML registry."""
+    """Point the example app at an empty registry file."""
     registry_path = set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     registry_path.parent.mkdir(parents=True, exist_ok=True)
     registry_path.write_text("", encoding="utf-8")

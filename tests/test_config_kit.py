@@ -101,11 +101,12 @@ def test_config_doctor_reports_env_not_set_without_env(
     result = runner.invoke(app, ["doctor", "--json"])
 
     assert payload["status"] == ConfigDoctorStatus.ENV_NOT_SET.value
-    assert payload["runnable"] is False
     assert payload["registry_exists"] is False
     assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
     assert result.exit_code == 1, result.output
-    assert json.loads(result.output)["status"] == "env_not_set"
+    result_payload = json.loads(result.output)
+    assert result_payload["status"] == "env_not_set"
+    assert "runnable" not in result_payload
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -197,6 +198,10 @@ def test_doctor_payload_reports_registry_not_ready_for_missing_file(
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["status"] == ConfigDoctorStatus.REGISTRY_NOT_READY.value
+    assert payload["next_steps"][0].startswith(
+        "Unset APPRC_EXAMPLE_APP_APPRC_TOML"
+    )
+    assert "--multi-storage" in payload["next_steps"][1]
 
 
 def test_doctor_payload_reports_runnable_for_empty_registry_with_active_path(
@@ -215,7 +220,6 @@ def test_doctor_payload_reports_runnable_for_empty_registry_with_active_path(
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
-    assert payload["runnable"] is True
     assert payload["registry_exists"] is True
     assert payload["storage_count"] == 0
     assert payload["selected_storage"] is None
@@ -252,6 +256,10 @@ def test_doctor_payload_reports_storage_not_ready_for_missing_local_env(
 
     assert payload["status"] == ConfigDoctorStatus.STORAGE_NOT_READY.value
     assert payload["selected_local_env_exists"] is False
+    assert payload["next_steps"][0] == (
+        "Ensure the selected storage root exists and contains "
+        ".env.apprc_example_app."
+    )
 
 
 def test_doctor_payload_reports_runnable_for_active_storage_path(
@@ -273,7 +281,6 @@ def test_doctor_payload_reports_runnable_for_active_storage_path(
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
-    assert payload["runnable"] is True
     assert payload["registry_exists"] is True
 
 
@@ -302,7 +309,7 @@ def test_doctor_payload_tracks_selected_storage_source_from_env(
     assert payload["selected_storage_source"] == "APPRC_EXAMPLE_APP_STORAGE"
     assert payload["selected_storage_root"] == str(active_root.resolve())
     assert payload["selected_storage"] is None
-    assert payload["runnable"] is True
+    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
 
 
 def test_doctor_payload_resolves_storage_env_registered_name(
@@ -325,7 +332,7 @@ def test_doctor_payload_resolves_storage_env_registered_name(
     assert payload["selected_storage_source"] == "APPRC_EXAMPLE_APP_STORAGE"
     assert payload["selected_storage"] == "alpha"
     assert payload["selected_storage_root"] == str(storage_root.resolve())
-    assert payload["runnable"] is True
+    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
 
 
 def test_registry_storage_setup_reports_doctor_payload(
@@ -358,7 +365,7 @@ def test_registry_storage_setup_reports_doctor_payload(
     assert "APPRC_EXAMPLE_APP_STORAGE" not in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
-    assert payload["runnable"] is True
+    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
     assert payload["selected_storage_root"] == str(storage_root.resolve())
     assert payload["selected_local_env_exists"] is True
 

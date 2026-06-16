@@ -346,8 +346,7 @@ Doctor status is explicit:
 | `storage_not_ready` | The selected storage root or local env file is missing, or a multi-storage selector cannot be resolved. |
 | `runnable` | `<APP>_STORAGE` resolves to an existing storage root with a local env file; the optional registry is either unset or valid. |
 
-In `config doctor --json`, the `runnable` boolean is true only when `status`
-is `runnable`.
+In `config doctor --json`, use `status == "runnable"` as the readiness check.
 
 For example:
 

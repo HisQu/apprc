@@ -23,6 +23,7 @@ from apprc.cli.doctor import print_config_doctor
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
 from apprc.config.diagnostics import build_config_doctor_payload
+from apprc.config.doctor_status import ConfigDoctorStatus
 from apprc.config.kit import AppConfigKit
 from apprc.config.local_env import set_local_env_value
 from apprc.config.paths import StorageRootPathError
@@ -132,7 +133,7 @@ class ConfigCommandHandlers:
             dump_json(payload)
         else:
             print_config_doctor(self.kit, payload)
-        if not payload["runnable"]:
+        if payload["status"] != ConfigDoctorStatus.RUNNABLE.value:
             raise typer.Exit(code=1)
 
     def init(

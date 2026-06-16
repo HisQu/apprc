@@ -455,11 +455,13 @@ def test_generated_config_app_lists_registered_storages_as_json(
     }
 
 
+@pytest.mark.allow_missing_apprc_env
 def test_config_doctor_guidance_describes_active_storage_selector(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
 
     message = config_setup_message(kit)

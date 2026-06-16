@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 class ConfigDoctorPayload(TypedDict):
     """Machine-readable diagnostics emitted by ``config doctor``."""
 
-    runnable: bool
     status: str
     registry_env_key: str
     registry_env_value: str | None
@@ -159,11 +158,9 @@ def _doctor_payload(
     :param issues: All collected issues.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    runnable = status == ConfigDoctorStatus.RUNNABLE
     selection = storage.selection
     selected_storage_root = selection.root if selection is not None else None
     return {
-        "runnable": runnable,
         "status": status.value,
         "registry_env_key": kit.spec.apprc_toml_env_key,
         "registry_env_value": registry.env_value,
@@ -195,16 +192,7 @@ def _doctor_payload(
         "selected_local_env_exists": storage.local_env_exists,
         "missing_env_keys": storage.missing_env_keys,
         "issues": issues,
-        "next_steps": []
-        if not issues
-        else [
-            config_command_text(
-                kit,
-                "setup --yes --storage-root /absolute/path/to/storage-root",
-            ),
-            config_command_text(kit, "doctor"),
-            config_command_text(kit, "show"),
-        ],
+        "next_steps": _doctor_next_steps(kit, status),
     }
 
 
@@ -348,6 +336,50 @@ def _doctor_status(
     if storage.issues:
         return ConfigDoctorStatus.STORAGE_NOT_READY
     return ConfigDoctorStatus.RUNNABLE
+
+
+def _doctor_next_steps(
+    kit: "AppConfigKit",
+    status: ConfigDoctorStatus,
+) -> list[str]:
+    """Return recovery steps tailored to one doctor status.
+
+    :param kit: Application config facade.
+    :param status: Public readiness status.
+    :return: Ordered actions for human and JSON output.
+    """
+    if status == ConfigDoctorStatus.RUNNABLE:
+        return []
+    if status == ConfigDoctorStatus.ENV_NOT_SET:
+        return [
+            config_command_text(
+                kit,
+                "setup --yes --storage-root /absolute/path/to/storage-root",
+            ),
+            config_command_text(kit, "doctor"),
+            config_command_text(kit, "show"),
+        ]
+    if status == ConfigDoctorStatus.REGISTRY_NOT_READY:
+        return [
+            f"Unset {kit.spec.apprc_toml_env_key} for single-storage mode, "
+            "or create the registry:",
+            config_command_text(
+                kit,
+                "setup --yes --apprc-dir /absolute/path/to/config-dir "
+                "--storage-root /absolute/path/to/storage-root "
+                "--multi-storage",
+            ),
+            config_command_text(kit, "doctor"),
+        ]
+    return [
+        "Ensure the selected storage root exists and contains "
+        f"{kit.spec.local_env_filename}.",
+        config_command_text(
+            kit,
+            "setup --yes --storage-root /absolute/path/to/storage-root",
+        ),
+        config_command_text(kit, "doctor"),
+    ]
 
 
 def _missing_env_issue(

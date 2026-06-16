@@ -146,7 +146,6 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 result = setup_flow.ensure_single_storage(
                     self.kit,
                     storage_root=guarded_root,
-                    allow_non_empty_storage=True,
                 )
             except setup_flow.ConfigSetupError as exc:
                 self.notify(str(exc), severity="error", markup=False)
@@ -269,15 +268,15 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
 
         :return: Empty or parsed registry at the selected path.
         """
-        apprc_dir = await self._choose_apprc_dir(
-            default_dir=self._default_apprc_dir(),
+        registry_dir = await self._choose_registry_dir(
+            default_dir=self._default_registry_dir(),
             title=setup_text.apprc_dir_label(self.kit),
         )
-        if apprc_dir is None:
+        if registry_dir is None:
             return None
         registry_path = setup_flow.setup_registry_path_from_dir(
             self.kit,
-            apprc_dir,
+            registry_dir,
         )
         try:
             return setup_flow.load_setup_registry(registry_path)
@@ -294,7 +293,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :param registry: Existing registry to move.
         :return: Registry loaded from the move target, or ``None``.
         """
-        target_dir = await self._choose_apprc_dir(
+        target_dir = await self._choose_registry_dir(
             default_dir=registry.path.parent,
             title="Move registry",
         )
@@ -340,23 +339,23 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             self.notify(str(exc), severity="error", markup=False)
             return None
 
-    async def _choose_apprc_dir(
+    async def _choose_registry_dir(
         self,
         *,
         default_dir: Path | None,
         title: str,
     ) -> Path | None:
-        """Prompt until the user picks a usable AppRC directory.
+        """Prompt until the user picks a usable registry directory.
 
-        :param default_dir: Prefilled AppRC directory.
+        :param default_dir: Prefilled registry directory.
         :param title: Modal title.
-        :return: Normalized AppRC directory, or ``None`` when canceled.
+        :return: Normalized registry directory, or ``None`` when canceled.
         """
         while True:
             result = await self.push_screen_wait(
                 PathInputScreen(
                     title=title,
-                    message=self._style_apprc_dir_step_text(
+                    message=self._style_registry_dir_step_text(
                         default_dir,
                     ),
                     placeholder=f"{self.kit.spec.display_name} directory",
@@ -371,7 +370,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 self.notify(str(exc), severity="error", markup=False)
                 continue
 
-    def _default_apprc_dir(self) -> Path | None:
+    def _default_registry_dir(self) -> Path | None:
         """Return the env-selected registry parent directory, if known."""
         active_path = self.kit.spec.optional_apprc_toml_path()
         if active_path is None:
@@ -404,7 +403,6 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
                 registry,
                 storage_root=guarded_root,
                 storage_name=name_result,
-                allow_non_empty_storage=True,
             )
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
@@ -488,9 +486,9 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :return: Safe path, or ``None`` when canceled.
         """
         try:
-            root = setup_flow.validate_storage_root_for_setup(
+            root = setup_flow.prepare_setup_storage_root(
                 self.kit,
-                storage_root,
+                storage_root=storage_root,
                 storage_name=storage_name,
                 allow_non_empty_storage=True,
             )
@@ -612,10 +610,10 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         )
         return self._style_setup_text(text, paths=tuple(paths))
 
-    def _style_apprc_dir_step_text(self, default_dir: Path | None) -> Text:
+    def _style_registry_dir_step_text(self, default_dir: Path | None) -> Text:
         """Return the AppRC directory step body with known paths styled.
 
-        :param default_dir: Prefilled AppRC directory, if available.
+        :param default_dir: Prefilled registry directory, if available.
         :return: Rich setup body.
         """
         paths: tuple[Path | str, ...]

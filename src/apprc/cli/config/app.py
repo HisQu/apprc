@@ -164,7 +164,7 @@ def build_config_typer_app(
                 help="Run setup non-interactively with the selected values.",
             ),
         ] = False,
-        apprc_dir: Annotated[
+        registry_dir: Annotated[
             Path | None,
             typer.Option(
                 "--apprc-dir",
@@ -206,7 +206,7 @@ def build_config_typer_app(
         """Configure the active storage root and optional registry."""
         handlers.setup(
             assume_yes=assume_yes,
-            apprc_dir=apprc_dir,
+            registry_dir=registry_dir,
             storage_root=storage_root,
             storage_name=storage_name,
             multi_storage=multi_storage,

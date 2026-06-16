@@ -27,7 +27,7 @@ def run_config_setup(
     kit: AppConfigKit,
     *,
     assume_yes: bool = False,
-    apprc_dir: Path | None = None,
+    registry_dir: Path | None = None,
     storage_root: Path | None = None,
     storage_name: str | None = None,
     multi_storage: bool = False,
@@ -37,7 +37,7 @@ def run_config_setup(
 
     :param kit: Application config facade mounted by the host CLI.
     :param assume_yes: Whether to run without opening the Textual wizard.
-    :param apprc_dir: Optional AppRC directory for non-interactive setup.
+    :param registry_dir: Optional registry directory for non-interactive setup.
     :param storage_root: Optional active storage root.
     :param storage_name: Optional selector for multi-storage registration.
     :param multi_storage: Whether setup should register the active storage.
@@ -48,7 +48,7 @@ def run_config_setup(
     has_setup_options = any(
         option is not None
         for option in (
-            apprc_dir,
+            registry_dir,
             storage_root,
             storage_name,
             existing_action,
@@ -64,7 +64,7 @@ def run_config_setup(
             "--name is only used with --multi-storage.",
             param_hint="--multi-storage",
         )
-    if apprc_dir is not None and not multi_storage:
+    if registry_dir is not None and not multi_storage:
         raise typer.BadParameter(
             "--apprc-dir is only used with --multi-storage.",
             param_hint="--multi-storage",
@@ -82,24 +82,39 @@ def run_config_setup(
 
     try:
         if multi_storage:
+            registered_name = (
+                setup_flow.setup_storage_name(kit)
+                if storage_name is None
+                else storage_name
+            )
             setup_result = setup_flow.prepare_setup_registry(
                 kit,
-                apprc_dir=apprc_dir,
+                registry_dir=registry_dir,
                 existing_action=existing_action,
                 replace_existing_file=True,
+            )
+            root = setup_flow.prepare_setup_storage_root(
+                kit,
+                storage_root=storage_root,
+                storage_name=registered_name,
+                allow_non_empty_storage=True,
             )
             result = setup_flow.ensure_registered_storage(
                 kit,
                 setup_result.registry,
-                storage_root=storage_root,
-                storage_name=storage_name,
-                allow_non_empty_storage=True,
+                storage_root=root,
+                storage_name=registered_name,
             )
         else:
-            result = setup_flow.ensure_single_storage(
+            root = setup_flow.prepare_setup_storage_root(
                 kit,
                 storage_root=storage_root,
+                storage_name=None,
                 allow_non_empty_storage=True,
+            )
+            result = setup_flow.ensure_single_storage(
+                kit,
+                storage_root=root,
             )
     except setup_flow.ConfigSetupError as exc:
         _raise_setup_error(exc)

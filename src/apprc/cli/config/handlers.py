@@ -186,7 +186,7 @@ class ConfigCommandHandlers:
         self,
         *,
         assume_yes: bool,
-        apprc_dir: Path | None,
+        registry_dir: Path | None,
         storage_root: Path | None,
         storage_name: str | None,
         multi_storage: bool,
@@ -196,7 +196,7 @@ class ConfigCommandHandlers:
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,
-            apprc_dir=apprc_dir,
+            registry_dir=registry_dir,
             storage_root=storage_root,
             storage_name=storage_name,
             multi_storage=multi_storage,

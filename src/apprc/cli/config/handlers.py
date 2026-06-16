@@ -22,11 +22,11 @@ from apprc.cli.config.state import (
 from apprc.cli.doctor import print_config_doctor
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
-from apprc.config.app_spec import RegistryEnvError
 from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
 from apprc.config.local_env import set_local_env_value
 from apprc.config.paths import StorageRootPathError
+from apprc.config.registry_env import RegistryEnvError
 import apprc.config.setup.flow as setup_flow
 from apprc.config.storage.registry import StorageRegistry, register_storage
 from apprc.config.storage.selector import StorageSelectorError

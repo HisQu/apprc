@@ -4,7 +4,6 @@
 
 from apprc.config.app_spec import (
     AppConfigSpec,
-    RegistryEnvError,
 )
 from apprc.config.base_config import (
     BaseConfig,
@@ -39,6 +38,7 @@ from apprc.config.paths import (
     normalize_storage_root_path,
     windows_drive_path_to_posix,
 )
+from apprc.config.registry_env import RegistryEnvError
 from apprc.config.schema import (
     CONFIG_MISSING,
     ConfigField,

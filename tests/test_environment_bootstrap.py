@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.app_spec import AppConfigSpec, RegistryEnvError
+from apprc.config.app_spec import AppConfigSpec
 from apprc.config.environment import bootstrap_env
+from apprc.config.registry_env import RegistryEnvError
 from apprc.config.storage.registry import register_storage
 
 

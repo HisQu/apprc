@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.app_spec import AppConfigSpec, RegistryEnvError
+from apprc.config.app_spec import AppConfigSpec
+from apprc.config.registry_env import RegistryEnvError
 
 
 def _app_spec(app_name: str) -> AppConfigSpec:

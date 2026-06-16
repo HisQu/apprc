@@ -11,9 +11,9 @@ from typing import Any
 import typer
 
 # == Internal ================================
-from apprc.config.app_spec import RegistryEnvError
 from apprc.config.environment import BootstrapLogger, EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
+from apprc.config.registry_env import RegistryEnvError
 from apprc.config.storage.selector import StorageSelectorError
 
 

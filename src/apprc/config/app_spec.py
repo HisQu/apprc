@@ -10,11 +10,11 @@ from pathlib import Path
 
 # == Internal ================================
 from apprc.config.paths import normalize_apprc_toml_path
+from apprc.config.registry_env import (
+    RegistryEnvError,
+    missing_registry_env_message,
+)
 from apprc.config.schema import ConfigOwner
-
-
-class RegistryEnvError(ValueError):
-    """Raised when the optional registry env contract is missing or unusable."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +78,13 @@ class AppConfigSpec:
         path = self.optional_apprc_toml_path(proc_env=proc_env)
         if path is not None:
             return path
-        raise RegistryEnvError(self._missing_apprc_toml_env_message())
+        raise RegistryEnvError(
+            missing_registry_env_message(
+                apprc_toml_env_key=self.apprc_toml_env_key,
+                apprc_toml_filename=self.apprc_toml_filename,
+                command_name=self.config_command_name(),
+            )
+        )
 
     def optional_apprc_toml_path(
         self,
@@ -94,34 +100,6 @@ class AppConfigSpec:
         if raw_path:
             return normalize_apprc_toml_path(raw_path)
         return None
-
-    def missing_apprc_toml_file_message(self, path: str | Path) -> str:
-        """Return guidance when configured multi-storage state is missing.
-
-        :param path: Missing registry file path.
-        :return: Human-facing setup guidance.
-        """
-        resolved_path = normalize_apprc_toml_path(path)
-        return (
-            f"{self.apprc_toml_env_key} points to a missing registry file: "
-            f"{resolved_path}. Remove {self.apprc_toml_env_key} for "
-            "single-storage mode, or create the registry with "
-            f"{self.config_command_name()} config setup --yes --multi-storage."
-        )
-
-    def _missing_apprc_toml_env_message(self) -> str:
-        """Return guidance for registry commands without a registry env var."""
-        return (
-            f"{self.apprc_toml_env_key} is required for multi-storage registry "
-            "commands and must point to this app's registry file. Choose this "
-            "app's registry directory, then run:\n"
-            f"  {self.config_command_name()} config setup --yes --apprc-dir "
-            "/absolute/path/to/config-dir --multi-storage\n"
-            "Setup will derive the registry file path:\n"
-            f"  /absolute/path/to/config-dir/{self.apprc_toml_filename}\n"
-            "For single-storage runtime commands, export only the storage env "
-            "var."
-        )
 
 
 def _apprc_toml_env_key(app_name: str) -> str:

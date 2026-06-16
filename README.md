@@ -517,6 +517,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.config.schema` | `ConfigField`, `ConfigOwner`, field lookup, typed loading. |
 | `apprc.config.kit` | `AppConfigKit`, the high-level app integration facade. |
 | `apprc.config.app_spec` | App-specific env keys, literal AppRC TOML path derivation, and config contract metadata. |
+| `apprc.config.registry_env` | Registry env validation and setup guidance. |
 | `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
 | `apprc.config.paths` | Storage-root path normalization helpers. |
 | `apprc.config.storage.selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |

@@ -17,11 +17,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 # == Internal ================================
-from apprc.config.app_spec import AppConfigSpec, RegistryEnvError
+from apprc.config.app_spec import AppConfigSpec
 from apprc.config.environment import (
     BootstrapLogger,
     EnvBootstrapResult,
     bootstrap_env,
+)
+from apprc.config.registry_env import (
+    RegistryEnvError,
+    missing_registry_file_message,
 )
 from apprc.config.schema import ConfigOwner
 from apprc.config.storage.registry import (
@@ -157,7 +161,11 @@ class AppConfigKit:
         """
         resolved_path = self.spec.required_apprc_toml_path()
         if not resolved_path.is_file():
-            message = self.spec.missing_apprc_toml_file_message(resolved_path)
+            message = missing_registry_file_message(
+                apprc_toml_env_key=self.spec.apprc_toml_env_key,
+                command_name=self.spec.config_command_name(),
+                path=resolved_path,
+            )
             raise RegistryEnvError(message)
         return load_storage_registry_or_empty(resolved_path)
 

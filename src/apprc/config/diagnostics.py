@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
 from apprc.config.install_state import ConfigInstallState
-from apprc.config.storage.registry import StorageRegistry
+from apprc.config.storage.registry import (
+    StorageRegistry,
+    load_storage_registry_or_empty,
+)
 from apprc.config.storage.selector import (
     StorageSelection,
     StorageSelectorError,
@@ -94,7 +97,7 @@ def config_setup_message(kit: "AppConfigKit") -> str:
     return (
         f"No active {kit.spec.display_name} storage is selected.\n\n"
         f"{storage_key} is required and points at the active storage root. "
-        f"{kit.apprc_toml_env_key()} is optional; set it only when you want "
+        f"{kit.spec.apprc_toml_env_key()} is optional; set it only when you want "
         "multi-storage registry features.\n"
         "Choose the storage root; setup will create the storage-local env "
         "file and print the export command:\n"
@@ -172,7 +175,7 @@ def _doctor_payload(
     return {
         "ok": ok,
         "install_state": install_state.value,
-        "apprc_toml_env_key": kit.apprc_toml_env_key(),
+        "apprc_toml_env_key": kit.spec.apprc_toml_env_key(),
         "apprc_toml_env_value": registry.toml_env_value,
         "apprc_toml_path": (
             str(registry.active_toml_path)
@@ -228,11 +231,13 @@ def _diagnose_registry(
     :param apprc_toml_path: Optional explicit setup path.
     :return: Registry diagnosis with parse or missing-file issues.
     """
-    raw_toml_env_value = os.environ.get(kit.apprc_toml_env_key(), "").strip()
+    raw_toml_env_value = os.environ.get(
+        kit.spec.apprc_toml_env_key(), ""
+    ).strip()
     active_toml_path = (
         Path(apprc_toml_path).expanduser().resolve()
         if apprc_toml_path is not None
-        else kit.optional_apprc_toml_path()
+        else kit.spec.optional_apprc_toml_path()
     )
     if active_toml_path is None:
         return _RegistryDiagnosis(
@@ -258,7 +263,7 @@ def _diagnose_registry(
         )
 
     try:
-        registry = kit.load_registry(path=active_toml_path)
+        registry = load_storage_registry_or_empty(active_toml_path)
     except ValueError as exc:
         toml_error = str(exc)
         return _RegistryDiagnosis(

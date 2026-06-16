@@ -16,7 +16,12 @@ from textual.widgets import Button, Footer, Header, Static
 # == Internal ================================
 import apprc.config.setup.flow as setup_flow
 import apprc.config.setup.text as setup_text
-from apprc.config.storage.registry import StorageRegistry, ordered_storage_names
+from apprc.config.storage.registry import (
+    StorageRegistry,
+    ordered_storage_names,
+    suggested_storage_name,
+    suggested_storage_root,
+)
 from apprc.config.tui.primitives import (
     ButtonVariant,
     ConfirmScreen,
@@ -367,7 +372,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
 
     def _default_apprc_dir(self) -> Path | None:
         """Return the env-selected AppRC TOML parent directory, if known."""
-        active_path = self.kit.optional_apprc_toml_path()
+        active_path = self.kit.spec.optional_apprc_toml_path()
         if active_path is None:
             return None
         return active_path.parent
@@ -383,7 +388,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :param storage_root: Active storage root selected earlier in setup.
         """
         self.registry = registry
-        name_result = await self._choose_storage_name(registry)
+        name_result = await self._choose_storage_name()
         if name_result is None:
             return
         guarded_root = await self._guard_storage_root(
@@ -411,12 +416,12 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :return: User-selected root, or ``None`` when canceled.
         """
         try:
-            default_root = setup_flow.storage_root_path_from_env(self.kit)
+            default_root = setup_flow.setup_storage_root_from_env(self.kit)
         except setup_flow.ConfigSetupError as exc:
             self.notify(str(exc), severity="error", markup=False)
             default_root = None
         if default_root is None:
-            default_root = self.kit.suggested_storage_root()
+            default_root = suggested_storage_root(self.kit.spec.app_name)
         root_result = await self.push_screen_wait(
             PathInputScreen(
                 title="Active storage root",
@@ -454,18 +459,14 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             return True
         return None
 
-    async def _choose_storage_name(
-        self,
-        registry: StorageRegistry,
-    ) -> str | None:
+    async def _choose_storage_name(self) -> str | None:
         """Prompt for the multi-storage registry selector.
 
-        :param registry: Registry selected by setup.
         :return: Storage name, or ``None`` when canceled.
         """
         name_result = await self.push_screen_wait(
             StorageNameScreen(
-                default_name=self.kit.suggested_storage_name(),
+                default_name=suggested_storage_name(self.kit.spec.app_name),
                 message="Choose the registry name used by --storage.",
             )
         )
@@ -586,7 +587,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
             "Shell:": "bold",
             "Or Dotenv:": "bold",
             "env_not_set": MISSING_STYLE,
-            self.kit.apprc_toml_env_key(): ENV_KEY_STYLE,
+            self.kit.spec.apprc_toml_env_key(): ENV_KEY_STYLE,
             self.kit.spec.storage_env_key: ENV_KEY_STYLE,
         }
         styles.update({str(path): PATH_STYLE for path in paths if str(path)})

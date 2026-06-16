@@ -80,7 +80,7 @@ from apprc.config.storage.selector import (
     StorageSelectorError,
     missing_storage_selector_error,
     resolve_active_storage_selection,
-    resolve_env_storage_root_path,
+    resolve_setup_storage_root_from_env,
     resolve_registered_storage_name,
     resolve_storage_selector_value,
 )

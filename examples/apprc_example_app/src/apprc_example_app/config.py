@@ -139,7 +139,7 @@ def _bootstrap_payload(
     bootstrap: EnvBootstrapResult | None,
 ) -> dict[str, object]:
     """Return JSON-friendly bootstrap state for the current invocation."""
-    apprc_toml_path = APPRC_EXAMPLE_APP_KIT.optional_apprc_toml_path()
+    apprc_toml_path = APPRC_EXAMPLE_APP_KIT.spec.optional_apprc_toml_path()
     if bootstrap is None:
         return {
             "shared_env": None,

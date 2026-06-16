@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from apprc.cli.config import config_request_skips_bootstrap
+from apprc.cli.config import config_request_skips_runtime_bootstrap
 from apprc.config import (
     AppConfigKit,
     ApprcTomlEnvError,
@@ -19,6 +19,7 @@ from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     ApprcExampleAppConfigState,
     build_apprc_example_app_kit,
+    register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
     set_apprc_example_app_bootstrap,
 )
@@ -27,10 +28,12 @@ pytestmark = [pytest.mark.requires_apprc_env("APPRC_EXAMPLE_APP")]
 
 
 def test_config_init_and_list_skip_runtime_bootstrap() -> None:
-    assert config_request_skips_bootstrap(["init", "/tmp/storage"])
-    assert config_request_skips_bootstrap(["list"])
-    assert config_request_skips_bootstrap(["edit"])
-    assert config_request_skips_bootstrap(["setup"])
+    skips = config_request_skips_runtime_bootstrap
+
+    assert skips(tokens=["config", "init", "/tmp/storage"])
+    assert skips(tokens=["config", "list"])
+    assert skips(tokens=["config", "edit"])
+    assert skips(tokens=["config", "setup"])
 
 
 def test_config_owner_runtime_cls_is_optional() -> None:
@@ -84,7 +87,7 @@ def test_kit_registry_path_requires_apprc_toml_env(
     kit = build_apprc_example_app_kit()
 
     with pytest.raises(ApprcTomlEnvError) as exc_info:
-        kit.apprc_toml_path()
+        kit.spec.apprc_toml_path()
 
     message = str(exc_info.value)
     assert (
@@ -159,7 +162,8 @@ def test_config_doctor_reports_env_not_set_for_missing_storage_env(
 ) -> None:
     set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    kit.register_storage(
+    register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
@@ -189,7 +193,7 @@ def test_generated_config_setup_yes_requires_storage_without_env(
     assert "APPRC_EXAMPLE_APP_STORAGE" in result.output
 
 
-def test_install_state_reports_not_installed_for_missing_file(
+def test_doctor_payload_reports_not_installed_for_missing_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -201,10 +205,12 @@ def test_install_state_reports_not_installed_for_missing_file(
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
 
-    assert kit.install_state() == ConfigInstallState.NOT_INSTALLED
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload["install_state"] == ConfigInstallState.NOT_INSTALLED.value
 
 
-def test_install_state_reports_healthy_for_empty_registry_with_active_path(
+def test_doctor_payload_reports_healthy_for_empty_registry_with_active_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -217,16 +223,18 @@ def test_install_state_reports_healthy_for_empty_registry_with_active_path(
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
 
-    payload = kit.doctor_payload()
+    payload = build_config_doctor_payload(kit, storage=None)
 
-    assert kit.install_state() == ConfigInstallState.INSTALLED_HEALTHY
+    assert (
+        payload["install_state"] == ConfigInstallState.INSTALLED_HEALTHY.value
+    )
     assert payload["ok"] is True
     assert payload["apprc_toml_exists"] is True
     assert payload["storage_count"] == 0
     assert payload["selected_storage"] is None
 
 
-def test_install_state_reports_unhealthy_for_invalid_registry(
+def test_doctor_payload_reports_unhealthy_for_invalid_registry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -235,31 +243,35 @@ def test_install_state_reports_unhealthy_for_invalid_registry(
     registry_path.write_text("[invalid", encoding="utf-8")
     kit = build_apprc_example_app_kit()
 
-    payload = kit.doctor_payload()
+    payload = build_config_doctor_payload(kit, storage=None)
 
-    assert kit.install_state() == ConfigInstallState.INSTALLED_UNHEALTHY
+    assert (
+        payload["install_state"] == ConfigInstallState.INSTALLED_UNHEALTHY.value
+    )
     assert payload["apprc_toml_parse_ok"] is False
     assert payload["apprc_toml_error"] is not None
 
 
-def test_install_state_reports_unhealthy_for_missing_local_env(
+def test_doctor_payload_reports_unhealthy_for_missing_local_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
-    kit.register_storage(name="alpha", root=storage_root)
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
     (storage_root / ".env.apprc_example_app").unlink()
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
 
-    payload = kit.doctor_payload()
+    payload = build_config_doctor_payload(kit, storage=None)
 
-    assert kit.install_state() == ConfigInstallState.INSTALLED_UNHEALTHY
+    assert (
+        payload["install_state"] == ConfigInstallState.INSTALLED_UNHEALTHY.value
+    )
     assert payload["selected_local_env_exists"] is False
 
 
-def test_install_state_reports_healthy_for_active_storage_path(
+def test_doctor_payload_reports_healthy_for_active_storage_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -269,19 +281,22 @@ def test_install_state_reports_healthy_for_active_storage_path(
         storage_root=tmp_path / "storage",
     )
     kit = build_apprc_example_app_kit()
-    kit.register_storage(
+    register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
 
-    payload = kit.doctor_payload()
+    payload = build_config_doctor_payload(kit, storage=None)
 
-    assert kit.install_state() == ConfigInstallState.INSTALLED_HEALTHY
+    assert (
+        payload["install_state"] == ConfigInstallState.INSTALLED_HEALTHY.value
+    )
     assert payload["ok"] is True
     assert payload["apprc_toml_exists"] is True
 
 
-def test_install_state_tracks_selected_storage_source_from_env(
+def test_doctor_payload_tracks_selected_storage_source_from_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -295,12 +310,13 @@ def test_install_state_tracks_selected_storage_source_from_env(
         encoding="utf-8",
     )
 
-    kit.register_storage(
+    register_storage_for_kit(
+        kit,
         name="alpha",
         root=registry_root,
     )
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(active_root))
-    payload = kit.doctor_payload()
+    payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["selected_storage_source"] == "APPRC_EXAMPLE_APP_STORAGE"
     assert payload["selected_storage_root"] == str(active_root.resolve())
@@ -308,7 +324,7 @@ def test_install_state_tracks_selected_storage_source_from_env(
     assert payload["ok"] is True
 
 
-def test_install_state_resolves_storage_env_registered_name(
+def test_doctor_payload_resolves_storage_env_registered_name(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -316,13 +332,14 @@ def test_install_state_resolves_storage_env_registered_name(
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "alpha"
 
-    kit.register_storage(
+    register_storage_for_kit(
+        kit,
         name="alpha",
         root=storage_root,
     )
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
 
-    payload = kit.doctor_payload()
+    payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload["selected_storage_source"] == "APPRC_EXAMPLE_APP_STORAGE"
     assert payload["selected_storage"] == "alpha"
@@ -330,7 +347,7 @@ def test_install_state_resolves_storage_env_registered_name(
     assert payload["ok"] is True
 
 
-def test_kit_registers_storage_and_reports_doctor_payload(
+def test_registry_storage_setup_reports_doctor_payload(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -342,11 +359,12 @@ def test_kit_registers_storage_and_reports_doctor_payload(
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
 
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=storage_root,
     )
-    payload = kit.doctor_payload()
+    payload = build_config_doctor_payload(kit, storage=None)
 
     assert (
         registry.path

@@ -8,6 +8,7 @@ from rich.text import Text
 from textual.containers import VerticalScroll
 from textual.widgets import Button, DataTable, Input, ListView, Static
 
+from apprc.config.tui import ConfigEditorApp
 from apprc.config.tui.modals import ArchiveOptionsScreen
 from apprc.config.tui.styles import (
     CHOICE_STYLE,
@@ -25,6 +26,8 @@ from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     build_apprc_example_app_kit,
     create_empty_apprc_example_app_registry,
+    record_archived_storage_for_kit,
+    register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
 )
 from tests.support_tui import (
@@ -44,12 +47,13 @@ def test_kit_builds_generic_editor_with_spec_defaults(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
 
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     assert editor.owners == APPRC_EXAMPLE_APP_OWNERS
     assert editor.local_env_filename == ".env.apprc_example_app"
@@ -66,7 +70,7 @@ async def test_editor_launches_with_empty_registry_and_new_storage_button(
 ) -> None:
     create_empty_apprc_example_app_registry(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    editor = kit.editor_app(registry=kit.load_registry())
+    editor = ConfigEditorApp(kit=kit, registry=kit.load_storage_registry())
 
     async with editor.run_test():
         title = editor.query_one("#storage-title", Static).content
@@ -91,7 +95,8 @@ async def test_editor_launches_with_active_path_without_registry(
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "active"
-    editor = kit.editor_app(
+    editor = ConfigEditorApp(
+        kit=kit,
         registry=None,
         active_storage_root=storage_root,
     )
@@ -122,12 +127,13 @@ async def test_editor_launches_with_missing_registered_storage(
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "alpha"
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=storage_root,
     )
     shutil.rmtree(storage_root)
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test():
         title = editor.query_one("#storage-title", Static).content
@@ -158,7 +164,7 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
 ) -> None:
     create_empty_apprc_example_app_registry(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    editor = kit.editor_app(registry=kit.load_registry())
+    editor = ConfigEditorApp(kit=kit, registry=kit.load_storage_registry())
     storage_root = tmp_path / "alpha"
 
     async with editor.run_test() as pilot:
@@ -174,7 +180,7 @@ async def test_editor_registers_missing_storage_directory_from_modal_flow(
         editor.screen.query_one("#name-continue", Button).press()
         await worker.wait()
 
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert registry.selected("alpha").root == storage_root.resolve()
     assert (storage_root / ".env.apprc_example_app").is_file()
 
@@ -188,13 +194,16 @@ async def test_editor_unregisters_missing_storage(
     kit = build_apprc_example_app_kit()
     beta_root = tmp_path / "beta"
     alpha_root = tmp_path / "alpha"
-    kit.register_storage(name="beta", root=beta_root)
-    registry = kit.register_storage(
+    register_storage_for_kit(kit, name="beta", root=beta_root)
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=alpha_root,
     )
     shutil.rmtree(alpha_root)
-    editor = kit.editor_app(registry=registry, initial_storage="alpha")
+    editor = ConfigEditorApp(
+        kit=kit, registry=registry, initial_storage="alpha"
+    )
 
     async with editor.run_test() as pilot:
         worker = editor.run_worker(
@@ -207,7 +216,7 @@ async def test_editor_unregisters_missing_storage(
         await pilot.pause()
         await worker.wait()
 
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert sorted(registry.storages) == ["beta"]
     assert registry.selected("beta").root == beta_root.resolve()
     assert not alpha_root.exists()
@@ -220,12 +229,13 @@ async def test_editor_unregisters_live_storage(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    kit.register_storage(name="alpha", root=tmp_path / "alpha")
-    registry = kit.register_storage(
+    register_storage_for_kit(kit, name="alpha", root=tmp_path / "alpha")
+    registry = register_storage_for_kit(
+        kit,
         name="beta",
         root=tmp_path / "beta",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test():
         editor._select_storage("alpha")
@@ -234,7 +244,7 @@ async def test_editor_unregisters_live_storage(
             delete_content=False,
         )
 
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert removed is True
     assert sorted(registry.storages) == ["beta"]
     assert (tmp_path / "alpha").is_dir()
@@ -250,14 +260,15 @@ async def test_editor_unregisters_live_storage_without_replacement_prompt(
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
     gamma_root = tmp_path / "gamma"
-    kit.register_storage(name="alpha", root=alpha_root)
-    kit.register_storage(name="beta", root=beta_root)
-    registry = kit.register_storage(
+    register_storage_for_kit(kit, name="alpha", root=alpha_root)
+    register_storage_for_kit(kit, name="beta", root=beta_root)
+    registry = register_storage_for_kit(
+        kit,
         name="gamma",
         root=gamma_root,
     )
     shutil.rmtree(beta_root)
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test():
         removed = await editor.storage_workflows.remove_live_storage(
@@ -265,7 +276,7 @@ async def test_editor_unregisters_live_storage_without_replacement_prompt(
             delete_content=False,
         )
 
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert removed is True
     assert sorted(registry.storages) == ["beta", "gamma"]
     assert registry.selected("gamma").root == gamma_root.resolve()
@@ -280,8 +291,9 @@ async def test_editor_registers_active_storage_from_button_flow(
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "active"
     storage_root.mkdir()
-    editor = kit.editor_app(
-        registry=kit.load_registry(),
+    editor = ConfigEditorApp(
+        kit=kit,
+        registry=kit.load_storage_registry(),
         active_storage_root=storage_root,
     )
 
@@ -298,7 +310,7 @@ async def test_editor_registers_active_storage_from_button_flow(
         await pilot.pause()
         await worker.wait()
 
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert sorted(registry.storages) == ["active"]
     assert registry.selected("active").root == storage_root.resolve()
 
@@ -310,12 +322,13 @@ async def test_editor_shows_and_prunes_stale_archived_rows(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.record_archived_storage(
+    registry = record_archived_storage_for_kit(
+        kit,
         name="alpha",
         archive=tmp_path / "alpha.apprc.tar.xz",
         source_root=tmp_path / "alpha",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test():
         storage_list = editor.query_one("#storage-list", ListView)
@@ -325,7 +338,7 @@ async def test_editor_shows_and_prunes_stale_archived_rows(
             "alpha"
         )
 
-    assert kit.load_registry().archived_storages == {}
+    assert kit.load_storage_registry().archived_storages == {}
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -341,7 +354,8 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
     monkeypatch.delenv("APPRC_EXAMPLE_APP_ACCESS_TOKEN", raising=False)
     monkeypatch.setenv("APPRC_EXAMPLE_APP_MODE", "MANUAL")
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
@@ -353,7 +367,7 @@ async def test_editor_table_shows_storage_root_and_formats_rows(
         'APPRC_EXAMPLE_APP_RETRY_COUNT="7"\n',
         encoding="utf-8",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test():
         table = editor.query_one("#field-table", DataTable)
@@ -414,11 +428,12 @@ async def test_editor_table_required_missing_keeps_red_fill(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test():
         table = editor.query_one("#field-table", DataTable)
@@ -439,11 +454,12 @@ async def test_editor_modal_saves_local_value(
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=storage_root,
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test() as pilot:
         await open_field_editor(
@@ -470,7 +486,8 @@ async def test_editor_modal_copies_source_values_without_saving(
     monkeypatch.setenv("APPRC_EXAMPLE_APP_PROFILE", "shell-profile")
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=storage_root,
     )
@@ -479,7 +496,7 @@ async def test_editor_modal_copies_source_values_without_saving(
         'APPRC_EXAMPLE_APP_PROFILE="local-profile"\n',
         encoding="utf-8",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test() as pilot:
         await open_field_editor(
@@ -559,11 +576,12 @@ async def test_editor_modal_keeps_sources_visible_at_compact_height(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test(size=(120, 18)) as pilot:
         await open_field_editor(
@@ -614,11 +632,12 @@ async def test_editor_modal_details_scroll_when_height_is_compact(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test(size=(120, 18)) as pilot:
         await open_field_editor(
@@ -646,11 +665,12 @@ async def test_editor_modal_enables_local_copy_when_user_types(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test() as pilot:
         await open_field_editor(
@@ -681,7 +701,8 @@ async def test_editor_modal_redacts_secret_sources_but_copies_raw_value(
     monkeypatch.delenv("APPRC_EXAMPLE_APP_ACCESS_TOKEN", raising=False)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=storage_root,
     )
@@ -689,7 +710,7 @@ async def test_editor_modal_redacts_secret_sources_but_copies_raw_value(
         'APPRC_EXAMPLE_APP_ACCESS_TOKEN="super-secret"\n',
         encoding="utf-8",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test() as pilot:
         await open_field_editor(
@@ -732,11 +753,12 @@ async def test_editor_modal_shows_type_choices_and_long_explanation(
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     monkeypatch.delenv("APPRC_EXAMPLE_APP_MODE", raising=False)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test() as pilot:
         await open_field_editor(
@@ -785,11 +807,12 @@ async def test_editor_modal_styles_generic_possible_values(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test() as pilot:
         await open_field_editor(
@@ -812,11 +835,12 @@ async def test_editor_modal_marks_path_inputs(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
 
     async with editor.run_test() as pilot:
         await open_field_editor(
@@ -841,11 +865,12 @@ async def test_archive_options_marks_path_input_and_source_path(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "storage",
     )
-    editor = kit.editor_app(registry=registry)
+    editor = ConfigEditorApp(kit=kit, registry=registry)
     source_root = registry.selected("alpha").root
 
     async with editor.run_test() as pilot:

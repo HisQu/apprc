@@ -5,9 +5,14 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from apprc.config.storage.registry import (
+    load_storage_registry_or_empty,
+    suggested_storage_root,
+)
 from tests.support_config import (
     ApprcExampleAppConfigState,
     build_apprc_example_app_kit,
+    register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
 )
 
@@ -23,7 +28,7 @@ def test_generated_config_setup_creates_single_storage_files(
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
-        str(kit.suggested_storage_root()),
+        str(suggested_storage_root(kit.spec.app_name)),
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -34,7 +39,7 @@ def test_generated_config_setup_creates_single_storage_files(
         tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
     )
     assert result.exit_code == 0, result.output
-    assert kit.optional_apprc_toml_path() is None
+    assert kit.spec.optional_apprc_toml_path() is None
     assert "APPRC_EXAMPLE_APP_STORAGE" not in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
@@ -83,7 +88,7 @@ def test_generated_config_setup_accepts_apprc_dir_without_env(
         ],
     )
 
-    registry = kit.load_registry(path=custom_registry)
+    registry = load_storage_registry_or_empty(custom_registry)
     assert result.exit_code == 0, result.output
     assert registry.path == custom_registry
     assert custom_registry.is_file()
@@ -99,7 +104,7 @@ def test_generated_config_setup_accepts_apprc_dir_without_env(
     assert (
         f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"' in result.output
     )
-    assert kit.optional_apprc_toml_path() is None
+    assert kit.spec.optional_apprc_toml_path() is None
 
 
 def test_generated_config_setup_accepts_apprc_dir_env_mismatch(
@@ -115,7 +120,7 @@ def test_generated_config_setup_accepts_apprc_dir_env_mismatch(
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
-        str(kit.suggested_storage_root()),
+        str(suggested_storage_root(kit.spec.app_name)),
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -127,7 +132,7 @@ def test_generated_config_setup_accepts_apprc_dir_env_mismatch(
         ["setup", "--yes", "--apprc-dir", str(custom_dir), "--multi-storage"],
     )
 
-    registry = kit.load_registry(path=custom_registry)
+    registry = load_storage_registry_or_empty(custom_registry)
     assert result.exit_code == 0, result.output
     assert registry.path == custom_registry
     assert custom_registry.is_file()
@@ -149,14 +154,14 @@ def test_generated_config_setup_accepts_matching_custom_registry_env(
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
-        str(kit.suggested_storage_root()),
+        str(suggested_storage_root(kit.spec.app_name)),
     )
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
 
     result = runner.invoke(app, ["setup", "--yes", "--multi-storage"])
 
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert result.exit_code == 0, result.output
     assert registry.path == custom_registry
     assert custom_registry.is_file()
@@ -191,7 +196,7 @@ def test_generated_config_setup_accepts_custom_multi_storage_name(
         ],
     )
 
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert result.exit_code == 0, result.output
     assert registry.selected("alpha").root == storage_root.resolve()
     assert (storage_root / ".env.apprc_example_app").is_file()
@@ -226,7 +231,7 @@ def test_generated_config_setup_options_require_yes(
 
     assert result.exit_code == 2, result.output
     assert "Setup options run non-interactively" in result.output
-    assert not kit.apprc_toml_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
 
 
 def test_generated_config_setup_name_requires_multi_storage(
@@ -252,7 +257,7 @@ def test_generated_config_setup_name_requires_multi_storage(
 
     assert result.exit_code == 2, result.output
     assert "--name is only used with --multi-storage" in result.output
-    assert not kit.apprc_toml_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -282,7 +287,7 @@ def test_generated_config_setup_keeps_existing_registry_rows(
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "alpha"
-    kit.register_storage(name="alpha", root=storage_root)
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
         str(storage_root.resolve()),
@@ -292,7 +297,7 @@ def test_generated_config_setup_keeps_existing_registry_rows(
 
     result = runner.invoke(app, ["setup", "--yes"])
 
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert result.exit_code == 0, result.output
     assert registry.selected("alpha").root == storage_root.resolve()
     assert "Example App setup files are ready." in result.output
@@ -314,10 +319,10 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     kit = build_apprc_example_app_kit()
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
-        str(kit.suggested_storage_root()),
+        str(suggested_storage_root(kit.spec.app_name)),
     )
     old_storage_root = tmp_path / "alpha"
-    kit.register_storage(name="alpha", root=old_storage_root)
+    register_storage_for_kit(kit, name="alpha", root=old_storage_root)
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
 
@@ -329,7 +334,7 @@ def test_generated_config_setup_reset_orphans_registered_storage(
     new_storage_root = (
         tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
     )
-    registry = kit.load_registry()
+    registry = kit.load_storage_registry()
     assert result.exit_code == 0, result.output
     assert old_storage_root.is_dir()
     assert registry.selected("apprc_example_app_stor-1").root == (
@@ -350,12 +355,12 @@ def test_generated_config_setup_moves_existing_registry_to_apprc_dir_target(
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "alpha"
-    kit.register_storage(name="alpha", root=storage_root)
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
         str(storage_root.resolve()),
     )
-    original_registry = kit.apprc_toml_path()
+    original_registry = kit.spec.apprc_toml_path()
     custom_dir = tmp_path / "custom"
     custom_registry = custom_dir / "apprc_example_app.apprc.toml"
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
@@ -374,7 +379,7 @@ def test_generated_config_setup_moves_existing_registry_to_apprc_dir_target(
         ],
     )
 
-    registry = kit.load_registry(path=custom_registry)
+    registry = load_storage_registry_or_empty(custom_registry)
     assert result.exit_code == 0, result.output
     assert not original_registry.exists()
     assert custom_registry.is_file()

@@ -38,7 +38,6 @@ def build_config_typer_app(
     editor_app_cls: type[ConfigEditorApp] | None = None,
     help: str | None = None,
     setup_message: str | None = None,
-    legacy_json_migration_message: str | None = None,
     runtime_error_param_hint: str = "CONFIG",
 ) -> typer.Typer:
     """Build the reusable ``config`` command group.
@@ -51,8 +50,6 @@ def build_config_typer_app(
     :param editor_app_cls: Optional Textual subclass.
     :param help: Optional command-group help.
     :param setup_message: Optional setup text for missing storage.
-    :param legacy_json_migration_message: Optional deprecated callback
-        ``--json`` hint.
     :param runtime_error_param_hint: Parameter hint for runtime-payload
         validation errors.
     :return: Configured Typer app.
@@ -81,27 +78,15 @@ def build_config_typer_app(
         ),
         editor_app_cls=editor_app_cls,
         missing_setup=setup_message or config_setup_message(kit),
-        migration_message=(
-            legacy_json_migration_message
-            or f"Use: {kit.spec.config_command_name()} config show --json"
-        ),
         runtime_error_param_hint=runtime_error_param_hint,
     )
 
     @app.callback(invoke_without_command=True)
     def config_cmd(
         ctx: typer.Context,
-        legacy_json: Annotated[
-            bool,
-            typer.Option(
-                "--json",
-                hidden=True,
-                help="Deprecated. Use the show subcommand with --json.",
-            ),
-        ] = False,
     ) -> None:
-        """Show config help or route removed callback-level options."""
-        handlers.callback(ctx, legacy_json)
+        """Show config help when no subcommand was selected."""
+        handlers.callback(ctx)
 
     @app.command("list")
     def config_list_cmd(

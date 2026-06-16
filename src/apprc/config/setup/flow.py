@@ -18,8 +18,10 @@ import apprc.config.setup.text as setup_text
 from apprc.config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
+    register_storage,
+    suggested_storage_name,
 )
-from apprc.config.storage.selector import resolve_env_storage_root_path
+from apprc.config.storage.selector import resolve_setup_storage_root_from_env
 
 if TYPE_CHECKING:
     from apprc.config.kit import AppConfigKit
@@ -88,7 +90,7 @@ def find_existing_apprc_toml_path(kit: "AppConfigKit") -> Path | None:
     :param kit: Application config facade.
     :return: Existing env-selected AppRC TOML path, or ``None``.
     """
-    active_path = kit.optional_apprc_toml_path()
+    active_path = kit.spec.optional_apprc_toml_path()
     if active_path is not None and active_path.is_file():
         return normalized_apprc_toml_path(active_path)
     return None
@@ -201,7 +203,7 @@ def ensure_registered_storage(
     :return: Setup result with active root and registered selector.
     :raises ConfigSetupError: If the storage root is unsafe.
     """
-    name = storage_name or kit.suggested_storage_name()
+    name = storage_name or suggested_storage_name(kit.spec.app_name)
     resolved_root = _ensure_setup_storage_root(
         kit,
         storage_root=storage_root,
@@ -209,10 +211,11 @@ def ensure_registered_storage(
         allow_non_empty_storage=allow_non_empty_storage,
     )
     try:
-        updated = kit.register_storage(
+        updated = register_storage(
             name=name,
             root=resolved_root,
             path=registry.path,
+            local_env_filename=kit.spec.local_env_filename,
         )
         return ConfigSetupResult(
             registry=updated,
@@ -273,7 +276,7 @@ def _ensure_setup_storage_root(
     :return: Resolved active storage root.
     :raises ConfigSetupError: If the storage root is unsafe.
     """
-    active_root = storage_root or storage_root_path_from_env(kit)
+    active_root = storage_root or setup_storage_root_from_env(kit)
     if active_root is None:
         raise ConfigSetupError(
             f"{kit.spec.storage_env_key} or --storage-root is required for "
@@ -283,7 +286,7 @@ def _ensure_setup_storage_root(
     root = validate_storage_root_for_setup(
         kit,
         active_root,
-        storage_name=None,
+        storage_name=storage_name,
         allow_non_empty_storage=allow_non_empty_storage,
     )
     try:
@@ -342,7 +345,7 @@ def validate_storage_root_for_setup(
     )
 
 
-def storage_root_path_from_env(kit: "AppConfigKit") -> Path | None:
+def setup_storage_root_from_env(kit: "AppConfigKit") -> Path | None:
     """Return the active storage root from the setup-time env selector.
 
     During setup, the storage env value is path-preferred. A bare value such as
@@ -353,7 +356,7 @@ def storage_root_path_from_env(kit: "AppConfigKit") -> Path | None:
     :raises ConfigSetupError: If the path cannot be safely interpreted.
     """
     try:
-        return resolve_env_storage_root_path(
+        return resolve_setup_storage_root_from_env(
             storage_env_key=kit.spec.storage_env_key,
             proc_env=os.environ,
         )
@@ -377,13 +380,13 @@ def setup_apprc_toml_path(
     """
     if apprc_dir is not None:
         return setup_apprc_toml_path_from_dir(kit, apprc_dir)
-    active_path = kit.optional_apprc_toml_path()
+    active_path = kit.spec.optional_apprc_toml_path()
     if active_path is not None:
         return normalized_apprc_toml_path(active_path)
     raise ConfigSetupError(
         f"{kit.spec.display_name} setup needs the "
         f"{kit.spec.display_name} directory (AppRC) because "
-        f"{kit.apprc_toml_env_key()} is not set.\n"
+        f"{kit.spec.apprc_toml_env_key()} is not set.\n"
         "Run setup again with an explicit directory:\n"
         f"{kit.spec.config_command_name()} config setup --yes "
         "--apprc-dir /absolute/path/to/config-dir",

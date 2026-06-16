@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import Protocol
 
@@ -12,7 +13,7 @@ from apprc.cli.options import (
     COMMON_ROOT_FLAG_OPTIONS,
     COMMON_ROOT_VALUE_OPTIONS,
 )
-from apprc.cli.typer_utils import strip_leading_options
+from apprc.cli.typer_utils import args_after_command, strip_leading_options
 from apprc.config.environment import EnvBootstrapResult
 from apprc.config.kit import AppConfigKit
 from apprc.config.storage.registry import StorageRegistry
@@ -26,20 +27,33 @@ class ConfigCliState(Protocol):
     storage: str | None
 
 
-def config_request_skips_bootstrap(args: list[str]) -> bool:
+def config_request_skips_runtime_bootstrap(
+    command_name: str = "config",
+    *,
+    tokens: Sequence[str] | None = None,
+    root_value_options: Collection[str] = COMMON_ROOT_VALUE_OPTIONS,
+) -> bool:
     """Return whether one config invocation avoids runtime bootstrap.
 
-    :param args: Tokens after the top-level ``config`` command.
+    :param command_name: Top-level config command name to inspect.
+    :param tokens: Optional command tokens without the program name.
+    :param root_value_options: Root options that consume a following value
+        before the config command.
     :return: Whether the config command can run without root config state.
     """
+    args = args_after_command(
+        command_name,
+        tokens=tokens,
+        root_value_options=root_value_options,
+    )
+    if args is None:
+        return False
     action_args = strip_leading_options(
         args,
         flag_options=COMMON_ROOT_FLAG_OPTIONS,
         value_options=COMMON_ROOT_VALUE_OPTIONS,
     )
     if not action_args:
-        return True
-    if action_args == ["--json"]:
         return True
     return action_args[0] in {
         "doctor",
@@ -67,8 +81,12 @@ def active_storage_root_from_state(
         return state.env_bootstrap.storage_root
     if not os.environ.get(kit.spec.storage_env_key, "").strip():
         return None
-    active_registry_path = kit.optional_apprc_toml_path()
-    registry = kit.load_registry() if active_registry_path is not None else None
+    active_registry_path = kit.spec.optional_apprc_toml_path()
+    registry = (
+        kit.load_storage_registry()
+        if active_registry_path is not None
+        else None
+    )
     return active_storage_root_from_env(kit, registry=registry)
 
 

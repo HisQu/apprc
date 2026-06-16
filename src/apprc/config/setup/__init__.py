@@ -17,7 +17,7 @@ from apprc.config.setup.flow import (
     same_path,
     setup_apprc_toml_dir,
     setup_apprc_toml_path_from_dir,
-    storage_root_path_from_env,
+    setup_storage_root_from_env,
     validate_storage_root_for_setup,
 )
 from apprc.config.setup.text import (

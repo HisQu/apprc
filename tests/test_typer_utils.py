@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from apprc.cli.config import config_request_skips_bootstrap
+from apprc.cli.config import config_request_skips_runtime_bootstrap
 from apprc.cli.typer_utils import args_after_command, strip_leading_options
 
 
@@ -66,15 +66,26 @@ def test_args_after_command_skips_root_options_before_command() -> None:
     )
 
 
-def test_config_request_skips_bootstrap_for_setup_only_commands() -> None:
-    assert config_request_skips_bootstrap([]) is True
-    assert config_request_skips_bootstrap(["--json"]) is True
-    assert (
-        config_request_skips_bootstrap(
-            ["--skip-dotenv-layers", "--storage", "alpha", "doctor"]
-        )
-        is True
+def test_config_request_skips_runtime_bootstrap_for_setup_only_commands() -> (
+    None
+):
+    skips = config_request_skips_runtime_bootstrap
+
+    assert skips(tokens=["config"]) is True
+    assert skips(tokens=["config", "--json"]) is False
+    assert skips(
+        tokens=[
+            "config",
+            "--skip-dotenv-layers",
+            "--storage",
+            "alpha",
+            "doctor",
+        ]
     )
-    assert config_request_skips_bootstrap(["doctor"]) is True
-    assert config_request_skips_bootstrap(["init", "/tmp/storage"]) is True
-    assert config_request_skips_bootstrap(["show"]) is False
+    assert skips(
+        tokens=["--env-file", "local.env", "config", "doctor"],
+        root_value_options={"--env-file"},
+    )
+    assert skips(tokens=["config", "init", "/tmp/storage"])
+    assert skips(tokens=["config", "show"]) is False
+    assert skips(tokens=["tool", "run"]) is False

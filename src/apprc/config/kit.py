@@ -2,8 +2,7 @@
 
 ``AppConfigKit`` is the convenient entrypoint for applications. It stores one
 ``AppConfigSpec`` and delegates to the focused lower-level modules for storage
-registries, dotenv bootstrapping, local value editing, diagnostics, Textual
-editing, and Typer command generation.
+registries, dotenv bootstrapping, diagnostics, and Typer command generation.
 
 Use this module when wiring a host application. Use the sibling modules
 directly when testing one layer in isolation or when building a custom workflow
@@ -24,32 +23,15 @@ from apprc.config.environment import (
     EnvBootstrapResult,
     bootstrap_env,
 )
-from apprc.config.install_state import ConfigInstallState
-from apprc.config.local_env import (
-    LocalEnvUpdate,
-    clear_local_env_value,
-    local_env_path,
-    set_local_env_value,
-)
 from apprc.config.schema import ConfigOwner
 from apprc.config.apprc_toml import (
     ApprcTomlEnvError,
-    apprc_toml_env_key,
-    apprc_toml_path,
     default_apprc_toml_filename,
     missing_configured_apprc_toml_message,
-    optional_apprc_toml_path,
 )
 from apprc.config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
-    prune_missing_archived_storages,
-    record_archived_storage,
-    register_storage,
-    remove_archived_storage,
-    suggested_storage_name,
-    suggested_storage_root,
-    unregister_storage,
 )
 
 StateT = TypeVar("StateT")
@@ -57,9 +39,7 @@ StateT = TypeVar("StateT")
 if TYPE_CHECKING:
     import typer
 
-    from apprc.config.diagnostics import ConfigDoctorPayload
     from apprc.config.tui import ConfigEditorApp
-    from apprc.config.tui.setup import ConfigSetupApp
 
 
 class AppConfigKit:
@@ -135,40 +115,6 @@ class AppConfigKit:
             local_env_filename=local_env_filename,
         )
 
-    def apprc_toml_path(
-        self,
-        proc_env: Mapping[str, str] | None = None,
-    ) -> Path:
-        """Return the configured multi-storage AppRC TOML path.
-
-        :param proc_env: Optional environment mapping for tests.
-        :return: Env-selected AppRC TOML path for this application.
-        :raises ApprcTomlEnvError: If the AppRC TOML env var is missing.
-        """
-        return apprc_toml_path(
-            app_name=self.spec.app_name,
-            apprc_toml_filename=self.spec.apprc_toml_filename,
-            proc_env=proc_env,
-        )
-
-    def optional_apprc_toml_path(
-        self,
-        proc_env: Mapping[str, str] | None = None,
-    ) -> Path | None:
-        """Return the active AppRC TOML path when multi-storage is configured.
-
-        :param proc_env: Optional environment mapping for tests.
-        :return: Env-selected AppRC TOML path, or ``None``.
-        """
-        return optional_apprc_toml_path(
-            app_name=self.spec.app_name,
-            proc_env=proc_env,
-        )
-
-    def apprc_toml_env_key(self) -> str:
-        """Return the env var that selects the AppRC TOML path."""
-        return apprc_toml_env_key(self.spec.app_name)
-
     def bootstrap(
         self,
         *,
@@ -206,205 +152,23 @@ class AppConfigKit:
             logger=logger,
         )
 
-    def load_registry(self, path: Path | None = None) -> StorageRegistry:
+    def load_storage_registry(self) -> StorageRegistry:
         """Read this application's installed multi-storage registry.
 
-        :param path: Optional explicit AppRC TOML path for tests.
         :return: Parsed storage registry.
         :raises ApprcTomlEnvError: If the TOML env var is missing or points at
             a missing file.
         :raises ValueError: If the registry cannot be parsed.
         """
-        registry_path = self.apprc_toml_path() if path is None else path
-        resolved_path = Path(registry_path).expanduser().resolve()
+        resolved_path = self.spec.apprc_toml_path()
         if not resolved_path.is_file():
             message = missing_configured_apprc_toml_message(
                 app_name=self.spec.app_name,
                 command_name=self.spec.config_command_name(),
                 path=resolved_path,
             )
-            if path is None:
-                raise ApprcTomlEnvError(message)
-            raise ValueError(message)
+            raise ApprcTomlEnvError(message)
         return load_storage_registry_or_empty(resolved_path)
-
-    def register_storage(
-        self,
-        *,
-        name: str,
-        root: Path,
-        path: Path | None = None,
-    ) -> StorageRegistry:
-        """Add or update one storage entry for this application."""
-        return register_storage(
-            name=name,
-            root=root,
-            path=self.apprc_toml_path() if path is None else path,
-            local_env_filename=self.spec.local_env_filename,
-        )
-
-    def unregister_storage(
-        self,
-        *,
-        name: str,
-        path: Path | None = None,
-    ) -> StorageRegistry:
-        """Remove one live storage from this application's registry."""
-        return unregister_storage(
-            name=name,
-            path=self.apprc_toml_path() if path is None else path,
-        )
-
-    def record_archived_storage(
-        self,
-        *,
-        name: str,
-        archive: Path,
-        source_root: Path,
-        path: Path | None = None,
-    ) -> StorageRegistry:
-        """Remember the last archive path for one storage selector."""
-        return record_archived_storage(
-            name=name,
-            archive=archive,
-            source_root=source_root,
-            path=self.apprc_toml_path() if path is None else path,
-        )
-
-    def remove_archived_storage(
-        self,
-        *,
-        name: str,
-        path: Path | None = None,
-    ) -> StorageRegistry:
-        """Remove one archived-storage convenience record."""
-        return remove_archived_storage(
-            name=name,
-            path=self.apprc_toml_path() if path is None else path,
-        )
-
-    def prune_missing_archived_storages(
-        self,
-        *,
-        path: Path | None = None,
-    ) -> StorageRegistry:
-        """Drop archive records whose last known files are gone."""
-        return prune_missing_archived_storages(
-            path=self.apprc_toml_path() if path is None else path
-        )
-
-    def suggested_storage_root(self) -> Path:
-        """Return this app's conventional active storage directory."""
-        return suggested_storage_root(self.spec.app_name)
-
-    def suggested_storage_name(self) -> str:
-        """Return this app's conventional first storage selector."""
-        return suggested_storage_name(self.spec.app_name)
-
-    def local_env_path(self, storage_root: Path) -> Path:
-        """Return this application's storage-local dotenv path."""
-        return local_env_path(
-            storage_root,
-            filename=self.spec.local_env_filename,
-        )
-
-    def set_local_value(
-        self,
-        *,
-        storage_root: Path,
-        reference: str,
-        raw_value: str,
-    ) -> LocalEnvUpdate:
-        """Set one storage-local override value.
-
-        :param storage_root: Active storage root from the registry.
-        :param reference: Env key, dotted config path, or unique field name.
-        :param raw_value: User-provided value before type validation.
-        :return: Written dotenv path, env key, and normalized value.
-        """
-        return set_local_env_value(
-            storage_root=storage_root,
-            reference=reference,
-            raw_value=raw_value,
-            owners=self.spec.owners,
-            local_env_filename=self.spec.local_env_filename,
-        )
-
-    def clear_local_value(
-        self,
-        *,
-        storage_root: Path,
-        reference: str,
-    ) -> LocalEnvUpdate | None:
-        """Remove one storage-local override value.
-
-        :param storage_root: Active storage root from the registry.
-        :param reference: Env key, dotted config path, or unique field name.
-        :return: Written dotenv path and env key, or ``None`` when absent.
-        """
-        return clear_local_env_value(
-            storage_root=storage_root,
-            reference=reference,
-            owners=self.spec.owners,
-            local_env_filename=self.spec.local_env_filename,
-        )
-
-    def install_state(
-        self,
-        storage: str | None = None,
-        apprc_toml_path: Path | None = None,
-    ) -> ConfigInstallState:
-        """Return this application's explicit local installation state.
-
-        :param storage: Optional selector passed by ``--storage``.
-        :param apprc_toml_path: Optional explicit AppRC TOML path used by setup.
-        :return: Coarse installation and health state.
-        """
-        return ConfigInstallState(
-            self.doctor_payload(
-                storage=storage,
-                apprc_toml_path=apprc_toml_path,
-            )["install_state"]
-        )
-
-    def doctor_payload(
-        self,
-        storage: str | None = None,
-        apprc_toml_path: Path | None = None,
-    ) -> ConfigDoctorPayload:
-        """Return JSON-friendly local setup diagnostics."""
-        from apprc.config.diagnostics import build_config_doctor_payload
-
-        return build_config_doctor_payload(
-            self,
-            storage=storage,
-            apprc_toml_path=apprc_toml_path,
-        )
-
-    def editor_app(
-        self,
-        *,
-        registry: StorageRegistry | None,
-        initial_storage: str | None = None,
-        active_storage_root: Path | None = None,
-        registry_actions_enabled: bool | None = None,
-    ) -> ConfigEditorApp:
-        """Build the generic Textual config editor for this application."""
-        from apprc.config.tui import ConfigEditorApp
-
-        return ConfigEditorApp(
-            kit=self,
-            registry=registry,
-            initial_storage=initial_storage,
-            active_storage_root=active_storage_root,
-            registry_actions_enabled=registry_actions_enabled,
-        )
-
-    def setup_app(self) -> ConfigSetupApp:
-        """Build the generic Textual setup wizard for this application."""
-        from apprc.config.tui.setup import ConfigSetupApp
-
-        return ConfigSetupApp(kit=self)
 
     def typer_app(
         self,
@@ -416,7 +180,6 @@ class AppConfigKit:
         editor_app_cls: type[ConfigEditorApp] | None = None,
         help: str | None = None,
         setup_message: str | None = None,
-        legacy_json_migration_message: str | None = None,
         runtime_error_param_hint: str = "CONFIG",
     ) -> typer.Typer:
         """Build the generic Typer ``config`` command group.
@@ -430,8 +193,6 @@ class AppConfigKit:
         :param editor_app_cls: Optional Textual subclass.
         :param help: Optional Typer group help.
         :param setup_message: Optional setup text for missing storage.
-        :param legacy_json_migration_message: Optional deprecated callback
-            ``--json`` hint.
         :param runtime_error_param_hint: Parameter hint for runtime-payload
             validation errors.
         :return: Configured Typer app.
@@ -447,6 +208,5 @@ class AppConfigKit:
             editor_app_cls=editor_app_cls,
             help=help,
             setup_message=setup_message,
-            legacy_json_migration_message=legacy_json_migration_message,
             runtime_error_param_hint=runtime_error_param_hint,
         )

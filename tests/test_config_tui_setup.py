@@ -8,9 +8,11 @@ from textual.widgets import Button, Input, Static
 
 from apprc.config.setup.flow import ConfigSetupResult
 from apprc.config.tui.primitives import PathSuggester
+from apprc.config.tui.setup import ConfigSetupApp
 from apprc.config.tui.styles import ENV_KEY_STYLE, PATH_INPUT_CLASS
 from tests.support_config import (
     build_apprc_example_app_kit,
+    register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
     set_apprc_example_app_bootstrap,
 )
@@ -26,7 +28,7 @@ async def test_config_setup_wizard_launches_with_host_overview(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    setup_app = kit.setup_app()
+    setup_app = ConfigSetupApp(kit=kit)
 
     async with setup_app.run_test():
         title = setup_app.query_one("#setup-title", Static).content
@@ -48,7 +50,7 @@ async def test_config_setup_wizard_opens_prefilled_path_input(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    setup_app = kit.setup_app()
+    setup_app = ConfigSetupApp(kit=kit)
 
     async with setup_app.run_test() as pilot:
         setup_app.query_one("#setup-start", Button).press()
@@ -78,7 +80,7 @@ async def test_config_setup_wizard_asks_for_path_without_env(
 ) -> None:
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     kit = build_apprc_example_app_kit()
-    setup_app = kit.setup_app()
+    setup_app = ConfigSetupApp(kit=kit)
 
     async with setup_app.run_test() as pilot:
         setup_app.query_one("#setup-start", Button).press()
@@ -103,11 +105,12 @@ async def test_config_setup_wizard_shows_existing_registry_actions(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    kit.register_storage(
+    register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "alpha",
     )
-    setup_app = kit.setup_app()
+    setup_app = ConfigSetupApp(kit=kit)
 
     async with setup_app.run_test() as pilot:
         setup_app.query_one("#setup-start", Button).press()
@@ -143,11 +146,12 @@ async def test_config_setup_wizard_finish_shows_doctor_and_next_steps(
         storage_root=storage_root,
     )
     kit = build_apprc_example_app_kit()
-    registry = kit.register_storage(
+    registry = register_storage_for_kit(
+        kit,
         name="alpha",
         root=storage_root,
     )
-    setup_app = kit.setup_app()
+    setup_app = ConfigSetupApp(kit=kit)
 
     async with setup_app.run_test():
         await setup_app._finish_setup(

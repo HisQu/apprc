@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 # == Internal ================================
+from apprc.config.apprc_toml import (
+    apprc_toml_env_key,
+    apprc_toml_path,
+    optional_apprc_toml_path,
+)
 from apprc.config.schema import ConfigOwner
 
 
@@ -12,9 +19,9 @@ from apprc.config.schema import ConfigOwner
 class AppConfigSpec:
     """Complete reusable configuration contract for one application.
 
-    Applications declare this once, then :class:`AppConfigKit` derives the
-    optional AppRC TOML registry path, dotenv bootstrap spec, local-env
-    behavior, config doctor diagnostics, and optional config CLI from it.
+    Applications declare this once. The spec owns naming rules such as env
+    keys and AppRC TOML paths, while :class:`AppConfigKit` delegates runtime
+    workflows to the focused config modules.
 
     :param app_name: Lowercase application name used in env var derivation.
     :param display_name: Human-readable application name for terminal output.
@@ -40,3 +47,36 @@ class AppConfigSpec:
     def config_command_name(self) -> str:
         """Return the executable name shown in generated config commands."""
         return self.command_name or self.app_name
+
+    def apprc_toml_env_key(self) -> str:
+        """Return the env var that selects this app's AppRC TOML."""
+        return apprc_toml_env_key(self.app_name)
+
+    def apprc_toml_path(
+        self,
+        proc_env: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Return the configured multi-storage AppRC TOML path.
+
+        :param proc_env: Optional environment mapping for tests.
+        :return: Env-selected AppRC TOML path for this application.
+        """
+        return apprc_toml_path(
+            app_name=self.app_name,
+            apprc_toml_filename=self.apprc_toml_filename,
+            proc_env=proc_env,
+        )
+
+    def optional_apprc_toml_path(
+        self,
+        proc_env: Mapping[str, str] | None = None,
+    ) -> Path | None:
+        """Return the AppRC TOML path when multi-storage is configured.
+
+        :param proc_env: Optional environment mapping for tests.
+        :return: Env-selected AppRC TOML path, or ``None``.
+        """
+        return optional_apprc_toml_path(
+            app_name=self.app_name,
+            proc_env=proc_env,
+        )

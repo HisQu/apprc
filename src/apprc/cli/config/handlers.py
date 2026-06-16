@@ -25,9 +25,10 @@ from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
 from apprc.config.apprc_toml import ApprcTomlEnvError
 from apprc.config.diagnostics import build_config_doctor_payload
 from apprc.config.kit import AppConfigKit
+from apprc.config.local_env import set_local_env_value
 from apprc.config.paths import StorageRootPathError
 import apprc.config.setup.flow as setup_flow
-from apprc.config.storage.registry import StorageRegistry
+from apprc.config.storage.registry import StorageRegistry, register_storage
 from apprc.config.storage.selector import StorageSelectorError
 
 if TYPE_CHECKING:
@@ -52,7 +53,6 @@ class ConfigCommandHandlers:
         initial_storage: Callable[[Any], str | None] | None,
         editor_app_cls: type[ConfigEditorApp] | None,
         missing_setup: str,
-        migration_message: str,
         runtime_error_param_hint: str,
     ) -> None:
         """Store config command dependencies and extension hooks.
@@ -65,8 +65,6 @@ class ConfigCommandHandlers:
         :param initial_storage: Optional editor initial-selection resolver.
         :param editor_app_cls: Optional Textual subclass.
         :param missing_setup: Message shown when runtime storage is absent.
-        :param migration_message: Message for the deprecated callback
-            ``--json`` option.
         :param runtime_error_param_hint: Parameter hint for runtime payload
             validation errors.
         """
@@ -77,16 +75,12 @@ class ConfigCommandHandlers:
         self.initial_storage_hook = initial_storage
         self.editor_app_cls = editor_app_cls
         self.missing_setup = missing_setup
-        self.migration_message = migration_message
         self.runtime_error_param_hint = runtime_error_param_hint
 
-    def callback(self, ctx: typer.Context, legacy_json: bool) -> None:
-        """Show config help or route removed callback-level options."""
+    def callback(self, ctx: typer.Context) -> None:
+        """Show config help when no subcommand was selected."""
         if ctx.invoked_subcommand is not None:
             return
-        if legacy_json:
-            typer.echo(self.migration_message, err=True)
-            raise typer.Exit(code=2)
         exit_missing_action(ctx)
 
     def list(self, *, json_output: bool) -> None:
@@ -150,11 +144,11 @@ class ConfigCommandHandlers:
     ) -> None:
         """Register one storage root and create its local env file."""
         try:
-            self.kit.apprc_toml_path()
+            self.kit.spec.apprc_toml_path()
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key(),
             ) from exc
         normalized_root = guard_storage_root_init(
             self.kit,
@@ -163,14 +157,16 @@ class ConfigCommandHandlers:
             assume_yes=assume_yes,
         )
         try:
-            registry = self.kit.register_storage(
+            registry = register_storage(
                 name=name,
                 root=normalized_root,
+                path=self.kit.spec.apprc_toml_path(),
+                local_env_filename=self.kit.spec.local_env_filename,
             )
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key(),
             ) from exc
         except StorageRootPathError as exc:
             raise typer.BadParameter(
@@ -215,10 +211,12 @@ class ConfigCommandHandlers:
             self.required_storage_root(self.state(ctx))
         )
         try:
-            update = self.kit.set_local_value(
+            update = set_local_env_value(
                 storage_root=root,
                 reference=key,
                 raw_value=value,
+                owners=self.kit.spec.owners,
+                local_env_filename=self.kit.spec.local_env_filename,
             )
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="KEY") from exc
@@ -239,21 +237,21 @@ class ConfigCommandHandlers:
         active_storage_root = self.optional_active_storage_root_from_env(
             configured_registry
         )
-        registry_actions_enabled = configured_registry is not None
         if self.editor_app_cls is not None:
             editor_app = self.editor_app_cls(
                 kit=self.kit,
                 registry=configured_registry,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
-                registry_actions_enabled=registry_actions_enabled,
             )
         else:
-            editor_app = self.kit.editor_app(
+            from apprc.config.tui import ConfigEditorApp
+
+            editor_app = ConfigEditorApp(
+                kit=self.kit,
                 registry=configured_registry,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
-                registry_actions_enabled=registry_actions_enabled,
             )
         editor_app.run()
 
@@ -273,7 +271,7 @@ class ConfigCommandHandlers:
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key(),
             ) from exc
         except StorageSelectorError as exc:
             raise typer.BadParameter(
@@ -300,11 +298,11 @@ class ConfigCommandHandlers:
     def load_required_registry(self) -> StorageRegistry:
         """Load the required registry for registry-only commands."""
         try:
-            return self.kit.load_registry()
+            return self.kit.load_storage_registry()
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key(),
             ) from exc
         except ValueError as exc:
             raise typer.BadParameter(
@@ -314,15 +312,15 @@ class ConfigCommandHandlers:
 
     def load_optional_registry(self) -> StorageRegistry | None:
         """Load the optional registry when multi-storage is set."""
-        registry_path = self.kit.optional_apprc_toml_path()
+        registry_path = self.kit.spec.optional_apprc_toml_path()
         if registry_path is None:
             return None
         try:
-            return self.kit.load_registry()
+            return self.kit.load_storage_registry()
         except ApprcTomlEnvError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint=self.kit.apprc_toml_env_key(),
+                param_hint=self.kit.spec.apprc_toml_env_key(),
             ) from exc
         except ValueError as exc:
             raise typer.BadParameter(
@@ -378,7 +376,7 @@ class ConfigCommandHandlers:
     def default_runtime_payload(self, state: Any) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
         storage_root = self.active_storage_root(state)
-        apprc_toml_path = self.kit.optional_apprc_toml_path()
+        apprc_toml_path = self.kit.spec.optional_apprc_toml_path()
         return {
             "app_name": self.kit.spec.app_name,
             "display_name": self.kit.spec.display_name,

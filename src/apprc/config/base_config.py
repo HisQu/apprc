@@ -31,7 +31,6 @@ from types import ModuleType
 from typing import Any, ClassVar, Literal, Mapping, Self
 
 # == Internal ================================
-import apprc.utils as ut
 from apprc.logging import get_logger
 from apprc._dotenv_guard import (
     _disable_dotenv_autoload as _disable_dotenv_autoload,
@@ -62,7 +61,20 @@ def resolve_package_root(pkg: ModuleType | str) -> Path:
     :raises RuntimeError: If no usable directory can be determined.
     """
     module = pkg if isinstance(pkg, ModuleType) else import_module(pkg)
-    return ut.package_root_dir(module)
+    origin = None if module.__spec__ is None else module.__spec__.origin
+    if isinstance(origin, str):
+        origin_path = Path(origin)
+        if origin_path.name == "__init__.py" and origin_path.is_file():
+            return origin_path.resolve().parent
+    module_file = getattr(module, "__file__", None)
+    if module_file:
+        module_path = Path(module_file).resolve()
+        if module_path.name == "__init__.py" and module_path.is_file():
+            return module_path.parent
+    raise RuntimeError(
+        f"Cannot determine package directory for {module.__name__!r}. "
+        "Expected a regular package with an __init__.py on disk."
+    )
 
 
 # ===============================================================
@@ -250,15 +262,6 @@ class BaseConfig:
             return
         val = self._format_field_value_for_log(key, value)
         LOG.warning(f"Config modified: {self.__class__.__name__}.{key} = {val}")
-
-    # -----------------------------------------------------------------
-    # -- Wrappers
-    # -----------------------------------------------------------------
-
-    @staticmethod
-    def resolve_package_root(pkg: ModuleType | str) -> Path:
-        """Thin wrapper so subclasses can call the module helper as a method."""
-        return resolve_package_root(pkg=pkg)
 
     def _format_field_value_for_log(self, key: str, value: Any) -> str:
         """Return ``repr(value)`` unless the dataclass field is redacted."""

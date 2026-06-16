@@ -16,6 +16,7 @@ from tests.support_config import (
     ApprcExampleAppConfigState,
     apprc_example_app_state,
     build_apprc_example_app_kit,
+    register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
 )
 
@@ -211,7 +212,8 @@ def test_generated_config_app_rejects_bare_unknown_storage_selector(
 ) -> None:
     set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
     kit = build_apprc_example_app_kit()
-    kit.register_storage(
+    register_storage_for_kit(
+        kit,
         name="alpha",
         root=tmp_path / "alpha-storage",
     )
@@ -226,31 +228,6 @@ def test_generated_config_app_rejects_bare_unknown_storage_selector(
     assert result.exit_code == 2, result.output
     assert "not a registered storage" in result.output
     assert any("Use './beta'" in issue for issue in payload["issues"])
-
-
-def test_kit_clears_local_value_with_app_local_env_filename(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    storage_root = tmp_path / "storage"
-    kit.set_local_value(
-        storage_root=storage_root,
-        reference="app.profile",
-        raw_value="other-profile",
-    )
-
-    update = kit.clear_local_value(
-        storage_root=storage_root,
-        reference="APPRC_EXAMPLE_APP_PROFILE",
-    )
-
-    assert update is not None
-    assert update.path == storage_root.resolve() / ".env.apprc_example_app"
-    assert (storage_root / ".env.apprc_example_app").read_text(
-        encoding="utf-8"
-    ) == "\n"
 
 
 def test_generated_config_app_inits_existing_storage_after_list_prompt(
@@ -318,7 +295,7 @@ def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
     assert "backslashes are consumed" in result.output
     assert "C:/Projects/demo-storage" in result.output
     assert not Path(malformed).exists()
-    assert not kit.apprc_toml_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
 
 
 def test_generated_config_app_rejects_removed_default_commands(
@@ -368,7 +345,7 @@ def test_generated_config_app_aborts_existing_storage_when_user_says_no(
 
     assert result.exit_code == 1, result.output
     assert "Aborted." in result.output
-    assert not kit.apprc_toml_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
     assert not (storage_root / ".env.apprc_example_app").exists()
 
 
@@ -402,8 +379,8 @@ def test_generated_config_app_lists_registered_storages_as_rich_tree(
     kit = build_apprc_example_app_kit()
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
-    kit.register_storage(name="alpha", root=alpha_root)
-    kit.register_storage(name="beta", root=beta_root)
+    register_storage_for_kit(kit, name="alpha", root=alpha_root)
+    register_storage_for_kit(kit, name="beta", root=beta_root)
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(alpha_root.resolve()))
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
@@ -437,8 +414,8 @@ def test_generated_config_app_lists_registered_storages_as_json(
     kit = build_apprc_example_app_kit()
     alpha_root = tmp_path / "alpha"
     beta_root = tmp_path / "beta"
-    kit.register_storage(name="alpha", root=alpha_root)
-    kit.register_storage(name="beta", root=beta_root)
+    register_storage_for_kit(kit, name="alpha", root=alpha_root)
+    register_storage_for_kit(kit, name="beta", root=beta_root)
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(alpha_root.resolve()))
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
     runner = CliRunner()

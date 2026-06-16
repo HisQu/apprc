@@ -40,7 +40,11 @@ from apprc.config.local_env import (
     read_local_env,
     set_local_env_value,
 )
-from apprc.config.storage.registry import StorageRecord, StorageRegistry
+from apprc.config.storage.registry import (
+    StorageRecord,
+    StorageRegistry,
+    suggested_storage_name,
+)
 from apprc.config.tui.modals import (
     ConfigValueEditScreen,
     ValueEditResult,
@@ -106,7 +110,6 @@ class ConfigEditorApp(App[None]):
         registry: StorageRegistry | None,
         initial_storage: str | None = None,
         active_storage_root: Path | None = None,
-        registry_actions_enabled: bool | None = None,
     ) -> None:
         """Keep registry and field metadata while editing storage state."""
         super().__init__()
@@ -125,11 +128,6 @@ class ConfigEditorApp(App[None]):
             Path(active_storage_root).expanduser().resolve()
             if active_storage_root is not None
             else None
-        )
-        self.registry_actions_enabled = (
-            registry is not None
-            if registry_actions_enabled is None
-            else registry_actions_enabled
         )
         self.shared_values = _read_packaged_shared_values(kit)
         self.storage_entries = (
@@ -257,21 +255,15 @@ class ConfigEditorApp(App[None]):
             return
         self._save_env_key(result.env_key, result.raw_value)
 
-    def _require_kit(self) -> AppConfigKit | None:
-        """Return the kit required for registry mutations."""
-        if not self.registry_actions_enabled:
+    def _require_registry_actions(self) -> StorageRegistry | None:
+        """Return the registry only when mutation actions are available."""
+        if self.registry is None:
             self.notify(
                 "Storage management requires an AppRC TOML.",
                 severity="error",
             )
             return None
-        if self.registry is None:
-            self.notify(
-                "Storage management requires a loaded AppRC TOML registry.",
-                severity="error",
-            )
-            return None
-        return self.kit
+        return self.registry
 
     def _require_registry(self) -> StorageRegistry | None:
         """Return the registry required for registry-only editor actions."""
@@ -384,7 +376,7 @@ class ConfigEditorApp(App[None]):
         self._populate_field_table()
         self._set_storage_controls_enabled(
             fields=True,
-            register_active=self.registry_actions_enabled,
+            register_active=self.registry is not None,
             delete=False,
             archive=False,
         )
@@ -530,9 +522,7 @@ class ConfigEditorApp(App[None]):
         :param archive: Whether the current storage directory may be archived.
         """
         self._set_controls_enabled(fields)
-        self.query_one(
-            "#storage-new", Button
-        ).disabled = not self.registry_actions_enabled
+        self.query_one("#storage-new", Button).disabled = self.registry is None
         self.query_one(
             "#storage-register-active", Button
         ).disabled = not register_active
@@ -565,12 +555,12 @@ class ConfigEditorApp(App[None]):
 
     def _fallback_storage_name(self) -> str:
         """Return a storage selector when no path name is available."""
-        return self.kit.suggested_storage_name()
+        return suggested_storage_name(self.kit.spec.app_name)
 
     def _no_storage_message(self) -> str:
         """Return empty-list guidance for the current registry capability."""
         storage_env_key = self.kit.spec.storage_env_key
-        if self.registry_actions_enabled:
+        if self.registry is not None:
             return (
                 "No storages registered. Use New storage to add one, or set "
                 f"{storage_env_key} to edit an active path.\n"

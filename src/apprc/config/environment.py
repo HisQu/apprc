@@ -30,7 +30,6 @@ from dotenv import dotenv_values
 from apprc.config.apprc_toml import (
     ApprcTomlEnvError,
     missing_configured_apprc_toml_message,
-    optional_apprc_toml_path,
 )
 from apprc.config.app_spec import AppConfigSpec
 from apprc.config.storage.registry import (
@@ -38,9 +37,9 @@ from apprc.config.storage.registry import (
     load_storage_registry_or_empty,
 )
 from apprc.config.storage.selector import (
-    _selected_storage_selector_value,
     missing_storage_selector_error,
     resolve_storage_selector_value,
+    select_storage_selector,
 )
 from apprc.logging import get_logger
 
@@ -125,7 +124,7 @@ def bootstrap_env(
     """
     original_env = dict(os.environ)
     explicit_values = _read_explicit_env_file(env_file)
-    storage_selector = _selected_storage_selector_value(
+    storage_selector = select_storage_selector(
         storage=storage,
         storage_env_key=spec.storage_env_key,
         original_env=original_env,
@@ -181,14 +180,14 @@ def bootstrap_env(
 
 def _load_optional_registry(spec: AppConfigSpec) -> StorageRegistry | None:
     """Load the multi-storage registry when the optional selector is set."""
-    active_path = optional_apprc_toml_path(app_name=spec.app_name)
+    active_path = spec.optional_apprc_toml_path()
     if active_path is None:
         return None
     if not active_path.is_file():
         raise ApprcTomlEnvError(
             missing_configured_apprc_toml_message(
                 app_name=spec.app_name,
-                command_name=spec.app_name,
+                command_name=spec.config_command_name(),
                 path=active_path,
             )
         )

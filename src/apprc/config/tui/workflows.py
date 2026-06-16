@@ -22,6 +22,12 @@ from apprc.config.storage.archive import (
     storage_archive_default_path,
     storage_root_name_from_archive,
 )
+from apprc.config.storage.registry import (
+    record_archived_storage,
+    register_storage,
+    remove_archived_storage,
+    unregister_storage,
+)
 from apprc.config.tui.modals import (
     ArchiveOptionsScreen,
     ProgressScreen,
@@ -60,7 +66,7 @@ class ConfigEditorStorageWorkflows:
 
     async def open_new_storage_flow(self) -> None:
         """Prompt for a new directory or archive path and register it."""
-        if self.editor._require_kit() is None:
+        if self.editor._require_registry_actions() is None:
             return
         result = await self.editor.push_screen_wait(
             PathInputScreen(
@@ -84,7 +90,7 @@ class ConfigEditorStorageWorkflows:
 
     async def register_active_storage_flow(self) -> None:
         """Register the env-selected active storage path by name."""
-        if self.editor._require_kit() is None:
+        if self.editor._require_registry_actions() is None:
             return
         root = self.editor.active_storage_root
         if root is None:
@@ -179,8 +185,8 @@ class ConfigEditorStorageWorkflows:
         :param storage_root: Directory selected by the user.
         :param default_name: Suggested registry selector.
         """
-        kit = self.editor._require_kit()
-        if kit is None:
+        registry = self.editor._require_registry_actions()
+        if registry is None:
             return
         guarded_root = await self.guard_storage_directory(storage_root)
         if guarded_root is None:
@@ -194,9 +200,6 @@ class ConfigEditorStorageWorkflows:
         if name_result is None:
             return
         name = name_result.name
-        registry = self.editor._require_registry()
-        if registry is None:
-            return
         if name in registry.storages:
             existing = registry.selected(name)
             action = await self.editor.push_screen_wait(
@@ -218,9 +221,11 @@ class ConfigEditorStorageWorkflows:
             if action != "replace":
                 return
         try:
-            self.editor.registry = kit.register_storage(
+            self.editor.registry = register_storage(
                 name=name,
                 root=guarded_root,
+                path=registry.path,
+                local_env_filename=self.editor.local_env_filename,
             )
         except (TypeError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -349,9 +354,9 @@ class ConfigEditorStorageWorkflows:
 
     async def open_archive_storage_flow(self) -> None:
         """Prompt for archive options and compress the selected storage."""
-        kit = self.editor._require_kit()
+        registry = self.editor._require_registry_actions()
         if (
-            kit is None
+            registry is None
             or self.editor.current_storage_kind != "live"
             or self.editor.current_storage_name is None
         ):
@@ -374,10 +379,11 @@ class ConfigEditorStorageWorkflows:
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        self.editor.registry = kit.record_archived_storage(
+        self.editor.registry = record_archived_storage(
             name=record.name,
             archive=archive_path,
             source_root=record.root,
+            path=registry.path,
         )
         if options.delete_source:
             removed = await self.remove_live_storage(
@@ -409,13 +415,10 @@ class ConfigEditorStorageWorkflows:
         :param delete_content: Whether to delete the storage directory too.
         :return: Whether the removal completed.
         """
-        kit = self.editor._require_kit()
-        if kit is None:
+        registry = self.editor._require_registry_actions()
+        if registry is None:
             return False
         try:
-            registry = self.editor._require_registry()
-            if registry is None:
-                return False
             record = registry.selected(name)
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -427,8 +430,9 @@ class ConfigEditorStorageWorkflows:
                 self.editor.notify(str(exc), severity="error", markup=False)
                 return False
         try:
-            self.editor.registry = kit.unregister_storage(
+            self.editor.registry = unregister_storage(
                 name=name,
+                path=registry.path,
             )
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -443,17 +447,17 @@ class ConfigEditorStorageWorkflows:
 
         :param name: Archived storage selector.
         """
-        kit = self.editor._require_kit()
-        if kit is None:
-            return
-        registry = self.editor._require_registry()
+        registry = self.editor._require_registry_actions()
         if registry is None:
             return
         record = registry.archived_storages.get(name)
         if record is None:
             return
         if not record.archive.is_file():
-            self.editor.registry = kit.remove_archived_storage(name=name)
+            self.editor.registry = remove_archived_storage(
+                name=name,
+                path=registry.path,
+            )
             await self.editor._refresh_storage_list()
             self.editor.notify(
                 f"Removed stale archive entry {name!r}; file was not found.",

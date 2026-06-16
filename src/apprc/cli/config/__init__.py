@@ -6,6 +6,6 @@ from apprc.cli.config.app import build_config_typer_app
 from apprc.cli.config.state import (
     ConfigCliState,
     active_storage_root_from_state,
-    config_request_skips_bootstrap,
+    config_request_skips_runtime_bootstrap,
     initial_storage_from_state,
 )

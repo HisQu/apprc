@@ -196,7 +196,7 @@ def _style_setup_finish_text(
         "Shell:": "bold",
         "Or Dotenv:": "bold",
         "env_not_set": MISSING_STYLE,
-        kit.apprc_toml_env_key(): ENV_KEY_STYLE,
+        kit.spec.apprc_toml_env_key(): ENV_KEY_STYLE,
         kit.spec.storage_env_key: ENV_KEY_STYLE,
         **paths,
     }

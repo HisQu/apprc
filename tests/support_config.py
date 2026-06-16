@@ -19,6 +19,11 @@ from apprc.config import (
     EnvBootstrapResult,
     config_field,
 )
+from apprc.config.storage.registry import (
+    StorageRegistry,
+    record_archived_storage,
+    register_storage,
+)
 
 APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
     key="app",
@@ -182,7 +187,7 @@ def apprc_example_app_state(
             shared_env=None,
             local_env=storage_root / ".env.apprc_example_app",
             env_file=None,
-            apprc_toml_path=kit.apprc_toml_path(),
+            apprc_toml_path=kit.spec.apprc_toml_path(),
             storage_selector_source="--storage",
             storage_selector_value="alpha",
             storage_name="alpha",
@@ -190,4 +195,48 @@ def apprc_example_app_state(
             storage_count=1,
         ),
         storage="alpha",
+    )
+
+
+def register_storage_for_kit(
+    kit: AppConfigKit,
+    *,
+    name: str,
+    root: Path,
+) -> StorageRegistry:
+    """Register a storage root through the kit's app contract in tests.
+
+    :param kit: App config facade under test.
+    :param name: Storage selector to write.
+    :param root: Storage root directory.
+    :return: Updated storage registry.
+    """
+    return register_storage(
+        name=name,
+        root=root,
+        path=kit.spec.apprc_toml_path(),
+        local_env_filename=kit.spec.local_env_filename,
+    )
+
+
+def record_archived_storage_for_kit(
+    kit: AppConfigKit,
+    *,
+    name: str,
+    archive: Path,
+    source_root: Path,
+) -> StorageRegistry:
+    """Record an archived storage through the kit's app contract in tests.
+
+    :param kit: App config facade under test.
+    :param name: Storage selector to write.
+    :param archive: Archive path to remember.
+    :param source_root: Storage directory that produced the archive.
+    :return: Updated storage registry.
+    """
+    return record_archived_storage(
+        name=name,
+        archive=archive,
+        source_root=source_root,
+        path=kit.spec.apprc_toml_path(),
     )

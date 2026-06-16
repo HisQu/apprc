@@ -34,8 +34,8 @@ def setup_paths(kit: "AppConfigKit") -> ConfigSetupPaths:
     :return: Paths and env var displayed by setup UIs.
     """
     return ConfigSetupPaths(
-        active=kit.optional_apprc_toml_path(),
-        env_key=kit.apprc_toml_env_key(),
+        active=kit.spec.optional_apprc_toml_path(),
+        env_key=kit.spec.apprc_toml_env_key(),
     )
 
 
@@ -86,7 +86,7 @@ def apprc_dir_step_text(
         f"{kit.spec.apprc_toml_filename} inside this directory.\n\n"
         "The derived AppRC TOML stores AppRC state: registered storage names, "
         "storage root paths, and archive restore metadata.\n\n"
-        f"{kit.apprc_toml_env_key()} must point at the full AppRC TOML path "
+        f"{kit.spec.apprc_toml_env_key()} must point at the full AppRC TOML path "
         "in future shells only when multi-storage management is enabled. "
         "Setup asks for the directory so the file name stays consistent."
         f"{suggested_text}{computed}\n\n"
@@ -346,7 +346,7 @@ def export_apprc_toml_command(
         '"',
         '\\"',
     )
-    return f'export {kit.apprc_toml_env_key()}="{path_text}"'
+    return f'export {kit.spec.apprc_toml_env_key()}="{path_text}"'
 
 
 def dotenv_apprc_toml_assignment(
@@ -360,7 +360,7 @@ def dotenv_apprc_toml_assignment(
     :return: Dotenv assignment with a quoted path value.
     """
     return _dotenv_assignment(
-        kit.apprc_toml_env_key(),
+        kit.spec.apprc_toml_env_key(),
         str(_normalized_apprc_toml_path(registry_path)),
     )
 

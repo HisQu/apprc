@@ -7,7 +7,7 @@ from apprc.cli.config import (
     ConfigCliState,
     active_storage_root_from_state,
     build_config_typer_app,
-    config_request_skips_bootstrap,
+    config_request_skips_runtime_bootstrap,
     initial_storage_from_state,
 )
 from apprc.cli.doctor import print_config_doctor

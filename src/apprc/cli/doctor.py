@@ -194,7 +194,7 @@ def _styled_issue_text(
     :return: Rich issue text.
     """
     styles = {
-        kit.apprc_toml_env_key(): ENV_KEY_STYLE,
+        kit.spec.apprc_toml_env_key(): ENV_KEY_STYLE,
         kit.spec.storage_env_key: ENV_KEY_STYLE,
         "env_not_set": MISSING_STYLE,
     }

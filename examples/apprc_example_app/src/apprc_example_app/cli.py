@@ -11,10 +11,8 @@ import typer
 
 # == Internal ================================
 from apprc.cli import (
-    COMMON_ROOT_VALUE_OPTIONS,
-    args_after_command,
     bootstrap_cli_env,
-    config_request_skips_bootstrap,
+    config_request_skips_runtime_bootstrap,
 )
 from apprc.logging import setup_logging
 from apprc_example_app import (
@@ -78,13 +76,8 @@ def root_cmd(
     """Bootstrap Example App config state for commands that need runtime values."""
     state = ApprcExampleAppState(storage=storage)
     ctx.obj = state
-    config_args = args_after_command(
-        "config",
-        root_value_options=COMMON_ROOT_VALUE_OPTIONS,
-    )
-    if config_args is not None:
-        if config_request_skips_bootstrap(config_args):
-            return
+    if config_request_skips_runtime_bootstrap("config"):
+        return
     state.env_bootstrap = bootstrap_cli_env(
         APPRC_EXAMPLE_APP_KIT,
         env_file=env_file,

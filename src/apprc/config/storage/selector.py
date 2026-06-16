@@ -104,7 +104,7 @@ def resolve_active_storage_selection(
     :return: Resolved selection, or ``None`` when no selector was provided.
     :raises StorageSelectorError: If the selected value is invalid.
     """
-    storage_selector = _selected_storage_selector_value(
+    storage_selector = select_storage_selector(
         storage=storage,
         original_env=original_env,
         explicit_values=explicit_values or {},
@@ -122,7 +122,7 @@ def resolve_active_storage_selection(
     return None
 
 
-def resolve_env_storage_root_path(
+def resolve_setup_storage_root_from_env(
     *,
     storage_env_key: str,
     proc_env: Mapping[str, str],
@@ -214,7 +214,7 @@ def missing_storage_selector_error(
     )
 
 
-def _selected_storage_selector_value(
+def select_storage_selector(
     *,
     storage: str | None,
     original_env: Mapping[str, str],

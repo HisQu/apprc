@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
 from apprc.config.doctor_status import ConfigDoctorStatus
+from apprc.config.environment import read_shared_env_values
 from apprc.config.storage_registry_loading import (
     StorageRegistryInspection,
     inspect_storage_registry,
@@ -191,24 +192,26 @@ def _diagnose_storage(
     :return: Storage diagnosis with missing-env and local-env issues.
     """
     storage_env_key = kit.spec.storage_env_key
-    raw_storage_env_value = os.environ.get(storage_env_key, "").strip()
+    _, shared_values = read_shared_env_values(kit.spec)
     issues: list[str] = []
     missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
+    selector_error = False
 
-    if storage is None and not raw_storage_env_value:
+    try:
+        selection = resolve_active_storage_selection(
+            registry=registry,
+            storage=storage,
+            storage_env_key=storage_env_key,
+            original_env=os.environ,
+            shared_values=shared_values,
+        )
+    except StorageSelectorError as exc:
+        selector_error = True
+        issues.append(str(exc))
+    if selection is None and not selector_error:
         missing_env_keys.append(storage_env_key)
         issues.append(_missing_env_issue(kit, missing_env_keys))
-    else:
-        try:
-            selection = resolve_active_storage_selection(
-                registry=registry,
-                storage=storage,
-                storage_env_key=storage_env_key,
-                original_env=os.environ,
-            )
-        except StorageSelectorError as exc:
-            issues.append(str(exc))
 
     selected_storage_root = selection.root if selection is not None else None
     local_env = (

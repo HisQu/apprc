@@ -6,9 +6,11 @@ AppRC imports are side-effect free: importing a config dataclass does not read
 packaged shared defaults, the selected storage-local dotenv file, an optional
 explicit ``--env-file``, and the values already present in ``os.environ``.
 
-The helper mutates only the current Python process. It never writes dotenv
-files and never changes the parent shell. AppRC TOML path lookup is delegated
-to :mod:`apprc.config.app_spec`, active storage selection is delegated to
+The helper mutates only the current Python process because runtime config
+binding and some application dependencies intentionally read from
+``os.environ``. It never writes dotenv files and never changes the parent
+shell. AppRC TOML path lookup is delegated to
+:mod:`apprc.config.app_spec`, active storage selection is delegated to
 :mod:`apprc.config.storage.selector`, and storage-local editing is delegated to
 :mod:`apprc.config.local_env`.
 """
@@ -119,11 +121,13 @@ def bootstrap_env(
     """
     original_env = dict(os.environ)
     explicit_values = _read_explicit_env_file(env_file)
+    shared_env_path, shared_values = read_shared_env_values(spec)
     storage_selector = select_storage_selector(
         storage=storage,
         storage_env_key=spec.storage_env_key,
         original_env=original_env,
         explicit_values=explicit_values,
+        shared_values=shared_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     if storage_selector is None:
@@ -140,28 +144,25 @@ def bootstrap_env(
     active_storage_root = selection.root
     active_local_env = active_storage_root / spec.local_env_filename
 
-    shared_env_path: Path | None = None
     loaded_local_env: Path | None = None
     if load_dotenv_layers:
         loaded_local_env = active_local_env
-        with as_file(_shared_env_resource(spec)) as shared_env:
-            if not shared_env.is_file():
-                raise FileNotFoundError(
-                    f"Did not find packaged .env.shared at {shared_env}."
-                )
-            shared_env_path = shared_env
-            merged = _merged_env_values(
-                shared_values=_read_dotenv_file(shared_env),
-                local_values=_read_dotenv_file(active_local_env),
-                explicit_values=explicit_values,
-                original_env=original_env,
-                env_file_overrides_os_environ=env_file_overrides_os_environ,
+        if shared_env_path is None:
+            raise FileNotFoundError(
+                f"Did not find packaged .env.shared for {spec.config_package}."
             )
-            os.environ.update(merged)
+        merged = _merged_env_values(
+            shared_values=shared_values,
+            local_values=_read_dotenv_file(active_local_env),
+            explicit_values=explicit_values,
+            original_env=original_env,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
+        )
+        os.environ.update(merged)
     os.environ[spec.storage_env_key] = str(active_storage_root)
 
     return EnvBootstrapResult(
-        shared_env=shared_env_path,
+        shared_env=shared_env_path if load_dotenv_layers else None,
         local_env=loaded_local_env,
         env_file=env_file,
         apprc_toml_path=registry.path if registry is not None else None,
@@ -176,6 +177,25 @@ def bootstrap_env(
 def _shared_env_resource(spec: AppConfigSpec) -> Traversable:
     """Return the packaged shared dotenv resource."""
     return files(spec.config_package).joinpath(spec.shared_env_filename)
+
+
+def read_shared_env_values(
+    spec: AppConfigSpec,
+) -> tuple[Path | None, dict[str, str]]:
+    """Read packaged shared dotenv values when the resource exists.
+
+    Missing shared resources are tolerated here so storage selection can use a
+    packaged default when present without making shared defaults mandatory for
+    every AppRC integration. ``bootstrap_env`` raises later when dotenv layers
+    are enabled and the shared resource is absent.
+
+    :param spec: Application-specific bootstrap contract.
+    :return: Shared dotenv path and parsed values, or ``(None, {})``.
+    """
+    with as_file(_shared_env_resource(spec)) as shared_env:
+        if not shared_env.is_file():
+            return None, {}
+        return shared_env, _read_dotenv_file(shared_env)
 
 
 def _read_explicit_env_file(env_file: Path | None) -> dict[str, str]:

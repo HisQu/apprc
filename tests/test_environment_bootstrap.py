@@ -166,6 +166,66 @@ def test_bootstrap_env_explicit_env_file_can_select_single_storage(
     assert os.environ["DEMO_MODEL"] == "explicit-model"
 
 
+@pytest.mark.allow_missing_apprc_env
+def test_bootstrap_env_uses_packaged_shared_storage_default_without_writes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
+    monkeypatch.delenv("DEMO_STORAGE", raising=False)
+    storage_root = tmp_path / "shared-storage"
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        f'DEMO_STORAGE="{storage_root}"\nDEMO_MODEL="shared-model"\n',
+    )
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=None,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.storage_selector_source == "packaged .env.shared"
+    assert result.storage_selector_value == str(storage_root)
+    assert result.storage_root == storage_root.resolve()
+    assert result.local_env == storage_root.resolve() / ".env.demo"
+    assert os.environ["DEMO_STORAGE"] == str(storage_root.resolve())
+    assert os.environ["DEMO_MODEL"] == "shared-model"
+    assert not storage_root.exists()
+    assert not (storage_root / ".env.demo").exists()
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_bootstrap_env_shell_storage_wins_over_packaged_shared_default(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
+    shell_storage = tmp_path / "shell-storage"
+    shared_storage = tmp_path / "shared-storage"
+    monkeypatch.setenv("DEMO_STORAGE", str(shell_storage))
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        f'DEMO_STORAGE="{shared_storage}"\nDEMO_MODEL="shared-model"\n',
+    )
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_file=None,
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.storage_selector_source == "DEMO_STORAGE"
+    assert result.storage_root == shell_storage.resolve()
+    assert os.environ["DEMO_STORAGE"] == str(shell_storage.resolve())
+
+
 def test_bootstrap_env_configured_apprc_toml_must_exist(
     monkeypatch,
     tmp_path: Path,

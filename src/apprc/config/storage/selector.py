@@ -84,6 +84,7 @@ def resolve_active_storage_selection(
     storage_env_key: str,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str] | None = None,
+    shared_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool = False,
 ) -> StorageSelection | None:
     """Return the active storage selected by CLI, env, or explicit dotenv.
@@ -99,6 +100,8 @@ def resolve_active_storage_selection(
     :param storage_env_key: Env key that stores the active storage selector.
     :param original_env: Process environment captured before dotenv loading.
     :param explicit_values: Values read from ``--env-file``.
+    :param shared_values: Packaged shared dotenv values used only as the
+        lowest-precedence storage selector fallback.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         already exported process values.
     :return: Resolved selection, or ``None`` when no selector was provided.
@@ -108,6 +111,7 @@ def resolve_active_storage_selection(
         storage=storage,
         original_env=original_env,
         explicit_values=explicit_values or {},
+        shared_values=shared_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         storage_env_key=storage_env_key,
     )
@@ -219,6 +223,7 @@ def select_storage_selector(
     storage: str | None,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
+    shared_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool,
     storage_env_key: str,
 ) -> tuple[str, str] | None:
@@ -231,6 +236,8 @@ def select_storage_selector(
     :param storage: Optional root CLI ``--storage`` value.
     :param original_env: Process environment captured before dotenv loading.
     :param explicit_values: Values read from ``--env-file``.
+    :param shared_values: Packaged shared dotenv values used only as the
+        lowest-precedence storage selector fallback.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         already exported process values.
     :param storage_env_key: Env key that stores the active storage selector.
@@ -248,6 +255,9 @@ def select_storage_selector(
         )
     if raw_value:
         return storage_env_key, raw_value
+    shared_raw_value = (shared_values or {}).get(storage_env_key)
+    if shared_raw_value:
+        return "packaged .env.shared", shared_raw_value
     return None
 
 

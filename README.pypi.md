@@ -265,9 +265,11 @@ For AppRC-backed apps, keep the storage selector in startup:
 
 - `export <APP>_STORAGE="/absolute/path/to/storage"`
 
-`<APP>_STORAGE` is always the active storage selector for the current shell. It
-is interpreted as a path when `<APP>_APPRC_TOML` is unset, including bare
-relative values such as `alpha`. Set
+`<APP>_STORAGE` is the active storage selector when the user exports it or an
+explicit env file provides it. A packaged `.env.shared` may also provide a
+lowest-precedence default selector for single-storage applications. The
+selector is interpreted as a path when `<APP>_APPRC_TOML` is unset, including
+bare relative values such as `alpha`. Set
 `export <APP>_APPRC_TOML="/absolute/path/to/<app>.apprc.toml"` only when the app
 should use multi-storage features. In multi-storage mode, exact
 registered names resolve through the TOML, path-like values such as
@@ -279,8 +281,10 @@ Runtime behavior when keys are missing:
 - `<APP>_APPRC_TOML` missing: single-storage mode is active. Runtime commands
   use `<APP>_STORAGE` as a path. Multi-storage commands such as `config list` and
   `config init` are unavailable until `<APP>_APPRC_TOML` is exported.
-- `<APP>_STORAGE` missing: runtime bootstrap fails. Setup and doctor commands
-  can still run in partial setup states to help fix the missing variable.
+- `<APP>_STORAGE` missing everywhere: runtime bootstrap fails after checking
+  `--storage`, already exported env values, an explicit env file, and packaged
+  `.env.shared` defaults. Setup and doctor commands can still run in partial
+  setup states to help fix the missing selector.
 
 <br>
 
@@ -320,10 +324,27 @@ should win inside the current Python process. AppRC never mutates the parent
 shell. CLI applications should expose this as
 `--env-file-overrides-os-environ` with the `-o` shorthand.
 
+Storage-root selection uses the same inputs before runtime config objects are
+created: `--storage`, explicit env or existing `os.environ` according to `-o`,
+and then packaged `.env.shared` as the lowest-precedence fallback. That lets an
+application ship a simple single-storage default while still allowing users and
+deployment env files to override it.
+
+AppRC intentionally mutates only the current Python process during bootstrap.
+`typed-settings` and some runtime dependencies bind from `os.environ`, so the
+bootstrap layer must populate that process before config dataclasses are
+constructed. Normal runtime bootstrap never writes `.env.local`, never creates
+storage roots, and never changes the parent shell; setup, register, editor, and
+`config set` flows own those file writes.
+
 Set `load_dotenv_layers=False` in Python, or expose a CLI flag such as
 `--skip-dotenv-layers`, to skip merging packaged, storage-local, and explicit
 dotenv values into the process. Registry and storage selection still run; the
 explicit env file may still provide the storage selector used for selection.
+
+`Config modified: ...` warnings come from `BaseConfig.__setattr__` after a
+runtime config object is constructed. They flag config-object reassignment, not
+`os.environ` changes and not dotenv-file writes.
 
 ### Storage Registries
 

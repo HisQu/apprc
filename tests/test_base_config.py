@@ -4,7 +4,9 @@ from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from apprc.config import BaseConfig
+import pytest
+
+from apprc.config import BaseConfig, BaseEnv, ConfigField, ConfigOwner
 
 
 @dataclass(slots=True)
@@ -18,6 +20,30 @@ class _RuntimeConfig(BaseConfig):
     name: str
     path: Path
     nested: _NestedConfig
+
+
+_CHOICE_OWNER = ConfigOwner(
+    key="demo",
+    title="Demo",
+    env_prefix="DEMO_",
+    rc_path=("demo",),
+    fields=(
+        ConfigField(
+            "mode",
+            "MODE",
+            str,
+            default="AUTO",
+            choices=("AUTO", "MANUAL"),
+        ),
+    ),
+)
+
+
+@dataclass(slots=True)
+class _ChoiceEnv(BaseEnv):
+    config_owner = _CHOICE_OWNER
+
+    mode: str = "AUTO"
 
 
 def test_base_config_to_dict_redacts_private_dataclass_fields(
@@ -56,3 +82,12 @@ def test_base_config_copy_preserves_resolved_state_without_constructor() -> (
     assert shallow.nested is config.nested
     assert deep == config
     assert deep.nested is not config.nested
+
+
+def test_base_env_rejects_invalid_runtime_choices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_MODE", "BOGUS")
+
+    with pytest.raises(ValueError, match="DEMO_MODE='BOGUS' is invalid"):
+        _ChoiceEnv()

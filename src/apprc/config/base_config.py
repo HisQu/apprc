@@ -350,10 +350,12 @@ class BaseEnv(BaseConfig):
         for spec in owner.fields:
             if not hasattr(loaded, spec.name):
                 continue
+            loaded_value = getattr(loaded, spec.name)
+            self._validate_loaded_choice(owner, spec.name, loaded_value)
             if spec.name in provided_fields or not self._has_instance_attr(
                 spec.name
             ):
-                object.__setattr__(self, spec.name, getattr(loaded, spec.name))
+                object.__setattr__(self, spec.name, loaded_value)
 
     # -----------------------------------------------------------------
     # -- Helpers
@@ -367,6 +369,29 @@ class BaseEnv(BaseConfig):
                 f"{cls.__name__} must declare a ConfigOwner before env binding."
             )
         return cls.config_owner
+
+    @staticmethod
+    def _validate_loaded_choice(
+        owner: ConfigOwner,
+        field_name: str,
+        value: Any,
+    ) -> None:
+        """Reject runtime env values outside a declared choice set.
+
+        :param owner: Config owner that declares the field.
+        :param field_name: Owner-local field name.
+        :param value: Typed value loaded from ``os.environ``.
+        :raises ValueError: If the value is not one of the declared choices.
+        """
+        spec = owner.field(field_name)
+        if not spec.choices or value in spec.choices:
+            return
+        choices = ", ".join(spec.choices)
+        env_key = owner.env_key(field_name)
+        raise ValueError(
+            f"{env_key}={value!r} is invalid; {field_name} must be one of: "
+            f"{choices}."
+        )
 
     def _truncate_prefix(self, s: str) -> str:
         """Remove the owner env prefix from ``s`` when present."""

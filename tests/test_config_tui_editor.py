@@ -103,6 +103,7 @@ async def test_editor_launches_with_active_path_without_apprc_toml(
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "active"
+    storage_root.mkdir()
     editor = ConfigEditorApp(
         kit=kit,
         storage_registry=None,

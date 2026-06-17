@@ -12,6 +12,7 @@ from apprc.config.local_env import (
     set_local_env_value,
     write_local_env,
 )
+from apprc.config.paths import StorageRootPathError
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNER,
     APPRC_EXAMPLE_APP_OWNERS,
@@ -42,8 +43,11 @@ def test_write_local_env_orders_known_keys_before_unknown_keys(
     )
 
 
-def test_ensure_local_env_file_creates_parent_and_file(tmp_path: Path) -> None:
+def test_ensure_local_env_file_creates_file_in_existing_root(
+    tmp_path: Path,
+) -> None:
     storage_root = tmp_path / "storage"
+    storage_root.mkdir()
 
     path = ensure_local_env_file(
         storage_root, filename=".env.apprc_example_app"
@@ -53,10 +57,21 @@ def test_ensure_local_env_file_creates_parent_and_file(tmp_path: Path) -> None:
     assert path.is_file()
 
 
+def test_ensure_local_env_file_rejects_missing_root(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
+
+    with pytest.raises(StorageRootPathError, match="does not exist"):
+        ensure_local_env_file(
+            storage_root,
+            filename=".env.apprc_example_app",
+        )
+
+
 def test_set_local_env_value_accepts_env_key_config_path_or_unique_name(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
+    storage_root.mkdir()
 
     update_by_env = set_local_env_value(
         storage_root=storage_root,
@@ -107,6 +122,7 @@ def test_clear_local_env_value_removes_existing_override(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
+    storage_root.mkdir()
     set_local_env_value(
         storage_root=storage_root,
         reference="APPRC_EXAMPLE_APP_PROFILE",

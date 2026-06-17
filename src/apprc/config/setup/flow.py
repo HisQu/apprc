@@ -252,6 +252,7 @@ class ConfigSetupFlow:
 
     def ensure_storage_local_env(self, storage_root: Path) -> Path:
         """Create or confirm the storage-local dotenv file after validation."""
+        storage_root.mkdir(parents=True, exist_ok=True)
         try:
             local_env = ensure_local_env_file(
                 storage_root,

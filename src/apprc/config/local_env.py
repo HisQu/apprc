@@ -24,6 +24,7 @@ from typing import Iterable, Mapping
 from dotenv import dotenv_values
 
 # == Internal ================================
+from apprc.config.paths import StorageRootPathError
 from apprc.config.schema import (
     CONFIG_MISSING,
     ConfigField,
@@ -65,8 +66,8 @@ def ensure_local_env_file(
     :param filename: Dotenv filename inside the storage root.
     :return: Path to the existing dotenv file.
     """
-    path = local_env_path(storage_root, filename=filename)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    root = _require_existing_storage_root(storage_root)
+    path = root / filename
     path.touch(exist_ok=True)
     return path
 
@@ -94,7 +95,7 @@ def write_local_env(
     preserved and sorted afterward so user-owned extras do not disappear.
     """
     env_path = Path(path).expanduser()
-    env_path.parent.mkdir(parents=True, exist_ok=True)
+    _require_existing_storage_root(env_path.parent)
     ordered_keys = _ordered_env_keys(owners)
     known_key_set = set(ordered_keys)
     known = [key for key in ordered_keys if key in values]
@@ -104,6 +105,21 @@ def write_local_env(
     ]
     env_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return env_path
+
+
+def _require_existing_storage_root(storage_root: Path) -> Path:
+    """Return ``storage_root`` after proving it already exists.
+
+    :param storage_root: Storage root expected to own a local dotenv file.
+    :return: Resolved existing storage root.
+    :raises StorageRootPathError: If the root is missing or not a directory.
+    """
+    root = Path(storage_root).expanduser().resolve()
+    if not root.exists():
+        raise StorageRootPathError(f"Storage root does not exist: {root!s}")
+    if not root.is_dir():
+        raise StorageRootPathError(f"Storage root is not a directory: {root!s}")
+    return root
 
 
 def set_local_env_value(

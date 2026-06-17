@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,16 +61,21 @@ def load_create_or_empty_storage_registry(path: Path) -> StorageRegistry:
     return load_storage_registry_or_empty(path)
 
 
-def load_existing_storage_registry(spec: AppConfigSpec) -> StorageRegistry:
+def load_existing_storage_registry(
+    spec: AppConfigSpec,
+    *,
+    proc_env: Mapping[str, str] | None = None,
+) -> StorageRegistry:
     """Read a configured storage table that must already exist.
 
     :param spec: Application-specific config contract.
+    :param proc_env: Optional environment mapping for bootstrap-time selection.
     :return: Parsed storage table.
     :raises ApprcTomlEnvError: If the env var is missing or points at a missing
         file.
     :raises ValueError: If the AppRC TOML cannot be parsed.
     """
-    apprc_toml_path = spec.required_apprc_toml_path()
+    apprc_toml_path = spec.required_apprc_toml_path(proc_env=proc_env)
     if not apprc_toml_path.is_file():
         raise ApprcTomlEnvError(
             missing_apprc_toml_file_message(
@@ -83,17 +89,20 @@ def load_existing_storage_registry(spec: AppConfigSpec) -> StorageRegistry:
 
 def load_optional_runtime_storage_registry(
     spec: AppConfigSpec,
+    *,
+    proc_env: Mapping[str, str] | None = None,
 ) -> StorageRegistry | None:
     """Read the storage table only when runtime multi-storage mode is enabled.
 
     :param spec: Application-specific config contract.
+    :param proc_env: Optional environment mapping for bootstrap-time selection.
     :return: Parsed storage table, or ``None`` in single-storage mode.
     :raises ApprcTomlEnvError: If the env var points at a missing file.
     :raises ValueError: If the AppRC TOML cannot be parsed.
     """
-    if spec.optional_apprc_toml_path() is None:
+    if spec.optional_apprc_toml_path(proc_env) is None:
         return None
-    return load_existing_storage_registry(spec)
+    return load_existing_storage_registry(spec, proc_env=proc_env)
 
 
 def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:

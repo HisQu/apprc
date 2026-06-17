@@ -12,7 +12,7 @@ that should not pull in CLI/TUI dependencies.
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
@@ -109,7 +109,7 @@ class AppConfigKit:
     def bootstrap(
         self,
         *,
-        env_file: Path | None,
+        env_files: Sequence[Path],
         env_file_overrides_os_environ: bool,
         load_dotenv_layers: bool,
         storage: str | None,
@@ -117,16 +117,16 @@ class AppConfigKit:
     ) -> EnvBootstrapResult:
         """Populate ``os.environ`` for this application.
 
-        :param env_file: Optional invocation-local dotenv file that outranks
+        :param env_files: Optional invocation-local dotenv files that outrank
             the packaged ``.env.shared`` and active storage-local
             ``.env.local``.
         :param env_file_overrides_os_environ: Whether explicit dotenv values beat
             existing values in ``os.environ`` inside this process. The parent
             shell is never mutated.
         :param load_dotenv_layers: Whether packaged ``.env.shared``, active
-            storage-local ``.env.local``, and explicit ``env_file`` values
+            storage-local ``.env.local``, and explicit ``env_files`` values
             should be merged into this process. Storage selection still runs
-            when this is ``False``, and explicit ``env_file`` values may still
+            when this is ``False``, and explicit values may still
             provide the selector used for selection.
         :param storage: Optional ``--storage`` selector. With AppRC TOML it may
             be a registered storage name or path. Without AppRC TOML it is
@@ -136,7 +136,7 @@ class AppConfigKit:
         """
         return bootstrap_env(
             spec=self.spec,
-            env_file=env_file,
+            env_files=env_files,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
             storage=storage,

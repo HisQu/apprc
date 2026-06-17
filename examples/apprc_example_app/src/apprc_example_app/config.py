@@ -147,7 +147,7 @@ def _bootstrap_payload(
         return {
             "shared_env": None,
             "local_env": None,
-            "env_file": None,
+            "env_files": [],
             "apprc_toml_path": str(apprc_toml_path)
             if apprc_toml_path
             else None,
@@ -160,7 +160,7 @@ def _bootstrap_payload(
     return {
         "shared_env": _path_text(bootstrap.shared_env),
         "local_env": _path_text(bootstrap.local_env),
-        "env_file": _path_text(bootstrap.env_file),
+        "env_files": [str(path) for path in bootstrap.env_files],
         "apprc_toml_path": _path_text(bootstrap.apprc_toml_path),
         "storage_selector_source": bootstrap.storage_selector_source,
         "storage_selector_value": bootstrap.storage_selector_value,

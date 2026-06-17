@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +29,7 @@ def parse_log_level(log_level: str) -> str | int:
 def bootstrap_cli_env(
     kit: AppConfigKit,
     *,
-    env_file: Path | None,
+    env_files: Sequence[Path],
     env_file_overrides_os_environ: bool,
     load_dotenv_layers: bool,
     storage: str | None,
@@ -40,16 +40,16 @@ def bootstrap_cli_env(
     """Initialize logging and dotenv layers for one CLI process.
 
     :param kit: Application config facade.
-    :param env_file: Optional invocation-local dotenv file that outranks the
+    :param env_files: Optional invocation-local dotenv files that outrank the
         packaged ``.env.shared`` and active storage-local ``.env.local``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
     :param load_dotenv_layers: Whether packaged ``.env.shared``, active
-        storage-local ``.env.local``, and explicit ``env_file`` values should
+        storage-local ``.env.local``, and explicit ``env_files`` values should
         be merged into this process. Registry selection still runs when this
-        is ``False``, and explicit ``env_file`` values may still provide the
-        storage selector used for selection.
+        is ``False``, and explicit values may still provide the storage
+        selector used for selection.
     :param storage: Optional ``--storage`` selector. With a registry it may be
         a registered storage name or path. Without a registry it is always
         interpreted as a path.
@@ -57,14 +57,14 @@ def bootstrap_cli_env(
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
-    :raises typer.BadParameter: If the explicit env file or storage selector
+    :raises typer.BadParameter: If an explicit env file or storage selector
         is invalid.
     """
     if setup_logging is not None and log_level is not None:
         setup_logging(level=parse_log_level(log_level))
     try:
         return kit.bootstrap(
-            env_file=env_file,
+            env_files=env_files,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
             storage=storage,

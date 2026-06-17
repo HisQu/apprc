@@ -3,8 +3,9 @@
 AppRC imports are side-effect free: importing a config dataclass does not read
 ``.env`` files or modify the process environment. Application entrypoints call
 ``bootstrap_env`` once, before runtime config objects are created, to merge the
-packaged shared defaults, the selected storage-local dotenv file, an optional
-explicit ``--env-file``, and the values already present in ``os.environ``.
+packaged shared defaults, the selected storage-local dotenv file, optional
+explicit ``--env-file`` values, and the values already present in
+``os.environ``.
 
 The helper mutates only the current Python process because runtime config
 binding and some application dependencies intentionally read from
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib.resources import as_file, files
 from importlib.resources.abc import Traversable
@@ -60,7 +62,7 @@ class EnvBootstrapResult:
         loading, or ``None`` when dotenv layers were skipped or no storage root
         is known. The path may not exist because missing local files are
         optional.
-    :param env_file: Explicit dotenv file passed through the CLI.
+    :param env_files: Explicit dotenv files passed through the CLI or Python API.
     :param apprc_toml_path: Env-selected AppRC TOML path, or ``None`` when
         single-storage path mode is active.
     :param storage_selector_source: Source that selected the active storage,
@@ -75,7 +77,7 @@ class EnvBootstrapResult:
 
     shared_env: Path | None
     local_env: Path | None
-    env_file: Path | None
+    env_files: tuple[Path, ...]
     apprc_toml_path: Path | None
     storage_selector_source: str | None
     storage_selector_value: str | None
@@ -87,7 +89,7 @@ class EnvBootstrapResult:
 def bootstrap_env(
     *,
     spec: AppConfigSpec,
-    env_file: Path | None = None,
+    env_files: Sequence[Path] = (),
     env_file_overrides_os_environ: bool = False,
     load_dotenv_layers: bool = True,
     storage: str | None = None,
@@ -98,15 +100,16 @@ def bootstrap_env(
     Imports stay side-effect free; entrypoints call this helper before building
     runtime config objects. The parent shell is not mutated. Dotenv layers are
     the packaged ``.env.shared``, the active storage-local ``.env.local``, and
-    the optional explicit ``env_file``. The explicit file always overrides the
-    packaged and storage-local dotenv layers. When dotenv layers are skipped,
-    the explicit ``env_file`` is still parsed so it can guide storage-root
-    selection, but its values are not merged into ``os.environ``.
+    the optional explicit ``env_files``. Later explicit files override earlier
+    explicit files. The merged explicit values always override the packaged and
+    storage-local dotenv layers. When dotenv layers are skipped, explicit files
+    are still parsed so they can guide storage-root selection, but their values
+    are not merged into ``os.environ``.
 
     :param spec: Application-specific bootstrap contract.
-    :param env_file: Optional invocation-local dotenv file that outranks the
+    :param env_files: Optional invocation-local dotenv files that outrank the
         packaged ``.env.shared`` and active storage-local ``.env.local``.
-    :param env_file_overrides_os_environ: Whether ``env_file`` beats already
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
     :param load_dotenv_layers: Whether packaged ``.env.shared``,
@@ -120,7 +123,7 @@ def bootstrap_env(
     :return: Bootstrap summary for diagnostics and tests.
     """
     original_env = dict(os.environ)
-    explicit_values = _read_explicit_env_file(env_file)
+    loaded_env_files, explicit_values = _read_explicit_env_files(env_files)
     shared_env_path, shared_values = read_shared_env_values(spec)
     storage_selector = select_storage_selector(
         storage=storage,
@@ -132,7 +135,14 @@ def bootstrap_env(
     )
     if storage_selector is None:
         raise missing_storage_selector_error(spec.storage_env_key)
-    registry = load_optional_runtime_storage_registry(spec)
+    registry = load_optional_runtime_storage_registry(
+        spec,
+        proc_env=_selection_env(
+            original_env=original_env,
+            explicit_values=explicit_values,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
+        ),
+    )
     selector_source, selector_value = storage_selector
     selection = resolve_storage_selector_value(
         registry=registry,
@@ -164,7 +174,7 @@ def bootstrap_env(
     return EnvBootstrapResult(
         shared_env=shared_env_path if load_dotenv_layers else None,
         local_env=loaded_local_env,
-        env_file=env_file,
+        env_files=loaded_env_files,
         apprc_toml_path=registry.path if registry is not None else None,
         storage_selector_source=selection.source,
         storage_selector_value=selection.raw_value,
@@ -198,18 +208,25 @@ def read_shared_env_values(
         return shared_env, _read_dotenv_file(shared_env)
 
 
-def _read_explicit_env_file(env_file: Path | None) -> dict[str, str]:
-    """Read the optional explicit dotenv file.
+def _read_explicit_env_files(
+    env_files: Sequence[Path],
+) -> tuple[tuple[Path, ...], dict[str, str]]:
+    """Read ordered explicit dotenv files.
 
     Explicit values may guide storage selection even when dotenv layers
-    are not merged into ``os.environ``.
+    are not merged into ``os.environ``. Later files override earlier files.
     """
-    if env_file is None:
-        return {}
-    resolved = Path(env_file).expanduser()
-    if not resolved.is_file():
-        raise FileNotFoundError(f"Explicit env file does not exist: {resolved}")
-    return _read_dotenv_file(resolved)
+    loaded_paths: list[Path] = []
+    merged_values: dict[str, str] = {}
+    for env_file in env_files:
+        resolved = Path(env_file).expanduser()
+        if not resolved.is_file():
+            raise FileNotFoundError(
+                f"Explicit env file does not exist: {resolved}"
+            )
+        loaded_paths.append(resolved)
+        merged_values.update(_read_dotenv_file(resolved))
+    return tuple(loaded_paths), merged_values
 
 
 def _read_dotenv_file(path: Path | None) -> dict[str, str]:
@@ -246,3 +263,15 @@ def _merged_env_values(
         **explicit_values,
         **original_env,
     }
+
+
+def _selection_env(
+    *,
+    original_env: Mapping[str, str],
+    explicit_values: Mapping[str, str],
+    env_file_overrides_os_environ: bool,
+) -> dict[str, str]:
+    """Return env values used before dotenv layers mutate ``os.environ``."""
+    if env_file_overrides_os_environ:
+        return {**original_env, **explicit_values}
+    return {**explicit_values, **original_env}

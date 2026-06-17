@@ -35,11 +35,11 @@ app = typer.Typer(
 @app.callback()
 def root_cmd(
     ctx: typer.Context,
-    env_file: Annotated[
-        Path | None,
+    env_files: Annotated[
+        list[Path] | None,
         typer.Option(
             "--env-file",
-            help="Invocation-local dotenv file loaded after shared/local env.",
+            help="Invocation-local dotenv file loaded after shared/local env. May be repeated.",
         ),
     ] = None,
     env_file_overrides_os_environ: Annotated[
@@ -80,7 +80,7 @@ def root_cmd(
         return
     state.env_bootstrap = bootstrap_cli_env(
         APPRC_EXAMPLE_APP_KIT,
-        env_file=env_file,
+        env_files=tuple(env_files or ()),
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         load_dotenv_layers=not skip_dotenv_layers,
         storage=storage,

@@ -264,9 +264,9 @@ For AppRC-backed apps, keep the storage selector in startup:
 
 - `export <APP>_STORAGE="/absolute/path/to/storage"`
 
-`<APP>_STORAGE` is the active storage selector when the user exports it or an
-explicit env file provides it. A packaged `.env.shared` may also provide a
-lowest-precedence default selector for single-storage applications. The
+`<APP>_STORAGE` is the active storage selector when the user exports it or one
+or more explicit env files provide it. A packaged `.env.shared` may also provide
+a lowest-precedence default selector for single-storage applications. The
 selector is interpreted as a path when `<APP>_APPRC_TOML` is unset, including
 bare relative values such as `alpha`. Set
 `export <APP>_APPRC_TOML="/absolute/path/to/<app>.apprc.toml"` only when the app
@@ -281,7 +281,7 @@ Runtime behavior when keys are missing:
   use `<APP>_STORAGE` as a path. Multi-storage commands such as `config list` and
   `config init` are unavailable until `<APP>_APPRC_TOML` is exported.
 - `<APP>_STORAGE` missing everywhere: runtime bootstrap fails after checking
-  `--storage`, already exported env values, an explicit env file, and packaged
+  `--storage`, already exported env values, explicit env files, and packaged
   `.env.shared` defaults. Setup and doctor commands can still run in partial
   setup states to help fix the missing selector.
 
@@ -313,21 +313,22 @@ Applications call `AppConfigKit.bootstrap(...)` once at CLI startup. It merges:
 
 1. packaged `.env.shared`
 2. selected storage-local `.env.local`
-3. explicit `--env-file`
+3. explicit `--env-file` values, in command/API order
 4. values already present in `os.environ`
 
-The explicit env file always overrides the packaged and storage-local dotenv
-layers. By default, values already present in `os.environ` win over
-`--env-file`. Set `env_file_overrides_os_environ=True` when an explicit file
-should win inside the current Python process. AppRC never mutates the parent
-shell. CLI applications should expose this as
+Explicit env files are ordered; later files override earlier files. The merged
+explicit values always override the packaged and storage-local dotenv layers. By
+default, values already present in `os.environ` win over `--env-file`. Set
+`env_file_overrides_os_environ=True` when explicit files should win inside the
+current Python process. AppRC never mutates the parent shell. CLI applications
+should expose repeatable `--env-file PATH` and
 `--env-file-overrides-os-environ` with the `-o` shorthand.
 
 Storage-root selection uses the same inputs before runtime config objects are
-created: `--storage`, explicit env or existing `os.environ` according to `-o`,
-and then packaged `.env.shared` as the lowest-precedence fallback. That lets an
-application ship a simple single-storage default while still allowing users and
-deployment env files to override it.
+created: `--storage`, explicit env values or existing `os.environ` according to
+`-o`, and then packaged `.env.shared` as the lowest-precedence fallback. That
+lets an application ship a simple single-storage default while still allowing
+users and deployment env files to override it.
 
 AppRC intentionally mutates only the current Python process during bootstrap.
 `typed-settings` and some runtime dependencies bind from `os.environ`, so the
@@ -339,7 +340,8 @@ storage roots, and never changes the parent shell; setup, register, editor, and
 Set `load_dotenv_layers=False` in Python, or expose a CLI flag such as
 `--skip-dotenv-layers`, to skip merging packaged, storage-local, and explicit
 dotenv values into the process. Registry and storage selection still run; the
-explicit env file may still provide the storage selector used for selection.
+explicit env files may still provide the AppRC TOML or storage selector used for
+selection.
 
 `Config modified: ...` warnings come from `BaseConfig.__setattr__` after a
 runtime config object is constructed. They flag config-object reassignment, not
@@ -457,7 +459,7 @@ from apprc.logging import setup_logging
 
 state.env_bootstrap = bootstrap_cli_env(
     MYAPP_CONFIG,
-    env_file=env_file,
+    env_files=env_files,
     env_file_overrides_os_environ=env_file_overrides_os_environ,
     load_dotenv_layers=not skip_dotenv_layers,
     storage=storage,

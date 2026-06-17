@@ -232,9 +232,14 @@ def test_demo_root_env_file_option_before_config_show(
             ).resolve()
         ),
     )
-    explicit_env = tmp_path / "override.env"
-    explicit_env.write_text(
-        'APPRC_EXAMPLE_APP_PROFILE="explicit-profile"\n',
+    first_env = tmp_path / "first.env"
+    first_env.write_text(
+        'APPRC_EXAMPLE_APP_PROFILE="first-profile"\n',
+        encoding="utf-8",
+    )
+    second_env = tmp_path / "second.env"
+    second_env.write_text(
+        'APPRC_EXAMPLE_APP_PROFILE="second-profile"\n',
         encoding="utf-8",
     )
     runner = CliRunner()
@@ -244,12 +249,20 @@ def test_demo_root_env_file_option_before_config_show(
     _clear_process_apprc_example_app_env()
     result = runner.invoke(
         app,
-        ["--env-file", str(explicit_env), "config", "show", "--json"],
+        [
+            "--env-file",
+            str(first_env),
+            "--env-file",
+            str(second_env),
+            "config",
+            "show",
+            "--json",
+        ],
     )
 
     payload = json.loads(result.output)
     assert result.exit_code == 0, result.output
-    assert payload["config"]["profile"] == "explicit-profile"
+    assert payload["config"]["profile"] == "second-profile"
 
 
 def test_command_name_falls_back_to_app_name() -> None:

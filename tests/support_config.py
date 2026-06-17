@@ -187,7 +187,7 @@ def apprc_example_app_state(
         env_bootstrap=EnvBootstrapResult(
             shared_env=None,
             local_env=storage_root / ".env.apprc_example_app",
-            env_file=None,
+            env_files=(),
             apprc_toml_path=kit.spec.required_apprc_toml_path(),
             storage_selector_source="--storage",
             storage_selector_value="alpha",

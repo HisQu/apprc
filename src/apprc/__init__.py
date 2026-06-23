@@ -9,6 +9,7 @@ from apprc.config import (
     BaseEnv,
     ConfigField,
     ConfigDoctorStatus,
+    ConfigFieldSource,
     ConfigOwner,
 )
 from apprc.logging import (

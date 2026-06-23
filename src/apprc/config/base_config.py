@@ -46,6 +46,38 @@ LOG = get_logger(__name__)
 
 _DEEPCOPY_LOG_DEPTH_KEY = ("apprc.config.base_config", "deepcopy_log_depth")
 
+type ConfigFieldSourceKey = Literal[
+    "python_arg",
+    "python_assignment",
+    "process_env",
+    "dataclass_default",
+]
+
+_CONFIG_FIELD_SOURCE_LABELS: dict[ConfigFieldSourceKey, str] = {
+    "python_arg": "Python argument",
+    "python_assignment": "Python assignment",
+    "process_env": "Process environment",
+    "dataclass_default": "Dataclass default",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigFieldSource:
+    """Resolved source metadata for one env-backed config field.
+
+    :param field_name: Runtime dataclass field name.
+    :param source: Stable source key that explains why the current value won.
+    :param label: Human-readable source label.
+    :param env_key: Full OS environment variable key owned by the field.
+    :param value: Current runtime value stored on the config object.
+    """
+
+    field_name: str
+    source: ConfigFieldSourceKey
+    label: str
+    env_key: str
+    value: Any
+
 
 def resolve_package_root(pkg: ModuleType | str) -> Path:
     """Return the filesystem directory for a regular (non-namespace) package.
@@ -260,6 +292,8 @@ class BaseConfig:
         object.__setattr__(self, key, value)
         if not existed:
             return
+        if isinstance(self, BaseEnv):
+            self._record_python_assignment(key)
         val = self._format_field_value_for_log(key, value)
         LOG.warning(f"Config modified: {self.__class__.__name__}.{key} = {val}")
 
@@ -329,6 +363,18 @@ class BaseEnv(BaseConfig):
     """
 
     config_owner: ClassVar[ConfigOwner | None] = None
+    _apprc_python_value_fields: frozenset[str] = field(
+        init=False,
+        repr=False,
+        compare=False,
+        metadata={"internal": True},
+    )
+    _apprc_field_sources: dict[str, ConfigFieldSourceKey] = field(
+        init=False,
+        repr=False,
+        compare=False,
+        metadata={"internal": True},
+    )
     bind_from_env_on_init: bool = field(
         default=True,
         repr=False,
@@ -336,37 +382,115 @@ class BaseEnv(BaseConfig):
         metadata={"internal": True},
     )
 
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """Create an instance while recording constructor-provided fields.
+
+        Dataclass ``__post_init__`` runs after normal field assignment, so AppRC
+        captures Python constructor arguments in ``__new__`` before env binding
+        can decide which fields are protected for this object's lifetime.
+        """
+        self = super().__new__(cls)
+        python_arg_fields = cls._python_arg_field_names(args, kwargs)
+        object.__setattr__(
+            self,
+            "_apprc_python_value_fields",
+            python_arg_fields,
+        )
+        object.__setattr__(
+            self,
+            "_apprc_field_sources",
+            {field_name: "python_arg" for field_name in python_arg_fields},
+        )
+        return self
+
     def __post_init__(self) -> None:
         """Bind owner-backed fields from current process ``os.environ``."""
         if self.bind_from_env_on_init:
             self.bind_from_env()
 
-    def reload(self) -> None:
-        """Re-bind owner-backed fields from current process ``os.environ``."""
+    def reload(self, override_python_values: bool = False) -> None:
+        """Re-bind owner-backed fields from current process ``os.environ``.
+
+        Python constructor arguments and later Python assignments stay
+        authoritative for the object lifetime by default. Pass
+        ``override_python_values=True`` when the current process environment
+        should deliberately replace those Python-provided values.
+
+        :param override_python_values: Whether env values may overwrite
+            ``python_arg`` and ``python_assignment`` fields.
+        """
         LOG.warning(
             f"♻️  Reloading from os.environ: {self.__class__.__name__} ..."
         )
-        self.bind_from_env()
+        skipped_python_fields = self._bind_from_env(
+            override_python_values=override_python_values
+        )
+        self._warn_skipped_python_fields(skipped_python_fields)
 
-    def bind_from_env(self) -> None:
+    def bind_from_env(self, override_python_values: bool = False) -> None:
         """Load owner-backed values from current process ``os.environ``.
 
         This does not load dotenv files or application config layers. Call the
         application bootstrap helper once at the entrypoint when those layers
         should populate ``os.environ`` before runtime configs are constructed.
+
+        :param override_python_values: Whether env values may overwrite fields
+            provided through Python constructor arguments or later assignment.
         """
+        self._bind_from_env(override_python_values=override_python_values)
+
+    def _bind_from_env(self, override_python_values: bool) -> list[str]:
+        """Bind env values and return Python-owned fields that were skipped."""
         owner = self._config_owner()
         loaded = load_owner_from_env(owner)
         provided_fields = provided_owner_field_names(owner, os.environ)
+        skipped_python_fields: list[str] = []
         for spec in owner.fields:
             if not hasattr(loaded, spec.name):
                 continue
             loaded_value = getattr(loaded, spec.name)
             self._validate_loaded_choice(owner, spec.name, loaded_value)
-            if spec.name in provided_fields or not self._has_instance_attr(
-                spec.name
-            ):
+            if spec.name in provided_fields:
+                if self._env_binding_is_blocked(
+                    spec.name,
+                    override_python_values=override_python_values,
+                ):
+                    skipped_python_fields.append(spec.name)
+                    continue
                 object.__setattr__(self, spec.name, loaded_value)
+                self._record_process_env_source(spec.name)
+                continue
+            if not self._has_instance_attr(spec.name):
+                object.__setattr__(self, spec.name, loaded_value)
+        return skipped_python_fields
+
+    def source_of(self, field_name: str) -> ConfigFieldSource:
+        """Return provenance metadata for one owner-backed field.
+
+        :param field_name: Runtime dataclass field name.
+        :return: Source metadata for the current field value.
+        :raises KeyError: If ``field_name`` is not declared by this config owner.
+        """
+        owner = self._config_owner()
+        env_key = owner.env_key(field_name)
+        source = self._field_source(field_name)
+        return ConfigFieldSource(
+            field_name=field_name,
+            source=source,
+            label=_CONFIG_FIELD_SOURCE_LABELS[source],
+            env_key=env_key,
+            value=getattr(self, field_name),
+        )
+
+    def sources(self) -> dict[str, ConfigFieldSource]:
+        """Return provenance metadata for all owner-backed fields.
+
+        :return: Mapping from field name to source metadata.
+        """
+        return {
+            spec.name: self.source_of(spec.name)
+            for spec in self._config_owner().fields
+        }
 
     # -----------------------------------------------------------------
     # -- Helpers
@@ -380,6 +504,102 @@ class BaseEnv(BaseConfig):
                 f"{cls.__name__} must declare a ConfigOwner before env binding."
             )
         return cls.config_owner
+
+    @classmethod
+    def _owner_field_names(cls) -> frozenset[str]:
+        """Return owner-backed runtime field names for this config class."""
+        if cls.config_owner is None:
+            return frozenset()
+        return frozenset(spec.name for spec in cls._config_owner().fields)
+
+    @classmethod
+    def _python_arg_field_names(
+        cls,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> frozenset[str]:
+        """Return owner-backed fields provided to the Python constructor.
+
+        :param args: Positional constructor arguments passed to ``__new__``.
+        :param kwargs: Keyword constructor arguments passed to ``__new__``.
+        :return: Owner-backed field names supplied directly by Python code.
+        """
+        owner_field_names = cls._owner_field_names()
+        positional_init_fields = [
+            item.name for item in fields(cls) if item.init and not item.kw_only
+        ]
+        positional_names = set(positional_init_fields[: len(args)])
+        keyword_names = set(kwargs)
+        return frozenset((positional_names | keyword_names) & owner_field_names)
+
+    def _field_source(self, field_name: str) -> ConfigFieldSourceKey:
+        """Return the recorded source key or the implicit dataclass default."""
+        self._config_owner().field(field_name)
+        return self._apprc_field_sources.get(field_name, "dataclass_default")
+
+    def _set_field_source(
+        self,
+        field_name: str,
+        source: ConfigFieldSourceKey,
+    ) -> None:
+        """Record provenance for one owner-backed field."""
+        next_sources = dict(self._apprc_field_sources)
+        next_sources[field_name] = source
+        object.__setattr__(self, "_apprc_field_sources", next_sources)
+
+    def _protect_python_field(self, field_name: str) -> None:
+        """Keep one Python-provided field safe from normal env reloads."""
+        protected_fields = self._apprc_python_value_fields | {field_name}
+        object.__setattr__(
+            self,
+            "_apprc_python_value_fields",
+            frozenset(protected_fields),
+        )
+
+    def _unprotect_python_field(self, field_name: str) -> None:
+        """Allow env reloads to own a previously Python-provided field."""
+        protected_fields = self._apprc_python_value_fields - {field_name}
+        object.__setattr__(
+            self,
+            "_apprc_python_value_fields",
+            frozenset(protected_fields),
+        )
+
+    def _record_python_assignment(self, field_name: str) -> None:
+        """Record a post-construction assignment as a Python override."""
+        if field_name not in self._owner_field_names():
+            return
+        self._protect_python_field(field_name)
+        self._set_field_source(field_name, "python_assignment")
+
+    def _record_process_env_source(self, field_name: str) -> None:
+        """Record that the current process environment owns one field."""
+        self._unprotect_python_field(field_name)
+        self._set_field_source(field_name, "process_env")
+
+    def _env_binding_is_blocked(
+        self,
+        field_name: str,
+        *,
+        override_python_values: bool,
+    ) -> bool:
+        """Return whether a Python-provided field should ignore env binding."""
+        return (
+            field_name in self._apprc_python_value_fields
+            and not override_python_values
+        )
+
+    def _warn_skipped_python_fields(self, field_names: list[str]) -> None:
+        """Warn when env binding leaves Python-owned fields untouched."""
+        if not field_names:
+            return
+        joined = ", ".join(sorted(field_names))
+        LOG.warning(
+            "Preserving Python-provided config field(s) during env binding for "
+            f"{self.__class__.__name__}: {joined}. Pass "
+            "override_python_values=True to reload() or bind_from_env() when "
+            "the current process environment should replace them."
+        )
 
     @staticmethod
     def _validate_loaded_choice(

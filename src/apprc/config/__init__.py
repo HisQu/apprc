@@ -8,6 +8,7 @@ from apprc.config.app_spec import (
 from apprc.config.base_config import (
     BaseConfig,
     BaseEnv,
+    ConfigFieldSource,
     resolve_package_root,
 )
 from apprc.config.diagnostics import (

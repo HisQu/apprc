@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config import BaseConfig, BaseEnv, ConfigField, ConfigOwner
+from apprc.config import (
+    BaseConfig,
+    BaseEnv,
+    ConfigField,
+    ConfigFieldSource,
+    ConfigOwner,
+)
+import apprc.config.base_config as base_config
 
 
 @dataclass(slots=True)
@@ -44,6 +51,52 @@ class _ChoiceEnv(BaseEnv):
     config_owner = _CHOICE_OWNER
 
     mode: str = "AUTO"
+
+
+@dataclass(slots=True)
+class _OwnerlessEnv(BaseEnv):
+    value: str = "fallback"
+
+
+_DEMO_OWNER = ConfigOwner(
+    key="demo.runtime",
+    title="Demo Runtime",
+    env_prefix="DEMO_",
+    rc_path=("demo",),
+    fields=(
+        ConfigField(
+            "mode",
+            "MODE",
+            str,
+            default="AUTO",
+            choices=("AUTO", "MANUAL"),
+        ),
+        ConfigField("retries", "RETRIES", int, default=3),
+        ConfigField("enabled", "ENABLED", bool, default=False),
+    ),
+)
+
+
+@dataclass(slots=True)
+class _DemoEnv(BaseEnv):
+    config_owner = _DEMO_OWNER
+
+    mode: str = "AUTO"
+    retries: int = 3
+    enabled: bool = False
+
+
+class _LogSink:
+    def __init__(self) -> None:
+        self.warnings: list[str] = []
+
+    def warning(self, msg: str) -> None:
+        self.warnings.append(msg)
+
+
+def _clear_demo_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for spec in _DEMO_OWNER.fields:
+        monkeypatch.delenv(_DEMO_OWNER.env_key(spec.name), raising=False)
 
 
 def test_base_config_to_dict_redacts_private_dataclass_fields(
@@ -91,3 +144,132 @@ def test_base_env_rejects_invalid_runtime_choices(
 
     with pytest.raises(ValueError, match="DEMO_MODE='BOGUS' is invalid"):
         _ChoiceEnv()
+
+
+def test_base_env_ownerless_config_can_skip_env_binding() -> None:
+    cfg = _OwnerlessEnv(bind_from_env_on_init=False)
+
+    assert cfg.value == "fallback"
+
+
+def test_base_env_python_keyword_arg_overrides_process_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    monkeypatch.setenv("DEMO_MODE", "AUTO")
+    monkeypatch.setenv("DEMO_RETRIES", "9")
+
+    cfg = _DemoEnv(mode="MANUAL")
+
+    assert cfg.mode == "MANUAL"
+    assert cfg.retries == 9
+    mode_source = cfg.source_of("mode")
+    retries_source = cfg.source_of("retries")
+    assert isinstance(mode_source, ConfigFieldSource)
+    assert mode_source.source == "python_arg"
+    assert mode_source.label == "Python argument"
+    assert mode_source.env_key == "DEMO_MODE"
+    assert mode_source.value == "MANUAL"
+    assert retries_source.source == "process_env"
+    assert retries_source.value == 9
+
+
+def test_base_env_python_arg_override_stays_quiet_during_init(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    sink = _LogSink()
+    monkeypatch.setattr(base_config, "LOG", sink)
+    monkeypatch.setenv("DEMO_MODE", "AUTO")
+
+    cfg = _DemoEnv(mode="MANUAL")
+
+    assert cfg.mode == "MANUAL"
+    assert sink.warnings == []
+
+
+def test_base_env_python_positional_arg_overrides_process_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    monkeypatch.setenv("DEMO_MODE", "AUTO")
+
+    cfg = _DemoEnv("MANUAL")
+
+    assert cfg.mode == "MANUAL"
+    assert cfg.source_of("mode").source == "python_arg"
+
+
+def test_base_env_absent_env_fields_report_dataclass_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+
+    cfg = _DemoEnv()
+
+    assert cfg.mode == "AUTO"
+    assert cfg.retries == 3
+    assert cfg.source_of("mode").source == "dataclass_default"
+    assert cfg.source_of("mode").label == "Dataclass default"
+    assert cfg.source_of("retries").source == "dataclass_default"
+
+
+def test_base_env_sources_returns_all_owner_field_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    monkeypatch.setenv("DEMO_RETRIES", "6")
+
+    cfg = _DemoEnv(mode="MANUAL")
+
+    sources = cfg.sources()
+    assert set(sources) == {"mode", "retries", "enabled"}
+    assert sources["mode"].source == "python_arg"
+    assert sources["retries"].source == "process_env"
+    assert sources["enabled"].source == "dataclass_default"
+
+
+def test_base_env_python_assignment_survives_reload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    sink = _LogSink()
+    monkeypatch.setattr(base_config, "LOG", sink)
+    cfg = _DemoEnv()
+    cfg.mode = "MANUAL"
+    monkeypatch.setenv("DEMO_MODE", "AUTO")
+
+    cfg.reload()
+
+    assert cfg.mode == "MANUAL"
+    assert cfg.source_of("mode").source == "python_assignment"
+    assert any("mode" in warning for warning in sink.warnings)
+    assert any(
+        "override_python_values=True" in warning for warning in sink.warnings
+    )
+
+
+def test_base_env_reload_can_override_python_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    cfg = _DemoEnv(mode="MANUAL")
+    monkeypatch.setenv("DEMO_MODE", "AUTO")
+
+    cfg.reload(override_python_values=True)
+
+    assert cfg.mode == "AUTO"
+    assert cfg.source_of("mode").source == "process_env"
+
+
+def test_base_env_bind_can_override_python_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    cfg = _DemoEnv(mode="MANUAL")
+    monkeypatch.setenv("DEMO_MODE", "AUTO")
+
+    cfg.bind_from_env(override_python_values=True)
+
+    assert cfg.mode == "AUTO"
+    assert cfg.source_of("mode").source == "process_env"

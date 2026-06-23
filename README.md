@@ -299,13 +299,19 @@ Runtime behavior when keys are missing:
 | `ConfigOwner` | application | A named section of related fields. |
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
-| `os.environ` | current process | Highest-priority values by default. |
+| Python args and assignments | application/library code | Highest-priority runtime values for one config object. |
+| `os.environ` | current process | Env-backed values used when Python code does not override the field. |
 | `<APP>_APPRC_TOML -> <app>.apprc.toml` | AppRC TOML | Optional named storage roots and archive restore metadata. |
 | `<APP>_STORAGE` | Bootstrap selector | Active storage name or storage path for current shell context. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
 `ConfigOwner` owns env names, docs labels, editor labels, choices, and
 redaction metadata.
+
+For one `BaseEnv` object, direct Python constructor arguments and later Python
+assignments are authoritative for that object's lifetime. `os.environ` fills
+only fields not provided by Python, and dataclass defaults fill any remaining
+gaps. Inspect this with `cfg.source_of("field_name")` or `cfg.sources()`.
 
 ### Bootstrap Precedence
 
@@ -345,7 +351,10 @@ selection.
 
 `Config modified: ...` warnings come from `BaseConfig.__setattr__` after a
 runtime config object is constructed. They flag config-object reassignment, not
-`os.environ` changes and not dotenv-file writes.
+`os.environ` changes and not dotenv-file writes. Assigning an owner-backed field
+also records a `python_assignment` source that normal `reload()` calls preserve;
+pass `reload(override_python_values=True)` only when env values should replace
+Python-provided values.
 
 ### Storage Registries
 
@@ -568,7 +577,8 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `ConfigOwner` | One config section, env prefix, runtime path, and fields. |
 | `ConfigField` | One editable or read-only env-backed setting. |
 | `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
-| `BaseEnv` | Runtime dataclass base that binds values from env. |
+| `BaseEnv` | Runtime dataclass base that resolves Python, env, and default values. |
+| `ConfigFieldSource` | Provenance record returned by `BaseEnv.source_of()` and `BaseEnv.sources()`. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
 | `StorageRegistry` | Parsed AppRC TOML storage table. |
 | `ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |

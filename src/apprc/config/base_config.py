@@ -321,7 +321,11 @@ class BaseEnv(BaseConfig):
     ``BaseEnv`` intentionally knows only about structured owner metadata.
     Subclasses declare normal typed dataclass fields, while their
     :class:`apprc.config.schema.ConfigOwner` owns env names, docs metadata, and
-    editor metadata.
+    editor metadata. ``BaseEnv`` reads OS environment variables from the
+    current Python process via ``os.environ``. It does not load dotenv files or
+    application config layers; application entrypoints should call their
+    bootstrap helper before constructing ``BaseEnv`` objects when they want
+    dotenv layers merged into ``os.environ``.
     """
 
     config_owner: ClassVar[ConfigOwner | None] = None
@@ -333,17 +337,24 @@ class BaseEnv(BaseConfig):
     )
 
     def __post_init__(self) -> None:
-        """Bind owner-backed fields from the current process env."""
+        """Bind owner-backed fields from current process ``os.environ``."""
         if self.bind_from_env_on_init:
             self.bind_from_env()
 
     def reload(self) -> None:
-        """Re-bind owner-backed fields from the current process env."""
-        LOG.warning(f"♻️  Reloading from .env: {self.__class__.__name__} ...")
+        """Re-bind owner-backed fields from current process ``os.environ``."""
+        LOG.warning(
+            f"♻️  Reloading from os.environ: {self.__class__.__name__} ..."
+        )
         self.bind_from_env()
 
     def bind_from_env(self) -> None:
-        """Load owner-backed values using ``typed-settings``."""
+        """Load owner-backed values from current process ``os.environ``.
+
+        This does not load dotenv files or application config layers. Call the
+        application bootstrap helper once at the entrypoint when those layers
+        should populate ``os.environ`` before runtime configs are constructed.
+        """
         owner = self._config_owner()
         loaded = load_owner_from_env(owner)
         provided_fields = provided_owner_field_names(owner, os.environ)

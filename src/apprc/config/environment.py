@@ -98,13 +98,14 @@ def bootstrap_env(
     """Populate ``os.environ`` for one application CLI process.
 
     Imports stay side-effect free; entrypoints call this helper before building
-    runtime config objects. The parent shell is not mutated. Dotenv layers are
-    the packaged ``.env.shared``, the active storage-local ``.env.local``, and
-    the optional explicit ``env_files``. Later explicit files override earlier
-    explicit files. The merged explicit values always override the packaged and
-    storage-local dotenv layers. When dotenv layers are skipped, explicit files
-    are still parsed so they can guide storage-root selection, but their values
-    are not merged into ``os.environ``.
+    runtime config objects that read OS environment variables from the current
+    Python process via ``os.environ``. The parent shell is not mutated. Dotenv
+    layers are the packaged ``.env.shared``, the active storage-local
+    ``.env.local``, and the optional explicit ``env_files``. Later explicit
+    files override earlier explicit files. The merged explicit values always
+    override the packaged and storage-local dotenv layers. When dotenv layers
+    are skipped, explicit files are still parsed so they can guide storage-root
+    selection, but their values are not merged into ``os.environ``.
 
     :param spec: Application-specific bootstrap contract.
     :param env_files: Optional invocation-local dotenv files that outrank the

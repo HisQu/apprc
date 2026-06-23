@@ -186,7 +186,13 @@ def load_owner_from_sources(
 
 
 def load_owner_from_env(owner: ConfigOwner) -> Any:
-    """Load one owner from the current process env only."""
+    """Load one owner from current process OS env variables only.
+
+    Reads values from ``os.environ``. This does not load dotenv files or
+    application config layers; call the application bootstrap helper at the
+    entrypoint when those layers should populate the current process
+    environment.
+    """
     return load_owner_from_sources(
         owner,
         (

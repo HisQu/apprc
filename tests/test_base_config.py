@@ -62,6 +62,26 @@ class _DemoEnv(EnvConfig):
     token: str = env_field("TOKEN", default="demo-token", secret=True)
 
 
+_factory_counter = 0
+
+
+def _next_factory_path() -> Path:
+    """Return a visibly fresh path for default-factory tests."""
+    global _factory_counter
+    _factory_counter += 1
+    return Path(f"factory-{_factory_counter}")
+
+
+@env_owner(
+    key="demo.factory",
+    title="Demo Factory",
+    env_prefix="FACTORY_",
+    rc_path=("demo", "factory"),
+)
+class _FactoryEnv(EnvConfig):
+    cache_dir: Path = env_field("CACHE_DIR", default_factory=_next_factory_path)
+
+
 @env_owner(
     key="demo.required",
     title="Demo Required",
@@ -167,6 +187,42 @@ def test_env_owner_derives_config_owner_from_env_config_class() -> None:
     assert owner.field("token").secret is True
 
 
+def test_config_owner_reuses_generated_settings_class() -> None:
+    owner = config_owner_for(_DemoEnv)
+
+    assert owner.settings_class() is owner.settings_class()
+
+
+def test_env_owner_rejects_non_env_config_class() -> None:
+    with pytest.raises(TypeError, match="must inherit EnvConfig"):
+
+        @env_owner(
+            key="bad",
+            title="Bad",
+            env_prefix="BAD_",
+            rc_path=("bad",),
+        )
+        class _BadOwner:
+            value: str = env_field("VALUE", default="bad")
+
+
+def test_env_field_rejects_default_and_default_factory() -> None:
+    with pytest.raises(ValueError, match="default and default_factory"):
+        env_field("VALUE", default="x", default_factory=lambda: "y")
+
+
+def test_env_field_default_factory_resolves_fresh_owner_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FACTORY_CACHE_DIR", raising=False)
+
+    first = _FactoryEnv()
+    second = _FactoryEnv()
+
+    assert first.cache_dir != second.cache_dir
+    assert first.source_of("cache_dir").source == "owner_default"
+
+
 def test_env_config_is_the_only_public_env_runtime_base() -> None:
     assert apprc.EnvConfig is EnvConfig
     assert config_api.EnvConfig is EnvConfig
@@ -177,6 +233,13 @@ def test_env_config_is_the_only_public_env_runtime_base() -> None:
 def test_owner_default_is_not_public_api() -> None:
     assert not hasattr(apprc, "owner_default")
     assert not hasattr(config_api, "owner_default")
+
+
+def test_schema_types_are_not_public_facade_exports() -> None:
+    assert not hasattr(apprc, "ConfigOwner")
+    assert not hasattr(apprc, "ConfigField")
+    assert not hasattr(config_api, "ConfigOwner")
+    assert not hasattr(config_api, "ConfigField")
 
 
 def test_env_owner_wraps_lifecycle_by_default() -> None:
@@ -282,6 +345,11 @@ def test_env_config_rejects_invalid_python_choice_arg() -> None:
         _ChoiceEnv(mode="BOGUS")
 
 
+def test_env_config_rejects_wrong_python_arg_type() -> None:
+    with pytest.raises(TypeError, match="DEMO_RETRIES must be int; got str"):
+        _DemoEnv(retries="4")  # pyright: ignore[reportArgumentType]
+
+
 def test_env_config_rejects_invalid_python_choice_assignment() -> None:
     cfg = _ChoiceEnv()
 
@@ -290,6 +358,29 @@ def test_env_config_rejects_invalid_python_choice_assignment() -> None:
 
     assert cfg.mode == "AUTO"
     assert cfg.source_of("mode").source == "owner_default"
+
+
+def test_env_config_rejects_wrong_python_assignment_type() -> None:
+    cfg = _DemoEnv()
+
+    with pytest.raises(TypeError, match="DEMO_ENABLED must be bool; got str"):
+        cfg.enabled = "true"  # pyright: ignore[reportAttributeAccessIssue]
+
+    assert cfg.enabled is False
+    assert cfg.source_of("enabled").source == "owner_default"
+
+
+def test_env_owner_rejects_wrong_python_default_type() -> None:
+    with pytest.raises(TypeError, match="retries must be int; got str"):
+
+        @env_owner(
+            key="demo.bad_default",
+            title="Bad Default",
+            env_prefix="BAD_DEFAULT_",
+            rc_path=("demo", "bad_default"),
+        )
+        class _BadDefaultEnv(EnvConfig):
+            retries: int = env_field("RETRIES", default="3")
 
 
 def test_env_config_python_positional_arg_overrides_process_env(

@@ -13,7 +13,7 @@ from typed_settings.dict_utils import set_path
 from typed_settings.types import LoadedSettings, LoaderMeta
 
 # == Internal ================================
-from apprc.config.schema import ConfigOwner
+from apprc.config.schema import ConfigField, ConfigOwner
 
 
 class OwnerMappingLoader:
@@ -97,6 +97,34 @@ def load_owner_from_env(
             ),
         ),
     )
+
+
+def parse_env_field_value(spec: ConfigField, raw_value: str) -> Any:
+    """Parse one dotenv string through the runtime settings converter.
+
+    :param spec: Field whose declared Python type should be applied.
+    :param raw_value: Raw string from a dotenv edit surface.
+    :return: Parsed Python value.
+    """
+    owner = ConfigOwner(
+        key=f"field.{spec.name}",
+        title=spec.title or spec.name,
+        env_prefix="",
+        rc_path=(spec.name,),
+        fields=(spec,),
+    )
+    loaded = load_owner_from_sources(
+        owner,
+        (
+            OwnerMappingLoader(
+                owner,
+                {spec.env_var: raw_value},
+                source_name="local-env-edit",
+                base_dir=Path.cwd(),
+            ),
+        ),
+    )
+    return getattr(loaded, spec.name)
 
 
 def provided_owner_field_names(

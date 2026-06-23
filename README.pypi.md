@@ -572,8 +572,8 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `AppConfigSpec` | Frozen declaration behind the kit. |
 | `env_owner(...)` | Decorator that turns an `EnvConfig` class into one config section. |
 | `env_field(...)` | Dataclass field helper for one env-backed runtime attribute. |
-| `ConfigOwner` | Derived schema for one config section, env prefix, runtime path, and fields. |
-| `ConfigField` | Derived schema for one editable or read-only env-backed setting. |
+| `apprc.config.schema.ConfigOwner` | Advanced derived schema for one config section, env prefix, runtime path, and fields. |
+| `apprc.config.schema.ConfigField` | Advanced derived schema for one editable or read-only env-backed setting. |
 | `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
 | `EnvConfig` | Runtime dataclass base that resolves Python, env, and owner-default values. |
 | `ConfigFieldSource` | Provenance record returned by `EnvConfig.source_of()` and `EnvConfig.sources()`. |

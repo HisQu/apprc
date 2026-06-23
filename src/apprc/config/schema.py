@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+from collections.abc import Callable
 from dataclasses import dataclass, field, make_dataclass
-from typing import Any
+from typing import Any, cast
 
 # == Internal ================================
 from apprc.config.sentinels import CONFIG_MISSING, ENV_FIELD_MISSING
@@ -18,6 +19,8 @@ class ConfigField:
     :param env_var: Env variable name without the owner prefix.
     :param python_type: Python type used for typed-settings conversion.
     :param default: Runtime fallback value when no source provides a value.
+    :param default_factory: Runtime fallback factory when no source provides a
+        value. The factory is called for each config instance.
     :param shared_default: Packaged ``.env.shared`` value when intentionally
         different from ``default``.
     :param title: Short display label for docs and terminal UIs.
@@ -33,6 +36,7 @@ class ConfigField:
     env_var: str
     python_type: type[Any]
     default: Any = CONFIG_MISSING
+    default_factory: Callable[[], Any] | object = CONFIG_MISSING
     shared_default: Any = CONFIG_MISSING
     title: str = ""
     explanation_short: str = ""
@@ -42,10 +46,26 @@ class ConfigField:
     required: bool = False
     choices: tuple[str, ...] = ()
 
+    def has_default(self) -> bool:
+        """Return whether this field has an owner-provided fallback."""
+        return (
+            self.default is not CONFIG_MISSING
+            or self.default_factory is not CONFIG_MISSING
+        )
+
+    def resolve_default(self) -> Any:
+        """Return a fresh runtime default value or ``CONFIG_MISSING``."""
+        if self.default_factory is not CONFIG_MISSING:
+            default_factory = cast(Callable[[], Any], self.default_factory)
+            return default_factory()
+        return self.default
+
     def shared_env_value(self) -> Any:
         """Return the expected packaged shared-env value."""
         if self.shared_default is not CONFIG_MISSING:
             return self.shared_default
+        if self.default_factory is not CONFIG_MISSING:
+            return CONFIG_MISSING
         return self.default
 
 
@@ -66,6 +86,12 @@ class ConfigOwner:
     env_prefix: str
     rc_path: tuple[str, ...]
     fields: tuple[ConfigField, ...] = ()
+    _settings_class_cache: type[Any] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def field(self, name: str) -> ConfigField:
         """Return one owner-local field spec."""
@@ -88,16 +114,31 @@ class ConfigOwner:
 
     def settings_class(self) -> type[Any]:
         """Build a lightweight dataclass consumed by ``typed-settings``."""
+        if self._settings_class_cache is not None:
+            return self._settings_class_cache
         dataclass_fields: list[
             tuple[str, type[Any]] | tuple[str, type[Any], Any]
         ] = []
         for spec in self.fields:
-            if spec.default is CONFIG_MISSING:
+            if not spec.has_default():
                 dataclass_fields.append(
                     (
                         spec.name,
                         spec.python_type,
                         field(default=ENV_FIELD_MISSING),
+                    )
+                )
+                continue
+            if spec.default_factory is not CONFIG_MISSING:
+                default_factory = cast(
+                    Callable[[], Any],
+                    spec.default_factory,
+                )
+                dataclass_fields.append(
+                    (
+                        spec.name,
+                        spec.python_type,
+                        field(default_factory=default_factory),
                     )
                 )
                 continue
@@ -109,8 +150,10 @@ class ConfigOwner:
                 )
             )
         class_name = "".join(part.title() for part in self.key.split("."))
-        return make_dataclass(
+        settings_cls = make_dataclass(
             f"{class_name}Settings",
             dataclass_fields,
             slots=True,
         )
+        object.__setattr__(self, "_settings_class_cache", settings_cls)
+        return settings_cls

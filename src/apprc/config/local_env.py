@@ -22,15 +22,17 @@ from typing import Iterable, Mapping
 
 # == 3rd Party ===============================
 from dotenv import dotenv_values
+from typed_settings.exceptions import InvalidSettingsError
 
 # == Internal ================================
+from apprc.config.loading import parse_env_field_value
 from apprc.config.paths import StorageRootPathError
 from apprc.config.lookup import (
     iter_config_fields,
     resolve_config_field_reference,
 )
 from apprc.config.schema import ConfigField, ConfigOwner
-from apprc.config.sentinels import CONFIG_MISSING
+from apprc.config.schema_validation import validate_python_field_value
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,26 +189,14 @@ def clear_local_env_value(
 def normalize_env_value(spec: ConfigField, raw_value: str) -> str:
     """Validate and normalize one user-entered dotenv value."""
     value = raw_value.strip()
-    if spec.required and value == "":
+    if value == "" and (spec.required or not spec.has_default()):
         raise ValueError(f"{spec.name} is required and cannot be empty.")
-    if spec.choices and value not in spec.choices:
-        choices = ", ".join(spec.choices)
-        raise ValueError(f"{spec.name} must be one of: {choices}.")
-    if spec.python_type is bool:
-        return _parse_bool(value)
-    if spec.python_type is int:
-        return str(int(value))
-    if spec.python_type is float:
-        return str(float(value))
-    if spec.python_type is Path:
-        if value == "" and spec.default is CONFIG_MISSING:
-            raise ValueError(f"{spec.name} requires a path value.")
-        return value
-    if spec.python_type is str:
-        return value
-    raise TypeError(
-        f"Unsupported config type for {spec.name}: {spec.python_type}"
-    )
+    try:
+        parsed = parse_env_field_value(spec, value)
+    except InvalidSettingsError as exc:
+        raise ValueError(str(exc)) from exc
+    validate_python_field_value(spec, parsed)
+    return _stringify_env_value(parsed)
 
 
 def _ordered_env_keys(owners: Iterable[ConfigOwner]) -> tuple[str, ...]:
@@ -216,16 +206,13 @@ def _ordered_env_keys(owners: Iterable[ConfigOwner]) -> tuple[str, ...]:
     )
 
 
-def _parse_bool(value: str) -> str:
-    """Return a dotenv bool literal accepted by typed-settings."""
-    normalized = value.strip().lower()
-    if normalized in {"1", "true", "yes", "y", "on"}:
-        return "true"
-    if normalized in {"0", "false", "no", "n", "off"}:
+def _stringify_env_value(value: object) -> str:
+    """Return a deterministic dotenv string for a parsed runtime value."""
+    if isinstance(value, bool):
+        if value:
+            return "true"
         return "false"
-    raise ValueError(
-        "Boolean values must be true/false, yes/no, on/off, or 1/0."
-    )
+    return str(value)
 
 
 def _dotenv_quote(value: str) -> str:

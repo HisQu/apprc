@@ -11,10 +11,9 @@ from apprc.config import (
     AppConfigKit,
     ApprcTomlEnvError,
     ConfigDoctorStatus,
-    ConfigField,
-    ConfigOwner,
 )
 from apprc.config.diagnostics import build_config_doctor_payload
+from apprc.config.schema import ConfigField, ConfigOwner
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     ApprcExampleAppConfigState,

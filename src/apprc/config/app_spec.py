@@ -17,6 +17,7 @@ from apprc.config.apprc_toml_env import (
 from apprc.config.env_authoring import config_owner_for
 from apprc.config.env_config import EnvConfig
 from apprc.config.schema import ConfigOwner
+from apprc.config.schema_validation import validate_config_owner_inventory
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -76,6 +77,7 @@ class AppConfigSpec:
         :param local_env_filename: Storage-local dotenv override filename.
         """
         resolved_owners = tuple(config_owner_for(env_cls) for env_cls in envs)
+        validate_config_owner_inventory(resolved_owners)
         object.__setattr__(self, "app_name", app_name)
         object.__setattr__(self, "display_name", display_name)
         object.__setattr__(self, "config_package", config_package)

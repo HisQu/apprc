@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-import os
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar, Mapping, Self
 
@@ -14,13 +13,20 @@ from apprc.config.loading import (
     owner_env_mapping,
     provided_owner_field_names,
 )
+from apprc.config.env_runtime import (
+    env_values_for_binding,
+    resolve_owner_defaults,
+    source_for_field,
+    validate_owner_field_value,
+    with_field_source,
+)
 from apprc.config.provenance import (
     CONFIG_FIELD_SOURCE_LABELS,
     ConfigFieldSource,
     ConfigFieldSourceKey,
 )
 from apprc.config.schema import ConfigOwner
-from apprc.config.sentinels import CONFIG_MISSING, ENV_FIELD_MISSING
+from apprc.config.sentinels import ENV_FIELD_MISSING
 from apprc.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -128,7 +134,7 @@ class EnvConfig(BaseConfig):
             ):
                 continue
             loaded_value = getattr(loaded, spec.name)
-            self._validate_owner_choice(owner, spec.name, loaded_value)
+            validate_owner_field_value(owner, spec.name, loaded_value)
             object.__setattr__(self, spec.name, loaded_value)
             self._record_process_env_source(spec.name)
         return skipped_python_fields
@@ -206,8 +212,11 @@ class EnvConfig(BaseConfig):
 
     def _field_source(self, field_name: str) -> ConfigFieldSourceKey:
         """Return the recorded source key or the implicit owner default."""
-        self._config_owner().field(field_name)
-        return self._apprc_field_sources.get(field_name, "owner_default")
+        return source_for_field(
+            self._config_owner(),
+            self._apprc_field_sources,
+            field_name,
+        )
 
     def _set_field_source(
         self,
@@ -215,31 +224,26 @@ class EnvConfig(BaseConfig):
         source: ConfigFieldSourceKey,
     ) -> None:
         """Record provenance for one owner-backed field."""
-        next_sources = dict(self._apprc_field_sources)
-        next_sources[field_name] = source
-        object.__setattr__(self, "_apprc_field_sources", next_sources)
+        object.__setattr__(
+            self,
+            "_apprc_field_sources",
+            with_field_source(self._apprc_field_sources, field_name, source),
+        )
 
     def _resolve_owner_defaults(self) -> None:
         """Resolve omitted owner-backed fields from derived owner defaults."""
         owner = self._config_owner()
-        dataclass_fields = {item.name: item for item in fields(self)}
-        for spec in owner.fields:
-            if self._field_source(spec.name) == "python_arg":
-                continue
-            field_def = dataclass_fields.get(spec.name)
-            if field_def is None:
-                raise RuntimeError(
-                    f"{self.__class__.__name__}.{spec.name} is declared by "
-                    f"{owner.key} but missing from the runtime dataclass."
-                )
-            if spec.default is CONFIG_MISSING:
-                continue
-            object.__setattr__(
+        object.__setattr__(
+            self,
+            "_apprc_field_sources",
+            resolve_owner_defaults(
                 self,
-                spec.name,
-                self._deepcopy_state_value(spec.default, {}),
-            )
-            self._set_field_source(spec.name, "owner_default")
+                owner,
+                dataclass_fields={item.name: item for item in fields(self)},
+                field_sources=self._apprc_field_sources,
+                copy_value=self._deepcopy_state_value,
+            ),
+        )
 
     def _validate_python_fields(self) -> None:
         """Validate constructor-provided values against owner metadata."""
@@ -247,7 +251,7 @@ class EnvConfig(BaseConfig):
         for field_name, source in self._apprc_field_sources.items():
             if source != "python_arg":
                 continue
-            self._validate_owner_choice(
+            validate_owner_field_value(
                 owner,
                 field_name,
                 getattr(self, field_name),
@@ -277,13 +281,13 @@ class EnvConfig(BaseConfig):
             value = getattr(self, spec.name)
             if value is ENV_FIELD_MISSING:
                 continue
-            self._validate_owner_choice(owner, spec.name, value)
+            validate_owner_field_value(owner, spec.name, value)
 
     def _validate_existing_assignment(self, key: str, value: Any) -> None:
         """Validate owner-backed assignment before storing it."""
         if key not in self._owner_field_names():
             return
-        self._validate_owner_choice(self._config_owner(), key, value)
+        validate_owner_field_value(self._config_owner(), key, value)
 
     def _after_existing_assignment(self, key: str, value: Any) -> None:
         """Record owner-backed assignment provenance after storing it."""
@@ -301,14 +305,6 @@ class EnvConfig(BaseConfig):
         """Record that the current process environment owns one field."""
         self._set_field_source(field_name, "process_env")
 
-    def _protected_field_names(self) -> frozenset[str]:
-        """Return fields whose Python value should beat normal env binding."""
-        return frozenset(
-            field_name
-            for field_name, source in self._apprc_field_sources.items()
-            if source in {"python_arg", "python_assignment"}
-        )
-
     def _env_values_for_binding(
         self,
         owner: ConfigOwner,
@@ -316,24 +312,10 @@ class EnvConfig(BaseConfig):
         override_python_values: bool,
     ) -> tuple[Mapping[str, str], list[str]]:
         """Return an env mapping with protected Python fields removed."""
-        if override_python_values:
-            return os.environ, []
-        skipped_fields = sorted(
-            provided_owner_field_names(owner, os.environ)
-            & self._protected_field_names()
-        )
-        if not skipped_fields:
-            return os.environ, []
-        skipped_keys = {
-            owner.env_key(field_name) for field_name in skipped_fields
-        }
-        return (
-            {
-                key: value
-                for key, value in os.environ.items()
-                if key not in skipped_keys
-            },
-            skipped_fields,
+        return env_values_for_binding(
+            owner,
+            self._apprc_field_sources,
+            override_python_values=override_python_values,
         )
 
     def _warn_skipped_python_fields(self, field_names: list[str]) -> None:
@@ -346,33 +328,6 @@ class EnvConfig(BaseConfig):
             f"{self.__class__.__name__}: {joined}. Pass "
             "override_python_values=True to reload() or bind_from_env() when "
             "the current process environment should replace them."
-        )
-
-    @staticmethod
-    def _validate_owner_choice(
-        owner: ConfigOwner,
-        field_name: str,
-        value: Any,
-    ) -> None:
-        """Reject owner-backed values outside a declared choice set.
-
-        :param owner: Config owner that declares the field.
-        :param field_name: Owner-local field name.
-        :param value: Candidate Python or env-loaded value.
-        :raises ValueError: If the value is not one of the declared choices.
-        """
-        spec = owner.field(field_name)
-        if (
-            value is ENV_FIELD_MISSING
-            or not spec.choices
-            or value in spec.choices
-        ):
-            return
-        choices = ", ".join(spec.choices)
-        env_key = owner.env_key(field_name)
-        raise ValueError(
-            f"{env_key}={value!r} is invalid; {field_name} must be one of: "
-            f"{choices}."
         )
 
     def _truncate_prefix(self, s: str) -> str:

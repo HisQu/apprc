@@ -13,6 +13,7 @@ from apprc.config.local_env import (
     write_local_env,
 )
 from apprc.config.paths import StorageRootPathError
+from apprc.config.schema import ConfigField
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNER,
     APPRC_EXAMPLE_APP_OWNERS,
@@ -162,5 +163,14 @@ def test_normalize_env_value_rejects_invalid_choices_and_bool() -> None:
 
     with pytest.raises(ValueError, match="mode must be one of"):
         normalize_env_value(mode, "OTHER")
-    with pytest.raises(ValueError, match="Boolean values must be"):
+    with pytest.raises(ValueError, match="converting"):
         normalize_env_value(enabled, "maybe")
+
+
+def test_normalize_env_value_uses_runtime_converter_for_float() -> None:
+    ratio = ConfigField("ratio", "RATIO", float, default=0.5)
+
+    assert normalize_env_value(ratio, "1") == "1.0"
+
+    with pytest.raises(ValueError, match="converting"):
+        normalize_env_value(ratio, "nope")

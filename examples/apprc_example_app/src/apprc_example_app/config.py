@@ -10,15 +10,15 @@ from pathlib import Path
 # == Internal ================================
 from apprc.config import (
     AppConfigKit,
-    CONFIG_MISSING,
-    ConfigField,
     EnvConfig,
     EnvBootstrapResult,
     config_owner_for,
     env_field,
     env_owner,
-    iter_config_fields,
 )
+from apprc.config.lookup import iter_config_fields
+from apprc.config.schema import ConfigField
+from apprc.config.sentinels import CONFIG_MISSING
 
 
 @env_owner(

@@ -15,12 +15,12 @@ from pytest import MonkeyPatch
 from apprc import AppConfigKit
 from apprc.config import (
     EnvConfig,
-    CONFIG_MISSING,
     EnvBootstrapResult,
     config_owner_for,
     env_field,
     env_owner,
 )
+from apprc.config.sentinels import CONFIG_MISSING
 from apprc.config.storage.registry import (
     StorageRegistry,
     record_archived_storage,

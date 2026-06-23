@@ -4,12 +4,14 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import re
+from collections.abc import Callable
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields
-from typing import Any, TypeVar, get_type_hints
+from typing import Any, TypeVar, cast, get_type_hints
 
 # == Internal ================================
 from apprc.config.schema import ConfigField, ConfigOwner
+from apprc.config.schema_validation import validate_config_owner
 from apprc.config.sentinels import (
     CONFIG_MISSING,
     ENV_FIELD_METADATA_KEY,
@@ -27,6 +29,8 @@ class EnvFieldSpec:
     :param env_var: Env variable name without the owner prefix. When omitted,
         AppRC derives the key from the Python attribute name.
     :param default: Runtime fallback when no Python value or env value wins.
+    :param default_factory: Runtime fallback factory used to build one fresh
+        value per config instance.
     :param shared_default: Packaged shared dotenv value when intentionally
         different from the runtime fallback.
     :param title: Short display label for docs and terminal UIs.
@@ -41,6 +45,7 @@ class EnvFieldSpec:
 
     env_var: str | None = None
     default: Any = CONFIG_MISSING
+    default_factory: Callable[[], Any] | object = CONFIG_MISSING
     shared_default: Any = CONFIG_MISSING
     title: str = ""
     explanation_short: str = ""
@@ -56,6 +61,7 @@ def env_field(
     env_var: str | None = None,
     *,
     default: Any = CONFIG_MISSING,
+    default_factory: Callable[[], Any] | object = CONFIG_MISSING,
     shared_default: Any = CONFIG_MISSING,
     title: str = "",
     explanation_short: str = "",
@@ -78,6 +84,8 @@ def env_field(
         the Python field name is converted to upper snake case.
     :param default: Runtime fallback when Python and env do not provide a
         value. Omit this for required env-backed settings.
+    :param default_factory: Runtime fallback factory used to build one fresh
+        value per config instance. Mutually exclusive with ``default``.
     :param shared_default: Packaged shared dotenv value when intentionally
         different from ``default``.
     :param title: Short display label for docs and terminal UIs.
@@ -92,9 +100,14 @@ def env_field(
     :param python_type: Optional override for the annotation-derived type.
     :return: Dataclass field consumed by ``EnvConfig`` and AppRC tooling.
     """
+    if default is not CONFIG_MISSING and default_factory is not CONFIG_MISSING:
+        raise ValueError(
+            "env_field cannot declare both default and default_factory."
+        )
     spec = EnvFieldSpec(
         env_var=env_var,
         default=default,
+        default_factory=default_factory,
         shared_default=shared_default,
         title=title,
         explanation_short=explanation_short,
@@ -105,13 +118,22 @@ def env_field(
         choices=tuple(choices),
         python_type=python_type,
     )
+    field_kwargs: dict[str, Any] = {
+        "repr": (not secret if repr is None else repr),
+        "metadata": {ENV_FIELD_METADATA_KEY: spec},
+    }
+    if default_factory is not CONFIG_MISSING:
+        field_kwargs["default_factory"] = cast(
+            Callable[[], Any],
+            default_factory,
+        )
+        return field(**field_kwargs)
     dataclass_default = (
         ENV_FIELD_MISSING if default is CONFIG_MISSING else default
     )
+    field_kwargs["default"] = dataclass_default
     return field(
-        default=dataclass_default,
-        repr=(not secret if repr is None else repr),
-        metadata={ENV_FIELD_METADATA_KEY: spec},
+        **field_kwargs,
     )
 
 
@@ -163,13 +185,18 @@ def _derive_owner_fields(env_cls: type[Any]) -> tuple[ConfigField, ...]:
                 env_var=env_var,
                 python_type=python_type,
                 default=spec.default,
+                default_factory=spec.default_factory,
                 shared_default=spec.shared_default,
                 title=spec.title,
                 explanation_short=spec.explanation_short,
                 explanation_long=spec.explanation_long,
                 secret=spec.secret,
                 editable=spec.editable,
-                required=spec.required or spec.default is CONFIG_MISSING,
+                required=spec.required
+                or (
+                    spec.default is CONFIG_MISSING
+                    and spec.default_factory is CONFIG_MISSING
+                ),
                 choices=spec.choices,
             )
         )
@@ -212,6 +239,13 @@ def env_owner(
     """
 
     def _decorate(cls: EnvClsT) -> EnvClsT:
+        from apprc.config.env_config import EnvConfig
+
+        if not issubclass(cls, EnvConfig):
+            raise TypeError(
+                f"{cls.__name__} must inherit EnvConfig before @env_owner "
+                "can derive config metadata."
+            )
         # > Dataclass subclasses inherit is_dataclass(cls)=True before their
         # > own annotations are processed, so inspect the class dictionary.
         env_cls = (
@@ -229,6 +263,7 @@ def env_owner(
             rc_path=rc_path,
             fields=_derive_owner_fields(env_cls),
         )
+        validate_config_owner(owner)
         setattr(env_cls, "config_owner", owner)
         if not log_lifecycle:
             return env_cls

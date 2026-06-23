@@ -30,6 +30,34 @@ from typed_settings.dict_utils import set_path
 from typed_settings.types import LoadedSettings, LoaderMeta
 
 CONFIG_MISSING: Final = object()
+OWNER_DEFAULT_METADATA_KEY: Final = "apprc.owner_default"
+
+
+class _OwnerDefaultSentinel:
+    """Placeholder assigned before ``BaseEnv`` resolves owner defaults."""
+
+    def __repr__(self) -> str:
+        return "owner_default()"
+
+
+OWNER_DEFAULT: Final = _OwnerDefaultSentinel()
+
+
+def owner_default(*, repr: bool = True) -> Any:
+    """Declare that an owner-backed dataclass field uses ``ConfigField.default``.
+
+    ``BaseEnv`` resolves this placeholder during ``__post_init__``. It keeps
+    runtime defaults in the ``ConfigOwner`` inventory while still giving
+    dataclasses an optional constructor argument.
+
+    :param repr: Whether dataclass ``repr`` should include this field.
+    :return: Dataclass field placeholder resolved by ``BaseEnv``.
+    """
+    return field(
+        default=OWNER_DEFAULT,
+        repr=repr,
+        metadata={OWNER_DEFAULT_METADATA_KEY: True},
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,20 +213,29 @@ def load_owner_from_sources(
     )
 
 
-def load_owner_from_env(owner: ConfigOwner) -> Any:
+def load_owner_from_env(
+    owner: ConfigOwner,
+    values: Mapping[str, str] | None = None,
+) -> Any:
     """Load one owner from current process OS env variables only.
 
-    Reads values from ``os.environ``. This does not load dotenv files or
-    application config layers; call the application bootstrap helper at the
-    entrypoint when those layers should populate the current process
-    environment.
+    Reads values from ``os.environ`` by default. Passing ``values`` is for
+    internals that need an env-like current-process snapshot with some keys
+    deliberately filtered. This does not load dotenv files or application
+    config layers; call the application bootstrap helper at the entrypoint when
+    those layers should populate the current process environment.
+
+    :param owner: Owner spec to load.
+    :param values: Optional env-like mapping. Defaults to ``os.environ``.
+    :return: A generated settings dataclass instance.
     """
+    env_values = os.environ if values is None else values
     return load_owner_from_sources(
         owner,
         (
             OwnerMappingLoader(
                 owner,
-                os.environ,
+                env_values,
                 source_name="process-env",
                 base_dir=Path.cwd(),
             ),

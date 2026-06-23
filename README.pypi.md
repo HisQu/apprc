@@ -225,7 +225,8 @@ app.add_typer(
 Runtime dataclasses can inherit `BaseEnv` when you want typed objects populated
 from the bootstrapped environment. The important first step is the owner
 inventory: AppRC reuses it for loading, validation, docs, CLI commands, and the
-terminal editor.
+terminal editor. Use `owner_default()` on owner-backed dataclass fields so
+`ConfigField.default` stays the single runtime fallback.
 
 Host applications should still mount the generated config CLI as a subcommand
 of the application that depends on AppRC. Generated end-user prompts should
@@ -311,8 +312,9 @@ redaction metadata.
 
 For one `BaseEnv` object, direct Python constructor arguments and later Python
 assignments are authoritative for that object's lifetime. `os.environ` fills
-only fields not provided by Python, and dataclass defaults fill any remaining
-gaps. Inspect this with `cfg.source_of("field_name")` or `cfg.sources()`.
+only fields not provided by Python, and `ConfigOwner.default` fills any
+remaining gaps through `owner_default()`. Inspect this with
+`cfg.source_of("field_name")` or `cfg.sources()`.
 
 ### Bootstrap Precedence
 
@@ -579,7 +581,8 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `ConfigOwner` | One config section, env prefix, runtime path, and fields. |
 | `ConfigField` | One editable or read-only env-backed setting. |
 | `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
-| `BaseEnv` | Runtime dataclass base that resolves Python, env, and default values. |
+| `BaseEnv` | Runtime dataclass base that resolves Python, env, and owner-default values. |
+| `owner_default()` | Dataclass field helper that resolves omitted values from `ConfigField.default`. |
 | `ConfigFieldSource` | Provenance record returned by `BaseEnv.source_of()` and `BaseEnv.sources()`. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
 | `StorageRegistry` | Parsed AppRC TOML storage table. |

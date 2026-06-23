@@ -50,6 +50,7 @@ from apprc.config.schema import (
     iter_config_fields,
     load_owner_from_env,
     load_owner_from_sources,
+    owner_default,
     owner_env_mapping,
     provided_owner_field_names,
     resolve_config_field_reference,

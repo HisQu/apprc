@@ -18,6 +18,7 @@ from apprc.config.diagnostics import build_config_doctor_payload
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     ApprcExampleAppConfigState,
+    ApprcExampleAppEnv,
     build_apprc_example_app_kit,
     register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
@@ -62,11 +63,22 @@ def test_kit_derives_apprc_toml_filename() -> None:
         app_name="my-app.rc",
         display_name="My App",
         config_package="apprc.config",
-        owners=APPRC_EXAMPLE_APP_OWNERS,
+        envs=(ApprcExampleAppEnv,),
         storage_env_key="MY_APP_STORAGE",
     )
 
     assert kit.spec.apprc_toml_filename == "my-app_rc.apprc.toml"
+
+
+def test_kit_rejects_manual_owner_argument() -> None:
+    with pytest.raises(TypeError, match="owners"):
+        AppConfigKit(  # pyright: ignore[reportCallIssue]
+            app_name="my-app.rc",
+            display_name="My App",
+            config_package="apprc.config",
+            owners=APPRC_EXAMPLE_APP_OWNERS,
+            storage_env_key="MY_APP_STORAGE",
+        )
 
 
 @pytest.mark.allow_missing_apprc_env

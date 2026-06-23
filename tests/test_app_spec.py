@@ -14,7 +14,6 @@ def _app_spec(app_name: str) -> AppConfigSpec:
         app_name=app_name,
         display_name="Demo",
         config_package="apprc.config",
-        owners=(),
         storage_env_key="DEMO_STORAGE",
         apprc_toml_filename="demo.apprc.toml",
     )
@@ -32,6 +31,18 @@ def test_app_config_spec_derives_apprc_toml_filename_text() -> None:
 def test_app_config_spec_derives_apprc_toml_env_key() -> None:
     assert _app_spec("demo").apprc_toml_env_key == "DEMO_APPRC_TOML"
     assert _app_spec("my-app.rc").apprc_toml_env_key == "MY_APP_RC_APPRC_TOML"
+
+
+def test_app_config_spec_rejects_manual_owner_argument() -> None:
+    with pytest.raises(TypeError, match="owners"):
+        AppConfigSpec(
+            app_name="demo",
+            display_name="Demo",
+            config_package="apprc.config",
+            owners=(),  # pyright: ignore[reportCallIssue]
+            storage_env_key="DEMO_STORAGE",
+            apprc_toml_filename="demo.apprc.toml",
+        )
 
 
 def test_app_config_spec_required_apprc_toml_path_uses_env_override(

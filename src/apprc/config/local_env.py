@@ -25,13 +25,12 @@ from dotenv import dotenv_values
 
 # == Internal ================================
 from apprc.config.paths import StorageRootPathError
-from apprc.config.schema import (
-    CONFIG_MISSING,
-    ConfigField,
-    ConfigOwner,
+from apprc.config.lookup import (
     iter_config_fields,
     resolve_config_field_reference,
 )
+from apprc.config.schema import ConfigField, ConfigOwner
+from apprc.config.sentinels import CONFIG_MISSING
 
 
 @dataclass(frozen=True, slots=True)

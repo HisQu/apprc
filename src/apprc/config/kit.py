@@ -23,7 +23,7 @@ from apprc.config.environment import (
     EnvBootstrapResult,
     bootstrap_env,
 )
-from apprc.config.schema import ConfigOwner
+from apprc.config.env_config import EnvConfig
 
 StateT = TypeVar("StateT")
 
@@ -53,8 +53,7 @@ class AppConfigKit:
         app_name: str,
         display_name: str,
         config_package: str,
-        envs: tuple[type[object], ...] = (),
-        owners: tuple[ConfigOwner, ...] | None = None,
+        envs: tuple[type[EnvConfig], ...] = (),
         storage_env_key: str,
         command_name: str | None = None,
         apprc_toml_filename: str | None = None,
@@ -69,8 +68,7 @@ class AppConfigKit:
         app_name: str | None = None,
         display_name: str | None = None,
         config_package: str | None = None,
-        owners: tuple[ConfigOwner, ...] | None = None,
-        envs: tuple[type[object], ...] = (),
+        envs: tuple[type[EnvConfig], ...] = (),
         storage_env_key: str | None = None,
         command_name: str | None = None,
         apprc_toml_filename: str | None = None,
@@ -95,7 +93,6 @@ class AppConfigKit:
             app_name=app_name,
             display_name=display_name,
             config_package=config_package,
-            owners=owners,
             envs=envs,
             storage_env_key=storage_env_key,
             command_name=command_name,

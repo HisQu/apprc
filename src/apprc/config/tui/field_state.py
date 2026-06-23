@@ -9,12 +9,9 @@ from typing import Literal
 
 # == Internal ================================
 from apprc.config.local_env import normalize_env_value
-from apprc.config.schema import (
-    CONFIG_MISSING,
-    ConfigField,
-    ConfigOwner,
-    find_field_by_env_key,
-)
+from apprc.config.lookup import find_field_by_env_key
+from apprc.config.schema import ConfigField, ConfigOwner
+from apprc.config.sentinels import CONFIG_MISSING
 
 
 @dataclass(frozen=True, slots=True)

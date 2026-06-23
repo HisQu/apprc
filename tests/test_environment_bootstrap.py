@@ -61,7 +61,6 @@ def _spec(package_name: str) -> AppConfigSpec:
         app_name="demo",
         display_name="Demo",
         config_package=package_name,
-        owners=(),
         storage_env_key="DEMO_STORAGE",
         apprc_toml_filename="demo.apprc.toml",
         shared_env_filename=".env.shared",

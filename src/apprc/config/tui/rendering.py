@@ -21,7 +21,8 @@ from pathlib import Path
 from rich.text import Text
 
 # == Internal ================================
-from apprc.config.schema import CONFIG_MISSING, ConfigField, ConfigOwner
+from apprc.config.schema import ConfigField, ConfigOwner
+from apprc.config.sentinels import CONFIG_MISSING
 from apprc.config.storage.registry import ArchivedStorageRecord, StorageRecord
 from apprc.config.tui.styles import (
     ARCHIVE_STYLE,

@@ -7,10 +7,10 @@ from apprc.config.app_spec import (
 )
 from apprc.config.base_config import (
     BaseConfig,
-    BaseEnv,
-    ConfigFieldSource,
-    resolve_package_root,
 )
+from apprc.config.env_config import EnvConfig
+from apprc.config.provenance import ConfigFieldSource, ConfigFieldSourceKey
+from apprc.config.package_resources import resolve_package_root
 from apprc.config.diagnostics import (
     ConfigDoctorPayload,
     build_config_doctor_payload,
@@ -40,23 +40,33 @@ from apprc.config.paths import (
     windows_drive_path_to_posix,
 )
 from apprc.config.apprc_toml_env import ApprcTomlEnvError
-from apprc.config.schema import (
-    CONFIG_MISSING,
-    ConfigField,
-    ConfigOwner,
+from apprc.config.env_authoring import (
     EnvFieldSpec,
-    OwnerMappingLoader,
     config_owner_for,
     env_field,
     env_owner,
-    find_field_by_config_path,
-    find_field_by_env_key,
-    iter_config_fields,
+)
+from apprc.config.loading import (
+    OwnerMappingLoader,
     load_owner_from_env,
     load_owner_from_sources,
     owner_env_mapping,
     provided_owner_field_names,
+)
+from apprc.config.lookup import (
+    find_field_by_config_path,
+    find_field_by_env_key,
+    iter_config_fields,
     resolve_config_field_reference,
+)
+from apprc.config.schema import (
+    ConfigField,
+    ConfigOwner,
+)
+from apprc.config.sentinels import (
+    CONFIG_MISSING,
+    ENV_FIELD_METADATA_KEY,
+    ENV_FIELD_MISSING,
 )
 from apprc.config.storage.registry import (
     ArchivedStorageRecord,

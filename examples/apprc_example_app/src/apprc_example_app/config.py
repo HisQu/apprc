@@ -9,103 +9,90 @@ from pathlib import Path
 
 # == Internal ================================
 from apprc.config import (
-    CONFIG_MISSING,
     AppConfigKit,
+    CONFIG_MISSING,
     ConfigField,
-    ConfigOwner,
+    EnvConfig,
     EnvBootstrapResult,
+    config_owner_for,
+    env_field,
+    env_owner,
     iter_config_fields,
 )
 
 
-APPRC_EXAMPLE_APP_OWNER = ConfigOwner(
+@env_owner(
     key="app",
     title="App",
     env_prefix="APPRC_EXAMPLE_APP_",
     rc_path=("app",),
-    fields=(
-        ConfigField(
-            "storage_root",
-            "STORAGE",
-            Path,
-            default=CONFIG_MISSING,
-            title="Storage root",
-            explanation_short="Active storage root.",
-            explanation_long=(
-                "Selected through APPRC_EXAMPLE_APP_STORAGE and written "
-                "automatically during runtime bootstrap."
-            ),
-            editable=False,
-            required=True,
-        ),
-        ConfigField(
-            "profile",
-            "PROFILE",
-            str,
-            default="default",
-            title="Profile",
-            explanation_short="Named profile used by the example app.",
-        ),
-        ConfigField(
-            "mode",
-            "MODE",
-            str,
-            default="AUTO",
-            title="Mode",
-            explanation_short=(
-                "Operating mode selected for Example App commands."
-            ),
-            choices=("AUTO", "MANUAL"),
-        ),
-        ConfigField(
-            "enabled",
-            "ENABLED",
-            bool,
-            default=True,
-            title="Enabled",
-            explanation_short="Turns the example app on or off.",
-        ),
-        ConfigField(
-            "retry_count",
-            "RETRY_COUNT",
-            int,
-            default=3,
-            title="Retry count",
-            explanation_short="Maximum number of retry attempts.",
-        ),
-        ConfigField(
-            "cache_dir",
-            "CACHE_DIR",
-            Path,
-            default=Path("cache"),
-            title="Cache directory",
-            explanation_short=(
-                "Storage-local cache directory used by the example app."
-            ),
-        ),
-        ConfigField(
-            "access_token",
-            "ACCESS_TOKEN",
-            str,
-            default=CONFIG_MISSING,
-            title="Access token",
-            explanation_short="Required secret token.",
-            explanation_long=(
-                "Secret token used to verify that AppRC editors and example "
-                "payloads redact sensitive values."
-            ),
-            secret=True,
-            required=True,
-        ),
-    ),
 )
+class ApprcExampleAppEnv(EnvConfig):
+    """Example App env section used by the standalone ``apprc`` CLI."""
+
+    storage_root: Path = env_field(
+        "STORAGE",
+        title="Storage root",
+        explanation_short="Active storage root.",
+        explanation_long=(
+            "Selected through APPRC_EXAMPLE_APP_STORAGE and written "
+            "automatically during runtime bootstrap."
+        ),
+        editable=False,
+        required=True,
+    )
+    profile: str = env_field(
+        "PROFILE",
+        default="default",
+        title="Profile",
+        explanation_short="Named profile used by the example app.",
+    )
+    mode: str = env_field(
+        "MODE",
+        default="AUTO",
+        title="Mode",
+        explanation_short="Operating mode selected for Example App commands.",
+        choices=("AUTO", "MANUAL"),
+    )
+    enabled: bool = env_field(
+        "ENABLED",
+        default=True,
+        title="Enabled",
+        explanation_short="Turns the example app on or off.",
+    )
+    retry_count: int = env_field(
+        "RETRY_COUNT",
+        default=3,
+        title="Retry count",
+        explanation_short="Maximum number of retry attempts.",
+    )
+    cache_dir: Path = env_field(
+        "CACHE_DIR",
+        default=Path("cache"),
+        title="Cache directory",
+        explanation_short="Storage-local cache directory used by the example app.",
+    )
+    access_token: str = env_field(
+        "ACCESS_TOKEN",
+        title="Access token",
+        explanation_short="Required secret token.",
+        explanation_long=(
+            "Secret token used to verify that AppRC editors and example "
+            "payloads redact sensitive values."
+        ),
+        secret=True,
+        required=True,
+    )
+
+
+APPRC_EXAMPLE_APP_OWNER = config_owner_for(ApprcExampleAppEnv)
 APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
 
 APPRC_EXAMPLE_APP_KIT = AppConfigKit(
     app_name="apprc_example_app",
     display_name="Example App",
     config_package="apprc_example_app",
-    owners=APPRC_EXAMPLE_APP_OWNERS,
+    envs=(ApprcExampleAppEnv,),
     storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
     command_name="apprc",
     apprc_toml_filename="apprc_example_app.apprc.toml",

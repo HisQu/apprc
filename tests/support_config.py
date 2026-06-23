@@ -14,7 +14,7 @@ from pytest import MonkeyPatch
 
 from apprc import AppConfigKit
 from apprc.config import (
-    BaseEnv,
+    EnvConfig,
     CONFIG_MISSING,
     EnvBootstrapResult,
     config_owner_for,
@@ -34,7 +34,7 @@ from apprc.config.storage.registry import (
     env_prefix="APPRC_EXAMPLE_APP_",
     rc_path=("app",),
 )
-class ApprcExampleAppEnv(BaseEnv):
+class ApprcExampleAppEnv(EnvConfig):
     """Example App env section used by AppRC integration tests."""
 
     storage_root: Path = env_field(

@@ -174,33 +174,29 @@ from dataclasses import dataclass
 
 import typer
 
-from apprc import AppConfigKit
-from apprc.config import ConfigField, ConfigOwner
+from apprc import AppConfigKit, BaseEnv, env_field, env_owner
 
 # 1) Declare the config fields your app owns.
-APP_OWNER = ConfigOwner(
+@env_owner(
     key="app",
     title="App",
     env_prefix="MYAPP_",
     rc_path=("app",),
-    fields=(
-        ConfigField(
-            "profile",
-            "PROFILE",
-            str,
-            default="default",
-            title="Profile",
-            explanation_short="Named profile used by the application.",
-        ),
-    ),
 )
+class AppEnv(BaseEnv):
+    profile: str = env_field(
+        "PROFILE",
+        default="default",
+        title="Profile",
+        explanation_short="Named profile used by the application.",
+    )
 
 # 2) Create the reusable AppRC facade for your application.
 MYAPP_CONFIG = AppConfigKit(
     app_name="myapp",
     display_name="MyApp",
     config_package="myapp.config",
-    owners=(APP_OWNER,),
+    envs=(AppEnv,),
     storage_env_key="MYAPP_STORAGE",
     apprc_toml_filename="myapp.apprc.toml",
     shared_env_filename=".env.shared",
@@ -222,11 +218,11 @@ app.add_typer(
 )
 ```
 
-Runtime dataclasses can inherit `BaseEnv` when you want typed objects populated
-from the bootstrapped environment. The important first step is the owner
-inventory: AppRC reuses it for loading, validation, docs, CLI commands, and the
-terminal editor. Use `owner_default()` on owner-backed dataclass fields so
-`ConfigField.default` stays the single runtime fallback.
+Runtime dataclasses inherit `BaseEnv` when you want typed objects populated from
+the bootstrapped environment. `env_field(...)` carries env names, defaults,
+docs labels, editor labels, choices, and redaction metadata. AppRC derives the
+normalized owner inventory from that class for loading, validation, docs, CLI
+commands, and the terminal editor.
 
 Host applications should still mount the generated config CLI as a subcommand
 of the application that depends on AppRC. Generated end-user prompts should
@@ -297,8 +293,8 @@ Runtime behavior when keys are missing:
 
 | Layer | Owner | Purpose |
 |---|---|---|
-| `ConfigField` | application | One typed env-backed setting. |
-| `ConfigOwner` | application | A named section of related fields. |
+| `env_field(...)` | application | One typed env-backed runtime attribute. |
+| `@env_owner(...)` | application | A named section of related fields derived from a `BaseEnv` class. |
 | `.env.shared` | application package | Packaged defaults shipped with code. |
 | `<storage>/.env.local` | user/project | Per-storage local overrides. |
 | Python args and assignments | application/library code | Highest-priority runtime values for one config object. |
@@ -307,14 +303,14 @@ Runtime behavior when keys are missing:
 | `<APP>_STORAGE` | Bootstrap selector | Active storage name or storage path for current shell context. |
 
 Runtime dataclasses inherit `BaseEnv`. The dataclass owns Python attributes;
-`ConfigOwner` owns env names, docs labels, editor labels, choices, and
-redaction metadata.
+`env_field(...)` owns env names, defaults, docs labels, editor labels, choices,
+and redaction metadata. AppRC derives `ConfigOwner` and `ConfigField` schema
+objects from the class for internal tools.
 
 For one `BaseEnv` object, direct Python constructor arguments and later Python
 assignments are authoritative for that object's lifetime. `os.environ` fills
-only fields not provided by Python, and `ConfigOwner.default` fills any
-remaining gaps through `owner_default()`. Inspect this with
-`cfg.source_of("field_name")` or `cfg.sources()`.
+only fields not provided by Python, and owner defaults fill any remaining gaps.
+Inspect this with `cfg.source_of("field_name")` or `cfg.sources()`.
 
 ### Bootstrap Precedence
 
@@ -438,26 +434,22 @@ Put config declarations in your application package, usually
 ```python
 from pathlib import Path
 
-from apprc.config import CONFIG_MISSING, ConfigField, ConfigOwner
+from apprc.config import BaseEnv, env_field, env_owner
 
-STORAGE_OWNER = ConfigOwner(
+@env_owner(
     key="storage",
     title="Storage",
     env_prefix="MYAPP_",
     rc_path=("storage",),
-    fields=(
-        ConfigField(
-            "root",
-            "STORAGE",
-            Path,
-            default=CONFIG_MISSING,
-            editable=False,
-            required=True,
-            explanation_short="Active storage root.",
-            explanation_long="Selected by the <APP>_STORAGE bootstrap value.",
-        ),
-    ),
 )
+class StorageEnv(BaseEnv):
+    root: Path = env_field(
+        "STORAGE",
+        editable=False,
+        required=True,
+        explanation_short="Active storage root.",
+        explanation_long="Selected by the <APP>_STORAGE bootstrap value.",
+    )
 ```
 
 Use `editable=False` for values owned by the AppRC TOML instead of `.env.local`.
@@ -549,7 +541,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 
 | Module | Look Here For |
 |---|---|
-| `apprc.config.schema` | `ConfigField`, `ConfigOwner`, field lookup, typed loading. |
+| `apprc.config.schema` | `env_field`, `env_owner`, derived owners, field lookup, typed loading. |
 | `apprc.config.kit` | `AppConfigKit`, the high-level app integration facade. |
 | `apprc.config.app_spec` | App-specific env keys, literal AppRC TOML path derivation, and config contract metadata. |
 | `apprc.config.apprc_toml_env` | AppRC TOML env validation and setup guidance. |
@@ -578,11 +570,12 @@ log.success("Workspace ready", storage="myapp_stor-1")
 |---|---|
 | `AppConfigKit` | Convenient object applications keep around. |
 | `AppConfigSpec` | Frozen declaration behind the kit. |
-| `ConfigOwner` | One config section, env prefix, runtime path, and fields. |
-| `ConfigField` | One editable or read-only env-backed setting. |
+| `env_owner(...)` | Decorator that turns a `BaseEnv` class into one config section. |
+| `env_field(...)` | Dataclass field helper for one env-backed runtime attribute. |
+| `ConfigOwner` | Derived schema for one config section, env prefix, runtime path, and fields. |
+| `ConfigField` | Derived schema for one editable or read-only env-backed setting. |
 | `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
 | `BaseEnv` | Runtime dataclass base that resolves Python, env, and owner-default values. |
-| `owner_default()` | Dataclass field helper that resolves omitted values from `ConfigField.default`. |
 | `ConfigFieldSource` | Provenance record returned by `BaseEnv.source_of()` and `BaseEnv.sources()`. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
 | `StorageRegistry` | Parsed AppRC TOML storage table. |

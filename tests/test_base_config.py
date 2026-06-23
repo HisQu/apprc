@@ -10,10 +10,10 @@ from typed_settings.exceptions import InvalidSettingsError
 from apprc.config import (
     BaseConfig,
     BaseEnv,
-    ConfigField,
     ConfigFieldSource,
-    ConfigOwner,
-    owner_default,
+    config_owner_for,
+    env_field,
+    env_owner,
 )
 import apprc.config.base_config as base_config
 
@@ -31,28 +31,14 @@ class _RuntimeConfig(BaseConfig):
     nested: _NestedConfig
 
 
-_CHOICE_OWNER = ConfigOwner(
+@env_owner(
     key="demo",
     title="Demo",
     env_prefix="DEMO_",
     rc_path=("demo",),
-    fields=(
-        ConfigField(
-            "mode",
-            "MODE",
-            str,
-            default="AUTO",
-            choices=("AUTO", "MANUAL"),
-        ),
-    ),
 )
-
-
-@dataclass(slots=True)
 class _ChoiceEnv(BaseEnv):
-    config_owner = _CHOICE_OWNER
-
-    mode: str = owner_default()
+    mode: str = env_field("MODE", default="AUTO", choices=("AUTO", "MANUAL"))
 
 
 @dataclass(slots=True)
@@ -60,50 +46,37 @@ class _OwnerlessEnv(BaseEnv):
     value: str = "fallback"
 
 
-_DEMO_OWNER = ConfigOwner(
+@env_owner(
     key="demo.runtime",
     title="Demo Runtime",
     env_prefix="DEMO_",
     rc_path=("demo",),
-    fields=(
-        ConfigField(
-            "mode",
-            "MODE",
-            str,
-            default="AUTO",
-            choices=("AUTO", "MANUAL"),
-        ),
-        ConfigField("retries", "RETRIES", int, default=3),
-        ConfigField("enabled", "ENABLED", bool, default=False),
-        ConfigField("token", "TOKEN", str, default="demo-token", secret=True),
-    ),
 )
-
-
-@dataclass(slots=True)
 class _DemoEnv(BaseEnv):
-    config_owner = _DEMO_OWNER
-
-    mode: str = owner_default()
-    retries: int = owner_default()
-    enabled: bool = owner_default()
-    token: str = owner_default(repr=False)
+    mode: str = env_field("MODE", default="AUTO", choices=("AUTO", "MANUAL"))
+    retries: int = env_field("RETRIES", default=3)
+    enabled: bool = env_field("ENABLED", default=False)
+    token: str = env_field("TOKEN", default="demo-token", secret=True)
 
 
-_DRIFT_OWNER = ConfigOwner(
-    key="demo.drift",
-    title="Demo Drift",
-    env_prefix="DRIFT_",
-    rc_path=("demo", "drift"),
-    fields=(ConfigField("value", "VALUE", str, default="owner-default"),),
+@env_owner(
+    key="demo.required",
+    title="Demo Required",
+    env_prefix="REQUIRED_",
+    rc_path=("demo", "required"),
 )
+class _RequiredEnv(BaseEnv):
+    value: str = env_field("VALUE", title="Required value")
 
 
-@dataclass(slots=True)
-class _LegacyDefaultEnv(BaseEnv):
-    config_owner = _DRIFT_OWNER
-
-    value: str = "dataclass-default"
+@env_owner(
+    key="demo.implicit",
+    title="Demo Implicit",
+    env_prefix="IMPLICIT_",
+    rc_path=("demo", "implicit"),
+)
+class _ImplicitEnv(BaseEnv):
+    auto_named_value: str = env_field(default="fallback")
 
 
 class _LogSink:
@@ -115,8 +88,9 @@ class _LogSink:
 
 
 def _clear_demo_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for spec in _DEMO_OWNER.fields:
-        monkeypatch.delenv(_DEMO_OWNER.env_key(spec.name), raising=False)
+    owner = config_owner_for(_DemoEnv)
+    for spec in owner.fields:
+        monkeypatch.delenv(owner.env_key(spec.name), raising=False)
 
 
 def test_base_config_to_dict_redacts_private_dataclass_fields(
@@ -155,6 +129,24 @@ def test_base_config_copy_preserves_resolved_state_without_constructor() -> (
     assert shallow.nested is config.nested
     assert deep == config
     assert deep.nested is not config.nested
+
+
+def test_env_owner_derives_config_owner_from_base_env_class() -> None:
+    owner = config_owner_for(_DemoEnv)
+
+    assert owner.key == "demo.runtime"
+    assert owner.env_key("mode") == "DEMO_MODE"
+    assert owner.config_path("retries") == ("demo", "retries")
+    assert owner.field("mode").python_type is str
+    assert owner.field("mode").default == "AUTO"
+    assert owner.field("mode").choices == ("AUTO", "MANUAL")
+    assert owner.field("token").secret is True
+
+
+def test_env_field_derives_env_var_from_python_field_name() -> None:
+    owner = config_owner_for(_ImplicitEnv)
+
+    assert owner.env_key("auto_named_value") == "IMPLICIT_AUTO_NAMED_VALUE"
 
 
 def test_base_env_rejects_invalid_runtime_choices(
@@ -312,19 +304,24 @@ def test_base_env_secret_source_redacts_repr_and_keeps_raw_value(
     assert "<redacted>" in repr(source)
 
 
-def test_base_env_legacy_dataclass_default_warns_and_owner_wins(
+def test_base_env_required_field_can_be_supplied_by_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sink = _LogSink()
-    monkeypatch.setattr(base_config, "LOG", sink)
-    monkeypatch.delenv("DRIFT_VALUE", raising=False)
+    monkeypatch.setenv("REQUIRED_VALUE", "from-env")
 
-    cfg = _LegacyDefaultEnv()
+    cfg = _RequiredEnv()
 
-    assert cfg.value == "owner-default"
-    assert cfg.source_of("value").source == "owner_default"
-    assert any("dataclass default is obsolete" in msg for msg in sink.warnings)
-    assert any("differs from owner default" in msg for msg in sink.warnings)
+    assert cfg.value == "from-env"
+    assert cfg.source_of("value").source == "process_env"
+
+
+def test_base_env_required_field_raises_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("REQUIRED_VALUE", raising=False)
+
+    with pytest.raises(RuntimeError, match="REQUIRED_VALUE"):
+        _RequiredEnv()
 
 
 def test_base_env_python_assignment_survives_reload(

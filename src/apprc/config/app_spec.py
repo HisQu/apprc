@@ -14,10 +14,10 @@ from apprc.config.apprc_toml_env import (
     ApprcTomlEnvError,
     missing_apprc_toml_env_message,
 )
-from apprc.config.schema import ConfigOwner
+from apprc.config.schema import ConfigOwner, config_owner_for
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class AppConfigSpec:
     """Complete reusable configuration contract for one application.
 
@@ -28,7 +28,10 @@ class AppConfigSpec:
     :param app_name: Lowercase application name used in env var derivation.
     :param display_name: Human-readable application name for terminal output.
     :param config_package: Package containing the packaged shared dotenv file.
-    :param owners: Config owner inventory for editable and documented fields.
+    :param owners: Derived config owner inventory for editable and documented
+        fields. Advanced callers may still pass owners directly.
+    :param envs: ``BaseEnv`` classes decorated with ``@env_owner``. This is the
+        primary public contract for applications.
     :param storage_env_key: Env key that stores the active storage selector.
     :param command_name: Optional executable name shown in generated CLI copy.
     :param apprc_toml_filename: Per-user AppRC TOML filename.
@@ -40,11 +43,57 @@ class AppConfigSpec:
     display_name: str
     config_package: str
     owners: tuple[ConfigOwner, ...]
+    envs: tuple[type[object], ...]
     storage_env_key: str
     apprc_toml_filename: str
     command_name: str | None = None
     shared_env_filename: str = ".env.shared"
     local_env_filename: str = ".env.local"
+
+    def __init__(
+        self,
+        *,
+        app_name: str,
+        display_name: str,
+        config_package: str,
+        storage_env_key: str,
+        apprc_toml_filename: str,
+        owners: tuple[ConfigOwner, ...] | None = None,
+        envs: tuple[type[object], ...] = (),
+        command_name: str | None = None,
+        shared_env_filename: str = ".env.shared",
+        local_env_filename: str = ".env.local",
+    ) -> None:
+        """Store one application config contract.
+
+        :param app_name: Lowercase application name used in env var derivation.
+        :param display_name: Human-readable application name.
+        :param config_package: Package containing the packaged shared dotenv.
+        :param storage_env_key: Env key that stores the active storage selector.
+        :param apprc_toml_filename: Per-user AppRC TOML filename.
+        :param owners: Advanced normalized owner inventory.
+        :param envs: ``BaseEnv`` classes decorated with ``@env_owner``.
+        :param command_name: Optional executable name shown in CLI copy.
+        :param shared_env_filename: Packaged shared dotenv filename.
+        :param local_env_filename: Storage-local dotenv override filename.
+        """
+        if owners is not None and envs:
+            raise TypeError("Pass either owners or envs, not both.")
+        resolved_owners = (
+            tuple(config_owner_for(env_cls) for env_cls in envs)
+            if envs
+            else tuple(() if owners is None else owners)
+        )
+        object.__setattr__(self, "app_name", app_name)
+        object.__setattr__(self, "display_name", display_name)
+        object.__setattr__(self, "config_package", config_package)
+        object.__setattr__(self, "owners", resolved_owners)
+        object.__setattr__(self, "envs", tuple(envs))
+        object.__setattr__(self, "storage_env_key", storage_env_key)
+        object.__setattr__(self, "apprc_toml_filename", apprc_toml_filename)
+        object.__setattr__(self, "command_name", command_name)
+        object.__setattr__(self, "shared_env_filename", shared_env_filename)
+        object.__setattr__(self, "local_env_filename", local_env_filename)
 
     def config_command_name(self) -> str:
         """Return the executable name shown in generated config commands."""

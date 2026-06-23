@@ -1,16 +1,17 @@
 """Base classes for runtime config objects.
 
 This module is the bridge between application dataclasses and AppRC's
-declarative config inventory. Application code normally declares a dataclass
-that inherits :class:`BaseEnv` and points it at a :class:`ConfigOwner`. AppRC
-then uses the owner to bind environment variables, serialize public config
-state, and log surprising runtime mutations.
+normalized config inventory. Application code normally declares a
+:class:`BaseEnv` subclass with :func:`apprc.config.schema.env_field` attributes
+and decorates it with :func:`apprc.config.schema.env_owner`. AppRC derives the
+owner schema from that class, then uses it to bind environment variables,
+serialize public config state, and log surprising runtime mutations.
 
 Keep this module focused on runtime config object behavior. File discovery,
 multi-storage tables, dotenv layer precedence, and CLI editing live in sibling
 modules so beginners can look up one problem at a time:
 
-* :mod:`apprc.config.schema` owns field/owner declarations.
+* :mod:`apprc.config.schema` owns env field authoring and owner derivation.
 * :mod:`apprc.config.environment` owns entrypoint dotenv bootstrap.
 * :mod:`apprc.config.app_spec` owns the optional AppRC TOML env contract.
 * :mod:`apprc.config.storage.registry` owns optional multi-storage tables.
@@ -22,7 +23,7 @@ from __future__ import annotations
 # == Stdlib =============================
 import os
 from copy import deepcopy as _deepcopy
-from dataclasses import MISSING, dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from importlib import import_module
 from pathlib import Path
 
@@ -37,8 +38,7 @@ from apprc._dotenv_guard import (
 )
 from apprc.config.schema import (
     CONFIG_MISSING,
-    OWNER_DEFAULT,
-    OWNER_DEFAULT_METADATA_KEY,
+    ENV_FIELD_MISSING,
     ConfigOwner,
     load_owner_from_env,
     owner_env_mapping,
@@ -392,16 +392,14 @@ class BaseConfig:
 
 @dataclass(slots=True)
 class BaseEnv(BaseConfig):
-    """Runtime config section backed by a structured ``ConfigOwner``.
+    """Runtime config section backed by a derived ``ConfigOwner``.
 
-    ``BaseEnv`` intentionally knows only about structured owner metadata.
-    Subclasses declare normal typed dataclass fields, while their
-    :class:`apprc.config.schema.ConfigOwner` owns defaults, env names, docs
-    metadata, and editor metadata. ``BaseEnv`` reads OS environment variables
-    from the current Python process via ``os.environ``. It does not load dotenv
-    files or application config layers; application entrypoints should call
-    their bootstrap helper before constructing ``BaseEnv`` objects when they
-    want dotenv layers merged into ``os.environ``.
+    Subclasses declare typed fields with ``env_field(...)`` and receive their
+    owner schema through ``@env_owner(...)``. ``BaseEnv`` reads OS environment
+    variables from the current Python process via ``os.environ``. It does not
+    load dotenv files or application config layers; application entrypoints
+    should call their bootstrap helper before constructing ``BaseEnv`` objects
+    when they want dotenv layers merged into ``os.environ``.
     """
 
     config_owner: ClassVar[ConfigOwner | None] = None
@@ -435,11 +433,13 @@ class BaseEnv(BaseConfig):
         return self
 
     def __post_init__(self) -> None:
-        """Resolve owner defaults, then bind env values when enabled."""
+        """Resolve owner defaults, bind env values, and validate completeness."""
         self._resolve_owner_defaults()
         self._validate_python_fields()
         if self.bind_from_env_on_init:
             self.bind_from_env()
+        self._validate_required_fields()
+        self._validate_all_owner_choices()
 
     def reload(self, override_python_values: bool = False) -> None:
         """Re-bind owner-backed fields from current process ``os.environ``.
@@ -466,13 +466,14 @@ class BaseEnv(BaseConfig):
         This does not load dotenv files or application config layers. Call the
         application bootstrap helper once at the entrypoint when those layers
         should populate ``os.environ`` before runtime configs are constructed.
-        Owner defaults are always resolved before this method runs; this method
-        only controls whether process env values overlay those defaults.
+        Owner defaults are always resolved; this method only controls whether
+        process env values overlay those defaults.
 
         :param override_python_values: Whether env values may overwrite fields
             provided through Python constructor arguments or later assignment.
         """
         self._bind_from_env(override_python_values=override_python_values)
+        self._validate_required_fields()
 
     def _bind_from_env(self, override_python_values: bool) -> list[str]:
         """Bind env values and return Python-owned fields that were skipped."""
@@ -581,7 +582,7 @@ class BaseEnv(BaseConfig):
         object.__setattr__(self, "_apprc_field_sources", next_sources)
 
     def _resolve_owner_defaults(self) -> None:
-        """Resolve omitted owner-backed fields from ``ConfigField.default``."""
+        """Resolve omitted owner-backed fields from derived owner defaults."""
         owner = self._config_owner()
         dataclass_fields = {item.name: item for item in fields(self)}
         for spec in owner.fields:
@@ -593,55 +594,14 @@ class BaseEnv(BaseConfig):
                     f"{self.__class__.__name__}.{spec.name} is declared by "
                     f"{owner.key} but missing from the runtime dataclass."
                 )
-            if not self._field_uses_owner_default(field_def):
-                self._warn_direct_dataclass_default(owner, spec.name, field_def)
+            if spec.default is CONFIG_MISSING:
+                continue
             object.__setattr__(
                 self,
                 spec.name,
-                self._owner_default_value(owner, spec.name),
+                self._deepcopy_state_value(spec.default, {}),
             )
             self._set_field_source(spec.name, "owner_default")
-
-    @staticmethod
-    def _field_uses_owner_default(field_def: Any) -> bool:
-        """Return whether a dataclass field delegates its default to the owner."""
-        return bool(field_def.metadata.get(OWNER_DEFAULT_METADATA_KEY))
-
-    def _owner_default_value(self, owner: ConfigOwner, field_name: str) -> Any:
-        """Return an isolated copy of the owner default for one field."""
-        spec = owner.field(field_name)
-        if spec.default is CONFIG_MISSING:
-            raise RuntimeError(
-                f"{owner.env_key(field_name)} has no ConfigOwner default. "
-                "Provide a Python value or process env value."
-            )
-        return self._deepcopy_state_value(spec.default, {})
-
-    def _warn_direct_dataclass_default(
-        self,
-        owner: ConfigOwner,
-        field_name: str,
-        field_def: Any,
-    ) -> None:
-        """Warn that a legacy dataclass default is no longer authoritative."""
-        spec = owner.field(field_name)
-        drift = ""
-        if (
-            field_def.default is not MISSING
-            and spec.default is not CONFIG_MISSING
-            and field_def.default != OWNER_DEFAULT
-            and field_def.default != spec.default
-        ):
-            drift = (
-                f" Dataclass default {field_def.default!r} differs from "
-                f"owner default {spec.default!r}."
-            )
-        LOG.warning(
-            "Owner-backed dataclass default is obsolete: "
-            f"{self.__class__.__name__}.{field_name}. Use owner_default(); "
-            f"{owner.env_key(field_name)} now uses ConfigOwner.default."
-            f"{drift}"
-        )
 
     def _validate_python_fields(self) -> None:
         """Validate constructor-provided values against owner metadata."""
@@ -654,6 +614,32 @@ class BaseEnv(BaseConfig):
                 field_name,
                 getattr(self, field_name),
             )
+
+    def _validate_required_fields(self) -> None:
+        """Raise when required owner-backed fields remain unresolved."""
+        owner = self._config_owner()
+        missing_keys = [
+            owner.env_key(spec.name)
+            for spec in owner.fields
+            if getattr(self, spec.name) is ENV_FIELD_MISSING
+        ]
+        if not missing_keys:
+            return
+        joined = ", ".join(missing_keys)
+        raise RuntimeError(
+            f"Missing required config value(s) for {self.__class__.__name__}: "
+            f"{joined}. Provide Python constructor values or current-process "
+            "os.environ values before constructing this config."
+        )
+
+    def _validate_all_owner_choices(self) -> None:
+        """Validate resolved owner-backed values after all binding steps."""
+        owner = self._config_owner()
+        for spec in owner.fields:
+            value = getattr(self, spec.name)
+            if value is ENV_FIELD_MISSING:
+                continue
+            self._validate_owner_choice(owner, spec.name, value)
 
     def _validate_existing_assignment(self, key: str, value: Any) -> None:
         """Validate owner-backed assignment before storing it."""
@@ -738,7 +724,11 @@ class BaseEnv(BaseConfig):
         :raises ValueError: If the value is not one of the declared choices.
         """
         spec = owner.field(field_name)
-        if not spec.choices or value in spec.choices:
+        if (
+            value is ENV_FIELD_MISSING
+            or not spec.choices
+            or value in spec.choices
+        ):
             return
         choices = ", ".join(spec.choices)
         env_key = owner.env_key(field_name)

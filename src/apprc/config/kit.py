@@ -53,7 +53,8 @@ class AppConfigKit:
         app_name: str,
         display_name: str,
         config_package: str,
-        owners: tuple[ConfigOwner, ...],
+        envs: tuple[type[object], ...] = (),
+        owners: tuple[ConfigOwner, ...] | None = None,
         storage_env_key: str,
         command_name: str | None = None,
         apprc_toml_filename: str | None = None,
@@ -69,6 +70,7 @@ class AppConfigKit:
         display_name: str | None = None,
         config_package: str | None = None,
         owners: tuple[ConfigOwner, ...] | None = None,
+        envs: tuple[type[object], ...] = (),
         storage_env_key: str | None = None,
         command_name: str | None = None,
         apprc_toml_filename: str | None = None,
@@ -83,7 +85,6 @@ class AppConfigKit:
             app_name is None
             or display_name is None
             or config_package is None
-            or owners is None
             or storage_env_key is None
         ):
             raise TypeError(
@@ -95,6 +96,7 @@ class AppConfigKit:
             display_name=display_name,
             config_package=config_package,
             owners=owners,
+            envs=envs,
             storage_env_key=storage_env_key,
             command_name=command_name,
             apprc_toml_filename=(

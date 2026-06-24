@@ -11,11 +11,11 @@ from rich.console import Console
 from rich.text import Text
 
 # == Internal ================================
-from apprc.config.kit import AppConfigKit
-import apprc.config.setup.flow as setup_flow
-import apprc.config.setup.text as setup_text
-from apprc.config.tui.setup import ConfigSetupApp
-from apprc.config.tui.styles import (
+from apprc.runtime_config.kit import AppConfigKit
+import apprc.runtime_config.setup.flow as setup_flow
+import apprc.runtime_config.setup.text as setup_text
+from apprc.runtime_config.tui.setup import ConfigSetupApp
+from apprc.runtime_config.tui.styles import (
     ENV_KEY_STYLE,
     MISSING_STYLE,
     PATH_STYLE,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.storage.registry import (
+from apprc.runtime_config.storage.registry import (
     app_data_dir,
     load_storage_registry_or_empty,
     ordered_storage_names,
@@ -16,7 +16,7 @@ from apprc.config.storage.registry import (
     suggested_storage_root,
     unregister_storage,
 )
-from apprc.config.paths import (
+from apprc.runtime_config.storage.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
     windows_drive_path_to_posix,
@@ -205,7 +205,7 @@ def test_register_storage_normalizes_windows_root(
     normalized_root = tmp_path / "demo-storage"
 
     monkeypatch.setattr(
-        "apprc.config.storage.registry.normalize_storage_root_path",
+        "apprc.runtime_config.storage.registry.normalize_storage_root_path",
         lambda path: normalized_root,
     )
 

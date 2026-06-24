@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.app_spec import AppConfigSpec
-from apprc.config.apprc_toml_env import ApprcTomlEnvError
-from apprc.config import EnvConfig, env_field, env_owner
+from apprc.runtime_config.contract.app_spec import AppConfigSpec
+from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
+from apprc.runtime_config import EnvConfig, env_field, env_owner
 
 
 @env_owner(
@@ -80,7 +80,7 @@ def _app_spec(app_name: str) -> AppConfigSpec:
     return AppConfigSpec(
         app_name=app_name,
         display_name="Demo",
-        config_package="apprc.config",
+        config_package="apprc.runtime_config",
         storage_env_key="DEMO_STORAGE",
         apprc_toml_filename="demo.apprc.toml",
     )
@@ -105,7 +105,7 @@ def test_app_config_spec_rejects_manual_owner_argument() -> None:
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.config",
+            config_package="apprc.runtime_config",
             owners=(),  # pyright: ignore[reportCallIssue]
             storage_env_key="DEMO_STORAGE",
             apprc_toml_filename="demo.apprc.toml",
@@ -117,7 +117,7 @@ def test_app_config_spec_rejects_duplicate_owner_keys() -> None:
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.config",
+            config_package="apprc.runtime_config",
             storage_env_key="DEMO_STORAGE",
             apprc_toml_filename="demo.apprc.toml",
             envs=(_DuplicateOwnerA, _DuplicateOwnerB),
@@ -129,7 +129,7 @@ def test_app_config_spec_rejects_duplicate_env_keys() -> None:
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.config",
+            config_package="apprc.runtime_config",
             storage_env_key="DEMO_STORAGE",
             apprc_toml_filename="demo.apprc.toml",
             envs=(_DuplicateEnvA, _DuplicateEnvB),
@@ -141,7 +141,7 @@ def test_app_config_spec_rejects_duplicate_config_paths() -> None:
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.config",
+            config_package="apprc.runtime_config",
             storage_env_key="DEMO_STORAGE",
             apprc_toml_filename="demo.apprc.toml",
             envs=(_DuplicatePathA, _DuplicatePathB),

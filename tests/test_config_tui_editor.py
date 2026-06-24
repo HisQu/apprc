@@ -8,15 +8,15 @@ from rich.text import Text
 from textual.containers import VerticalScroll
 from textual.widgets import Button, DataTable, Input, ListView, Static
 
-from apprc.config.storage_registry_loading import load_existing_storage_registry
-from apprc.config.tui import ConfigEditorApp
-from apprc.config.tui.modals import ArchiveOptionsScreen
-from apprc.config.tui.storage.selection import (
+from apprc.runtime_config.storage.loading import load_existing_storage_registry
+from apprc.runtime_config.tui import ConfigEditorApp
+from apprc.runtime_config.tui.modals import ArchiveOptionsScreen
+from apprc.runtime_config.tui.storage.selection import (
     ActivePathStorageSelection,
     ArchivedStorageSelection,
     MissingStorageSelection,
 )
-from apprc.config.tui.styles import (
+from apprc.runtime_config.tui.styles import (
     CHOICE_STYLE,
     EFFECTIVE_SOURCE_STYLE,
     GENERIC_VALUE_STYLE,

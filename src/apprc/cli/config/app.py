@@ -18,12 +18,12 @@ import typer
 
 # == Internal ================================
 from apprc.cli.config.handlers import ConfigCommandHandlers
-from apprc.config.diagnostics import config_setup_message
-from apprc.config.kit import AppConfigKit
-import apprc.config.setup.flow as setup_flow
+from apprc.runtime_config.doctor.payload import config_setup_message
+from apprc.runtime_config.kit import AppConfigKit
+import apprc.runtime_config.setup.flow as setup_flow
 
 if TYPE_CHECKING:
-    from apprc.config.tui import ConfigEditorApp
+    from apprc.runtime_config.tui import ConfigEditorApp
 
 StateT = TypeVar("StateT")
 

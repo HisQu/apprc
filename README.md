@@ -223,6 +223,18 @@ docs labels, editor labels, choices, and redaction metadata. AppRC derives the
 normalized owner inventory from that class for loading, validation, docs, CLI
 commands, and the terminal editor.
 
+### Config Package Convention
+
+Put AppRC declarations in a real `<app>.config` package, for example
+`myapp/config/owners.py`, and keep packaged shared defaults at
+`myapp/config/.env.shared`. Set `AppConfigKit(config_package="myapp.config")`
+so bootstrap can load those resources.
+
+`config doctor` reports non-fatal convention warnings when
+`config_package` does not end with `.config` or when an `EnvConfig` owner class
+lives outside that package. These warnings do not change the runtime readiness
+status.
+
 Host applications should still mount the generated config CLI as a subcommand
 of the application that depends on AppRC. Generated end-user prompts should
 feel owned by that host application: a MyApp user should see MyApp setup text,
@@ -449,7 +461,7 @@ Put config declarations in your application package, usually
 ```python
 from pathlib import Path
 
-from apprc.config import EnvConfig, env_field, env_owner
+from apprc import EnvConfig, env_field, env_owner
 
 @env_owner(
     key="storage",
@@ -556,23 +568,22 @@ log.success("Workspace ready", storage="myapp_stor-1")
 
 | Module | Look Here For |
 |---|---|
-| `apprc.config.env_authoring` | `env_field`, `env_owner`, and derived owners. |
-| `apprc.config.kit` | `AppConfigKit`, the high-level app integration facade. |
-| `apprc.config.app_spec` | App-specific env keys, literal AppRC TOML path derivation, and config contract metadata. |
-| `apprc.config.apprc_toml_env` | AppRC TOML env validation and setup guidance. |
-| `apprc.config.storage_registry_loading` | Storage table loading paths by setup, runtime, and diagnostic intent. |
-| `apprc.config.environment` | CLI startup dotenv/bootstrap precedence. |
-| `apprc.config.paths` | Storage-root path normalization helpers. |
-| `apprc.config.storage.selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
-| `apprc.config.storage.registry` | Optional multi-storage tables in AppRC TOML. |
-| `apprc.config.storage.archive` | `*.apprc.tar.xz` storage compression and restore. |
-| `apprc.config.local_env` | `<storage>/.env.local` reads, writes, validation. |
-| `apprc.config.setup.flow` | Shared setup workflow rules. |
-| `apprc.config.setup.text` | User-facing setup copy. |
-| `apprc.config.tui` | Textual config editor and setup wizard package. |
-| `apprc.config.tui.setup` | Textual setup wizard. |
-| `apprc.config.tui.primitives` | Shared Textual path, name, and confirmation modals. |
-| `apprc.config.tui.rendering` | Pure table cell rendering and styles. |
+| `apprc.runtime_config` | Advanced runtime-config facade. Prefer top-level `apprc` for normal app code. |
+| `apprc.runtime_config.kit` | `AppConfigKit`, the high-level app integration facade. |
+| `apprc.runtime_config.contract` | App specs, schema records, lookup, validation, and AppRC TOML contract helpers. |
+| `apprc.runtime_config.fields` | `BaseConfig`, `EnvConfig`, `env_field`, `env_owner`, and env binding. |
+| `apprc.runtime_config.provenance` | `ConfigProvenance`, source/origin literals, and bootstrap env-origin registry. |
+| `apprc.runtime_config.bootstrap` | CLI startup dotenv precedence and process-env mutation boundary. |
+| `apprc.runtime_config.storage` | Storage roots, local dotenv files, registries, paths, selectors, and archives. |
+| `apprc.runtime_config.storage.loading` | Storage table loading paths by setup, runtime, and diagnostic intent. |
+| `apprc.runtime_config.storage.selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
+| `apprc.runtime_config.doctor` | `config doctor` payloads, statuses, and setup guidance. |
+| `apprc.runtime_config.setup` | Shared setup workflow rules and user-facing setup copy. |
+| `apprc.runtime_config.tui` | Textual config editor and setup wizard package. |
+| `apprc.runtime_config.tui.editor` | Textual config editor app and storage workflows. |
+| `apprc.runtime_config.tui.setup` | Textual setup wizard app. |
+| `apprc.runtime_config.tui.modals` | Textual modal screens for value and storage operations. |
+| `apprc.runtime_config.tui.primitives` | Shared Textual path, name, and confirmation modals. |
 | `apprc.cli.config` | Generated `config` Typer command package. |
 | `apprc.cli.config.app` | Typer command factory for generated config CLIs. |
 | `apprc.cli.config.handlers` | Behavior behind generated config commands. |
@@ -587,8 +598,8 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `AppConfigSpec` | Frozen declaration behind the kit. |
 | `env_owner(...)` | Decorator that turns an `EnvConfig` class into one config section. |
 | `env_field(...)` | Dataclass field helper for one env-backed runtime attribute. |
-| `apprc.config.schema.ConfigOwner` | Advanced derived schema for one config section, env prefix, runtime path, and fields. |
-| `apprc.config.schema.ConfigField` | Advanced derived schema for one editable or read-only env-backed setting. |
+| `apprc.runtime_config.contract.schema.ConfigOwner` | Advanced derived schema for one config section, env prefix, runtime path, and fields. |
+| `apprc.runtime_config.contract.schema.ConfigField` | Advanced derived schema for one editable or read-only env-backed setting. |
 | `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
 | `EnvConfig` | Runtime dataclass base that resolves Python, env, and EnvConfig-default values. |
 | `ConfigProvenance` | Provenance record returned by `BaseConfig.provenance_of()` and `BaseConfig.provenance()`. |

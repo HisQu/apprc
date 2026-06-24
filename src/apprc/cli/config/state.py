@@ -14,13 +14,15 @@ from apprc.cli.options import (
     COMMON_ROOT_VALUE_OPTIONS,
 )
 from apprc.cli.typer_utils import args_after_command, strip_leading_options
-from apprc.config.environment import EnvBootstrapResult
-from apprc.config.kit import AppConfigKit
-from apprc.config.storage_registry_loading import (
+from apprc.runtime_config.bootstrap.result import EnvBootstrapResult
+from apprc.runtime_config.kit import AppConfigKit
+from apprc.runtime_config.storage.loading import (
     load_optional_runtime_storage_registry,
 )
-from apprc.config.storage.registry import StorageRegistry
-from apprc.config.storage.selector import resolve_active_storage_selection
+from apprc.runtime_config.storage.registry import StorageRegistry
+from apprc.runtime_config.storage.selector import (
+    resolve_active_storage_selection,
+)
 
 
 class ConfigCliState(Protocol):

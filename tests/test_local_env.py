@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config.local_env import (
+from apprc.runtime_config.storage.local_env import (
     clear_local_env_value,
     ensure_local_env_file,
     normalize_env_value,
@@ -12,8 +12,8 @@ from apprc.config.local_env import (
     set_local_env_value,
     write_local_env,
 )
-from apprc.config.paths import StorageRootPathError
-from apprc.config.schema import ConfigField
+from apprc.runtime_config.storage.paths import StorageRootPathError
+from apprc.runtime_config.contract.schema import ConfigField
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNER,
     APPRC_EXAMPLE_APP_OWNERS,

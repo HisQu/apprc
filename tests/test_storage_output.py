@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from apprc.cli.config.output import storage_list_payload
-from apprc.config.storage.registry import register_storage
+from apprc.runtime_config.storage.registry import register_storage
 
 
 def test_storage_list_payload_reports_local_env_status(tmp_path: Path) -> None:

@@ -13,15 +13,15 @@ from pathlib import Path
 from pytest import MonkeyPatch
 
 from apprc import AppConfigKit
-from apprc.config import (
+from apprc.runtime_config import (
     EnvConfig,
     EnvBootstrapResult,
     config_owner_for,
     env_field,
     env_owner,
 )
-from apprc.config.sentinels import CONFIG_MISSING
-from apprc.config.storage.registry import (
+from apprc.runtime_config.contract.sentinels import CONFIG_MISSING
+from apprc.runtime_config.storage.registry import (
     StorageRegistry,
     record_archived_storage,
     register_storage,
@@ -108,7 +108,7 @@ def build_apprc_example_app_kit() -> AppConfigKit:
     return AppConfigKit(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="apprc.config",
+        config_package="apprc.runtime_config",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
         apprc_toml_filename="apprc_example_app.apprc.toml",

@@ -7,10 +7,10 @@ from rich.console import Console
 from rich.text import Text
 
 # == Internal ================================
-from apprc.config.diagnostics import ConfigDoctorPayload
-from apprc.config.doctor_status import ConfigDoctorStatus
-from apprc.config.kit import AppConfigKit
-from apprc.config.tui.styles import (
+from apprc.runtime_config.doctor.payload import ConfigDoctorPayload
+from apprc.runtime_config.doctor.status import ConfigDoctorStatus
+from apprc.runtime_config.kit import AppConfigKit
+from apprc.runtime_config.tui.styles import (
     DEFAULT_STYLE,
     ENV_KEY_STYLE,
     ERROR_STYLE,

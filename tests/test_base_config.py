@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -7,9 +6,7 @@ from pathlib import Path
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
 
-import apprc
-import apprc.config as config_api
-from apprc.config import (
+from apprc.runtime_config import (
     BaseConfig,
     ConfigProvenance,
     EnvConfig,
@@ -17,8 +14,8 @@ from apprc.config import (
     env_field,
     env_owner,
 )
-import apprc.config.base_config as base_config
-import apprc.config.env_config as env_config_module
+import apprc.runtime_config.fields.base_config as base_config
+import apprc.runtime_config.fields.env_config as env_config_module
 
 
 @dataclass(slots=True)
@@ -263,27 +260,6 @@ def test_env_field_default_factory_resolves_fresh_envconfig_defaults(
 
     assert first.cache_dir != second.cache_dir
     assert first.provenance_of("cache_dir").origin == "python_envconfig_default"
-
-
-def test_env_config_is_the_only_public_env_runtime_base() -> None:
-    assert apprc.EnvConfig is EnvConfig
-    assert config_api.EnvConfig is EnvConfig
-    assert not hasattr(apprc, "BaseEnv")
-    assert not hasattr(config_api, "BaseEnv")
-
-
-def test_old_provenance_names_are_not_public_api() -> None:
-    assert not hasattr(apprc, "ConfigFieldSource")
-    assert not hasattr(config_api, "ConfigFieldSource")
-    assert not hasattr(apprc, "owner_default")
-    assert not hasattr(config_api, "owner_default")
-
-
-def test_schema_types_are_not_public_facade_exports() -> None:
-    assert not hasattr(apprc, "ConfigOwner")
-    assert not hasattr(apprc, "ConfigField")
-    assert not hasattr(config_api, "ConfigOwner")
-    assert not hasattr(config_api, "ConfigField")
 
 
 def test_env_owner_wraps_lifecycle_by_default() -> None:

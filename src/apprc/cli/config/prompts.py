@@ -13,9 +13,9 @@ from rich.text import Text
 import typer
 
 # == Internal ================================
-from apprc.config.kit import AppConfigKit
-from apprc.config.storage_registry_loading import apprc_toml_path_for_create
-import apprc.config.setup.flow as setup_flow
+from apprc.runtime_config.kit import AppConfigKit
+from apprc.runtime_config.storage.loading import apprc_toml_path_for_create
+import apprc.runtime_config.setup.flow as setup_flow
 
 
 def print_directory_listing(storage_root: Path) -> None:

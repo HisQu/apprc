@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from apprc.config import EnvConfig, env_field, env_owner
-from apprc.config.app_spec import AppConfigSpec
-from apprc.config.environment import bootstrap_env
-from apprc.config.apprc_toml_env import ApprcTomlEnvError
-from apprc.config.storage.registry import register_storage
+from apprc.runtime_config import EnvConfig, env_field, env_owner
+from apprc.runtime_config.contract.app_spec import AppConfigSpec
+from apprc.runtime_config.bootstrap.orchestrator import bootstrap_env
+from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
+from apprc.runtime_config.storage.registry import register_storage
 
 
 pytestmark = [pytest.mark.requires_apprc_env("DEMO")]
@@ -605,7 +605,7 @@ def test_bootstrap_env_normalizes_storage_root_env(
         r"D:\Training\demo-project",
     )
     monkeypatch.setattr(
-        "apprc.config.storage.selector.normalize_storage_root_path",
+        "apprc.runtime_config.storage.selector.normalize_storage_root_path",
         lambda path: normalized_root,
     )
     package_name = _shared_env_package(

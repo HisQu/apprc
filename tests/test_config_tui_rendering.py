@@ -4,9 +4,12 @@ from pathlib import Path
 
 from rich.text import Text
 
-from apprc.config.storage.registry import ArchivedStorageRecord, StorageRecord
-from apprc.config.tui.field_state import ConfigValueSource
-from apprc.config.tui.rendering import (
+from apprc.runtime_config.storage.registry import (
+    ArchivedStorageRecord,
+    StorageRecord,
+)
+from apprc.runtime_config.tui.field_state import EditableConfigValueSource
+from apprc.runtime_config.tui.rendering import (
     FIELD_TABLE_COLUMNS,
     FieldTableRow,
     archived_storage_title,
@@ -19,7 +22,7 @@ from apprc.config.tui.rendering import (
     possible_values_style,
     value_style,
 )
-from apprc.config.tui.styles import (
+from apprc.runtime_config.tui.styles import (
     ARCHIVE_STYLE,
     CHOICE_STYLE,
     DEFAULT_STYLE,
@@ -32,7 +35,7 @@ from apprc.config.tui.styles import (
     SECRET_STYLE,
     TEXT_STYLE,
 )
-from apprc.config.tui.value_modal_rendering import (
+from apprc.runtime_config.tui.value_modal_rendering import (
     field_type_text,
     possible_values_text,
     shell_status_text,
@@ -127,16 +130,16 @@ def test_config_textual_rendering_labels_match_field_metadata() -> None:
 def test_value_modal_rendering_formats_sources_and_metadata() -> None:
     mode = APPRC_EXAMPLE_APP_OWNER.field("mode")
     access_token = APPRC_EXAMPLE_APP_OWNER.field("access_token")
-    effective = ConfigValueSource(
+    effective = EditableConfigValueSource(
         key="effective",
         raw_value="super-secret",
         origin_key="local",
     )
-    shell = ConfigValueSource(key="shell", raw_value=None)
-    shell_set = ConfigValueSource(key="shell", raw_value="MANUAL")
-    local = ConfigValueSource(key="local", raw_value="super-secret")
-    empty_local = ConfigValueSource(key="local", raw_value="")
-    shared = ConfigValueSource(key="shared", raw_value=None)
+    shell = EditableConfigValueSource(key="shell", raw_value=None)
+    shell_set = EditableConfigValueSource(key="shell", raw_value="MANUAL")
+    local = EditableConfigValueSource(key="local", raw_value="super-secret")
+    empty_local = EditableConfigValueSource(key="local", raw_value="")
+    shared = EditableConfigValueSource(key="shared", raw_value=None)
 
     assert source_label(effective) == "Effective"
     assert source_label_text(effective).style == EFFECTIVE_SOURCE_STYLE

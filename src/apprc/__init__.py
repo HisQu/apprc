@@ -2,12 +2,13 @@
 
 # ruff: noqa: F401
 
-from apprc.config import (
+from apprc.runtime_config import (
     AppConfigKit,
     AppConfigSpec,
     BaseConfig,
     ConfigDoctorStatus,
     ConfigProvenance,
+    EnvBootstrapResult,
     EnvConfig,
     config_owner_for,
     env_field,

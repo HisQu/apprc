@@ -11,7 +11,7 @@ from apprc.cli.config import (
     initial_storage_from_state,
 )
 from apprc.cli.doctor import print_config_doctor
-from apprc.config.diagnostics import (
+from apprc.runtime_config.doctor.payload import (
     build_config_doctor_payload,
     config_command_text,
     config_setup_message,

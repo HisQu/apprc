@@ -7,8 +7,8 @@ from typing import Any, cast
 import pytest
 from typer.testing import CliRunner
 
-from apprc.config.tui import ConfigEditorApp
-from apprc.config.diagnostics import (
+from apprc.runtime_config.tui import ConfigEditorApp
+from apprc.runtime_config.doctor.payload import (
     build_config_doctor_payload,
     config_setup_message,
 )

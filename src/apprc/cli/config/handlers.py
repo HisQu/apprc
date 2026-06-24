@@ -23,23 +23,26 @@ from apprc.cli.config.state import (
 from apprc.cli.doctor import print_config_doctor
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
-from apprc.config.diagnostics import build_config_doctor_payload
-from apprc.config.doctor_status import ConfigDoctorStatus
-from apprc.config.kit import AppConfigKit
-from apprc.config.local_env import set_local_env_value
-from apprc.config.paths import StorageRootPathError
-from apprc.config.apprc_toml_env import ApprcTomlEnvError
-from apprc.config.storage_registry_loading import (
+from apprc.runtime_config.doctor.payload import build_config_doctor_payload
+from apprc.runtime_config.doctor.status import ConfigDoctorStatus
+from apprc.runtime_config.kit import AppConfigKit
+from apprc.runtime_config.storage.local_env import set_local_env_value
+from apprc.runtime_config.storage.paths import StorageRootPathError
+from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
+from apprc.runtime_config.storage.loading import (
     load_existing_storage_registry,
     load_optional_runtime_storage_registry,
     apprc_toml_path_for_create,
 )
-import apprc.config.setup.flow as setup_flow
-from apprc.config.storage.registry import StorageRegistry, register_storage
-from apprc.config.storage.selector import StorageSelectorError
+import apprc.runtime_config.setup.flow as setup_flow
+from apprc.runtime_config.storage.registry import (
+    StorageRegistry,
+    register_storage,
+)
+from apprc.runtime_config.storage.selector import StorageSelectorError
 
 if TYPE_CHECKING:
-    from apprc.config.tui import ConfigEditorApp
+    from apprc.runtime_config.tui import ConfigEditorApp
 
 
 class ConfigCommandBase:
@@ -222,7 +225,7 @@ class ConfigCommandBase:
                 active_storage_root=active_storage_root,
             )
         else:
-            from apprc.config.tui import ConfigEditorApp
+            from apprc.runtime_config.tui import ConfigEditorApp
 
             editor_app = ConfigEditorApp(
                 kit=self.kit,

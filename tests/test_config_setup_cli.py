@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from apprc.config.storage_registry_loading import load_existing_storage_registry
-from apprc.config.storage.registry import (
+from apprc.runtime_config.storage.loading import load_existing_storage_registry
+from apprc.runtime_config.storage.registry import (
     load_storage_registry_or_empty,
     suggested_storage_root,
 )

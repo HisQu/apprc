@@ -6,10 +6,10 @@ import pytest
 from rich.text import Text
 from textual.widgets import Button, Input, Static
 
-from apprc.config.setup.flow import ConfigSetupResult
-from apprc.config.tui.primitives import PathSuggester
-from apprc.config.tui.setup import ConfigSetupApp
-from apprc.config.tui.styles import ENV_KEY_STYLE, PATH_INPUT_CLASS
+from apprc.runtime_config.setup.flow import ConfigSetupResult
+from apprc.runtime_config.tui.primitives import PathSuggester
+from apprc.runtime_config.tui.setup import ConfigSetupApp
+from apprc.runtime_config.tui.styles import ENV_KEY_STYLE, PATH_INPUT_CLASS
 from tests.support_config import (
     build_apprc_example_app_kit,
     register_storage_for_kit,

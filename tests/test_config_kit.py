@@ -7,13 +7,13 @@ import pytest
 from typer.testing import CliRunner
 
 from apprc.cli.config import config_request_skips_runtime_bootstrap
-from apprc.config import (
+from apprc.runtime_config import (
     AppConfigKit,
     ApprcTomlEnvError,
     ConfigDoctorStatus,
 )
-from apprc.config.diagnostics import build_config_doctor_payload
-from apprc.config.schema import ConfigField, ConfigOwner
+from apprc.runtime_config.doctor.payload import build_config_doctor_payload
+from apprc.runtime_config.contract.schema import ConfigField, ConfigOwner
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     ApprcExampleAppConfigState,
@@ -61,7 +61,7 @@ def test_kit_derives_apprc_toml_filename() -> None:
     kit = AppConfigKit(
         app_name="my-app.rc",
         display_name="My App",
-        config_package="apprc.config",
+        config_package="apprc.runtime_config",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="MY_APP_STORAGE",
     )
@@ -74,7 +74,7 @@ def test_kit_rejects_manual_owner_argument() -> None:
         AppConfigKit(  # pyright: ignore[reportCallIssue]
             app_name="my-app.rc",
             display_name="My App",
-            config_package="apprc.config",
+            config_package="apprc.runtime_config",
             owners=APPRC_EXAMPLE_APP_OWNERS,
             storage_env_key="MY_APP_STORAGE",
         )

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from apprc.config.diagnostics import config_command_text
+from apprc.runtime_config.doctor.payload import config_command_text
 from apprc_example_app import APPRC_EXAMPLE_APP_KIT
 from apprc_example_app.cli import app
 from tests.support_config import (

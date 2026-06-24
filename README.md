@@ -568,7 +568,8 @@ log.success("Workspace ready", storage="myapp_stor-1")
 
 | Module | Look Here For |
 |---|---|
-| `apprc.runtime_config` | Narrow advanced runtime-config facade. Prefer top-level `apprc` for normal app code. |
+| `apprc` | Preferred app-facing facade for runtime config, schema, storage, local-env, and logging interfaces. |
+| `apprc.runtime_config` | Narrow advanced runtime-config facade for lower-level integration work. |
 | `apprc.runtime_config.app_spec` | `AppConfigSpec`, the application integration declaration behind the kit. |
 | `apprc.runtime_config.kit` | `AppConfigKit`, the high-level app integration facade. |
 | `apprc.runtime_config.contract` | Schema records, lookup, validation, and AppRC TOML contract helpers. |
@@ -597,18 +598,18 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | Type | Meaning |
 |---|---|
 | `AppConfigKit` | Convenient object applications keep around. |
-| `apprc.runtime_config.app_spec.AppConfigSpec` | Frozen declaration behind the kit. |
+| `AppConfigSpec` | Frozen declaration behind the kit. |
 | `env_owner(...)` | Decorator that turns an `EnvConfig` class into one config section. |
 | `env_field(...)` | Dataclass field helper for one env-backed runtime attribute. |
-| `apprc.runtime_config.contract.schema.ConfigOwner` | Advanced derived schema for one config section, env prefix, runtime path, and fields. |
-| `apprc.runtime_config.contract.schema.ConfigField` | Advanced derived schema for one editable or read-only env-backed setting. |
+| `ConfigOwner` | Derived schema for one config section, env prefix, runtime path, and fields. |
+| `ConfigField` | Derived schema for one editable or read-only env-backed setting. |
 | `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
 | `EnvConfig` | Runtime dataclass base that resolves Python, env, and EnvConfig-default values. |
 | `ConfigProvenance` | Provenance record returned by `BaseConfig.provenance_of()` and `BaseConfig.provenance()`. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
-| `apprc.runtime_config.storage.registry.StorageRegistry` | Parsed AppRC TOML storage table. |
-| `apprc.runtime_config.storage.registry.ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |
-| `apprc.runtime_config.storage.local_env.LocalEnvUpdate` | Result of writing one local dotenv override. |
+| `StorageRegistry` | Parsed AppRC TOML storage table. |
+| `ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |
+| `LocalEnvUpdate` | Result of writing one local dotenv override. |
 
 ### Config CLI Commands
 

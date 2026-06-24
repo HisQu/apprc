@@ -4,7 +4,7 @@ from __future__ import annotations
 
 # == Stdlib =============================
 from copy import deepcopy as _deepcopy
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 
 # == Typing ===============================
@@ -12,6 +12,7 @@ from types import ModuleType
 from typing import Any, Literal, Mapping, Self
 
 # == Internal ================================
+import apprc.config.provenance as provenance_api
 from apprc.logging import get_logger
 from apprc._dotenv_guard import (
     _disable_dotenv_autoload as _disable_dotenv_autoload,
@@ -48,6 +49,35 @@ class BaseConfig:
     During initial dataclass construction we avoid warning noise, but any later
     reassignment to an existing instance attribute is logged.
     """
+
+    _apprc_provenance_origins: dict[
+        str,
+        provenance_api.ConfigOriginState,
+    ] = field(
+        init=False,
+        repr=False,
+        compare=False,
+        metadata={"internal": True},
+    )
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """Create an instance while recording constructor provenance.
+
+        Dataclass ``__init__`` stores values after ``__new__`` returns, so the
+        constructor argument inventory must be captured before normal field
+        assignment erases which values were omitted and which were explicit.
+
+        :param args: Positional constructor arguments.
+        :param kwargs: Keyword constructor arguments.
+        :return: New config instance with initial provenance state.
+        """
+        self = super().__new__(cls)
+        object.__setattr__(
+            self,
+            "_apprc_provenance_origins",
+            provenance_api.constructor_field_origins(cls, args, kwargs),
+        )
+        return self
 
     # -----------------------------------------------------------------
     # -- Mutation warning system
@@ -226,6 +256,15 @@ class BaseConfig:
         :param key: Runtime attribute name.
         :param value: Replacement value already stored on the instance.
         """
+        if key not in {
+            item.name for item in provenance_api.public_config_fields(self)
+        }:
+            return
+        provenance_api.set_field_origin(
+            self,
+            key,
+            provenance_api.ConfigOriginState("python_runtime_assignment"),
+        )
 
     def _format_field_value_for_log(self, key: str, value: Any) -> str:
         """Return ``repr(value)`` unless the dataclass field is redacted."""
@@ -233,6 +272,40 @@ class BaseConfig:
         if field_def is not None and not field_def.repr:
             return "<redacted>"
         return repr(value)
+
+    # -----------------------------------------------------------------
+    # -- Provenance
+    # -----------------------------------------------------------------
+
+    def provenance_of(
+        self,
+        field_name: str,
+    ) -> provenance_api.ConfigProvenance:
+        """Return provenance metadata for one public config field.
+
+        :param field_name: Runtime dataclass field name.
+        :return: Resolved provenance metadata.
+        :raises KeyError: If ``field_name`` is not public config state.
+        """
+        return provenance_api.provenance_of(self, field_name)
+
+    def provenance(self) -> dict[str, provenance_api.ConfigProvenance]:
+        """Return provenance metadata for all public config fields.
+
+        :return: Mapping from field name to provenance metadata.
+        """
+        return provenance_api.provenance(self)
+
+    def _build_config_provenance(
+        self,
+        field_name: str,
+    ) -> provenance_api.ConfigProvenance:
+        """Build provenance for one public BaseConfig field.
+
+        :param field_name: Runtime dataclass field name.
+        :return: Resolved provenance metadata.
+        """
+        return provenance_api.base_config_provenance_of(self, field_name)
 
     # -----------------------------------------------------------------
     # -- Serialization

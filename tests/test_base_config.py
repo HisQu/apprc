@@ -11,8 +11,8 @@ import apprc
 import apprc.config as config_api
 from apprc.config import (
     BaseConfig,
+    ConfigProvenance,
     EnvConfig,
-    ConfigFieldSource,
     config_owner_for,
     env_field,
     env_owner,
@@ -32,6 +32,14 @@ class _RuntimeConfig(BaseConfig):
     name: str
     path: Path
     nested: _NestedConfig
+
+
+@dataclass(slots=True)
+class _DefaultRuntimeConfig(BaseConfig):
+    name: str = "demo"
+    secret: str = field(default="token", repr=False)
+    _private: str = "private"
+    internal: str = field(default="internal", metadata={"internal": True})
 
 
 @env_owner(
@@ -175,6 +183,40 @@ def test_base_config_copy_preserves_resolved_state_without_constructor() -> (
     assert deep.nested is not config.nested
 
 
+def test_base_config_provenance_reports_public_python_origins() -> None:
+    config = _DefaultRuntimeConfig(name="manual")
+
+    provenance = config.provenance()
+
+    assert set(provenance) == {"name", "secret"}
+    assert provenance["name"].source == "python"
+    assert provenance["name"].origin == "python_constructor_argument"
+    assert provenance["secret"].source == "python"
+    assert provenance["secret"].origin == "python_baseconfig_default"
+    assert provenance["secret"].secret is True
+    assert provenance["secret"].display_value == "<redacted>"
+
+
+def test_base_config_assignment_updates_provenance() -> None:
+    config = _DefaultRuntimeConfig()
+
+    config.name = "assigned"
+
+    assert config.provenance_of("name").source == "python"
+    assert config.provenance_of("name").origin == "python_runtime_assignment"
+
+
+def test_base_config_copy_preserves_provenance() -> None:
+    config = _DefaultRuntimeConfig(name="manual")
+    config.secret = "new-token"
+
+    shallow = copy(config)
+    deep = deepcopy(config)
+
+    assert shallow.provenance_of("name").origin == "python_constructor_argument"
+    assert deep.provenance_of("secret").origin == "python_runtime_assignment"
+
+
 def test_env_owner_derives_config_owner_from_env_config_class() -> None:
     owner = config_owner_for(_DemoEnv)
 
@@ -211,7 +253,7 @@ def test_env_field_rejects_default_and_default_factory() -> None:
         env_field("VALUE", default="x", default_factory=lambda: "y")
 
 
-def test_env_field_default_factory_resolves_fresh_owner_defaults(
+def test_env_field_default_factory_resolves_fresh_envconfig_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("FACTORY_CACHE_DIR", raising=False)
@@ -220,7 +262,7 @@ def test_env_field_default_factory_resolves_fresh_owner_defaults(
     second = _FactoryEnv()
 
     assert first.cache_dir != second.cache_dir
-    assert first.source_of("cache_dir").source == "owner_default"
+    assert first.provenance_of("cache_dir").origin == "python_envconfig_default"
 
 
 def test_env_config_is_the_only_public_env_runtime_base() -> None:
@@ -230,7 +272,9 @@ def test_env_config_is_the_only_public_env_runtime_base() -> None:
     assert not hasattr(config_api, "BaseEnv")
 
 
-def test_owner_default_is_not_public_api() -> None:
+def test_old_provenance_names_are_not_public_api() -> None:
+    assert not hasattr(apprc, "ConfigFieldSource")
+    assert not hasattr(config_api, "ConfigFieldSource")
     assert not hasattr(apprc, "owner_default")
     assert not hasattr(config_api, "owner_default")
 
@@ -281,7 +325,7 @@ def test_env_config_ownerless_config_requires_owner() -> None:
         _OwnerlessEnv(bind_from_env_on_init=False)
 
 
-def test_env_config_python_keyword_arg_overrides_process_env(
+def test_env_config_python_keyword_argument_overrides_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -292,18 +336,19 @@ def test_env_config_python_keyword_arg_overrides_process_env(
 
     assert cfg.mode == "MANUAL"
     assert cfg.retries == 9
-    mode_source = cfg.source_of("mode")
-    retries_source = cfg.source_of("retries")
-    assert isinstance(mode_source, ConfigFieldSource)
-    assert mode_source.source == "python_arg"
-    assert mode_source.label == "Python argument"
-    assert mode_source.env_key == "DEMO_MODE"
-    assert mode_source.value == "MANUAL"
-    assert retries_source.source == "process_env"
-    assert retries_source.value == 9
+    mode_provenance = cfg.provenance_of("mode")
+    retries_provenance = cfg.provenance_of("retries")
+    assert isinstance(mode_provenance, ConfigProvenance)
+    assert mode_provenance.source == "python"
+    assert mode_provenance.origin == "python_constructor_argument"
+    assert mode_provenance.env_key == "DEMO_MODE"
+    assert mode_provenance.value == "MANUAL"
+    assert retries_provenance.source == "shell"
+    assert retries_provenance.origin == "shell_export_variable"
+    assert retries_provenance.value == 9
 
 
-def test_env_config_python_arg_ignores_invalid_process_env(
+def test_env_config_python_constructor_argument_ignores_invalid_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -312,10 +357,10 @@ def test_env_config_python_arg_ignores_invalid_process_env(
     cfg = _DemoEnv(retries=4)
 
     assert cfg.retries == 4
-    assert cfg.source_of("retries").source == "python_arg"
+    assert cfg.provenance_of("retries").origin == "python_constructor_argument"
 
 
-def test_env_config_override_python_values_reads_invalid_process_env(
+def test_env_config_override_python_values_reads_invalid_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -326,7 +371,7 @@ def test_env_config_override_python_values_reads_invalid_process_env(
         cfg.reload(override_python_values=True)
 
 
-def test_env_config_python_arg_override_stays_quiet_during_init(
+def test_env_config_python_constructor_argument_override_stays_quiet_during_init(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -345,7 +390,7 @@ def test_env_config_rejects_invalid_python_choice_arg() -> None:
         _ChoiceEnv(mode="BOGUS")
 
 
-def test_env_config_rejects_wrong_python_arg_type() -> None:
+def test_env_config_rejects_wrong_python_constructor_argument_type() -> None:
     with pytest.raises(TypeError, match="DEMO_RETRIES must be int; got str"):
         _DemoEnv(retries="4")  # pyright: ignore[reportArgumentType]
 
@@ -357,7 +402,7 @@ def test_env_config_rejects_invalid_python_choice_assignment() -> None:
         cfg.mode = "BOGUS"
 
     assert cfg.mode == "AUTO"
-    assert cfg.source_of("mode").source == "owner_default"
+    assert cfg.provenance_of("mode").origin == "python_envconfig_default"
 
 
 def test_env_config_rejects_wrong_python_assignment_type() -> None:
@@ -367,7 +412,7 @@ def test_env_config_rejects_wrong_python_assignment_type() -> None:
         cfg.enabled = "true"  # pyright: ignore[reportAttributeAccessIssue]
 
     assert cfg.enabled is False
-    assert cfg.source_of("enabled").source == "owner_default"
+    assert cfg.provenance_of("enabled").origin == "python_envconfig_default"
 
 
 def test_env_owner_rejects_wrong_python_default_type() -> None:
@@ -383,7 +428,7 @@ def test_env_owner_rejects_wrong_python_default_type() -> None:
             retries: int = env_field("RETRIES", default="3")
 
 
-def test_env_config_python_positional_arg_overrides_process_env(
+def test_env_config_python_positional_argument_overrides_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -392,10 +437,10 @@ def test_env_config_python_positional_arg_overrides_process_env(
     cfg = _DemoEnv("MANUAL")
 
     assert cfg.mode == "MANUAL"
-    assert cfg.source_of("mode").source == "python_arg"
+    assert cfg.provenance_of("mode").origin == "python_constructor_argument"
 
 
-def test_env_config_absent_env_fields_report_owner_default(
+def test_env_config_absent_env_fields_report_envconfig_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -404,12 +449,12 @@ def test_env_config_absent_env_fields_report_owner_default(
 
     assert cfg.mode == "AUTO"
     assert cfg.retries == 3
-    assert cfg.source_of("mode").source == "owner_default"
-    assert cfg.source_of("mode").label == "Owner default"
-    assert cfg.source_of("retries").source == "owner_default"
+    assert cfg.provenance_of("mode").source == "python"
+    assert cfg.provenance_of("mode").origin == "python_envconfig_default"
+    assert cfg.provenance_of("retries").origin == "python_envconfig_default"
 
 
-def test_env_config_owner_defaults_resolve_when_env_binding_is_disabled(
+def test_env_config_envconfig_defaults_resolve_when_env_binding_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -418,10 +463,10 @@ def test_env_config_owner_defaults_resolve_when_env_binding_is_disabled(
     cfg = _DemoEnv(bind_from_env_on_init=False)
 
     assert cfg.retries == 3
-    assert cfg.source_of("retries").source == "owner_default"
+    assert cfg.provenance_of("retries").origin == "python_envconfig_default"
 
 
-def test_env_config_sources_returns_all_owner_field_sources(
+def test_env_config_provenance_returns_all_owner_field_sources(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -429,11 +474,11 @@ def test_env_config_sources_returns_all_owner_field_sources(
 
     cfg = _DemoEnv(mode="MANUAL")
 
-    sources = cfg.sources()
-    assert set(sources) == {"mode", "retries", "enabled", "token"}
-    assert sources["mode"].source == "python_arg"
-    assert sources["retries"].source == "process_env"
-    assert sources["enabled"].source == "owner_default"
+    provenance = cfg.provenance()
+    assert set(provenance) == {"mode", "retries", "enabled", "token"}
+    assert provenance["mode"].origin == "python_constructor_argument"
+    assert provenance["retries"].origin == "shell_export_variable"
+    assert provenance["enabled"].origin == "python_envconfig_default"
 
 
 def test_env_config_secret_source_redacts_repr_and_keeps_raw_value(
@@ -441,7 +486,7 @@ def test_env_config_secret_source_redacts_repr_and_keeps_raw_value(
 ) -> None:
     _clear_demo_env(monkeypatch)
 
-    source = _DemoEnv().source_of("token")
+    source = _DemoEnv().provenance_of("token")
 
     assert source.secret is True
     assert source.value == "demo-token"
@@ -458,7 +503,7 @@ def test_env_config_required_field_can_be_supplied_by_env(
     cfg = _RequiredEnv()
 
     assert cfg.value == "from-env"
-    assert cfg.source_of("value").source == "process_env"
+    assert cfg.provenance_of("value").origin == "shell_export_variable"
 
 
 def test_env_config_required_field_raises_when_missing(
@@ -483,7 +528,7 @@ def test_env_config_python_assignment_survives_reload(
     cfg.reload()
 
     assert cfg.mode == "MANUAL"
-    assert cfg.source_of("mode").source == "python_assignment"
+    assert cfg.provenance_of("mode").origin == "python_runtime_assignment"
     assert any("mode" in warning for warning in sink.warnings)
     assert any(
         "override_python_values=True" in warning for warning in sink.warnings
@@ -500,7 +545,7 @@ def test_env_config_reload_can_override_python_values(
     cfg.reload(override_python_values=True)
 
     assert cfg.mode == "AUTO"
-    assert cfg.source_of("mode").source == "process_env"
+    assert cfg.provenance_of("mode").origin == "shell_export_variable"
 
 
 def test_env_config_bind_can_override_python_values(
@@ -513,7 +558,7 @@ def test_env_config_bind_can_override_python_values(
     cfg.bind_from_env(override_python_values=True)
 
     assert cfg.mode == "AUTO"
-    assert cfg.source_of("mode").source == "process_env"
+    assert cfg.provenance_of("mode").origin == "shell_export_variable"
 
 
 def test_env_config_copy_preserves_provenance(
@@ -525,5 +570,5 @@ def test_env_config_copy_preserves_provenance(
     shallow = copy(cfg)
     deep = deepcopy(cfg)
 
-    assert shallow.source_of("mode").source == "python_arg"
-    assert deep.source_of("mode").source == "python_arg"
+    assert shallow.provenance_of("mode").origin == "python_constructor_argument"
+    assert deep.provenance_of("mode").origin == "python_constructor_argument"

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from apprc.config import EnvConfig, env_field, env_owner
 from apprc.config.app_spec import AppConfigSpec
 from apprc.config.environment import bootstrap_env
 from apprc.config.apprc_toml_env import ApprcTomlEnvError
@@ -15,12 +16,33 @@ from apprc.config.storage.registry import register_storage
 pytestmark = [pytest.mark.requires_apprc_env("DEMO")]
 
 
+@env_owner(
+    key="demo.runtime",
+    title="Demo Runtime",
+    env_prefix="DEMO_",
+    rc_path=("demo",),
+)
+class _DemoBootstrapEnv(EnvConfig):
+    storage: Path = env_field("STORAGE")
+    model: str = env_field("MODEL", default="default-model")
+    retry_count: int = env_field("RETRY_COUNT", default=0)
+
+
 @pytest.fixture(autouse=True)
 def _restore_demo_env(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> Iterator[None]:
+    original = {
+        key: value
+        for key, value in os.environ.items()
+        if key.startswith("DEMO_")
+    }
+    for key in tuple(os.environ):
+        if key.startswith("DEMO_"):
+            del os.environ[key]
+
     if request.node.get_closest_marker("allow_missing_apprc_env") is None:
         apprc_toml_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
         storage_root = tmp_path / "demo-storage"
@@ -28,11 +50,6 @@ def _restore_demo_env(
         monkeypatch.setenv("DEMO_APPRC_TOML", str(apprc_toml_path))
         monkeypatch.setenv("DEMO_STORAGE", str(storage_root.resolve()))
 
-    original = {
-        key: value
-        for key, value in os.environ.items()
-        if key.startswith("DEMO_")
-    }
     yield
     for key in tuple(os.environ):
         if key.startswith("DEMO_"):
@@ -61,6 +78,7 @@ def _spec(package_name: str) -> AppConfigSpec:
         app_name="demo",
         display_name="Demo",
         config_package=package_name,
+        envs=(_DemoBootstrapEnv,),
         storage_env_key="DEMO_STORAGE",
         apprc_toml_filename="demo.apprc.toml",
         shared_env_filename=".env.shared",
@@ -163,6 +181,9 @@ def test_bootstrap_env_explicit_env_file_can_select_single_storage(
     assert result.storage_selector_source == "DEMO_STORAGE"
     assert result.storage_root == storage_root.resolve()
     assert os.environ["DEMO_MODEL"] == "explicit-model"
+    provenance = _DemoBootstrapEnv().provenance_of("model")
+    assert provenance.origin == "shell_dotenv_explicit"
+    assert provenance.path == explicit_env
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -259,8 +280,41 @@ def test_bootstrap_env_uses_packaged_shared_storage_default_without_writes(
     assert result.local_env == storage_root.resolve() / ".env.demo"
     assert os.environ["DEMO_STORAGE"] == str(storage_root.resolve())
     assert os.environ["DEMO_MODEL"] == "shared-model"
+    provenance = _DemoBootstrapEnv().provenance_of("model")
+    assert provenance.origin == "shell_dotenv_shared"
+    assert provenance.path is not None
+    assert provenance.path.name == ".env.shared"
     assert not storage_root.exists()
     assert not (storage_root / ".env.demo").exists()
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_bootstrap_env_reports_post_bootstrap_process_env_mutation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
+    monkeypatch.delenv("DEMO_STORAGE", raising=False)
+    storage_root = tmp_path / "shared-storage"
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        f'DEMO_STORAGE="{storage_root}"\nDEMO_MODEL="shared-model"\n',
+    )
+    bootstrap_env(
+        spec=_spec(package_name),
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+    monkeypatch.setenv("DEMO_MODEL", "mutated-model")
+
+    provenance = _DemoBootstrapEnv().provenance_of("model")
+
+    assert provenance.source == "python"
+    assert provenance.origin == "python_process_environment_mutation"
+    assert provenance.path is None
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -355,6 +409,9 @@ def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(
     assert result.storage_selector_source == "DEMO_STORAGE"
     assert result.storage_selector_value == str(storage_root)
     assert result.local_env == storage_root.resolve() / ".env.demo"
+    provenance = _DemoBootstrapEnv().provenance()
+    assert provenance["model"].origin == "shell_export_variable"
+    assert provenance["retry_count"].origin == "shell_dotenv_shared"
 
 
 def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
@@ -390,6 +447,43 @@ def test_bootstrap_env_uses_explicit_env_over_dotenv_layers(
     )
 
     assert os.environ["DEMO_MODEL"] == "explicit-model"
+    provenance = _DemoBootstrapEnv().provenance_of("model")
+    assert provenance.origin == "shell_dotenv_explicit"
+    assert provenance.path == explicit_env
+
+
+def test_bootstrap_env_records_local_dotenv_origin(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    apprc_toml_path = _set_demo_apprc_toml(monkeypatch, tmp_path)
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-model"\n',
+    )
+    storage_root = tmp_path / "storage"
+    register_storage(
+        name="alpha",
+        root=storage_root,
+        path=apprc_toml_path,
+        local_env_filename=".env.demo",
+    )
+    monkeypatch.setenv("DEMO_STORAGE", str(storage_root))
+    local_env = storage_root / ".env.demo"
+    local_env.write_text('DEMO_MODEL="local-model"\n', encoding="utf-8")
+
+    bootstrap_env(
+        spec=_spec(package_name),
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    provenance = _DemoBootstrapEnv().provenance_of("model")
+    assert provenance.origin == "shell_dotenv_local"
+    assert provenance.path == local_env
 
 
 def test_bootstrap_env_merges_explicit_env_files_in_order(
@@ -431,6 +525,11 @@ def test_bootstrap_env_merges_explicit_env_files_in_order(
     assert result.env_files == (first_env, second_env)
     assert os.environ["DEMO_MODEL"] == "second-model"
     assert os.environ["DEMO_RETRY_COUNT"] == "2"
+    provenance = _DemoBootstrapEnv().provenance()
+    assert provenance["model"].origin == "shell_dotenv_explicit"
+    assert provenance["model"].path == second_env
+    assert provenance["retry_count"].origin == "shell_dotenv_explicit"
+    assert provenance["retry_count"].path == first_env
 
 
 def test_bootstrap_env_can_let_explicit_env_override_os_environ(
@@ -463,6 +562,9 @@ def test_bootstrap_env_can_let_explicit_env_override_os_environ(
     )
 
     assert os.environ["DEMO_MODEL"] == "explicit-model"
+    provenance = _DemoBootstrapEnv().provenance_of("model")
+    assert provenance.origin == "shell_dotenv_explicit"
+    assert provenance.path == explicit_env
 
 
 def test_bootstrap_env_without_dotenv_layers_uses_os_environ_storage_root(
@@ -562,6 +664,9 @@ def test_bootstrap_env_storage_selector_selects_active_root(
     assert result.storage_root == beta_root.resolve()
     assert result.local_env == beta_root.resolve() / ".env.demo"
     assert os.environ["DEMO_STORAGE"] == str(beta_root.resolve())
+    provenance = _DemoBootstrapEnv().provenance_of("storage")
+    assert provenance.origin == "shell_bootstrap_selector"
+    assert provenance.path is None
 
 
 def test_bootstrap_env_storage_option_wins_over_env_selector(

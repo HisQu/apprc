@@ -15,15 +15,16 @@ from apprc.config.loading import (
 )
 from apprc.config.env_runtime import (
     env_values_for_binding,
+    origin_for_field,
     resolve_owner_defaults,
-    source_for_field,
     validate_owner_field_value,
-    with_field_source,
+    with_field_origin,
 )
 from apprc.config.provenance import (
-    CONFIG_FIELD_SOURCE_LABELS,
-    ConfigFieldSource,
-    ConfigFieldSourceKey,
+    ConfigOriginState,
+    ConfigProvenance,
+    shell_origin_for_env_value,
+    source_for_origin,
 )
 from apprc.config.schema import ConfigOwner
 from apprc.config.sentinels import ENV_FIELD_MISSING
@@ -46,7 +47,7 @@ class EnvConfig(BaseConfig):
     """
 
     config_owner: ClassVar[ConfigOwner | None] = None
-    _apprc_field_sources: dict[str, ConfigFieldSourceKey] = field(
+    _apprc_field_origins: dict[str, ConfigOriginState] = field(
         init=False,
         repr=False,
         compare=False,
@@ -66,12 +67,18 @@ class EnvConfig(BaseConfig):
         captures Python constructor arguments in ``__new__`` before env binding
         can decide which fields are protected for this object's lifetime.
         """
-        self = super().__new__(cls)
-        python_arg_fields = cls._python_arg_field_names(args, kwargs)
+        self = super().__new__(cls, *args, **kwargs)
+        constructor_fields = cls._python_constructor_field_names(args, kwargs)
         object.__setattr__(
             self,
-            "_apprc_field_sources",
-            {field_name: "python_arg" for field_name in python_arg_fields},
+            "_apprc_field_origins",
+            {
+                field_name: ConfigOriginState(
+                    "python_constructor_argument",
+                    env_key=cls._config_owner().env_key(field_name),
+                )
+                for field_name in constructor_fields
+            },
         )
         return self
 
@@ -93,7 +100,8 @@ class EnvConfig(BaseConfig):
         should deliberately replace those Python-provided values.
 
         :param override_python_values: Whether env values may overwrite
-            ``python_arg`` and ``python_assignment`` fields.
+            ``python_constructor_argument`` and
+            ``python_runtime_assignment`` fields.
         """
         LOG.warning(
             f"♻️  Reloading from os.environ: {self.__class__.__name__} ..."
@@ -136,38 +144,39 @@ class EnvConfig(BaseConfig):
             loaded_value = getattr(loaded, spec.name)
             validate_owner_field_value(owner, spec.name, loaded_value)
             object.__setattr__(self, spec.name, loaded_value)
-            self._record_process_env_source(spec.name)
+            self._record_shell_field_origin(
+                spec.name,
+                binding_env[owner.env_key(spec.name)],
+            )
         return skipped_python_fields
 
-    def source_of(self, field_name: str) -> ConfigFieldSource:
-        """Return provenance metadata for one owner-backed field.
+    def _build_config_provenance(
+        self,
+        field_name: str,
+    ) -> ConfigProvenance:
+        """Build provenance metadata for one public config field.
 
         :param field_name: Runtime dataclass field name.
-        :return: Source metadata for the current field value.
-        :raises KeyError: If ``field_name`` is not declared by this config owner.
+        :return: Provenance metadata for the current field value.
         """
+        if self.config_owner is None:
+            return super()._build_config_provenance(field_name)
         owner = self._config_owner()
-        spec = owner.field(field_name)
+        try:
+            spec = owner.field(field_name)
+        except KeyError:
+            return super()._build_config_provenance(field_name)
         env_key = owner.env_key(field_name)
-        source = self._field_source(field_name)
-        return ConfigFieldSource(
+        state = self._field_origin(field_name)
+        return ConfigProvenance(
             field_name=field_name,
-            source=source,
-            label=CONFIG_FIELD_SOURCE_LABELS[source],
-            env_key=env_key,
+            source=source_for_origin(state.origin),
+            origin=state.origin,
             value=getattr(self, field_name),
             secret=spec.secret,
+            env_key=env_key,
+            path=state.path,
         )
-
-    def sources(self) -> dict[str, ConfigFieldSource]:
-        """Return provenance metadata for all owner-backed fields.
-
-        :return: Mapping from field name to source metadata.
-        """
-        return {
-            spec.name: self.source_of(spec.name)
-            for spec in self._config_owner().fields
-        }
 
     # -----------------------------------------------------------------
     # -- Helpers
@@ -191,7 +200,7 @@ class EnvConfig(BaseConfig):
         return frozenset(spec.name for spec in cls._config_owner().fields)
 
     @classmethod
-    def _python_arg_field_names(
+    def _python_constructor_field_names(
         cls,
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
@@ -210,24 +219,24 @@ class EnvConfig(BaseConfig):
         keyword_names = set(kwargs)
         return frozenset((positional_names | keyword_names) & owner_field_names)
 
-    def _field_source(self, field_name: str) -> ConfigFieldSourceKey:
-        """Return the recorded source key or the implicit owner default."""
-        return source_for_field(
+    def _field_origin(self, field_name: str) -> ConfigOriginState:
+        """Return the recorded origin state or the implicit EnvConfig default."""
+        return origin_for_field(
             self._config_owner(),
-            self._apprc_field_sources,
+            self._apprc_field_origins,
             field_name,
         )
 
-    def _set_field_source(
+    def _set_field_origin(
         self,
         field_name: str,
-        source: ConfigFieldSourceKey,
+        origin: ConfigOriginState,
     ) -> None:
         """Record provenance for one owner-backed field."""
         object.__setattr__(
             self,
-            "_apprc_field_sources",
-            with_field_source(self._apprc_field_sources, field_name, source),
+            "_apprc_field_origins",
+            with_field_origin(self._apprc_field_origins, field_name, origin),
         )
 
     def _resolve_owner_defaults(self) -> None:
@@ -235,12 +244,12 @@ class EnvConfig(BaseConfig):
         owner = self._config_owner()
         object.__setattr__(
             self,
-            "_apprc_field_sources",
+            "_apprc_field_origins",
             resolve_owner_defaults(
                 self,
                 owner,
                 dataclass_fields={item.name: item for item in fields(self)},
-                field_sources=self._apprc_field_sources,
+                field_origins=self._apprc_field_origins,
                 copy_value=self._deepcopy_state_value,
             ),
         )
@@ -248,8 +257,8 @@ class EnvConfig(BaseConfig):
     def _validate_python_fields(self) -> None:
         """Validate constructor-provided values against owner metadata."""
         owner = self._config_owner()
-        for field_name, source in self._apprc_field_sources.items():
-            if source != "python_arg":
+        for field_name, state in self._apprc_field_origins.items():
+            if state.origin != "python_constructor_argument":
                 continue
             validate_owner_field_value(
                 owner,
@@ -291,6 +300,7 @@ class EnvConfig(BaseConfig):
 
     def _after_existing_assignment(self, key: str, value: Any) -> None:
         """Record owner-backed assignment provenance after storing it."""
+        super()._after_existing_assignment(key, value)
         if key not in self._owner_field_names():
             return
         self._record_python_assignment(key)
@@ -299,11 +309,25 @@ class EnvConfig(BaseConfig):
         """Record a post-construction assignment as a Python override."""
         if field_name not in self._owner_field_names():
             return
-        self._set_field_source(field_name, "python_assignment")
+        self._set_field_origin(
+            field_name,
+            ConfigOriginState(
+                "python_runtime_assignment",
+                env_key=self._config_owner().env_key(field_name),
+            ),
+        )
 
-    def _record_process_env_source(self, field_name: str) -> None:
-        """Record that the current process environment owns one field."""
-        self._set_field_source(field_name, "process_env")
+    def _record_shell_field_origin(
+        self,
+        field_name: str,
+        raw_value: str,
+    ) -> None:
+        """Record that shell/bootstrap env state owns one field."""
+        env_key = self._config_owner().env_key(field_name)
+        self._set_field_origin(
+            field_name,
+            shell_origin_for_env_value(env_key, raw_value),
+        )
 
     def _env_values_for_binding(
         self,
@@ -314,7 +338,7 @@ class EnvConfig(BaseConfig):
         """Return an env mapping with protected Python fields removed."""
         return env_values_for_binding(
             owner,
-            self._apprc_field_sources,
+            self._apprc_field_origins,
             override_python_values=override_python_values,
         )
 

@@ -9,58 +9,88 @@ from typing import Any, Mapping
 
 # == Internal ================================
 from apprc.config.loading import provided_owner_field_names
-from apprc.config.provenance import ConfigFieldSourceKey
+from apprc.config.provenance import ConfigOriginState
 from apprc.config.schema import ConfigOwner
 from apprc.config.schema_validation import validate_python_field_value
 from apprc.config.sentinels import ENV_FIELD_MISSING
 
 
-def source_for_field(
+def origin_for_field(
     owner: ConfigOwner,
-    sources: Mapping[str, ConfigFieldSourceKey],
+    origins: Mapping[str, ConfigOriginState],
     field_name: str,
-) -> ConfigFieldSourceKey:
-    """Return the recorded source key or the implicit owner default."""
+) -> ConfigOriginState:
+    """Return the recorded origin state or the implicit EnvConfig default.
+
+    :param owner: Config owner declaring the field.
+    :param origins: Recorded origin states by owner field name.
+    :param field_name: Owner-local runtime field name.
+    :return: Stored origin state, or the EnvConfig default origin.
+    """
     owner.field(field_name)
-    return sources.get(field_name, "owner_default")
+    return origins.get(
+        field_name,
+        ConfigOriginState(
+            "python_envconfig_default",
+            env_key=owner.env_key(field_name),
+        ),
+    )
 
 
-def with_field_source(
-    sources: Mapping[str, ConfigFieldSourceKey],
+def with_field_origin(
+    origins: Mapping[str, ConfigOriginState],
     field_name: str,
-    source: ConfigFieldSourceKey,
-) -> dict[str, ConfigFieldSourceKey]:
-    """Return a copied source map with one updated field."""
-    next_sources = dict(sources)
-    next_sources[field_name] = source
-    return next_sources
+    origin: ConfigOriginState,
+) -> dict[str, ConfigOriginState]:
+    """Return a copied origin map with one updated field.
+
+    :param origins: Existing immutable-by-convention origin map.
+    :param field_name: Runtime dataclass field name.
+    :param origin: Replacement origin state.
+    :return: Copied origin map.
+    """
+    next_origins = dict(origins)
+    next_origins[field_name] = origin
+    return next_origins
 
 
 def protected_field_names(
-    sources: Mapping[str, ConfigFieldSourceKey],
+    origins: Mapping[str, ConfigOriginState],
 ) -> frozenset[str]:
-    """Return fields whose Python values should beat normal env binding."""
+    """Return fields whose Python values should beat normal env binding.
+
+    :param origins: Recorded origin states by owner field name.
+    :return: Field names protected from env binding by default.
+    """
     return frozenset(
         field_name
-        for field_name, source in sources.items()
-        if source in {"python_arg", "python_assignment"}
+        for field_name, state in origins.items()
+        if state.origin
+        in {"python_constructor_argument", "python_runtime_assignment"}
     )
 
 
 def env_values_for_binding(
     owner: ConfigOwner,
-    sources: Mapping[str, ConfigFieldSourceKey],
+    origins: Mapping[str, ConfigOriginState],
     *,
     override_python_values: bool,
     values: Mapping[str, str] | None = None,
 ) -> tuple[Mapping[str, str], list[str]]:
-    """Return an env mapping with protected Python fields removed."""
+    """Return an env mapping with protected Python fields removed.
+
+    :param owner: Config owner declaring env-backed fields.
+    :param origins: Recorded origin states by owner field name.
+    :param override_python_values: Whether env may replace Python-owned values.
+    :param values: Optional env-like mapping for tests and internals.
+    :return: Filtered env mapping and skipped Python-owned field names.
+    """
     env_values = os.environ if values is None else values
     if override_python_values:
         return env_values, []
     skipped_fields = sorted(
         provided_owner_field_names(owner, env_values)
-        & protected_field_names(sources)
+        & protected_field_names(origins)
     )
     if not skipped_fields:
         return env_values, []
@@ -80,13 +110,24 @@ def resolve_owner_defaults(
     owner: ConfigOwner,
     *,
     dataclass_fields: Mapping[str, Field[Any]],
-    field_sources: Mapping[str, ConfigFieldSourceKey],
+    field_origins: Mapping[str, ConfigOriginState],
     copy_value: Any,
-) -> dict[str, ConfigFieldSourceKey]:
-    """Apply owner defaults to fields not supplied as Python arguments."""
-    next_sources = dict(field_sources)
+) -> dict[str, ConfigOriginState]:
+    """Apply EnvConfig defaults to fields not supplied by Python callers.
+
+    :param instance: Runtime config instance being initialized.
+    :param owner: Config owner declaring env-backed fields.
+    :param dataclass_fields: Runtime dataclass fields by name.
+    :param field_origins: Existing owner-field provenance map.
+    :param copy_value: Value copier used to avoid shared mutable defaults.
+    :return: Updated origin map after resolving defaults.
+    """
+    next_origins = dict(field_origins)
     for spec in owner.fields:
-        if source_for_field(owner, next_sources, spec.name) == "python_arg":
+        if (
+            origin_for_field(owner, next_origins, spec.name).origin
+            == "python_constructor_argument"
+        ):
             continue
         if spec.name not in dataclass_fields:
             raise RuntimeError(
@@ -100,8 +141,11 @@ def resolve_owner_defaults(
             spec.name,
             copy_value(spec.resolve_default(), {}),
         )
-        next_sources[spec.name] = "owner_default"
-    return next_sources
+        next_origins[spec.name] = ConfigOriginState(
+            "python_envconfig_default",
+            env_key=owner.env_key(spec.name),
+        )
+    return next_origins
 
 
 def validate_owner_field_value(

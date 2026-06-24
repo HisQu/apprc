@@ -32,6 +32,11 @@ from dotenv import dotenv_values
 
 # == Internal ================================
 from apprc.config.app_spec import AppConfigSpec
+from apprc.config.provenance import (
+    EnvValueOrigin,
+    ShellProvenanceOrigin,
+    register_env_value_origins,
+)
 from apprc.config.storage_registry_loading import (
     load_optional_runtime_storage_registry,
 )
@@ -86,6 +91,18 @@ class EnvBootstrapResult:
     storage_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class _ExplicitEnvLayer:
+    """Parsed explicit env file plus its path for provenance tracking.
+
+    :param path: Resolved explicit env file path.
+    :param values: Parsed dotenv values from ``path``.
+    """
+
+    path: Path
+    values: dict[str, str]
+
+
 def bootstrap_env(
     *,
     spec: AppConfigSpec,
@@ -124,8 +141,11 @@ def bootstrap_env(
     :return: Bootstrap summary for diagnostics and tests.
     """
     original_env = dict(os.environ)
-    loaded_env_files, explicit_values = _read_explicit_env_files(env_files)
+    loaded_env_files, explicit_layers, explicit_values = (
+        _read_explicit_env_files(env_files)
+    )
     shared_env_path, shared_values = read_shared_env_values(spec)
+    app_env_keys = _app_env_keys(spec)
     storage_selector = select_storage_selector(
         storage=storage,
         storage_env_key=spec.storage_env_key,
@@ -155,6 +175,10 @@ def bootstrap_env(
     active_storage_root = selection.root
     active_local_env = active_storage_root / spec.local_env_filename
 
+    env_origins = _original_env_value_origins(
+        app_env_keys=app_env_keys,
+        original_env=original_env,
+    )
     loaded_local_env: Path | None = None
     if load_dotenv_layers:
         loaded_local_env = active_local_env
@@ -162,15 +186,32 @@ def bootstrap_env(
             raise FileNotFoundError(
                 f"Did not find packaged .env.shared for {spec.config_package}."
             )
+        local_values = _read_dotenv_file(active_local_env)
         merged = _merged_env_values(
             shared_values=shared_values,
-            local_values=_read_dotenv_file(active_local_env),
+            local_values=local_values,
             explicit_values=explicit_values,
+            original_env=original_env,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
+        )
+        env_origins = _merged_env_value_origins(
+            app_env_keys=app_env_keys,
+            shared_env_path=shared_env_path,
+            shared_values=shared_values,
+            local_env_path=active_local_env,
+            local_values=local_values,
+            explicit_layers=explicit_layers,
             original_env=original_env,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
         )
         os.environ.update(merged)
     os.environ[spec.storage_env_key] = str(active_storage_root)
+    env_origins[spec.storage_env_key] = EnvValueOrigin(
+        env_key=spec.storage_env_key,
+        origin="shell_bootstrap_selector",
+        value=str(active_storage_root),
+    )
+    register_env_value_origins(env_origins, clear_keys=app_env_keys)
 
     return EnvBootstrapResult(
         shared_env=shared_env_path if load_dotenv_layers else None,
@@ -211,13 +252,14 @@ def read_shared_env_values(
 
 def _read_explicit_env_files(
     env_files: Sequence[Path],
-) -> tuple[tuple[Path, ...], dict[str, str]]:
+) -> tuple[tuple[Path, ...], tuple[_ExplicitEnvLayer, ...], dict[str, str]]:
     """Read ordered explicit dotenv files.
 
     Explicit values may guide storage selection even when dotenv layers
     are not merged into ``os.environ``. Later files override earlier files.
     """
     loaded_paths: list[Path] = []
+    layers: list[_ExplicitEnvLayer] = []
     merged_values: dict[str, str] = {}
     for env_file in env_files:
         resolved = Path(env_file).expanduser()
@@ -226,8 +268,10 @@ def _read_explicit_env_files(
                 f"Explicit env file does not exist: {resolved}"
             )
         loaded_paths.append(resolved)
-        merged_values.update(_read_dotenv_file(resolved))
-    return tuple(loaded_paths), merged_values
+        values = _read_dotenv_file(resolved)
+        layers.append(_ExplicitEnvLayer(path=resolved, values=values))
+        merged_values.update(values)
+    return tuple(loaded_paths), tuple(layers), merged_values
 
 
 def _read_dotenv_file(path: Path | None) -> dict[str, str]:
@@ -264,6 +308,106 @@ def _merged_env_values(
         **explicit_values,
         **original_env,
     }
+
+
+def _app_env_keys(spec: AppConfigSpec) -> set[str]:
+    """Return env keys owned by one application contract.
+
+    :param spec: Application-specific bootstrap contract.
+    :return: Full env keys that AppRC should track for this app.
+    """
+    keys = {spec.apprc_toml_env_key, spec.storage_env_key}
+    for owner in spec.owners:
+        keys.update(
+            owner.env_key(owner_field.name) for owner_field in owner.fields
+        )
+    return keys
+
+
+def _original_env_value_origins(
+    *,
+    app_env_keys: set[str],
+    original_env: Mapping[str, str],
+) -> dict[str, EnvValueOrigin]:
+    """Return shell-export origins from the pre-bootstrap process env.
+
+    :param app_env_keys: App-owned env keys eligible for provenance tracking.
+    :param original_env: Process environment captured before bootstrap writes.
+    :return: Existing env values keyed by env key.
+    """
+    return {
+        key: EnvValueOrigin(
+            env_key=key,
+            origin="shell_export_variable",
+            value=original_env[key],
+        )
+        for key in app_env_keys
+        if key in original_env
+    }
+
+
+def _merged_env_value_origins(
+    *,
+    app_env_keys: set[str],
+    shared_env_path: Path,
+    shared_values: Mapping[str, str],
+    local_env_path: Path,
+    local_values: Mapping[str, str],
+    explicit_layers: tuple[_ExplicitEnvLayer, ...],
+    original_env: Mapping[str, str],
+    env_file_overrides_os_environ: bool,
+) -> dict[str, EnvValueOrigin]:
+    """Return winning env-value origins using runtime bootstrap precedence.
+
+    :param app_env_keys: App-owned env keys eligible for provenance tracking.
+    :param shared_env_path: Packaged shared dotenv path.
+    :param shared_values: Parsed packaged shared dotenv values.
+    :param local_env_path: Active storage-local dotenv path.
+    :param local_values: Parsed storage-local dotenv values.
+    :param explicit_layers: Parsed explicit env files in command/API order.
+    :param original_env: Process environment captured before bootstrap writes.
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+        existing values in ``os.environ`` inside this process.
+    :return: Winning env-value origins keyed by env key.
+    """
+    origins: dict[str, EnvValueOrigin] = {}
+
+    def apply_values(
+        values: Mapping[str, str],
+        origin: ShellProvenanceOrigin,
+        *,
+        path: Path | None = None,
+    ) -> None:
+        for key, value in values.items():
+            if key not in app_env_keys:
+                continue
+            origins[key] = EnvValueOrigin(
+                env_key=key,
+                origin=origin,
+                value=value,
+                path=path,
+            )
+
+    apply_values(shared_values, "shell_dotenv_shared", path=shared_env_path)
+    apply_values(local_values, "shell_dotenv_local", path=local_env_path)
+    if env_file_overrides_os_environ:
+        apply_values(original_env, "shell_export_variable")
+        for layer in explicit_layers:
+            apply_values(
+                layer.values,
+                "shell_dotenv_explicit",
+                path=layer.path,
+            )
+        return origins
+
+    for layer in explicit_layers:
+        apply_values(
+            layer.values,
+            "shell_dotenv_explicit",
+            path=layer.path,
+        )
+    apply_values(original_env, "shell_export_variable")
+    return origins
 
 
 def _selection_env(

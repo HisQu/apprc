@@ -9,7 +9,7 @@ from apprc.config.base_config import (
     BaseConfig,
 )
 from apprc.config.env_config import EnvConfig
-from apprc.config.provenance import ConfigFieldSource
+from apprc.config.provenance import ConfigProvenance
 from apprc.config.package_resources import resolve_package_root
 from apprc.config.diagnostics import (
     ConfigDoctorPayload,

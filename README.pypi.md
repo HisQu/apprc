@@ -309,8 +309,25 @@ objects from the class for internal tools.
 
 For one `EnvConfig` object, direct Python constructor arguments and later Python
 assignments are authoritative for that object's lifetime. `os.environ` fills
-only fields not provided by Python, and owner defaults fill any remaining gaps.
-Inspect this with `cfg.source_of("field_name")` or `cfg.sources()`.
+only fields not provided by Python, and EnvConfig defaults fill any remaining
+gaps. Inspect this with `cfg.provenance_of("field_name")` or `cfg.provenance()`.
+
+### Runtime Provenance
+
+`BaseConfig.provenance()` reports where each public config value came from.
+Every `ConfigProvenance` record has a broad `source` and an exact `origin`:
+
+| Boundary | Origins |
+|---|---|
+| `python` | `python_constructor_argument`, `python_runtime_assignment`, `python_baseconfig_default`, `python_envconfig_default`, `python_process_environment_mutation` |
+| `shell` | `shell_export_variable`, `shell_dotenv_shared`, `shell_dotenv_local`, `shell_dotenv_explicit`, `shell_bootstrap_selector` |
+
+`BaseConfig` records Python constructor arguments, dataclass defaults, and
+post-construction assignments. `EnvConfig` enriches env-backed fields with the
+env key and the winning shell-side origin when AppRC bootstrap knows it.
+Dotenv-backed records include the source file path. If a value AppRC recorded
+during bootstrap no longer matches the value later read from `os.environ`, the
+origin is reported as `python_process_environment_mutation`.
 
 ### Bootstrap Precedence
 
@@ -351,9 +368,9 @@ selection.
 `Config modified: ...` warnings come from `BaseConfig.__setattr__` after a
 runtime config object is constructed. They flag config-object reassignment, not
 `os.environ` changes and not dotenv-file writes. Assigning an owner-backed field
-also records a `python_assignment` source that normal `reload()` calls preserve;
-pass `reload(override_python_values=True)` only when env values should replace
-Python-provided values.
+also records a `python_runtime_assignment` origin that normal `reload()` calls
+preserve; pass `reload(override_python_values=True)` only when env values should
+replace Python-provided values.
 
 ### Storage Registries
 
@@ -575,8 +592,8 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.config.schema.ConfigOwner` | Advanced derived schema for one config section, env prefix, runtime path, and fields. |
 | `apprc.config.schema.ConfigField` | Advanced derived schema for one editable or read-only env-backed setting. |
 | `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
-| `EnvConfig` | Runtime dataclass base that resolves Python, env, and owner-default values. |
-| `ConfigFieldSource` | Provenance record returned by `EnvConfig.source_of()` and `EnvConfig.sources()`. |
+| `EnvConfig` | Runtime dataclass base that resolves Python, env, and EnvConfig-default values. |
+| `ConfigProvenance` | Provenance record returned by `BaseConfig.provenance_of()` and `BaseConfig.provenance()`. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
 | `StorageRegistry` | Parsed AppRC TOML storage table. |
 | `ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |

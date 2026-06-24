@@ -7,7 +7,7 @@ from apprc.config import (
     AppConfigSpec,
     BaseConfig,
     ConfigDoctorStatus,
-    ConfigFieldSource,
+    ConfigProvenance,
     EnvConfig,
     config_owner_for,
     env_field,

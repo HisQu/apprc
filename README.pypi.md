@@ -233,8 +233,8 @@ so bootstrap can load those resources.
 
 `config doctor` reports non-fatal convention warnings when
 `config_package` does not end with `.config` or when an `EnvConfig` owner class
-lives outside that package. These warnings do not change the runtime readiness
-status.
+lives outside that package. JSON doctor payloads put these messages in
+`warnings`, not `issues`, and they do not change the runtime readiness status.
 
 Host applications should still mount the generated config CLI as a subcommand
 of the application that depends on AppRC. Generated end-user prompts should
@@ -570,9 +570,10 @@ log.success("Workspace ready", storage="myapp_stor-1")
 
 | Module | Look Here For |
 |---|---|
-| `apprc.runtime_config` | Advanced runtime-config facade. Prefer top-level `apprc` for normal app code. |
+| `apprc.runtime_config` | Narrow advanced runtime-config facade. Prefer top-level `apprc` for normal app code. |
+| `apprc.runtime_config.app_spec` | `AppConfigSpec`, the application integration declaration behind the kit. |
 | `apprc.runtime_config.kit` | `AppConfigKit`, the high-level app integration facade. |
-| `apprc.runtime_config.contract` | App specs, schema records, lookup, validation, and AppRC TOML contract helpers. |
+| `apprc.runtime_config.contract` | Schema records, lookup, validation, and AppRC TOML contract helpers. |
 | `apprc.runtime_config.fields` | `BaseConfig`, `EnvConfig`, `env_field`, `env_owner`, and env binding. |
 | `apprc.runtime_config.provenance` | `ConfigProvenance`, source/origin literals, and bootstrap env-origin registry. |
 | `apprc.runtime_config.bootstrap` | CLI startup dotenv precedence and process-env mutation boundary. |
@@ -581,6 +582,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.runtime_config.storage.selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
 | `apprc.runtime_config.doctor` | `config doctor` payloads, statuses, and setup guidance. |
 | `apprc.runtime_config.setup` | Shared setup workflow rules and user-facing setup copy. |
+| `apprc.runtime_config.terminal_styles` | Shared Rich text helpers for CLI and TUI output. |
 | `apprc.runtime_config.tui` | Textual config editor and setup wizard package. |
 | `apprc.runtime_config.tui.editor` | Textual config editor app and storage workflows. |
 | `apprc.runtime_config.tui.setup` | Textual setup wizard app. |
@@ -597,7 +599,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | Type | Meaning |
 |---|---|
 | `AppConfigKit` | Convenient object applications keep around. |
-| `AppConfigSpec` | Frozen declaration behind the kit. |
+| `apprc.runtime_config.app_spec.AppConfigSpec` | Frozen declaration behind the kit. |
 | `env_owner(...)` | Decorator that turns an `EnvConfig` class into one config section. |
 | `env_field(...)` | Dataclass field helper for one env-backed runtime attribute. |
 | `apprc.runtime_config.contract.schema.ConfigOwner` | Advanced derived schema for one config section, env prefix, runtime path, and fields. |
@@ -606,9 +608,9 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `EnvConfig` | Runtime dataclass base that resolves Python, env, and EnvConfig-default values. |
 | `ConfigProvenance` | Provenance record returned by `BaseConfig.provenance_of()` and `BaseConfig.provenance()`. |
 | `EnvBootstrapResult` | Files and storage selected during CLI startup. |
-| `StorageRegistry` | Parsed AppRC TOML storage table. |
-| `ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |
-| `LocalEnvUpdate` | Result of writing one local dotenv override. |
+| `apprc.runtime_config.storage.registry.StorageRegistry` | Parsed AppRC TOML storage table. |
+| `apprc.runtime_config.storage.registry.ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |
+| `apprc.runtime_config.storage.local_env.LocalEnvUpdate` | Result of writing one local dotenv override. |
 
 ### Config CLI Commands
 

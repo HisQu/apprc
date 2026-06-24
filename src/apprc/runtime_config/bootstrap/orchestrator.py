@@ -11,9 +11,9 @@ The helper mutates only the current Python process because runtime config
 binding and some application dependencies intentionally read from
 ``os.environ``. It never writes dotenv files and never changes the parent
 shell. AppRC TOML path lookup is delegated to
-:mod:`apprc.runtime_config.contract.app_spec`, active storage selection is delegated to
-:mod:`apprc.runtime_config.storage.selector`, and storage-local editing is delegated to
-:mod:`apprc.runtime_config.storage.local_env`.
+:mod:`apprc.runtime_config.app_spec`, active storage selection is delegated
+to :mod:`apprc.runtime_config.storage.selector`, and storage-local editing is
+delegated to :mod:`apprc.runtime_config.storage.local_env`.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from apprc.runtime_config.bootstrap.result import (
     BootstrapLogger,
     EnvBootstrapResult,
 )
-from apprc.runtime_config.contract.app_spec import AppConfigSpec
+from apprc.runtime_config.app_spec import AppConfigSpec
 from apprc.runtime_config.provenance import EnvValueOrigin
 from apprc.runtime_config.provenance import register_env_value_origins
 from apprc.runtime_config.storage.loading import (
@@ -94,12 +94,21 @@ def bootstrap_env(
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
     """
+    emit = logger or LOG
     original_env = dict(os.environ)
     loaded_env_files, explicit_layers, explicit_values = (
         read_explicit_env_files(env_files)
     )
     shared_env_path, shared_values = read_shared_env_values(spec)
     owned_env_keys = app_env_keys(spec)
+    emit.info(
+        "AppRC bootstrap starting for %s: explicit_env_files=%s "
+        "load_dotenv_layers=%s env_file_overrides_os_environ=%s",
+        spec.app_name,
+        len(loaded_env_files),
+        load_dotenv_layers,
+        env_file_overrides_os_environ,
+    )
     storage_selector = select_storage_selector(
         storage=storage,
         storage_env_key=spec.storage_env_key,
@@ -119,6 +128,11 @@ def bootstrap_env(
         ),
     )
     selector_source, selector_value = storage_selector
+    emit.info(
+        "AppRC bootstrap selected storage selector: source=%s value=%s",
+        selector_source,
+        selector_value,
+    )
     selection = resolve_storage_selector_value(
         registry=registry,
         raw_value=selector_value,
@@ -128,6 +142,14 @@ def bootstrap_env(
 
     active_storage_root = selection.root
     active_local_env = active_storage_root / spec.local_env_filename
+    emit.info(
+        "AppRC bootstrap resolved storage: name=%s root=%s registry_path=%s "
+        "registry_storage_count=%s",
+        selection.storage_name,
+        active_storage_root,
+        registry.path if registry is not None else None,
+        len(registry.storages) if registry is not None else 0,
+    )
 
     env_origins = original_env_value_origins(
         app_env_keys=owned_env_keys,
@@ -163,11 +185,30 @@ def bootstrap_env(
             storage_env_key=spec.storage_env_key,
             storage_root=active_storage_root,
         )
+        emit.info(
+            "AppRC bootstrap loaded dotenv layers: shared_env=%s "
+            "local_env=%s explicit_env_files=%s",
+            shared_env_path,
+            active_local_env,
+            loaded_env_files,
+        )
+        emit.info(
+            "AppRC bootstrap wrote process env entries: total=%s "
+            "app_owned=%s storage_selector_key=%s",
+            len(merged),
+            len(set(merged) & owned_env_keys),
+            spec.storage_env_key,
+        )
     else:
         write_bootstrap_environment(
             {},
             storage_env_key=spec.storage_env_key,
             storage_root=active_storage_root,
+        )
+        emit.info(
+            "AppRC bootstrap skipped dotenv layer merge and wrote only "
+            "storage selector key: %s",
+            spec.storage_env_key,
         )
     env_origins[spec.storage_env_key] = EnvValueOrigin(
         env_key=spec.storage_env_key,

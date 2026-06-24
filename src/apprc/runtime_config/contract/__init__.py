@@ -2,7 +2,6 @@
 
 # ruff: noqa: F401
 
-from apprc.runtime_config.contract.app_spec import AppConfigSpec
 from apprc.runtime_config.contract.apprc_toml_env import (
     ApprcTomlEnvError,
     missing_apprc_toml_env_message,

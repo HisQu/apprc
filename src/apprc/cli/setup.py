@@ -14,13 +14,13 @@ from rich.text import Text
 from apprc.runtime_config.kit import AppConfigKit
 import apprc.runtime_config.setup.flow as setup_flow
 import apprc.runtime_config.setup.text as setup_text
-from apprc.runtime_config.tui.setup import ConfigSetupApp
-from apprc.runtime_config.tui.styles import (
+from apprc.runtime_config.terminal_styles import (
     ENV_KEY_STYLE,
     MISSING_STYLE,
     PATH_STYLE,
     style_literals,
 )
+from apprc.runtime_config.tui.setup import ConfigSetupApp
 
 
 def run_config_setup(

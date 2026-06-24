@@ -103,9 +103,7 @@ class EnvConfig(BaseConfig):
             ``python_constructor_argument`` and
             ``python_runtime_assignment`` fields.
         """
-        LOG.warning(
-            f"♻️  Reloading from os.environ: {self.__class__.__name__} ..."
-        )
+        LOG.warning(f"Reloading from os.environ: {self.__class__.__name__} ...")
         skipped_python_fields = self._bind_from_env(
             override_python_values=override_python_values
         )

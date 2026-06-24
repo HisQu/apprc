@@ -10,7 +10,7 @@ from rich.text import Text
 from apprc.runtime_config.doctor.payload import ConfigDoctorPayload
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.tui.styles import (
+from apprc.runtime_config.terminal_styles import (
     DEFAULT_STYLE,
     ENV_KEY_STYLE,
     ERROR_STYLE,
@@ -104,9 +104,18 @@ def print_config_doctor(
         for issue in issues:
             console.print(_styled_issue_text(kit, payload, issue))
 
+    warnings = payload["warnings"]
+    if warnings:
+        console.print("")
+        console.print(Text("Warnings:", style="bold"))
+        for warning in warnings:
+            console.print(_styled_issue_text(kit, payload, warning))
+
+    next_steps = payload["next_steps"]
+    if next_steps:
         console.print("")
         console.print(Text("Next steps:", style="bold"))
-        for step in payload["next_steps"]:
+        for step in next_steps:
             console.print(Text(f"  {step}"))
 
 

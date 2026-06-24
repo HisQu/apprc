@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from apprc.runtime_config import EnvConfig, env_field, env_owner
-from apprc.runtime_config.contract.app_spec import AppConfigSpec
+from apprc.runtime_config.app_spec import AppConfigSpec
 from apprc.runtime_config.bootstrap.orchestrator import bootstrap_env
 from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
 from apprc.runtime_config.storage.registry import register_storage
@@ -86,6 +86,20 @@ def _spec(package_name: str) -> AppConfigSpec:
     )
 
 
+class _BootstrapLogSink:
+    """Collect bootstrap log messages for assertions."""
+
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def info(self, msg: object, *args: object, **kwargs: object) -> None:
+        """Store the rendered informational message."""
+        if args:
+            self.messages.append(str(msg) % args)
+            return
+        self.messages.append(str(msg))
+
+
 def _set_demo_apprc_toml(monkeypatch, tmp_path: Path) -> Path:
     """Point the demo bootstrap spec at a test AppRC TOML file."""
     apprc_toml_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
@@ -118,6 +132,48 @@ def test_bootstrap_env_uses_storage_without_apprc_toml_env(
     assert result.apprc_toml_path is None
     assert result.storage_name is None
     assert result.storage_root == storage_root.resolve()
+    assert result.local_env == storage_root.resolve() / ".env.demo"
+    assert os.environ["DEMO_STORAGE"] == str(storage_root.resolve())
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_bootstrap_env_logs_layers_without_env_values(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("DEMO_APPRC_TOML", raising=False)
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    monkeypatch.setenv("DEMO_STORAGE", str(storage_root))
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'DEMO_MODEL="shared-secret-value"\n',
+    )
+    explicit_env = tmp_path / "explicit.env"
+    explicit_env.write_text(
+        'DEMO_MODEL="explicit-secret-value"\n',
+        encoding="utf-8",
+    )
+    sink = _BootstrapLogSink()
+
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_files=(explicit_env,),
+        env_file_overrides_os_environ=True,
+        load_dotenv_layers=True,
+        storage=None,
+        logger=sink,
+    )
+
+    output = "\n".join(sink.messages)
+    assert "AppRC bootstrap starting" in output
+    assert "selected storage selector" in output
+    assert "resolved storage" in output
+    assert "loaded dotenv layers" in output
+    assert "wrote process env entries" in output
+    assert "shared-secret-value" not in output
+    assert "explicit-secret-value" not in output
     assert result.local_env == storage_root.resolve() / ".env.demo"
     assert os.environ["DEMO_STORAGE"] == str(storage_root.resolve())
 

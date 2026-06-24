@@ -9,7 +9,7 @@ from typing import Mapping
 
 # == Internal ================================
 from apprc.runtime_config.bootstrap.dotenv_layers import ExplicitEnvLayer
-from apprc.runtime_config.contract.app_spec import AppConfigSpec
+from apprc.runtime_config.app_spec import AppConfigSpec
 from apprc.runtime_config.provenance import (
     EnvValueOrigin,
     ShellProvenanceOrigin,

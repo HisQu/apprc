@@ -1,7 +1,7 @@
 """AppRC TOML environment validation messages.
 
 The AppRC TOML env var is the literal file selector for optional
-multi-storage behavior. :mod:`apprc.runtime_config.contract.app_spec` derives the env key and
+multi-storage behavior. :mod:`apprc.runtime_config.app_spec` derives the env key and
 filename; this module owns the errors shown when that env contract is missing
 or points at unusable state.
 """

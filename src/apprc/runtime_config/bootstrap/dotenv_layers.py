@@ -14,7 +14,7 @@ from typing import Mapping
 from dotenv import dotenv_values
 
 # == Internal ================================
-from apprc.runtime_config.contract.app_spec import AppConfigSpec
+from apprc.runtime_config.app_spec import AppConfigSpec
 
 
 @dataclass(frozen=True, slots=True)

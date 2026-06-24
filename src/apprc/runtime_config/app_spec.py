@@ -9,17 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # == Internal ================================
-from apprc.runtime_config.contract.paths import normalize_apprc_toml_path
 from apprc.runtime_config.contract.apprc_toml_env import (
     ApprcTomlEnvError,
     missing_apprc_toml_env_message,
 )
-from apprc.runtime_config.fields.env_authoring import config_owner_for
-from apprc.runtime_config.fields.env_config import EnvConfig
+from apprc.runtime_config.contract.paths import normalize_apprc_toml_path
 from apprc.runtime_config.contract.schema import ConfigOwner
 from apprc.runtime_config.contract.schema_validation import (
     validate_config_owner_inventory,
 )
+from apprc.runtime_config.fields.env_authoring import config_owner_for
+from apprc.runtime_config.fields.env_config import EnvConfig
 
 
 @dataclass(frozen=True, slots=True, init=False)

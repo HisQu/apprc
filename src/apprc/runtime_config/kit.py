@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 # == Internal ================================
-from apprc.runtime_config.contract.app_spec import AppConfigSpec
+from apprc.runtime_config.app_spec import AppConfigSpec
 from apprc.runtime_config.bootstrap.orchestrator import (
     BootstrapLogger,
     EnvBootstrapResult,

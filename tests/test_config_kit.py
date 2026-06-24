@@ -9,9 +9,9 @@ from typer.testing import CliRunner
 from apprc.cli.config import config_request_skips_runtime_bootstrap
 from apprc.runtime_config import (
     AppConfigKit,
-    ApprcTomlEnvError,
     ConfigDoctorStatus,
 )
+from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
 from apprc.runtime_config.doctor.payload import build_config_doctor_payload
 from apprc.runtime_config.contract.schema import ConfigField, ConfigOwner
 from tests.support_config import (
@@ -148,13 +148,22 @@ def test_config_doctor_reports_runnable_single_storage_without_apprc_toml(
     (storage_root / ".env.apprc_example_app").write_text("", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
 
     payload = build_config_doctor_payload(kit, storage=None)
+    result = runner.invoke(app, ["doctor"])
 
     assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
     assert payload["apprc_toml_path"] is None
     assert payload["missing_env_keys"] == []
     assert payload["selected_storage_root"] == str(storage_root.resolve())
+    assert payload["issues"] == []
+    assert payload["warnings"]
+    assert result.exit_code == 0, result.output
+    assert "Warnings:" in result.output
+    assert "Issues:" not in result.output
+    assert "Next steps:" not in result.output
 
 
 def test_config_doctor_reports_env_not_set_for_missing_storage_env(

@@ -46,6 +46,7 @@ class ConfigDoctorPayload(TypedDict):
     selected_local_env_exists: bool | None
     missing_env_keys: list[str]
     issues: list[str]
+    warnings: list[str]
     next_steps: list[str]
 
 
@@ -112,8 +113,8 @@ def build_config_doctor_payload(
     issues = [
         *storage_registry_diagnosis.issues,
         *storage_diagnosis.issues,
-        *_config_package_convention_issues(kit),
     ]
+    warnings = _config_package_convention_warnings(kit)
     status = _doctor_status(
         registry=storage_registry_diagnosis,
         storage=storage_diagnosis,
@@ -124,6 +125,7 @@ def build_config_doctor_payload(
         storage=storage_diagnosis,
         status=status,
         issues=issues,
+        warnings=warnings,
     )
 
 
@@ -134,6 +136,7 @@ def _doctor_payload(
     storage: _StorageDiagnosis,
     status: ConfigDoctorStatus,
     issues: list[str],
+    warnings: list[str],
 ) -> ConfigDoctorPayload:
     """Serialize diagnosis objects into the public doctor payload.
 
@@ -141,7 +144,8 @@ def _doctor_payload(
     :param registry: Optional AppRC TOML and storage-table diagnosis.
     :param storage: Active storage diagnosis.
     :param status: Public readiness status.
-    :param issues: All collected issues.
+    :param issues: Readiness-affecting problems.
+    :param warnings: Non-fatal convention or quality diagnostics.
     :return: Stable JSON-friendly diagnostic payload.
     """
     selection = storage.selection
@@ -178,6 +182,7 @@ def _doctor_payload(
         "selected_local_env_exists": storage.local_env_exists,
         "missing_env_keys": storage.missing_env_keys,
         "issues": issues,
+        "warnings": warnings,
         "next_steps": _doctor_next_steps(kit, status),
     }
 
@@ -196,8 +201,15 @@ def _diagnose_storage(
     :return: Storage diagnosis with missing-env and local-env issues.
     """
     storage_env_key = kit.spec.storage_env_key
-    _, shared_values = read_shared_env_values(kit.spec)
     issues: list[str] = []
+    try:
+        _, shared_values = read_shared_env_values(kit.spec)
+    except (ImportError, OSError, TypeError) as exc:
+        shared_values = {}
+        issues.append(
+            "Packaged shared env could not be read for "
+            f"{kit.spec.config_package!r}: {exc}"
+        )
     missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
     selector_error = False
@@ -267,16 +279,16 @@ def _doctor_status(
     return ConfigDoctorStatus.RUNNABLE
 
 
-def _config_package_convention_issues(kit: "AppConfigKit") -> list[str]:
-    """Return non-fatal issues for drift from ``<app>.config.*``.
+def _config_package_convention_warnings(kit: "AppConfigKit") -> list[str]:
+    """Return non-fatal warnings for drift from ``<app>.config.*``.
 
     :param kit: Application config facade.
     :return: Human-readable convention warnings for doctor output.
     """
     config_package = kit.spec.config_package
-    issues: list[str] = []
+    warnings: list[str] = []
     if not config_package.endswith(".config"):
-        issues.append(
+        warnings.append(
             "Config package convention warning: AppConfigSpec.config_package "
             f"is {config_package!r}; prefer '<app>.config'."
         )
@@ -284,12 +296,12 @@ def _config_package_convention_issues(kit: "AppConfigKit") -> list[str]:
         module = env_cls.__module__
         if module == config_package or module.startswith(f"{config_package}."):
             continue
-        issues.append(
+        warnings.append(
             "Config package convention warning: "
             f"{env_cls.__qualname__} lives in {module!r}, outside "
             f"{config_package!r}."
         )
-    return issues
+    return warnings
 
 
 def _doctor_next_steps(

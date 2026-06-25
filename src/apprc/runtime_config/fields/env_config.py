@@ -91,6 +91,11 @@ class EnvConfig(BaseConfig):
         self._validate_required_fields()
         self._validate_all_owner_choices()
 
+
+    # -----------------------------------------------------------
+    # --- Logic for Reading from os.environ
+    # -----------------------------------------------------------
+
     def reload(self, override_python_values: bool = False) -> None:
         """Re-bind owner-backed fields from current process ``os.environ``.
 
@@ -177,7 +182,7 @@ class EnvConfig(BaseConfig):
         )
 
     # -----------------------------------------------------------------
-    # -- Helpers
+    # -- Implementation
     # -----------------------------------------------------------------
 
     @classmethod

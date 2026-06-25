@@ -82,9 +82,46 @@ class BaseConfig:
         )
         return self
 
-    # -----------------------------------------------------------------
-    # -- Mutation warning system
-    # -----------------------------------------------------------------
+    # ===========================================================
+    # -- Constructor for subclass parameter overrides
+    # ===========================================================
+
+    @classmethod
+    def create_or_update(
+        cls, cfg: Self | None = None, **overrides: Any
+    ) -> Self:
+        """Reuse an existing config instance OR create a new one with overrides.
+
+        This class method allows subclasses to provide a convenient way to
+        either reuse an existing config object or create a new one with specific
+        overrides. If an existing instance is provided, it will be reused and
+        the overrides will be applied. If no existing instance is provided, a
+        new instance will be created with the given overrides.
+
+        This only overrides non-None values. If None has a meaning,
+        resolve that beforehand!
+
+        New instances of ``EnvConfig`` will be built from current `os.environ`
+
+        :param cfg: An existing config instance to reuse (optional).
+        :param overrides: Keyword arguments for overriding config fields.
+        :return: A config instance with the specified overrides applied.
+        """
+        _overrides = {k: v for k, v in overrides.items() if v is not None}
+
+        if cfg is None:
+            # > Create a new instance with the specified overrides
+            return cls(**_overrides)
+        else:
+            # > Reuse the existing instance and apply overrides
+            for key, value in _overrides.items():
+                setattr(cfg, key, value)
+            return cfg
+
+    # ===========================================================
+    # -- Implementation
+    # ===========================================================
+
     @staticmethod
     def _slot_names(obj_type: type) -> set[str]:
         """Collect slot names from ``obj_type`` and all bases in MRO order.
@@ -144,6 +181,67 @@ class BaseConfig:
                 continue
             items.append((slot_name, value))
         return tuple(items)
+
+    # ===========================================================
+    # -- Mutation warning system
+    # ===========================================================
+
+    def __setattr__(self, key, value):
+        """Assign one attribute and log post-init config mutations.
+
+        Callers should normally use plain assignment so this hook can record the
+        mutation. New attributes set during construction are quiet. Reassigning
+        an existing attribute logs a warning. Use ``object.__setattr__`` only
+        inside config internals that intentionally bypass runtime mutation
+        logging.
+        """
+        existed = self._has_instance_attr(key)
+        if existed:
+            # !! Intentional no-op
+            pass
+            self._validate_existing_assignment(key, value)
+        object.__setattr__(self, key, value)
+        if not existed:
+            return
+        self._after_existing_assignment(key, value)
+        val = self._format_field_value_for_log(key, value)
+        LOG.warning(f"Config modified: {self.__class__.__name__}.{key} = {val}")
+
+    def _validate_existing_assignment(self, key: str, value: Any) -> None:
+        """Validate a post-init assignment before storing it.
+
+        Subclasses override this when assignment has domain-specific invariants.
+
+        :param key: Runtime attribute name.
+        :param value: Candidate replacement value.
+        """
+
+    def _after_existing_assignment(self, key: str, value: Any) -> None:
+        """Record subclass-specific state after a post-init assignment.
+
+        :param key: Runtime attribute name.
+        :param value: Replacement value already stored on the instance.
+        """
+        if key not in {
+            item.name for item in provenance_api.public_config_fields(self)
+        }:
+            return
+        provenance_api.set_field_origin(
+            self,
+            key,
+            provenance_api.ConfigOriginState("python_runtime_assignment"),
+        )
+
+    def _format_field_value_for_log(self, key: str, value: Any) -> str:
+        """Return ``repr(value)`` unless the dataclass field is redacted."""
+        field_def = next((f for f in fields(self) if f.name == key), None)
+        if field_def is not None and not field_def.repr:
+            return "<redacted>"
+        return repr(value)
+
+    # ===========================================================
+    # -- Copying
+    # ===========================================================
 
     @staticmethod
     def _deepcopy_state_value(value: Any, memo: dict[Any, Any]) -> Any:
@@ -225,60 +323,9 @@ class BaseConfig:
             self._log_copy("deepcopy")
         return clone
 
-    def __setattr__(self, key, value):
-        """Assign one attribute and log post-init config mutations.
-
-        Callers should normally use plain assignment so this hook can record the
-        mutation. New attributes set during construction are quiet. Reassigning
-        an existing attribute logs a warning. Use ``object.__setattr__`` only
-        inside config internals that intentionally bypass runtime mutation
-        logging.
-        """
-        existed = self._has_instance_attr(key)
-        if existed:
-            self._validate_existing_assignment(key, value)
-        object.__setattr__(self, key, value)
-        if not existed:
-            return
-        self._after_existing_assignment(key, value)
-        val = self._format_field_value_for_log(key, value)
-        LOG.warning(f"Config modified: {self.__class__.__name__}.{key} = {val}")
-
-    def _validate_existing_assignment(self, key: str, value: Any) -> None:
-        """Validate a post-init assignment before storing it.
-
-        Subclasses override this when assignment has domain-specific invariants.
-
-        :param key: Runtime attribute name.
-        :param value: Candidate replacement value.
-        """
-
-    def _after_existing_assignment(self, key: str, value: Any) -> None:
-        """Record subclass-specific state after a post-init assignment.
-
-        :param key: Runtime attribute name.
-        :param value: Replacement value already stored on the instance.
-        """
-        if key not in {
-            item.name for item in provenance_api.public_config_fields(self)
-        }:
-            return
-        provenance_api.set_field_origin(
-            self,
-            key,
-            provenance_api.ConfigOriginState("python_runtime_assignment"),
-        )
-
-    def _format_field_value_for_log(self, key: str, value: Any) -> str:
-        """Return ``repr(value)`` unless the dataclass field is redacted."""
-        field_def = next((f for f in fields(self) if f.name == key), None)
-        if field_def is not None and not field_def.repr:
-            return "<redacted>"
-        return repr(value)
-
-    # -----------------------------------------------------------------
+    # ===========================================================
     # -- Provenance
-    # -----------------------------------------------------------------
+    # ===========================================================
 
     def provenance_of(
         self,
@@ -310,9 +357,9 @@ class BaseConfig:
         """
         return provenance_api.base_config_provenance_of(self, field_name)
 
-    # -----------------------------------------------------------------
+    # ===========================================================
     # -- Serialization
-    # -----------------------------------------------------------------
+    # ===========================================================
 
     @classmethod
     def _serialize_public_value(

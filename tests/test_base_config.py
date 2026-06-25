@@ -16,9 +16,9 @@ from apprc.runtime_config import (
     env_field,
     env_owner,
 )
-import apprc.runtime_config.fields as fields_api
-import apprc.runtime_config.fields.base_config as base_config
-import apprc.runtime_config.fields.env_config as env_config_module
+import apprc.runtime_config.config_objects as config_objects_api
+import apprc.runtime_config.config_objects.base_config as base_config
+import apprc.runtime_config.config_objects.env_config as env_config_module
 
 
 @dataclass(slots=True)
@@ -428,10 +428,16 @@ def test_base_config_deepcopy_logs_once_for_nested_configs(
     ]
 
 
-def test_runtime_config_fields_facade_keeps_helper_exports() -> None:
-    assert fields_api.env_values_for_binding is not None
-    assert fields_api.protected_field_names is not None
-    assert fields_api.validate_owner_field_value is not None
+def test_runtime_config_config_objects_facade_hides_internal_helpers() -> None:
+    assert config_objects_api.BaseConfig is BaseConfig
+    assert config_objects_api.EnvConfig is EnvConfig
+    assert config_objects_api.env_field is env_field
+    assert config_objects_api.env_owner is env_owner
+    assert not hasattr(config_objects_api, "env_values_for_binding")
+    assert not hasattr(config_objects_api, "protected_field_names")
+    assert not hasattr(config_objects_api, "validate_owner_field_value")
+    assert not hasattr(config_objects_api, "bind_owner_from_env")
+    assert not hasattr(config_objects_api, "state_transfer")
 
 
 def test_env_owner_derives_config_owner_from_env_config_class() -> None:

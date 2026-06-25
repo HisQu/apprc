@@ -7,7 +7,7 @@ from typing import Any, Mapping, Protocol, TypeVar, cast
 
 # == Internal ================================
 import apprc.runtime_config.provenance as provenance_api
-import apprc.runtime_config.fields.state_transfer as state_transfer
+import apprc.runtime_config.config_objects._state_transfer as state_transfer
 
 
 class _RuntimeConfigProtocol(Protocol):

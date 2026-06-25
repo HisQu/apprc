@@ -1,4 +1,4 @@
-"""Author-facing helpers for EnvConfig-backed config declarations."""
+"""Config declaration helpers for EnvConfig-backed app sections."""
 
 from __future__ import annotations
 
@@ -241,7 +241,7 @@ def env_owner(
     """
 
     def _decorate(cls: EnvClsT) -> EnvClsT:
-        from apprc.runtime_config.fields.env_config import EnvConfig
+        from apprc.runtime_config.config_objects.env_config import EnvConfig
 
         if not issubclass(cls, EnvConfig):
             raise TypeError(

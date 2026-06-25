@@ -59,13 +59,18 @@ def test_old_config_package_is_removed() -> None:
         importlib.import_module(removed_module)
 
 
+def test_old_runtime_config_fields_package_is_removed() -> None:
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("apprc.runtime_config.fields")
+
+
 def test_old_contract_app_spec_module_is_removed() -> None:
     removed_module = "apprc.runtime_config.contract.app_spec"
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module(removed_module)
 
 
-def test_contract_modules_do_not_import_fields_layer() -> None:
+def test_contract_modules_do_not_import_config_objects_layer() -> None:
     contract_root = (
         Path(__file__).resolve().parents[1]
         / "src"
@@ -78,6 +83,6 @@ def test_contract_modules_do_not_import_fields_layer() -> None:
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom) or node.module is None:
                 continue
-            assert not node.module.startswith("apprc.runtime_config.fields"), (
-                f"{path} imports {node.module}"
-            )
+            assert not node.module.startswith(
+                "apprc.runtime_config.config_objects"
+            ), f"{path} imports {node.module}"

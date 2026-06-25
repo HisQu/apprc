@@ -12,7 +12,7 @@ from typing import Any, Generic, TypeVar, cast
 ConfigT = TypeVar("ConfigT")
 
 _DEEPCOPY_LOG_DEPTH_KEY = (
-    "apprc.runtime_config.fields.base_config",
+    "apprc.runtime_config.config_objects.base_config",
     "deepcopy_log_depth",
 )
 

@@ -25,7 +25,9 @@ from dotenv import dotenv_values
 from typed_settings.exceptions import InvalidSettingsError
 
 # == Internal ================================
-from apprc.runtime_config.fields.loading import parse_env_field_value
+from apprc.runtime_config.config_objects._env_loading import (
+    parse_env_field_value,
+)
 from apprc.runtime_config.storage.paths import StorageRootPathError
 from apprc.runtime_config.contract.lookup import (
     iter_config_fields,

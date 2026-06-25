@@ -12,8 +12,8 @@ from typing import Any, Literal, Mapping, Self
 
 # == Internal ================================
 import apprc.runtime_config.provenance as provenance_api
-import apprc.runtime_config.fields.post_env_overrides as post_env_overrides
-import apprc.runtime_config.fields.state_transfer as state_transfer
+import apprc.runtime_config.config_objects._library_mode as library_mode
+import apprc.runtime_config.config_objects._state_transfer as state_transfer
 from apprc.logging import get_logger
 from apprc._dotenv_guard import (
     _disable_dotenv_autoload as _disable_dotenv_autoload,
@@ -103,7 +103,7 @@ class BaseConfig:
         :return: Created or updated persistent config instance.
         :raises KeyError: If an override names a non-public config field.
         """
-        return post_env_overrides.create_or_update(cls, cfg, **overrides)
+        return library_mode.create_or_update(cls, cfg, **overrides)
 
     # ===========================================================
     # -- Implementation
@@ -246,7 +246,7 @@ class BaseConfig:
         :return: Cloned config with scoped override values applied.
         :raises KeyError: If an override names a non-public config field.
         """
-        return post_env_overrides.scoped(
+        return library_mode.scoped(
             self,
             overrides,
             skip_none=skip_none,
@@ -270,7 +270,7 @@ class BaseConfig:
         :param skip_none: Whether ``None`` values mean no override.
         :return: Cloned config with matching scoped override values applied.
         """
-        return post_env_overrides.scoped_from(
+        return library_mode.scoped_from(
             self,
             values,
             skip_none=skip_none,

@@ -318,15 +318,62 @@ Runtime dataclasses inherit `EnvConfig`. The dataclass owns Python attributes;
 and redaction metadata. AppRC derives `ConfigOwner` and `ConfigField` schema
 objects from the class for internal tools.
 
-For one `EnvConfig` object, direct Python constructor arguments and later Python
-assignments are authoritative for that object's lifetime. Use
-`ConfigClass.create_or_update(cfg=cfg, field=value)` when a library-style
-constructor should accept convenience parameters that persist on that config
-instance. Use `cfg.scoped(field=value)` or `cfg.scoped_from(locals())` when a
-method needs isolated request-local effective config without mutating the
-original. `os.environ` fills only fields not provided by Python, and EnvConfig
-defaults fill any remaining gaps. Inspect this with
-`cfg.provenance_of("field_name")` or `cfg.provenance()`.
+### App / Env Mode
+
+Applications use App / Env Mode when they want one effective runtime config
+object built from declarations, Python constructor values, defaults, and the
+current process environment.
+
+```python
+from apprc import EnvConfig, env_field, env_owner
+
+
+@env_owner(
+    key="app.runtime",
+    title="App Runtime",
+    env_prefix="MYAPP_",
+    rc_path=("app",),
+)
+class AppEnv(EnvConfig):
+    profile: str = env_field("PROFILE", default="default")
+```
+
+Constructing `AppEnv()` resolves the config object in this order:
+
+1. Python constructor arguments, such as `AppEnv(profile="test")`
+2. `EnvConfig` defaults declared by `env_field(...)`
+3. current-process `os.environ` values for fields not already owned by Python
+4. required-field, type, and choice validation
+
+Call `AppConfigKit.bootstrap(...)` before constructing `EnvConfig` objects when
+packaged, storage-local, or explicit dotenv layers should populate
+`os.environ`.
+
+### Library Mode
+
+Library Mode is for reusable clients that accept an optional config object plus
+simple convenience parameters. AppRC keeps the policy centralized on
+`BaseConfig`:
+
+```python
+class LLMClient:
+    def __init__(self, config: ClientConfig | None = None, model: str | None = None):
+        self.config = ClientConfig.create_or_update(cfg=config, model=model)
+
+    def prompt(self, text: str, model: str | None = None) -> str:
+        cfg = self.config.scoped_from(locals())
+        ...
+```
+
+Use `ConfigClass.create_or_update(cfg=cfg, field=value)` for persistent
+per-instance values, for example constructor convenience arguments. Use
+`cfg.scoped(field=value)` or `cfg.scoped_from(locals())` for per-call effective
+config. Scoped configs are isolated clones: they validate like assignment,
+record `python_scoped_override` provenance, and leave the original config
+unchanged.
+
+Inspect any effective value with `cfg.provenance_of("field_name")`, or inspect
+the whole config object with `cfg.provenance()`.
 
 ### Runtime Provenance
 
@@ -580,7 +627,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 | `apprc.runtime_config.app_spec` | `AppConfigSpec`, the application integration declaration behind the kit. |
 | `apprc.runtime_config.kit` | `AppConfigKit`, the high-level app integration facade. |
 | `apprc.runtime_config.contract` | Schema records, lookup, validation, and AppRC TOML contract helpers. |
-| `apprc.runtime_config.fields` | `BaseConfig`, `EnvConfig`, `env_field`, `env_owner`, and env binding. |
+| `apprc.runtime_config.config_objects` | Config object classes and declaration helpers: `BaseConfig`, `EnvConfig`, `env_field`, and `env_owner`. |
 | `apprc.runtime_config.provenance` | `ConfigProvenance`, source/origin literals, and bootstrap env-origin registry. |
 | `apprc.runtime_config.bootstrap` | CLI startup dotenv precedence and process-env mutation boundary. |
 | `apprc.runtime_config.storage` | Storage roots, local dotenv files, registries, paths, selectors, and archives. |

@@ -23,7 +23,7 @@ from apprc.runtime_config.bootstrap.orchestrator import (
     EnvBootstrapResult,
     bootstrap_env,
 )
-from apprc.runtime_config.fields.env_config import EnvConfig
+from apprc.runtime_config.config_objects.env_config import EnvConfig
 
 StateT = TypeVar("StateT")
 

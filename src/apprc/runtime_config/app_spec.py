@@ -18,8 +18,8 @@ from apprc.runtime_config.contract.schema import ConfigOwner
 from apprc.runtime_config.contract.schema_validation import (
     validate_config_owner_inventory,
 )
-from apprc.runtime_config.fields.env_authoring import config_owner_for
-from apprc.runtime_config.fields.env_config import EnvConfig
+from apprc.runtime_config.config_objects.env_field import config_owner_for
+from apprc.runtime_config.config_objects.env_config import EnvConfig
 
 
 @dataclass(frozen=True, slots=True, init=False)

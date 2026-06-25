@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from typing import Mapping
 
 # == Internal ================================
-from apprc.runtime_config.fields.env_validation import (
+from apprc.runtime_config.config_objects._env_validation import (
     validate_owner_field_value,
 )
-from apprc.runtime_config.fields.loading import (
+from apprc.runtime_config.config_objects._env_loading import (
     load_owner_from_env,
     provided_owner_field_names,
 )

@@ -18,6 +18,12 @@
 - If a test needs a lighter setup, add or reuse a dedicated test helper instead of widening production code to `Any`.
 - If a boundary is truly dynamic, model that boundary explicitly; do not probe strict domain objects defensively.
 
+## User Decisions
+- Never answer questions on the user's behalf.
+- Do not treat recommended options, defaults, timeouts, or auto-resolution as user approval or user preference.
+- If a user decision is required, ask and wait for the user’s explicit answer.
+- If work can continue without the answer, clearly label any default as an assumption, not as the user's choice.
+
 ## Verification
 - Review the diff for duplicate helpers, naming drift, unnecessary abstractions, and regressions.
 - Run the project’s relevant lint, type-check, and test commands before considering the task done.

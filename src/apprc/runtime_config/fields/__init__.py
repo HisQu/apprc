@@ -10,13 +10,17 @@ from apprc.runtime_config.fields.env_authoring import (
     env_owner,
 )
 from apprc.runtime_config.fields.env_config import EnvConfig
-from apprc.runtime_config.fields.env_runtime import (
+from apprc.runtime_config.fields.env_binding import (
     env_values_for_binding,
-    origin_for_field,
     protected_field_names,
+)
+from apprc.runtime_config.fields.env_runtime import (
+    origin_for_field,
     resolve_owner_defaults,
-    validate_owner_field_value,
     with_field_origin,
+)
+from apprc.runtime_config.fields.env_validation import (
+    validate_owner_field_value,
 )
 from apprc.runtime_config.fields.loading import (
     OwnerMappingLoader,

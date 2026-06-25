@@ -288,10 +288,10 @@ class BaseConfig:
         :param memo: Active ``copy.deepcopy`` memo.
         :return: Deep copy of this config object.
         """
-        clone, log_this_copy = state_transfer.deep_copy(self, memo)
-        if log_this_copy:
+        result = state_transfer.deepcopy_with_log_signal(self, memo)
+        if result.should_log:
             self._log_copy("deepcopy")
-        return clone
+        return result.clone
 
     # ===========================================================
     # -- Provenance

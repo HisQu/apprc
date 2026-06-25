@@ -4,8 +4,10 @@ from __future__ import annotations
 
 # == Standard Library ========================
 from copy import deepcopy as _deepcopy
+from dataclasses import dataclass
+from functools import cache
 from types import ModuleType
-from typing import Any, TypeVar, cast
+from typing import Any, Generic, TypeVar, cast
 
 ConfigT = TypeVar("ConfigT")
 
@@ -15,7 +17,20 @@ _DEEPCOPY_LOG_DEPTH_KEY = (
 )
 
 
-def slot_names(obj_type: type) -> set[str]:
+@dataclass(frozen=True, slots=True)
+class DeepCopyResult(Generic[ConfigT]):
+    """Deep-copy result plus the public logging signal.
+
+    :param clone: Deep-copied runtime object.
+    :param should_log: Whether this call copied the top-level config object.
+    """
+
+    clone: ConfigT
+    should_log: bool
+
+
+@cache
+def slot_names(obj_type: type) -> frozenset[str]:
     """Collect slot names from ``obj_type`` and all bases in MRO order.
 
     :param obj_type: Class to inspect for ``__slots__``.
@@ -29,7 +44,7 @@ def slot_names(obj_type: type) -> set[str]:
             continue
         for name in slots:
             names.add(name)
-    return names
+    return frozenset(names)
 
 
 def has_instance_attr(instance: Any, key: str) -> bool:
@@ -112,23 +127,23 @@ def isolated_deep_clone(
     :param memo: Optional active ``copy.deepcopy`` memo.
     :return: Clone with deep-copied assigned state.
     """
-    clone, _ = deep_copy(instance, {} if memo is None else memo)
-    return clone
+    result = deepcopy_with_log_signal(instance, {} if memo is None else memo)
+    return result.clone
 
 
-def deep_copy(
+def deepcopy_with_log_signal(
     instance: ConfigT,
     memo: dict[Any, Any],
-) -> tuple[ConfigT, bool]:
+) -> DeepCopyResult[ConfigT]:
     """Return a deep clone plus whether the caller should log the copy.
 
     :param instance: Runtime config object to clone.
     :param memo: Active ``copy.deepcopy`` memo.
-    :return: Deep clone and ``True`` when this was the top-level copy.
+    :return: Deep-copy result with the top-level logging signal.
     """
     obj_id = id(instance)
     if obj_id in memo:
-        return cast(ConfigT, memo[obj_id]), False
+        return DeepCopyResult(cast(ConfigT, memo[obj_id]), False)
 
     depth = int(memo.get(_DEEPCOPY_LOG_DEPTH_KEY, 0))
     log_this_copy = depth == 0
@@ -148,4 +163,4 @@ def deep_copy(
             memo[_DEEPCOPY_LOG_DEPTH_KEY] = next_depth
         else:
             memo.pop(_DEEPCOPY_LOG_DEPTH_KEY, None)
-    return clone, log_this_copy
+    return DeepCopyResult(clone, log_this_copy)

@@ -10,7 +10,7 @@ import apprc.runtime_config.provenance as provenance_api
 import apprc.runtime_config.fields.state_transfer as state_transfer
 
 
-class RuntimeConfigProtocol(Protocol):
+class _RuntimeConfigProtocol(Protocol):
     """Runtime config surface consumed by post-env override helpers."""
 
     def _assign_existing_value(
@@ -23,14 +23,14 @@ class RuntimeConfigProtocol(Protocol):
         """Assign an existing field through the config's validation hooks."""
 
 
-ConfigT = TypeVar("ConfigT", bound=RuntimeConfigProtocol)
+_ConfigT = TypeVar("_ConfigT", bound=_RuntimeConfigProtocol)
 
 
 def create_or_update(
-    config_type: type[ConfigT],
-    cfg: ConfigT | None = None,
+    config_type: type[_ConfigT],
+    cfg: _ConfigT | None = None,
     **overrides: Any,
-) -> ConfigT:
+) -> _ConfigT:
     """Return an effective persistent config instance.
 
     :param config_type: Runtime config class to construct when ``cfg`` is absent.
@@ -39,23 +39,26 @@ def create_or_update(
     :return: Created or updated persistent config instance.
     :raises KeyError: If an override names a non-public config field.
     """
-    validate_public_override_names(config_type, config_type, overrides)
-    values = without_skipped_none(overrides)
+    target = config_type if cfg is None else cfg
+    diagnostic_type = config_type if cfg is None else type(cfg)
+    _validate_matching_config_type(config_type, cfg)
+    _validate_public_override_names(diagnostic_type, target, overrides)
+    values = _without_skipped_none(overrides)
     if cfg is None:
         constructor = cast(Any, config_type)
-        return cast(ConfigT, constructor(**values))
+        return cast(_ConfigT, constructor(**values))
     for key, value in values.items():
         setattr(cfg, key, value)
     return cfg
 
 
 def scoped(
-    config: ConfigT,
+    config: _ConfigT,
     overrides: Mapping[str, Any] | None = None,
     *,
     skip_none: bool = True,
     kwargs: Mapping[str, Any] | None = None,
-) -> ConfigT:
+) -> _ConfigT:
     """Return a request-local clone with public field overrides applied.
 
     :param config: Already resolved runtime config instance.
@@ -66,9 +69,9 @@ def scoped(
     :return: Cloned config with scoped override values applied.
     :raises KeyError: If an override names a non-public config field.
     """
-    candidate_values = merge_overrides(overrides, kwargs or {})
-    validate_public_override_names(type(config), config, candidate_values)
-    values = without_skipped_none(candidate_values, skip_none=skip_none)
+    candidate_values = _merge_overrides(overrides, kwargs or {})
+    _validate_public_override_names(type(config), config, candidate_values)
+    values = _without_skipped_none(candidate_values, skip_none=skip_none)
     clone = state_transfer.isolated_deep_clone(config)
     for key, value in values.items():
         clone._assign_existing_value(
@@ -80,11 +83,11 @@ def scoped(
 
 
 def scoped_from(
-    config: ConfigT,
+    config: _ConfigT,
     values: Mapping[str, Any],
     *,
     skip_none: bool = True,
-) -> ConfigT:
+) -> _ConfigT:
     """Return a scoped clone from a larger local-value mapping.
 
     :param config: Already resolved runtime config instance.
@@ -92,7 +95,7 @@ def scoped_from(
     :param skip_none: Whether ``None`` values mean no override.
     :return: Cloned config with matching scoped override values applied.
     """
-    public_field_names = public_config_field_names(config)
+    public_field_names = _public_config_field_names(config)
     return scoped(
         config,
         {
@@ -104,7 +107,25 @@ def scoped_from(
     )
 
 
-def public_config_field_names(instance: Any) -> frozenset[str]:
+def _validate_matching_config_type(
+    config_type: type[Any],
+    cfg: Any | None,
+) -> None:
+    """Raise when an existing config does not match the class facade.
+
+    :param config_type: Config class used to call ``create_or_update``.
+    :param cfg: Existing config instance, if any.
+    :raises TypeError: If ``cfg`` is not an instance of ``config_type``.
+    """
+    if cfg is None or isinstance(cfg, config_type):
+        return
+    raise TypeError(
+        f"cfg must be an instance of {config_type.__name__}; "
+        f"got {type(cfg).__name__}."
+    )
+
+
+def _public_config_field_names(instance: Any) -> frozenset[str]:
     """Return public config field names for override validation.
 
     :param instance: Runtime config object or config class to inspect.
@@ -115,7 +136,7 @@ def public_config_field_names(instance: Any) -> frozenset[str]:
     )
 
 
-def validate_public_override_names(
+def _validate_public_override_names(
     config_type: type[Any],
     target: Any,
     values: Mapping[str, Any],
@@ -127,7 +148,7 @@ def validate_public_override_names(
     :param values: Candidate override mapping.
     :raises KeyError: If any override name is not a public config field.
     """
-    public_field_names = public_config_field_names(target)
+    public_field_names = _public_config_field_names(target)
     unknown = sorted(set(values) - public_field_names)
     if not unknown:
         return
@@ -137,7 +158,7 @@ def validate_public_override_names(
     )
 
 
-def merge_overrides(
+def _merge_overrides(
     overrides: Mapping[str, Any] | None,
     kwargs: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -152,7 +173,7 @@ def merge_overrides(
     return values
 
 
-def without_skipped_none(
+def _without_skipped_none(
     values: Mapping[str, Any],
     *,
     skip_none: bool = True,

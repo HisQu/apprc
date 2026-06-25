@@ -12,16 +12,18 @@ from apprc.runtime_config.fields.loading import (
     owner_env_mapping,
 )
 import apprc.runtime_config.fields.state_transfer as state_transfer
+from apprc.runtime_config.fields.env_binding import bind_owner_from_env
 from apprc.runtime_config.fields.env_runtime import (
-    bind_owner_from_env,
     origin_for_field,
     python_constructor_field_names,
-    resolve_owner_defaults_for_instance,
+    resolve_instance_owner_defaults,
+    with_field_origin,
+)
+from apprc.runtime_config.fields.env_validation import (
     validate_all_owner_values,
     validate_owner_field_value,
     validate_python_constructor_fields,
     validate_required_fields,
-    with_field_origin,
 )
 from apprc.runtime_config.provenance import (
     ConfigOriginState,
@@ -148,7 +150,7 @@ class EnvConfig(BaseConfig):
             self._apprc_field_origins,
             override_python_values=override_python_values,
         )
-        for item in result.values:
+        for item in result.bound_fields:
             object.__setattr__(self, item.name, item.value)
             self._set_field_origin(item.name, item.origin)
         return list(result.skipped_python_fields)
@@ -228,7 +230,7 @@ class EnvConfig(BaseConfig):
         object.__setattr__(
             self,
             "_apprc_field_origins",
-            resolve_owner_defaults_for_instance(
+            resolve_instance_owner_defaults(
                 self,
                 owner,
                 field_origins=self._apprc_field_origins,

@@ -3,6 +3,7 @@ from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
+from typing import Any, cast
 
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
@@ -15,6 +16,7 @@ from apprc.runtime_config import (
     env_field,
     env_owner,
 )
+import apprc.runtime_config.fields as fields_api
 import apprc.runtime_config.fields.base_config as base_config
 import apprc.runtime_config.fields.env_config as env_config_module
 
@@ -44,6 +46,16 @@ class _DefaultRuntimeConfig(BaseConfig):
 class _MutableRuntimeConfig(BaseConfig):
     items: list[str] = field(default_factory=list)
     module: ModuleType = base_config
+
+
+@dataclass(slots=True)
+class _ExtendedRuntimeConfig(_DefaultRuntimeConfig):
+    extra: str = "extra"
+
+
+@dataclass(slots=True)
+class _RuntimeConfigWithNestedConfig(BaseConfig):
+    nested: _DefaultRuntimeConfig = field(default_factory=_DefaultRuntimeConfig)
 
 
 @env_owner(
@@ -253,6 +265,28 @@ def test_base_config_create_or_update_rejects_unknown_field() -> None:
     assert not hasattr(config, "unknown")
 
 
+def test_base_config_create_or_update_validates_actual_cfg_fields() -> None:
+    config = _ExtendedRuntimeConfig()
+
+    updated = BaseConfig.create_or_update(cfg=config, extra="persistent")
+
+    assert updated is config
+    assert config.extra == "persistent"
+    assert config.provenance_of("extra").origin == "python_runtime_assignment"
+
+
+def test_base_config_create_or_update_rejects_sibling_config() -> None:
+    other = _RuntimeConfig(
+        name="demo",
+        path=Path("storage"),
+        nested=_NestedConfig(visible="ok", secret="token"),
+    )
+
+    create_or_update = cast(Any, _DefaultRuntimeConfig.create_or_update)
+    with pytest.raises(TypeError, match="cfg must be an instance"):
+        create_or_update(cfg=other)
+
+
 def test_base_config_scoped_returns_clone_and_preserves_original() -> None:
     config = _DefaultRuntimeConfig(name="base")
 
@@ -365,6 +399,39 @@ def test_base_config_scoped_does_not_log_mutation_or_copy(
 
     assert scoped.name == "request"
     assert sink.warnings == []
+
+
+def test_base_config_copy_logs_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = _DefaultRuntimeConfig()
+    sink = _LogSink()
+    monkeypatch.setattr(base_config, "LOG", sink)
+
+    copied = copy(config)
+
+    assert copied is not config
+    assert sink.warnings == ["Config copied: _DefaultRuntimeConfig (copy)"]
+
+
+def test_base_config_deepcopy_logs_once_for_nested_configs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _RuntimeConfigWithNestedConfig()
+    sink = _LogSink()
+    monkeypatch.setattr(base_config, "LOG", sink)
+
+    copied = deepcopy(config)
+
+    assert copied is not config
+    assert copied.nested is not config.nested
+    assert sink.warnings == [
+        "Config copied: _RuntimeConfigWithNestedConfig (deepcopy)"
+    ]
+
+
+def test_runtime_config_fields_facade_keeps_helper_exports() -> None:
+    assert fields_api.env_values_for_binding is not None
+    assert fields_api.protected_field_names is not None
+    assert fields_api.validate_owner_field_value is not None
 
 
 def test_env_owner_derives_config_owner_from_env_config_class() -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # == Stdlib =============================
-from copy import deepcopy as _deepcopy
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 
@@ -13,17 +12,14 @@ from typing import Any, Literal, Mapping, Self
 
 # == Internal ================================
 import apprc.runtime_config.provenance as provenance_api
+import apprc.runtime_config.fields.post_env_overrides as post_env_overrides
+import apprc.runtime_config.fields.state_transfer as state_transfer
 from apprc.logging import get_logger
 from apprc._dotenv_guard import (
     _disable_dotenv_autoload as _disable_dotenv_autoload,
 )
 
 LOG = get_logger(__name__)
-
-_DEEPCOPY_LOG_DEPTH_KEY = (
-    "apprc.runtime_config.fields.base_config",
-    "deepcopy_log_depth",
-)
 
 
 # ===============================================================
@@ -107,145 +103,11 @@ class BaseConfig:
         :return: Created or updated persistent config instance.
         :raises KeyError: If an override names a non-public config field.
         """
-        cls._validate_public_override_names(cls, overrides)
-        values = cls._without_skipped_none(overrides)
-        if cfg is None:
-            return cls(**values)
-        for key, value in values.items():
-            setattr(cfg, key, value)
-        return cfg
+        return post_env_overrides.create_or_update(cls, cfg, **overrides)
 
     # ===========================================================
     # -- Implementation
     # ===========================================================
-
-    @staticmethod
-    def _slot_names(obj_type: type) -> set[str]:
-        """Collect slot names from ``obj_type`` and all bases in MRO order.
-        :param obj_type: Class to inspect for __slots__.
-        """
-        names: set[str] = set()
-        for cls in obj_type.__mro__:
-            slots = cls.__dict__.get("__slots__", ())
-            if isinstance(slots, str):
-                names.add(slots)
-                continue
-            for name in slots:
-                names.add(name)
-        return names
-
-    def _has_instance_attr(self, key: str) -> bool:
-        """Return ``True`` only when ``key`` is already set on this instance.
-        For regular instances this checks ``__dict__`` directly. For
-        slotted instances it checks slot membership, then probes
-        ``object.__getattribute__`` to distinguish "slot exists" from
-        "slot has a value yet".
-        """
-        d = getattr(self, "__dict__", None)
-        if isinstance(d, dict):
-            # Non-slotted instances: ignore class/default attributes.
-            return key in d
-        if key in self._slot_names(type(self)):
-            try:
-                object.__getattribute__(self, key)
-            except AttributeError:
-                return False
-            return True
-        return False
-
-    def _assigned_state_items(self) -> tuple[tuple[str, Any], ...]:
-        """Return assigned instance state for lifecycle-neutral copying.
-
-        Copying config objects is state transfer, not runtime mutation. This
-        helper collects both dynamic ``__dict__`` attributes and assigned slot
-        values so copy operations can bypass ``__setattr__`` centrally.
-
-        :return: Assigned instance attributes as ``(name, value)`` pairs.
-        """
-        items: list[tuple[str, Any]] = []
-        seen: set[str] = set()
-        d = getattr(self, "__dict__", None)
-        if isinstance(d, dict):
-            for key, value in d.items():
-                items.append((key, value))
-                seen.add(key)
-        for slot_name in self._slot_names(type(self)):
-            if slot_name in {"__dict__", "__weakref__"} or slot_name in seen:
-                continue
-            try:
-                value = object.__getattribute__(self, slot_name)
-            except AttributeError:
-                continue
-            items.append((slot_name, value))
-        return tuple(items)
-
-    @staticmethod
-    def _public_config_field_names(instance: Any) -> frozenset[str]:
-        """Return public config field names for override validation.
-
-        :param instance: Runtime config object to inspect.
-        :return: Public field names, excluding private and internal state.
-        """
-        return frozenset(
-            item.name for item in provenance_api.public_config_fields(instance)
-        )
-
-    @classmethod
-    def _validate_public_override_names(
-        cls,
-        target: Any,
-        values: Mapping[str, Any],
-    ) -> None:
-        """Raise when an override does not name public config state.
-
-        :param target: Config class or instance defining public field names.
-        :param values: Candidate override mapping.
-        :raises KeyError: If any override name is not a public config field.
-        """
-        public_field_names = cls._public_config_field_names(target)
-        unknown = sorted(set(values) - public_field_names)
-        if not unknown:
-            return
-        joined = ", ".join(unknown)
-        raise KeyError(
-            f"{cls.__name__} has no public config field(s): {joined}"
-        )
-
-    @staticmethod
-    def _merge_overrides(
-        overrides: Mapping[str, Any] | None,
-        kwargs: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        """Return override values with keyword arguments taking precedence.
-
-        Keyword overrides intentionally win over mapping overrides so callers can
-        combine a broad inventory such as ``locals()`` with explicit corrections.
-
-        :param overrides: Optional mapping of field-name overrides.
-        :param kwargs: Keyword field-name overrides.
-        :return: Merged override mapping.
-        """
-        values = dict(overrides or {})
-        values.update(kwargs)
-        return values
-
-    @staticmethod
-    def _without_skipped_none(
-        values: Mapping[str, Any],
-        *,
-        skip_none: bool = True,
-    ) -> dict[str, Any]:
-        """Return overrides that survive the configured ``None`` policy.
-
-        :param values: Candidate override mapping.
-        :param skip_none: Whether ``None`` means no override.
-        :return: Override mapping after applying the ``None`` policy.
-        """
-        if not skip_none:
-            return dict(values)
-        return {
-            key: value for key, value in values.items() if value is not None
-        }
 
     # ===========================================================
     # -- Mutation warning system
@@ -260,7 +122,7 @@ class BaseConfig:
         inside config internals that intentionally bypass runtime mutation
         logging.
         """
-        existed = self._has_instance_attr(key)
+        existed = state_transfer.has_instance_attr(self, key)
         if not existed:
             object.__setattr__(self, key, value)
             return
@@ -332,21 +194,6 @@ class BaseConfig:
     # -- Copying
     # ===========================================================
 
-    @staticmethod
-    def _deepcopy_state_value(value: Any, memo: dict[Any, Any]) -> Any:
-        """Deep-copy one state value while preserving process singletons.
-
-        Module objects are not deepcopyable and represent imported process
-        singletons, so config copies should keep them by identity.
-
-        :param value: State value to copy.
-        :param memo: Active ``copy.deepcopy`` memo.
-        :return: Deep-copied value or identity-preserved singleton.
-        """
-        if isinstance(value, ModuleType):
-            return value
-        return _deepcopy(value, memo)
-
     def _log_copy(self, kind: Literal["copy", "deepcopy"]) -> None:
         """Log that this config object was copied.
 
@@ -359,40 +206,6 @@ class BaseConfig:
         """
         LOG.warning(f"Config copied: {self.__class__.__name__} ({kind})")
 
-    def _clone_for_state_transfer(self) -> Self:
-        """Return a shallow clone without constructor or lifecycle side effects.
-
-        :return: Config clone with the same assigned state as this instance.
-        """
-        clone = object.__new__(type(self))
-        for key, value in self._assigned_state_items():
-            object.__setattr__(clone, key, value)
-        return clone
-
-    def _deep_clone_for_state_transfer(self, memo: dict[Any, Any]) -> Self:
-        """Return an isolated clone without lifecycle side effects.
-
-        :param memo: Active ``copy.deepcopy`` memo.
-        :return: Config clone with deep-copied assigned state.
-        """
-        clone = object.__new__(type(self))
-        memo[id(self)] = clone
-        depth = int(memo.get(_DEEPCOPY_LOG_DEPTH_KEY, 0))
-        memo[_DEEPCOPY_LOG_DEPTH_KEY] = depth + 1
-        try:
-            for key, value in self._assigned_state_items():
-                object.__setattr__(
-                    clone,
-                    key,
-                    self._deepcopy_state_value(value, memo),
-                )
-        finally:
-            if depth:
-                memo[_DEEPCOPY_LOG_DEPTH_KEY] = depth
-            else:
-                memo.pop(_DEEPCOPY_LOG_DEPTH_KEY, None)
-        return clone
-
     def __copy__(self) -> Self:
         """Return a shallow config clone without logging mutations.
 
@@ -403,7 +216,7 @@ class BaseConfig:
 
         :return: Shallow copy of this config object.
         """
-        clone = self._clone_for_state_transfer()
+        clone = state_transfer.shallow_clone(self)
         self._log_copy("copy")
         return clone
 
@@ -433,23 +246,12 @@ class BaseConfig:
         :return: Cloned config with scoped override values applied.
         :raises KeyError: If an override names a non-public config field.
         """
-        candidate_values = self._merge_overrides(
+        return post_env_overrides.scoped(
+            self,
             overrides,
-            kwargs,
-        )
-        self._validate_public_override_names(self, candidate_values)
-        values = self._without_skipped_none(
-            candidate_values,
             skip_none=skip_none,
+            kwargs=kwargs,
         )
-        clone = self._deep_clone_for_state_transfer({})
-        for key, value in values.items():
-            clone._assign_existing_value(
-                key,
-                value,
-                origin="python_scoped_override",
-            )
-        return clone
 
     def scoped_from(
         self,
@@ -468,13 +270,9 @@ class BaseConfig:
         :param skip_none: Whether ``None`` values mean no override.
         :return: Cloned config with matching scoped override values applied.
         """
-        public_field_names = self._public_config_field_names(self)
-        return self.scoped(
-            {
-                key: value
-                for key, value in values.items()
-                if key in public_field_names
-            },
+        return post_env_overrides.scoped_from(
+            self,
+            values,
             skip_none=skip_none,
         )
 
@@ -490,27 +288,7 @@ class BaseConfig:
         :param memo: Active ``copy.deepcopy`` memo.
         :return: Deep copy of this config object.
         """
-        obj_id = id(self)
-        if obj_id in memo:
-            return memo[obj_id]
-        depth = int(memo.get(_DEEPCOPY_LOG_DEPTH_KEY, 0))
-        log_this_copy = depth == 0
-        memo[_DEEPCOPY_LOG_DEPTH_KEY] = depth + 1
-        try:
-            clone = object.__new__(type(self))
-            memo[obj_id] = clone
-            for key, value in self._assigned_state_items():
-                object.__setattr__(
-                    clone,
-                    key,
-                    self._deepcopy_state_value(value, memo),
-                )
-        finally:
-            next_depth = int(memo.get(_DEEPCOPY_LOG_DEPTH_KEY, 1)) - 1
-            if next_depth > 0:
-                memo[_DEEPCOPY_LOG_DEPTH_KEY] = next_depth
-            else:
-                memo.pop(_DEEPCOPY_LOG_DEPTH_KEY, None)
+        clone, log_this_copy = state_transfer.deep_copy(self, memo)
         if log_this_copy:
             self._log_copy("deepcopy")
         return clone

@@ -3,32 +3,33 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from dataclasses import dataclass, field, fields
-from typing import Any, ClassVar, Mapping, Self
+from dataclasses import dataclass, field
+from typing import Any, ClassVar, Self
 
 # == Internal ================================
 from apprc.runtime_config.fields.base_config import BaseConfig
 from apprc.runtime_config.fields.loading import (
-    load_owner_from_env,
     owner_env_mapping,
-    provided_owner_field_names,
 )
+import apprc.runtime_config.fields.state_transfer as state_transfer
 from apprc.runtime_config.fields.env_runtime import (
-    env_values_for_binding,
+    bind_owner_from_env,
     origin_for_field,
-    resolve_owner_defaults,
+    python_constructor_field_names,
+    resolve_owner_defaults_for_instance,
+    validate_all_owner_values,
     validate_owner_field_value,
+    validate_python_constructor_fields,
+    validate_required_fields,
     with_field_origin,
 )
 from apprc.runtime_config.provenance import (
     ConfigOriginState,
     ConfigProvenance,
     PythonProvenanceOrigin,
-    shell_origin_for_env_value,
     source_for_origin,
 )
 from apprc.runtime_config.contract.schema import ConfigOwner
-from apprc.runtime_config.contract.sentinels import ENV_FIELD_MISSING
 from apprc.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -69,7 +70,12 @@ class EnvConfig(BaseConfig):
         can decide which fields are protected for this object's lifetime.
         """
         self = super().__new__(cls, *args, **kwargs)
-        constructor_fields = cls._python_constructor_field_names(args, kwargs)
+        constructor_fields = python_constructor_field_names(
+            cls,
+            cls._config_owner(),
+            args,
+            kwargs,
+        )
         object.__setattr__(
             self,
             "_apprc_field_origins",
@@ -86,11 +92,15 @@ class EnvConfig(BaseConfig):
     def __post_init__(self) -> None:
         """Resolve owner defaults, bind env values, and validate completeness."""
         self._resolve_owner_defaults()
-        self._validate_python_fields()
+        validate_python_constructor_fields(
+            self,
+            self._config_owner(),
+            self._apprc_field_origins,
+        )
         if self.bind_from_env_on_init:
             self.bind_from_env()
-        self._validate_required_fields()
-        self._validate_all_owner_choices()
+        validate_required_fields(self, self._config_owner())
+        validate_all_owner_values(self, self._config_owner())
 
     # -----------------------------------------------------------
     # --- Logic for Reading from os.environ
@@ -128,31 +138,20 @@ class EnvConfig(BaseConfig):
             scoped overrides.
         """
         self._bind_from_env(override_python_values=override_python_values)
-        self._validate_required_fields()
+        validate_required_fields(self, self._config_owner())
 
     def _bind_from_env(self, override_python_values: bool) -> list[str]:
         """Bind env values and return Python-owned fields that were skipped."""
         owner = self._config_owner()
-        binding_env, skipped_python_fields = self._env_values_for_binding(
+        result = bind_owner_from_env(
             owner,
+            self._apprc_field_origins,
             override_python_values=override_python_values,
         )
-        loaded = load_owner_from_env(owner, binding_env)
-        provided_fields = provided_owner_field_names(owner, binding_env)
-        for spec in owner.fields:
-            if spec.name not in provided_fields or not hasattr(
-                loaded,
-                spec.name,
-            ):
-                continue
-            loaded_value = getattr(loaded, spec.name)
-            validate_owner_field_value(owner, spec.name, loaded_value)
-            object.__setattr__(self, spec.name, loaded_value)
-            self._record_shell_field_origin(
-                spec.name,
-                binding_env[owner.env_key(spec.name)],
-            )
-        return skipped_python_fields
+        for item in result.values:
+            object.__setattr__(self, item.name, item.value)
+            self._set_field_origin(item.name, item.origin)
+        return list(result.skipped_python_fields)
 
     def _build_config_provenance(
         self,
@@ -203,26 +202,6 @@ class EnvConfig(BaseConfig):
             return frozenset()
         return frozenset(spec.name for spec in cls._config_owner().fields)
 
-    @classmethod
-    def _python_constructor_field_names(
-        cls,
-        args: tuple[Any, ...],
-        kwargs: dict[str, Any],
-    ) -> frozenset[str]:
-        """Return owner-backed fields provided to the Python constructor.
-
-        :param args: Positional constructor arguments passed to ``__new__``.
-        :param kwargs: Keyword constructor arguments passed to ``__new__``.
-        :return: Owner-backed field names supplied directly by Python code.
-        """
-        owner_field_names = cls._owner_field_names()
-        positional_init_fields = [
-            item.name for item in fields(cls) if item.init and not item.kw_only
-        ]
-        positional_names = set(positional_init_fields[: len(args)])
-        keyword_names = set(kwargs)
-        return frozenset((positional_names | keyword_names) & owner_field_names)
-
     def _field_origin(self, field_name: str) -> ConfigOriginState:
         """Return the recorded origin state or the implicit EnvConfig default."""
         return origin_for_field(
@@ -249,52 +228,13 @@ class EnvConfig(BaseConfig):
         object.__setattr__(
             self,
             "_apprc_field_origins",
-            resolve_owner_defaults(
+            resolve_owner_defaults_for_instance(
                 self,
                 owner,
-                dataclass_fields={item.name: item for item in fields(self)},
                 field_origins=self._apprc_field_origins,
-                copy_value=self._deepcopy_state_value,
+                copy_value=state_transfer.deepcopy_state_value,
             ),
         )
-
-    def _validate_python_fields(self) -> None:
-        """Validate constructor-provided values against owner metadata."""
-        owner = self._config_owner()
-        for field_name, state in self._apprc_field_origins.items():
-            if state.origin != "python_constructor_argument":
-                continue
-            validate_owner_field_value(
-                owner,
-                field_name,
-                getattr(self, field_name),
-            )
-
-    def _validate_required_fields(self) -> None:
-        """Raise when required owner-backed fields remain unresolved."""
-        owner = self._config_owner()
-        missing_keys = [
-            owner.env_key(spec.name)
-            for spec in owner.fields
-            if getattr(self, spec.name) is ENV_FIELD_MISSING
-        ]
-        if not missing_keys:
-            return
-        joined = ", ".join(missing_keys)
-        raise RuntimeError(
-            f"Missing required config value(s) for {self.__class__.__name__}: "
-            f"{joined}. Provide Python constructor values or current-process "
-            "os.environ values before constructing this config."
-        )
-
-    def _validate_all_owner_choices(self) -> None:
-        """Validate resolved owner-backed values after all binding steps."""
-        owner = self._config_owner()
-        for spec in owner.fields:
-            value = getattr(self, spec.name)
-            if value is ENV_FIELD_MISSING:
-                continue
-            validate_owner_field_value(owner, spec.name, value)
 
     def _validate_existing_assignment(self, key: str, value: Any) -> None:
         """Validate owner-backed assignment before storing it."""
@@ -319,31 +259,6 @@ class EnvConfig(BaseConfig):
                 origin,
                 env_key=self._config_owner().env_key(key),
             ),
-        )
-
-    def _record_shell_field_origin(
-        self,
-        field_name: str,
-        raw_value: str,
-    ) -> None:
-        """Record that shell/bootstrap env state owns one field."""
-        env_key = self._config_owner().env_key(field_name)
-        self._set_field_origin(
-            field_name,
-            shell_origin_for_env_value(env_key, raw_value),
-        )
-
-    def _env_values_for_binding(
-        self,
-        owner: ConfigOwner,
-        *,
-        override_python_values: bool,
-    ) -> tuple[Mapping[str, str], list[str]]:
-        """Return an env mapping with protected Python fields removed."""
-        return env_values_for_binding(
-            owner,
-            self._apprc_field_origins,
-            override_python_values=override_python_values,
         )
 
     def _warn_skipped_python_fields(self, field_names: list[str]) -> None:

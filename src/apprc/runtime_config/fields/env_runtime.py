@@ -68,7 +68,11 @@ def protected_field_names(
         field_name
         for field_name, state in origins.items()
         if state.origin
-        in {"python_constructor_argument", "python_runtime_assignment"}
+        in {
+            "python_constructor_argument",
+            "python_runtime_assignment",
+            "python_scoped_override",
+        }
     )
 
 

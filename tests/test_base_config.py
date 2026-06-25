@@ -214,6 +214,105 @@ def test_base_config_copy_preserves_provenance() -> None:
     assert deep.provenance_of("secret").origin == "python_runtime_assignment"
 
 
+def test_base_config_create_or_update_constructs_with_overrides() -> None:
+    config = _DefaultRuntimeConfig.create_or_update(name="manual")
+
+    assert config.name == "manual"
+    assert config.provenance_of("name").origin == "python_constructor_argument"
+
+
+def test_base_config_create_or_update_persists_on_existing_config() -> None:
+    config = _DefaultRuntimeConfig(name="base")
+
+    updated = _DefaultRuntimeConfig.create_or_update(
+        cfg=config,
+        name="persistent",
+        secret=None,
+    )
+
+    assert updated is config
+    assert config.name == "persistent"
+    assert config.secret == "token"
+    assert config.provenance_of("name").origin == "python_runtime_assignment"
+    assert config.provenance_of("secret").origin == "python_baseconfig_default"
+
+
+def test_base_config_scoped_returns_clone_and_preserves_original() -> None:
+    config = _DefaultRuntimeConfig(name="base")
+
+    scoped = config.scoped(name="request")
+
+    assert scoped is not config
+    assert scoped.name == "request"
+    assert config.name == "base"
+    assert scoped.provenance_of("name").origin == "python_scoped_override"
+    assert config.provenance_of("name").origin == "python_constructor_argument"
+
+
+def test_base_config_scoped_preserves_untouched_provenance() -> None:
+    config = _DefaultRuntimeConfig(name="manual")
+
+    scoped = config.scoped(secret="request-token")
+
+    assert scoped.name == "manual"
+    assert scoped.secret == "request-token"
+    assert scoped.provenance_of("name").origin == "python_constructor_argument"
+    assert scoped.provenance_of("secret").origin == "python_scoped_override"
+    assert config.secret == "token"
+
+
+def test_base_config_scoped_rejects_unknown_field() -> None:
+    config = _DefaultRuntimeConfig()
+
+    with pytest.raises(KeyError, match="unknown"):
+        config.scoped(unknown="value")
+
+
+def test_base_config_scoped_skips_none_by_default() -> None:
+    config = _DefaultRuntimeConfig(name="base")
+
+    scoped = config.scoped(name=None)
+
+    assert scoped is not config
+    assert scoped.name == "base"
+    assert scoped.provenance_of("name").origin == "python_constructor_argument"
+
+
+def test_base_config_scoped_can_apply_none_when_requested() -> None:
+    config = _DefaultRuntimeConfig(name="base")
+
+    scoped = config.scoped({"name": None}, skip_none=False)
+
+    assert getattr(scoped, "name") is None
+    assert scoped.provenance_of("name").origin == "python_scoped_override"
+    assert config.name == "base"
+
+
+def test_base_config_scoped_from_filters_non_config_names() -> None:
+    config = _DefaultRuntimeConfig(name="base")
+
+    def _build_scoped(name: str, ignored: str) -> _DefaultRuntimeConfig:
+        return config.scoped_from(locals())
+
+    scoped = _build_scoped(name="request", ignored="ignored")
+
+    assert scoped.name == "request"
+    assert scoped.provenance_of("name").origin == "python_scoped_override"
+
+
+def test_base_config_scoped_does_not_log_mutation_or_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _DefaultRuntimeConfig()
+    sink = _LogSink()
+    monkeypatch.setattr(base_config, "LOG", sink)
+
+    scoped = config.scoped(name="request")
+
+    assert scoped.name == "request"
+    assert sink.warnings == []
+
+
 def test_env_owner_derives_config_owner_from_env_config_class() -> None:
     owner = config_owner_for(_DemoEnv)
 
@@ -532,6 +631,64 @@ def test_env_config_bind_can_override_python_values(
     monkeypatch.setenv("DEMO_MODE", "AUTO")
 
     cfg.bind_from_env(override_python_values=True)
+
+    assert cfg.mode == "AUTO"
+    assert cfg.provenance_of("mode").origin == "shell_export_variable"
+
+
+def test_env_config_scoped_owner_field_records_env_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    cfg = _DemoEnv()
+
+    scoped = cfg.scoped(mode="MANUAL")
+    provenance = scoped.provenance_of("mode")
+
+    assert scoped is not cfg
+    assert scoped.mode == "MANUAL"
+    assert cfg.mode == "AUTO"
+    assert provenance.source == "python"
+    assert provenance.origin == "python_scoped_override"
+    assert provenance.env_key == "DEMO_MODE"
+
+
+def test_env_config_scoped_validates_owner_choices_and_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    cfg = _DemoEnv()
+
+    with pytest.raises(ValueError, match="DEMO_MODE='BOGUS' is invalid"):
+        cfg.scoped(mode="BOGUS")
+    with pytest.raises(TypeError, match="DEMO_ENABLED must be bool; got str"):
+        cfg.scoped(enabled="true")
+
+    assert cfg.mode == "AUTO"
+    assert cfg.enabled is False
+
+
+def test_env_config_reload_preserves_scoped_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    cfg = _DemoEnv().scoped(mode="MANUAL")
+    monkeypatch.setenv("DEMO_MODE", "AUTO")
+
+    cfg.reload()
+
+    assert cfg.mode == "MANUAL"
+    assert cfg.provenance_of("mode").origin == "python_scoped_override"
+
+
+def test_env_config_reload_can_replace_scoped_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_demo_env(monkeypatch)
+    cfg = _DemoEnv().scoped(mode="MANUAL")
+    monkeypatch.setenv("DEMO_MODE", "AUTO")
+
+    cfg.reload(override_python_values=True)
 
     assert cfg.mode == "AUTO"
     assert cfg.provenance_of("mode").origin == "shell_export_variable"

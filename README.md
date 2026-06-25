@@ -319,9 +319,14 @@ and redaction metadata. AppRC derives `ConfigOwner` and `ConfigField` schema
 objects from the class for internal tools.
 
 For one `EnvConfig` object, direct Python constructor arguments and later Python
-assignments are authoritative for that object's lifetime. `os.environ` fills
-only fields not provided by Python, and EnvConfig defaults fill any remaining
-gaps. Inspect this with `cfg.provenance_of("field_name")` or `cfg.provenance()`.
+assignments are authoritative for that object's lifetime. Use
+`ConfigClass.create_or_update(cfg=cfg, field=value)` when a library-style
+constructor should accept convenience parameters that persist on that config
+instance. Use `cfg.scoped(field=value)` or `cfg.scoped_from(locals())` when a
+method needs request-local effective config without mutating the original.
+`os.environ` fills only fields not provided by Python, and EnvConfig defaults
+fill any remaining gaps. Inspect this with `cfg.provenance_of("field_name")` or
+`cfg.provenance()`.
 
 ### Runtime Provenance
 
@@ -330,15 +335,15 @@ Every `ConfigProvenance` record has a broad `source` and an exact `origin`:
 
 | Boundary | Origins |
 |---|---|
-| `python` | `python_constructor_argument`, `python_runtime_assignment`, `python_baseconfig_default`, `python_envconfig_default`, `python_process_environment_mutation` |
+| `python` | `python_constructor_argument`, `python_runtime_assignment`, `python_scoped_override`, `python_baseconfig_default`, `python_envconfig_default`, `python_process_environment_mutation` |
 | `shell` | `shell_export_variable`, `shell_dotenv_shared`, `shell_dotenv_local`, `shell_dotenv_explicit`, `shell_bootstrap_selector` |
 
-`BaseConfig` records Python constructor arguments, dataclass defaults, and
-post-construction assignments. `EnvConfig` enriches env-backed fields with the
-env key and the winning shell-side origin when AppRC bootstrap knows it.
-Dotenv-backed records include the source file path. If a value AppRC recorded
-during bootstrap no longer matches the value later read from `os.environ`, the
-origin is reported as `python_process_environment_mutation`.
+`BaseConfig` records Python constructor arguments, dataclass defaults,
+post-construction assignments, and scoped override clones. `EnvConfig` enriches
+env-backed fields with the env key and the winning shell-side origin when AppRC
+bootstrap knows it. Dotenv-backed records include the source file path. If a
+value AppRC recorded during bootstrap no longer matches the value later read from
+`os.environ`, the origin is reported as `python_process_environment_mutation`.
 
 ### Bootstrap Precedence
 
@@ -381,7 +386,8 @@ runtime config object is constructed. They flag config-object reassignment, not
 `os.environ` changes and not dotenv-file writes. Assigning an owner-backed field
 also records a `python_runtime_assignment` origin that normal `reload()` calls
 preserve; pass `reload(override_python_values=True)` only when env values should
-replace Python-provided values.
+replace Python-provided values. Scoped clones record `python_scoped_override`
+instead and follow the same reload protection rules.
 
 ### Storage Registries
 

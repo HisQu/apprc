@@ -23,6 +23,7 @@ from apprc.runtime_config.fields.env_runtime import (
 from apprc.runtime_config.provenance import (
     ConfigOriginState,
     ConfigProvenance,
+    PythonProvenanceOrigin,
     shell_origin_for_env_value,
     source_for_origin,
 )
@@ -91,7 +92,6 @@ class EnvConfig(BaseConfig):
         self._validate_required_fields()
         self._validate_all_owner_choices()
 
-
     # -----------------------------------------------------------
     # --- Logic for Reading from os.environ
     # -----------------------------------------------------------
@@ -106,7 +106,7 @@ class EnvConfig(BaseConfig):
 
         :param override_python_values: Whether env values may overwrite
             ``python_constructor_argument`` and
-            ``python_runtime_assignment`` fields.
+            ``python_runtime_assignment`` and ``python_scoped_override`` fields.
         """
         LOG.warning(f"Reloading from os.environ: {self.__class__.__name__} ...")
         skipped_python_fields = self._bind_from_env(
@@ -301,22 +301,22 @@ class EnvConfig(BaseConfig):
             return
         validate_owner_field_value(self._config_owner(), key, value)
 
-    def _after_existing_assignment(self, key: str, value: Any) -> None:
+    def _after_existing_assignment(
+        self,
+        key: str,
+        value: Any,
+        *,
+        origin: PythonProvenanceOrigin,
+    ) -> None:
         """Record owner-backed assignment provenance after storing it."""
-        super()._after_existing_assignment(key, value)
+        super()._after_existing_assignment(key, value, origin=origin)
         if key not in self._owner_field_names():
             return
-        self._record_python_assignment(key)
-
-    def _record_python_assignment(self, field_name: str) -> None:
-        """Record a post-construction assignment as a Python override."""
-        if field_name not in self._owner_field_names():
-            return
         self._set_field_origin(
-            field_name,
+            key,
             ConfigOriginState(
-                "python_runtime_assignment",
-                env_key=self._config_owner().env_key(field_name),
+                origin,
+                env_key=self._config_owner().env_key(key),
             ),
         )
 

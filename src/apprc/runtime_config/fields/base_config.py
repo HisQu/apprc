@@ -83,40 +83,37 @@ class BaseConfig:
         return self
 
     # ===========================================================
-    # -- Constructor for subclass parameter overrides
+    # -- Persistent overrides
     # ===========================================================
 
     @classmethod
     def create_or_update(
         cls, cfg: Self | None = None, **overrides: Any
     ) -> Self:
-        """Reuse an existing config instance OR create a new one with overrides.
+        """Return an effective persistent config instance.
 
-        This class method allows subclasses to provide a convenient way to
-        either reuse an existing config object or create a new one with specific
-        overrides. If an existing instance is provided, it will be reused and
-        the overrides will be applied. If no existing instance is provided, a
-        new instance will be created with the given overrides.
+        This helper supports library-style constructors that accept both an
+        existing config object and top-level convenience parameters. When
+        ``cfg`` is absent, a new config is constructed from current defaults,
+        env binding, and non-``None`` constructor overrides. When ``cfg`` is
+        provided, non-``None`` overrides are assigned to that existing instance
+        and intentionally persist for that object's lifetime.
 
-        This only overrides non-None values. If None has a meaning,
-        resolve that beforehand!
+        Use :meth:`scoped` for request-local overrides that must not mutate an
+        existing config instance.
 
-        New instances of ``EnvConfig`` will be built from current `os.environ`
-
-        :param cfg: An existing config instance to reuse (optional).
-        :param overrides: Keyword arguments for overriding config fields.
-        :return: A config instance with the specified overrides applied.
+        :param cfg: Existing config instance to update, or ``None`` to build one.
+        :param overrides: Field-name overrides. ``None`` means no override.
+        :return: Created or updated persistent config instance.
         """
-        _overrides = {k: v for k, v in overrides.items() if v is not None}
-
+        values = {
+            key: value for key, value in overrides.items() if value is not None
+        }
         if cfg is None:
-            # > Create a new instance with the specified overrides
-            return cls(**_overrides)
-        else:
-            # > Reuse the existing instance and apply overrides
-            for key, value in _overrides.items():
-                setattr(cfg, key, value)
-            return cfg
+            return cls(**values)
+        for key, value in values.items():
+            setattr(cfg, key, value)
+        return cfg
 
     # ===========================================================
     # -- Implementation
@@ -182,6 +179,42 @@ class BaseConfig:
             items.append((slot_name, value))
         return tuple(items)
 
+    @staticmethod
+    def _public_config_field_names(instance: Any) -> frozenset[str]:
+        """Return public config field names for override validation.
+
+        :param instance: Runtime config object to inspect.
+        :return: Public field names, excluding private and internal state.
+        """
+        return frozenset(
+            item.name for item in provenance_api.public_config_fields(instance)
+        )
+
+    @staticmethod
+    def _merged_scoped_overrides(
+        overrides: Mapping[str, Any] | None,
+        kwargs: Mapping[str, Any],
+        *,
+        skip_none: bool,
+    ) -> dict[str, Any]:
+        """Return normalized scoped override values.
+
+        Keyword overrides intentionally win over mapping overrides so callers can
+        combine a broad inventory such as ``locals()`` with explicit corrections.
+
+        :param overrides: Optional mapping of field-name overrides.
+        :param kwargs: Keyword field-name overrides.
+        :param skip_none: Whether ``None`` means no override.
+        :return: Merged override mapping.
+        """
+        merged = dict(overrides or {})
+        merged.update(kwargs)
+        if not skip_none:
+            return merged
+        return {
+            key: value for key, value in merged.items() if value is not None
+        }
+
     # ===========================================================
     # -- Mutation warning system
     # ===========================================================
@@ -196,16 +229,33 @@ class BaseConfig:
         logging.
         """
         existed = self._has_instance_attr(key)
-        if existed:
-            # !! Intentional no-op
-            pass
-            self._validate_existing_assignment(key, value)
-        object.__setattr__(self, key, value)
         if not existed:
+            object.__setattr__(self, key, value)
             return
-        self._after_existing_assignment(key, value)
+        self._assign_existing_value(
+            key,
+            value,
+            origin="python_runtime_assignment",
+        )
         val = self._format_field_value_for_log(key, value)
         LOG.warning(f"Config modified: {self.__class__.__name__}.{key} = {val}")
+
+    def _assign_existing_value(
+        self,
+        key: str,
+        value: Any,
+        *,
+        origin: provenance_api.PythonProvenanceOrigin,
+    ) -> None:
+        """Store an existing value and record its Python lifecycle origin.
+
+        :param key: Runtime attribute name.
+        :param value: Candidate replacement value.
+        :param origin: Python lifecycle event that owns the new value.
+        """
+        self._validate_existing_assignment(key, value)
+        object.__setattr__(self, key, value)
+        self._after_existing_assignment(key, value, origin=origin)
 
     def _validate_existing_assignment(self, key: str, value: Any) -> None:
         """Validate a post-init assignment before storing it.
@@ -216,11 +266,18 @@ class BaseConfig:
         :param value: Candidate replacement value.
         """
 
-    def _after_existing_assignment(self, key: str, value: Any) -> None:
+    def _after_existing_assignment(
+        self,
+        key: str,
+        value: Any,
+        *,
+        origin: provenance_api.PythonProvenanceOrigin,
+    ) -> None:
         """Record subclass-specific state after a post-init assignment.
 
         :param key: Runtime attribute name.
         :param value: Replacement value already stored on the instance.
+        :param origin: Python lifecycle event that owns the new value.
         """
         if key not in {
             item.name for item in provenance_api.public_config_fields(self)
@@ -229,7 +286,7 @@ class BaseConfig:
         provenance_api.set_field_origin(
             self,
             key,
-            provenance_api.ConfigOriginState("python_runtime_assignment"),
+            provenance_api.ConfigOriginState(origin),
         )
 
     def _format_field_value_for_log(self, key: str, value: Any) -> str:
@@ -270,6 +327,16 @@ class BaseConfig:
         """
         LOG.warning(f"Config copied: {self.__class__.__name__} ({kind})")
 
+    def _clone_for_state_transfer(self) -> Self:
+        """Return a shallow clone without constructor or lifecycle side effects.
+
+        :return: Config clone with the same assigned state as this instance.
+        """
+        clone = object.__new__(type(self))
+        for key, value in self._assigned_state_items():
+            object.__setattr__(clone, key, value)
+        return clone
+
     def __copy__(self) -> Self:
         """Return a shallow config clone without logging mutations.
 
@@ -280,11 +347,83 @@ class BaseConfig:
 
         :return: Shallow copy of this config object.
         """
-        clone = object.__new__(type(self))
-        for key, value in self._assigned_state_items():
-            object.__setattr__(clone, key, value)
+        clone = self._clone_for_state_transfer()
         self._log_copy("copy")
         return clone
+
+    # ===========================================================
+    # -- Scoped overrides
+    # ===========================================================
+
+    def scoped(
+        self,
+        overrides: Mapping[str, Any] | None = None,
+        /,
+        *,
+        skip_none: bool = True,
+        **kwargs: Any,
+    ) -> Self:
+        """Return a request-local clone with public field overrides applied.
+
+        Scoped overrides are for per-call or per-task effective config. They
+        validate through the same hooks as direct assignment, record
+        ``python_scoped_override`` provenance, and leave this config unchanged.
+
+        :param overrides: Optional mapping of public field-name overrides.
+        :param skip_none: Whether ``None`` values mean no override.
+        :param kwargs: Additional public field-name overrides; these win over
+            ``overrides``.
+        :return: Cloned config with scoped override values applied.
+        :raises KeyError: If an override names a non-public config field.
+        """
+        values = self._merged_scoped_overrides(
+            overrides,
+            kwargs,
+            skip_none=skip_none,
+        )
+        public_field_names = self._public_config_field_names(self)
+        unknown = sorted(set(values) - public_field_names)
+        if unknown:
+            joined = ", ".join(unknown)
+            raise KeyError(
+                f"{self.__class__.__name__} has no public config field(s): "
+                f"{joined}"
+            )
+        clone = self._clone_for_state_transfer()
+        for key, value in values.items():
+            clone._assign_existing_value(
+                key,
+                value,
+                origin="python_scoped_override",
+            )
+        return clone
+
+    def scoped_from(
+        self,
+        values: Mapping[str, Any],
+        /,
+        *,
+        skip_none: bool = True,
+    ) -> Self:
+        """Return a scoped clone from a larger local-value mapping.
+
+        This convenience method is intended for inventories such as
+        ``locals()``. Non-config names are ignored; known public field names are
+        delegated to :meth:`scoped`.
+
+        :param values: Mapping that may contain public config field names.
+        :param skip_none: Whether ``None`` values mean no override.
+        :return: Cloned config with matching scoped override values applied.
+        """
+        public_field_names = self._public_config_field_names(self)
+        return self.scoped(
+            {
+                key: value
+                for key, value in values.items()
+                if key in public_field_names
+            },
+            skip_none=skip_none,
+        )
 
     def __deepcopy__(self, memo: dict[Any, Any]) -> Self:
         """Return a deep config clone without logging mutations.

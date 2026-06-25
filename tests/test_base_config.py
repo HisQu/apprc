@@ -438,6 +438,9 @@ def test_runtime_config_config_objects_facade_hides_internal_helpers() -> None:
     assert not hasattr(config_objects_api, "validate_owner_field_value")
     assert not hasattr(config_objects_api, "bind_owner_from_env")
     assert not hasattr(config_objects_api, "state_transfer")
+    assert not hasattr(config_objects_api, "post_env_overrides")
+    assert not hasattr(config_objects_api, "origin_for_field")
+    assert not hasattr(config_objects_api, "parse_env_field_value")
 
 
 def test_env_owner_derives_config_owner_from_env_config_class() -> None:

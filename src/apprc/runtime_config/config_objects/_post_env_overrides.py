@@ -1,4 +1,12 @@
-"""Post-env Python override policy for resolved runtime configs."""
+"""Post-env Python override policy for resolved runtime config objects.
+
+These helpers support library-style usage where Python code already has an
+effective config object and wants to apply additional values after defaults,
+dotenv layers, and ``os.environ`` have been resolved.
+
+Persistent per-instance changes use ``create_or_update``. Request/task-local
+effective configs use ``scoped`` and ``scoped_from``.
+"""
 
 from __future__ import annotations
 

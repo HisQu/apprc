@@ -5,8 +5,10 @@ Conceptual map:
   and library code should inherit from.
 - App / env mode: ``env_field`` and ``env_owner`` declare env-backed config
   sections that resolve defaults, Python constructor values, and ``os.environ``.
-- Library mode: ``BaseConfig.create_or_update`` persists per-instance values,
-  while ``BaseConfig.scoped`` and ``scoped_from`` create request-local clones.
+- Library mode: post-env Python overrides let reusable clients accept optional
+  config objects plus convenience parameters. ``BaseConfig.create_or_update``
+  persists per-instance values, while ``BaseConfig.scoped`` and
+  ``scoped_from`` create request-local clones.
 - State changes: assignment and persistent library-mode updates are tracked as
   Python-owned state changes.
 - State transfer: internal copy/deepcopy helpers clone already-resolved config

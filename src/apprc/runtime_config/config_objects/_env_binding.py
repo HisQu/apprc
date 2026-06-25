@@ -11,7 +11,7 @@ from typing import Mapping
 from apprc.runtime_config.config_objects._env_validation import (
     validate_owner_field_value,
 )
-from apprc.runtime_config.config_objects._env_loading import (
+from apprc.runtime_config._env_loading import (
     load_owner_from_env,
     provided_owner_field_names,
 )

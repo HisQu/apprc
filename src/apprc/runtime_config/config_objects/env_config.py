@@ -8,15 +8,17 @@ from typing import Any, ClassVar, Self
 
 # == Internal ================================
 from apprc.runtime_config.config_objects.base_config import BaseConfig
-from apprc.runtime_config.config_objects._env_loading import (
+from apprc.runtime_config._env_loading import (
     owner_env_mapping,
 )
 import apprc.runtime_config.config_objects._state_transfer as state_transfer
 from apprc.runtime_config.config_objects._env_binding import bind_owner_from_env
 from apprc.runtime_config.config_objects._env_defaults import (
+    resolve_instance_owner_defaults,
+)
+from apprc.runtime_config.config_objects._env_origins import (
     origin_for_field,
     python_constructor_field_names,
-    resolve_instance_owner_defaults,
     with_field_origin,
 )
 from apprc.runtime_config.config_objects._env_validation import (

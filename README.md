@@ -338,18 +338,22 @@ class AppEnv(EnvConfig):
     profile: str = env_field("PROFILE", default="default")
 ```
 
-Constructing `AppEnv()` resolves the config object in this order:
+Constructing `AppEnv()` resolves the config object in this lifecycle order:
 
 1. Python constructor arguments, such as `AppEnv(profile="test")`
 2. `EnvConfig` defaults declared by `env_field(...)`
 3. current-process `os.environ` values for fields not already owned by Python
 4. required-field, type, and choice validation
 
+The effective precedence is: persistent Python-owned values beat env, env beats
+`env_field(...)` defaults, and scoped clones beat the original config only for
+that request/task-local clone.
+
 Call `AppConfigKit.bootstrap(...)` before constructing `EnvConfig` objects when
 packaged, storage-local, or explicit dotenv layers should populate
 `os.environ`.
 
-### Library Mode
+### Library Mode: Post-env Python Overrides
 
 Library Mode is for reusable clients that accept an optional config object plus
 simple convenience parameters. AppRC keeps the policy centralized on
@@ -370,7 +374,8 @@ per-instance values, for example constructor convenience arguments. Use
 `cfg.scoped(field=value)` or `cfg.scoped_from(locals())` for per-call effective
 config. Scoped configs are isolated clones: they validate like assignment,
 record `python_scoped_override` provenance, and leave the original config
-unchanged.
+unchanged. `scoped_from(locals())` ignores non-config names and applies only
+matching public config field names.
 
 Inspect any effective value with `cfg.provenance_of("field_name")`, or inspect
 the whole config object with `cfg.provenance()`.

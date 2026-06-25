@@ -12,7 +12,7 @@ from typing import Any, Literal, Mapping, Self
 
 # == Internal ================================
 import apprc.runtime_config.provenance as provenance_api
-import apprc.runtime_config.config_objects._library_mode as library_mode
+import apprc.runtime_config.config_objects._post_env_overrides as post_env_overrides
 import apprc.runtime_config.config_objects._state_transfer as state_transfer
 from apprc.logging import get_logger
 from apprc._dotenv_guard import (
@@ -103,7 +103,7 @@ class BaseConfig:
         :return: Created or updated persistent config instance.
         :raises KeyError: If an override names a non-public config field.
         """
-        return library_mode.create_or_update(cls, cfg, **overrides)
+        return post_env_overrides.create_or_update(cls, cfg, **overrides)
 
     # ===========================================================
     # -- Implementation
@@ -220,6 +220,23 @@ class BaseConfig:
         self._log_copy("copy")
         return clone
 
+    def __deepcopy__(self, memo: dict[Any, Any]) -> Self:
+        """Return a deep config clone without logging mutations.
+
+        Deep copying is lifecycle-neutral state transfer: it preserves the
+        already-resolved config, honors recursive object graphs through
+        ``memo``, and does not re-read process environment variables. One
+        dedicated copy warning is logged for the top-level config object in a
+        deep-copy graph.
+
+        :param memo: Active ``copy.deepcopy`` memo.
+        :return: Deep copy of this config object.
+        """
+        result = state_transfer.deepcopy_with_log_signal(self, memo)
+        if result.should_log:
+            self._log_copy("deepcopy")
+        return result.clone
+
     # ===========================================================
     # -- Scoped overrides
     # ===========================================================
@@ -246,7 +263,7 @@ class BaseConfig:
         :return: Cloned config with scoped override values applied.
         :raises KeyError: If an override names a non-public config field.
         """
-        return library_mode.scoped(
+        return post_env_overrides.scoped(
             self,
             overrides,
             skip_none=skip_none,
@@ -270,28 +287,11 @@ class BaseConfig:
         :param skip_none: Whether ``None`` values mean no override.
         :return: Cloned config with matching scoped override values applied.
         """
-        return library_mode.scoped_from(
+        return post_env_overrides.scoped_from(
             self,
             values,
             skip_none=skip_none,
         )
-
-    def __deepcopy__(self, memo: dict[Any, Any]) -> Self:
-        """Return a deep config clone without logging mutations.
-
-        Deep copying is lifecycle-neutral state transfer: it preserves the
-        already-resolved config, honors recursive object graphs through
-        ``memo``, and does not re-read process environment variables. One
-        dedicated copy warning is logged for the top-level config object in a
-        deep-copy graph.
-
-        :param memo: Active ``copy.deepcopy`` memo.
-        :return: Deep copy of this config object.
-        """
-        result = state_transfer.deepcopy_with_log_signal(self, memo)
-        if result.should_log:
-            self._log_copy("deepcopy")
-        return result.clone
 
     # ===========================================================
     # -- Provenance

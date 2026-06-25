@@ -8,8 +8,8 @@ declarations used by runtime loading, writes keys in declaration order, and
 preserves unknown dotenv keys after the known AppRC keys.
 
 It intentionally does not mutate ``os.environ``. Entrypoints use
-:mod:`apprc.runtime_config.bootstrap.orchestrator` to decide which dotenv layers enter the current
-process.
+:mod:`apprc.runtime_config.bootstrap.orchestrator` to decide which dotenv
+layers enter the current process.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from dotenv import dotenv_values
 from typed_settings.exceptions import InvalidSettingsError
 
 # == Internal ================================
-from apprc.runtime_config.config_objects._env_loading import (
+from apprc.runtime_config._env_loading import (
     parse_env_field_value,
 )
 from apprc.runtime_config.storage.paths import StorageRootPathError

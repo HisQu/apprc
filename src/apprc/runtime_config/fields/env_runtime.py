@@ -9,12 +9,23 @@ from typing import Any, Mapping
 
 # == Internal ================================
 from apprc.runtime_config.fields.loading import provided_owner_field_names
-from apprc.runtime_config.provenance import ConfigOriginState
+from apprc.runtime_config.provenance import (
+    ConfigOriginState,
+    PythonProvenanceOrigin,
+)
 from apprc.runtime_config.contract.schema import ConfigOwner
 from apprc.runtime_config.contract.schema_validation import (
     validate_python_field_value,
 )
 from apprc.runtime_config.contract.sentinels import ENV_FIELD_MISSING
+
+ENV_BINDING_PROTECTED_ORIGINS: frozenset[PythonProvenanceOrigin] = frozenset(
+    (
+        "python_constructor_argument",
+        "python_runtime_assignment",
+        "python_scoped_override",
+    )
+)
 
 
 def origin_for_field(
@@ -67,12 +78,7 @@ def protected_field_names(
     return frozenset(
         field_name
         for field_name, state in origins.items()
-        if state.origin
-        in {
-            "python_constructor_argument",
-            "python_runtime_assignment",
-            "python_scoped_override",
-        }
+        if state.origin in ENV_BINDING_PROTECTED_ORIGINS
     )
 
 

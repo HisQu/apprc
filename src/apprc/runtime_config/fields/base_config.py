@@ -105,10 +105,10 @@ class BaseConfig:
         :param cfg: Existing config instance to update, or ``None`` to build one.
         :param overrides: Field-name overrides. ``None`` means no override.
         :return: Created or updated persistent config instance.
+        :raises KeyError: If an override names a non-public config field.
         """
-        values = {
-            key: value for key, value in overrides.items() if value is not None
-        }
+        cls._validate_public_override_names(cls, overrides)
+        values = cls._without_skipped_none(overrides)
         if cfg is None:
             return cls(**values)
         for key, value in values.items():
@@ -190,29 +190,61 @@ class BaseConfig:
             item.name for item in provenance_api.public_config_fields(instance)
         )
 
+    @classmethod
+    def _validate_public_override_names(
+        cls,
+        target: Any,
+        values: Mapping[str, Any],
+    ) -> None:
+        """Raise when an override does not name public config state.
+
+        :param target: Config class or instance defining public field names.
+        :param values: Candidate override mapping.
+        :raises KeyError: If any override name is not a public config field.
+        """
+        public_field_names = cls._public_config_field_names(target)
+        unknown = sorted(set(values) - public_field_names)
+        if not unknown:
+            return
+        joined = ", ".join(unknown)
+        raise KeyError(
+            f"{cls.__name__} has no public config field(s): {joined}"
+        )
+
     @staticmethod
-    def _merged_scoped_overrides(
+    def _merge_overrides(
         overrides: Mapping[str, Any] | None,
         kwargs: Mapping[str, Any],
-        *,
-        skip_none: bool,
     ) -> dict[str, Any]:
-        """Return normalized scoped override values.
+        """Return override values with keyword arguments taking precedence.
 
         Keyword overrides intentionally win over mapping overrides so callers can
         combine a broad inventory such as ``locals()`` with explicit corrections.
 
         :param overrides: Optional mapping of field-name overrides.
         :param kwargs: Keyword field-name overrides.
-        :param skip_none: Whether ``None`` means no override.
         :return: Merged override mapping.
         """
-        merged = dict(overrides or {})
-        merged.update(kwargs)
+        values = dict(overrides or {})
+        values.update(kwargs)
+        return values
+
+    @staticmethod
+    def _without_skipped_none(
+        values: Mapping[str, Any],
+        *,
+        skip_none: bool = True,
+    ) -> dict[str, Any]:
+        """Return overrides that survive the configured ``None`` policy.
+
+        :param values: Candidate override mapping.
+        :param skip_none: Whether ``None`` means no override.
+        :return: Override mapping after applying the ``None`` policy.
+        """
         if not skip_none:
-            return merged
+            return dict(values)
         return {
-            key: value for key, value in merged.items() if value is not None
+            key: value for key, value in values.items() if value is not None
         }
 
     # ===========================================================
@@ -337,6 +369,30 @@ class BaseConfig:
             object.__setattr__(clone, key, value)
         return clone
 
+    def _deep_clone_for_state_transfer(self, memo: dict[Any, Any]) -> Self:
+        """Return an isolated clone without lifecycle side effects.
+
+        :param memo: Active ``copy.deepcopy`` memo.
+        :return: Config clone with deep-copied assigned state.
+        """
+        clone = object.__new__(type(self))
+        memo[id(self)] = clone
+        depth = int(memo.get(_DEEPCOPY_LOG_DEPTH_KEY, 0))
+        memo[_DEEPCOPY_LOG_DEPTH_KEY] = depth + 1
+        try:
+            for key, value in self._assigned_state_items():
+                object.__setattr__(
+                    clone,
+                    key,
+                    self._deepcopy_state_value(value, memo),
+                )
+        finally:
+            if depth:
+                memo[_DEEPCOPY_LOG_DEPTH_KEY] = depth
+            else:
+                memo.pop(_DEEPCOPY_LOG_DEPTH_KEY, None)
+        return clone
+
     def __copy__(self) -> Self:
         """Return a shallow config clone without logging mutations.
 
@@ -366,8 +422,9 @@ class BaseConfig:
         """Return a request-local clone with public field overrides applied.
 
         Scoped overrides are for per-call or per-task effective config. They
-        validate through the same hooks as direct assignment, record
-        ``python_scoped_override`` provenance, and leave this config unchanged.
+        deep-copy the current resolved state, validate through the same hooks as
+        direct assignment, record ``python_scoped_override`` provenance, and
+        leave this config unchanged.
 
         :param overrides: Optional mapping of public field-name overrides.
         :param skip_none: Whether ``None`` values mean no override.
@@ -376,20 +433,16 @@ class BaseConfig:
         :return: Cloned config with scoped override values applied.
         :raises KeyError: If an override names a non-public config field.
         """
-        values = self._merged_scoped_overrides(
+        candidate_values = self._merge_overrides(
             overrides,
             kwargs,
+        )
+        self._validate_public_override_names(self, candidate_values)
+        values = self._without_skipped_none(
+            candidate_values,
             skip_none=skip_none,
         )
-        public_field_names = self._public_config_field_names(self)
-        unknown = sorted(set(values) - public_field_names)
-        if unknown:
-            joined = ", ".join(unknown)
-            raise KeyError(
-                f"{self.__class__.__name__} has no public config field(s): "
-                f"{joined}"
-            )
-        clone = self._clone_for_state_transfer()
+        clone = self._deep_clone_for_state_transfer({})
         for key, value in values.items():
             clone._assign_existing_value(
                 key,

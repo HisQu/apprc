@@ -2,6 +2,7 @@ from __future__ import annotations
 from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
@@ -37,6 +38,12 @@ class _DefaultRuntimeConfig(BaseConfig):
     secret: str = field(default="token", repr=False)
     _private: str = "private"
     internal: str = field(default="internal", metadata={"internal": True})
+
+
+@dataclass(slots=True)
+class _MutableRuntimeConfig(BaseConfig):
+    items: list[str] = field(default_factory=list)
+    module: ModuleType = base_config
 
 
 @env_owner(
@@ -237,6 +244,15 @@ def test_base_config_create_or_update_persists_on_existing_config() -> None:
     assert config.provenance_of("secret").origin == "python_baseconfig_default"
 
 
+def test_base_config_create_or_update_rejects_unknown_field() -> None:
+    config = _DefaultRuntimeConfig()
+
+    with pytest.raises(KeyError, match="unknown"):
+        _DefaultRuntimeConfig.create_or_update(cfg=config, unknown=None)
+
+    assert not hasattr(config, "unknown")
+
+
 def test_base_config_scoped_returns_clone_and_preserves_original() -> None:
     config = _DefaultRuntimeConfig(name="base")
 
@@ -268,6 +284,33 @@ def test_base_config_scoped_rejects_unknown_field() -> None:
         config.scoped(unknown="value")
 
 
+def test_base_config_scoped_rejects_unknown_field_before_skipping_none() -> (
+    None
+):
+    config = _DefaultRuntimeConfig()
+
+    with pytest.raises(KeyError, match="unknown"):
+        config.scoped(unknown=None)
+
+
+def test_base_config_scoped_kwargs_win_over_mapping() -> None:
+    config = _DefaultRuntimeConfig(name="base")
+
+    scoped = config.scoped({"name": "mapping"}, name="kwarg")
+
+    assert scoped.name == "kwarg"
+    assert config.name == "base"
+
+
+def test_base_config_scoped_without_overrides_still_returns_clone() -> None:
+    config = _DefaultRuntimeConfig(name="base")
+
+    scoped = config.scoped()
+
+    assert scoped is not config
+    assert scoped == config
+
+
 def test_base_config_scoped_skips_none_by_default() -> None:
     config = _DefaultRuntimeConfig(name="base")
 
@@ -286,6 +329,17 @@ def test_base_config_scoped_can_apply_none_when_requested() -> None:
     assert getattr(scoped, "name") is None
     assert scoped.provenance_of("name").origin == "python_scoped_override"
     assert config.name == "base"
+
+
+def test_base_config_scoped_deep_copies_mutable_state() -> None:
+    config = _MutableRuntimeConfig(items=["base"])
+
+    scoped = config.scoped()
+    scoped.items.append("request")
+
+    assert scoped.items == ["base", "request"]
+    assert config.items == ["base"]
+    assert scoped.module is base_config
 
 
 def test_base_config_scoped_from_filters_non_config_names() -> None:
@@ -666,6 +720,20 @@ def test_env_config_scoped_validates_owner_choices_and_types(
 
     assert cfg.mode == "AUTO"
     assert cfg.enabled is False
+
+
+def test_env_config_scoped_preserves_owner_default_without_factory_rerun(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FACTORY_CACHE_DIR", raising=False)
+    cfg = _FactoryEnv()
+    factory_count = _factory_counter
+
+    scoped = cfg.scoped()
+
+    assert scoped is not cfg
+    assert scoped.cache_dir == cfg.cache_dir
+    assert _factory_counter == factory_count
 
 
 def test_env_config_reload_preserves_scoped_override(

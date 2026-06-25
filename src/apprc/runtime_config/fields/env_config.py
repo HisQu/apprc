@@ -99,8 +99,8 @@ class EnvConfig(BaseConfig):
     def reload(self, override_python_values: bool = False) -> None:
         """Re-bind owner-backed fields from current process ``os.environ``.
 
-        Python constructor arguments and later Python assignments stay
-        authoritative for the object lifetime by default. Pass
+        Python constructor arguments, later Python assignments, and scoped
+        overrides stay authoritative for the object lifetime by default. Pass
         ``override_python_values=True`` when the current process environment
         should deliberately replace those Python-provided values.
 
@@ -124,7 +124,8 @@ class EnvConfig(BaseConfig):
         process env values overlay those defaults.
 
         :param override_python_values: Whether env values may overwrite fields
-            provided through Python constructor arguments or later assignment.
+            provided through Python constructor arguments, later assignment, or
+            scoped overrides.
         """
         self._bind_from_env(override_python_values=override_python_values)
         self._validate_required_fields()

@@ -92,6 +92,7 @@ def read_dotenv_file(path: Path | None) -> dict[str, str]:
 def merged_env_values(
     *,
     shared_values: Mapping[str, str],
+    global_values: Mapping[str, str],
     local_values: Mapping[str, str],
     explicit_values: Mapping[str, str],
     original_env: Mapping[str, str],
@@ -101,12 +102,14 @@ def merged_env_values(
     if env_file_overrides_os_environ:
         return {
             **shared_values,
+            **global_values,
             **local_values,
             **original_env,
             **explicit_values,
         }
     return {
         **shared_values,
+        **global_values,
         **local_values,
         **explicit_values,
         **original_env,

@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from apprc.runtime_config.app_spec import AppConfigSpec
+from apprc.runtime_config.app_spec import AppConfigSpec, StorageMode
 from apprc.runtime_config.contract.apprc_toml_env import (
     ApprcTomlEnvError,
     missing_apprc_toml_file_message,
@@ -45,8 +45,7 @@ def apprc_toml_path_for_create(spec: AppConfigSpec) -> Path:
     create or update the storage table.
 
     :param spec: Application-specific config contract.
-    :return: Env-selected AppRC TOML path.
-    :raises ApprcTomlEnvError: If the AppRC TOML env var is missing.
+    :return: Override or default AppRC TOML path.
     """
     return spec.required_apprc_toml_path()
 
@@ -71,8 +70,7 @@ def load_existing_storage_registry(
     :param spec: Application-specific config contract.
     :param proc_env: Optional environment mapping for bootstrap-time selection.
     :return: Parsed storage table.
-    :raises ApprcTomlEnvError: If the env var is missing or points at a missing
-        file.
+    :raises ApprcTomlEnvError: If the AppRC TOML file is missing.
     :raises ValueError: If the AppRC TOML cannot be parsed.
     """
     apprc_toml_path = spec.required_apprc_toml_path(proc_env=proc_env)
@@ -92,15 +90,15 @@ def load_optional_runtime_storage_registry(
     *,
     proc_env: Mapping[str, str] | None = None,
 ) -> StorageRegistry | None:
-    """Read the storage table only when runtime multi-storage mode is enabled.
+    """Read the storage table only when the app uses storage.
 
     :param spec: Application-specific config contract.
     :param proc_env: Optional environment mapping for bootstrap-time selection.
-    :return: Parsed storage table, or ``None`` in single-storage mode.
-    :raises ApprcTomlEnvError: If the env var points at a missing file.
+    :return: Parsed storage table, or ``None`` when storage is disabled.
+    :raises ApprcTomlEnvError: If the AppRC TOML file is missing.
     :raises ValueError: If the AppRC TOML cannot be parsed.
     """
-    if spec.optional_apprc_toml_path(proc_env) is None:
+    if spec.storage_mode == StorageMode.DISABLED:
         return None
     return load_existing_storage_registry(spec, proc_env=proc_env)
 
@@ -115,17 +113,6 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
         spec.apprc_toml_env_key, ""
     ).strip()
     apprc_toml_path = spec.optional_apprc_toml_path()
-    if apprc_toml_path is None:
-        return StorageRegistryInspection(
-            path=None,
-            env_value=raw_apprc_toml_env_value or None,
-            exists=False,
-            error=None,
-            registry=None,
-            storage_count=0,
-            issues=[],
-        )
-
     apprc_toml_exists = apprc_toml_path.is_file()
     if not apprc_toml_exists:
         return StorageRegistryInspection(

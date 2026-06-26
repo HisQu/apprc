@@ -42,6 +42,7 @@ name = "apprc"
 version = "0.16.0"
 source = { editable = "." }
 dependencies = [
+    { name = "platformdirs" },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "textual" },
@@ -74,6 +75,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "platformdirs" },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "structlog", marker = "extra == 'logging'", specifier = ">=25.5" },

@@ -19,8 +19,8 @@ from apprc.runtime_config.provenance import (
 def write_bootstrap_environment(
     values: Mapping[str, str],
     *,
-    storage_env_key: str,
-    storage_root: Path,
+    storage_env_key: str | None = None,
+    storage_root: Path | None = None,
 ) -> None:
     """Apply bootstrap values to this Python process only.
 
@@ -29,7 +29,8 @@ def write_bootstrap_environment(
     :param storage_root: Resolved active storage root written after merge.
     """
     os.environ.update(values)
-    os.environ[storage_env_key] = str(storage_root)
+    if storage_env_key is not None and storage_root is not None:
+        os.environ[storage_env_key] = str(storage_root)
 
 
 def app_env_keys(spec: AppConfigSpec) -> set[str]:
@@ -38,7 +39,9 @@ def app_env_keys(spec: AppConfigSpec) -> set[str]:
     :param spec: Application-specific bootstrap contract.
     :return: Full env keys that AppRC should track for this app.
     """
-    keys = {spec.apprc_toml_env_key, spec.storage_env_key}
+    keys = {spec.apprc_toml_env_key}
+    if spec.storage_env_key is not None:
+        keys.add(spec.storage_env_key)
     for owner in spec.owners:
         keys.update(
             owner.env_key(owner_field.name) for owner_field in owner.fields
@@ -73,7 +76,9 @@ def merged_env_value_origins(
     app_env_keys: set[str],
     shared_env_path: Path,
     shared_values: Mapping[str, str],
-    local_env_path: Path,
+    global_env_path: Path,
+    global_values: Mapping[str, str],
+    local_env_path: Path | None,
     local_values: Mapping[str, str],
     explicit_layers: tuple[ExplicitEnvLayer, ...],
     original_env: Mapping[str, str],
@@ -84,6 +89,8 @@ def merged_env_value_origins(
     :param app_env_keys: App-owned env keys eligible for provenance tracking.
     :param shared_env_path: Packaged shared dotenv path.
     :param shared_values: Parsed packaged shared dotenv values.
+    :param global_env_path: App-global dotenv path.
+    :param global_values: Parsed app-global dotenv values.
     :param local_env_path: Active storage-local dotenv path.
     :param local_values: Parsed storage-local dotenv values.
     :param explicit_layers: Parsed explicit env files in command/API order.
@@ -111,7 +118,9 @@ def merged_env_value_origins(
             )
 
     apply_values(shared_values, "shell_dotenv_shared", path=shared_env_path)
-    apply_values(local_values, "shell_dotenv_local", path=local_env_path)
+    apply_values(global_values, "shell_dotenv_global", path=global_env_path)
+    if local_env_path is not None:
+        apply_values(local_values, "shell_dotenv_local", path=local_env_path)
     if env_file_overrides_os_environ:
         apply_values(original_env, "shell_export_variable")
         for layer in explicit_layers:

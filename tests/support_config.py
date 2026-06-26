@@ -95,11 +95,45 @@ APPRC_EXAMPLE_APP_OWNER = config_owner_for(ApprcExampleAppEnv)
 APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
 
 
+@env_owner(
+    key="global",
+    title="Global",
+    env_prefix="STORAGE_FREE_APP_",
+    rc_path=("global",),
+)
+class StorageFreeExampleEnv(EnvConfig):
+    """Storage-free env section used by AppRC integration tests."""
+
+    profile: str = env_field(
+        "PROFILE",
+        default="default",
+        title="Profile",
+        explanation_short="Named profile used by the storage-free app.",
+    )
+    enabled: bool = env_field(
+        "ENABLED",
+        default=True,
+        title="Enabled",
+        explanation_short="Turns the storage-free app on or off.",
+    )
+
+
+STORAGE_FREE_EXAMPLE_OWNER = config_owner_for(StorageFreeExampleEnv)
+
+
 @dataclass(slots=True)
 class ApprcExampleAppConfigState:
     """Root CLI state used by generated config app tests."""
 
     env_bootstrap: EnvBootstrapResult | None
+    storage: str | None = None
+
+
+@dataclass(slots=True)
+class StorageFreeExampleConfigState:
+    """Root CLI state used by storage-free generated config tests."""
+
+    env_bootstrap: EnvBootstrapResult | None = None
     storage: str | None = None
 
 
@@ -113,6 +147,17 @@ def build_apprc_example_app_kit() -> AppConfigKit:
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
         apprc_toml_filename="apprc_example_app.apprc.toml",
         local_env_filename=".env.apprc_example_app",
+    )
+
+
+def build_storage_free_example_kit() -> AppConfigKit:
+    """Return a tiny AppConfigKit that does not use storage."""
+    return AppConfigKit(
+        app_name="storage_free_app",
+        display_name="Storage-Free App",
+        config_package="apprc.runtime_config",
+        envs=(StorageFreeExampleEnv,),
+        apprc_toml_filename="storage_free_app.apprc.toml",
     )
 
 

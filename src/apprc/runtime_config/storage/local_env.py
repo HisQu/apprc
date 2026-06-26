@@ -1,11 +1,10 @@
-"""Read and write storage-local dotenv overrides.
+"""Read and write AppRC dotenv override files.
 
-AppRC always has one active storage root selected by ``<APP>_STORAGE``. That
-root owns a storage-local dotenv file. Optional multi-storage registries may
-name several such roots in an AppRC TOML, but this module only owns local dotenv
-file handling. It validates values against the same ``ConfigField``
-declarations used by runtime loading, writes keys in declaration order, and
-preserves unknown dotenv keys after the known AppRC keys.
+Storage-enabled apps use storage-local dotenv files. Storage-free apps use one
+app-global dotenv file in the AppRC config home. Both files validate values
+against the same ``ConfigField`` declarations used by runtime loading, write
+keys in declaration order, and preserve unknown dotenv keys after known AppRC
+keys.
 
 It intentionally does not mutate ``os.environ``. Entrypoints use
 :mod:`apprc.runtime_config.bootstrap.orchestrator` to decide which dotenv
@@ -25,6 +24,7 @@ from dotenv import dotenv_values
 from typed_settings.exceptions import InvalidSettingsError
 
 # == Internal ================================
+from apprc.runtime_config.config_home import ensure_text_file, write_text_atomic
 from apprc.runtime_config._env_loading import (
     parse_env_field_value,
 )
@@ -73,12 +73,25 @@ def ensure_local_env_file(
     """
     root = _require_existing_storage_root(storage_root)
     path = root / filename
-    path.touch(exist_ok=True)
-    return path
+    return ensure_text_file(path)
+
+
+def ensure_env_file(path: Path) -> Path:
+    """Create an AppRC dotenv override file when it is missing.
+
+    :param path: Dotenv path to create.
+    :return: Path to the existing dotenv file.
+    """
+    return ensure_text_file(path)
 
 
 def read_local_env(path: Path) -> dict[str, str]:
     """Parse an optional dotenv file into string key/value pairs."""
+    return read_env_file(path)
+
+
+def read_env_file(path: Path) -> dict[str, str]:
+    """Parse an optional AppRC dotenv file into string key/value pairs."""
     env_path = Path(path).expanduser()
     if not env_path.is_file():
         return {}
@@ -101,6 +114,23 @@ def write_local_env(
     """
     env_path = Path(path).expanduser()
     _require_existing_storage_root(env_path.parent)
+    return write_env_file(env_path, values, owners=owners)
+
+
+def write_env_file(
+    path: Path,
+    values: Mapping[str, str],
+    *,
+    owners: Iterable[ConfigOwner],
+) -> Path:
+    """Write deterministic AppRC dotenv values.
+
+    :param path: Dotenv file path to replace.
+    :param values: Env values keyed by concrete environment variable.
+    :param owners: Config owners that define known AppRC env keys.
+    :return: Written dotenv path.
+    """
+    env_path = Path(path).expanduser()
     ordered_keys = _ordered_env_keys(owners)
     known_key_set = set(ordered_keys)
     known = [key for key in ordered_keys if key in values]
@@ -108,8 +138,7 @@ def write_local_env(
     lines = [
         f"{key}={_dotenv_quote(values[key])}" for key in (*known, *unknown)
     ]
-    env_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    return env_path
+    return write_text_atomic(env_path, "\n".join(lines).rstrip() + "\n")
 
 
 def _require_existing_storage_root(storage_root: Path) -> Path:
@@ -145,18 +174,46 @@ def set_local_env_value(
     :return: Written file, key, and normalized value.
     :raises ValueError: If the key is unknown, read-only, or invalid.
     """
+    path = local_env_path(storage_root, filename=local_env_filename)
+    return set_env_file_value(
+        path=path,
+        reference=reference,
+        raw_value=raw_value,
+        owners=owners,
+        layer_name=".env.local",
+    )
+
+
+def set_env_file_value(
+    *,
+    path: Path,
+    reference: str,
+    raw_value: str,
+    owners: Iterable[ConfigOwner],
+    layer_name: str,
+) -> LocalEnvUpdate:
+    """Set one override value in an AppRC dotenv file.
+
+    :param path: Dotenv file to update.
+    :param reference: Full env key, dotted config path, or unique field name.
+    :param raw_value: User-provided value before type validation.
+    :param owners: Config owners to search.
+    :param layer_name: Human-readable layer name for read-only errors.
+    :return: Written file, key, and normalized value.
+    :raises ValueError: If the key is unknown, read-only, or invalid.
+    """
     owner, spec = resolve_config_field_reference(owners, reference)
     if not spec.editable:
         raise ValueError(
-            f"{owner.env_key(spec.name)} is managed outside .env.local."
+            f"{owner.env_key(spec.name)} is managed outside {layer_name}."
         )
     value = normalize_env_value(spec, raw_value)
     env_key = owner.env_key(spec.name)
-    path = local_env_path(storage_root, filename=local_env_filename)
-    values = read_local_env(path)
+    path = ensure_env_file(path)
+    values = read_env_file(path)
     values[env_key] = value
-    write_local_env(path, values, owners=owners)
-    return LocalEnvUpdate(path=path, env_key=env_key, value=value)
+    written_path = write_env_file(path, values, owners=owners)
+    return LocalEnvUpdate(path=written_path, env_key=env_key, value=value)
 
 
 def clear_local_env_value(
@@ -175,19 +232,44 @@ def clear_local_env_value(
     :return: Written file and removed key, or ``None`` when the key was absent.
     :raises ValueError: If the key is unknown or read-only.
     """
+    path = local_env_path(storage_root, filename=local_env_filename)
+    return clear_env_file_value(
+        path=path,
+        reference=reference,
+        owners=owners,
+        layer_name=".env.local",
+    )
+
+
+def clear_env_file_value(
+    *,
+    path: Path,
+    reference: str,
+    owners: Iterable[ConfigOwner],
+    layer_name: str,
+) -> LocalEnvUpdate | None:
+    """Remove one override value from an AppRC dotenv file.
+
+    :param path: Dotenv file to update.
+    :param reference: Full env key, dotted config path, or unique field name.
+    :param owners: Config owners to search.
+    :param layer_name: Human-readable layer name for read-only errors.
+    :return: Written file and removed key, or ``None`` when the key was absent.
+    :raises ValueError: If the key is unknown or read-only.
+    """
     owner, spec = resolve_config_field_reference(owners, reference)
     if not spec.editable:
         raise ValueError(
-            f"{owner.env_key(spec.name)} is managed outside .env.local."
+            f"{owner.env_key(spec.name)} is managed outside {layer_name}."
         )
     env_key = owner.env_key(spec.name)
-    path = local_env_path(storage_root, filename=local_env_filename)
-    values = read_local_env(path)
+    path = ensure_env_file(path)
+    values = read_env_file(path)
     if env_key not in values:
         return None
     values.pop(env_key)
-    write_local_env(path, values, owners=owners)
-    return LocalEnvUpdate(path=path, env_key=env_key, value="")
+    written_path = write_env_file(path, values, owners=owners)
+    return LocalEnvUpdate(path=written_path, env_key=env_key, value="")
 
 
 def normalize_env_value(spec: ConfigField, raw_value: str) -> str:

@@ -9,8 +9,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
+from apprc.runtime_config.app_spec import StorageMode
+from apprc.runtime_config.config_home import AppConfigHome
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
-from apprc.runtime_config.bootstrap.dotenv_layers import read_shared_env_values
+from apprc.runtime_config.bootstrap.dotenv_layers import (
+    read_dotenv_file,
+    read_shared_env_values,
+)
 from apprc.runtime_config.storage.loading import (
     StorageRegistryInspection,
     inspect_storage_registry,
@@ -30,6 +35,10 @@ class ConfigDoctorPayload(TypedDict):
     """Machine-readable diagnostics emitted by ``config doctor``."""
 
     status: str
+    config_home: str
+    config_home_exists: bool
+    global_env: str
+    global_env_exists: bool
     apprc_toml_env_key: str
     apprc_toml_env_value: str | None
     apprc_toml_path: str | None
@@ -74,7 +83,16 @@ def config_command_text(kit: "AppConfigKit", action: str) -> str:
 
 def config_setup_message(kit: "AppConfigKit") -> str:
     """Return setup text shown when no storage is registered."""
-    storage_key = kit.spec.storage_env_key
+    if kit.spec.storage_mode == StorageMode.DISABLED:
+        return (
+            f"{kit.spec.display_name} uses AppRC's app-global config home.\n\n"
+            "Create or inspect the AppRC-managed files:\n"
+            f"  {config_command_text(kit, 'setup')}\n\n"
+            "Then inspect the setup:\n"
+            f"  {config_command_text(kit, 'doctor')}\n"
+            f"  {config_command_text(kit, 'show')}"
+        )
+    storage_key = kit.spec.require_storage_env_key()
     setup_action = "setup --yes --storage-root /absolute/path/to/storage-root"
     return (
         f"No active {kit.spec.display_name} storage is selected.\n\n"
@@ -104,6 +122,7 @@ def build_config_doctor_payload(
     :param storage: Optional selector passed by ``--storage``.
     :return: Stable JSON-friendly diagnostic payload.
     """
+    config_home = kit.spec.ensure_config_home()
     storage_registry_diagnosis = inspect_storage_registry(kit.spec)
     storage_diagnosis = _diagnose_storage(
         kit,
@@ -116,11 +135,13 @@ def build_config_doctor_payload(
     ]
     warnings = _config_package_convention_warnings(kit)
     status = _doctor_status(
+        kit,
         registry=storage_registry_diagnosis,
         storage=storage_diagnosis,
     )
     return _doctor_payload(
         kit,
+        config_home=config_home,
         registry=storage_registry_diagnosis,
         storage=storage_diagnosis,
         status=status,
@@ -132,6 +153,7 @@ def build_config_doctor_payload(
 def _doctor_payload(
     kit: "AppConfigKit",
     *,
+    config_home: AppConfigHome,
     registry: StorageRegistryInspection,
     storage: _StorageDiagnosis,
     status: ConfigDoctorStatus,
@@ -152,6 +174,10 @@ def _doctor_payload(
     selected_storage_root = selection.root if selection is not None else None
     return {
         "status": status.value,
+        "config_home": str(config_home.root),
+        "config_home_exists": config_home.root.is_dir(),
+        "global_env": str(config_home.global_env),
+        "global_env_exists": config_home.global_env.is_file(),
         "apprc_toml_env_key": kit.spec.apprc_toml_env_key,
         "apprc_toml_env_value": registry.env_value,
         "apprc_toml_path": str(registry.path)
@@ -200,8 +226,20 @@ def _diagnose_storage(
     :param storage: Optional selector passed by ``--storage``.
     :return: Storage diagnosis with missing-env and local-env issues.
     """
-    storage_env_key = kit.spec.storage_env_key
+    if kit.spec.storage_mode == StorageMode.DISABLED:
+        return _StorageDiagnosis(
+            selection=None,
+            storage_root_exists=None,
+            local_env=None,
+            local_env_exists=None,
+            missing_env_keys=[],
+            issues=[],
+        )
+    storage_env_key = kit.spec.require_storage_env_key()
     issues: list[str] = []
+    global_values = {}
+    if kit.spec.global_env_path().is_file():
+        global_values = read_dotenv_file(kit.spec.global_env_path())
     try:
         _, shared_values = read_shared_env_values(kit.spec)
     except (ImportError, OSError, TypeError) as exc:
@@ -220,6 +258,7 @@ def _diagnose_storage(
             storage=storage,
             storage_env_key=storage_env_key,
             original_env=os.environ,
+            global_values=global_values,
             shared_values=shared_values,
         )
     except StorageSelectorError as exc:
@@ -260,6 +299,7 @@ def _diagnose_storage(
 
 
 def _doctor_status(
+    kit: "AppConfigKit",
     *,
     registry: StorageRegistryInspection,
     storage: _StorageDiagnosis,
@@ -273,6 +313,8 @@ def _doctor_status(
     if storage.missing_env_keys:
         return ConfigDoctorStatus.ENV_NOT_SET
     if registry.issues:
+        if kit.spec.storage_mode == StorageMode.DISABLED:
+            return ConfigDoctorStatus.CONFIG_NOT_READY
         return ConfigDoctorStatus.MULTI_STORAGE_NOT_READY
     if storage.issues:
         return ConfigDoctorStatus.STORAGE_NOT_READY
@@ -316,6 +358,11 @@ def _doctor_next_steps(
     """
     if status == ConfigDoctorStatus.RUNNABLE:
         return []
+    if status == ConfigDoctorStatus.CONFIG_NOT_READY:
+        return [
+            config_command_text(kit, "setup"),
+            config_command_text(kit, "doctor"),
+        ]
     if status == ConfigDoctorStatus.ENV_NOT_SET:
         return [
             config_command_text(
@@ -327,12 +374,11 @@ def _doctor_next_steps(
         ]
     if status == ConfigDoctorStatus.MULTI_STORAGE_NOT_READY:
         return [
-            f"Unset {kit.spec.apprc_toml_env_key} for single-storage mode, "
-            "or create the AppRC TOML file:",
+            "Fix the AppRC TOML file or choose a different AppRC TOML path "
+            f"with {kit.spec.apprc_toml_env_key}:",
             config_command_text(
                 kit,
-                "setup --yes --apprc-dir /absolute/path/to/config-dir "
-                "--storage-root /absolute/path/to/storage-root "
+                "setup --yes --storage-root /absolute/path/to/storage-root "
                 "--multi-storage",
             ),
             config_command_text(kit, "doctor"),

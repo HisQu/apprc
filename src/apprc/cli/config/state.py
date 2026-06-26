@@ -15,6 +15,7 @@ from apprc.cli.options import (
 )
 from apprc.cli.typer_utils import args_after_command, strip_leading_options
 from apprc.runtime_config.bootstrap.result import EnvBootstrapResult
+from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.kit import AppConfigKit
 from apprc.runtime_config.storage.loading import (
     load_optional_runtime_storage_registry,
@@ -79,13 +80,17 @@ def active_storage_root_from_state(
     :param state: Root CLI state object.
     :return: Resolved storage root, or ``None`` when no selector is active.
     """
+    if kit.spec.storage_mode == StorageMode.DISABLED:
+        return None
     if (
         state.env_bootstrap is not None
         and state.env_bootstrap.storage_root is not None
     ):
         return state.env_bootstrap.storage_root
-    if not os.environ.get(kit.spec.storage_env_key, "").strip():
+    storage_env_key = kit.spec.require_storage_env_key()
+    if not os.environ.get(storage_env_key, "").strip():
         return None
+    kit.spec.ensure_config_home()
     registry = load_optional_runtime_storage_registry(kit.spec)
     return active_storage_root_from_env(kit, registry=registry)
 
@@ -103,13 +108,16 @@ def active_storage_root_from_env(
     :return: Resolved storage root, or ``None`` when no env selector is set.
     :raises StorageSelectorError: If the env selector cannot be resolved.
     """
-    env_storage = os.environ.get(kit.spec.storage_env_key, "").strip()
+    if kit.spec.storage_mode == StorageMode.DISABLED:
+        return None
+    storage_env_key = kit.spec.require_storage_env_key()
+    env_storage = os.environ.get(storage_env_key, "").strip()
     if not env_storage:
         return None
     selection = resolve_active_storage_selection(
         registry=registry,
         storage=None,
-        storage_env_key=kit.spec.storage_env_key,
+        storage_env_key=storage_env_key,
         original_env=os.environ,
     )
     return selection.root if selection is not None else None
@@ -131,7 +139,10 @@ def initial_storage_from_state(
         return state.env_bootstrap.storage_name
     if state.storage is not None:
         return state.storage
-    env_storage = os.environ.get(kit.spec.storage_env_key, "").strip()
+    if kit.spec.storage_mode == StorageMode.DISABLED:
+        return None
+    storage_env_key = kit.spec.require_storage_env_key()
+    env_storage = os.environ.get(storage_env_key, "").strip()
     if registry is not None and env_storage in registry.storages:
         return env_storage
     return None

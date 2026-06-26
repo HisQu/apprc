@@ -241,8 +241,9 @@ class ConfigSetupFlow:
         """Resolve and validate the active storage root before setup writes."""
         active_root = storage_root or self.storage_root_from_env()
         if active_root is None:
+            storage_env_key = self.kit.spec.require_storage_env_key()
             raise ConfigSetupError(
-                f"{self.kit.spec.storage_env_key} or --storage-root is "
+                f"{storage_env_key} or --storage-root is "
                 "required for non-interactive setup.",
                 param_hint="--storage-root",
             )
@@ -303,15 +304,16 @@ class ConfigSetupFlow:
 
     def storage_root_from_env(self) -> Path | None:
         """Return the active storage root from the setup-time env selector."""
+        storage_env_key = self.kit.spec.require_storage_env_key()
         try:
             return resolve_setup_storage_root_from_env(
-                storage_env_key=self.kit.spec.storage_env_key,
+                storage_env_key=storage_env_key,
                 proc_env=os.environ,
             )
         except StorageRootPathError as exc:
             raise ConfigSetupError(
                 str(exc),
-                param_hint=self.kit.spec.storage_env_key,
+                param_hint=storage_env_key,
             ) from exc
 
     def apprc_toml_path(self, apprc_dir: Path | None) -> Path:

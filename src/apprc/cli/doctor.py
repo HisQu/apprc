@@ -34,6 +34,30 @@ def print_config_doctor(
     console.print("")
     console.print(
         label_value_text(
+            "config_home",
+            path_text(payload["config_home"]),
+        )
+    )
+    console.print(
+        label_value_text(
+            "config_home_exists",
+            _bool_text(payload["config_home_exists"]),
+        )
+    )
+    console.print(
+        label_value_text(
+            "global_env",
+            path_text(payload["global_env"]),
+        )
+    )
+    console.print(
+        label_value_text(
+            "global_env_exists",
+            _bool_text(payload["global_env_exists"]),
+        )
+    )
+    console.print(
+        label_value_text(
             "apprc_toml_env_key",
             env_key_text(payload["apprc_toml_env_key"]),
         )
@@ -130,6 +154,10 @@ def _doctor_status_text(
     :return: Rich text status line.
     """
     status_labels = {
+        ConfigDoctorStatus.CONFIG_NOT_READY.value: (
+            "config not ready",
+            ERROR_STYLE,
+        ),
         ConfigDoctorStatus.ENV_NOT_SET.value: ("env not set", MISSING_STYLE),
         ConfigDoctorStatus.MULTI_STORAGE_NOT_READY.value: (
             "multi-storage not ready",
@@ -204,13 +232,17 @@ def _styled_issue_text(
     """
     styles = {
         kit.spec.apprc_toml_env_key: ENV_KEY_STYLE,
-        kit.spec.storage_env_key: ENV_KEY_STYLE,
         "env_not_set": MISSING_STYLE,
+        "config_not_ready": ERROR_STYLE,
     }
+    if kit.spec.storage_env_key is not None:
+        styles[kit.spec.storage_env_key] = ENV_KEY_STYLE
     styles.update(
         {
             str(value): PATH_STYLE
             for value in (
+                payload["config_home"],
+                payload["global_env"],
                 payload["apprc_toml_env_value"],
                 payload["apprc_toml_path"],
                 payload["selected_storage_root"],

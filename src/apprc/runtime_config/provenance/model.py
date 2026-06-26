@@ -19,6 +19,7 @@ type PythonProvenanceOrigin = Literal[
 type ShellProvenanceOrigin = Literal[
     "shell_export_variable",
     "shell_dotenv_shared",
+    "shell_dotenv_global",
     "shell_dotenv_local",
     "shell_dotenv_explicit",
     "shell_bootstrap_selector",

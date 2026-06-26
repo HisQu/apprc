@@ -6,12 +6,15 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 # == Internal ================================
-from apprc.runtime_config.contract.apprc_toml_env import (
-    ApprcTomlEnvError,
-    missing_apprc_toml_env_message,
+from apprc.runtime_config.config_home import (
+    AppConfigHome,
+    app_config_file,
+    app_config_home,
+    ensure_app_config_home,
 )
 from apprc.runtime_config.contract.paths import normalize_apprc_toml_path
 from apprc.runtime_config.contract.schema import ConfigOwner
@@ -20,6 +23,13 @@ from apprc.runtime_config.contract.schema_validation import (
 )
 from apprc.runtime_config.config_objects.env_field import config_owner_for
 from apprc.runtime_config.config_objects.env_config import EnvConfig
+
+
+class StorageMode(StrEnum):
+    """Storage capability selected by one application integration."""
+
+    DISABLED = "disabled"
+    REQUIRED = "required"
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -35,10 +45,13 @@ class AppConfigSpec:
     :param config_package: Package containing the packaged shared dotenv file.
     :param envs: ``EnvConfig`` classes decorated with ``@env_owner``. AppRC
         derives the normalized owner inventory from these classes.
-    :param storage_env_key: Env key that stores the active storage selector.
+    :param storage_mode: Whether this app needs an active storage root.
+    :param storage_env_key: Env key that stores the active storage selector
+        when storage is required.
     :param command_name: Optional executable name shown in generated CLI copy.
     :param apprc_toml_filename: Per-user AppRC TOML filename.
     :param shared_env_filename: Packaged shared dotenv filename.
+    :param global_env_filename: App-global dotenv override filename.
     :param local_env_filename: Storage-local dotenv override filename.
     """
 
@@ -47,10 +60,12 @@ class AppConfigSpec:
     config_package: str
     owners: tuple[ConfigOwner, ...]
     envs: tuple[type[EnvConfig], ...]
-    storage_env_key: str
+    storage_mode: StorageMode
+    storage_env_key: str | None
     apprc_toml_filename: str
     command_name: str | None = None
     shared_env_filename: str = ".env.shared"
+    global_env_filename: str = ".env.global"
     local_env_filename: str = ".env.local"
 
     def __init__(
@@ -59,11 +74,13 @@ class AppConfigSpec:
         app_name: str,
         display_name: str,
         config_package: str,
-        storage_env_key: str,
+        storage_env_key: str | None = None,
         apprc_toml_filename: str,
         envs: tuple[type[EnvConfig], ...] = (),
+        storage_mode: StorageMode | str | None = None,
         command_name: str | None = None,
         shared_env_filename: str = ".env.shared",
+        global_env_filename: str = ".env.global",
         local_env_filename: str = ".env.local",
     ) -> None:
         """Store one application config contract.
@@ -71,24 +88,39 @@ class AppConfigSpec:
         :param app_name: Lowercase application name used in env var derivation.
         :param display_name: Human-readable application name.
         :param config_package: Package containing the packaged shared dotenv.
-        :param storage_env_key: Env key that stores the active storage selector.
+        :param storage_env_key: Env key that stores the active storage selector
+            when storage is required.
         :param apprc_toml_filename: Per-user AppRC TOML filename.
         :param envs: ``EnvConfig`` classes decorated with ``@env_owner``.
+        :param storage_mode: Whether this app needs an active storage root.
         :param command_name: Optional executable name shown in CLI copy.
         :param shared_env_filename: Packaged shared dotenv filename.
+        :param global_env_filename: App-global dotenv override filename.
         :param local_env_filename: Storage-local dotenv override filename.
         """
         resolved_owners = tuple(config_owner_for(env_cls) for env_cls in envs)
         validate_config_owner_inventory(resolved_owners)
+        resolved_storage_mode = _resolve_storage_mode(
+            storage_env_key=storage_env_key,
+            storage_mode=storage_mode,
+        )
+        resolved_storage_env_key = _resolve_storage_env_key(
+            app_name=app_name,
+            storage_env_key=storage_env_key,
+            storage_mode=resolved_storage_mode,
+            storage_mode_was_explicit=storage_mode is not None,
+        )
         object.__setattr__(self, "app_name", app_name)
         object.__setattr__(self, "display_name", display_name)
         object.__setattr__(self, "config_package", config_package)
         object.__setattr__(self, "owners", resolved_owners)
         object.__setattr__(self, "envs", tuple(envs))
-        object.__setattr__(self, "storage_env_key", storage_env_key)
+        object.__setattr__(self, "storage_mode", resolved_storage_mode)
+        object.__setattr__(self, "storage_env_key", resolved_storage_env_key)
         object.__setattr__(self, "apprc_toml_filename", apprc_toml_filename)
         object.__setattr__(self, "command_name", command_name)
         object.__setattr__(self, "shared_env_filename", shared_env_filename)
+        object.__setattr__(self, "global_env_filename", global_env_filename)
         object.__setattr__(self, "local_env_filename", local_env_filename)
 
     def config_command_name(self) -> str:
@@ -111,40 +143,88 @@ class AppConfigSpec:
         """Return the env var that selects this app's AppRC TOML."""
         return _apprc_toml_env_key(self.app_name)
 
+    def config_home(self) -> Path:
+        """Return the platform-native AppRC config directory for this app."""
+        return app_config_home(self.app_name)
+
+    def app_config_file(self, filename: str) -> Path:
+        """Return a host-owned config file path below the config home.
+
+        :param filename: File basename owned by the host application.
+        :return: Path below this app's platform-native config directory.
+        """
+        return app_config_file(self.app_name, filename)
+
+    def default_apprc_toml_path(self) -> Path:
+        """Return the conventional AppRC TOML path for this app."""
+        return self.config_home() / self.apprc_toml_filename
+
+    def global_env_path(self) -> Path:
+        """Return the app-global dotenv override path for this app."""
+        return self.config_home() / self.global_env_filename
+
+    def ensure_config_home(
+        self,
+        proc_env: Mapping[str, str] | None = None,
+    ) -> AppConfigHome:
+        """Create AppRC-managed config files for this application.
+
+        :param proc_env: Optional environment mapping for tests and bootstrap.
+        :return: Resolved AppRC-managed config paths.
+        """
+        return ensure_app_config_home(
+            app_name=self.app_name,
+            global_env_filename=self.global_env_filename,
+            apprc_toml_filename=self.apprc_toml_filename,
+            apprc_toml_path=self.apprc_toml_path(proc_env=proc_env),
+        )
+
     def required_apprc_toml_path(
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path:
-        """Return the configured multi-storage AppRC TOML path.
+        """Return the configured AppRC TOML path.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: Env-selected AppRC TOML path for this application.
+        :return: Override or default AppRC TOML path for this application.
         """
-        path = self.optional_apprc_toml_path(proc_env=proc_env)
-        if path is not None:
-            return path
-        raise ApprcTomlEnvError(
-            missing_apprc_toml_env_message(
-                apprc_toml_env_key=self.apprc_toml_env_key,
-                apprc_toml_filename=self.apprc_toml_filename,
-                command_name=self.config_command_name(),
-            )
-        )
+        return self.apprc_toml_path(proc_env=proc_env)
 
     def optional_apprc_toml_path(
         self,
         proc_env: Mapping[str, str] | None = None,
-    ) -> Path | None:
-        """Return the AppRC TOML path when multi-storage is configured.
+    ) -> Path:
+        """Return the configured AppRC TOML path.
 
         :param proc_env: Optional environment mapping for tests.
-        :return: Env-selected AppRC TOML path, or ``None``.
+        :return: Override or default AppRC TOML path.
+        """
+        return self.apprc_toml_path(proc_env=proc_env)
+
+    def apprc_toml_path(
+        self,
+        proc_env: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Return the override or default AppRC TOML path.
+
+        :param proc_env: Optional environment mapping for tests.
+        :return: AppRC TOML path selected by env or config-home convention.
         """
         env = os.environ if proc_env is None else proc_env
         raw_path = env.get(self.apprc_toml_env_key, "").strip()
         if raw_path:
             return normalize_apprc_toml_path(raw_path)
-        return None
+        return self.default_apprc_toml_path()
+
+    def require_storage_env_key(self) -> str:
+        """Return the storage env key or raise for storage-free apps.
+
+        :return: Storage selector env key.
+        :raises ValueError: If storage is disabled for this app.
+        """
+        if self.storage_env_key is None:
+            raise ValueError(f"{self.display_name} does not use AppRC storage.")
+        return self.storage_env_key
 
 
 def _apprc_toml_env_key(app_name: str) -> str:
@@ -153,3 +233,43 @@ def _apprc_toml_env_key(app_name: str) -> str:
     if not normalized:
         normalized = "APP"
     return f"{normalized}_APPRC_TOML"
+
+
+def _storage_env_key(app_name: str) -> str:
+    """Return the environment variable that selects active storage."""
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", app_name).strip("_").upper()
+    if not normalized:
+        normalized = "APP"
+    return f"{normalized}_STORAGE"
+
+
+def _resolve_storage_mode(
+    *,
+    storage_env_key: str | None,
+    storage_mode: StorageMode | str | None,
+) -> StorageMode:
+    """Return the storage mode while preserving legacy constructor behavior."""
+    if storage_mode is None:
+        return (
+            StorageMode.REQUIRED
+            if storage_env_key is not None
+            else StorageMode.DISABLED
+        )
+    return StorageMode(storage_mode)
+
+
+def _resolve_storage_env_key(
+    *,
+    app_name: str,
+    storage_env_key: str | None,
+    storage_mode: StorageMode,
+    storage_mode_was_explicit: bool,
+) -> str | None:
+    """Return the selector env key allowed by the selected storage mode."""
+    if storage_mode == StorageMode.DISABLED:
+        if storage_mode_was_explicit and storage_env_key is not None:
+            raise ValueError(
+                "storage_env_key cannot be set when storage_mode is disabled."
+            )
+        return None
+    return storage_env_key or _storage_env_key(app_name)

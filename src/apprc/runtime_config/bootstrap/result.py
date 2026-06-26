@@ -25,9 +25,11 @@ class EnvBootstrapResult:
         loading, or ``None`` when dotenv layers were skipped or no storage root
         is known. The path may not exist because missing local files are
         optional.
+    :param config_home: AppRC-managed per-user config directory.
+    :param global_env: App-global dotenv override file considered during
+        loading, or ``None`` when dotenv layers were skipped.
     :param env_files: Explicit dotenv files passed through the CLI or Python API.
-    :param apprc_toml_path: Env-selected AppRC TOML path, or ``None`` when
-        single-storage path mode is active.
+    :param apprc_toml_path: AppRC TOML metadata path.
     :param storage_selector_source: Source that selected the active storage,
         such as ``--storage`` or the app-specific storage env key.
     :param storage_selector_value: Selector value before it was resolved to a
@@ -47,3 +49,5 @@ class EnvBootstrapResult:
     storage_name: str | None
     storage_root: Path | None
     storage_count: int
+    config_home: Path | None = None
+    global_env: Path | None = None

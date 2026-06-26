@@ -11,14 +11,15 @@ from apprc.runtime_config import (
     AppConfigKit,
     ConfigDoctorStatus,
 )
-from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
 from apprc.runtime_config.doctor.payload import build_config_doctor_payload
 from apprc.runtime_config.contract.schema import ConfigField, ConfigOwner
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNERS,
     ApprcExampleAppConfigState,
     ApprcExampleAppEnv,
+    StorageFreeExampleConfigState,
     build_apprc_example_app_kit,
+    build_storage_free_example_kit,
     register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
     set_apprc_example_app_bootstrap,
@@ -81,21 +82,21 @@ def test_kit_rejects_manual_owner_argument() -> None:
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_kit_apprc_toml_path_requires_apprc_toml_env(
+def test_kit_apprc_toml_path_defaults_to_config_home(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
 
-    with pytest.raises(ApprcTomlEnvError) as exc_info:
-        kit.spec.required_apprc_toml_path()
-
-    message = str(exc_info.value)
     assert (
-        "APPRC_EXAMPLE_APP_APPRC_TOML is required for multi-storage" in message
+        kit.spec.required_apprc_toml_path()
+        == tmp_path
+        / "config-home"
+        / "apprc_example_app"
+        / "apprc_example_app.apprc.toml"
     )
-    assert "config setup --yes --apprc-dir" in message
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -112,7 +113,7 @@ def test_config_doctor_reports_env_not_set_without_env(
     result = runner.invoke(app, ["doctor", "--json"])
 
     assert payload["status"] == ConfigDoctorStatus.ENV_NOT_SET.value
-    assert payload["apprc_toml_exists"] is False
+    assert payload["apprc_toml_exists"] is True
     assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
     assert result.exit_code == 1, result.output
     result_payload = json.loads(result.output)
@@ -138,6 +139,40 @@ def test_config_doctor_prints_env_not_set_status(
 
 
 @pytest.mark.allow_missing_apprc_env
+def test_storage_free_config_cli_uses_global_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STORAGE_FREE_APP_PROFILE", raising=False)
+    kit = build_storage_free_example_kit()
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    runner = CliRunner()
+
+    doctor = runner.invoke(app, ["doctor", "--json"])
+    show = runner.invoke(app, ["show", "--json"])
+    update = runner.invoke(app, ["set", "profile", "global-profile"])
+    storage_list = runner.invoke(app, ["list"])
+
+    assert doctor.exit_code == 0, doctor.output
+    doctor_payload = json.loads(doctor.output)
+    assert doctor_payload["status"] == "runnable"
+    assert doctor_payload["storage_count"] == 0
+    assert doctor_payload["selected_storage_root"] is None
+    assert Path(doctor_payload["global_env"]).is_file()
+    assert Path(doctor_payload["apprc_toml_path"]).is_file()
+    assert show.exit_code == 0, show.output
+    show_payload = json.loads(show.output)
+    assert show_payload["storage_root"] is None
+    assert show_payload["global_env"] == doctor_payload["global_env"]
+    assert update.exit_code == 0, update.output
+    assert "global_env:" in update.output
+    assert 'STORAGE_FREE_APP_PROFILE="global-profile"' in Path(
+        doctor_payload["global_env"]
+    ).read_text(encoding="utf-8")
+    assert storage_list.exit_code != 0
+    assert "does not use AppRC storage" in storage_list.output
+
+
+@pytest.mark.allow_missing_apprc_env
 def test_config_doctor_reports_runnable_single_storage_without_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -155,7 +190,7 @@ def test_config_doctor_reports_runnable_single_storage_without_apprc_toml(
     result = runner.invoke(app, ["doctor"])
 
     assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
-    assert payload["apprc_toml_path"] is None
+    assert payload["apprc_toml_path"] is not None
     assert payload["missing_env_keys"] == []
     assert payload["selected_storage_root"] == str(storage_root.resolve())
     assert payload["issues"] == []
@@ -203,7 +238,7 @@ def test_generated_config_setup_yes_requires_storage_without_env(
     assert "APPRC_EXAMPLE_APP_STORAGE" in result.output
 
 
-def test_doctor_payload_reports_multi_storage_not_ready_for_missing_file(
+def test_doctor_payload_creates_missing_override_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -217,11 +252,9 @@ def test_doctor_payload_reports_multi_storage_not_ready_for_missing_file(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.MULTI_STORAGE_NOT_READY.value
-    assert payload["next_steps"][0].startswith(
-        "Unset APPRC_EXAMPLE_APP_APPRC_TOML"
-    )
-    assert "--multi-storage" in payload["next_steps"][1]
+    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
+    assert payload["apprc_toml_path"] == str(missing_apprc_toml)
+    assert missing_apprc_toml.is_file()
 
 
 def test_doctor_payload_reports_runnable_for_empty_apprc_toml_with_active_path(

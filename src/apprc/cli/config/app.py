@@ -120,7 +120,7 @@ def build_config_typer_app(
             typer.Option("--json", help="Emit machine-readable JSON."),
         ] = False,
     ) -> None:
-        """Check local storage setup and print suggested fixes."""
+        """Check AppRC config readiness and print suggested fixes."""
         handlers.doctor(ctx, json_output=json_output)
 
     @app.command("init")
@@ -203,7 +203,7 @@ def build_config_typer_app(
             ),
         ] = None,
     ) -> None:
-        """Configure the active storage root and optional multi-storage."""
+        """Configure AppRC-managed files and optional storage."""
         handlers.setup(
             assume_yes=assume_yes,
             apprc_dir=apprc_dir,
@@ -221,23 +221,23 @@ def build_config_typer_app(
             typer.Argument(
                 help=(
                     "Env key, dotted config path, or unique field name to "
-                    "write into the active storage local env."
+                    "write into the active AppRC dotenv override file."
                 ),
             ),
         ],
         value: Annotated[
             str,
             typer.Argument(
-                help="Value to validate and store as a local override."
+                help="Value to validate and store as an AppRC override."
             ),
         ],
     ) -> None:
-        """Write one active storage-local config override."""
+        """Write one active AppRC dotenv config override."""
         handlers.set(ctx, key=key, value=value)
 
     @app.command("edit")
     def config_edit_cmd(ctx: typer.Context) -> None:
-        """Open the Textual editor for registered storage-local env files."""
+        """Open the Textual editor for AppRC dotenv override files."""
         handlers.edit(ctx)
 
     return app

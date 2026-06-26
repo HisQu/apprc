@@ -9,8 +9,8 @@ import pytest
 from apprc.runtime_config import EnvConfig, env_field, env_owner
 from apprc.runtime_config.app_spec import AppConfigSpec
 from apprc.runtime_config.bootstrap.orchestrator import bootstrap_env
-from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
 from apprc.runtime_config.storage.registry import register_storage
+from tests.support_config import StorageFreeExampleEnv
 
 
 pytestmark = [pytest.mark.requires_apprc_env("DEMO")]
@@ -34,13 +34,14 @@ def _restore_demo_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> Iterator[None]:
+    prefixes = ("DEMO_", "STORAGE_FREE_APP_")
     original = {
         key: value
         for key, value in os.environ.items()
-        if key.startswith("DEMO_")
+        if key.startswith(prefixes)
     }
     for key in tuple(os.environ):
-        if key.startswith("DEMO_"):
+        if key.startswith(prefixes):
             del os.environ[key]
 
     if request.node.get_closest_marker("allow_missing_apprc_env") is None:
@@ -52,7 +53,7 @@ def _restore_demo_env(
 
     yield
     for key in tuple(os.environ):
-        if key.startswith("DEMO_"):
+        if key.startswith(prefixes):
             del os.environ[key]
     os.environ.update(original)
 
@@ -86,6 +87,17 @@ def _spec(package_name: str) -> AppConfigSpec:
     )
 
 
+def _storage_free_spec(package_name: str) -> AppConfigSpec:
+    """Return a storage-free bootstrap spec for global config tests."""
+    return AppConfigSpec(
+        app_name="storage_free_app",
+        display_name="Storage-Free App",
+        config_package=package_name,
+        envs=(StorageFreeExampleEnv,),
+        apprc_toml_filename="storage_free_app.apprc.toml",
+    )
+
+
 class _BootstrapLogSink:
     """Collect bootstrap log messages for assertions."""
 
@@ -105,6 +117,51 @@ def _set_demo_apprc_toml(monkeypatch, tmp_path: Path) -> Path:
     apprc_toml_path = tmp_path / "config" / "demo" / "demo.apprc.toml"
     monkeypatch.setenv("DEMO_APPRC_TOML", str(apprc_toml_path))
     return apprc_toml_path
+
+
+def _default_demo_apprc_toml() -> Path:
+    """Return the isolated default AppRC TOML path for demo tests."""
+    return Path(os.environ["XDG_CONFIG_HOME"]) / "demo" / "demo.apprc.toml"
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_bootstrap_env_storage_disabled_loads_global_env(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("STORAGE_FREE_APP_STORAGE", raising=False)
+    monkeypatch.delenv("STORAGE_FREE_APP_PROFILE", raising=False)
+    package_name = _shared_env_package(
+        monkeypatch,
+        tmp_path,
+        'STORAGE_FREE_APP_PROFILE="shared-profile"\n',
+    )
+    spec = _storage_free_spec(package_name)
+    paths = spec.ensure_config_home()
+    paths.global_env.write_text(
+        'STORAGE_FREE_APP_PROFILE="global-profile"\n',
+        encoding="utf-8",
+    )
+
+    result = bootstrap_env(
+        spec=spec,
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.config_home == paths.root
+    assert result.global_env == paths.global_env
+    assert result.local_env is None
+    assert result.storage_root is None
+    assert result.storage_selector_source is None
+    assert result.apprc_toml_path == paths.apprc_toml
+    assert "STORAGE_FREE_APP_STORAGE" not in os.environ
+    assert os.environ["STORAGE_FREE_APP_PROFILE"] == "global-profile"
+    provenance = StorageFreeExampleEnv().provenance_of("profile")
+    assert provenance.origin == "shell_dotenv_global"
+    assert provenance.path == paths.global_env
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -129,7 +186,8 @@ def test_bootstrap_env_uses_storage_without_apprc_toml_env(
         storage=None,
     )
 
-    assert result.apprc_toml_path is None
+    assert result.apprc_toml_path == _default_demo_apprc_toml()
+    assert _default_demo_apprc_toml().is_file()
     assert result.storage_name is None
     assert result.storage_root == storage_root.resolve()
     assert result.local_env == storage_root.resolve() / ".env.demo"
@@ -200,7 +258,7 @@ def test_bootstrap_env_bare_storage_without_apprc_toml_is_relative_path(
         storage=None,
     )
 
-    assert result.apprc_toml_path is None
+    assert result.apprc_toml_path == _default_demo_apprc_toml()
     assert result.storage_name is None
     assert result.storage_selector_value == "alpha"
     assert result.storage_root == (tmp_path / "alpha").resolve()
@@ -233,7 +291,7 @@ def test_bootstrap_env_explicit_env_file_can_select_single_storage(
         storage=None,
     )
 
-    assert result.apprc_toml_path is None
+    assert result.apprc_toml_path == _default_demo_apprc_toml()
     assert result.storage_selector_source == "DEMO_STORAGE"
     assert result.storage_root == storage_root.resolve()
     assert os.environ["DEMO_MODEL"] == "explicit-model"
@@ -401,7 +459,7 @@ def test_bootstrap_env_shell_storage_wins_over_packaged_shared_default(
     assert os.environ["DEMO_STORAGE"] == str(shell_storage.resolve())
 
 
-def test_bootstrap_env_configured_apprc_toml_must_exist(
+def test_bootstrap_env_configured_apprc_toml_is_created(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -414,14 +472,16 @@ def test_bootstrap_env_configured_apprc_toml_must_exist(
         'DEMO_MODEL="shared-model"\n',
     )
 
-    with pytest.raises(ApprcTomlEnvError, match="missing AppRC TOML file"):
-        bootstrap_env(
-            spec=_spec(package_name),
-            env_files=(),
-            env_file_overrides_os_environ=False,
-            load_dotenv_layers=False,
-            storage=None,
-        )
+    result = bootstrap_env(
+        spec=_spec(package_name),
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=False,
+        storage=None,
+    )
+
+    assert result.apprc_toml_path == missing_apprc_toml
+    assert missing_apprc_toml.is_file()
 
 
 def test_bootstrap_env_uses_os_environ_over_explicit_env_by_default(

@@ -37,9 +37,10 @@
 
 `apprc` is a small Python library for application runtime configuration and
 logging. It is useful when a project needs typed env-backed config, packaged
-defaults, per-user storage registries, local override files, a reusable
-`config` CLI, a terminal config editor, and optional structured logs without
-rebuilding that plumbing in every application.
+defaults, an app config home, app-global dotenv overrides, optional per-user
+storage registries, local override files, a reusable `config` CLI, a terminal
+config editor, and optional structured logs without rebuilding that plumbing in
+every application.
 
 The key idea: the application declares its config contract once, and `apprc`
 derives the boring workflows from that contract.
@@ -164,8 +165,9 @@ The executable is `apprc`, but its disposable example files live under the
 
 | Item | Default |
 |---|---|
-| Storage selector | `APPRC_EXAMPLE_APP_STORAGE` (required) |
-| AppRC TOML selector | `APPRC_EXAMPLE_APP_APPRC_TOML` (optional multi-storage file) |
+| Storage selector | `APPRC_EXAMPLE_APP_STORAGE` (required by this storage demo) |
+| AppRC TOML path | `APPRC_EXAMPLE_APP_APPRC_TOML` override or platform config-home default |
+| Global env | platform config home `.env.global` |
 | Suggested active storage root | `~/.local/share/apprc_example_app/apprc_example_app_stor-1` |
 | Local env | `~/.local/share/apprc_example_app/apprc_example_app_stor-1/.env.apprc_example_app` |
 
@@ -204,10 +206,9 @@ MYAPP_CONFIG = AppConfigKit(
     display_name="MyApp",
     config_package="myapp.config",
     envs=(AppEnv,),
-    storage_env_key="MYAPP_STORAGE",
     apprc_toml_filename="myapp.apprc.toml",
     shared_env_filename=".env.shared",
-    local_env_filename=".env.local",
+    global_env_filename=".env.global",
 )
 
 
@@ -250,57 +251,57 @@ not AppRC implementation details. `app_name` drives paths and selectors,
 `display_name` drives human-facing labels, and optional `command_name`
 overrides the executable shown in generated next-step commands.
 
-Users then get:
+With the default storage-free mode, users get:
 
 ```shell
-export MYAPP_STORAGE="/absolute/path/to/storage"
 myapp config setup
-myapp config setup --yes --storage-root "$MYAPP_STORAGE"
-export MYAPP_APPRC_TOML="/absolute/path/to/config-dir/myapp.apprc.toml"
-myapp config setup --yes --apprc-dir "/absolute/path/to/config-dir" --storage-root "$MYAPP_STORAGE" --multi-storage --name myapp_stor-1
-myapp config init /absolute/path/to/storage --name myapp_stor-1
 myapp config doctor
 myapp config show --json
 myapp config set app.profile other-profile
 myapp config edit
 ```
 
-Use `myapp config setup` for normal first-time installation. With no options it
-opens a Textual wizard with path autocomplete, asks for an active storage root,
-asks whether to enable multi-storage management, and shows next steps. For CI
-or scripted single-storage bootstrap, pass `--yes --storage-root PATH`. Add
-`--multi-storage --apprc-dir /absolute/path/to/config-dir --name NAME` when
-setup should also create or reuse an AppRC TOML file and register the active
-root. `config init`, `config list`, archive, restore, and register-active
-workflows remain multi-storage features after `MYAPP_APPRC_TOML` is
-exported.
+Use `myapp config setup` to show the AppRC-managed files and config home.
+Runtime bootstrap also creates missing AppRC-managed files non-interactively:
+the platform-native config directory, `.env.global`, and
+`myapp.apprc.toml`. AppRC does not create host-owned structured config files
+such as `myapp.toml`; use `kit.spec.app_config_file("myapp.toml")` when the
+host app wants a conventional path beside AppRC files.
+
+Apps that need a selected storage root opt in by passing
+`storage_env_key="MYAPP_STORAGE"` or `storage_mode="required"`. Storage-enabled
+apps additionally get:
+
+```shell
+export MYAPP_STORAGE="/absolute/path/to/storage"
+myapp config setup --yes --storage-root "$MYAPP_STORAGE"
+myapp config setup --yes --storage-root "$MYAPP_STORAGE" --multi-storage --name myapp_stor-1
+myapp config init /absolute/path/to/storage --name myapp_stor-1
+```
+
+Set `MYAPP_APPRC_TOML="/absolute/path/to/config-dir/myapp.apprc.toml"` only to
+relocate the AppRC TOML metadata file. It no longer enables storage by itself.
 
 ### Bootstrap Recommendation
 
-For AppRC-backed apps, keep the storage selector in startup:
+Storage-free apps need no bootstrap env vars. AppRC resolves a config home
+through `platformdirs` and creates `.env.global` plus `<app>.apprc.toml` there
+when runtime bootstrap, `config setup`, or `config doctor` needs them.
+
+Storage-enabled apps still need one active storage selector:
 
 - `export <APP>_STORAGE="/absolute/path/to/storage"`
 
-`<APP>_STORAGE` is the active storage selector when the user exports it or one
-or more explicit env files provide it. A packaged `.env.shared` may also provide
-a lowest-precedence default selector for single-storage applications. The
-selector is interpreted as a path when `<APP>_APPRC_TOML` is unset, including
-bare relative values such as `alpha`. Set
-`export <APP>_APPRC_TOML="/absolute/path/to/<app>.apprc.toml"` only when the app
-should use multi-storage features. In multi-storage mode, exact
-registered names resolve through the TOML, path-like values such as
+`<APP>_STORAGE` is checked from `--storage`, exported env values, explicit env
+files, `.env.global`, and finally packaged `.env.shared`. Exact registered
+names resolve through the AppRC TOML when present, path-like values such as
 `./project`, `/data/project`, `~/project`, and `C:/Projects/project` resolve as
-paths, and bare unknown names fail with guidance.
+paths, and bare unknown names fail only after the registry contains named
+storages.
 
-Runtime behavior when keys are missing:
-
-- `<APP>_APPRC_TOML` missing: single-storage mode is active. Runtime commands
-  use `<APP>_STORAGE` as a path. Multi-storage commands such as `config list` and
-  `config init` are unavailable until `<APP>_APPRC_TOML` is exported.
-- `<APP>_STORAGE` missing everywhere: runtime bootstrap fails after checking
-  `--storage`, already exported env values, explicit env files, and packaged
-  `.env.shared` defaults. Setup and doctor commands can still run in partial
-  setup states to help fix the missing selector.
+`<APP>_APPRC_TOML` is an optional override path. When it is unset, AppRC uses
+the platform config-home default. When it is set, AppRC creates or reads that
+file and uses it for storage registry and archive metadata.
 
 <br>
 
@@ -314,12 +315,15 @@ Runtime behavior when keys are missing:
 |---|---|---|
 | `env_field(...)` | application | One typed env-backed runtime attribute. |
 | `@env_owner(...)` | application | A named section of related fields derived from an `EnvConfig` class. |
+| Platform config home | AppRC | AppRC-managed directory for `.env.global`, `<app>.apprc.toml`, and conventional host-owned config paths. |
 | `.env.shared` | application package | Packaged defaults shipped with code. |
-| `<storage>/.env.local` | user/project | Per-storage local overrides. |
+| `.env.global` | user/app | Persistent app-wide dotenv overrides in the platform config home. |
+| `<storage>/.env.local` | user/project | Per-storage local overrides used only by storage-required apps. |
 | Python args and assignments | application/library code | Highest-priority runtime values for one config object. |
 | `os.environ` | current process | Env-backed values used when Python code does not override the field. |
-| `<APP>_APPRC_TOML -> <app>.apprc.toml` | AppRC TOML | Optional named storage roots and archive restore metadata. |
-| `<APP>_STORAGE` | Bootstrap selector | Active storage name or storage path for current shell context. |
+| `<config-home>/<app>.apprc.toml` | AppRC TOML | AppRC metadata, named storage roots, and archive restore metadata. |
+| `<APP>_APPRC_TOML` | Optional override | Relocates the AppRC TOML metadata file. |
+| `<APP>_STORAGE` | Optional bootstrap selector | Active storage name or storage path for storage-required apps. |
 
 Runtime dataclasses inherit `EnvConfig`. The dataclass owns Python attributes;
 `env_field(...)` owns env names, defaults, docs labels, editor labels, choices,
@@ -358,7 +362,7 @@ The effective precedence is: persistent Python-owned values beat env, env beats
 that request/task-local clone.
 
 Call `AppConfigKit.bootstrap(...)` before constructing `EnvConfig` objects when
-packaged, storage-local, or explicit dotenv layers should populate
+packaged, global, storage-local, or explicit dotenv layers should populate
 `os.environ`.
 
 ### Library Mode: Post-env Python Overrides
@@ -396,7 +400,7 @@ Every `ConfigProvenance` record has a broad `source` and an exact `origin`:
 | Boundary | Origins |
 |---|---|
 | `python` | `python_constructor_argument`, `python_runtime_assignment`, `python_scoped_override`, `python_baseconfig_default`, `python_envconfig_default`, `python_process_environment_mutation` |
-| `shell` | `shell_export_variable`, `shell_dotenv_shared`, `shell_dotenv_local`, `shell_dotenv_explicit`, `shell_bootstrap_selector` |
+| `shell` | `shell_export_variable`, `shell_dotenv_shared`, `shell_dotenv_global`, `shell_dotenv_local`, `shell_dotenv_explicit`, `shell_bootstrap_selector` |
 
 `BaseConfig` records Python constructor arguments, dataclass defaults,
 post-construction assignments, and isolated scoped override clones. `EnvConfig`
@@ -411,36 +415,39 @@ later read from `os.environ`, the origin is reported as
 Applications call `AppConfigKit.bootstrap(...)` once at CLI startup. It merges:
 
 1. packaged `.env.shared`
-2. selected storage-local `.env.local`
-3. explicit `--env-file` values, in command/API order
-4. values already present in `os.environ`
+2. app-global `.env.global`
+3. selected storage-local `.env.local`, when storage is required and selected
+4. explicit `--env-file` values, in command/API order
+5. values already present in `os.environ`
 
 Explicit env files are ordered; later files override earlier files. The merged
-explicit values always override the packaged and storage-local dotenv layers. By
-default, values already present in `os.environ` win over `--env-file`. Set
-`env_file_overrides_os_environ=True` when explicit files should win inside the
-current Python process. AppRC never mutates the parent shell. CLI applications
-should expose repeatable `--env-file PATH` and
+explicit values always override packaged, global, and storage-local dotenv
+layers. By default, values already present in `os.environ` win over
+`--env-file`. Set `env_file_overrides_os_environ=True` when explicit files
+should win inside the current Python process. AppRC never mutates the parent
+shell. CLI applications should expose repeatable `--env-file PATH` and
 `--env-file-overrides-os-environ` with the `-o` shorthand.
 
-Storage-root selection uses the same inputs before runtime config objects are
-created: `--storage`, explicit env values or existing `os.environ` according to
-`-o`, and then packaged `.env.shared` as the lowest-precedence fallback. That
-lets an application ship a simple single-storage default while still allowing
-users and deployment env files to override it.
+Storage-free apps skip storage-root selection completely. Storage-required apps
+use the same inputs before runtime config objects are created: `--storage`,
+explicit env values or existing `os.environ` according to `-o`, `.env.global`,
+and then packaged `.env.shared` as the lowest-precedence fallback. That lets a
+user persist a preferred storage selector globally while still allowing shell
+exports and deployment env files to override it.
 
 AppRC intentionally mutates only the current Python process during bootstrap.
 `typed-settings` and some runtime dependencies bind from `os.environ`, so the
 bootstrap layer must populate that process before config dataclasses are
-constructed. Normal runtime bootstrap never writes `.env.local`, never creates
-storage roots, and never changes the parent shell; setup, register, editor, and
-`config set` flows own those file writes.
+constructed. Normal runtime bootstrap may create missing AppRC-managed files in
+the config home, but it never prompts, never creates storage roots, and never
+changes the parent shell. Setup, register, editor, and `config set` flows own
+intentional dotenv value writes.
 
 Set `load_dotenv_layers=False` in Python, or expose a CLI flag such as
-`--skip-dotenv-layers`, to skip merging packaged, storage-local, and explicit
-dotenv values into the process. Registry and storage selection still run; the
-explicit env files may still provide the AppRC TOML or storage selector used for
-selection.
+`--skip-dotenv-layers`, to skip merging packaged, global, storage-local, and
+explicit dotenv values into the process. Registry and storage selection still
+run for storage-required apps; explicit env files may still provide the AppRC
+TOML override or storage selector used for selection.
 
 `Config modified: ...` warnings come from `BaseConfig.__setattr__` after a
 runtime config object is constructed. They flag config-object reassignment, not
@@ -452,25 +459,30 @@ instead and follow the same reload protection rules.
 
 ### Storage Registries
 
-Globally installed commands need to find user data without hardcoding one path,
-so AppRC uses one required rule: the app-specific `<APP>_STORAGE` environment
-variable selects the active storage root. For an app named `myapp`, that
-variable is `MYAPP_STORAGE`.
+Storage is opt-in. The default AppRC integration does not require
+`<APP>_STORAGE`, does not create storage roots, and stores user-editable dotenv
+overrides in `.env.global` inside the platform config home.
 
-The app-specific `<APP>_APPRC_TOML` environment variable is optional. When it is
-unset, AppRC runs in single-storage mode and treats every non-empty storage
-selector as a path. When it is set, AppRC runs in multi-storage mode and uses
-the TOML for named storage roots, archive metadata, and register-active
-workflows.
+Apps that need an active project, workspace, or data directory should opt into
+storage by passing `storage_env_key="MYAPP_STORAGE"` or
+`storage_mode="required"` to `AppConfigKit`. For an app named `myapp`, the
+derived storage selector is `MYAPP_STORAGE`.
+
+The app-specific `<APP>_APPRC_TOML` environment variable is only an override
+path for the AppRC TOML metadata file. When it is unset, AppRC uses
+`<config-home>/<app>.apprc.toml`. That TOML can stay empty, or it can hold
+named storage roots, archive metadata, and register-active workflows for
+storage-required apps.
 
 Doctor status is explicit:
 
 | State | Meaning |
 |---|---|
-| `env_not_set` | `<APP>_STORAGE` is missing. |
-| `multi_storage_not_ready` | `<APP>_APPRC_TOML` is set for multi-storage mode but points to a missing or invalid file. |
-| `storage_not_ready` | The selected storage root or local env file is missing, or a multi-storage selector cannot be resolved. |
-| `runnable` | `<APP>_STORAGE` resolves to an existing storage root with a local env file; the optional AppRC TOML is either unset or valid. |
+| `config_not_ready` | AppRC-managed config-home files are missing or unreadable. |
+| `env_not_set` | Storage is required and `<APP>_STORAGE` is missing from all selector sources. |
+| `multi_storage_not_ready` | The AppRC TOML has invalid storage metadata. |
+| `storage_not_ready` | The selected storage root or local env file is missing, or a registered selector cannot be resolved. |
+| `runnable` | The config home is ready, and any required storage selector resolves to an existing root with a local env file. |
 
 In `config doctor --json`, use `status == "runnable"` as the readiness check.
 
@@ -485,10 +497,11 @@ archive = "/absolute/path/to/old-default.apprc.tar.xz"
 source_root = "/absolute/path/to/old-default"
 ```
 
-Each storage root owns its own local override file, such as `.env.local`.
-Archived storage records are only last-known restore shortcuts for the
-terminal editor; runtime bootstrap still selects live directory entries from
-`[storages]`.
+Storage-free apps write editable dotenv overrides to `.env.global`. Each
+storage root in a storage-required app owns its own local override file, such
+as `.env.local`. Archived storage records are only last-known restore shortcuts
+for the terminal editor; runtime bootstrap still selects live directory entries
+from `[storages]`.
 
 On POSIX/WSL hosts, Windows drive paths such as `D:\Training\demo-project` are
 normalized to usable local paths before AppRC writes the AppRC TOML or reads a
@@ -528,27 +541,24 @@ Put config declarations in your application package, usually
 `myapp/config/owners.py`.
 
 ```python
-from pathlib import Path
-
 from apprc import EnvConfig, env_field, env_owner
 
 @env_owner(
-    key="storage",
-    title="Storage",
+    key="app",
+    title="App",
     env_prefix="MYAPP_",
-    rc_path=("storage",),
+    rc_path=("app",),
 )
-class StorageEnv(EnvConfig):
-    root: Path = env_field(
-        "STORAGE",
-        editable=False,
-        required=True,
-        explanation_short="Active storage root.",
-        explanation_long="Selected by the <APP>_STORAGE bootstrap value.",
+class AppEnv(EnvConfig):
+    profile: str = env_field(
+        "PROFILE",
+        default="default",
+        explanation_short="Named profile used by the application.",
     )
 ```
 
-Use `editable=False` for values owned by the AppRC TOML instead of `.env.local`.
+Use `editable=False` for values AppRC manages from bootstrap state rather than
+from `.env.global` or storage-local `.env.local`.
 
 ### Bootstrap a CLI
 
@@ -577,7 +587,7 @@ state.env_bootstrap = bootstrap_cli_env(
 config_app = MYAPP_CONFIG.typer_app(
     state_type=CliState,
     runtime_payload=lambda state: {
-        "storage": str(state.env_bootstrap.storage_root)
+        "config_home": str(state.env_bootstrap.config_home)
         if state.env_bootstrap
         else None,
     },
@@ -588,9 +598,10 @@ app.add_typer(config_app, name="config")
 ### Edit Local Values in the Terminal
 
 `config setup` opens a Textual wizard for first-time setup unless `--yes` is
-passed for non-interactive use. The wizard handles active storage root
-creation, optional multi-storage registration, existing registries, custom app
-directories (AppRC), and final diagnostics.
+passed for non-interactive use. Storage-free setup explains the config home,
+`.env.global`, and AppRC TOML paths. Storage-required setup additionally handles
+active storage root creation, optional multi-storage registration, existing
+registries, custom AppRC TOML paths, and final diagnostics.
 
 `config edit` opens a Textual editor. The editor shows:
 
@@ -598,18 +609,17 @@ directories (AppRC), and final diagnostics.
 - section
 - env key
 - shell status
-- local value
+- global or local value
 - default value
 - short explanation
 
 Selecting a row opens a modal with type information, possible values, the long
-explanation, and copy buttons for the effective, shell, local, and shared
-default values that are currently available. Secret values are redacted on
-screen, but an explicit copy action copies the raw value. Required missing
+explanation, and copy buttons for the effective, shell, global or local, and
+shared default values that are currently available. Secret values are redacted
+on screen, but an explicit copy action copies the raw value. Required missing
 values show `<required>`.
 
-When `<APP>_APPRC_TOML` is set, the editor also manages multi-storage
-storage lifecycle:
+When storage is required, the editor also manages storage lifecycle:
 
 - `New storage` registers a directory or restores a `*.apprc.tar.xz` archive.
 - `Register active storage` registers an unregistered `<APP>_STORAGE` path.
@@ -639,15 +649,16 @@ log.success("Workspace ready", extra_struct={"storage": "myapp_stor-1"})
 
 | Module | Look Here For |
 |---|---|
-| `apprc` | Preferred app-facing facade for runtime config, schema, storage, local-env, and logging interfaces. |
+| `apprc` | Preferred app-facing facade for runtime config, schema, config-home, storage, dotenv, and logging interfaces. |
 | `apprc.runtime_config` | Narrow advanced runtime-config facade for lower-level integration work. |
 | `apprc.runtime_config.app_spec` | `AppConfigSpec`, the application integration declaration behind the kit. |
+| `apprc.runtime_config.config_home` | Platform-native config-home path resolution and AppRC-managed file creation. |
 | `apprc.runtime_config.kit` | `AppConfigKit`, the high-level app integration facade. |
 | `apprc.runtime_config.contract` | Schema records, lookup, validation, and AppRC TOML contract helpers. |
 | `apprc.runtime_config.config_objects` | Config object classes and declaration helpers: `BaseConfig`, `EnvConfig`, `env_field`, and `env_owner`. |
 | `apprc.runtime_config.provenance` | `ConfigProvenance`, source/origin literals, and bootstrap env-origin registry. |
 | `apprc.runtime_config.bootstrap` | CLI startup dotenv precedence and process-env mutation boundary. |
-| `apprc.runtime_config.storage` | Storage roots, local dotenv files, registries, paths, selectors, and archives. |
+| `apprc.runtime_config.storage` | Storage roots, storage-local dotenv files, registries, paths, selectors, and archives. |
 | `apprc.runtime_config.storage.loading` | Storage table loading paths by setup, runtime, and diagnostic intent. |
 | `apprc.runtime_config.storage.selector` | `<APP>_STORAGE` registered-name and explicit-path resolution. |
 | `apprc.runtime_config.doctor` | `config doctor` payloads, statuses, and setup guidance. |
@@ -664,33 +675,36 @@ log.success("Workspace ready", extra_struct={"storage": "myapp_stor-1"})
 | `apprc.cli.bootstrap` | Common root CLI bootstrap options. |
 | `apprc.logging` | Logging facade: `setup_logging`, `get_logger`, `AppLogger`. |
 
-### Important Config Types
+### Important Config Types And Helpers
 
 | Type | Meaning |
 |---|---|
 | `AppConfigKit` | Convenient object applications keep around. |
 | `AppConfigSpec` | Frozen declaration behind the kit. |
+| `StorageMode` | `disabled` or `required`, controlling whether bootstrap needs a storage selector. |
+| `app_config_home(...)` | Platform-native AppRC config-home path for an app name. |
+| `app_config_file(...)` | Conventional app-owned config-file path inside the app config home. |
 | `env_owner(...)` | Decorator that turns an `EnvConfig` class into one config section. |
 | `env_field(...)` | Dataclass field helper for one env-backed runtime attribute. |
 | `ConfigOwner` | Derived schema for one config section, env prefix, runtime path, and fields. |
 | `ConfigField` | Derived schema for one editable or read-only env-backed setting. |
-| `ConfigDoctorStatus` | `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
+| `ConfigDoctorStatus` | `config_not_ready`, `env_not_set`, `multi_storage_not_ready`, `storage_not_ready`, or `runnable`. |
 | `EnvConfig` | Runtime dataclass base that resolves Python, env, and EnvConfig-default values. |
 | `ConfigProvenance` | Provenance record returned by `BaseConfig.provenance_of()` and `BaseConfig.provenance()`. |
-| `EnvBootstrapResult` | Files and storage selected during CLI startup. |
+| `EnvBootstrapResult` | Config-home, dotenv, AppRC TOML, and optional storage selected during CLI startup. |
 | `StorageRegistry` | Parsed AppRC TOML storage table. |
 | `ArchivedStorageRecord` | Last-known archive path for editor restore shortcuts. |
-| `LocalEnvUpdate` | Result of writing one local dotenv override. |
+| `LocalEnvUpdate` | Result of writing one dotenv override file. |
 
 ### Config CLI Commands
 
 | Command | Purpose |
 |---|---|
 | `config setup` | Open the setup wizard, or run non-interactively with `--yes`. |
-| `config init STORAGE_ROOT --name NAME` | Register a storage root in multi-storage mode. |
-| `config doctor` | Diagnose the selected storage and optional AppRC TOML state. |
+| `config init STORAGE_ROOT --name NAME` | Register a storage root for storage-required apps. |
+| `config doctor` | Diagnose config-home readiness and optional storage state. |
 | `config show --json` | Print resolved runtime config payload. |
-| `config set KEY VALUE` | Write one local override. |
+| `config set KEY VALUE` | Write one `.env.global` or storage-local override. |
 | `config edit` | Open the Textual editor. |
 
 ### Logging Functions

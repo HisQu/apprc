@@ -578,12 +578,13 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
         :param paths: Exact path values known by the caller.
         :return: Rich text with semantic spans.
         """
+        storage_env_key = self.kit.spec.require_storage_env_key()
         styles = {
             "Shell:": "bold",
             "Or Dotenv:": "bold",
             "env_not_set": MISSING_STYLE,
             self.kit.spec.apprc_toml_env_key: ENV_KEY_STYLE,
-            self.kit.spec.storage_env_key: ENV_KEY_STYLE,
+            storage_env_key: ENV_KEY_STYLE,
         }
         styles.update({str(path): PATH_STYLE for path in paths if str(path)})
         return style_literals(text, styles)

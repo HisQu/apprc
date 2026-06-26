@@ -20,6 +20,7 @@ requires-python = ">=3.12"
 dependencies = [
     # Core runtime packages only: imports needed when somebody installs and
     # uses this package with `python -m pip install -e "."`.
+    "platformdirs",        # < Cross-platform user config directories
     "python-dotenv",       # < Loads .env files
     "typed-settings[dotenv]", # < Typed env/config binding
     "rich",                # < Exception rendering

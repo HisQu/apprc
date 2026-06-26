@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.text import Text
 
 # == Internal ================================
+from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.kit import AppConfigKit
 import apprc.runtime_config.setup.flow as setup_flow
 import apprc.runtime_config.setup.text as setup_text
@@ -74,6 +75,14 @@ def run_config_setup(
             "--existing-action is only used with --multi-storage.",
             param_hint="--multi-storage",
         )
+    if kit.spec.storage_mode == StorageMode.DISABLED:
+        if has_setup_options or multi_storage:
+            raise typer.BadParameter(
+                f"{kit.spec.display_name} does not use AppRC storage.",
+                param_hint="storage",
+            )
+        _print_global_setup_finish(kit)
+        return
 
     if not assume_yes:
         if ConfigSetupApp(kit=kit).run() is None:
@@ -104,6 +113,7 @@ def run_config_setup(
                 storage_name=registered_name,
             )
         else:
+            kit.spec.ensure_config_home()
             root = flow.prepare_storage_root(
                 storage_root=storage_root,
                 storage_name=None,
@@ -128,6 +138,42 @@ def _print_setup_finish(
     """
     console = Console(soft_wrap=True)
     console.print(_style_setup_finish_text(kit, result))
+
+
+def _print_global_setup_finish(kit: AppConfigKit) -> None:
+    """Print storage-free setup guidance for AppRC-managed files.
+
+    :param kit: Application config facade.
+    """
+    paths = kit.spec.ensure_config_home()
+    text = "\n".join(
+        (
+            f"{kit.spec.display_name} AppRC config files are ready.",
+            "",
+            f"Config home: {paths.root}",
+            f"Global env: {paths.global_env}",
+            f"AppRC TOML: {paths.apprc_toml}",
+            "",
+            "AppRC owns the global env and AppRC TOML files. Host "
+            "applications own their own structured config files in the same "
+            "config home.",
+            "",
+            "Then verify:",
+            f"  {kit.spec.config_command_name()} config doctor",
+            f"  {kit.spec.config_command_name()} config show",
+        )
+    )
+    console = Console(soft_wrap=True)
+    console.print(
+        style_literals(
+            text,
+            {
+                str(paths.root): PATH_STYLE,
+                str(paths.global_env): PATH_STYLE,
+                str(paths.apprc_toml): PATH_STYLE,
+            },
+        )
+    )
 
 
 def _raise_setup_error(exc: setup_flow.ConfigSetupError) -> None:
@@ -169,9 +215,10 @@ def _style_setup_finish_text(
         "Or Dotenv:": "bold",
         "env_not_set": MISSING_STYLE,
         kit.spec.apprc_toml_env_key: ENV_KEY_STYLE,
-        kit.spec.storage_env_key: ENV_KEY_STYLE,
         **paths,
     }
+    if kit.spec.storage_env_key is not None:
+        styles[kit.spec.storage_env_key] = ENV_KEY_STYLE
     return style_literals(
         setup_text.setup_finish_text(
             kit,

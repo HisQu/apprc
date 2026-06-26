@@ -40,7 +40,7 @@ def test_generated_config_setup_creates_single_storage_files(
         tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
     )
     assert result.exit_code == 0, result.output
-    assert kit.spec.optional_apprc_toml_path() is None
+    assert kit.spec.optional_apprc_toml_path().is_file()
     assert "APPRC_EXAMPLE_APP_STORAGE" not in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
@@ -105,7 +105,8 @@ def test_generated_config_setup_accepts_apprc_dir_without_env(
     assert (
         f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"' in result.output
     )
-    assert kit.spec.optional_apprc_toml_path() is None
+    assert kit.spec.optional_apprc_toml_path() != custom_registry
+    assert not kit.spec.optional_apprc_toml_path().is_file()
 
 
 def test_generated_config_setup_accepts_apprc_dir_env_mismatch(

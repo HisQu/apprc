@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 # == Internal ================================
 from apprc.runtime_config.app_spec import AppConfigSpec
+from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.bootstrap.orchestrator import (
     BootstrapLogger,
     EnvBootstrapResult,
@@ -54,10 +55,12 @@ class AppConfigKit:
         display_name: str,
         config_package: str,
         envs: tuple[type[EnvConfig], ...] = (),
-        storage_env_key: str,
+        storage_env_key: str | None = None,
+        storage_mode: StorageMode | str | None = None,
         command_name: str | None = None,
         apprc_toml_filename: str | None = None,
         shared_env_filename: str = ".env.shared",
+        global_env_filename: str = ".env.global",
         local_env_filename: str = ".env.local",
     ) -> None: ...
 
@@ -70,24 +73,21 @@ class AppConfigKit:
         config_package: str | None = None,
         envs: tuple[type[EnvConfig], ...] = (),
         storage_env_key: str | None = None,
+        storage_mode: StorageMode | str | None = None,
         command_name: str | None = None,
         apprc_toml_filename: str | None = None,
         shared_env_filename: str = ".env.shared",
+        global_env_filename: str = ".env.global",
         local_env_filename: str = ".env.local",
     ) -> None:
         """Store the application spec or build one from keyword arguments."""
         if spec is not None:
             self.spec = spec
             return
-        if (
-            app_name is None
-            or display_name is None
-            or config_package is None
-            or storage_env_key is None
-        ):
+        if app_name is None or display_name is None or config_package is None:
             raise TypeError(
                 "AppConfigKit requires either an AppConfigSpec or all "
-                "application spec keyword arguments."
+                "required application spec keyword arguments."
             )
         self.spec = AppConfigSpec(
             app_name=app_name,
@@ -95,6 +95,7 @@ class AppConfigKit:
             config_package=config_package,
             envs=envs,
             storage_env_key=storage_env_key,
+            storage_mode=storage_mode,
             command_name=command_name,
             apprc_toml_filename=(
                 apprc_toml_filename
@@ -102,6 +103,7 @@ class AppConfigKit:
                 else AppConfigSpec.derive_apprc_toml_filename(app_name)
             ),
             shared_env_filename=shared_env_filename,
+            global_env_filename=global_env_filename,
             local_env_filename=local_env_filename,
         )
 
@@ -117,19 +119,20 @@ class AppConfigKit:
         """Populate ``os.environ`` for this application.
 
         :param env_files: Optional invocation-local dotenv files that outrank
-            the packaged ``.env.shared`` and active storage-local
-            ``.env.local``.
+            packaged ``.env.shared``, app-global ``.env.global``, and active
+            storage-local ``.env.local``.
         :param env_file_overrides_os_environ: Whether explicit dotenv values beat
             existing values in ``os.environ`` inside this process. The parent
             shell is never mutated.
-        :param load_dotenv_layers: Whether packaged ``.env.shared``, active
-            storage-local ``.env.local``, and explicit ``env_files`` values
-            should be merged into this process. Storage selection still runs
-            when this is ``False``, and explicit values may still
-            provide the selector used for selection.
-        :param storage: Optional ``--storage`` selector. With AppRC TOML it may
-            be a registered storage name or path. Without AppRC TOML it is
-            always interpreted as a path.
+        :param load_dotenv_layers: Whether packaged ``.env.shared``,
+            app-global ``.env.global``, active storage-local ``.env.local``,
+            and explicit ``env_files`` values should be merged into this
+            process. Storage selection still runs for storage-required apps
+            when this is ``False``, and explicit values may still provide the
+            selector used for selection.
+        :param storage: Optional ``--storage`` selector for storage-required
+            apps. With AppRC TOML it may be a registered storage name or path.
+            Without registered storages it is interpreted as a path.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
         """

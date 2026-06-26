@@ -23,10 +23,14 @@ from apprc.cli.config.state import (
 from apprc.cli.doctor import print_config_doctor
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
+from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.doctor.payload import build_config_doctor_payload
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.local_env import set_local_env_value
+from apprc.runtime_config.storage.local_env import (
+    set_env_file_value,
+    set_local_env_value,
+)
 from apprc.runtime_config.storage.paths import StorageRootPathError
 from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
 from apprc.runtime_config.storage.loading import (
@@ -103,6 +107,8 @@ class ConfigCommandBase:
 
     def load_required_storage_registry(self) -> StorageRegistry:
         """Return the storage table required by multi-storage CLI commands."""
+        self.require_storage_enabled()
+        self.kit.spec.ensure_config_home()
         try:
             return load_existing_storage_registry(self.kit.spec)
         except (ApprcTomlEnvError, ValueError) as exc:
@@ -110,6 +116,7 @@ class ConfigCommandBase:
 
     def load_optional_storage_registry(self) -> StorageRegistry | None:
         """Return the storage table only when multi-storage mode is enabled."""
+        self.kit.spec.ensure_config_home()
         try:
             return load_optional_runtime_storage_registry(self.kit.spec)
         except (ApprcTomlEnvError, ValueError) as exc:
@@ -126,6 +133,14 @@ class ConfigCommandBase:
             else self.kit.spec.apprc_toml_filename
         )
         return typer.BadParameter(str(exc), param_hint=param_hint)
+
+    def require_storage_enabled(self) -> None:
+        """Raise a CLI error when a storage command is unavailable."""
+        if self.kit.spec.storage_mode == StorageMode.DISABLED:
+            raise typer.BadParameter(
+                f"{self.kit.spec.display_name} does not use AppRC storage.",
+                param_hint="storage",
+            )
 
     def active_storage_root_for_cli(self, state: Any) -> Path | None:
         """Return the selected storage root using app overrides first."""
@@ -178,10 +193,13 @@ class ConfigCommandBase:
     ) -> Path | None:
         """Return the env-selected storage root, suppressing selector errors."""
         try:
-            return active_storage_root_from_env(
+            storage_root = active_storage_root_from_env(
                 self.kit,
                 registry=storage_registry,
             )
+            if storage_root is None or not storage_root.is_dir():
+                return None
+            return storage_root
         except StorageSelectorError:
             return None
 
@@ -195,9 +213,9 @@ class ConfigCommandBase:
         return {
             "app_name": self.kit.spec.app_name,
             "display_name": self.kit.spec.display_name,
-            "apprc_toml_path": (
-                str(apprc_toml_path) if apprc_toml_path is not None else None
-            ),
+            "config_home": str(self.kit.spec.config_home()),
+            "global_env": str(self.kit.spec.global_env_path()),
+            "apprc_toml_path": str(apprc_toml_path),
             "storage_root": str(storage_root) if storage_root else None,
         }
 
@@ -256,6 +274,7 @@ class MultiStorageConfigCommands(ConfigCommandBase):
 
     def list(self, *, json_output: bool) -> None:
         """List named storage roots from the AppRC TOML file."""
+        self.require_storage_enabled()
         registry = self.load_required_storage_registry()
         payload = storage_list_payload(
             registry,
@@ -277,6 +296,8 @@ class MultiStorageConfigCommands(ConfigCommandBase):
         assume_yes: bool,
     ) -> None:
         """Register one storage root and create its local env file."""
+        self.require_storage_enabled()
+        self.kit.spec.ensure_config_home()
         try:
             apprc_toml_path = apprc_toml_path_for_create(self.kit.spec)
         except ApprcTomlEnvError as exc:
@@ -316,15 +337,28 @@ class RuntimeConfigCommands(ConfigCommandBase):
 
     def show(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Show the resolved runtime config available to this invocation."""
-        current_state = self.state(ctx)
-        storage_root = self.active_storage_root_for_cli(current_state)
-        if storage_root is None:
+        current_state = (
+            self.state(ctx)
+            if self.kit.spec.storage_mode == StorageMode.REQUIRED
+            or isinstance(ctx.obj, self.state_type)
+            else None
+        )
+        storage_root = (
+            self.active_storage_root_for_cli(current_state)
+            if current_state is not None
+            else None
+        )
+        if (
+            self.kit.spec.storage_mode == StorageMode.REQUIRED
+            and storage_root is None
+        ):
             typer.echo(self.missing_setup, err=True)
             raise typer.Exit(code=1)
         try:
             payload = (
                 self.runtime_payload(current_state)
                 if self.runtime_payload is not None
+                and current_state is not None
                 else self.default_runtime_payload(storage_root=storage_root)
             )
         except ValueError as exc:
@@ -338,7 +372,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         rich_print(payload)
 
     def doctor(self, ctx: typer.Context, *, json_output: bool) -> None:
-        """Check local storage setup and print suggested fixes."""
+        """Check AppRC config readiness and print suggested fixes."""
         storage = self.root_context_param(ctx, "storage")
         storage_selector = storage if isinstance(storage, str) else None
         payload = build_config_doctor_payload(
@@ -353,34 +387,50 @@ class RuntimeConfigCommands(ConfigCommandBase):
             raise typer.Exit(code=1)
 
     def set(self, ctx: typer.Context, *, key: str, value: str) -> None:
-        """Write one active storage-local config override."""
-        root = self.required_storage_root_for_write(self.state(ctx))
+        """Write one active config override."""
         try:
-            update = set_local_env_value(
-                storage_root=root,
-                reference=key,
-                raw_value=value,
-                owners=self.kit.spec.owners,
-                local_env_filename=self.kit.spec.local_env_filename,
-            )
+            if self.kit.spec.storage_mode == StorageMode.DISABLED:
+                paths = self.kit.spec.ensure_config_home()
+                update = set_env_file_value(
+                    path=paths.global_env,
+                    reference=key,
+                    raw_value=value,
+                    owners=self.kit.spec.owners,
+                    layer_name=self.kit.spec.global_env_filename,
+                )
+            else:
+                root = self.required_storage_root_for_write(self.state(ctx))
+                update = set_local_env_value(
+                    storage_root=root,
+                    reference=key,
+                    raw_value=value,
+                    owners=self.kit.spec.owners,
+                    local_env_filename=self.kit.spec.local_env_filename,
+                )
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="KEY") from exc
         typer.echo(f"updated: {update.env_key}")
-        typer.echo(f"local_env: {update.path}")
+        if self.kit.spec.storage_mode == StorageMode.DISABLED:
+            typer.echo(f"global_env: {update.path}")
+        else:
+            typer.echo(f"local_env: {update.path}")
 
 
 class EditorConfigCommands(ConfigCommandBase):
     """Textual editor command implementation."""
 
     def edit(self, ctx: typer.Context) -> None:
-        """Open the Textual editor for registered storage-local env files."""
+        """Open the Textual editor for AppRC dotenv override files."""
         optional_registry = self.load_optional_storage_registry()
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
-        active_storage_root = self.best_effort_active_storage_root_from_env(
-            storage_registry=optional_registry,
-        )
+        if self.kit.spec.storage_mode == StorageMode.DISABLED:
+            active_storage_root = self.kit.spec.ensure_config_home().root
+        else:
+            active_storage_root = self.best_effort_active_storage_root_from_env(
+                storage_registry=optional_registry,
+            )
         self.launch_config_editor(
             current_state=current_state,
             storage_registry=optional_registry,
@@ -416,7 +466,7 @@ class ConfigCommandHandlers(
         multi_storage: bool,
         existing_action: setup_flow.ExistingSetupAction | None,
     ) -> None:
-        """Configure the active storage root and optional multi-storage."""
+        """Configure AppRC-managed files and optional storage."""
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,

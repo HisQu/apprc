@@ -146,7 +146,7 @@ def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
     )
 
     assert result.exit_code == 0, result.output
-    assert APPRC_EXAMPLE_APP_KIT.spec.optional_apprc_toml_path() is None
+    assert APPRC_EXAMPLE_APP_KIT.spec.optional_apprc_toml_path().is_file()
     assert (storage_root / ".env.apprc_example_app").is_file()
     assert "export APPRC_EXAMPLE_APP_APPRC_TOML" not in result.output
     assert (

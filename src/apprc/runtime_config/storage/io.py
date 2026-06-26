@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import cast
 
 # == Internal ================================
+from apprc.runtime_config.config_home import write_text_atomic
 from apprc.runtime_config.storage.model import (
     ArchivedStorageRecord,
     StorageRecord,
@@ -50,11 +51,7 @@ def write_storage_registry(registry: StorageRegistry) -> Path:
     :param registry: Registry object to serialize.
     :return: Written AppRC TOML path.
     """
-    registry.path.parent.mkdir(parents=True, exist_ok=True)
-    registry.path.write_text(
-        _render_storage_registry(registry), encoding="utf-8"
-    )
-    return registry.path
+    return write_text_atomic(registry.path, _render_storage_registry(registry))
 
 
 def ordered_storage_names(registry: StorageRegistry) -> list[str]:

@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.runtime_config.app_spec import AppConfigSpec
-from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
+from apprc.runtime_config.app_spec import AppConfigSpec, StorageMode
 from apprc.runtime_config import EnvConfig, env_field, env_owner
 
 
@@ -155,9 +154,29 @@ def test_app_config_spec_required_apprc_toml_path_uses_env_override(
     custom_registry = tmp_path / "custom" / "demo.apprc.toml"
     spec = _app_spec("demo")
 
-    with pytest.raises(ApprcTomlEnvError, match="DEMO_APPRC_TOML"):
-        spec.required_apprc_toml_path()
+    assert spec.required_apprc_toml_path() == (
+        tmp_path / "config-home" / "demo" / "demo.apprc.toml"
+    )
 
     monkeypatch.setenv("DEMO_APPRC_TOML", str(custom_registry))
 
     assert spec.required_apprc_toml_path() == custom_registry
+
+
+def test_app_config_spec_defaults_to_storage_disabled() -> None:
+    spec = AppConfigSpec(
+        app_name="demo",
+        display_name="Demo",
+        config_package="apprc.runtime_config",
+        apprc_toml_filename="demo.apprc.toml",
+    )
+
+    assert spec.storage_mode == StorageMode.DISABLED
+    assert spec.storage_env_key is None
+
+
+def test_app_config_spec_inferrs_required_storage_from_legacy_key() -> None:
+    spec = _app_spec("demo")
+
+    assert spec.storage_mode == StorageMode.REQUIRED
+    assert spec.storage_env_key == "DEMO_STORAGE"

@@ -84,11 +84,12 @@ def test_generated_config_app_sets_and_shows_with_storage_only(
     assert 'APPRC_EXAMPLE_APP_PROFILE="single-profile"\n' in (
         storage_root / ".env.apprc_example_app"
     ).read_text(encoding="utf-8")
-    assert json.loads(show_result.output)["apprc_toml_path"] is None
+    payload = json.loads(show_result.output)
+    assert Path(payload["apprc_toml_path"]).is_file()
 
 
 @pytest.mark.allow_missing_apprc_env
-def test_generated_config_multi_storage_commands_require_apprc_toml_env(
+def test_generated_config_multi_storage_commands_use_default_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -104,15 +105,14 @@ def test_generated_config_multi_storage_commands_require_apprc_toml_env(
         ["init", str(tmp_path / "storage"), "--name", "alpha"],
     )
 
-    assert list_result.exit_code == 2, list_result.output
-    assert init_result.exit_code == 2, init_result.output
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in list_result.output
-    assert "required for multi-storage" in list_result.output
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in init_result.output
-    assert "required for multi-storage" in init_result.output
+    assert list_result.exit_code == 0, list_result.output
+    assert init_result.exit_code == 0, init_result.output
+    assert kit.spec.required_apprc_toml_path().is_file()
+    assert "storages: <none>" in list_result.output
+    assert "registered_storage: alpha" in init_result.output
 
 
-def test_generated_config_list_rejects_missing_apprc_toml_file(
+def test_generated_config_list_creates_missing_apprc_toml_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -125,10 +125,9 @@ def test_generated_config_list_rejects_missing_apprc_toml_file(
 
     result = runner.invoke(app, ["list"])
 
-    assert result.exit_code == 2, result.output
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in result.output
-    assert "points to a missing AppRC TOML file" in result.output
-    assert not missing_apprc_toml.exists()
+    assert result.exit_code == 0, result.output
+    assert str(missing_apprc_toml) in result.output
+    assert missing_apprc_toml.is_file()
 
 
 def test_generated_config_init_creates_missing_apprc_toml_file(
@@ -188,7 +187,7 @@ def test_generated_config_edit_opens_single_storage_without_apprc_toml(
     assert editor.kwargs["active_storage_root"] == storage_root.resolve()
 
 
-def test_generated_config_edit_rejects_missing_apprc_toml_file(
+def test_generated_config_edit_creates_missing_apprc_toml_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -196,14 +195,32 @@ def test_generated_config_edit_rejects_missing_apprc_toml_file(
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_apprc_toml))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
     kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    class RecordingEditor:
+        instances: list["RecordingEditor"] = []
+
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+            self.ran = False
+            self.__class__.instances.append(self)
+
+        def run(self) -> None:
+            self.ran = True
+
+    app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        editor_app_cls=cast(type[ConfigEditorApp], RecordingEditor),
+    )
     runner = CliRunner()
 
     result = runner.invoke(app, ["edit"])
 
-    assert result.exit_code == 2, result.output
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in result.output
-    assert "points to a missing AppRC TOML file" in result.output
+    assert result.exit_code == 0, result.output
+    assert missing_apprc_toml.is_file()
+    assert len(RecordingEditor.instances) == 1
+    editor = RecordingEditor.instances[0]
+    assert editor.ran
+    assert editor.kwargs["active_storage_root"] is None
 
 
 def test_generated_config_app_rejects_bare_unknown_storage_selector(
@@ -295,7 +312,7 @@ def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
     assert "backslashes are consumed" in result.output
     assert "C:/Projects/demo-storage" in result.output
     assert not Path(malformed).exists()
-    assert not kit.spec.required_apprc_toml_path().exists()
+    assert kit.spec.required_apprc_toml_path().is_file()
 
 
 def test_generated_config_app_rejects_removed_default_commands(
@@ -345,7 +362,7 @@ def test_generated_config_app_aborts_existing_storage_when_user_says_no(
 
     assert result.exit_code == 1, result.output
     assert "Aborted." in result.output
-    assert not kit.spec.required_apprc_toml_path().exists()
+    assert kit.spec.required_apprc_toml_path().is_file()
     assert not (storage_root / ".env.apprc_example_app").exists()
 
 

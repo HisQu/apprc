@@ -24,18 +24,17 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     :param kit: Application config facade.
     :return: Host-app-specific setup explanation.
     """
+    storage_env_key = kit.spec.require_storage_env_key()
     apprc_toml_path = kit.spec.optional_apprc_toml_path()
-    apprc_toml_path_text = (
-        str(apprc_toml_path) if apprc_toml_path is not None else "<not set>"
-    )
+    apprc_toml_path_text = str(apprc_toml_path)
     return (
         f"{kit.spec.display_name} needs one active storage root selected by "
-        f"{kit.spec.storage_env_key}. Optional multi-storage management adds "
+        f"{storage_env_key}. Optional multi-storage management uses "
         "one small AppRC TOML file to remember named storage roots. The AppRC "
         "TOML file does not contain storage data.\n\n"
-        f"{kit.spec.apprc_toml_env_key} is optional. When it is set, AppRC "
-        "uses it for multi-storage listing, switching, archiving, and "
-        "restoring.\n\n"
+        f"{kit.spec.apprc_toml_env_key} is optional. Set it only to relocate "
+        "the AppRC TOML metadata file; otherwise AppRC uses the platform "
+        "config-home default.\n\n"
         "Setup starts by choosing the active storage root, then asks whether "
         "to enable multi-storage.\n\n"
         f"Current AppRC TOML value:\n{apprc_toml_path_text}"
@@ -52,6 +51,7 @@ def apprc_dir_step_text(
     :param suggested: Prefilled AppRC directory, if one is known.
     :return: Plain text for CLI and Textual setup UIs.
     """
+    storage_env_key = kit.spec.require_storage_env_key()
     computed = (
         "\n\nDerived AppRC TOML path:\n"
         f"{suggested / kit.spec.apprc_toml_filename}"
@@ -68,11 +68,11 @@ def apprc_dir_step_text(
         f"{kit.spec.apprc_toml_filename} inside this directory.\n\n"
         "The derived AppRC TOML file stores AppRC state: registered storage names, "
         "storage root paths, and archive restore metadata.\n\n"
-        f"{kit.spec.apprc_toml_env_key} must point at the full AppRC TOML path "
-        "in future shells only when multi-storage management is enabled. "
-        "Setup asks for the directory so the file name stays consistent."
+        f"{kit.spec.apprc_toml_env_key} should point at the full AppRC TOML "
+        "path only when you want to relocate this metadata file. Setup asks "
+        "for the directory so the file name stays consistent."
         f"{suggested_text}{computed}\n\n"
-        f"After setup, keep {kit.spec.storage_env_key} exported as the active "
+        f"After setup, keep {storage_env_key} exported as the active "
         "storage selector. It may be a registered storage name or an explicit "
         "storage path. Setup prints export commands but does not edit shell "
         "startup files."
@@ -85,10 +85,11 @@ def storage_root_step_text(kit: "AppConfigKit") -> str:
     :param kit: Application config facade.
     :return: Plain text for CLI and Textual setup UIs.
     """
+    storage_env_key = kit.spec.require_storage_env_key()
     return (
         "A storage root is where the application keeps user data and the "
         f"storage-local {kit.spec.local_env_filename} file. Runtime commands "
-        f"use {kit.spec.storage_env_key} as the active storage selector. "
+        f"use {storage_env_key} as the active storage selector. "
         "Optional multi-storage management can additionally register this "
         "root under a short name."
     )
@@ -209,6 +210,7 @@ def setup_finish_text(
     :param active_storage_root: Explicit storage path selected for runtime.
     :return: Human-facing setup completion guidance.
     """
+    storage_env_key = kit.spec.require_storage_env_key()
     lines = [
         f"{kit.spec.display_name} setup files are ready.",
         "",
@@ -234,7 +236,7 @@ def setup_finish_text(
             )
         ],
         "",
-        f"Without {kit.spec.storage_env_key}, {kit.spec.app_name} will report "
+        f"Without {storage_env_key}, {kit.spec.app_name} will report "
         "env_not_set in config doctor.",
         "",
         "Then verify:",
@@ -355,7 +357,7 @@ def export_storage_selector_command(
         '"',
         '\\"',
     )
-    return f'export {kit.spec.storage_env_key}="{selector_text}"'
+    return f'export {kit.spec.require_storage_env_key()}="{selector_text}"'
 
 
 def dotenv_storage_selector_assignment(
@@ -368,7 +370,10 @@ def dotenv_storage_selector_assignment(
     :param storage_selector: Storage selector selected for future shells.
     :return: Dotenv assignment with a quoted selector value.
     """
-    return _dotenv_assignment(kit.spec.storage_env_key, storage_selector)
+    return _dotenv_assignment(
+        kit.spec.require_storage_env_key(),
+        storage_selector,
+    )
 
 
 def _dotenv_assignment(key: str, value: str) -> str:

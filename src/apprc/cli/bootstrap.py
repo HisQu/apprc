@@ -43,19 +43,21 @@ def bootstrap_cli_env(
     """Initialize logging and dotenv layers for one CLI process.
 
     :param kit: Application config facade.
-    :param env_files: Optional invocation-local dotenv files that outrank the
-        packaged ``.env.shared`` and active storage-local ``.env.local``.
+    :param env_files: Optional invocation-local dotenv files that outrank
+        packaged ``.env.shared``, app-global ``.env.global``, and active
+        storage-local ``.env.local``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
-    :param load_dotenv_layers: Whether packaged ``.env.shared``, active
-        storage-local ``.env.local``, and explicit ``env_files`` values should
-        be merged into this process. Registry selection still runs when this
-        is ``False``, and explicit values may still provide the storage
-        selector used for selection.
-    :param storage: Optional ``--storage`` selector. With a registry it may be
-        a registered storage name or path. Without a registry it is always
-        interpreted as a path.
+    :param load_dotenv_layers: Whether packaged ``.env.shared``, app-global
+        ``.env.global``, active storage-local ``.env.local``, and explicit
+        ``env_files`` values should be merged into this process. Registry
+        selection still runs for storage-required apps when this is ``False``,
+        and explicit values may still provide the storage selector used for
+        selection.
+    :param storage: Optional ``--storage`` selector for storage-required apps.
+        With a registry it may be a registered storage name or path. Without a
+        registry it is always interpreted as a path.
     :param log_level: Optional CLI log-level token.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status messages.

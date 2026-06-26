@@ -70,6 +70,7 @@ def _set_default_apprc_example_app_bootstrap(
     tmp_path: Path,
 ) -> None:
     """Provide the common Example App bootstrap env for marked tests."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     if request.node.get_closest_marker("allow_missing_apprc_env") is not None:
         return
     if "APPRC_EXAMPLE_APP" not in _required_apprc_prefixes(request.node):

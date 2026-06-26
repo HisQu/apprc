@@ -84,6 +84,7 @@ def resolve_active_storage_selection(
     storage_env_key: str,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str] | None = None,
+    global_values: Mapping[str, str] | None = None,
     shared_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool = False,
 ) -> StorageSelection | None:
@@ -100,6 +101,8 @@ def resolve_active_storage_selection(
     :param storage_env_key: Env key that stores the active storage selector.
     :param original_env: Process environment captured before dotenv loading.
     :param explicit_values: Values read from ``--env-file``.
+    :param global_values: App-global dotenv values used as a persistent
+        storage selector fallback.
     :param shared_values: Packaged shared dotenv values used only as the
         lowest-precedence storage selector fallback.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
@@ -111,6 +114,7 @@ def resolve_active_storage_selection(
         storage=storage,
         original_env=original_env,
         explicit_values=explicit_values or {},
+        global_values=global_values or {},
         shared_values=shared_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         storage_env_key=storage_env_key,
@@ -185,7 +189,7 @@ def resolve_storage_selector_value(
             storage_name=record.name,
             root=record.root,
         )
-    if _is_storage_path_like(selector):
+    if _is_storage_path_like(selector) or not registry.storages:
         return StorageSelection(
             source=selection_source,
             raw_value=selector,
@@ -223,6 +227,7 @@ def select_storage_selector(
     storage: str | None,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
+    global_values: Mapping[str, str] | None = None,
     shared_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool,
     storage_env_key: str,
@@ -236,6 +241,8 @@ def select_storage_selector(
     :param storage: Optional root CLI ``--storage`` value.
     :param original_env: Process environment captured before dotenv loading.
     :param explicit_values: Values read from ``--env-file``.
+    :param global_values: App-global dotenv values used as a persistent
+        selector fallback.
     :param shared_values: Packaged shared dotenv values used only as the
         lowest-precedence storage selector fallback.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
@@ -255,6 +262,9 @@ def select_storage_selector(
         )
     if raw_value:
         return storage_env_key, raw_value
+    global_raw_value = (global_values or {}).get(storage_env_key)
+    if global_raw_value:
+        return "app .env.global", global_raw_value
     shared_raw_value = (shared_values or {}).get(storage_env_key)
     if shared_raw_value:
         return "packaged .env.shared", shared_raw_value

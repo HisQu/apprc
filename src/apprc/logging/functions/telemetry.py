@@ -1,4 +1,4 @@
-"""Async telemetry helpers for AppRC's structlog logging suite.
+"""Async telemetry helpers for AppRC's stdlib semantic logger.
 
 Telemetry is a lightweight progress heartbeat for async workflows. The context
 manager temporarily wraps the running event loop's ``create_task`` method so it

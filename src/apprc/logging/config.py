@@ -1,4 +1,4 @@
-"""Configuration for stdlib-backed structlog logging.
+"""Configuration for AppRC's optional structured logging formatter.
 
 Entrypoints call ``setup_logging`` once near startup. That function installs
 ``AppLogger`` for future named loggers, configures a root or named stdlib
@@ -92,7 +92,7 @@ def setup_logging(
     force: bool = False,
     logger: str | logging.Logger | None = None,
 ) -> None:
-    """Configure stdlib handlers and structlog processors.
+    """Configure stdlib handlers and optional structlog processors.
 
     The function is intentionally idempotent by default. If target handlers
     already exist and ``force`` is false, AppRC only updates the target level

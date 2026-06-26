@@ -699,6 +699,7 @@ log.success("Workspace ready", extra_struct={"storage": "myapp_stor-1"})
 |---|---|
 | `setup_logging(...)` | Configure optional stdlib/structlog output. |
 | `get_logger(__name__)` | Return an `AppLogger`. |
+| `clear_cid()` | Clear the current logging correlation ID. |
 | `log.action_begin(...)` | Start a visible operation. |
 | `log.success(...)` | Mark a completed operation. |
 | `log.retry(...)` | Record retry attempts. |

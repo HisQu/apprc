@@ -4,6 +4,7 @@ from apprc.logging.config import (
     setup_logging as setup_logging,
 )
 from apprc.logging.context import (
+    clear_cid as clear_cid,
     new_cid as new_cid,
     set_cid as set_cid,
 )

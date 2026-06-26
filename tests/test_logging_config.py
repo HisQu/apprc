@@ -1,3 +1,5 @@
+import io
+import json
 import logging
 import os
 import subprocess
@@ -7,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from apprc.logging import get_logger, setup_logging
+from apprc.logging import clear_cid, get_logger, set_cid, setup_logging
+from apprc.logging.context import CID
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,6 +63,61 @@ def test_semantic_logger_preserves_structured_fields_and_validation(
             log.info("bad", extra={"rows": 1}, extra_struct={"rows": 2})
 
 
+def test_clear_cid_is_public_and_unbinds_contexts() -> None:
+    import structlog.contextvars
+
+    structlog.contextvars.clear_contextvars()
+    clear_cid()
+
+    assert CID.get() is None
+    assert "cid" not in structlog.contextvars.get_contextvars()
+
+    assert set_cid("cid-public") == "cid-public"
+    assert CID.get() == "cid-public"
+    assert structlog.contextvars.get_contextvars()["cid"] == "cid-public"
+
+    clear_cid()
+
+    assert CID.get() is None
+    assert "cid" not in structlog.contextvars.get_contextvars()
+
+
+def test_json_renderer_uses_lazy_exception_renderer_and_redacts_fields() -> (
+    None
+):
+    stream = io.StringIO()
+    target = logging.getLogger("apprc.tests.json_renderer")
+    try:
+        setup_logging(
+            renderer="json",
+            colorize=False,
+            force=True,
+            logger=target,
+        )
+        handler = target.handlers[0]
+        assert isinstance(handler, logging.StreamHandler)
+        handler.stream = stream
+        log = get_logger("apprc.tests.json_renderer.child")
+        log.setLevel(logging.INFO)
+
+        try:
+            raise RuntimeError("sensitive failure")
+        except RuntimeError as exc:
+            log.traceback(
+                "rendered failure",
+                exc=exc,
+                extra_struct={"DATABASE_URL": "postgres://secret"},
+            )
+
+        payload = json.loads(stream.getvalue())
+        assert payload["DATABASE_URL"] == "[redacted]"
+        assert payload["message"] == "rendered failure:"
+        assert payload["exception"][0]["exc_type"] == "RuntimeError"
+    finally:
+        target.handlers.clear()
+        target.propagate = True
+
+
 def test_base_logging_api_imports_without_structlog() -> None:
     script = textwrap.dedent(
         """
@@ -82,10 +140,13 @@ def test_base_logging_api_imports_without_structlog() -> None:
         sys.modules.pop("structlog", None)
 
         import apprc
-        from apprc.logging import get_logger, set_cid, setup_logging
+        from apprc.logging import clear_cid, get_logger, set_cid, setup_logging
+        from apprc.logging.context import CID
 
         assert apprc.get_logger is get_logger
         assert set_cid("cid-1") == "cid-1"
+        clear_cid()
+        assert CID.get() is None
 
         log = get_logger("apprc.tests.no_structlog")
         log.setLevel(logging.INFO)
@@ -97,6 +158,46 @@ def test_base_logging_api_imports_without_structlog() -> None:
             assert 'python -m pip install "apprc[logging]"' in str(exc)
         else:
             raise AssertionError("setup_logging did not require apprc[logging]")
+        """
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(
+            (str(ROOT / "src"), os.environ.get("PYTHONPATH", ""))
+        ),
+    }
+    subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_incompatible_structlog_reports_import_guidance() -> None:
+    script = textwrap.dedent(
+        """
+        import types
+        import sys
+
+        for name in list(sys.modules):
+            if name == "structlog" or name.startswith("structlog."):
+                del sys.modules[name]
+
+        structlog = types.ModuleType("structlog")
+        structlog.__path__ = []
+        sys.modules["structlog"] = structlog
+
+        from apprc.logging import set_cid, setup_logging
+
+        for action in (lambda: set_cid("cid-1"), setup_logging):
+            try:
+                action()
+            except ImportError as exc:
+                assert "structlog>=25.5" in str(exc)
+            else:
+                raise AssertionError("incompatible structlog was accepted")
         """
     )
     env = {

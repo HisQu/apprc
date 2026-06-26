@@ -26,7 +26,12 @@ This project follows Semantic Versioning.
 
 ### 💥 Breaking Change Summary
 
-No breaking changes yet.
+  - Breaking: `setup_logging()` now requires the `apprc[logging]`
+    optional dependency because `structlog` is no longer installed by the base
+    package.
+    Affected: Users calling `setup_logging()` after installing bare `apprc`.
+    Migration: Install AppRC with `python -m pip install "apprc[logging]"` or
+    add `apprc[logging]` to the application's dependency declaration.
 
 <br>
 

@@ -76,7 +76,7 @@ dev = [
 requires-dist = [
     { name = "python-dotenv" },
     { name = "rich" },
-    { name = "structlog", marker = "extra == 'logging'" },
+    { name = "structlog", marker = "extra == 'logging'", specifier = ">=25.5" },
     { name = "textual" },
     { name = "typed-settings", extras = ["dotenv"] },
     { name = "typer" },
@@ -95,7 +95,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
     { name = "ruff", specifier = ">=0.4" },
-    { name = "structlog" },
+    { name = "structlog", specifier = ">=25.5" },
     { name = "twine", specifier = ">=6.0" },
 ]
 

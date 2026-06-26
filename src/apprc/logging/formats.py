@@ -1,4 +1,4 @@
-"""Console renderers for AppRC structlog events.
+"""Console renderers for AppRC structured formatter events.
 
 This module is the last step for human-readable logging. By the time
 ``AppConsoleRenderer`` runs, ``config`` has already copied stdlib ``extra``
@@ -125,7 +125,7 @@ class SecondCollapser:
 
 @dataclass
 class AppConsoleRenderer:
-    """Render structlog event dictionaries in AppRC's column style.
+    """Render structured event dictionaries in AppRC's column style.
 
     The renderer is a structlog processor: it receives a mutable event
     dictionary and returns the final string for the stdlib handler. It renders

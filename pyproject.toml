@@ -22,7 +22,6 @@ dependencies = [
     # uses this package with `python -m pip install -e "."`.
     "python-dotenv",       # < Loads .env files
     "typed-settings[dotenv]", # < Typed env/config binding
-    "structlog",           # < Stdlib-backed structured logging
     "rich",                # < Exception rendering
     "textual",             # < Terminal config editor
     "typer",               # < Reusable config CLI builder
@@ -76,7 +75,10 @@ Issues = "https://github.com/HisQu/apprc/issues"
 #   python -m pip install -e ".[rag]"
 #   uv sync --locked --all-extras --no-default-groups
 #
-# [project.optional-dependencies]
+[project.optional-dependencies]
+logging = [
+    "structlog",  # < Stdlib-backed structured logging
+]
 # rag = [
 #     # "huggingface-hub",  # < Hugging Face model/data downloads
 #     # "openai",           # < OpenAI API client
@@ -114,6 +116,7 @@ dev = [
     "pytest>=8.2",
     "pytest-asyncio",  # < Async testing
     "pytest-xdist",    # < Multi-core testing
+    "structlog",       # < Develop and test the optional logging extra
     # --- Code-Quality ---------
     "pyright>=1.1",  # < Type checker
     "ruff>=0.4",  # < Linter and formatter

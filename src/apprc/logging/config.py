@@ -21,8 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
-import structlog
-
+from apprc.logging._optional import require_structlog
 from apprc.logging.context import (
     add_log_record_fields,
     add_runtime_context,
@@ -117,6 +116,7 @@ def setup_logging(
         instead of the root logger.
     """
 
+    structlog_module = require_structlog()
     install_app_logger_class()
     effective_dependency_levels = {
         **DEFAULT_DEPENDENCY_LEVELS,
@@ -133,14 +133,15 @@ def setup_logging(
         force=force,
         logger=logger,
     )
-    _configure_stdlib(config)
+    _configure_stdlib(config, structlog_module)
     _configure_dependency_loggers(config.dependency_levels)
 
 
-def _configure_stdlib(config: LoggingConfig) -> None:
+def _configure_stdlib(config: LoggingConfig, structlog_module: Any) -> None:
     """Install or update the selected stdlib logging handler.
 
     :param config: Normalized logging configuration.
+    :param structlog_module: Imported structlog module from the logging extra.
     :return: ``None``.
     """
 
@@ -156,7 +157,7 @@ def _configure_stdlib(config: LoggingConfig) -> None:
     if config.logger is not None:
         target.propagate = False
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(_processor_formatter(config))
+    handler.setFormatter(_processor_formatter(config, structlog_module))
     target.addHandler(handler)
 
 
@@ -177,7 +178,8 @@ def _target_logger(logger: str | logging.Logger | None) -> logging.Logger:
 
 def _processor_formatter(
     config: LoggingConfig,
-) -> structlog.stdlib.ProcessorFormatter:
+    structlog_module: Any,
+) -> logging.Formatter:
     """Build the formatter that converts ``LogRecord`` objects to output.
 
     ``ExtraAdder`` copies stdlib ``extra`` fields, including AppRC
@@ -186,13 +188,14 @@ def _processor_formatter(
     defaults, and redaction before the renderer receives the event dictionary.
 
     :param config: Normalized logging configuration.
+    :param structlog_module: Imported structlog module from the logging extra.
     :return: Structlog formatter installed on the root handler.
     """
 
     redact_patterns = logging_redact_patterns(config.extra_redact_patterns)
     shared_processors: list[Any] = [
-        structlog.contextvars.merge_contextvars,
-        structlog.stdlib.ExtraAdder(),
+        structlog_module.contextvars.merge_contextvars,
+        structlog_module.stdlib.ExtraAdder(),
         add_log_record_fields,
         add_runtime_context,
         add_semantic_defaults,
@@ -205,12 +208,12 @@ def _processor_formatter(
                 show_locals=config.exception_show_locals,
                 patterns=redact_patterns,
             ),
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            structlog.processors.EventRenamer(to="message"),
-            structlog.processors.JSONRenderer(),
+            structlog_module.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog_module.processors.EventRenamer(to="message"),
+            structlog_module.processors.JSONRenderer(),
         ]
-        return structlog.stdlib.ProcessorFormatter(
-            foreign_pre_chain=_foreign_pre_chain(),
+        return structlog_module.stdlib.ProcessorFormatter(
+            foreign_pre_chain=_foreign_pre_chain(structlog_module),
             processors=processors,
         )
 
@@ -226,23 +229,24 @@ def _processor_formatter(
     )
     processors = [
         *shared_processors,
-        structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+        structlog_module.stdlib.ProcessorFormatter.remove_processors_meta,
         renderer,
     ]
-    return structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=_foreign_pre_chain(),
+    return structlog_module.stdlib.ProcessorFormatter(
+        foreign_pre_chain=_foreign_pre_chain(structlog_module),
         processors=processors,
     )
 
 
-def _foreign_pre_chain() -> list[Any]:
+def _foreign_pre_chain(structlog_module: Any) -> list[Any]:
     """Return processors used for non-structlog stdlib records.
 
+    :param structlog_module: Imported structlog module from the logging extra.
     :return: Pre-chain processors that run before formatter processors.
     """
 
     return [
-        structlog.contextvars.merge_contextvars,
+        structlog_module.contextvars.merge_contextvars,
         add_runtime_context,
     ]
 

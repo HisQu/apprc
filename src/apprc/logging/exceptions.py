@@ -17,14 +17,16 @@ import linecache
 import sys
 from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Any, Literal, TextIO, cast
 
 from rich.console import Console
 from rich.traceback import Trace, Traceback
-from structlog.processors import ExceptionRenderer
-from structlog.tracebacks import ExceptionDictTransformer
-from structlog.types import EventDict, WrappedLogger
-from structlog.typing import ExcInfo
+
+from apprc.logging._optional import require_structlog
+
+
+type ExcInfo = tuple[type[BaseException], BaseException, Any]
 
 
 ColorSystem = Literal["auto", "standard", "256", "truecolor", "windows"]
@@ -126,13 +128,13 @@ class LogFieldRedactor:
 
     def __call__(
         self,
-        logger: WrappedLogger | None,
+        logger: object | None,
         method_name: str,
-        event_dict: EventDict,
-    ) -> EventDict:
+        event_dict: dict[str, Any],
+    ) -> dict[str, Any]:
         """Replace sensitive top-level event values with a marker.
 
-        :param logger: Logger currently processed by structlog.
+        :param logger: Logger currently processed by the structured formatter.
         :param method_name: Logging method name such as ``info``.
         :param event_dict: Mutable structured log event.
         :return: The updated event dictionary.
@@ -233,7 +235,10 @@ class RedactedExceptionDictTransformer:
         :return: JSON-serializable stack dictionaries.
         """
 
-        transformer = ExceptionDictTransformer(
+        require_structlog()
+        transformer_module = cast(Any, import_module("structlog.tracebacks"))
+        transformer_cls = transformer_module.ExceptionDictTransformer
+        transformer = transformer_cls(
             show_locals=self.show_locals,
             locals_max_length=10,
             locals_max_string=80,
@@ -251,7 +256,7 @@ def json_exception_renderer(
     *,
     show_locals: bool,
     patterns: tuple[str, ...],
-) -> ExceptionRenderer:
+) -> Any:
     """Create a structlog exception renderer for JSON logs.
 
     The returned processor reads ``exc_info`` from the event dictionary and
@@ -263,11 +268,14 @@ def json_exception_renderer(
     :return: Structlog processor that writes an ``exception`` field.
     """
 
+    require_structlog()
+    processor_module = cast(Any, import_module("structlog.processors"))
+    renderer_cls = processor_module.ExceptionRenderer
     transformer = RedactedExceptionDictTransformer(
         show_locals=show_locals,
         patterns=patterns,
     )
-    return ExceptionRenderer(transformer)
+    return renderer_cls(transformer)
 
 
 def _color_system(colorize: bool) -> ColorSystem | None:

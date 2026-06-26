@@ -38,8 +38,8 @@
 `apprc` is a small Python library for application runtime configuration and
 logging. It is useful when a project needs typed env-backed config, packaged
 defaults, per-user storage registries, local override files, a reusable
-`config` CLI, a terminal config editor, and structured logs without rebuilding
-that plumbing in every application.
+`config` CLI, a terminal config editor, and optional structured logs without
+rebuilding that plumbing in every application.
 
 The key idea: the application declares its config contract once, and `apprc`
 derives the boring workflows from that contract.
@@ -49,7 +49,7 @@ derives the boring workflows from that contract.
 - [`typer`] for CLI commands.
 - [`python-dotenv`] for `.env` file parsing and writing.
 - [`textual`] for the terminal config editor.
-- [`structlog`] for structured logging.
+- Optional [`structlog`] for structured logging.
 
 <br>
 
@@ -67,6 +67,13 @@ derives the boring workflows from that contract.
 
 ```shell
 python -m pip install apprc
+```
+
+Install the optional structured logging formatter stack when your application
+calls `setup_logging()`:
+
+```shell
+python -m pip install "apprc[logging]"
 ```
 
 <br>
@@ -500,10 +507,11 @@ storage-root environment value.
 
 ### Logging
 
-`apprc.logging` wraps stdlib logging and structlog. `setup_logging()` installs
-formatters and dependency logger levels. `get_logger()` returns an `AppLogger`
-with semantic helper methods such as `action_begin`, `success`, `retry`,
-`fallback`, `telemetry`, and `traceback`.
+`apprc.logging` provides stdlib-compatible semantic loggers in the base
+package. `get_logger()` returns an `AppLogger` with helper methods such as
+`action_begin`, `success`, `retry`, `fallback`, `telemetry`, and `traceback`.
+Install `apprc[logging]` before calling `setup_logging()`, which configures
+the optional structlog-backed formatters and dependency logger levels.
 
 Use AppRC logging when application logs should stay structured and readable in
 CLI output, notebooks, and tests.
@@ -543,6 +551,8 @@ Use `editable=False` for values owned by the AppRC TOML instead of `.env.local`.
 ### Bootstrap a CLI
 
 Call bootstrap before creating runtime config objects.
+Install `apprc[logging]` first if you pass `setup_logging` into the bootstrap
+helper for `--log-level` support.
 
 ```python
 from apprc.cli import bootstrap_cli_env
@@ -616,7 +626,7 @@ setup_logging(level="INFO", renderer="cli")
 log = get_logger(__name__)
 
 log.action_begin("Loading workspace")
-log.success("Workspace ready", storage="myapp_stor-1")
+log.success("Workspace ready", extra_struct={"storage": "myapp_stor-1"})
 ```
 
 <br>
@@ -685,7 +695,7 @@ log.success("Workspace ready", storage="myapp_stor-1")
 
 | Function | Purpose |
 |---|---|
-| `setup_logging(...)` | Configure stdlib/structlog output. |
+| `setup_logging(...)` | Configure optional stdlib/structlog output. |
 | `get_logger(__name__)` | Return an `AppLogger`. |
 | `log.action_begin(...)` | Start a visible operation. |
 | `log.success(...)` | Mark a completed operation. |

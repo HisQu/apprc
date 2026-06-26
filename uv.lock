@@ -44,10 +44,14 @@ source = { editable = "." }
 dependencies = [
     { name = "python-dotenv" },
     { name = "rich" },
-    { name = "structlog" },
     { name = "textual" },
     { name = "typed-settings", extra = ["dotenv"] },
     { name = "typer" },
+]
+
+[package.optional-dependencies]
+logging = [
+    { name = "structlog" },
 ]
 
 [package.dev-dependencies]
@@ -64,6 +68,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "structlog" },
     { name = "twine" },
 ]
 
@@ -71,11 +76,12 @@ dev = [
 requires-dist = [
     { name = "python-dotenv" },
     { name = "rich" },
-    { name = "structlog" },
+    { name = "structlog", marker = "extra == 'logging'" },
     { name = "textual" },
     { name = "typed-settings", extras = ["dotenv"] },
     { name = "typer" },
 ]
+provides-extras = ["logging"]
 
 [package.metadata.requires-dev]
 demo = [{ name = "apprc-example-app", editable = "examples/apprc_example_app" }]
@@ -89,6 +95,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
     { name = "ruff", specifier = ">=0.4" },
+    { name = "structlog" },
     { name = "twine", specifier = ">=6.0" },
 ]
 

@@ -18,9 +18,7 @@ import logging
 from io import StringIO
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal
-
-from structlog.types import EventDict, WrappedLogger
+from typing import Any, Literal
 
 from apprc.logging.context import elapsed_seconds
 from apprc.logging.exceptions import (
@@ -154,9 +152,9 @@ class AppConsoleRenderer:
 
     def __call__(
         self,
-        logger: WrappedLogger | None,
+        logger: object | None,
         method_name: str,
-        event_dict: EventDict,
+        event_dict: dict[str, Any],
     ) -> str:
         """Render one log event.
 
@@ -164,7 +162,7 @@ class AppConsoleRenderer:
         It treats the event dictionary as read-only display input and returns
         the final text line expected by ``ProcessorFormatter``.
 
-        :param logger: Logger currently processed by structlog.
+        :param logger: Logger currently processed by the structured formatter.
         :param method_name: Logging method name such as ``info``.
         :param event_dict: Structured event data.
         :return: Console-ready log line.
@@ -179,7 +177,7 @@ class AppConsoleRenderer:
         line = self._append_fields(line, event_dict)
         return self._append_exception(line, event_dict)
 
-    def _render_mini(self, event_dict: EventDict) -> str:
+    def _render_mini(self, event_dict: dict[str, Any]) -> str:
         """Render the compact default console layout.
 
         :param event_dict: Structured event data.
@@ -201,7 +199,7 @@ class AppConsoleRenderer:
             f"{self._style(self._event(event_dict), self._color(event_dict))}"
         )
 
-    def _render_cli(self, event_dict: EventDict) -> str:
+    def _render_cli(self, event_dict: dict[str, Any]) -> str:
         """Render the wider command-line layout.
 
         :param event_dict: Structured event data.
@@ -225,7 +223,7 @@ class AppConsoleRenderer:
             f"{self._style(self._event(event_dict), self._color(event_dict))}"
         )
 
-    def _render_ipy(self, event_dict: EventDict) -> str:
+    def _render_ipy(self, event_dict: dict[str, Any]) -> str:
         """Render the compact notebook-friendly layout.
 
         :param event_dict: Structured event data.
@@ -245,7 +243,7 @@ class AppConsoleRenderer:
     def _append_exception(
         self,
         line: str,
-        event_dict: EventDict,
+        event_dict: dict[str, Any],
     ) -> str:
         """Append a formatted traceback when the event carries ``exc_info``.
 
@@ -263,7 +261,7 @@ class AppConsoleRenderer:
             self.exception_formatter(output, exc_info)
         return line + output.getvalue()
 
-    def _append_fields(self, line: str, event_dict: EventDict) -> str:
+    def _append_fields(self, line: str, event_dict: dict[str, Any]) -> str:
         """Append unconsumed structured fields to the rendered line.
 
         :param line: Already-rendered one-line console message.
@@ -277,7 +275,7 @@ class AppConsoleRenderer:
         return f"{line} {self._style(fields, 'gray')}"
 
     @staticmethod
-    def _structured_fields(event_dict: EventDict) -> str:
+    def _structured_fields(event_dict: dict[str, Any]) -> str:
         """Render structured fields not already shown by console columns.
 
         :param event_dict: Structured event data.
@@ -319,7 +317,7 @@ class AppConsoleRenderer:
         return f"{prefix}{value}{ANSI_RESET}"
 
     @staticmethod
-    def _datetime(event_dict: EventDict) -> datetime:
+    def _datetime(event_dict: dict[str, Any]) -> datetime:
         """Return the wall-clock timestamp represented by an event.
 
         :param event_dict: Structured event data.
@@ -341,7 +339,7 @@ class AppConsoleRenderer:
         return str(timedelta(seconds=elapsed_seconds()))
 
     @staticmethod
-    def _logger_name(event_dict: EventDict) -> str:
+    def _logger_name(event_dict: dict[str, Any]) -> str:
         """Return the best available logger name for display.
 
         :param event_dict: Structured event data.
@@ -352,7 +350,7 @@ class AppConsoleRenderer:
         return str(name or "<unknown>")
 
     @staticmethod
-    def _function(event_dict: EventDict) -> str:
+    def _function(event_dict: dict[str, Any]) -> str:
         """Return the source function name for display.
 
         :param event_dict: Structured event data.
@@ -362,7 +360,7 @@ class AppConsoleRenderer:
         return str(event_dict.get("function") or "<unknown>")
 
     @staticmethod
-    def _event(event_dict: EventDict) -> str:
+    def _event(event_dict: dict[str, Any]) -> str:
         """Return the human message text from the event dictionary.
 
         :param event_dict: Structured event data.
@@ -372,7 +370,7 @@ class AppConsoleRenderer:
         return str(event_dict.get("event", ""))
 
     @staticmethod
-    def _icon(event_dict: EventDict) -> str:
+    def _icon(event_dict: dict[str, Any]) -> str:
         """Return the semantic event icon.
 
         :param event_dict: Structured event data.
@@ -382,7 +380,7 @@ class AppConsoleRenderer:
         return str(event_dict.get("icon") or "")
 
     @staticmethod
-    def _color(event_dict: EventDict) -> str:
+    def _color(event_dict: dict[str, Any]) -> str:
         """Return the semantic color role.
 
         :param event_dict: Structured event data.
@@ -393,10 +391,10 @@ class AppConsoleRenderer:
 
 
 def add_semantic_defaults(
-    logger: WrappedLogger | None,
+    logger: object | None,
     method_name: str,
-    event_dict: EventDict,
-) -> EventDict:
+    event_dict: dict[str, Any],
+) -> dict[str, Any]:
     """Fill display metadata for plain stdlib records.
 
     AppRC semantic methods already attach ``event_type``, ``icon``, and
@@ -404,7 +402,7 @@ def add_semantic_defaults(
     loggers do not, so this processor chooses a reasonable semantic display
     style from the numeric logging level.
 
-    :param logger: Logger currently processed by structlog.
+    :param logger: Logger currently processed by the structured formatter.
     :param method_name: Logging method name such as ``warning``.
     :param event_dict: Mutable structured log event.
     :return: The updated event dictionary.

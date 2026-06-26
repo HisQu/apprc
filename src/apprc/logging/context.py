@@ -1,4 +1,4 @@
-"""Runtime context processors for AppRC logging.
+"""Runtime context helpers and processors for AppRC logging.
 
 This module owns values that are true at emission or formatting time rather
 than values chosen by the caller. ``CID`` stores an optional correlation ID in a
@@ -6,10 +6,11 @@ than values chosen by the caller. ``CID`` stores an optional correlation ID in a
 it through every function. ``current_task_name`` records the active asyncio task
 or OS thread for console scans.
 
-The structlog processors here are deliberately conservative: they use
+The structured logging processors here are deliberately conservative: they use
 ``setdefault`` so explicit caller fields survive, and they copy stdlib
 ``LogRecord`` attributes into renderer-friendly names only when a record is
-available.
+available. The module itself stays stdlib-only so bare AppRC installs can still
+use semantic loggers without the ``apprc[logging]`` extra.
 """
 
 from __future__ import annotations
@@ -21,9 +22,9 @@ import uuid
 from contextvars import ContextVar
 from datetime import datetime
 from time import perf_counter
+from typing import Any
 
-import structlog
-from structlog.types import EventDict, WrappedLogger
+from apprc.logging._optional import optional_structlog_contextvars
 
 
 CID: ContextVar[str | None] = ContextVar("apprc_log_cid", default=None)
@@ -43,9 +44,9 @@ def new_cid() -> str:
 def set_cid(value: str | None = None) -> str:
     """Bind a correlation ID to the current context.
 
-    The ID is stored both in AppRC's own ``ContextVar`` and in structlog's
-    contextvars storage. That lets AppRC's stdlib path and any direct structlog
-    path agree on the same ``cid`` field.
+    The ID is always stored in AppRC's own ``ContextVar``. When the optional
+    logging extra is installed, AppRC also mirrors the value into structlog's
+    contextvars storage so direct structlog usage sees the same ``cid`` field.
 
     :param value: Explicit correlation ID, or ``None`` to create a new one.
     :return: The active correlation ID.
@@ -53,18 +54,22 @@ def set_cid(value: str | None = None) -> str:
 
     cid = value or new_cid()
     CID.set(cid)
-    structlog.contextvars.bind_contextvars(cid=cid)
+    structlog_contextvars = optional_structlog_contextvars()
+    if structlog_contextvars is not None:
+        structlog_contextvars.bind_contextvars(cid=cid)
     return cid
 
 
 def clear_cid() -> None:
-    """Remove the current correlation ID from both context stores.
+    """Remove the current correlation ID from available context stores.
 
     :return: ``None``.
     """
 
     CID.set(None)
-    structlog.contextvars.unbind_contextvars("cid")
+    structlog_contextvars = optional_structlog_contextvars()
+    if structlog_contextvars is not None:
+        structlog_contextvars.unbind_contextvars("cid")
 
 
 def current_task_name() -> str:
@@ -83,10 +88,10 @@ def current_task_name() -> str:
 
 
 def add_runtime_context(
-    logger: WrappedLogger | None,
+    logger: object | None,
     method_name: str,
-    event_dict: EventDict,
-) -> EventDict:
+    event_dict: dict[str, Any],
+) -> dict[str, Any]:
     """Add task/thread and correlation fields when missing.
 
     This processor runs for AppRC records and foreign stdlib records. It fills
@@ -94,7 +99,7 @@ def add_runtime_context(
     the current thread name. ``cid`` is ``"-"`` when no correlation ID was
     bound.
 
-    :param logger: Logger currently processed by structlog.
+    :param logger: Logger currently processed by the structured formatter.
     :param method_name: Logging method name such as ``info`` or ``warning``.
     :param event_dict: Mutable structured log event.
     :return: The updated event dictionary.
@@ -106,10 +111,10 @@ def add_runtime_context(
 
 
 def add_log_record_fields(
-    logger: WrappedLogger | None,
+    logger: object | None,
     method_name: str,
-    event_dict: EventDict,
-) -> EventDict:
+    event_dict: dict[str, Any],
+) -> dict[str, Any]:
     """Copy stdlib ``LogRecord`` fields into renderer-friendly names.
 
     Structlog's ``ProcessorFormatter`` stores the original record under
@@ -117,7 +122,7 @@ def add_log_record_fields(
     line, and timestamp so console and JSON renderers do not need to know the
     stdlib ``LogRecord`` API.
 
-    :param logger: Logger currently processed by structlog.
+    :param logger: Logger currently processed by the structured formatter.
     :param method_name: Logging method name such as ``info`` or ``warning``.
     :param event_dict: Mutable structured log event.
     :return: The updated event dictionary.

@@ -33,11 +33,9 @@ from textual.widgets import (
 )
 
 # == Internal ================================
-from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.storage.local_env import (
     clear_env_file_value,
     clear_local_env_value,
-    ensure_local_env_file,
     read_local_env,
     set_env_file_value,
     set_local_env_value,
@@ -127,26 +125,29 @@ class ConfigEditorApp(App[None]):
         self.storage_registry = storage_registry
         self.owners = kit.spec.owners
         self.initial_storage = initial_storage
-        self.local_env_filename = (
-            kit.spec.global_env_filename
-            if kit.spec.storage_mode == StorageMode.DISABLED
-            else kit.spec.local_env_filename
+        self.storage_enabled = kit.spec.storage_required()
+        self.current_env_filename = (
+            kit.spec.storage_env_filename
+            if self.storage_enabled
+            else kit.spec.app_wide_env_filename
         )
         self.init_command = (
-            f"{kit.spec.config_command_name()} config init "
-            "STORAGE_ROOT --name NAME"
+            f"{kit.spec.config_command_name()} config storage add NAME PATH"
         )
-        self.apprc_toml_label = kit.spec.apprc_toml_filename
+        self.index_label = kit.spec.index_filename
         self.hidden_env_keys = (
             frozenset({kit.spec.storage_env_key})
             if kit.spec.storage_env_key is not None
             else frozenset()
         )
-        self.active_storage_root = (
-            Path(active_storage_root).expanduser().resolve()
-            if active_storage_root is not None
-            else None
-        )
+        if active_storage_root is not None:
+            self.active_storage_root = (
+                Path(active_storage_root).expanduser().resolve()
+            )
+        elif self.storage_enabled:
+            self.active_storage_root = None
+        else:
+            self.active_storage_root = kit.spec.config_home()
         self.shared_values = _read_packaged_shared_values(kit)
         self.storage_entries = (
             ordered_storage_entries(storage_registry)
@@ -223,7 +224,7 @@ class ConfigEditorApp(App[None]):
             return
         if not selected.spec.editable:
             self.notify(
-                f"This setting is managed by {self.apprc_toml_label}.",
+                f"This setting is managed by {self.index_label}.",
                 severity="warning",
             )
             return
@@ -282,7 +283,7 @@ class ConfigEditorApp(App[None]):
         """Return the storage table required for multi-storage editor actions."""
         if self.storage_registry is None:
             self.notify(
-                "Storage management requires an AppRC TOML file.",
+                "Storage management requires a named-storage index.",
                 severity="error",
             )
             return None
@@ -291,13 +292,13 @@ class ConfigEditorApp(App[None]):
     def _save_env_key(self, env_key: str, raw_value: str) -> None:
         """Validate and persist one local env value."""
         try:
-            if self.kit.spec.storage_mode == StorageMode.DISABLED:
+            if not self.storage_enabled:
                 update = set_env_file_value(
                     path=self._current_env_file_path(),
                     reference=env_key,
                     raw_value=raw_value,
                     owners=self.owners,
-                    layer_name=self.local_env_filename,
+                    layer_name=self.current_env_filename,
                 )
             else:
                 update = set_local_env_value(
@@ -305,7 +306,7 @@ class ConfigEditorApp(App[None]):
                     reference=env_key,
                     raw_value=raw_value,
                     owners=self.owners,
-                    local_env_filename=self.local_env_filename,
+                    storage_env_filename=self.current_env_filename,
                 )
         except (TypeError, ValueError) as exc:
             self.notify(str(exc), severity="error", markup=False)
@@ -317,19 +318,19 @@ class ConfigEditorApp(App[None]):
     def _clear_env_key(self, env_key: str) -> None:
         """Remove one key from the active local env file."""
         try:
-            if self.kit.spec.storage_mode == StorageMode.DISABLED:
+            if not self.storage_enabled:
                 update = clear_env_file_value(
                     path=self._current_env_file_path(),
                     reference=env_key,
                     owners=self.owners,
-                    layer_name=self.local_env_filename,
+                    layer_name=self.current_env_filename,
                 )
             else:
                 update = clear_local_env_value(
                     storage_root=self._current_storage_root(),
                     reference=env_key,
                     owners=self.owners,
-                    local_env_filename=self.local_env_filename,
+                    storage_env_filename=self.current_env_filename,
                 )
         except ValueError as exc:
             self.notify(str(exc), severity="error", markup=False)
@@ -397,7 +398,7 @@ class ConfigEditorApp(App[None]):
         if root is None:
             return
         self.selection = ActivePathStorageSelection(root=root)
-        path = ensure_local_env_file(root, filename=self.local_env_filename)
+        path = self._env_file_path_for_root(root)
         self.local_values = read_local_env(path)
         self.query_one("#storage-title", Static).update(
             active_storage_title(root, path)
@@ -417,10 +418,7 @@ class ConfigEditorApp(App[None]):
             return
         record = registry.selected(name)
         self.selection = LiveStorageSelection(record=record)
-        path = ensure_local_env_file(
-            record.root,
-            filename=self.local_env_filename,
-        )
+        path = self._env_file_path_for_root(record.root)
         self.local_values = read_local_env(path)
         self.query_one("#storage-title", Static).update(
             live_storage_title(record, path)
@@ -506,7 +504,11 @@ class ConfigEditorApp(App[None]):
 
     def _current_env_file_path(self) -> Path:
         """Return the selected editable dotenv file path."""
-        return self._current_storage_root() / self.local_env_filename
+        return self._env_file_path_for_root(self._current_storage_root())
+
+    def _env_file_path_for_root(self, root: Path) -> Path:
+        """Return the editable dotenv path below one current root."""
+        return Path(root).expanduser().resolve() / self.current_env_filename
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable editor controls."""
@@ -575,10 +577,10 @@ class ConfigEditorApp(App[None]):
 
     def _no_storage_message(self) -> str:
         """Return empty-list guidance for current multi-storage capability."""
-        if self.kit.spec.storage_mode == StorageMode.DISABLED:
+        if not self.storage_enabled:
             return (
-                "Editing app-global settings from the AppRC config home:\n"
-                f"{self.kit.spec.config_home() / self.local_env_filename}"
+                "Editing app-wide settings from the AppRC config home:\n"
+                f"{self.kit.spec.app_wide_env_path()}"
             )
         storage_env_key = self.kit.spec.require_storage_env_key()
         if self.storage_registry is not None:
@@ -589,8 +591,8 @@ class ConfigEditorApp(App[None]):
             )
         return (
             "No active storage path is selected. Set "
-            f"{storage_env_key} to edit a storage-local env file. Configure "
-            "the AppRC TOML file to enable multi-storage actions."
+            f"{storage_env_key} to edit a storage-local env file. Create a "
+            "named-storage index to enable storage management actions."
         )
 
 

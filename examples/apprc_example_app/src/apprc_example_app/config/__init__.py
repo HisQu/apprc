@@ -88,15 +88,14 @@ class ApprcExampleAppEnv(EnvConfig):
 APPRC_EXAMPLE_APP_OWNER = config_owner_for(ApprcExampleAppEnv)
 APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
 
-APPRC_EXAMPLE_APP_KIT = AppConfigKit(
+APPRC_EXAMPLE_APP_KIT = AppConfigKit.storage_only(
     app_name="apprc_example_app",
     display_name="Example App",
     config_package="apprc_example_app.config",
     envs=(ApprcExampleAppEnv,),
     storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
     command_name="apprc",
-    apprc_toml_filename="apprc_example_app.apprc.toml",
-    local_env_filename=".env.apprc_example_app",
+    index_filename="apprc_example_app.apprc.toml",
 )
 
 
@@ -129,15 +128,14 @@ def _bootstrap_payload(
     bootstrap: EnvBootstrapResult | None,
 ) -> dict[str, object]:
     """Return JSON-friendly bootstrap state for the current invocation."""
-    apprc_toml_path = APPRC_EXAMPLE_APP_KIT.spec.optional_apprc_toml_path()
+    index_path = APPRC_EXAMPLE_APP_KIT.spec.optional_index_path()
     if bootstrap is None:
         return {
             "shared_env": None,
-            "local_env": None,
+            "app_wide_env": None,
+            "storage_env": None,
             "env_files": [],
-            "apprc_toml_path": str(apprc_toml_path)
-            if apprc_toml_path
-            else None,
+            "index_path": str(index_path) if index_path else None,
             "storage_selector_source": None,
             "storage_selector_value": None,
             "storage_name": None,
@@ -146,9 +144,10 @@ def _bootstrap_payload(
         }
     return {
         "shared_env": _path_text(bootstrap.shared_env),
-        "local_env": _path_text(bootstrap.local_env),
+        "app_wide_env": _path_text(bootstrap.app_wide_env),
+        "storage_env": _path_text(bootstrap.storage_env),
         "env_files": [str(path) for path in bootstrap.env_files],
-        "apprc_toml_path": _path_text(bootstrap.apprc_toml_path),
+        "index_path": _path_text(bootstrap.index_path),
         "storage_selector_source": bootstrap.storage_selector_source,
         "storage_selector_value": bootstrap.storage_selector_value,
         "storage_name": bootstrap.storage_name,

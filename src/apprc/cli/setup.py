@@ -8,233 +8,196 @@ from pathlib import Path
 # == 3rd Party ===============================
 import typer
 from rich.console import Console
-from rich.text import Text
 
 # == Internal ================================
 from apprc.cli.errors import config_home_bad_parameter
-from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.kit import AppConfigKit
-import apprc.runtime_config.setup.flow as setup_flow
-import apprc.runtime_config.setup.text as setup_text
+from apprc.runtime_config.storage.local_env import ensure_local_env_file
+from apprc.runtime_config.storage.paths import (
+    StorageRootPathError,
+    normalize_storage_root_path,
+)
 from apprc.runtime_config.terminal_styles import (
     ENV_KEY_STYLE,
-    MISSING_STYLE,
     PATH_STYLE,
     style_literals,
 )
-from apprc.runtime_config.tui.setup import ConfigSetupApp
 
 
 def run_config_setup(
     kit: AppConfigKit,
     *,
     assume_yes: bool = False,
-    apprc_dir: Path | None = None,
     storage_root: Path | None = None,
-    storage_name: str | None = None,
-    multi_storage: bool = False,
-    existing_action: setup_flow.ExistingSetupAction | None = None,
 ) -> None:
-    """Run the Textual setup wizard or a non-interactive setup command.
+    """Configure files for the declared AppRC capability layers.
 
     :param kit: Application config facade mounted by the host CLI.
-    :param assume_yes: Whether to run without opening the Textual wizard.
-    :param apprc_dir: Optional AppRC directory for non-interactive setup.
+    :param assume_yes: Whether to run without prompts.
     :param storage_root: Optional active storage root.
-    :param storage_name: Optional selector for multi-storage registration.
-    :param multi_storage: Whether setup should register the active storage.
-    :param existing_action: Optional action for an existing AppRC TOML file.
-    :raises typer.Exit: If the user cancels or setup diagnostics fail.
+    :raises typer.Exit: If the user cancels.
     :raises typer.BadParameter: If setup inputs are invalid.
     """
-    has_setup_options = any(
-        option is not None
-        for option in (
-            apprc_dir,
-            storage_root,
-            storage_name,
-            existing_action,
-        )
-    )
-    if (has_setup_options or multi_storage) and not assume_yes:
-        raise typer.BadParameter(
-            "Setup options run non-interactively and require --yes.",
-            param_hint="--yes",
-        )
-    if storage_name is not None and not multi_storage:
-        raise typer.BadParameter(
-            "--name is only used with --multi-storage.",
-            param_hint="--multi-storage",
-        )
-    if apprc_dir is not None and not multi_storage:
-        raise typer.BadParameter(
-            "--apprc-dir is only used with --multi-storage.",
-            param_hint="--multi-storage",
-        )
-    if existing_action is not None and not multi_storage:
-        raise typer.BadParameter(
-            "--existing-action is only used with --multi-storage.",
-            param_hint="--multi-storage",
-        )
-    if kit.spec.storage_mode == StorageMode.DISABLED:
-        if has_setup_options or multi_storage:
+    if not kit.spec.storage_required():
+        if storage_root is not None:
             raise typer.BadParameter(
                 f"{kit.spec.display_name} does not use AppRC storage.",
-                param_hint="storage",
+                param_hint="--storage-root",
             )
-        try:
-            _print_global_setup_finish(kit)
-        except ConfigHomeError as exc:
-            raise config_home_bad_parameter(exc) from exc
+        if kit.spec.app_wide_default():
+            try:
+                app_wide_path = kit.spec.ensure_app_wide_env()
+            except ConfigHomeError as exc:
+                raise config_home_bad_parameter(exc) from exc
+            _print_app_wide_setup(kit, app_wide_path=app_wide_path)
+            return
+        _print_env_only_setup(kit)
         return
 
-    if not assume_yes:
-        try:
-            result = ConfigSetupApp(kit=kit).run()
-        except ConfigHomeError as exc:
-            raise config_home_bad_parameter(exc) from exc
-        if result is None:
-            raise typer.Exit(code=1)
-        return
-
-    flow = setup_flow.ConfigSetupFlow(kit)
+    root = _prepare_storage_root(
+        kit,
+        storage_root=storage_root,
+        assume_yes=assume_yes,
+    )
     try:
-        if multi_storage:
-            registered_name = (
-                flow.default_storage_name()
-                if storage_name is None
-                else storage_name
-            )
-            setup_result = flow.prepare_storage_registry(
-                apprc_dir=apprc_dir,
-                existing_action=existing_action,
-                replace_existing_file=True,
-            )
-            root = flow.prepare_storage_root(
-                storage_root=storage_root,
-                storage_name=registered_name,
-                allow_non_empty_storage=True,
-            )
-            result = flow.ensure_registered_storage(
-                setup_result.registry,
-                storage_root=root,
-                storage_name=registered_name,
-            )
-        else:
-            kit.spec.ensure_config_home()
-            root = flow.prepare_storage_root(
-                storage_root=storage_root,
-                storage_name=None,
-                allow_non_empty_storage=True,
-            )
-            result = flow.ensure_single_storage(
-                storage_root=root,
-            )
-    except ConfigHomeError as exc:
-        raise config_home_bad_parameter(exc) from exc
-    except setup_flow.ConfigSetupError as exc:
-        _raise_setup_error(exc)
-    _print_setup_finish(kit, result)
+        storage_env = ensure_local_env_file(
+            root,
+            filename=kit.spec.storage_env_filename,
+        )
+        app_wide_path = (
+            kit.spec.ensure_app_wide_env()
+            if kit.spec.app_wide_default()
+            else None
+        )
+    except (ConfigHomeError, StorageRootPathError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--storage-root") from exc
+    _print_storage_setup(
+        kit,
+        storage_root=root,
+        storage_env=storage_env,
+        app_wide_path=app_wide_path,
+    )
 
 
-def _print_setup_finish(
+def _prepare_storage_root(
     kit: AppConfigKit,
-    result: setup_flow.ConfigSetupResult,
-) -> None:
-    """Print environment handoff text after non-interactive setup.
+    *,
+    storage_root: Path | None,
+    assume_yes: bool,
+) -> Path:
+    """Return the storage root selected for setup, creating directories.
 
     :param kit: Application config facade.
-    :param result: Setup files and active storage selected by setup.
+    :param storage_root: Optional CLI-provided root.
+    :param assume_yes: Whether setup may run without prompts.
+    :return: Existing storage root directory.
+    :raises typer.Exit: If the user cancels.
+    :raises typer.BadParameter: If the path cannot be used as a directory.
     """
-    console = Console(soft_wrap=True)
-    console.print(_style_setup_finish_text(kit, result))
+    selected = storage_root
+    if selected is None and assume_yes:
+        raise typer.BadParameter(
+            "--storage-root is required with --yes for storage setup.",
+            param_hint="--storage-root",
+        )
+    if selected is None:
+        raw_value = typer.prompt("Storage root")
+        selected = Path(raw_value)
+    try:
+        root = normalize_storage_root_path(selected)
+    except StorageRootPathError as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint="--storage-root",
+        ) from exc
+    if root.exists() and not root.is_dir():
+        raise typer.BadParameter(
+            f"Storage root exists but is not a directory: {root}",
+            param_hint="--storage-root",
+        )
+    if root.exists() and any(root.iterdir()) and not assume_yes:
+        if not typer.confirm(
+            f"Reuse non-empty storage root for {kit.spec.display_name}?"
+        ):
+            raise typer.Exit(code=1)
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
 
 
-def _print_global_setup_finish(kit: AppConfigKit) -> None:
-    """Print storage-free setup guidance for AppRC-managed files.
-
-    :param kit: Application config facade.
-    """
-    paths = kit.spec.ensure_config_home()
+def _print_env_only_setup(kit: AppConfigKit) -> None:
+    """Print setup-free guidance for env-only integrations."""
     text = "\n".join(
         (
-            f"{kit.spec.display_name} AppRC config files are ready.",
+            f"{kit.spec.display_name} uses env-only AppRC setup.",
             "",
-            f"Config home: {paths.root}",
-            f"Global env: {paths.global_env}",
-            f"AppRC TOML: {paths.apprc_toml}",
+            "writes: none",
             "",
-            "AppRC owns the global env and AppRC TOML files. Host "
-            "applications own their own structured config files in the same "
-            "config home.",
+            "Set environment variables in your shell or pass explicit env files.",
+            "Inspect the current paths:",
+            f"  {kit.spec.config_command_name()} config paths",
+        )
+    )
+    Console(soft_wrap=True).print(text)
+
+
+def _print_app_wide_setup(
+    kit: AppConfigKit,
+    *,
+    app_wide_path: Path,
+) -> None:
+    """Print setup completion for app-wide config."""
+    text = "\n".join(
+        (
+            f"{kit.spec.display_name} app-wide config is ready.",
+            "",
+            f"app_wide_env: {app_wide_path}",
             "",
             "Then verify:",
             f"  {kit.spec.config_command_name()} config doctor",
-            f"  {kit.spec.config_command_name()} config show",
         )
     )
-    console = Console(soft_wrap=True)
-    console.print(
+    Console(soft_wrap=True).print(
+        style_literals(text, {str(app_wide_path): PATH_STYLE})
+    )
+
+
+def _print_storage_setup(
+    kit: AppConfigKit,
+    *,
+    storage_root: Path,
+    storage_env: Path,
+    app_wide_path: Path | None,
+) -> None:
+    """Print setup completion for storage-capable integrations."""
+    storage_key = kit.spec.require_storage_env_key()
+    lines = [
+        f"{kit.spec.display_name} storage config is ready.",
+        "",
+        f"storage_root: {storage_root}",
+        f"storage_env: {storage_env}",
+    ]
+    if app_wide_path is not None:
+        lines.append(f"app_wide_env: {app_wide_path}")
+    lines.extend(
+        (
+            "",
+            "Add this to your shell or dotenv file:",
+            f'  export {storage_key}="{storage_root}"',
+            "",
+            "Then verify:",
+            f"  {kit.spec.config_command_name()} config doctor",
+        )
+    )
+    paths = {str(storage_root): PATH_STYLE, str(storage_env): PATH_STYLE}
+    if app_wide_path is not None:
+        paths[str(app_wide_path)] = PATH_STYLE
+    Console(soft_wrap=True).print(
         style_literals(
-            text,
+            "\n".join(lines),
             {
-                str(paths.root): PATH_STYLE,
-                str(paths.global_env): PATH_STYLE,
-                str(paths.apprc_toml): PATH_STYLE,
+                storage_key: ENV_KEY_STYLE,
+                **paths,
             },
         )
-    )
-
-
-def _raise_setup_error(exc: setup_flow.ConfigSetupError) -> None:
-    """Convert setup workflow errors to Typer's CLI errors.
-
-    :param exc: Setup-layer error with optional CLI context.
-    :raises typer.Exit: For setup refusals that should keep exit code ``1``.
-    :raises typer.BadParameter: For invalid command input.
-    """
-    exit_code = getattr(exc, "exit_code", None)
-    if exit_code is not None:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=exit_code)
-    raise typer.BadParameter(str(exc), param_hint=exc.param_hint) from exc
-
-
-def _style_setup_finish_text(
-    kit: AppConfigKit,
-    result: setup_flow.ConfigSetupResult,
-) -> Text:
-    """Return styled setup completion text for the CLI.
-
-    :param kit: Application config facade.
-    :param result: Setup files and active storage selected by setup.
-    :return: Rich text with semantic setup spans.
-    """
-    paths = {
-        str(result.active_storage_root): PATH_STYLE,
-    }
-    if result.registry is not None:
-        paths.update(
-            {
-                str(result.registry.path): PATH_STYLE,
-                str(result.registry.path.expanduser().resolve()): PATH_STYLE,
-            }
-        )
-    styles = {
-        "Shell:": "bold",
-        "Or Dotenv:": "bold",
-        "env_not_set": MISSING_STYLE,
-        kit.spec.apprc_toml_env_key: ENV_KEY_STYLE,
-        **paths,
-    }
-    if kit.spec.storage_env_key is not None:
-        styles[kit.spec.storage_env_key] = ENV_KEY_STYLE
-    return style_literals(
-        setup_text.setup_finish_text(
-            kit,
-            result.registry,
-            result.active_storage_root,
-        ),
-        styles,
     )

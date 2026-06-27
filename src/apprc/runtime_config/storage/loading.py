@@ -1,4 +1,4 @@
-"""Load AppRC storage registries by explicit intent."""
+"""Load optional named-storage indexes by explicit intent."""
 
 from __future__ import annotations
 
@@ -7,12 +7,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from apprc.runtime_config.app_spec import AppConfigSpec, StorageMode
+from apprc.runtime_config.app_spec import AppConfigSpec
 from apprc.runtime_config.config_home import ConfigHomeError
-from apprc.runtime_config.contract.apprc_toml_env import (
-    ApprcTomlEnvError,
-    missing_apprc_toml_file_message,
-)
+from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
 from apprc.runtime_config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
@@ -21,7 +18,7 @@ from apprc.runtime_config.storage.registry import (
 
 @dataclass(frozen=True, slots=True)
 class StorageRegistryInspection:
-    """Storage table state discovered without raising on file problems."""
+    """Named-storage index state discovered without creating files."""
 
     path: Path | None
     env_value: str | None
@@ -33,33 +30,33 @@ class StorageRegistryInspection:
 
     @property
     def parse_ok(self) -> bool:
-        """Return whether the AppRC TOML was readable and parseable."""
+        """Return whether the index was readable and parseable."""
         return self.error is None
 
 
-def apprc_toml_path_for_create(spec: AppConfigSpec) -> Path:
-    """Return the configured AppRC TOML path for setup/init write flows.
+def index_path_for_create(spec: AppConfigSpec) -> Path:
+    """Return the configured named-storage index path for write flows.
 
     Missing files are valid for this intent because the caller is about to
     create or update the storage table.
 
     :param spec: Application-specific config contract.
-    :return: Override or default AppRC TOML path.
+    :return: Override or default named-storage index path.
     """
-    return spec.apprc_toml_path()
+    return spec.index_path()
 
 
 def load_create_or_empty_storage_registry(path: Path) -> StorageRegistry:
     """Read an existing storage table or return an empty one for write flows.
 
-    :param path: AppRC TOML path that may not exist yet.
+    :param path: Named-storage index path that may not exist yet.
     :return: Parsed or empty storage table.
-    :raises ValueError: If an existing AppRC TOML cannot be parsed.
+    :raises ValueError: If an existing index cannot be parsed.
     """
     try:
         return load_storage_registry_or_empty(path)
     except OSError as exc:
-        raise _apprc_toml_read_error(path, exc) from exc
+        raise _index_read_error(path, exc) from exc
 
 
 def load_existing_storage_registry(
@@ -67,27 +64,27 @@ def load_existing_storage_registry(
     *,
     proc_env: Mapping[str, str] | None = None,
 ) -> StorageRegistry:
-    """Read a configured storage table that must already exist.
+    """Read a named-storage index that must already exist.
 
     :param spec: Application-specific config contract.
     :param proc_env: Optional environment mapping for bootstrap-time selection.
     :return: Parsed storage table.
-    :raises ApprcTomlEnvError: If the AppRC TOML file is missing.
-    :raises ValueError: If the AppRC TOML cannot be parsed.
+    :raises ApprcTomlEnvError: If the index file is missing.
+    :raises ValueError: If the index cannot be parsed.
     """
-    apprc_toml_path = spec.apprc_toml_path(proc_env=proc_env)
-    if not apprc_toml_path.is_file():
+    _require_named_storage_allowed(spec)
+    index_path = spec.index_path(proc_env=proc_env)
+    if not index_path.is_file():
         raise ApprcTomlEnvError(
-            missing_apprc_toml_file_message(
-                apprc_toml_env_key=spec.apprc_toml_env_key,
-                command_name=spec.config_command_name(),
-                path=apprc_toml_path,
-            )
+            f"{spec.index_env_key} points to a missing named-storage index: "
+            f"{index_path}. Create one with "
+            f"`{spec.config_command_name()} config storage add NAME PATH` "
+            "or unset the variable to use path selectors only."
         )
     try:
-        return load_storage_registry_or_empty(apprc_toml_path)
+        return load_storage_registry_or_empty(index_path)
     except OSError as exc:
-        raise _apprc_toml_read_error(apprc_toml_path, exc) from exc
+        raise _index_read_error(index_path, exc) from exc
 
 
 def load_optional_runtime_storage_registry(
@@ -95,72 +92,90 @@ def load_optional_runtime_storage_registry(
     *,
     proc_env: Mapping[str, str] | None = None,
 ) -> StorageRegistry | None:
-    """Read the storage table only when the app uses storage.
+    """Read the named-storage index only when it is allowed and present.
 
     :param spec: Application-specific config contract.
     :param proc_env: Optional environment mapping for bootstrap-time selection.
-    :return: Parsed storage table, or ``None`` when storage is disabled.
-    :raises ApprcTomlEnvError: If the AppRC TOML file is missing.
-    :raises ValueError: If the AppRC TOML cannot be parsed.
+    :return: Parsed storage table, or ``None`` for path-only selection.
+    :raises ValueError: If an existing index cannot be parsed.
     """
-    if spec.storage_mode == StorageMode.DISABLED:
+    if not spec.named_storage_allowed():
         return None
-    return load_existing_storage_registry(spec, proc_env=proc_env)
+    index_path = spec.index_path(proc_env=proc_env)
+    if not index_path.is_file():
+        return None
+    try:
+        return load_storage_registry_or_empty(index_path)
+    except OSError as exc:
+        raise _index_read_error(index_path, exc) from exc
 
 
 def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
-    """Inspect optional AppRC TOML state for diagnostics without raising.
+    """Inspect optional named-storage index state without raising.
 
     :param spec: Application-specific config contract.
-    :return: AppRC TOML and storage-table diagnosis for ``config doctor``.
+    :return: Named-storage index diagnosis for ``config doctor`` and paths.
     """
-    raw_apprc_toml_env_value = os.environ.get(
-        spec.apprc_toml_env_key, ""
-    ).strip()
-    apprc_toml_path = spec.apprc_toml_path()
-    apprc_toml_exists = apprc_toml_path.is_file()
-    if not apprc_toml_exists:
+    raw_index_env_value = os.environ.get(spec.index_env_key, "").strip()
+    index_path = spec.index_path()
+    index_exists = index_path.is_file()
+    if not spec.named_storage_allowed() and not index_exists:
         return StorageRegistryInspection(
-            path=apprc_toml_path,
-            env_value=raw_apprc_toml_env_value or None,
+            path=index_path,
+            env_value=raw_index_env_value or None,
             exists=False,
             error=None,
             registry=None,
             storage_count=0,
-            issues=[f"AppRC TOML file does not exist: {apprc_toml_path}"],
+            issues=[],
+        )
+    if not index_exists:
+        issue = (
+            [f"Named-storage index does not exist: {index_path}"]
+            if spec.named_storage_default()
+            else []
+        )
+        return StorageRegistryInspection(
+            path=index_path,
+            env_value=raw_index_env_value or None,
+            exists=False,
+            error=None,
+            registry=None,
+            storage_count=0,
+            issues=issue,
         )
 
     try:
-        registry = load_storage_registry_or_empty(apprc_toml_path)
+        registry = load_storage_registry_or_empty(index_path)
     except OSError as exc:
-        apprc_toml_error = str(exc)
+        index_error = str(exc)
         return StorageRegistryInspection(
-            path=apprc_toml_path,
-            env_value=raw_apprc_toml_env_value or None,
+            path=index_path,
+            env_value=raw_index_env_value or None,
             exists=True,
-            error=apprc_toml_error,
+            error=index_error,
             registry=None,
             storage_count=0,
             issues=[
-                "AppRC TOML file could not be read: "
-                f"{apprc_toml_path}: {apprc_toml_error}"
+                "Named-storage index could not be read: "
+                f"{index_path}: {index_error}"
             ],
         )
     except ValueError as exc:
-        apprc_toml_error = str(exc)
+        index_error = str(exc)
         return StorageRegistryInspection(
-            path=apprc_toml_path,
-            env_value=raw_apprc_toml_env_value or None,
+            path=index_path,
+            env_value=raw_index_env_value or None,
             exists=True,
-            error=apprc_toml_error,
+            error=index_error,
             registry=None,
             storage_count=0,
-            issues=[f"AppRC TOML file is invalid: {apprc_toml_error}"],
+            issues=[f"Named-storage index is invalid: {index_error}"],
         )
 
     return StorageRegistryInspection(
-        path=apprc_toml_path,
-        env_value=raw_apprc_toml_env_value or None,
+        path=index_path,
+        env_value=raw_index_env_value or None,
         exists=True,
         error=None,
         registry=registry,
@@ -169,10 +184,20 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
     )
 
 
-def _apprc_toml_read_error(path: Path, exc: OSError) -> ConfigHomeError:
-    """Return a config-home error for unreadable AppRC TOML files.
+def _require_named_storage_allowed(spec: AppConfigSpec) -> None:
+    """Raise when a named-storage command is unavailable for this app.
 
-    :param path: AppRC TOML path that could not be read.
+    :param spec: Application-specific config contract.
+    :raises ValueError: If named storage is disabled.
+    """
+    if not spec.named_storage_allowed():
+        raise ValueError(f"{spec.display_name} does not enable named storage.")
+
+
+def _index_read_error(path: Path, exc: OSError) -> ConfigHomeError:
+    """Return a config-home error for unreadable index files.
+
+    :param path: Named-storage index path that could not be read.
     :param exc: Filesystem read failure.
     :return: Config-home error suitable for CLI adapters.
     """

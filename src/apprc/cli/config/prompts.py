@@ -14,8 +14,11 @@ import typer
 
 # == Internal ================================
 from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.loading import apprc_toml_path_for_create
-import apprc.runtime_config.setup.flow as setup_flow
+from apprc.runtime_config.storage.loading import index_path_for_create
+from apprc.runtime_config.storage.paths import (
+    StorageRootPathError,
+    normalize_storage_root_path,
+)
 
 
 def print_directory_listing(storage_root: Path) -> None:
@@ -56,12 +59,12 @@ def confirm_existing_storage_root(
     managed_files.add_column(style="dim", no_wrap=True)
     managed_files.add_column(style="cyan")
     managed_files.add_row(
-        "storage-local env",
-        str(storage_root / kit.spec.local_env_filename),
+        "storage env",
+        str(storage_root / kit.spec.storage_env_filename),
     )
     managed_files.add_row(
-        "AppRC TOML file",
-        str(apprc_toml_path_for_create(kit.spec)),
+        "named-storage index",
+        str(index_path_for_create(kit.spec)),
     )
 
     panel_lines: list[RenderableType] = [
@@ -152,18 +155,18 @@ def guard_storage_root_init(
     :raises typer.BadParameter: If the path cannot represent a directory.
     :raises typer.Exit: If the user declines reuse of a non-empty directory.
     """
-    flow = setup_flow.ConfigSetupFlow(kit)
     try:
-        root = flow.validate_storage_root(
-            storage_root,
-            storage_name=storage_name,
-            allow_non_empty_storage=True,
-        )
-    except setup_flow.ConfigSetupError as exc:
+        root = normalize_storage_root_path(storage_root)
+    except StorageRootPathError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=exc.param_hint,
+            param_hint="PATH",
         ) from exc
+    if root.exists() and not root.is_dir():
+        raise typer.BadParameter(
+            f"Storage root exists but is not a directory: {root}",
+            param_hint="PATH",
+        )
     if not root.exists():
         return root
     if assume_yes:

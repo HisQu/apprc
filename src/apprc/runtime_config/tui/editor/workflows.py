@@ -230,7 +230,7 @@ class ConfigEditorStorageWorkflows:
                 name=name,
                 root=guarded_root,
                 path=registry.path,
-                local_env_filename=self.editor.local_env_filename,
+                storage_env_filename=self.editor.current_env_filename,
             )
         except (TypeError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -281,12 +281,12 @@ class ConfigEditorStorageWorkflows:
         if not any(resolved_root.iterdir()):
             return resolved_root
 
-        env_path = resolved_root / self.editor.local_env_filename
+        env_path = resolved_root / self.editor.current_env_filename
         if env_path.is_file():
             keys = list(read_local_env(env_path))[:10]
             preview = ", ".join(keys) if keys else "<none>"
             message = (
-                f"Storage not empty, found {self.editor.local_env_filename} "
+                f"Storage not empty, found {self.editor.current_env_filename} "
                 f"with these env vars: {preview}.\n"
                 "All these local env vars will be exported on runtime. "
                 "Proceed?"
@@ -294,8 +294,8 @@ class ConfigEditorStorageWorkflows:
         else:
             message = lines_text(
                 "Storage not empty, but no "
-                f"{self.editor.local_env_filename} found, initialize with "
-                f"empty {self.editor.local_env_filename}?",
+                f"{self.editor.current_env_filename} found, initialize with "
+                f"empty {self.editor.current_env_filename}?",
                 path_text(resolved_root),
             )
         action = await self.editor.push_screen_wait(

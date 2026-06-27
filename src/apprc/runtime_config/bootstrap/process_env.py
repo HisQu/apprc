@@ -39,7 +39,7 @@ def app_env_keys(spec: AppConfigSpec) -> set[str]:
     :param spec: Application-specific bootstrap contract.
     :return: Full env keys that AppRC should track for this app.
     """
-    keys = {spec.apprc_toml_env_key}
+    keys = {spec.index_env_key}
     if spec.storage_env_key is not None:
         keys.add(spec.storage_env_key)
     for owner in spec.owners:
@@ -76,10 +76,10 @@ def merged_env_value_origins(
     app_env_keys: set[str],
     shared_env_path: Path,
     shared_values: Mapping[str, str],
-    global_env_path: Path,
-    global_values: Mapping[str, str],
-    local_env_path: Path | None,
-    local_values: Mapping[str, str],
+    app_wide_env_path: Path | None,
+    app_wide_values: Mapping[str, str],
+    storage_env_path: Path | None,
+    storage_values: Mapping[str, str],
     explicit_layers: tuple[ExplicitEnvLayer, ...],
     original_env: Mapping[str, str],
     env_file_overrides_os_environ: bool,
@@ -89,10 +89,10 @@ def merged_env_value_origins(
     :param app_env_keys: App-owned env keys eligible for provenance tracking.
     :param shared_env_path: Packaged shared dotenv path.
     :param shared_values: Parsed packaged shared dotenv values.
-    :param global_env_path: App-global dotenv path.
-    :param global_values: Parsed app-global dotenv values.
-    :param local_env_path: Active storage-local dotenv path.
-    :param local_values: Parsed storage-local dotenv values.
+    :param app_wide_env_path: App-wide dotenv path.
+    :param app_wide_values: Parsed app-wide dotenv values.
+    :param storage_env_path: Active storage-local dotenv path.
+    :param storage_values: Parsed storage-local dotenv values.
     :param explicit_layers: Parsed explicit env files in command/API order.
     :param original_env: Process environment captured before bootstrap writes.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
@@ -118,9 +118,18 @@ def merged_env_value_origins(
             )
 
     apply_values(shared_values, "shell_dotenv_shared", path=shared_env_path)
-    apply_values(global_values, "shell_dotenv_global", path=global_env_path)
-    if local_env_path is not None:
-        apply_values(local_values, "shell_dotenv_local", path=local_env_path)
+    if app_wide_env_path is not None:
+        apply_values(
+            app_wide_values,
+            "shell_dotenv_app_wide",
+            path=app_wide_env_path,
+        )
+    if storage_env_path is not None:
+        apply_values(
+            storage_values,
+            "shell_dotenv_storage",
+            path=storage_env_path,
+        )
     if env_file_overrides_os_environ:
         apply_values(original_env, "shell_export_variable")
         for layer in explicit_layers:

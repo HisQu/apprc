@@ -2,646 +2,151 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
 from typer.testing import CliRunner
 
-from apprc.runtime_config.tui import ConfigEditorApp
-from apprc.runtime_config.doctor.payload import (
-    build_config_doctor_payload,
-    config_setup_message,
-)
 from tests.support_config import (
     ApprcExampleAppConfigState,
+    StorageFreeExampleConfigState,
     apprc_example_app_state,
-    assert_config_home_cli_error,
-    block_config_home_with_file,
     build_apprc_example_app_kit,
-    register_storage_for_kit,
-    set_apprc_example_app_apprc_toml,
+    build_storage_free_example_kit,
 )
 
-pytestmark = [pytest.mark.requires_apprc_env("APPRC_EXAMPLE_APP")]
 
-
-def test_generated_config_app_sets_local_values_and_shows_payload(
-    monkeypatch,
+def test_config_paths_reports_zero_writes(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    result = CliRunner().invoke(app, ["paths", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["writes"] == "none"
+    assert payload["capabilities"] == {
+        "app_wide": "optional",
+        "named_storage": "optional",
+        "storage": "required",
+    }
+    assert not Path(payload["app_wide_env"]).exists()
+    assert not Path(payload["index_path"]).exists()
+
+
+def test_config_app_init_creates_app_wide_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    kit = build_storage_free_example_kit()
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+
+    result = CliRunner().invoke(app, ["app", "init"])
+
+    assert result.exit_code == 0, result.output
+    assert kit.spec.app_wide_env_path().is_file()
+    assert "app_wide_env:" in result.output
+
+
+def test_config_storage_add_list_and_remove(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    index_path = tmp_path / "config" / "demo.apprc.toml"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(index_path))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+    storage_root = tmp_path / "alpha"
+
+    add = runner.invoke(
+        app,
+        ["storage", "add", "alpha", str(storage_root), "--yes"],
+    )
+    listed = runner.invoke(app, ["storage", "list", "--json"])
+    removed = runner.invoke(app, ["storage", "remove", "alpha"])
+    listed_after = runner.invoke(app, ["storage", "list", "--json"])
+
+    assert add.exit_code == 0, add.output
+    assert index_path.is_file()
+    assert (storage_root / ".env.apprc-storage").is_file()
+    assert json.loads(listed.output)["storages"][0]["name"] == "alpha"
+    assert removed.exit_code == 0, removed.output
+    assert json.loads(listed_after.output)["storages"] == []
+
+
+def test_config_set_infers_storage_scope(tmp_path: Path) -> None:
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
     state = apprc_example_app_state(kit, storage_root)
-    app = kit.typer_app(
-        state_type=ApprcExampleAppConfigState,
-        runtime_payload=lambda current: {
-            "storage": str(current.env_bootstrap.storage_root)
-            if current.env_bootstrap is not None
-            else None,
-        },
-    )
-    runner = CliRunner()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
 
-    set_result = runner.invoke(
+    result = CliRunner().invoke(
         app,
-        ["set", "app.profile", "other-profile"],
+        ["set", "app.profile", "storage-profile"],
         obj=state,
     )
-    show_result = runner.invoke(app, ["show", "--json"], obj=state)
 
-    assert set_result.exit_code == 0, set_result.output
-    assert 'APPRC_EXAMPLE_APP_PROFILE="other-profile"\n' in (
-        storage_root / ".env.apprc_example_app"
+    assert result.exit_code == 0, result.output
+    assert 'APPRC_EXAMPLE_APP_PROFILE="storage-profile"\n' in (
+        storage_root / ".env.apprc-storage"
     ).read_text(encoding="utf-8")
-    assert show_result.exit_code == 0, show_result.output
-    assert json.loads(show_result.output) == {"storage": str(storage_root)}
+    assert "storage_env:" in result.output
 
 
-@pytest.mark.allow_missing_apprc_env
-def test_generated_config_app_sets_and_shows_with_storage_only(
+def test_config_set_requires_scope_when_app_and_storage_are_active(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    storage_root = tmp_path / "single-storage"
-    storage_root.mkdir()
-    (storage_root / ".env.apprc_example_app").write_text("", encoding="utf-8")
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_apprc_example_app_kit()
+    kit.spec.ensure_app_wide_env()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    state = apprc_example_app_state(kit, storage_root)
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    state = ApprcExampleAppConfigState(env_bootstrap=None)
     runner = CliRunner()
 
-    set_result = runner.invoke(
+    ambiguous = runner.invoke(
         app,
-        ["set", "app.profile", "single-profile"],
+        ["set", "app.profile", "ambiguous"],
         obj=state,
     )
-    show_result = runner.invoke(app, ["show", "--json"], obj=state)
-
-    assert set_result.exit_code == 0, set_result.output
-    assert show_result.exit_code == 0, show_result.output
-    assert 'APPRC_EXAMPLE_APP_PROFILE="single-profile"\n' in (
-        storage_root / ".env.apprc_example_app"
-    ).read_text(encoding="utf-8")
-    payload = json.loads(show_result.output)
-    assert Path(payload["apprc_toml_path"]).is_file()
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_generated_config_multi_storage_commands_use_default_apprc_toml(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    list_result = runner.invoke(app, ["list"])
-    init_result = runner.invoke(
+    app_scoped = runner.invoke(
         app,
-        ["init", str(tmp_path / "storage"), "--name", "alpha"],
+        ["set", "app.profile", "app-profile", "--scope", "app"],
+        obj=state,
     )
 
-    assert list_result.exit_code == 0, list_result.output
-    assert init_result.exit_code == 0, init_result.output
-    assert kit.spec.required_apprc_toml_path().is_file()
-    assert "storages: <none>" in list_result.output
-    assert "registered_storage: alpha" in init_result.output
+    assert ambiguous.exit_code != 0
+    assert "--scope app or --scope storage" in ambiguous.output
+    assert app_scoped.exit_code == 0, app_scoped.output
+    assert 'APPRC_EXAMPLE_APP_PROFILE="app-profile"\n' in (
+        kit.spec.app_wide_env_path().read_text(encoding="utf-8")
+    )
 
 
-def test_generated_config_list_creates_missing_apprc_toml_file(
+def test_config_setup_storage_only_writes_only_storage_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    missing_apprc_toml = tmp_path / "missing.apprc.toml"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_apprc_toml))
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["list"])
-
-    assert result.exit_code == 0, result.output
-    assert str(missing_apprc_toml) in result.output
-    assert missing_apprc_toml.is_file()
-
-
-def test_generated_config_init_creates_missing_apprc_toml_file(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    missing_apprc_toml = tmp_path / "missing.apprc.toml"
     storage_root = tmp_path / "storage"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_apprc_toml))
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
 
-    result = runner.invoke(
+    result = CliRunner().invoke(
         app,
-        ["init", str(storage_root), "--name", "alpha", "--yes"],
+        ["setup", "--yes", "--storage-root", str(storage_root)],
     )
 
     assert result.exit_code == 0, result.output
-    assert missing_apprc_toml.is_file()
-    assert "registered_storage: alpha" in result.output
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_generated_config_edit_opens_single_storage_without_apprc_toml(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    class RecordingEditor:
-        instances: list["RecordingEditor"] = []
-
-        def __init__(self, **kwargs: Any) -> None:
-            self.kwargs = kwargs
-            self.ran = False
-            self.instances.append(self)
-
-        def run(self) -> None:
-            self.ran = True
-
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    storage_root = tmp_path / "single-storage"
-    storage_root.mkdir()
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(
-        state_type=ApprcExampleAppConfigState,
-        editor_app_cls=cast(type[ConfigEditorApp], RecordingEditor),
-    )
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["edit"])
-
-    assert result.exit_code == 0, result.output
-    assert len(RecordingEditor.instances) == 1
-    editor = RecordingEditor.instances[0]
-    assert editor.ran
-    assert editor.kwargs["active_storage_root"] == storage_root.resolve()
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_generated_config_list_uses_global_env_storage_selector(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app_kit()
-    paths = kit.spec.ensure_config_home()
-    storage_root = tmp_path / "alpha-storage"
-    storage_root.mkdir()
-    register_storage_for_kit(kit, name="alpha", root=storage_root)
-    paths.global_env.write_text(
-        'APPRC_EXAMPLE_APP_STORAGE="alpha"\n',
-        encoding="utf-8",
-    )
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["list", "--json"])
-
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert payload["storages"][0]["name"] == "alpha"
-    assert payload["storages"][0]["active"] is True
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_generated_config_edit_uses_global_env_storage_selector(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    class RecordingEditor:
-        instances: list["RecordingEditor"] = []
-
-        def __init__(self, **kwargs: Any) -> None:
-            self.kwargs = kwargs
-            self.ran = False
-            self.instances.append(self)
-
-        def run(self) -> None:
-            self.ran = True
-
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app_kit()
-    paths = kit.spec.ensure_config_home()
-    storage_root = tmp_path / "alpha-storage"
-    storage_root.mkdir()
-    register_storage_for_kit(kit, name="alpha", root=storage_root)
-    paths.global_env.write_text(
-        'APPRC_EXAMPLE_APP_STORAGE="alpha"\n',
-        encoding="utf-8",
-    )
-    app = kit.typer_app(
-        state_type=ApprcExampleAppConfigState,
-        editor_app_cls=cast(type[ConfigEditorApp], RecordingEditor),
-    )
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["edit"])
-
-    assert result.exit_code == 0, result.output
-    assert len(RecordingEditor.instances) == 1
-    editor = RecordingEditor.instances[0]
-    assert editor.ran
-    assert editor.kwargs["active_storage_root"] == storage_root.resolve()
-
-
-def test_storage_required_config_commands_report_config_home_errors(
-    tmp_path: Path,
-) -> None:
-    kit = build_apprc_example_app_kit()
-    block_config_home_with_file(kit)
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    list_result = runner.invoke(app, ["list"])
-    init_result = runner.invoke(
-        app,
-        ["init", str(tmp_path / "storage"), "--name", "alpha", "--yes"],
-    )
-    edit_result = runner.invoke(app, ["edit"])
-
-    assert_config_home_cli_error(list_result)
-    assert_config_home_cli_error(init_result)
-    assert_config_home_cli_error(edit_result)
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_storage_required_list_and_edit_report_unreadable_global_env(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app_kit()
-    paths = kit.spec.ensure_config_home()
-    storage_root = tmp_path / "alpha-storage"
-    storage_root.mkdir()
-    register_storage_for_kit(kit, name="alpha", root=storage_root)
-    paths.global_env.write_text(
-        'APPRC_EXAMPLE_APP_STORAGE="alpha"\n',
-        encoding="utf-8",
-    )
-    paths.global_env.chmod(0)
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    try:
-        list_result = runner.invoke(app, ["list"])
-        edit_result = runner.invoke(app, ["edit"])
-    finally:
-        paths.global_env.chmod(0o600)
-
-    assert_config_home_cli_error(list_result)
-    assert_config_home_cli_error(edit_result)
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_storage_required_set_reports_storage_local_read_error(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    local_env = storage_root / ".env.apprc_example_app"
-    local_env.write_text('APPRC_EXAMPLE_APP_PROFILE="old"\n', encoding="utf-8")
-    local_env.chmod(0)
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    state = ApprcExampleAppConfigState(env_bootstrap=None)
-    runner = CliRunner()
-
-    try:
-        result = runner.invoke(
-            app,
-            ["set", "app.profile", "new-profile"],
-            obj=state,
-        )
-    finally:
-        local_env.chmod(0o600)
-
-    assert result.exit_code == 2, result.output
-    assert "--storage" in result.output
-    assert "config-home" not in result.output
-    assert "Invalid value for KEY" not in result.output
-    assert "PermissionError" not in result.output
-
-
-def test_generated_config_edit_creates_missing_apprc_toml_file(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    missing_apprc_toml = tmp_path / "missing.apprc.toml"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(missing_apprc_toml))
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
-    kit = build_apprc_example_app_kit()
-
-    class RecordingEditor:
-        instances: list["RecordingEditor"] = []
-
-        def __init__(self, **kwargs: Any) -> None:
-            self.kwargs = kwargs
-            self.ran = False
-            self.__class__.instances.append(self)
-
-        def run(self) -> None:
-            self.ran = True
-
-    app = kit.typer_app(
-        state_type=ApprcExampleAppConfigState,
-        editor_app_cls=cast(type[ConfigEditorApp], RecordingEditor),
-    )
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["edit"])
-
-    assert result.exit_code == 0, result.output
-    assert missing_apprc_toml.is_file()
-    assert len(RecordingEditor.instances) == 1
-    editor = RecordingEditor.instances[0]
-    assert editor.ran
-    assert editor.kwargs["active_storage_root"] is None
-
-
-def test_generated_config_app_rejects_bare_unknown_storage_selector(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    register_storage_for_kit(
-        kit,
-        name="alpha",
-        root=tmp_path / "alpha-storage",
-    )
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "beta")
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    state = ApprcExampleAppConfigState(env_bootstrap=None)
-    runner = CliRunner()
-
-    payload = build_config_doctor_payload(kit, storage=None)
-    result = runner.invoke(app, ["show"], obj=state)
-
-    assert result.exit_code == 2, result.output
-    assert "not a registered storage" in result.output
-    assert any("Use './beta'" in issue for issue in payload["issues"])
-
-
-def test_generated_config_app_inits_existing_storage_after_list_prompt(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    (storage_root / "payload.txt").write_text("demo", encoding="utf-8")
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["init", str(storage_root), "--name", "alpha"],
-        input="l\ny\n",
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Storage Root Not Empty" in result.output
-    assert "Storage root exists and is not empty." in result.output
-    assert str(storage_root) in result.output
-    assert (
-        "Example App will reuse this directory for Example App storage "
-        "'alpha'." in result.output
-    )
-    assert "AppRC-managed files to create or update:" in result.output
-    assert "storage-local env" in result.output
-    assert "AppRC TOML file" in result.output
-    assert "Existing files inside the storage root" in result.output
-    assert "will not be deleted" in result.output
-    assert (
-        "Choices: y continue  n abort  l list first-level contents"
-        in result.output
-    )
-    assert "payload.txt" in result.output
-    local_env = (storage_root / ".env.apprc_example_app").read_text(
-        encoding="utf-8"
-    )
-    assert "APPRC_EXAMPLE_APP_STORAGE" not in local_env
-
-
-def test_generated_config_app_rejects_shell_damaged_windows_storage_root(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-    malformed = "C:Projectsdemo-storage"
-    monkeypatch.chdir(tmp_path)
-
-    result = runner.invoke(
-        app,
-        ["init", malformed, "--name", "alpha"],
-    )
-
-    assert result.exit_code == 2, result.output
-    assert "STORAGE_ROOT" in result.output
-    assert "Storage root looks like a Windows drive" in result.output
-    assert "path, but it is missing a slash" in result.output
-    assert "backslashes are consumed" in result.output
-    assert "C:/Projects/demo-storage" in result.output
-    assert not Path(malformed).exists()
-    assert kit.spec.required_apprc_toml_path().is_file()
-
-
-def test_generated_config_app_rejects_removed_default_commands(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    init_result = runner.invoke(
-        app,
-        [
-            "init",
-            str(tmp_path / "storage"),
-            "--name",
-            "alpha",
-            "--default",
-        ],
-    )
-    set_default_result = runner.invoke(app, ["set-default", "alpha"])
-
-    assert init_result.exit_code == 2, init_result.output
-    assert "--default" in init_result.output
-    assert set_default_result.exit_code == 2, set_default_result.output
-    assert "set-default" in set_default_result.output
-
-
-def test_generated_config_app_aborts_existing_storage_when_user_says_no(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    (storage_root / "payload.txt").write_text("demo", encoding="utf-8")
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["init", str(storage_root), "--name", "alpha"],
-        input="n\n",
-    )
-
-    assert result.exit_code == 1, result.output
-    assert "Aborted." in result.output
-    assert kit.spec.required_apprc_toml_path().is_file()
-    assert not (storage_root / ".env.apprc_example_app").exists()
-
-
-def test_generated_config_app_inits_non_empty_storage_with_yes_option(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    (storage_root / "payload.txt").write_text("demo", encoding="utf-8")
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["init", str(storage_root), "--name", "alpha", "--yes"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Continue? [y/n/l]" not in result.output
-    assert (storage_root / ".env.apprc_example_app").is_file()
-
-
-def test_generated_config_app_lists_registered_storages_as_rich_tree(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    alpha_root = tmp_path / "alpha"
-    beta_root = tmp_path / "beta"
-    register_storage_for_kit(kit, name="alpha", root=alpha_root)
-    register_storage_for_kit(kit, name="beta", root=beta_root)
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(alpha_root.resolve()))
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["list"])
-
-    assert result.exit_code == 0, result.output
-    assert "apprc_toml_path:" in result.output
-    assert "storages:" in result.output
-    assert "alpha [active]" in result.output
-    assert "beta" in result.output
-    assert "root:" in result.output
-    assert "root_exists:" in result.output
-    assert "local_env:" in result.output
-    assert "local_env_exists:" in result.output
-    root_lines = [
-        line
-        for line in result.output.splitlines()
-        if "root:" in line and "root_exists:" not in line
-    ]
-    assert root_lines
-    assert all(not line.startswith("root:") for line in root_lines)
-
-
-def test_generated_config_app_lists_registered_storages_as_json(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    kit = build_apprc_example_app_kit()
-    alpha_root = tmp_path / "alpha"
-    beta_root = tmp_path / "beta"
-    register_storage_for_kit(kit, name="alpha", root=alpha_root)
-    register_storage_for_kit(kit, name="beta", root=beta_root)
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(alpha_root.resolve()))
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["list", "--json"])
-
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert payload == {
-        "apprc_toml_path": str(
-            tmp_path
-            / "config"
-            / "apprc_example_app"
-            / "apprc_example_app.apprc.toml"
-        ),
-        "storages": [
-            {
-                "active": True,
-                "local_env": str(
-                    alpha_root.resolve() / ".env.apprc_example_app"
-                ),
-                "local_env_exists": True,
-                "name": "alpha",
-                "root": str(alpha_root.resolve()),
-                "root_exists": True,
-            },
-            {
-                "active": False,
-                "local_env": str(
-                    beta_root.resolve() / ".env.apprc_example_app"
-                ),
-                "local_env_exists": True,
-                "name": "beta",
-                "root": str(beta_root.resolve()),
-                "root_exists": True,
-            },
-        ],
-    }
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_config_doctor_guidance_describes_active_storage_selector(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app_kit()
-
-    message = config_setup_message(kit)
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML" in message
-    assert "optional" in message
-    assert "active storage root" in message
-    assert "setup --yes --storage-root" in message
-    assert payload["next_steps"][0].endswith(
-        "setup --yes --storage-root /absolute/path/to/storage-root"
-    )
+    assert (storage_root / ".env.apprc-storage").is_file()
+    assert not kit.spec.app_wide_env_path().exists()
+    assert not kit.spec.index_path().exists()

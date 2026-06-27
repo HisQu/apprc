@@ -5,7 +5,7 @@ from __future__ import annotations
 # == Standard Library ========================
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 # == 3rd Party ===============================
 import typer
@@ -20,11 +20,10 @@ from apprc.cli.config.state import (
     active_storage_root_from_state,
     initial_storage_from_state,
 )
-from apprc.cli.doctor import print_config_doctor
+from apprc.cli.doctor import print_config_doctor, print_config_paths
 from apprc.cli.errors import config_home_bad_parameter
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
-from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.doctor.payload import build_config_doctor_payload
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
@@ -33,31 +32,27 @@ from apprc.runtime_config.storage.local_env import (
     set_env_file_value,
     set_local_env_value,
 )
-from apprc.runtime_config.storage.paths import StorageRootPathError
-from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
 from apprc.runtime_config.storage.loading import (
-    load_existing_storage_registry,
+    index_path_for_create,
+    load_create_or_empty_storage_registry,
     load_optional_runtime_storage_registry,
-    apprc_toml_path_for_create,
 )
-import apprc.runtime_config.setup.flow as setup_flow
+from apprc.runtime_config.storage.paths import StorageRootPathError
 from apprc.runtime_config.storage.registry import (
     StorageRegistry,
     register_storage,
+    unregister_storage,
 )
 from apprc.runtime_config.storage.selector import StorageSelectorError
 
 if TYPE_CHECKING:
     from apprc.runtime_config.tui import ConfigEditorApp
 
+type ConfigSetScope = Literal["app", "storage"]
+
 
 class ConfigCommandBase:
-    """Shared dependencies and adapters for generated config commands.
-
-    The Typer app owns parsing. Command handlers own AppRC behavior. Keeping
-    common runtime, multi-storage, and editor adapters on one base class avoids
-    helper modules that only shuttle ``kit`` and app hooks around.
-    """
+    """Shared dependencies and adapters for generated config commands."""
 
     def __init__(
         self,
@@ -81,7 +76,7 @@ class ConfigCommandBase:
         :param initial_storage: Optional editor initial-selection resolver.
         :param editor_app_cls: Optional Textual subclass.
         :param missing_setup: Message shown when runtime storage is absent.
-        :param runtime_error_param_hint: Parameter hint for runtime payload
+        :param runtime_error_param_hint: Parameter hint for runtime-payload
             validation errors.
         """
         self.kit = kit
@@ -107,27 +102,6 @@ class ConfigCommandBase:
             return None
         return ctx.parent.params.get(name)
 
-    def load_required_storage_registry(self) -> StorageRegistry:
-        """Return the storage table required by multi-storage CLI commands."""
-        self.require_storage_enabled()
-        try:
-            self.kit.spec.ensure_config_home()
-            return load_existing_storage_registry(self.kit.spec)
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
-        except (ApprcTomlEnvError, ValueError) as exc:
-            raise self.apprc_toml_bad_parameter(exc) from exc
-
-    def load_optional_storage_registry(self) -> StorageRegistry | None:
-        """Return the storage table only when multi-storage mode is enabled."""
-        try:
-            self.kit.spec.ensure_config_home()
-            return load_optional_runtime_storage_registry(self.kit.spec)
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
-        except (ApprcTomlEnvError, ValueError) as exc:
-            raise self.apprc_toml_bad_parameter(exc) from exc
-
     def config_home_bad_parameter(
         self,
         exc: ConfigHomeError | OSError,
@@ -139,25 +113,52 @@ class ConfigCommandBase:
         """
         return config_home_bad_parameter(exc)
 
-    def apprc_toml_bad_parameter(
+    def index_bad_parameter(
         self,
-        exc: ApprcTomlEnvError | ValueError,
+        exc: ValueError,
     ) -> typer.BadParameter:
-        """Return Typer's error type for AppRC TOML loading failures."""
-        param_hint = (
-            self.kit.spec.apprc_toml_env_key
-            if isinstance(exc, ApprcTomlEnvError)
-            else self.kit.spec.apprc_toml_filename
+        """Return Typer's error type for named-storage index failures."""
+        return typer.BadParameter(
+            str(exc), param_hint=self.kit.spec.index_env_key
         )
-        return typer.BadParameter(str(exc), param_hint=param_hint)
 
-    def require_storage_enabled(self) -> None:
+    def require_storage_capability(self) -> None:
         """Raise a CLI error when a storage command is unavailable."""
-        if self.kit.spec.storage_mode == StorageMode.DISABLED:
+        if not self.kit.spec.storage_required():
             raise typer.BadParameter(
                 f"{self.kit.spec.display_name} does not use AppRC storage.",
                 param_hint="storage",
             )
+
+    def require_named_storage_capability(self) -> None:
+        """Raise a CLI error when named storage is unavailable."""
+        self.require_storage_capability()
+        if not self.kit.spec.named_storage_allowed():
+            raise typer.BadParameter(
+                f"{self.kit.spec.display_name} does not enable named storage.",
+                param_hint="storage",
+            )
+
+    def load_optional_storage_registry(self) -> StorageRegistry | None:
+        """Return the named-storage index only when it exists."""
+        try:
+            return load_optional_runtime_storage_registry(self.kit.spec)
+        except ConfigHomeError as exc:
+            raise self.config_home_bad_parameter(exc) from exc
+        except ValueError as exc:
+            raise self.index_bad_parameter(exc) from exc
+
+    def load_list_storage_registry(self) -> StorageRegistry:
+        """Return a parsed or empty named-storage registry without writing."""
+        self.require_named_storage_capability()
+        try:
+            return load_create_or_empty_storage_registry(
+                index_path_for_create(self.kit.spec)
+            )
+        except ConfigHomeError as exc:
+            raise self.config_home_bad_parameter(exc) from exc
+        except ValueError as exc:
+            raise self.index_bad_parameter(exc) from exc
 
     def active_storage_root_for_cli(self, state: Any) -> Path | None:
         """Return the selected storage root using app overrides first."""
@@ -168,11 +169,6 @@ class ConfigCommandBase:
                 self.kit,
                 cast(ConfigCliState, state),
             )
-        except ApprcTomlEnvError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=self.kit.spec.apprc_toml_env_key,
-            ) from exc
         except StorageSelectorError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -230,14 +226,24 @@ class ConfigCommandBase:
         storage_root: Path | None,
     ) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
-        apprc_toml_path = self.kit.spec.apprc_toml_path()
+        storage_env = (
+            str(self.kit.spec.storage_env_path(storage_root))
+            if storage_root is not None
+            else None
+        )
         return {
             "app_name": self.kit.spec.app_name,
             "display_name": self.kit.spec.display_name,
+            "capabilities": {
+                "storage": self.kit.spec.storage_layer.value,
+                "app_wide": self.kit.spec.app_wide_layer.value,
+                "named_storage": self.kit.spec.named_storage_layer.value,
+            },
             "config_home": str(self.kit.spec.config_home()),
-            "global_env": str(self.kit.spec.global_env_path()),
-            "apprc_toml_path": str(apprc_toml_path),
+            "app_wide_env": str(self.kit.spec.app_wide_env_path()),
+            "index_path": str(self.kit.spec.index_path()),
             "storage_root": str(storage_root) if storage_root else None,
+            "storage_env": storage_env,
         }
 
     def launch_config_editor(
@@ -290,16 +296,15 @@ class ConfigCommandBase:
         )
 
 
-class MultiStorageConfigCommands(ConfigCommandBase):
-    """Multi-storage config command implementations."""
+class StorageConfigCommands(ConfigCommandBase):
+    """Named-storage config command implementations."""
 
-    def list(self, *, json_output: bool) -> None:
-        """List named storage roots from the AppRC TOML file."""
-        self.require_storage_enabled()
-        registry = self.load_required_storage_registry()
+    def storage_list(self, *, json_output: bool) -> None:
+        """List named storage roots from the optional index."""
+        registry = self.load_list_storage_registry()
         payload = storage_list_payload(
             registry,
-            local_env_filename=self.kit.spec.local_env_filename,
+            storage_env_filename=self.kit.spec.storage_env_filename,
             active_storage_root=self.best_effort_active_storage_root_from_env(
                 storage_registry=registry,
             ),
@@ -309,25 +314,18 @@ class MultiStorageConfigCommands(ConfigCommandBase):
             return
         print_storage_list(payload)
 
-    def init(
+    def storage_add(
         self,
         *,
-        storage_root: Path,
         name: str,
+        path: Path,
         assume_yes: bool,
     ) -> None:
-        """Register one storage root and create its local env file."""
-        self.require_storage_enabled()
-        try:
-            self.kit.spec.ensure_config_home()
-            apprc_toml_path = apprc_toml_path_for_create(self.kit.spec)
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
-        except ApprcTomlEnvError as exc:
-            raise self.apprc_toml_bad_parameter(exc) from exc
+        """Create or update one named storage entry."""
+        self.require_named_storage_capability()
         normalized_root = guard_storage_root_init(
             self.kit,
-            storage_root,
+            path,
             storage_name=name,
             assume_yes=assume_yes,
         )
@@ -335,36 +333,64 @@ class MultiStorageConfigCommands(ConfigCommandBase):
             registry = register_storage(
                 name=name,
                 root=normalized_root,
-                path=apprc_toml_path,
-                local_env_filename=self.kit.spec.local_env_filename,
+                path=index_path_for_create(self.kit.spec),
+                storage_env_filename=self.kit.spec.storage_env_filename,
             )
         except StorageRootPathError as exc:
             raise typer.BadParameter(
                 str(exc),
-                param_hint="STORAGE_ROOT",
+                param_hint="PATH",
             ) from exc
         except ConfigHomeError as exc:
             raise self.config_home_bad_parameter(exc) from exc
         except ValueError as exc:
-            raise typer.BadParameter(str(exc), param_hint="--name") from exc
+            raise typer.BadParameter(str(exc), param_hint="NAME") from exc
 
         record = registry.selected(name)
-        typer.echo(f"registered_storage: {record.name}")
+        typer.echo(f"storage: {record.name}")
         typer.echo(f"storage_root: {record.root}")
         typer.echo(
-            f"local_env: {record.root / self.kit.spec.local_env_filename}"
+            f"storage_env: {self.kit.spec.storage_env_path(record.root)}"
         )
-        typer.echo(f"apprc_toml_path: {registry.path}")
+        typer.echo(f"index_path: {registry.path}")
+
+    def storage_remove(self, *, name: str) -> None:
+        """Remove one named storage entry from the index."""
+        self.require_named_storage_capability()
+        try:
+            registry = unregister_storage(
+                name=name,
+                path=index_path_for_create(self.kit.spec),
+            )
+        except ConfigHomeError as exc:
+            raise self.config_home_bad_parameter(exc) from exc
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="NAME") from exc
+        typer.echo(f"removed_storage: {name}")
+        typer.echo(f"index_path: {registry.path}")
 
 
 class RuntimeConfigCommands(ConfigCommandBase):
     """Runtime config command implementations."""
 
+    def paths(self, ctx: typer.Context, *, json_output: bool) -> None:
+        """Show declared and active config paths without writing files."""
+        storage = self.root_context_param(ctx, "storage")
+        storage_selector = storage if isinstance(storage, str) else None
+        payload = build_config_doctor_payload(
+            self.kit,
+            storage=storage_selector,
+        )
+        if json_output:
+            dump_json(payload)
+            return
+        print_config_paths(self.kit, payload)
+
     def show(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Show the resolved runtime config available to this invocation."""
         current_state = (
             self.state(ctx)
-            if self.kit.spec.storage_mode == StorageMode.REQUIRED
+            if self.kit.spec.storage_required()
             or isinstance(ctx.obj, self.state_type)
             else None
         )
@@ -373,10 +399,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             if current_state is not None
             else None
         )
-        if (
-            self.kit.spec.storage_mode == StorageMode.REQUIRED
-            and storage_root is None
-        ):
+        if self.kit.spec.storage_required() and storage_root is None:
             typer.echo(self.missing_setup, err=True)
             raise typer.Exit(code=1)
         try:
@@ -411,44 +434,147 @@ class RuntimeConfigCommands(ConfigCommandBase):
         if payload["status"] != ConfigDoctorStatus.RUNNABLE.value:
             raise typer.Exit(code=1)
 
-    def set(self, ctx: typer.Context, *, key: str, value: str) -> None:
-        """Write one active config override."""
-        if self.kit.spec.storage_mode == StorageMode.DISABLED:
-            try:
-                paths = self.kit.spec.ensure_config_home()
-                update = set_env_file_value(
-                    path=paths.global_env,
-                    reference=key,
-                    raw_value=value,
-                    owners=self.kit.spec.owners,
-                    layer_name=self.kit.spec.global_env_filename,
-                )
-            except (ConfigHomeError, OSError) as exc:
-                raise self.config_home_bad_parameter(exc) from exc
-            except ValueError as exc:
-                raise typer.BadParameter(str(exc), param_hint="KEY") from exc
-        else:
-            root = self.required_storage_root_for_write(self.state(ctx))
-            try:
-                update = set_local_env_value(
-                    storage_root=root,
-                    reference=key,
-                    raw_value=value,
-                    owners=self.kit.spec.owners,
-                    local_env_filename=self.kit.spec.local_env_filename,
-                )
-            except (ConfigHomeError, OSError, StorageRootPathError) as exc:
-                raise typer.BadParameter(
-                    str(exc),
-                    param_hint="--storage",
-                ) from exc
-            except ValueError as exc:
-                raise typer.BadParameter(str(exc), param_hint="KEY") from exc
+    def set(
+        self,
+        ctx: typer.Context,
+        *,
+        key: str,
+        value: str,
+        scope: str | None,
+    ) -> None:
+        """Write one config override to the selected writable layer."""
+        current_state = (
+            self.state(ctx)
+            if self.kit.spec.storage_required()
+            or isinstance(ctx.obj, self.state_type)
+            else None
+        )
+        resolved_scope = self._resolve_write_scope(
+            current_state,
+            requested_scope=scope,
+        )
+        if resolved_scope == "app":
+            update = self._set_app_value(key=key, value=value)
+            typer.echo(f"updated: {update.env_key}")
+            typer.echo(f"app_wide_env: {update.path}")
+            return
+        if current_state is None:
+            raise typer.BadParameter(
+                "Storage scope requires runtime CLI state.",
+                param_hint="--scope",
+            )
+        root = self.required_storage_root_for_write(current_state)
+        update = self._set_storage_value(root=root, key=key, value=value)
         typer.echo(f"updated: {update.env_key}")
-        if self.kit.spec.storage_mode == StorageMode.DISABLED:
-            typer.echo(f"global_env: {update.path}")
-        else:
-            typer.echo(f"local_env: {update.path}")
+        typer.echo(f"storage_env: {update.path}")
+
+    def _resolve_write_scope(
+        self,
+        state: Any | None,
+        *,
+        requested_scope: str | None,
+    ) -> ConfigSetScope:
+        """Return the target write scope or raise for ambiguous writes.
+
+        :param state: Optional application root CLI state.
+        :param requested_scope: User-provided scope.
+        :return: Concrete write scope.
+        :raises typer.BadParameter: If no layer or multiple layers qualify.
+        """
+        active_scopes = self._active_write_scopes(state)
+        if requested_scope is not None:
+            if requested_scope not in {"app", "storage"}:
+                raise typer.BadParameter(
+                    "--scope must be 'app' or 'storage'.",
+                    param_hint="--scope",
+                )
+            resolved_requested_scope = cast(ConfigSetScope, requested_scope)
+            if resolved_requested_scope not in active_scopes:
+                raise typer.BadParameter(
+                    _inactive_scope_message(self.kit, resolved_requested_scope),
+                    param_hint="--scope",
+                )
+            return resolved_requested_scope
+        if len(active_scopes) == 1:
+            return active_scopes[0]
+        if not active_scopes:
+            raise typer.BadParameter(
+                "No writable AppRC layer is active. Run `config app init`, "
+                "select a storage root, or set environment variables directly.",
+                param_hint="--scope",
+            )
+        raise typer.BadParameter(
+            "Both app-wide and storage layers are writable. Pass "
+            "--scope app or --scope storage.",
+            param_hint="--scope",
+        )
+
+    def _active_write_scopes(
+        self,
+        state: Any | None,
+    ) -> list[ConfigSetScope]:
+        """Return write scopes currently active for ``config set``."""
+        scopes: list[ConfigSetScope] = []
+        app_path = self.kit.spec.app_wide_env_path()
+        if self.kit.spec.app_wide_allowed() and (
+            self.kit.spec.app_wide_default() or app_path.is_file()
+        ):
+            scopes.append("app")
+        if self.kit.spec.storage_required() and state is not None:
+            storage_root = self.active_storage_root_for_cli(state)
+            if storage_root is not None and storage_root.is_dir():
+                scopes.append("storage")
+        return scopes
+
+    def _set_app_value(self, *, key: str, value: str):
+        """Write one value to the app-wide dotenv file."""
+        try:
+            return set_env_file_value(
+                path=self.kit.spec.app_wide_env_path(),
+                reference=key,
+                raw_value=value,
+                owners=self.kit.spec.owners,
+                layer_name=self.kit.spec.app_wide_env_filename,
+            )
+        except (ConfigHomeError, OSError) as exc:
+            raise self.config_home_bad_parameter(exc) from exc
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="KEY") from exc
+
+    def _set_storage_value(self, *, root: Path, key: str, value: str):
+        """Write one value to the selected storage dotenv file."""
+        try:
+            return set_local_env_value(
+                storage_root=root,
+                reference=key,
+                raw_value=value,
+                owners=self.kit.spec.owners,
+                storage_env_filename=self.kit.spec.storage_env_filename,
+            )
+        except (ConfigHomeError, OSError, StorageRootPathError) as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint="--storage",
+            ) from exc
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="KEY") from exc
+
+
+class AppWideConfigCommands(ConfigCommandBase):
+    """App-wide config command implementations."""
+
+    def app_init(self) -> None:
+        """Create the app-wide dotenv file explicitly."""
+        if not self.kit.spec.app_wide_allowed():
+            raise typer.BadParameter(
+                f"{self.kit.spec.display_name} does not enable app-wide config.",
+                param_hint="app",
+            )
+        try:
+            path = self.kit.spec.ensure_app_wide_env()
+        except ConfigHomeError as exc:
+            raise self.config_home_bad_parameter(exc) from exc
+        typer.echo(f"app_wide_env: {path}")
 
 
 class EditorConfigCommands(ConfigCommandBase):
@@ -461,14 +587,13 @@ class EditorConfigCommands(ConfigCommandBase):
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         try:
-            if self.kit.spec.storage_mode == StorageMode.DISABLED:
-                active_storage_root = self.kit.spec.ensure_config_home().root
-            else:
-                active_storage_root = (
-                    self.best_effort_active_storage_root_from_env(
-                        storage_registry=optional_registry,
-                    )
+            active_storage_root = (
+                self.best_effort_active_storage_root_from_env(
+                    storage_registry=optional_registry,
                 )
+                if self.kit.spec.storage_required()
+                else None
+            )
             self.launch_config_editor(
                 current_state=current_state,
                 storage_registry=optional_registry,
@@ -480,15 +605,11 @@ class EditorConfigCommands(ConfigCommandBase):
 
 class ConfigCommandHandlers(
     RuntimeConfigCommands,
-    MultiStorageConfigCommands,
+    StorageConfigCommands,
+    AppWideConfigCommands,
     EditorConfigCommands,
 ):
-    """Command implementations for the generated ``config`` Typer group.
-
-    The Typer factory owns option declarations and command registration. This
-    class owns the behavior those command callbacks execute, which keeps CLI
-    parsing separate from AppRC state mutations.
-    """
+    """Command implementations for the generated ``config`` Typer group."""
 
     def callback(self, ctx: typer.Context) -> None:
         """Show config help when no subcommand was selected."""
@@ -500,19 +621,32 @@ class ConfigCommandHandlers(
         self,
         *,
         assume_yes: bool,
-        apprc_dir: Path | None,
         storage_root: Path | None,
-        storage_name: str | None,
-        multi_storage: bool,
-        existing_action: setup_flow.ExistingSetupAction | None,
     ) -> None:
-        """Configure AppRC-managed files and optional storage."""
+        """Configure files for the declared AppRC capability layers."""
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,
-            apprc_dir=apprc_dir,
             storage_root=storage_root,
-            storage_name=storage_name,
-            multi_storage=multi_storage,
-            existing_action=existing_action,
         )
+
+
+def _inactive_scope_message(
+    kit: AppConfigKit,
+    scope: ConfigSetScope,
+) -> str:
+    """Return a readable error for an unavailable write scope.
+
+    :param kit: Application config facade.
+    :param scope: Requested write scope.
+    :return: Human-facing CLI error.
+    """
+    if scope == "app":
+        return (
+            "The app-wide layer is not active. Run "
+            f"`{kit.spec.config_command_name()} config app init` first."
+        )
+    return (
+        "The storage layer is not active. Select a storage root with --storage "
+        f"or export {kit.spec.storage_env_key}."
+    )

@@ -46,25 +46,25 @@ def test_suggested_storage_name_uses_valid_host_specific_selector() -> None:
 def test_register_storage_writes_sorted_toml_and_local_env(
     tmp_path: Path,
 ) -> None:
-    apprc_toml_path = tmp_path / "config" / "demo.apprc.toml"
+    index_path = tmp_path / "config" / "demo.apprc.toml"
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
 
     register_storage(
         name="zeta",
         root=second_root,
-        path=apprc_toml_path,
-        local_env_filename=".env.demo",
+        path=index_path,
+        storage_env_filename=".env.demo",
     )
     register_storage(
         name="alpha",
         root=first_root,
-        path=apprc_toml_path,
-        local_env_filename=".env.demo",
+        path=index_path,
+        storage_env_filename=".env.demo",
     )
 
     assert (first_root / ".env.demo").is_file()
-    assert apprc_toml_path.read_text(encoding="utf-8") == (
+    assert index_path.read_text(encoding="utf-8") == (
         "[storages.alpha]\n"
         f'root = "{first_root.resolve()}"\n'
         "\n"
@@ -74,16 +74,16 @@ def test_register_storage_writes_sorted_toml_and_local_env(
 
 
 def test_ordered_storage_names_are_sorted(tmp_path: Path) -> None:
-    apprc_toml_path = tmp_path / "config" / "demo.apprc.toml"
+    index_path = tmp_path / "config" / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        path=apprc_toml_path,
+        path=index_path,
     )
     registry = register_storage(
         name="zeta",
         root=tmp_path / "zeta",
-        path=apprc_toml_path,
+        path=index_path,
     )
 
     assert ordered_storage_names(registry) == ["alpha", "zeta"]
@@ -92,8 +92,8 @@ def test_ordered_storage_names_are_sorted(tmp_path: Path) -> None:
 def test_load_storage_registry_or_empty_rejects_unknown_top_level_keys(
     tmp_path: Path,
 ) -> None:
-    apprc_toml_path = tmp_path / "demo.apprc.toml"
-    apprc_toml_path.write_text(
+    index_path = tmp_path / "demo.apprc.toml"
+    index_path.write_text(
         'default_storage = "alpha"\n'
         "\n"
         "[storages.alpha]\n"
@@ -102,106 +102,104 @@ def test_load_storage_registry_or_empty_rejects_unknown_top_level_keys(
     )
 
     with pytest.raises(ValueError, match="unsupported top-level registry key"):
-        load_storage_registry_or_empty(apprc_toml_path)
+        load_storage_registry_or_empty(index_path)
 
 
 def test_archived_storage_records_round_trip_sorted_toml(
     tmp_path: Path,
 ) -> None:
-    apprc_toml_path = tmp_path / "demo.apprc.toml"
+    index_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        path=apprc_toml_path,
-        local_env_filename=".env.demo",
+        path=index_path,
+        storage_env_filename=".env.demo",
     )
 
     registry = record_archived_storage(
         name="zeta",
         archive=tmp_path / "zeta.apprc.tar.xz",
         source_root=tmp_path / "zeta",
-        path=apprc_toml_path,
+        path=index_path,
     )
 
     assert registry.archived_storages["zeta"].archive == (
         tmp_path / "zeta.apprc.tar.xz"
     )
-    assert load_storage_registry_or_empty(apprc_toml_path).archived_storages[
+    assert load_storage_registry_or_empty(index_path).archived_storages[
         "zeta"
     ].source_root == (tmp_path / "zeta")
-    assert "[archived_storages.zeta]" in apprc_toml_path.read_text(
-        encoding="utf-8"
-    )
+    assert "[archived_storages.zeta]" in index_path.read_text(encoding="utf-8")
 
 
 def test_remove_and_prune_archived_storage_records(tmp_path: Path) -> None:
-    apprc_toml_path = tmp_path / "demo.apprc.toml"
+    index_path = tmp_path / "demo.apprc.toml"
     existing_archive = tmp_path / "alpha.apprc.tar.xz"
     existing_archive.write_bytes(b"placeholder")
     record_archived_storage(
         name="alpha",
         archive=existing_archive,
         source_root=tmp_path / "alpha",
-        path=apprc_toml_path,
+        path=index_path,
     )
     record_archived_storage(
         name="beta",
         archive=tmp_path / "missing.apprc.tar.xz",
         source_root=tmp_path / "beta",
-        path=apprc_toml_path,
+        path=index_path,
     )
 
-    registry = prune_missing_archived_storages(path=apprc_toml_path)
-    registry = remove_archived_storage(name="alpha", path=apprc_toml_path)
+    registry = prune_missing_archived_storages(path=index_path)
+    registry = remove_archived_storage(name="alpha", path=index_path)
 
     assert sorted(registry.archived_storages) == []
     assert (
         "beta"
-        not in load_storage_registry_or_empty(apprc_toml_path).archived_storages
+        not in load_storage_registry_or_empty(index_path).archived_storages
     )
 
 
 def test_unregister_storage_removes_rows_without_default_repair(
     tmp_path: Path,
 ) -> None:
-    apprc_toml_path = tmp_path / "demo.apprc.toml"
+    index_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        path=apprc_toml_path,
+        path=index_path,
     )
     register_storage(
         name="beta",
         root=tmp_path / "beta",
-        path=apprc_toml_path,
+        path=index_path,
     )
 
     registry = unregister_storage(
         name="alpha",
-        path=apprc_toml_path,
+        path=index_path,
     )
-    registry = unregister_storage(name="beta", path=apprc_toml_path)
+    registry = unregister_storage(name="beta", path=index_path)
 
     assert registry.storages == {}
 
 
 def test_unregister_storage_requires_existing_name(tmp_path: Path) -> None:
-    apprc_toml_path = tmp_path / "demo.apprc.toml"
+    index_path = tmp_path / "demo.apprc.toml"
     register_storage(
         name="alpha",
         root=tmp_path / "alpha",
-        path=apprc_toml_path,
+        path=index_path,
     )
 
     with pytest.raises(ValueError, match="Unknown storage 'beta'"):
-        unregister_storage(name="beta", path=apprc_toml_path)
+        unregister_storage(name="beta", path=index_path)
 
 
 def test_register_storage_normalizes_windows_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    apprc_toml_path = tmp_path / "config" / "demo.apprc.toml"
+    index_path = tmp_path / "config" / "demo.apprc.toml"
     normalized_root = tmp_path / "demo-storage"
 
     monkeypatch.setattr(
@@ -212,8 +210,8 @@ def test_register_storage_normalizes_windows_root(
     registry = register_storage(
         name="demo",
         root=Path(r"D:\Training\demo-project"),
-        path=apprc_toml_path,
-        local_env_filename=".env.demo",
+        path=index_path,
+        storage_env_filename=".env.demo",
     )
 
     assert registry.selected("demo").root == normalized_root.resolve()
@@ -259,26 +257,26 @@ def test_normalize_storage_root_path_rejects_damaged_windows_path() -> None:
 def test_load_storage_registry_or_empty_rejects_invalid_storage_tables(
     tmp_path: Path,
 ) -> None:
-    apprc_toml_path = tmp_path / "demo.apprc.toml"
-    apprc_toml_path.write_text('storages = "alpha"\n', encoding="utf-8")
+    index_path = tmp_path / "demo.apprc.toml"
+    index_path.write_text('storages = "alpha"\n', encoding="utf-8")
 
     with pytest.raises(ValueError, match="storages must be a table"):
-        load_storage_registry_or_empty(apprc_toml_path)
+        load_storage_registry_or_empty(index_path)
 
-    apprc_toml_path.write_text(
+    index_path.write_text(
         "[storages.alpha]\nroot = []\n",
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match=r"storages\.alpha\.root"):
-        load_storage_registry_or_empty(apprc_toml_path)
+        load_storage_registry_or_empty(index_path)
 
 
 def test_load_storage_registry_or_empty_rejects_invalid_archived_storage_tables(
     tmp_path: Path,
 ) -> None:
-    apprc_toml_path = tmp_path / "demo.apprc.toml"
-    apprc_toml_path.write_text(
+    index_path = tmp_path / "demo.apprc.toml"
+    index_path.write_text(
         "[archived_storages.alpha]\n"
         f'archive = "{tmp_path / "alpha.apprc.tar.xz"}"\n',
         encoding="utf-8",
@@ -288,7 +286,7 @@ def test_load_storage_registry_or_empty_rejects_invalid_archived_storage_tables(
         ValueError,
         match=r"archived_storages\.alpha\.source_root",
     ):
-        load_storage_registry_or_empty(apprc_toml_path)
+        load_storage_registry_or_empty(index_path)
 
 
 def test_register_storage_rejects_names_that_cannot_be_toml_keys(

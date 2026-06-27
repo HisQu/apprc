@@ -1,4 +1,4 @@
-"""Build AppRC setup diagnostics independent of CLI rendering."""
+"""Build AppRC layer diagnostics independent of CLI rendering."""
 
 from __future__ import annotations
 
@@ -9,15 +9,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
-from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.bootstrap.dotenv_layers import (
+    read_dotenv_file,
     read_storage_selector_fallback_values,
 )
-from apprc.runtime_config.config_home import (
-    AppConfigHome,
-    ConfigHomeError,
-    require_readable_text_file,
-)
+from apprc.runtime_config.config_home import AppConfigHome
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.storage.loading import (
     StorageRegistryInspection,
@@ -38,24 +34,28 @@ class ConfigDoctorPayload(TypedDict):
     """Machine-readable diagnostics emitted by ``config doctor``."""
 
     status: str
+    writes: str
+    capabilities: dict[str, str]
     config_home: str
     config_home_exists: bool
-    global_env: str
-    global_env_exists: bool
-    apprc_toml_env_key: str
-    apprc_toml_env_value: str | None
-    apprc_toml_path: str | None
-    apprc_toml_exists: bool
-    apprc_toml_parse_ok: bool
-    apprc_toml_error: str | None
+    app_wide_env: str
+    app_wide_env_exists: bool
+    app_wide_active: bool
+    storage_env_key: str | None
+    index_env_key: str
+    index_env_value: str | None
+    index_path: str | None
+    index_exists: bool
+    index_parse_ok: bool
+    index_error: str | None
     storage_count: int
     selected_storage: str | None
     selected_storage_source: str | None
     selected_storage_selector: str | None
     selected_storage_root: str | None
     selected_storage_root_exists: bool | None
-    selected_local_env: str | None
-    selected_local_env_exists: bool | None
+    selected_storage_env: str | None
+    selected_storage_env_exists: bool | None
     missing_env_keys: list[str]
     issues: list[str]
     warnings: list[str]
@@ -68,21 +68,17 @@ class _StorageDiagnosis:
 
     selection: StorageSelection | None
     storage_root_exists: bool | None
-    local_env: Path | None
-    local_env_exists: bool | None
+    storage_env: Path | None
+    storage_env_exists: bool | None
     missing_env_keys: list[str]
     issues: list[str]
 
 
 @dataclass(frozen=True, slots=True)
-class _ConfigHomeDiagnosis:
-    """Config-home state discovered for one doctor run.
+class _AppWideDiagnosis:
+    """App-wide dotenv state discovered for one doctor run."""
 
-    :param paths: Intended AppRC-managed paths.
-    :param issues: Readiness-affecting config-home problems.
-    """
-
-    paths: AppConfigHome
+    active: bool
     issues: list[str]
 
 
@@ -97,32 +93,25 @@ def config_command_text(kit: "AppConfigKit", action: str) -> str:
 
 
 def config_setup_message(kit: "AppConfigKit") -> str:
-    """Return setup text shown when no storage is registered."""
-    if kit.spec.storage_mode == StorageMode.DISABLED:
+    """Return setup text shown when runtime storage is missing."""
+    if not kit.spec.storage_required():
         return (
-            f"{kit.spec.display_name} uses AppRC's app-global config home.\n\n"
-            "Create or inspect the AppRC-managed files:\n"
-            f"  {config_command_text(kit, 'setup')}\n\n"
-            "Then inspect the setup:\n"
-            f"  {config_command_text(kit, 'doctor')}\n"
-            f"  {config_command_text(kit, 'show')}"
+            f"{kit.spec.display_name} can run from packaged defaults, explicit "
+            "env files, and shell environment variables.\n\n"
+            "Inspect the current layer state:\n"
+            f"  {config_command_text(kit, 'paths')}\n"
+            f"  {config_command_text(kit, 'doctor')}"
         )
     storage_key = kit.spec.require_storage_env_key()
-    setup_action = "setup --yes --storage-root /absolute/path/to/storage-root"
     return (
         f"No active {kit.spec.display_name} storage is selected.\n\n"
-        f"{storage_key} is required and points at the active storage root. "
-        f"{kit.spec.apprc_toml_env_key} is optional; set it only when you want "
-        "multi-storage features.\n"
-        "Choose the storage root; setup will create the storage-local env "
-        "file and print the export command:\n"
-        f"  {config_command_text(kit, setup_action)}\n\n"
-        "Keep the storage variable exported for future commands, then inspect "
-        "the setup:\n"
-        f"  {config_command_text(kit, 'doctor')}\n"
-        f"  {config_command_text(kit, 'show')}\n\n"
-        "Setup creates or checks:\n"
-        f"  /absolute/path/to/storage-root/{kit.spec.local_env_filename}"
+        f"Set {storage_key} to a storage path or pass --storage PATH. The "
+        "named-storage index is optional and only needed for named selectors.\n"
+        "For guided setup:\n"
+        f"  {config_command_text(kit, 'setup --yes --storage-root /absolute/path/to/storage-root')}\n\n"
+        "Then inspect the setup:\n"
+        f"  {config_command_text(kit, 'paths')}\n"
+        f"  {config_command_text(kit, 'doctor')}"
     )
 
 
@@ -131,42 +120,42 @@ def build_config_doctor_payload(
     *,
     storage: str | None,
 ) -> ConfigDoctorPayload:
-    """Return local setup diagnostics for one app's selected storage.
+    """Return local setup diagnostics for one app's active layers.
 
     :param kit: Application config facade.
     :param storage: Optional selector passed by ``--storage``.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    config_home_diagnosis = _diagnose_config_home(kit)
-    if config_home_diagnosis.issues:
-        storage_registry_diagnosis = _undiscovered_storage_registry(
-            kit,
-            config_home=config_home_diagnosis.paths,
-        )
-        storage_diagnosis = _empty_storage_diagnosis()
-    else:
-        storage_registry_diagnosis = inspect_storage_registry(kit.spec)
-        storage_diagnosis = _diagnose_storage(
-            kit,
-            registry=storage_registry_diagnosis.registry,
-            storage=storage,
-        )
+    paths = kit.spec.config_paths()
+    app_wide = _diagnose_app_wide(kit, paths=paths)
+    registry = inspect_storage_registry(kit.spec)
+    storage_diagnosis = _diagnose_storage(
+        kit,
+        registry=registry.registry,
+        storage=storage,
+    )
+    warnings = [
+        *_config_package_convention_warnings(kit),
+        *_legacy_file_warnings(
+            app_wide_path=paths.app_wide_env,
+            storage_env=storage_diagnosis.storage_env,
+        ),
+    ]
     issues = [
-        *config_home_diagnosis.issues,
-        *storage_registry_diagnosis.issues,
+        *app_wide.issues,
+        *registry.issues,
         *storage_diagnosis.issues,
     ]
-    warnings = _config_package_convention_warnings(kit)
     status = _doctor_status(
-        kit,
-        config_home_issues=config_home_diagnosis.issues,
-        registry=storage_registry_diagnosis,
+        app_wide=app_wide,
+        registry=registry,
         storage=storage_diagnosis,
     )
     return _doctor_payload(
         kit,
-        config_home=config_home_diagnosis.paths,
-        registry=storage_registry_diagnosis,
+        paths=paths,
+        app_wide=app_wide,
+        registry=registry,
         storage=storage_diagnosis,
         status=status,
         issues=issues,
@@ -174,71 +163,45 @@ def build_config_doctor_payload(
     )
 
 
-def _diagnose_config_home(kit: "AppConfigKit") -> _ConfigHomeDiagnosis:
-    """Create AppRC-managed files or capture path-level failures.
-
-    :param kit: Application config facade.
-    :return: Intended config-home paths plus any creation issue.
-    """
-    intended_paths = AppConfigHome(
-        root=kit.spec.config_home(),
-        global_env=kit.spec.global_env_path(),
-        apprc_toml=kit.spec.apprc_toml_path(),
-    )
-    try:
-        ensured_paths = kit.spec.ensure_config_home()
-    except (ConfigHomeError, OSError) as exc:
-        return _ConfigHomeDiagnosis(
-            paths=intended_paths,
-            issues=[str(exc)],
-        )
-    issues: list[str] = []
-    for managed_file in (
-        ensured_paths.global_env,
-        ensured_paths.apprc_toml,
-    ):
-        try:
-            require_readable_text_file(managed_file)
-        except ConfigHomeError as exc:
-            issues.append(str(exc))
-    if issues:
-        return _ConfigHomeDiagnosis(paths=ensured_paths, issues=issues)
-    return _ConfigHomeDiagnosis(paths=ensured_paths, issues=[])
-
-
-def _undiscovered_storage_registry(
+def _diagnose_app_wide(
     kit: "AppConfigKit",
     *,
-    config_home: AppConfigHome,
-) -> StorageRegistryInspection:
-    """Return AppRC TOML path fields when config-home writes are blocked.
-
-    ``config doctor`` keeps its JSON field shape even when the managed config
-    home is not usable. This placeholder reports the intended AppRC TOML path
-    without pretending that a parse or missing-file diagnosis ran.
+    paths: AppConfigHome,
+) -> _AppWideDiagnosis:
+    """Return app-wide dotenv readiness without creating files.
 
     :param kit: Application config facade.
-    :param config_home: Intended AppRC-managed paths.
-    :return: Storage registry placeholder with no downstream issues.
+    :param paths: Resolved app-wide and index paths.
+    :return: App-wide diagnosis.
     """
-    raw_apprc_toml_env_value = os.environ.get(
-        kit.spec.apprc_toml_env_key, ""
-    ).strip()
-    return StorageRegistryInspection(
-        path=config_home.apprc_toml,
-        env_value=raw_apprc_toml_env_value or None,
-        exists=config_home.apprc_toml.is_file(),
-        error=None,
-        registry=None,
-        storage_count=0,
-        issues=[],
-    )
+    if not kit.spec.app_wide_allowed():
+        return _AppWideDiagnosis(active=False, issues=[])
+    exists = paths.app_wide_env.is_file()
+    active = kit.spec.app_wide_default() or exists
+    if kit.spec.app_wide_default() and not exists:
+        return _AppWideDiagnosis(
+            active=active,
+            issues=[f"App-wide env file does not exist: {paths.app_wide_env}"],
+        )
+    if exists:
+        try:
+            read_dotenv_file(paths.app_wide_env)
+        except OSError as exc:
+            return _AppWideDiagnosis(
+                active=active,
+                issues=[
+                    "App-wide env file could not be read: "
+                    f"{paths.app_wide_env}: {exc}"
+                ],
+            )
+    return _AppWideDiagnosis(active=active, issues=[])
 
 
 def _doctor_payload(
     kit: "AppConfigKit",
     *,
-    config_home: AppConfigHome,
+    paths: AppConfigHome,
+    app_wide: _AppWideDiagnosis,
     registry: StorageRegistryInspection,
     storage: _StorageDiagnosis,
     status: ConfigDoctorStatus,
@@ -248,29 +211,33 @@ def _doctor_payload(
     """Serialize diagnosis objects into the public doctor payload.
 
     :param kit: Application config facade.
-    :param registry: Optional AppRC TOML and storage-table diagnosis.
+    :param paths: Resolved app-wide and index paths.
+    :param app_wide: App-wide dotenv diagnosis.
+    :param registry: Optional named-storage index diagnosis.
     :param storage: Active storage diagnosis.
     :param status: Public readiness status.
     :param issues: Readiness-affecting problems.
-    :param warnings: Non-fatal convention or quality diagnostics.
+    :param warnings: Non-fatal convention or migration diagnostics.
     :return: Stable JSON-friendly diagnostic payload.
     """
     selection = storage.selection
     selected_storage_root = selection.root if selection is not None else None
     return {
         "status": status.value,
-        "config_home": str(config_home.root),
-        "config_home_exists": config_home.root.is_dir(),
-        "global_env": str(config_home.global_env),
-        "global_env_exists": config_home.global_env.is_file(),
-        "apprc_toml_env_key": kit.spec.apprc_toml_env_key,
-        "apprc_toml_env_value": registry.env_value,
-        "apprc_toml_path": str(registry.path)
-        if registry.path is not None
-        else None,
-        "apprc_toml_exists": registry.exists,
-        "apprc_toml_parse_ok": registry.parse_ok,
-        "apprc_toml_error": registry.error,
+        "writes": "none",
+        "capabilities": _capability_payload(kit),
+        "config_home": str(paths.root),
+        "config_home_exists": paths.root.is_dir(),
+        "app_wide_env": str(paths.app_wide_env),
+        "app_wide_env_exists": paths.app_wide_env.is_file(),
+        "app_wide_active": app_wide.active,
+        "storage_env_key": kit.spec.storage_env_key,
+        "index_env_key": kit.spec.index_env_key,
+        "index_env_value": registry.env_value,
+        "index_path": str(registry.path) if registry.path is not None else None,
+        "index_exists": registry.exists,
+        "index_parse_ok": registry.parse_ok,
+        "index_error": registry.error,
         "storage_count": registry.storage_count,
         "selected_storage": (
             selection.storage_name if selection is not None else None
@@ -287,10 +254,12 @@ def _doctor_payload(
             else None
         ),
         "selected_storage_root_exists": storage.storage_root_exists,
-        "selected_local_env": (
-            str(storage.local_env) if storage.local_env is not None else None
+        "selected_storage_env": (
+            str(storage.storage_env)
+            if storage.storage_env is not None
+            else None
         ),
-        "selected_local_env_exists": storage.local_env_exists,
+        "selected_storage_env_exists": storage.storage_env_exists,
         "missing_env_keys": storage.missing_env_keys,
         "issues": issues,
         "warnings": warnings,
@@ -307,16 +276,16 @@ def _diagnose_storage(
     """Return active storage state for diagnostics.
 
     :param kit: Application config facade.
-    :param registry: Optional multi-storage table diagnosis result.
+    :param registry: Optional named-storage table diagnosis result.
     :param storage: Optional selector passed by ``--storage``.
-    :return: Storage diagnosis with missing-env and local-env issues.
+    :return: Storage diagnosis with missing-env and storage-env issues.
     """
-    if kit.spec.storage_mode == StorageMode.DISABLED:
+    if not kit.spec.storage_required():
         return _StorageDiagnosis(
             selection=None,
             storage_root_exists=None,
-            local_env=None,
-            local_env_exists=None,
+            storage_env=None,
+            storage_env_exists=None,
             missing_env_keys=[],
             issues=[],
         )
@@ -324,7 +293,7 @@ def _diagnose_storage(
     issues: list[str] = []
     fallback_values = read_storage_selector_fallback_values(
         kit.spec,
-        collect_global_issues=True,
+        collect_app_wide_issues=True,
     )
     issues.extend(fallback_values.issues)
     missing_env_keys: list[str] = []
@@ -337,7 +306,7 @@ def _diagnose_storage(
             storage=storage,
             storage_env_key=storage_env_key,
             original_env=os.environ,
-            global_values=fallback_values.global_values,
+            app_wide_values=fallback_values.app_wide_values,
             shared_values=fallback_values.shared_values,
         )
     except StorageSelectorError as exc:
@@ -348,8 +317,8 @@ def _diagnose_storage(
         issues.append(_missing_env_issue(kit, missing_env_keys))
 
     selected_storage_root = selection.root if selection is not None else None
-    local_env = (
-        selected_storage_root / kit.spec.local_env_filename
+    storage_env = (
+        kit.spec.storage_env_path(selected_storage_root)
         if selected_storage_root is not None
         else None
     )
@@ -358,64 +327,62 @@ def _diagnose_storage(
         if selected_storage_root is not None
         else None
     )
-    local_env_exists = local_env.is_file() if local_env is not None else None
+    storage_env_exists = (
+        storage_env.is_file() if storage_env is not None else None
+    )
     if selected_storage_root is not None and not storage_root_exists:
         issues.append(
             f"Selected storage root does not exist: {selected_storage_root}"
         )
-    if local_env is not None and not local_env_exists:
+    if storage_env is not None and not storage_env_exists:
         issues.append(
-            f"Selected storage local env file does not exist: {local_env}"
+            f"Selected storage env file does not exist: {storage_env}"
         )
     return _StorageDiagnosis(
         selection=selection,
         storage_root_exists=storage_root_exists,
-        local_env=local_env,
-        local_env_exists=local_env_exists,
+        storage_env=storage_env,
+        storage_env_exists=storage_env_exists,
         missing_env_keys=missing_env_keys,
         issues=issues,
     )
 
 
-def _empty_storage_diagnosis() -> _StorageDiagnosis:
-    """Return a storage placeholder when config-home readiness is decisive.
-
-    :return: Storage diagnosis with no selected storage or secondary issues.
-    """
-    return _StorageDiagnosis(
-        selection=None,
-        storage_root_exists=None,
-        local_env=None,
-        local_env_exists=None,
-        missing_env_keys=[],
-        issues=[],
-    )
-
-
 def _doctor_status(
-    kit: "AppConfigKit",
     *,
-    config_home_issues: list[str],
+    app_wide: _AppWideDiagnosis,
     registry: StorageRegistryInspection,
     storage: _StorageDiagnosis,
 ) -> ConfigDoctorStatus:
-    """Return readiness status while keeping missing storage env decisive.
+    """Return readiness status with missing storage env as decisive.
 
-    :param registry: Optional AppRC TOML and storage-table diagnosis.
+    :param app_wide: App-wide dotenv diagnosis.
+    :param registry: Optional named-storage index diagnosis.
     :param storage: Active storage diagnosis.
     :return: Public doctor status.
     """
-    if config_home_issues:
-        return ConfigDoctorStatus.CONFIG_NOT_READY
     if storage.missing_env_keys:
         return ConfigDoctorStatus.ENV_NOT_SET
+    if app_wide.issues:
+        return ConfigDoctorStatus.APP_CONFIG_NOT_READY
     if registry.issues:
-        if kit.spec.storage_mode == StorageMode.DISABLED:
-            return ConfigDoctorStatus.CONFIG_NOT_READY
-        return ConfigDoctorStatus.MULTI_STORAGE_NOT_READY
+        return ConfigDoctorStatus.NAMED_STORAGE_NOT_READY
     if storage.issues:
         return ConfigDoctorStatus.STORAGE_NOT_READY
     return ConfigDoctorStatus.RUNNABLE
+
+
+def _capability_payload(kit: "AppConfigKit") -> dict[str, str]:
+    """Return declared capability state for JSON output.
+
+    :param kit: Application config facade.
+    :return: JSON-friendly capability names and states.
+    """
+    return {
+        "storage": kit.spec.storage_layer.value,
+        "app_wide": kit.spec.app_wide_layer.value,
+        "named_storage": kit.spec.named_storage_layer.value,
+    }
 
 
 def _config_package_convention_warnings(kit: "AppConfigKit") -> list[str]:
@@ -443,6 +410,34 @@ def _config_package_convention_warnings(kit: "AppConfigKit") -> list[str]:
     return warnings
 
 
+def _legacy_file_warnings(
+    *,
+    app_wide_path: Path,
+    storage_env: Path | None,
+) -> list[str]:
+    """Return migration warnings for old dotenv filenames.
+
+    :param app_wide_path: Current app-wide dotenv path.
+    :param storage_env: Current selected storage dotenv path, if any.
+    :return: Human-readable legacy-file warnings.
+    """
+    warnings: list[str] = []
+    old_app_env = app_wide_path.with_name(".env.global")
+    if old_app_env.is_file():
+        warnings.append(
+            f"Legacy app-wide dotenv file ignored: {old_app_env}. Move values "
+            f"to {app_wide_path}."
+        )
+    if storage_env is not None:
+        old_storage_env = storage_env.with_name(".env.local")
+        if old_storage_env.is_file():
+            warnings.append(
+                "Legacy storage dotenv file ignored: "
+                f"{old_storage_env}. Move values to {storage_env}."
+            )
+    return warnings
+
+
 def _doctor_next_steps(
     kit: "AppConfigKit",
     status: ConfigDoctorStatus,
@@ -455,34 +450,31 @@ def _doctor_next_steps(
     """
     if status == ConfigDoctorStatus.RUNNABLE:
         return []
-    if status == ConfigDoctorStatus.CONFIG_NOT_READY:
-        return [
-            config_command_text(kit, "setup"),
-            config_command_text(kit, "doctor"),
-        ]
     if status == ConfigDoctorStatus.ENV_NOT_SET:
         return [
             config_command_text(
                 kit,
                 "setup --yes --storage-root /absolute/path/to/storage-root",
             ),
+            config_command_text(kit, "paths"),
             config_command_text(kit, "doctor"),
-            config_command_text(kit, "show"),
         ]
-    if status == ConfigDoctorStatus.MULTI_STORAGE_NOT_READY:
+    if status == ConfigDoctorStatus.APP_CONFIG_NOT_READY:
         return [
-            "Fix the AppRC TOML file or choose a different AppRC TOML path "
-            f"with {kit.spec.apprc_toml_env_key}:",
+            config_command_text(kit, "app init"),
+            config_command_text(kit, "doctor"),
+        ]
+    if status == ConfigDoctorStatus.NAMED_STORAGE_NOT_READY:
+        return [
+            "Fix the named-storage index or create a new entry:",
             config_command_text(
-                kit,
-                "setup --yes --storage-root /absolute/path/to/storage-root "
-                "--multi-storage",
+                kit, "storage add NAME /absolute/path/to/storage-root"
             ),
             config_command_text(kit, "doctor"),
         ]
     return [
         "Ensure the selected storage root exists and contains "
-        f"{kit.spec.local_env_filename}.",
+        f"{kit.spec.storage_env_filename}.",
         config_command_text(
             kit,
             "setup --yes --storage-root /absolute/path/to/storage-root",
@@ -503,7 +495,7 @@ def _missing_env_issue(
     """
     keys = ", ".join(missing_env_keys)
     return (
-        f"Env not set. {kit.spec.display_name} requires {keys}. Add the setup "
-        "handoff values to your shell or dotenv file, then run "
+        f"Env not set. {kit.spec.display_name} requires {keys}. Export the "
+        "storage path or add it to an explicit dotenv file, then run "
         f"{config_command_text(kit, 'doctor')}."
     )

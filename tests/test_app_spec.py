@@ -4,8 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from apprc.runtime_config.app_spec import AppConfigSpec, StorageMode
 from apprc.runtime_config import EnvConfig, env_field, env_owner
+from apprc.runtime_config.app_spec import (
+    AppConfigSpec,
+    CapabilityState,
+    StorageLayerState,
+)
 
 
 @env_owner(
@@ -52,41 +56,27 @@ class _DuplicateEnvB(EnvConfig):
     value: str = env_field("VALUE", default="b")
 
 
-@env_owner(
-    key="dup.path_a",
-    title="Duplicate Path A",
-    env_prefix="DUP_PATH_A_",
-    rc_path=("dup", "path"),
-    log_lifecycle=False,
-)
-class _DuplicatePathA(EnvConfig):
-    value: str = env_field("VALUE_A", default="a")
-
-
-@env_owner(
-    key="dup.path_b",
-    title="Duplicate Path B",
-    env_prefix="DUP_PATH_B_",
-    rc_path=("dup", "path"),
-    log_lifecycle=False,
-)
-class _DuplicatePathB(EnvConfig):
-    value: str = env_field("VALUE_B", default="b")
-
-
-def _app_spec(app_name: str) -> AppConfigSpec:
-    """Return the smallest spec needed for literal AppRC TOML naming tests."""
+def _spec(
+    *,
+    storage_layer: StorageLayerState = StorageLayerState.DISABLED,
+    app_wide_layer: CapabilityState = CapabilityState.OPTIONAL,
+    named_storage_layer: CapabilityState = CapabilityState.DISABLED,
+    storage_env_key: str | None = None,
+) -> AppConfigSpec:
     return AppConfigSpec(
-        app_name=app_name,
+        app_name="demo",
         display_name="Demo",
         config_package="apprc.runtime_config",
-        storage_env_key="DEMO_STORAGE",
-        apprc_toml_filename="demo.apprc.toml",
+        index_filename="demo.apprc.toml",
+        storage_layer=storage_layer,
+        app_wide_layer=app_wide_layer,
+        named_storage_layer=named_storage_layer,
+        storage_env_key=storage_env_key,
     )
 
 
-def test_app_config_spec_derives_apprc_toml_filename_text() -> None:
-    derive = AppConfigSpec.derive_apprc_toml_filename
+def test_app_config_spec_derives_index_filename_text() -> None:
+    derive = AppConfigSpec.derive_index_filename
 
     assert derive("demo") == "demo.apprc.toml"
     assert derive("my-app.rc") == "my-app_rc.apprc.toml"
@@ -94,9 +84,52 @@ def test_app_config_spec_derives_apprc_toml_filename_text() -> None:
     assert derive("???") == "app.apprc.toml"
 
 
-def test_app_config_spec_derives_apprc_toml_env_key() -> None:
-    assert _app_spec("demo").apprc_toml_env_key == "DEMO_APPRC_TOML"
-    assert _app_spec("my-app.rc").apprc_toml_env_key == "MY_APP_RC_APPRC_TOML"
+def test_app_config_spec_derives_index_env_key() -> None:
+    assert _spec().index_env_key == "DEMO_APPRC_TOML"
+
+
+def test_app_config_spec_defaults_to_env_only_capabilities() -> None:
+    spec = _spec()
+
+    assert spec.storage_layer == StorageLayerState.DISABLED
+    assert spec.app_wide_layer == CapabilityState.OPTIONAL
+    assert spec.named_storage_layer == CapabilityState.DISABLED
+    assert spec.storage_env_key is None
+    assert spec.app_wide_env_filename == ".env.apprc-app"
+    assert spec.storage_env_filename == ".env.apprc-storage"
+
+
+def test_app_config_spec_storage_required_derives_storage_env_key() -> None:
+    spec = _spec(
+        storage_layer=StorageLayerState.REQUIRED,
+        named_storage_layer=CapabilityState.OPTIONAL,
+    )
+
+    assert spec.storage_required() is True
+    assert spec.storage_env_key == "DEMO_STORAGE"
+    assert spec.named_storage_allowed() is True
+
+
+def test_app_config_spec_rejects_storage_key_without_storage() -> None:
+    with pytest.raises(ValueError, match="storage-capable"):
+        _spec(storage_env_key="DEMO_STORAGE")
+
+
+def test_app_config_spec_rejects_named_storage_without_storage() -> None:
+    with pytest.raises(ValueError, match="named_storage_layer"):
+        _spec(named_storage_layer=CapabilityState.OPTIONAL)
+
+
+def test_app_config_spec_index_path_uses_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    custom_index = tmp_path / "custom" / "demo.apprc.toml"
+    spec = _spec()
+
+    monkeypatch.setenv("DEMO_APPRC_TOML", str(custom_index))
+
+    assert spec.required_index_path() == custom_index
 
 
 def test_app_config_spec_rejects_manual_owner_argument() -> None:
@@ -106,8 +139,7 @@ def test_app_config_spec_rejects_manual_owner_argument() -> None:
             display_name="Demo",
             config_package="apprc.runtime_config",
             owners=(),  # pyright: ignore[reportCallIssue]
-            storage_env_key="DEMO_STORAGE",
-            apprc_toml_filename="demo.apprc.toml",
+            index_filename="demo.apprc.toml",
         )
 
 
@@ -117,8 +149,7 @@ def test_app_config_spec_rejects_duplicate_owner_keys() -> None:
             app_name="demo",
             display_name="Demo",
             config_package="apprc.runtime_config",
-            storage_env_key="DEMO_STORAGE",
-            apprc_toml_filename="demo.apprc.toml",
+            index_filename="demo.apprc.toml",
             envs=(_DuplicateOwnerA, _DuplicateOwnerB),
         )
 
@@ -129,54 +160,6 @@ def test_app_config_spec_rejects_duplicate_env_keys() -> None:
             app_name="demo",
             display_name="Demo",
             config_package="apprc.runtime_config",
-            storage_env_key="DEMO_STORAGE",
-            apprc_toml_filename="demo.apprc.toml",
+            index_filename="demo.apprc.toml",
             envs=(_DuplicateEnvA, _DuplicateEnvB),
         )
-
-
-def test_app_config_spec_rejects_duplicate_config_paths() -> None:
-    with pytest.raises(ValueError, match="Duplicate config path"):
-        AppConfigSpec(
-            app_name="demo",
-            display_name="Demo",
-            config_package="apprc.runtime_config",
-            storage_env_key="DEMO_STORAGE",
-            apprc_toml_filename="demo.apprc.toml",
-            envs=(_DuplicatePathA, _DuplicatePathB),
-        )
-
-
-def test_app_config_spec_required_apprc_toml_path_uses_env_override(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    custom_registry = tmp_path / "custom" / "demo.apprc.toml"
-    spec = _app_spec("demo")
-
-    assert spec.required_apprc_toml_path() == (
-        tmp_path / "config-home" / "demo" / "demo.apprc.toml"
-    )
-
-    monkeypatch.setenv("DEMO_APPRC_TOML", str(custom_registry))
-
-    assert spec.required_apprc_toml_path() == custom_registry
-
-
-def test_app_config_spec_defaults_to_storage_disabled() -> None:
-    spec = AppConfigSpec(
-        app_name="demo",
-        display_name="Demo",
-        config_package="apprc.runtime_config",
-        apprc_toml_filename="demo.apprc.toml",
-    )
-
-    assert spec.storage_mode == StorageMode.DISABLED
-    assert spec.storage_env_key is None
-
-
-def test_app_config_spec_inferrs_required_storage_from_legacy_key() -> None:
-    spec = _app_spec("demo")
-
-    assert spec.storage_mode == StorageMode.REQUIRED
-    assert spec.storage_env_key == "DEMO_STORAGE"

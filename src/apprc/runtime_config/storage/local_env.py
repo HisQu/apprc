@@ -1,7 +1,7 @@
 """Read and write AppRC dotenv override files.
 
-Storage-enabled apps use storage-local dotenv files. Storage-free apps use one
-app-global dotenv file in the AppRC config home. Both files validate values
+Storage-enabled apps use storage-local dotenv files. App-wide apps use one
+app-wide dotenv file in the AppRC config home. Both files validate values
 against the same ``ConfigField`` declarations used by runtime loading, write
 keys in declaration order, and preserve unknown dotenv keys after known AppRC
 keys.
@@ -59,7 +59,7 @@ class LocalEnvUpdate:
 
 def local_env_path(
     storage_root: Path,
-    filename: str = ".env.local",
+    filename: str = ".env.apprc-storage",
 ) -> Path:
     """Return the override file owned by one storage root."""
     return Path(storage_root).expanduser().resolve() / filename
@@ -67,7 +67,7 @@ def local_env_path(
 
 def ensure_local_env_file(
     storage_root: Path,
-    filename: str = ".env.local",
+    filename: str = ".env.apprc-storage",
 ) -> Path:
     """Create the storage-local dotenv file when it is missing.
 
@@ -172,26 +172,26 @@ def set_local_env_value(
     reference: str,
     raw_value: str,
     owners: Iterable[ConfigOwner],
-    local_env_filename: str = ".env.local",
+    storage_env_filename: str = ".env.apprc-storage",
 ) -> LocalEnvUpdate:
-    """Set one override value in ``<storage-root>/.env.local``.
+    """Set one override value in a storage-local dotenv file.
 
     :param storage_root: Active storage root from the application registry.
     :param reference: Full env key, dotted config path, or unique field name.
     :param raw_value: User-provided value before type validation.
     :param owners: Config owners to search.
-    :param local_env_filename: Storage-local dotenv filename.
+    :param storage_env_filename: Storage-local dotenv filename.
     :return: Written file, key, and normalized value.
     :raises ValueError: If the key is unknown, read-only, or invalid.
     """
-    path = local_env_path(storage_root, filename=local_env_filename)
+    path = local_env_path(storage_root, filename=storage_env_filename)
     try:
         return set_env_file_value(
             path=path,
             reference=reference,
             raw_value=raw_value,
             owners=owners,
-            layer_name=".env.local",
+            layer_name=storage_env_filename,
         )
     except (ConfigHomeError, OSError) as exc:
         raise StorageRootPathError(str(exc)) from exc
@@ -234,24 +234,24 @@ def clear_local_env_value(
     storage_root: Path,
     reference: str,
     owners: Iterable[ConfigOwner],
-    local_env_filename: str = ".env.local",
+    storage_env_filename: str = ".env.apprc-storage",
 ) -> LocalEnvUpdate | None:
-    """Remove one override value from ``<storage-root>/.env.local``.
+    """Remove one override value from a storage-local dotenv file.
 
     :param storage_root: Active storage root from the application registry.
     :param reference: Full env key, dotted config path, or unique field name.
     :param owners: Config owners to search.
-    :param local_env_filename: Storage-local dotenv filename.
+    :param storage_env_filename: Storage-local dotenv filename.
     :return: Written file and removed key, or ``None`` when the key was absent.
     :raises ValueError: If the key is unknown or read-only.
     """
-    path = local_env_path(storage_root, filename=local_env_filename)
+    path = local_env_path(storage_root, filename=storage_env_filename)
     try:
         return clear_env_file_value(
             path=path,
             reference=reference,
             owners=owners,
-            layer_name=".env.local",
+            layer_name=storage_env_filename,
         )
     except (ConfigHomeError, OSError) as exc:
         raise StorageRootPathError(str(exc)) from exc

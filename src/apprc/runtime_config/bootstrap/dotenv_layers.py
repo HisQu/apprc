@@ -41,12 +41,12 @@ class ExplicitEnvLayer:
 class StorageSelectorFallbackValues:
     """Dotenv values used after process env storage selectors.
 
-    :param global_values: Values from the app-global dotenv file.
+    :param app_wide_values: Values from the app-wide dotenv file.
     :param shared_values: Values from the packaged shared dotenv file.
     :param issues: Non-fatal read problems suitable for diagnostics.
     """
 
-    global_values: dict[str, str]
+    app_wide_values: dict[str, str]
     shared_values: dict[str, str]
     issues: list[str]
 
@@ -119,7 +119,7 @@ def read_dotenv_file(path: Path | None) -> dict[str, str]:
 def read_storage_selector_fallback_values(
     spec: AppConfigSpec,
     *,
-    collect_global_issues: bool = False,
+    collect_app_wide_issues: bool = False,
 ) -> StorageSelectorFallbackValues:
     """Read persistent dotenv values used for storage selection.
 
@@ -128,22 +128,22 @@ def read_storage_selector_fallback_values(
     stays in :mod:`apprc.runtime_config.storage.selector`.
 
     :param spec: Application-specific config contract.
-    :param collect_global_issues: Whether app-global dotenv read errors should
+    :param collect_app_wide_issues: Whether app-wide dotenv read errors should
         be returned as diagnostic issues instead of raised.
     :return: Parsed fallback values and any diagnostic issues.
     """
-    global_values = {}
+    app_wide_values = {}
     issues: list[str] = []
-    global_env_path = spec.global_env_path()
-    if global_env_path.is_file():
+    app_wide_env_path = spec.app_wide_env_path()
+    if spec.app_wide_allowed() and app_wide_env_path.is_file():
         try:
-            global_values = read_dotenv_file(global_env_path)
+            app_wide_values = read_dotenv_file(app_wide_env_path)
         except OSError as exc:
             issue = (
                 "AppRC-managed file could not be read: "
-                f"{global_env_path}: {exc}"
+                f"{app_wide_env_path}: {exc}"
             )
-            if collect_global_issues:
+            if collect_app_wide_issues:
                 issues.append(issue)
             else:
                 raise ConfigHomeError(issue) from exc
@@ -156,7 +156,7 @@ def read_storage_selector_fallback_values(
             f"{spec.config_package!r}: {exc}"
         )
     return StorageSelectorFallbackValues(
-        global_values=global_values,
+        app_wide_values=app_wide_values,
         shared_values=shared_values,
         issues=issues,
     )
@@ -165,8 +165,8 @@ def read_storage_selector_fallback_values(
 def merged_env_values(
     *,
     shared_values: Mapping[str, str],
-    global_values: Mapping[str, str],
-    local_values: Mapping[str, str],
+    app_wide_values: Mapping[str, str],
+    storage_values: Mapping[str, str],
     explicit_values: Mapping[str, str],
     original_env: Mapping[str, str],
     env_file_overrides_os_environ: bool,
@@ -175,15 +175,15 @@ def merged_env_values(
     if env_file_overrides_os_environ:
         return {
             **shared_values,
-            **global_values,
-            **local_values,
+            **app_wide_values,
+            **storage_values,
             **original_env,
             **explicit_values,
         }
     return {
         **shared_values,
-        **global_values,
-        **local_values,
+        **app_wide_values,
+        **storage_values,
         **explicit_values,
         **original_env,
     }

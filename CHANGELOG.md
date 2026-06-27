@@ -27,88 +27,78 @@ This project follows Semantic Versioning.
 
 ### Breaking changes
 
-  - Breaking: `AppConfigKit` and `AppConfigSpec` no longer require storage by
-    default when `storage_env_key` is omitted.
-    Affected: Integrations that expected AppRC to derive and require
-    `<APP>_STORAGE` without explicitly declaring storage.
-    Migration: Pass `storage_mode="required"` or `storage_env_key="<APP>_STORAGE"`
-    when the application needs an active storage root.
+  - Breaking: `StorageMode` and `storage_mode=` were removed from the public
+    API.
+    Affected: Integrations importing `StorageMode` or passing `storage_mode=`.
+    Migration: Use `AppConfigKit.env_only(...)`,
+    `AppConfigKit.storage_only(...)`, `AppConfigKit.app_wide_config(...)`, or
+    `AppConfigKit.app_wide_storage(...)`.
 
-  - Breaking: `<APP>_APPRC_TOML` is now only an override path for the AppRC
-    TOML metadata file, not the switch that enables multi-storage behavior.
-    Affected: Users and integrations that relied on setting
-    `<APP>_APPRC_TOML` to move from single-storage path mode into
-    multi-storage registry mode.
-    Migration: Opt the app into required storage, then keep storage entries in
-    the default `<config-home>/<app>.apprc.toml` or set `<APP>_APPRC_TOML` only
-    when that metadata file must live somewhere else.
+  - Breaking: AppRC no longer reads or writes `.env.global` and `.env.local`.
+    Affected: Users with existing app-global values in `.env.global` or
+    storage-local values in `.env.local`.
+    Migration: Move app-wide values to `.env.apprc-app` and storage values to
+    `.env.apprc-storage`. `config doctor` reports legacy-file warnings.
 
-  - Breaking: AppRC bootstrap now inserts `.env.global` between packaged
-    `.env.shared` and storage-local `.env.local`.
-    Affected: Environments where the same key exists in `.env.shared` and the
-    new `.env.global` file.
-    Migration: Move values that should apply everywhere into `.env.global`, and
-    keep per-storage overrides in `.env.local` when storage is required.
+  - Breaking: Runtime bootstrap, `config paths`, `config doctor`, and editor
+    open are zero-write.
+    Affected: Users and tests that expected normal runtime reads to create the
+    config home, app-wide dotenv, storage dotenv, or `<app>.apprc.toml`.
+    Migration: Run `config app init`, `config setup`, or
+    `config storage add NAME PATH` when files should be created.
 
-  - Breaking: Generated `config` commands gate storage registry workflows to
-    storage-required apps and use `.env.global` for storage-free `show`, `set`,
-    `edit`, `setup`, and `doctor` flows.
-    Affected: Host apps that omitted `storage_env_key` but still exposed
-    storage registry commands as part of their generated config CLI.
-    Migration: Pass `storage_mode="required"` or `storage_env_key` for apps
-    that need `config init`, `config list`, archive, or register workflows.
+  - Breaking: Top-level generated storage commands were removed.
+    Affected: Users running `config init` or `config list`.
+    Migration: Use `config storage add NAME PATH`,
+    `config storage list`, and `config storage remove NAME`.
 
-  - Breaking: Filename-style config inputs now accept only basenames.
-    Affected: Integrations passing path-like values to `apprc_toml_filename`,
-    `shared_env_filename`, `global_env_filename`, `local_env_filename`, or
-    `app_config_file(..., filename)`.
-    Migration: Pass only a file name for these attributes. Use
-    `<APP>_APPRC_TOML` for a full AppRC TOML override path, and use
-    `app_config_home(...)` or `app_config_file(...)` to build conventional
-    config-home paths.
+  - Breaking: App-wide and storage writes now use explicit scopes when both
+    writable layers are active.
+    Affected: Users running `config set KEY VALUE` after activating both
+    `.env.apprc-app` and a storage root.
+    Migration: Pass `--scope app` or `--scope storage`.
+
+  - Breaking: Public filename constructor arguments were renamed.
+    Affected: Integrations passing `apprc_toml_filename`,
+    `global_env_filename`, or `local_env_filename`.
+    Migration: Use `index_filename`, `app_wide_env_filename`, and
+    `storage_env_filename`.
 
 <br>
 
 ### Added
 
-  - Added `platformdirs` as a runtime dependency behind AppRC config-home
-    helpers.
+  - Added explicit capability constructors:
+    `AppConfigKit.env_only(...)`, `AppConfigKit.storage_only(...)`,
+    `AppConfigKit.app_wide_config(...)`, and
+    `AppConfigKit.app_wide_storage(...)`.
 
-  - Added `StorageMode`, `global_env_filename`, `.env.global` support, and
-    public `app_config_home(...)` / `app_config_file(...)` helpers.
+  - Added `config paths` to show declared capabilities, active layers,
+    candidate paths, selected storage, named-storage index status, and
+    `writes: none`.
 
-  - Added non-interactive creation of AppRC-managed config-home files:
-    `.env.global` and `<app>.apprc.toml`.
+  - Added `config app init`, `config storage add NAME PATH`,
+    `config storage list`, and `config storage remove NAME`.
 
-  - Added `config_home` and `global_env` to `EnvBootstrapResult` and the
-    generated `config doctor --json` payload.
-
-  - Added the `config_not_ready` doctor status for AppRC config-home readiness
-    problems.
-
-  - Added `ConfigHomeError` for invalid AppRC-managed config-home paths and
-    filename-style inputs.
+  - Added doctor statuses `app_config_not_ready` and
+    `named_storage_not_ready`.
 
 <br>
 
 ### Changed
 
-  - Changed runtime bootstrap so storage-disabled apps never require, write, or
-    mutate `<APP>_STORAGE`.
+  - Changed runtime bootstrap precedence to packaged `.env.shared`,
+    app-wide `.env.apprc-app`, storage `.env.apprc-storage`, explicit env
+    files, and existing `os.environ`.
 
-  - Changed storage-required selector resolution so `.env.global` can provide a
-    persistent selector fallback before packaged `.env.shared`.
+  - Changed storage selector resolution so path selectors work without a
+    named-storage index, while named selectors use `<app>.apprc.toml` only when
+    the index is allowed and exists.
 
-  - Changed dotenv override helpers so `.env.global` and storage-local
-    `.env.local` share the same read/write implementation while preserving the
-    existing storage-local facade imports.
+  - Changed `<APP>_APPRC_TOML` to mean only named-storage index relocation.
 
-  - Changed `config doctor` to report config-home and `.env.global` readiness
-    for storage-free apps instead of treating missing storage as central.
-
-  - Changed generated setup output to print `<APP>_APPRC_TOML` exports only
-    when the AppRC TOML path is custom. The config-home default no longer
-    needs an export line.
+  - Changed `config setup` to follow the constructor instead of prompting for
+    optional upgrades.
 
 <br>
 
@@ -118,31 +108,18 @@ This project follows Semantic Versioning.
 
 ### Removed
 
+  - Removed `StorageMode`.
+
+  - Removed `config init` and `config list`.
+
+  - Removed `.env.global` and `.env.local` fallback reads.
+
 <br>
 
 ### Fixed
 
-  - Fixed `config doctor` so wrong filesystem types in the config home,
-    `.env.global`, or AppRC TOML path report `config_not_ready` instead of
-    silently appearing runnable.
-
-  - Fixed skipped-bootstrap generated config commands so `config list` and
-    `config edit` honor storage selectors stored in `.env.global`.
-
-  - Fixed generated config commands, `config setup`, and root CLI bootstrap so
-    AppRC config-home path failures report a `config-home` error instead of raw
-    exceptions or misleading `KEY`, `--storage`, or `--name` hints.
-
-  - Fixed `config doctor` so config-home creation failures stay focused on
-    AppRC-managed file readiness instead of adding secondary AppRC TOML or
-    storage diagnosis issues caused by the blocked write.
-
-  - Fixed unreadable `.env.global` and AppRC TOML files so `config doctor`
-    reports `config_not_ready` instead of crashing or reporting runnable.
-
-  - Fixed CLI error hints so unreadable explicit `--env-file` paths no longer
-    appear as `config-home` failures, and storage-local dotenv write/read
-    failures no longer appear as `KEY` or config-home failures.
+  - Fixed storage-only runtime use so a single `APP_STORAGE=/path` selector no
+    longer requires a config-home file or named-storage index.
 
 <br>
 

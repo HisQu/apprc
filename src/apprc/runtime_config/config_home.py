@@ -20,13 +20,13 @@ class AppConfigHome:
     """Resolved AppRC-managed paths for one application.
 
     :param root: Platform-native per-user config directory.
-    :param global_env: App-global dotenv override file.
-    :param apprc_toml: AppRC TOML metadata file.
+    :param app_wide_env: App-wide dotenv override file.
+    :param index: Named-storage index file.
     """
 
     root: Path
-    global_env: Path
-    apprc_toml: Path
+    app_wide_env: Path
+    index: Path
 
 
 def app_config_home(app_name: str) -> Path:
@@ -58,58 +58,54 @@ def app_config_file(app_name: str, filename: str) -> Path:
 def resolve_app_config_home(
     *,
     app_name: str,
-    global_env_filename: str,
-    apprc_toml_filename: str,
-    apprc_toml_path: Path | None = None,
+    app_wide_env_filename: str,
+    index_filename: str,
+    index_path: Path | None = None,
 ) -> AppConfigHome:
     """Return AppRC-managed config paths without creating files.
 
     :param app_name: Application name from the AppRC integration spec.
-    :param global_env_filename: Dotenv filename for app-global overrides.
-    :param apprc_toml_filename: Default AppRC TOML basename.
-    :param apprc_toml_path: Optional override AppRC TOML path.
+    :param app_wide_env_filename: Dotenv filename for app-wide overrides.
+    :param index_filename: Default named-storage index basename.
+    :param index_path: Optional override named-storage index path.
     :return: Resolved config-home paths.
     """
     root = app_config_home(app_name)
-    global_name = require_config_filename(
-        global_env_filename,
-        field_name="global_env_filename",
+    app_wide_name = require_config_filename(
+        app_wide_env_filename,
+        field_name="app_wide_env_filename",
     )
-    apprc_name = require_config_filename(
-        apprc_toml_filename,
-        field_name="apprc_toml_filename",
+    index_name = require_config_filename(
+        index_filename,
+        field_name="index_filename",
     )
     return AppConfigHome(
         root=root,
-        global_env=root / global_name,
-        apprc_toml=(
-            apprc_toml_path
-            if apprc_toml_path is not None
-            else root / apprc_name
-        ),
+        app_wide_env=root / app_wide_name,
+        index=index_path if index_path is not None else root / index_name,
     )
 
 
 def ensure_app_config_home(
     *,
     app_name: str,
-    global_env_filename: str,
-    apprc_toml_filename: str,
-    apprc_toml_path: Path | None = None,
+    app_wide_env_filename: str,
+    index_filename: str,
+    index_path: Path | None = None,
 ) -> AppConfigHome:
     """Create AppRC-managed config files without overwriting user content.
 
     :param app_name: Application name from the AppRC integration spec.
-    :param global_env_filename: Dotenv filename for app-global overrides.
-    :param apprc_toml_filename: Default AppRC TOML basename.
-    :param apprc_toml_path: Optional override AppRC TOML path.
+    :param app_wide_env_filename: Dotenv filename for app-wide overrides.
+    :param index_filename: Default named-storage index basename.
+    :param index_path: Optional override named-storage index path.
     :return: Resolved config-home paths.
     """
     paths = resolve_app_config_home(
         app_name=app_name,
-        global_env_filename=global_env_filename,
-        apprc_toml_filename=apprc_toml_filename,
-        apprc_toml_path=apprc_toml_path,
+        app_wide_env_filename=app_wide_env_filename,
+        index_filename=index_filename,
+        index_path=index_path,
     )
     if paths.root.exists() and not paths.root.is_dir():
         raise ConfigHomeError(
@@ -121,8 +117,8 @@ def ensure_app_config_home(
         raise ConfigHomeError(
             f"AppRC config home could not be created: {paths.root}: {exc}"
         ) from exc
-    ensure_text_file(paths.global_env)
-    ensure_text_file(paths.apprc_toml)
+    ensure_text_file(paths.app_wide_env)
+    ensure_text_file(paths.index)
     return paths
 
 

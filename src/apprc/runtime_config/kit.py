@@ -17,8 +17,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 # == Internal ================================
-from apprc.runtime_config.app_spec import AppConfigSpec
-from apprc.runtime_config.app_spec import StorageMode
+from apprc.runtime_config.app_spec import (
+    AppConfigSpec,
+    CapabilityState,
+    StorageLayerState,
+)
 from apprc.runtime_config.bootstrap.orchestrator import (
     BootstrapLogger,
     EnvBootstrapResult,
@@ -56,12 +59,14 @@ class AppConfigKit:
         config_package: str,
         envs: tuple[type[EnvConfig], ...] = (),
         storage_env_key: str | None = None,
-        storage_mode: StorageMode | str | None = None,
+        storage_layer: StorageLayerState | str = StorageLayerState.DISABLED,
+        app_wide_layer: CapabilityState | str = CapabilityState.OPTIONAL,
+        named_storage_layer: CapabilityState | str = CapabilityState.DISABLED,
         command_name: str | None = None,
-        apprc_toml_filename: str | None = None,
+        index_filename: str | None = None,
         shared_env_filename: str = ".env.shared",
-        global_env_filename: str = ".env.global",
-        local_env_filename: str = ".env.local",
+        app_wide_env_filename: str = ".env.apprc-app",
+        storage_env_filename: str = ".env.apprc-storage",
     ) -> None: ...
 
     def __init__(
@@ -73,12 +78,14 @@ class AppConfigKit:
         config_package: str | None = None,
         envs: tuple[type[EnvConfig], ...] = (),
         storage_env_key: str | None = None,
-        storage_mode: StorageMode | str | None = None,
+        storage_layer: StorageLayerState | str = StorageLayerState.DISABLED,
+        app_wide_layer: CapabilityState | str = CapabilityState.OPTIONAL,
+        named_storage_layer: CapabilityState | str = CapabilityState.DISABLED,
         command_name: str | None = None,
-        apprc_toml_filename: str | None = None,
+        index_filename: str | None = None,
         shared_env_filename: str = ".env.shared",
-        global_env_filename: str = ".env.global",
-        local_env_filename: str = ".env.local",
+        app_wide_env_filename: str = ".env.apprc-app",
+        storage_env_filename: str = ".env.apprc-storage",
     ) -> None:
         """Store the application spec or build one from keyword arguments."""
         if spec is not None:
@@ -95,16 +102,192 @@ class AppConfigKit:
             config_package=config_package,
             envs=envs,
             storage_env_key=storage_env_key,
-            storage_mode=storage_mode,
+            storage_layer=storage_layer,
+            app_wide_layer=app_wide_layer,
+            named_storage_layer=named_storage_layer,
             command_name=command_name,
-            apprc_toml_filename=(
-                apprc_toml_filename
-                if apprc_toml_filename is not None
-                else AppConfigSpec.derive_apprc_toml_filename(app_name)
+            index_filename=(
+                index_filename
+                if index_filename is not None
+                else AppConfigSpec.derive_index_filename(app_name)
             ),
             shared_env_filename=shared_env_filename,
-            global_env_filename=global_env_filename,
-            local_env_filename=local_env_filename,
+            app_wide_env_filename=app_wide_env_filename,
+            storage_env_filename=storage_env_filename,
+        )
+
+    @classmethod
+    def env_only(
+        cls,
+        *,
+        app_name: str,
+        display_name: str,
+        config_package: str,
+        envs: tuple[type[EnvConfig], ...] = (),
+        command_name: str | None = None,
+        index_filename: str | None = None,
+        shared_env_filename: str = ".env.shared",
+        app_wide_env_filename: str = ".env.apprc-app",
+        storage_env_filename: str = ".env.apprc-storage",
+    ) -> AppConfigKit:
+        """Create a setup-free integration with env/package/shell layers.
+
+        :param app_name: Lowercase application name used in env var derivation.
+        :param display_name: Human-readable application name.
+        :param config_package: Package containing the packaged shared dotenv.
+        :param envs: ``EnvConfig`` classes decorated with ``@env_owner``.
+        :param command_name: Optional executable name shown in CLI copy.
+        :param index_filename: Optional named-storage index filename override.
+        :param shared_env_filename: Packaged shared dotenv filename.
+        :param app_wide_env_filename: App-wide dotenv override filename.
+        :param storage_env_filename: Storage-local dotenv override filename.
+        :return: Kit with storage and named-storage disabled.
+        """
+        return cls(
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            envs=envs,
+            storage_layer=StorageLayerState.DISABLED,
+            app_wide_layer=CapabilityState.OPTIONAL,
+            named_storage_layer=CapabilityState.DISABLED,
+            command_name=command_name,
+            index_filename=index_filename,
+            shared_env_filename=shared_env_filename,
+            app_wide_env_filename=app_wide_env_filename,
+            storage_env_filename=storage_env_filename,
+        )
+
+    @classmethod
+    def storage_only(
+        cls,
+        *,
+        app_name: str,
+        display_name: str,
+        config_package: str,
+        envs: tuple[type[EnvConfig], ...] = (),
+        storage_env_key: str | None = None,
+        command_name: str | None = None,
+        index_filename: str | None = None,
+        shared_env_filename: str = ".env.shared",
+        app_wide_env_filename: str = ".env.apprc-app",
+        storage_env_filename: str = ".env.apprc-storage",
+    ) -> AppConfigKit:
+        """Create an integration that requires one active storage selector.
+
+        :param app_name: Lowercase application name used in env var derivation.
+        :param display_name: Human-readable application name.
+        :param config_package: Package containing the packaged shared dotenv.
+        :param envs: ``EnvConfig`` classes decorated with ``@env_owner``.
+        :param storage_env_key: Optional explicit storage selector env key.
+        :param command_name: Optional executable name shown in CLI copy.
+        :param index_filename: Optional named-storage index filename override.
+        :param shared_env_filename: Packaged shared dotenv filename.
+        :param app_wide_env_filename: App-wide dotenv override filename.
+        :param storage_env_filename: Storage-local dotenv override filename.
+        :return: Kit with storage required and app-wide/index upgrades enabled.
+        """
+        return cls(
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            envs=envs,
+            storage_env_key=storage_env_key,
+            storage_layer=StorageLayerState.REQUIRED,
+            app_wide_layer=CapabilityState.OPTIONAL,
+            named_storage_layer=CapabilityState.OPTIONAL,
+            command_name=command_name,
+            index_filename=index_filename,
+            shared_env_filename=shared_env_filename,
+            app_wide_env_filename=app_wide_env_filename,
+            storage_env_filename=storage_env_filename,
+        )
+
+    @classmethod
+    def app_wide_config(
+        cls,
+        *,
+        app_name: str,
+        display_name: str,
+        config_package: str,
+        envs: tuple[type[EnvConfig], ...] = (),
+        command_name: str | None = None,
+        index_filename: str | None = None,
+        shared_env_filename: str = ".env.shared",
+        app_wide_env_filename: str = ".env.apprc-app",
+        storage_env_filename: str = ".env.apprc-storage",
+    ) -> AppConfigKit:
+        """Create an integration centered on the app-wide dotenv layer.
+
+        :param app_name: Lowercase application name used in env var derivation.
+        :param display_name: Human-readable application name.
+        :param config_package: Package containing the packaged shared dotenv.
+        :param envs: ``EnvConfig`` classes decorated with ``@env_owner``.
+        :param command_name: Optional executable name shown in CLI copy.
+        :param index_filename: Optional named-storage index filename override.
+        :param shared_env_filename: Packaged shared dotenv filename.
+        :param app_wide_env_filename: App-wide dotenv override filename.
+        :param storage_env_filename: Storage-local dotenv override filename.
+        :return: Kit with app-wide config enabled by default.
+        """
+        return cls(
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            envs=envs,
+            storage_layer=StorageLayerState.DISABLED,
+            app_wide_layer=CapabilityState.DEFAULT,
+            named_storage_layer=CapabilityState.DISABLED,
+            command_name=command_name,
+            index_filename=index_filename,
+            shared_env_filename=shared_env_filename,
+            app_wide_env_filename=app_wide_env_filename,
+            storage_env_filename=storage_env_filename,
+        )
+
+    @classmethod
+    def app_wide_storage(
+        cls,
+        *,
+        app_name: str,
+        display_name: str,
+        config_package: str,
+        envs: tuple[type[EnvConfig], ...] = (),
+        storage_env_key: str | None = None,
+        command_name: str | None = None,
+        index_filename: str | None = None,
+        shared_env_filename: str = ".env.shared",
+        app_wide_env_filename: str = ".env.apprc-app",
+        storage_env_filename: str = ".env.apprc-storage",
+    ) -> AppConfigKit:
+        """Create an integration with app-wide config and storage roots.
+
+        :param app_name: Lowercase application name used in env var derivation.
+        :param display_name: Human-readable application name.
+        :param config_package: Package containing the packaged shared dotenv.
+        :param envs: ``EnvConfig`` classes decorated with ``@env_owner``.
+        :param storage_env_key: Optional explicit storage selector env key.
+        :param command_name: Optional executable name shown in CLI copy.
+        :param index_filename: Optional named-storage index filename override.
+        :param shared_env_filename: Packaged shared dotenv filename.
+        :param app_wide_env_filename: App-wide dotenv override filename.
+        :param storage_env_filename: Storage-local dotenv override filename.
+        :return: Kit with app-wide config and storage enabled.
+        """
+        return cls(
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            envs=envs,
+            storage_env_key=storage_env_key,
+            storage_layer=StorageLayerState.REQUIRED,
+            app_wide_layer=CapabilityState.DEFAULT,
+            named_storage_layer=CapabilityState.OPTIONAL,
+            command_name=command_name,
+            index_filename=index_filename,
+            shared_env_filename=shared_env_filename,
+            app_wide_env_filename=app_wide_env_filename,
+            storage_env_filename=storage_env_filename,
         )
 
     def bootstrap(
@@ -119,13 +302,14 @@ class AppConfigKit:
         """Populate ``os.environ`` for this application.
 
         :param env_files: Optional invocation-local dotenv files that outrank
-            packaged ``.env.shared``, app-global ``.env.global``, and active
-            storage-local ``.env.local``.
+            packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
+            storage-local ``.env.apprc-storage``.
         :param env_file_overrides_os_environ: Whether explicit dotenv values beat
             existing values in ``os.environ`` inside this process. The parent
             shell is never mutated.
         :param load_dotenv_layers: Whether packaged ``.env.shared``,
-            app-global ``.env.global``, active storage-local ``.env.local``,
+            app-wide ``.env.apprc-app``, active storage-local
+            ``.env.apprc-storage``,
             and explicit ``env_files`` values should be merged into this
             process. Storage selection still runs for storage-required apps
             when this is ``False``, and explicit values may still provide the

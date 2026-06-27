@@ -47,14 +47,14 @@ def bootstrap_cli_env(
 
     :param kit: Application config facade.
     :param env_files: Optional invocation-local dotenv files that outrank
-        packaged ``.env.shared``, app-global ``.env.global``, and active
-        storage-local ``.env.local``.
+        packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
+        storage-local ``.env.apprc-storage``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
-    :param load_dotenv_layers: Whether packaged ``.env.shared``, app-global
-        ``.env.global``, active storage-local ``.env.local``, and explicit
-        ``env_files`` values should be merged into this process. Registry
+    :param load_dotenv_layers: Whether packaged ``.env.shared``, app-wide
+        ``.env.apprc-app``, active storage-local ``.env.apprc-storage``, and
+        explicit ``env_files`` values should be merged into this process. Registry
         selection still runs for storage-required apps when this is ``False``,
         and explicit values may still provide the storage selector used for
         selection.
@@ -85,7 +85,7 @@ def bootstrap_cli_env(
     except ApprcTomlEnvError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=kit.spec.apprc_toml_env_key,
+            param_hint=kit.spec.index_env_key,
         ) from exc
     except StorageSelectorError as exc:
         raise typer.BadParameter(

@@ -30,18 +30,18 @@ def test_app_config_file_rejects_windows_path_like_filename() -> None:
 @pytest.mark.parametrize(
     "field_name",
     [
-        "apprc_toml_filename",
+        "index_filename",
         "shared_env_filename",
-        "global_env_filename",
-        "local_env_filename",
+        "app_wide_env_filename",
+        "storage_env_filename",
     ],
 )
 def test_app_config_spec_rejects_path_like_filenames(field_name: str) -> None:
     filenames = {
-        "apprc_toml_filename": "demo.apprc.toml",
+        "index_filename": "demo.apprc.toml",
         "shared_env_filename": ".env.shared",
-        "global_env_filename": ".env.global",
-        "local_env_filename": ".env.local",
+        "app_wide_env_filename": ".env.global",
+        "storage_env_filename": ".env.local",
     }
     filenames[field_name] = "../escape"
 
@@ -50,10 +50,10 @@ def test_app_config_spec_rejects_path_like_filenames(field_name: str) -> None:
             app_name="demo",
             display_name="Demo",
             config_package="apprc.runtime_config",
-            apprc_toml_filename=filenames["apprc_toml_filename"],
+            index_filename=filenames["index_filename"],
             shared_env_filename=filenames["shared_env_filename"],
-            global_env_filename=filenames["global_env_filename"],
-            local_env_filename=filenames["local_env_filename"],
+            app_wide_env_filename=filenames["app_wide_env_filename"],
+            storage_env_filename=filenames["storage_env_filename"],
         )
 
 
@@ -69,12 +69,12 @@ def test_ensure_app_config_home_rejects_config_home_file(
     with pytest.raises(ConfigHomeError, match="config home"):
         ensure_app_config_home(
             app_name="demo",
-            global_env_filename=".env.global",
-            apprc_toml_filename="demo.apprc.toml",
+            app_wide_env_filename=".env.global",
+            index_filename="demo.apprc.toml",
         )
 
 
-def test_ensure_app_config_home_rejects_global_env_directory(
+def test_ensure_app_config_home_rejects_app_wide_env_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -85,8 +85,8 @@ def test_ensure_app_config_home_rejects_global_env_directory(
     with pytest.raises(ConfigHomeError, match="not a file"):
         ensure_app_config_home(
             app_name="demo",
-            global_env_filename=".env.global",
-            apprc_toml_filename="demo.apprc.toml",
+            app_wide_env_filename=".env.global",
+            index_filename="demo.apprc.toml",
         )
 
 
@@ -101,8 +101,8 @@ def test_ensure_app_config_home_rejects_apprc_toml_directory(
     with pytest.raises(ConfigHomeError, match="not a file"):
         ensure_app_config_home(
             app_name="demo",
-            global_env_filename=".env.global",
-            apprc_toml_filename="demo.apprc.toml",
+            app_wide_env_filename=".env.global",
+            index_filename="demo.apprc.toml",
         )
 
 

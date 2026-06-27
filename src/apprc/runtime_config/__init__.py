@@ -4,7 +4,8 @@
 
 from apprc.runtime_config.app_spec import (
     AppConfigSpec,
-    StorageMode,
+    CapabilityState,
+    StorageLayerState,
 )
 from apprc.runtime_config.config_home import (
     ConfigHomeError,

@@ -21,7 +21,7 @@ def test_config_doctor_reports_config_package_convention_warnings(
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     storage_root = tmp_path / "alpha"
     storage_root.mkdir()
-    (storage_root / ".env.apprc_example_app").write_text("", encoding="utf-8")
+    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
 
@@ -45,15 +45,14 @@ def test_config_doctor_reports_unreadable_config_package_as_issue(
     monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
     storage_root = tmp_path / "alpha"
     storage_root.mkdir()
-    (storage_root / ".env.apprc_example_app").write_text("", encoding="utf-8")
+    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
-    kit = AppConfigKit(
+    kit = AppConfigKit.storage_only(
         app_name="apprc_example_app",
         display_name="Example App",
         config_package="missing_app.config",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
-        local_env_filename=".env.apprc_example_app",
     )
 
     payload = build_config_doctor_payload(kit, storage=None)

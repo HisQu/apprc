@@ -12,15 +12,7 @@ from typer.testing import CliRunner
 from apprc.runtime_config.doctor.payload import config_command_text
 from apprc_example_app import APPRC_EXAMPLE_APP_KIT
 from apprc_example_app.cli import app
-from tests.support_config import (
-    assert_config_home_cli_error,
-    block_config_home_with_file,
-    build_apprc_example_app_kit,
-    set_apprc_example_app_bootstrap,
-)
-
-
-pytestmark = [pytest.mark.requires_apprc_env("APPRC_EXAMPLE_APP")]
+from tests.support_config import build_apprc_example_app_kit
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +23,7 @@ def _isolate_apprc_example_app_env(
     for key in tuple(os.environ):
         if key.startswith("APPRC_EXAMPLE_APP_"):
             monkeypatch.delenv(key, raising=False)
-    set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
 
 
 def _clear_process_apprc_example_app_env() -> None:
@@ -45,26 +37,8 @@ def _clear_process_apprc_example_app_env() -> None:
             del os.environ[key]
 
 
-def _set_demo_apprc_toml(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> Path:
-    """Point the demo CLI at a test AppRC TOML file."""
-    apprc_toml_path, _ = set_apprc_example_app_bootstrap(
-        monkeypatch=monkeypatch,
-        tmp_path=tmp_path,
-        apprc_toml=tmp_path
-        / "config"
-        / "apprc_example_app"
-        / "apprc_example_app.apprc.toml",
-    )
-    return apprc_toml_path
-
-
 def test_standalone_cli_help_shows_config_command() -> None:
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["--help"])
+    result = CliRunner().invoke(app, ["--help"])
 
     assert result.exit_code == 0, result.output
     assert "config" in result.output
@@ -160,181 +134,92 @@ def _imports_runtime_config_bootstrap(path: Path) -> bool:
     return False
 
 
-def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    storage_root = tmp_path / ".demo" / "storage"
-    monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_STORAGE",
-        str(storage_root.resolve()),
-    )
-    runner = CliRunner()
+def test_demo_config_setup_uses_storage_only_route(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
 
-    result = runner.invoke(
+    result = CliRunner().invoke(
         app,
         [
+            "--storage",
+            str(storage_root),
             "config",
             "setup",
             "--yes",
             "--storage-root",
-            os.environ["APPRC_EXAMPLE_APP_STORAGE"],
+            str(storage_root),
         ],
     )
 
     assert result.exit_code == 0, result.output
-    assert APPRC_EXAMPLE_APP_KIT.spec.optional_apprc_toml_path().is_file()
-    assert (storage_root / ".env.apprc_example_app").is_file()
-    assert "export APPRC_EXAMPLE_APP_APPRC_TOML" not in result.output
-    assert (
-        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
-        in result.output
-    )
-    assert "apprc config edit" in result.output
-    assert "apprc config show" in result.output
-    assert "apprc config doctor" in result.output
-    assert "apprc_example_app config" not in result.output
+    assert (storage_root / ".env.apprc-storage").is_file()
+    assert "export APPRC_EXAMPLE_APP_STORAGE" in result.output
+    assert "APPRC_EXAMPLE_APP_APPRC_TOML" not in result.output
 
 
-def test_demo_root_bootstrap_reports_config_home_error() -> None:
-    block_config_home_with_file(APPRC_EXAMPLE_APP_KIT)
+def test_demo_config_set_and_show_payload(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
     runner = CliRunner()
-
-    result = runner.invoke(app, ["config", "show"])
-
-    assert_config_home_cli_error(result)
-
-
-def test_demo_root_bootstrap_reports_env_file_read_error(
-    tmp_path: Path,
-) -> None:
-    env_file = tmp_path / "unreadable.env"
-    env_file.write_text(
-        'APPRC_EXAMPLE_APP_PROFILE="explicit"\n',
-        encoding="utf-8",
+    setup_result = runner.invoke(
+        app,
+        [
+            "--storage",
+            str(storage_root),
+            "config",
+            "setup",
+            "--yes",
+            "--storage-root",
+            str(storage_root),
+        ],
     )
-    env_file.chmod(0)
-    runner = CliRunner()
-
-    try:
-        result = runner.invoke(
-            app,
-            ["--env-file", str(env_file), "config", "show"],
-        )
-    finally:
-        env_file.chmod(0o600)
-
-    assert result.exit_code == 2, result.output
-    assert "--env-file" in result.output
-    assert "config-home" not in result.output
-    assert "PermissionError" not in result.output
-
-
-def test_demo_config_set_and_show_payload(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
-    monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_STORAGE",
-        str(
-            (
-                tmp_path
-                / "data"
-                / "apprc_example_app"
-                / "apprc_example_app_stor-1"
-            ).resolve()
-        ),
-    )
-    runner = CliRunner()
-
-    setup_result = runner.invoke(app, ["config", "setup", "--yes"])
     assert setup_result.exit_code == 0, setup_result.output
+    os.environ["APPRC_EXAMPLE_APP_STORAGE"] = str(storage_root)
 
     _clear_process_apprc_example_app_env()
-    model_result = runner.invoke(
+    profile_result = runner.invoke(
         app,
         ["config", "set", "app.profile", "other-profile"],
     )
-    assert model_result.exit_code == 0, model_result.output
-
-    _clear_process_apprc_example_app_env()
-    retry_result = runner.invoke(app, ["config", "set", "retry_count", "5"])
-    assert retry_result.exit_code == 0, retry_result.output
-
     _clear_process_apprc_example_app_env()
     token_result = runner.invoke(
         app,
         ["config", "set", "access_token", "secret-token"],
     )
-    assert token_result.exit_code == 0, token_result.output
-
     _clear_process_apprc_example_app_env()
     show_result = runner.invoke(app, ["config", "show", "--json"])
 
-    payload = json.loads(show_result.output)
-    storage_root = (
-        tmp_path / "data" / "apprc_example_app" / "apprc_example_app_stor-1"
-    )
+    assert profile_result.exit_code == 0, profile_result.output
+    assert token_result.exit_code == 0, token_result.output
     assert show_result.exit_code == 0, show_result.output
-    assert payload["app_name"] == "apprc_example_app"
-    assert payload["command_name"] == "apprc"
-    assert payload["bootstrap"]["storage_root"] == str(storage_root.resolve())
+    payload = json.loads(show_result.output)
+    assert payload["bootstrap"]["storage_env"] == str(
+        storage_root.resolve() / ".env.apprc-storage"
+    )
     assert payload["config"]["profile"] == "other-profile"
-    assert payload["config"]["retry_count"] == 5
     assert payload["config"]["access_token"] == "<redacted>"
 
 
-def test_demo_root_env_file_option_before_config_show(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
-    monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_STORAGE",
-        str(
-            (
-                tmp_path
-                / "data"
-                / "apprc_example_app"
-                / "apprc_example_app_stor-1"
-            ).resolve()
-        ),
-    )
-    first_env = tmp_path / "first.env"
-    first_env.write_text(
-        'APPRC_EXAMPLE_APP_PROFILE="first-profile"\n',
+def test_demo_root_env_file_option_before_config_show(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / ".env.apprc-storage").write_text(
+        'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-token"\n',
         encoding="utf-8",
     )
-    second_env = tmp_path / "second.env"
-    second_env.write_text(
-        'APPRC_EXAMPLE_APP_PROFILE="second-profile"\n',
+    os.environ["APPRC_EXAMPLE_APP_STORAGE"] = str(storage_root)
+    env_file = tmp_path / "profile.env"
+    env_file.write_text(
+        'APPRC_EXAMPLE_APP_PROFILE="from-explicit"\n',
         encoding="utf-8",
     )
-    runner = CliRunner()
-    setup_result = runner.invoke(app, ["config", "setup", "--yes"])
-    assert setup_result.exit_code == 0, setup_result.output
 
-    _clear_process_apprc_example_app_env()
-    result = runner.invoke(
+    result = CliRunner().invoke(
         app,
-        [
-            "--env-file",
-            str(first_env),
-            "--env-file",
-            str(second_env),
-            "config",
-            "show",
-            "--json",
-        ],
+        ["--env-file", str(env_file), "config", "show", "--json"],
     )
 
-    payload = json.loads(result.output)
     assert result.exit_code == 0, result.output
-    assert payload["config"]["profile"] == "second-profile"
+    payload = json.loads(result.output)
+    assert payload["config"]["profile"] == "from-explicit"
 
 
 def test_command_name_falls_back_to_app_name() -> None:

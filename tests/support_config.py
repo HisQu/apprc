@@ -176,25 +176,24 @@ class StorageFreeExampleConfigState:
 
 def build_apprc_example_app_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that behaves like a real application."""
-    return AppConfigKit(
+    return AppConfigKit.storage_only(
         app_name="apprc_example_app",
         display_name="Example App",
         config_package="apprc.runtime_config",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
-        apprc_toml_filename="apprc_example_app.apprc.toml",
-        local_env_filename=".env.apprc_example_app",
+        index_filename="apprc_example_app.apprc.toml",
     )
 
 
 def build_storage_free_example_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that does not use storage."""
-    return AppConfigKit(
+    return AppConfigKit.app_wide_config(
         app_name="storage_free_app",
         display_name="Storage-Free App",
         config_package="apprc.runtime_config",
         envs=(StorageFreeExampleEnv,),
-        apprc_toml_filename="storage_free_app.apprc.toml",
+        index_filename="storage_free_app.apprc.toml",
     )
 
 
@@ -203,8 +202,8 @@ def set_apprc_example_app_apprc_toml(
     tmp_path: Path,
 ) -> Path:
     """Point the example app at a test AppRC TOML file."""
-    apprc_toml_path, _ = set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
-    return apprc_toml_path
+    index_path, _ = set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
+    return index_path
 
 
 def create_empty_apprc_example_app_apprc_toml(
@@ -212,10 +211,10 @@ def create_empty_apprc_example_app_apprc_toml(
     tmp_path: Path,
 ) -> Path:
     """Point the example app at an empty AppRC TOML file."""
-    apprc_toml_path = set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    apprc_toml_path.parent.mkdir(parents=True, exist_ok=True)
-    apprc_toml_path.write_text("", encoding="utf-8")
-    return apprc_toml_path
+    index_path = set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text("", encoding="utf-8")
+    return index_path
 
 
 def set_apprc_example_app_bootstrap(
@@ -226,7 +225,7 @@ def set_apprc_example_app_bootstrap(
     storage_root: Path | None = None,
 ) -> tuple[Path, Path]:
     """Point the example app at explicit bootstrap environment variables."""
-    apprc_toml_path = (
+    index_path = (
         apprc_toml
         if apprc_toml is not None
         else tmp_path
@@ -243,13 +242,13 @@ def set_apprc_example_app_bootstrap(
 
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_APPRC_TOML",
-        str(apprc_toml_path),
+        str(index_path),
     )
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
         str(active_storage_root.resolve()),
     )
-    return apprc_toml_path, active_storage_root
+    return index_path, active_storage_root
 
 
 def apprc_example_app_state(
@@ -260,9 +259,9 @@ def apprc_example_app_state(
     return ApprcExampleAppConfigState(
         env_bootstrap=EnvBootstrapResult(
             shared_env=None,
-            local_env=storage_root / ".env.apprc_example_app",
+            storage_env=storage_root / kit.spec.storage_env_filename,
             env_files=(),
-            apprc_toml_path=kit.spec.required_apprc_toml_path(),
+            index_path=kit.spec.required_index_path(),
             storage_selector_source="--storage",
             storage_selector_value="alpha",
             storage_name="alpha",
@@ -289,8 +288,8 @@ def register_storage_for_kit(
     return register_storage(
         name=name,
         root=root,
-        path=kit.spec.required_apprc_toml_path(),
-        local_env_filename=kit.spec.local_env_filename,
+        path=kit.spec.required_index_path(),
+        storage_env_filename=kit.spec.storage_env_filename,
     )
 
 
@@ -313,5 +312,5 @@ def record_archived_storage_for_kit(
         name=name,
         archive=archive,
         source_root=source_root,
-        path=kit.spec.required_apprc_toml_path(),
+        path=kit.spec.required_index_path(),
     )

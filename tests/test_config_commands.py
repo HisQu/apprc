@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from typer.testing import CliRunner
 
 from apprc.runtime_config.app_spec import CapabilityState
 from apprc.runtime_config.kit import AppConfigKit
+from apprc.runtime_config.storage.registry import StorageRegistry
+from apprc.runtime_config.tui.editor import ConfigEditorApp
 from tests.support_config import (
     ApprcExampleAppConfigState,
     StorageFreeExampleEnv,
@@ -16,6 +19,46 @@ from tests.support_config import (
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
 )
+
+
+class CapturingConfigEditorApp(ConfigEditorApp):
+    """Test editor that records launch state without starting Textual."""
+
+    active_storage_root_seen: ClassVar[Path | None] = None
+    storage_registry_seen: ClassVar[StorageRegistry | None] = None
+    initial_storage_seen: ClassVar[str | None] = None
+    run_count: ClassVar[int] = 0
+
+    @classmethod
+    def reset(cls) -> None:
+        """Clear captured constructor and run values."""
+        cls.active_storage_root_seen = None
+        cls.storage_registry_seen = None
+        cls.initial_storage_seen = None
+        cls.run_count = 0
+
+    def __init__(
+        self,
+        *,
+        kit: AppConfigKit,
+        storage_registry: StorageRegistry | None,
+        initial_storage: str | None = None,
+        active_storage_root: Path | None = None,
+    ) -> None:
+        """Record editor launch arguments."""
+        super().__init__(
+            kit=kit,
+            storage_registry=storage_registry,
+            initial_storage=initial_storage,
+            active_storage_root=active_storage_root,
+        )
+        type(self).active_storage_root_seen = self.active_storage_root
+        type(self).storage_registry_seen = storage_registry
+        type(self).initial_storage_seen = initial_storage
+
+    def run(self, *args: object, **kwargs: object) -> None:
+        """Record that the editor would have launched."""
+        type(self).run_count += 1
 
 
 def test_config_paths_reports_zero_writes(
@@ -184,3 +227,61 @@ def test_disabled_capability_command_groups_are_absent() -> None:
     assert app_help.exit_code == 0, app_help.output
     assert "app" not in app_help.output
     assert app_command.exit_code != 0
+
+
+def test_config_edit_uses_root_storage_path_with_corrupt_optional_index(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    kit = build_apprc_example_app_kit()
+    index_path = kit.spec.index_path()
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("[invalid", encoding="utf-8")
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    state = ApprcExampleAppConfigState(
+        env_bootstrap=None,
+        storage=str(storage_root),
+    )
+    CapturingConfigEditorApp.reset()
+    app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        editor_app_cls=CapturingConfigEditorApp,
+    )
+
+    result = CliRunner().invoke(app, ["edit"], obj=state)
+
+    assert result.exit_code == 0, result.output
+    assert CapturingConfigEditorApp.run_count == 1
+    assert CapturingConfigEditorApp.active_storage_root_seen == (
+        storage_root.resolve()
+    )
+    assert CapturingConfigEditorApp.storage_registry_seen is None
+    assert not (storage_root / ".env.apprc-storage").exists()
+
+
+def test_config_edit_ignores_corrupt_optional_index_without_selector(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    index_path = kit.spec.index_path()
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("[invalid", encoding="utf-8")
+    state = ApprcExampleAppConfigState(env_bootstrap=None, storage=None)
+    CapturingConfigEditorApp.reset()
+    app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        editor_app_cls=CapturingConfigEditorApp,
+    )
+
+    result = CliRunner().invoke(app, ["edit"], obj=state)
+
+    assert result.exit_code == 0, result.output
+    assert CapturingConfigEditorApp.run_count == 1
+    assert CapturingConfigEditorApp.active_storage_root_seen is None
+    assert CapturingConfigEditorApp.storage_registry_seen is None
+    assert not kit.spec.app_wide_env_path().exists()

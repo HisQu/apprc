@@ -222,6 +222,27 @@ class ConfigCommandBase:
         except ValueError:
             return None
 
+    def active_storage_root_for_editor(
+        self,
+        current_state: Any | None,
+    ) -> Path | None:
+        """Return the storage root selected for zero-write editor reads."""
+        if not self.kit.spec.storage_required():
+            return None
+        try:
+            if current_state is not None:
+                return self.active_storage_root_for_cli(current_state)
+            return active_storage_root_from_env(self.kit)
+        except StorageSelectorError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=exc.param_hint,
+            ) from exc
+        except ConfigHomeError as exc:
+            raise self.config_home_bad_parameter(exc) from exc
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--storage") from exc
+
     def default_runtime_payload(
         self,
         *,
@@ -598,17 +619,16 @@ class EditorConfigCommands(ConfigCommandBase):
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         try:
-            active_storage_root = (
-                self.best_effort_active_storage_root_from_env(
-                    storage_registry=None,
-                )
-                if self.kit.spec.storage_required()
-                else None
+            active_storage_root = self.active_storage_root_for_editor(
+                current_state
             )
             try:
                 optional_registry = self.load_optional_storage_registry()
             except typer.BadParameter:
-                if active_storage_root is None:
+                if (
+                    active_storage_root is None
+                    and self.kit.spec.named_storage_default()
+                ):
                     raise
                 optional_registry = None
             self.launch_config_editor(

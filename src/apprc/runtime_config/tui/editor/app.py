@@ -128,6 +128,7 @@ class ConfigEditorApp(App[None]):
         self.owners = kit.spec.owners
         self.initial_storage = initial_storage
         self.storage_enabled = kit.spec.storage_required()
+        self.named_storage_enabled = kit.spec.named_storage_allowed()
         self.init_command = (
             f"{kit.spec.config_command_name()} config storage add NAME PATH"
         )
@@ -164,28 +165,32 @@ class ConfigEditorApp(App[None]):
         """Compose the storage list and field editor."""
         yield Header()
         with Horizontal():
-            yield ListView(id="storage-list")
+            if self.named_storage_enabled:
+                yield ListView(id="storage-list")
             with Vertical(id="editor-pane"):
                 yield Static("", id="storage-title")
-                with Horizontal(id="storage-action-row"):
-                    yield Button(
-                        "New storage", variant="primary", id="storage-new"
-                    )
-                    yield Button(
-                        "Register active storage",
-                        id="storage-register-active",
-                        disabled=True,
-                    )
-                    yield Button(
-                        "Delete storage",
-                        id="storage-delete",
-                        disabled=True,
-                    )
-                    yield Button(
-                        "Archive storage",
-                        id="storage-archive",
-                        disabled=True,
-                    )
+                if self.named_storage_enabled:
+                    with Horizontal(id="storage-action-row"):
+                        yield Button(
+                            "New storage",
+                            variant="primary",
+                            id="storage-new",
+                        )
+                        yield Button(
+                            "Register active storage",
+                            id="storage-register-active",
+                            disabled=True,
+                        )
+                        yield Button(
+                            "Delete storage",
+                            id="storage-delete",
+                            disabled=True,
+                        )
+                        yield Button(
+                            "Archive storage",
+                            id="storage-archive",
+                            disabled=True,
+                        )
                 yield DataTable(id="field-table")
         yield Footer()
 
@@ -375,15 +380,21 @@ class ConfigEditorApp(App[None]):
         select_name: str | None = None,
     ) -> None:
         """Reload storage rows and select the requested storage."""
-        registry = self.storage_registry
+        registry = self.storage_registry if self.named_storage_enabled else None
         self.storage_entries = (
             ordered_storage_entries(registry) if registry is not None else []
         )
-        storage_list = self.query_one("#storage-list", ListView)
-        await storage_list.clear()
         if not self.storage_enabled:
             self._select_app_wide()
             return
+        if not self.named_storage_enabled:
+            if self.active_storage_root is not None:
+                self._select_active_storage()
+                return
+            self._select_app_wide()
+            return
+        storage_list = self.query_one("#storage-list", ListView)
+        await storage_list.clear()
         if not self.storage_entries:
             if self.active_storage_root is not None:
                 self._select_active_storage()
@@ -582,6 +593,8 @@ class ConfigEditorApp(App[None]):
         :param archive: Whether the current storage directory may be archived.
         """
         self._set_controls_enabled(fields)
+        if not self.named_storage_enabled:
+            return
         self.query_one("#storage-new", Button).disabled = (
             self.storage_registry is None
         )

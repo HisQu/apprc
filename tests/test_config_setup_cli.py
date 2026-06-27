@@ -11,6 +11,8 @@ from tests.support_config import (
     ApprcExampleAppEnv,
     StorageFreeExampleConfigState,
     StorageFreeExampleEnv,
+    assert_config_home_cli_error,
+    block_config_home_with_file,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
 )
@@ -97,6 +99,29 @@ def test_app_wide_storage_setup_creates_app_and_storage_env(
     assert kit.spec.app_wide_env_path().is_file()
     assert (storage_root / ".env.apprc-storage").is_file()
     assert not kit.spec.index_path().exists()
+
+
+def test_app_wide_storage_setup_reports_config_home_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    kit = AppConfigKit.app_wide_storage(
+        app_name="wide_storage",
+        display_name="Wide Storage",
+        config_package="apprc.runtime_config",
+        envs=(ApprcExampleAppEnv,),
+        storage_env_key="WIDE_STORAGE",
+    )
+    block_config_home_with_file(kit)
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    result = CliRunner().invoke(
+        app,
+        ["setup", "--yes", "--storage-root", str(tmp_path / "storage")],
+    )
+
+    assert_config_home_cli_error(result)
 
 
 def test_storage_only_can_upgrade_to_app_wide_and_named_storage(

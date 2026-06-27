@@ -195,6 +195,9 @@ def inspect_storage_registry(
     path_like_selector = (
         raw_selector is not None and storage_selector_is_path_like(raw_selector)
     )
+    index_error_is_fatal = spec.named_storage_default() or (
+        raw_selector is not None and not path_like_selector
+    )
     try:
         registry = load_storage_registry_or_empty(index_path)
     except OSError as exc:
@@ -210,8 +213,8 @@ def inspect_storage_registry(
             error=index_error,
             registry=None,
             storage_count=0,
-            issues=[] if path_like_selector else [message],
-            warnings=[message] if path_like_selector else [],
+            issues=[message] if index_error_is_fatal else [],
+            warnings=[] if index_error_is_fatal else [message],
         )
     except ValueError as exc:
         index_error = str(exc)
@@ -223,8 +226,8 @@ def inspect_storage_registry(
             error=index_error,
             registry=None,
             storage_count=0,
-            issues=[] if path_like_selector else [message],
-            warnings=[message] if path_like_selector else [],
+            issues=[message] if index_error_is_fatal else [],
+            warnings=[] if index_error_is_fatal else [message],
         )
 
     return StorageRegistryInspection(

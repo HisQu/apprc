@@ -325,10 +325,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
             yield Button(
                 "Copy",
                 id=f"edit-copy-{source.key}",
-                disabled=source_copy_is_disabled(
-                    source,
-                    target_input_value=self._target_value(),
-                ),
+                disabled=source_copy_is_disabled(source),
                 classes="edit-source-copy",
             )
 
@@ -357,26 +354,20 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         if event.input.id == "edit-value-input":
             self.action_save()
 
-    def on_input_changed(self, event: Input.Changed) -> None:
-        """Enable local copy once a new local value is visible."""
-        if event.input.id != "edit-value-input":
-            return
-        for scope in self.writable_scopes:
-            source = self._source_by_key(scope)
-            if source is None:
-                continue
-            self.query_one(
-                f"#edit-copy-{scope}", Button
-            ).disabled = source_copy_is_disabled(
-                source, target_input_value=event.value
-            )
-
     def action_save(self) -> None:
         """Dismiss with the current input value."""
-        if not self.writable_scopes:
+        scope_count = len(self.writable_scopes)
+        if scope_count == 0:
             self.notify("No writable AppRC layer is active.", severity="error")
             return
-        self._save_scope(self.writable_scopes[0])
+        if scope_count > 1:
+            self.notify(
+                "Choose Save App-wide or Save Storage.",
+                severity="warning",
+            )
+            return
+        (scope,) = self.writable_scopes
+        self._save_scope(scope)
 
     def _save_scope(self, raw_scope: str) -> None:
         """Dismiss with the current input value for one write scope."""
@@ -419,22 +410,10 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         if source is None:
             self.notify("No value to copy.", severity="warning")
             return
-        if source.key in {"app", "storage"}:
-            self._copy_target_source(source)
-            return
         if source.raw_value is None:
             self.notify("No value to copy.", severity="warning")
             return
         self.app.copy_to_clipboard(source.raw_value)
-        self.notify(f"Copied {source_label(source)}")
-
-    def _copy_target_source(self, source: EditableConfigValueSource) -> None:
-        """Copy a saved layer value or the visible target input value."""
-        raw_value = self.query_one("#edit-value-input", Input).value
-        if raw_value == "" and not source.is_available:
-            self.notify("No value to copy.", severity="warning")
-            return
-        self.app.copy_to_clipboard(raw_value)
         self.notify(f"Copied {source_label(source)}")
 
     def _source_by_key(
@@ -448,6 +427,8 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
 
     def _target_value(self) -> str:
         """Return the saved target value shown when the modal opens."""
+        if len(self.writable_scopes) != 1:
+            return ""
         for scope in self.writable_scopes:
             source = self._source_by_key(scope)
             if source is not None and source.raw_value is not None:

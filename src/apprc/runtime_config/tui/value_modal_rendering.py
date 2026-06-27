@@ -162,17 +162,12 @@ def target_input_classes(spec: ConfigField) -> str:
 
 def source_copy_is_disabled(
     source: EditableConfigValueSource,
-    *,
-    target_input_value: str,
 ) -> bool:
     """Return whether a source copy button should be disabled.
 
     :param source: Source row model.
-    :param target_input_value: Current visible target override input text.
     :return: Whether the copy action has no value to copy.
     """
-    if source.key in {"app", "storage"}:
-        return not source.is_available and target_input_value == ""
     return not source.is_available
 
 

@@ -154,7 +154,8 @@ def set_storage_env_value(
     """
     from apprc.runtime_config.storage.paths import StorageRootPathError
 
-    path = storage_env_path(storage_root, filename=storage_env_filename)
+    root = _require_existing_storage_root(storage_root)
+    path = storage_env_path(root, filename=storage_env_filename)
     try:
         return set_env_file_value(
             path=path,
@@ -218,7 +219,8 @@ def clear_storage_env_value(
     """
     from apprc.runtime_config.storage.paths import StorageRootPathError
 
-    path = storage_env_path(storage_root, filename=storage_env_filename)
+    root = _require_existing_storage_root(storage_root)
+    path = storage_env_path(root, filename=storage_env_filename)
     try:
         return clear_env_file_value(
             path=path,
@@ -252,7 +254,9 @@ def clear_env_file_value(
             f"{owner.env_key(spec.name)} is managed outside {layer_name}."
         )
     env_key = owner.env_key(spec.name)
-    path = ensure_env_file(path)
+    path = Path(path).expanduser()
+    if not path.is_file():
+        return None
     values = read_env_file(path)
     if env_key not in values:
         return None

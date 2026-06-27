@@ -131,7 +131,7 @@ class ConfigSetupFlow:
         root = self.prepare_storage_root(storage_root)
         storage_env = self.ensure_storage_env(root)
         app_wide_env = (
-            self.kit.spec.ensure_app_wide_env()
+            self.ensure_app_wide_env()
             if self.kit.spec.app_wide_default()
             else None
         )

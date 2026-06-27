@@ -10,8 +10,9 @@ This project follows Semantic Versioning.
 
 1. [Changelog](#changelog)
 2. [\[Unreleased\]](#unreleased)
-3. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-4. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+4. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+5. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -22,6 +23,44 @@ This project follows Semantic Versioning.
 <!-- ======================================================== -->
 
 # [Unreleased]
+
+<br>
+
+### Breaking changes
+
+<br>
+
+### Added
+
+<br>
+
+### Changed
+
+<br>
+
+### Deprecated
+
+<br>
+
+### Removed
+
+<br>
+
+### Fixed
+
+<br>
+
+### Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.16.1 - 2026-06-27
 
 <br>
 
@@ -161,6 +200,10 @@ This project follows Semantic Versioning.
 
   - Fixed Textual editor source-copy buttons so app-wide and storage copy
     actions copy only actual source values.
+
+<br>
+
+### Security
 
 <br>
 

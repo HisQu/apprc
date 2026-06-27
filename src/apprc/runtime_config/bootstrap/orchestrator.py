@@ -3,7 +3,7 @@
 AppRC imports are side-effect free: importing a config dataclass does not read
 ``.env`` files or modify the process environment. Application entrypoints call
 ``bootstrap_env`` once, before runtime config objects are created, to merge the
-packaged shared defaults, app-global dotenv values, optional storage-local
+    packaged shared defaults, app-wide dotenv values, optional storage
 dotenv values, explicit ``--env-file`` values, and the values already present
 in ``os.environ``.
 
@@ -12,8 +12,8 @@ binding and some application dependencies intentionally read from
 ``os.environ``. It resolves AppRC-managed paths but never creates files,
 storage roots, or parent shell changes. Named-storage index path lookup is delegated to
 :mod:`apprc.runtime_config.app_spec`, active storage selection is delegated
-to :mod:`apprc.runtime_config.storage.selector`, and storage-local editing is
-delegated to :mod:`apprc.runtime_config.storage.local_env`.
+    to :mod:`apprc.runtime_config.storage.selector`, and storage dotenv editing is
+delegated to :mod:`apprc.runtime_config.env_file`.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.provenance import EnvValueOrigin
 from apprc.runtime_config.provenance import register_env_value_origins
 from apprc.runtime_config.storage.loading import (
-    load_optional_runtime_storage_registry,
+    load_runtime_storage_registry_for_selector,
 )
 from apprc.runtime_config.storage.selector import (
     StorageSelectorError,
@@ -74,9 +74,9 @@ def bootstrap_env(
     runtime config objects that read OS environment variables from the current
     Python process via ``os.environ``. The parent shell is not mutated. Dotenv
     layers are packaged ``.env.shared``, app-wide ``.env.apprc-app``, optional
-    active storage-local ``.env.apprc-storage``, and explicit ``env_files``. Later
+    active storage ``.env.apprc-storage``, and explicit ``env_files``. Later
     explicit files override earlier explicit files. The merged explicit values
-    always override packaged, global, and storage-local dotenv layers. When
+    always override packaged, app-wide, and storage dotenv layers. When
     dotenv layers are skipped, explicit files are still parsed so they can
     guide storage-root selection for storage-required apps, but their values
     are not merged into ``os.environ``.
@@ -84,12 +84,12 @@ def bootstrap_env(
     :param spec: Application-specific bootstrap contract.
     :param env_files: Optional invocation-local dotenv files that outrank
         packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
-        storage-local ``.env.apprc-storage``.
+        storage ``.env.apprc-storage``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
-    :param load_dotenv_layers: Whether packaged ``.env.shared``, app-global
-        ``.env.apprc-app``, storage-local ``.env.apprc-storage``, and explicit dotenv
+        :param load_dotenv_layers: Whether packaged ``.env.shared``, app-wide
+        ``.env.apprc-app``, storage ``.env.apprc-storage``, and explicit dotenv
         values should be merged into this process. Storage selection still runs
         for storage-required apps when this is ``False``.
     :param storage: Optional ``--storage`` selector for storage-required apps.
@@ -130,9 +130,7 @@ def bootstrap_env(
         load_dotenv_layers,
         env_file_overrides_os_environ,
     )
-    registry = load_optional_runtime_storage_registry(
-        spec, proc_env=selector_env
-    )
+    registry = None
     selection = None
     active_storage_root: Path | None = None
     active_storage_env: Path | None = None
@@ -155,6 +153,11 @@ def bootstrap_env(
             "AppRC bootstrap selected storage selector: source=%s value=%s",
             selector_source,
             selector_value,
+        )
+        registry = load_runtime_storage_registry_for_selector(
+            spec,
+            raw_selector=selector_value,
+            proc_env=selector_env,
         )
         selection = resolve_storage_selector_value(
             registry=registry,
@@ -195,7 +198,7 @@ def bootstrap_env(
             storage_values = read_dotenv_file(active_storage_env)
         except OSError as exc:
             raise StorageSelectorError(
-                "Storage-local env file could not be read: "
+                "Storage env file could not be read: "
                 f"{active_storage_env}: {exc}",
                 param_hint="--storage",
             ) from exc

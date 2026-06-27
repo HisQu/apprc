@@ -86,42 +86,6 @@ def resolve_app_config_home(
     )
 
 
-def ensure_app_config_home(
-    *,
-    app_name: str,
-    app_wide_env_filename: str,
-    index_filename: str,
-    index_path: Path | None = None,
-) -> AppConfigHome:
-    """Create AppRC-managed config files without overwriting user content.
-
-    :param app_name: Application name from the AppRC integration spec.
-    :param app_wide_env_filename: Dotenv filename for app-wide overrides.
-    :param index_filename: Default named-storage index basename.
-    :param index_path: Optional override named-storage index path.
-    :return: Resolved config-home paths.
-    """
-    paths = resolve_app_config_home(
-        app_name=app_name,
-        app_wide_env_filename=app_wide_env_filename,
-        index_filename=index_filename,
-        index_path=index_path,
-    )
-    if paths.root.exists() and not paths.root.is_dir():
-        raise ConfigHomeError(
-            f"AppRC config home exists but is not a directory: {paths.root}"
-        )
-    try:
-        paths.root.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise ConfigHomeError(
-            f"AppRC config home could not be created: {paths.root}: {exc}"
-        ) from exc
-    ensure_text_file(paths.app_wide_env)
-    ensure_text_file(paths.index)
-    return paths
-
-
 def require_config_filename(filename: str, *, field_name: str) -> str:
     """Return a config-home basename or raise for path-like input.
 

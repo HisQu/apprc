@@ -48,12 +48,12 @@ def bootstrap_cli_env(
     :param kit: Application config facade.
     :param env_files: Optional invocation-local dotenv files that outrank
         packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
-        storage-local ``.env.apprc-storage``.
+        storage ``.env.apprc-storage``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
     :param load_dotenv_layers: Whether packaged ``.env.shared``, app-wide
-        ``.env.apprc-app``, active storage-local ``.env.apprc-storage``, and
+        ``.env.apprc-app``, active storage ``.env.apprc-storage``, and
         explicit ``env_files`` values should be merged into this process. Registry
         selection still runs for storage-required apps when this is ``False``,
         and explicit values may still provide the storage selector used for

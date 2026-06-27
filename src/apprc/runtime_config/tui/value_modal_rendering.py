@@ -12,6 +12,7 @@ from rich.text import Text
 from apprc.runtime_config.contract.schema import ConfigField
 from apprc.runtime_config.tui.field_state import (
     ConfigResolvedSourceKey,
+    ConfigWriteScope,
     EditableConfigValueSource,
     EditableConfigValueSourceKey,
 )
@@ -30,16 +31,18 @@ from apprc.runtime_config.tui.styles import (
     SECRET_STYLE,
 )
 
-EDIT_LOCAL_INPUT_CLASS = "edit-local-input"
+EDIT_TARGET_INPUT_CLASS = "edit-target-input"
 SOURCE_LABELS: dict[EditableConfigValueSourceKey, str] = {
     "effective": "Effective",
     "shell": "Shell",
-    "local": "Local",
+    "app": "App-wide",
+    "storage": "Storage",
     "shared": "Shared default",
 }
 SOURCE_ORIGIN_LABELS: dict[ConfigResolvedSourceKey, str] = {
     "shell": SOURCE_LABELS["shell"],
-    "local": SOURCE_LABELS["local"],
+    "app": SOURCE_LABELS["app"],
+    "storage": SOURCE_LABELS["storage"],
     "shared": SOURCE_LABELS["shared"],
 }
 
@@ -51,7 +54,7 @@ def config_value_source_key(value: str) -> EditableConfigValueSourceKey | None:
     :return: Known source key, or ``None`` for unknown text.
     """
     match value:
-        case "effective" | "shell" | "local" | "shared":
+        case "effective" | "shell" | "app" | "storage" | "shared":
             return value
         case _:
             return None
@@ -145,13 +148,13 @@ def shell_status_text(shell_source: EditableConfigValueSource | None) -> Text:
     return Text("unset", style=LABEL_STYLE)
 
 
-def local_input_classes(spec: ConfigField) -> str:
-    """Return CSS classes for the embedded local override input.
+def target_input_classes(spec: ConfigField) -> str:
+    """Return CSS classes for the embedded write-target input.
 
     :param spec: Field declaration that determines path-specific styling.
     :return: Space-separated Textual CSS classes.
     """
-    classes = [EDIT_LOCAL_INPUT_CLASS]
+    classes = [EDIT_TARGET_INPUT_CLASS]
     if spec.python_type is Path:
         classes.append(PATH_INPUT_CLASS)
     return " ".join(classes)
@@ -160,16 +163,16 @@ def local_input_classes(spec: ConfigField) -> str:
 def source_copy_is_disabled(
     source: EditableConfigValueSource,
     *,
-    local_input_value: str,
+    target_input_value: str,
 ) -> bool:
     """Return whether a source copy button should be disabled.
 
     :param source: Source row model.
-    :param local_input_value: Current visible local override input text.
+    :param target_input_value: Current visible target override input text.
     :return: Whether the copy action has no value to copy.
     """
-    if source.key == "local":
-        return not source.is_available and local_input_value == ""
+    if source.key in {"app", "storage"}:
+        return not source.is_available and target_input_value == ""
     return not source.is_available
 
 
@@ -178,6 +181,13 @@ def _missing_source_label(source: EditableConfigValueSource) -> str:
     if source.key in {"effective", "shared"}:
         return "missing"
     return "unset"
+
+
+def scope_label(scope: ConfigWriteScope) -> str:
+    """Return the button label fragment for one writable scope."""
+    if scope == "app":
+        return "App-wide"
+    return "Storage"
 
 
 def _source_style(

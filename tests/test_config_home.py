@@ -8,7 +8,6 @@ from apprc.runtime_config.app_spec import AppConfigSpec
 from apprc.runtime_config.config_home import (
     ConfigHomeError,
     app_config_file,
-    ensure_app_config_home,
     write_text_atomic,
 )
 
@@ -40,8 +39,8 @@ def test_app_config_spec_rejects_path_like_filenames(field_name: str) -> None:
     filenames = {
         "index_filename": "demo.apprc.toml",
         "shared_env_filename": ".env.shared",
-        "app_wide_env_filename": ".env.global",
-        "storage_env_filename": ".env.local",
+        "app_wide_env_filename": ".env.apprc-app",
+        "storage_env_filename": ".env.apprc-storage",
     }
     filenames[field_name] = "../escape"
 
@@ -57,7 +56,7 @@ def test_app_config_spec_rejects_path_like_filenames(field_name: str) -> None:
         )
 
 
-def test_ensure_app_config_home_rejects_config_home_file(
+def test_ensure_app_wide_env_rejects_config_home_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -66,44 +65,51 @@ def test_ensure_app_config_home_rejects_config_home_file(
     config_home.parent.mkdir(parents=True)
     config_home.write_text("not a directory", encoding="utf-8")
 
-    with pytest.raises(ConfigHomeError, match="config home"):
-        ensure_app_config_home(
-            app_name="demo",
-            app_wide_env_filename=".env.global",
-            index_filename="demo.apprc.toml",
-        )
+    spec = AppConfigSpec(
+        app_name="demo",
+        display_name="Demo",
+        config_package="apprc.runtime_config",
+        index_filename="demo.apprc.toml",
+    )
+
+    with pytest.raises(ConfigHomeError, match="parent exists"):
+        spec.ensure_app_wide_env()
 
 
-def test_ensure_app_config_home_rejects_app_wide_env_directory(
+def test_ensure_app_wide_env_rejects_app_wide_env_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     config_home = tmp_path / "config" / "demo"
-    (config_home / ".env.global").mkdir(parents=True)
+    (config_home / ".env.apprc-app").mkdir(parents=True)
+    spec = AppConfigSpec(
+        app_name="demo",
+        display_name="Demo",
+        config_package="apprc.runtime_config",
+        index_filename="demo.apprc.toml",
+    )
 
     with pytest.raises(ConfigHomeError, match="not a file"):
-        ensure_app_config_home(
-            app_name="demo",
-            app_wide_env_filename=".env.global",
-            index_filename="demo.apprc.toml",
-        )
+        spec.ensure_app_wide_env()
 
 
-def test_ensure_app_config_home_rejects_apprc_toml_directory(
+def test_ensure_index_file_rejects_index_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     config_home = tmp_path / "config" / "demo"
     (config_home / "demo.apprc.toml").mkdir(parents=True)
+    spec = AppConfigSpec(
+        app_name="demo",
+        display_name="Demo",
+        config_package="apprc.runtime_config",
+        index_filename="demo.apprc.toml",
+    )
 
     with pytest.raises(ConfigHomeError, match="not a file"):
-        ensure_app_config_home(
-            app_name="demo",
-            app_wide_env_filename=".env.global",
-            index_filename="demo.apprc.toml",
-        )
+        spec.ensure_index_file()
 
 
 def test_write_text_atomic_rejects_directory_target(tmp_path: Path) -> None:

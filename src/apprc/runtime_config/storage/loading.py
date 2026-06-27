@@ -14,6 +14,7 @@ from apprc.runtime_config.storage.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
 )
+from apprc.runtime_config.storage.selector import storage_selector_is_path_like
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,7 @@ class StorageRegistryInspection:
     registry: StorageRegistry | None
     storage_count: int
     issues: list[str]
+    warnings: list[str]
 
     @property
     def parse_ok(self) -> bool:
@@ -110,24 +112,68 @@ def load_optional_runtime_storage_registry(
         raise _index_read_error(index_path, exc) from exc
 
 
-def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
+def load_runtime_storage_registry_for_selector(
+    spec: AppConfigSpec,
+    *,
+    raw_selector: str,
+    proc_env: Mapping[str, str] | None = None,
+) -> StorageRegistry | None:
+    """Read the named-storage index only when a selector may need it.
+
+    Path-like selectors are the storage-only happy path and must not be blocked
+    by a missing or invalid optional index. Bare selectors use an existing
+    index when available; without an index they remain valid path selectors.
+
+    :param spec: Application-specific config contract.
+    :param raw_selector: Selected storage value before resolution.
+    :param proc_env: Optional environment mapping for bootstrap-time selection.
+    :return: Parsed storage table, or ``None`` for path-only selection.
+    :raises ValueError: If a bare selector needs an existing invalid index.
+    """
+    if not spec.named_storage_allowed() or storage_selector_is_path_like(
+        raw_selector
+    ):
+        return None
+    index_path = spec.index_path(proc_env=proc_env)
+    if not index_path.is_file():
+        return None
+    try:
+        return load_storage_registry_or_empty(index_path)
+    except OSError as exc:
+        raise _index_read_error(index_path, exc) from exc
+
+
+def inspect_storage_registry(
+    spec: AppConfigSpec,
+    *,
+    raw_selector: str | None = None,
+) -> StorageRegistryInspection:
     """Inspect optional named-storage index state without raising.
 
     :param spec: Application-specific config contract.
+    :param raw_selector: Selected storage value before resolution, if any.
     :return: Named-storage index diagnosis for ``config doctor`` and paths.
     """
     raw_index_env_value = os.environ.get(spec.index_env_key, "").strip()
     index_path = spec.index_path()
     index_exists = index_path.is_file()
-    if not spec.named_storage_allowed() and not index_exists:
+    if not spec.named_storage_allowed():
+        warning = (
+            [
+                f"Named-storage index ignored because the layer is disabled: {index_path}"
+            ]
+            if index_exists
+            else []
+        )
         return StorageRegistryInspection(
             path=index_path,
             env_value=raw_index_env_value or None,
-            exists=False,
+            exists=index_exists,
             error=None,
             registry=None,
             storage_count=0,
             issues=[],
+            warnings=warning,
         )
     if not index_exists:
         issue = (
@@ -143,12 +189,20 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
             registry=None,
             storage_count=0,
             issues=issue,
+            warnings=[],
         )
 
+    path_like_selector = (
+        raw_selector is not None and storage_selector_is_path_like(raw_selector)
+    )
     try:
         registry = load_storage_registry_or_empty(index_path)
     except OSError as exc:
         index_error = str(exc)
+        message = (
+            "Named-storage index could not be read: "
+            f"{index_path}: {index_error}"
+        )
         return StorageRegistryInspection(
             path=index_path,
             env_value=raw_index_env_value or None,
@@ -156,13 +210,12 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
             error=index_error,
             registry=None,
             storage_count=0,
-            issues=[
-                "Named-storage index could not be read: "
-                f"{index_path}: {index_error}"
-            ],
+            issues=[] if path_like_selector else [message],
+            warnings=[message] if path_like_selector else [],
         )
     except ValueError as exc:
         index_error = str(exc)
+        message = f"Named-storage index is invalid: {index_error}"
         return StorageRegistryInspection(
             path=index_path,
             env_value=raw_index_env_value or None,
@@ -170,7 +223,8 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
             error=index_error,
             registry=None,
             storage_count=0,
-            issues=[f"Named-storage index is invalid: {index_error}"],
+            issues=[] if path_like_selector else [message],
+            warnings=[message] if path_like_selector else [],
         )
 
     return StorageRegistryInspection(
@@ -181,6 +235,7 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
         registry=registry,
         storage_count=len(registry.storages),
         issues=[],
+        warnings=[],
     )
 
 

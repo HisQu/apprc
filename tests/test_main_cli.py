@@ -3,11 +3,12 @@ from __future__ import annotations
 import ast
 import json
 import os
+import sys
 import tomllib
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from apprc.runtime_config.doctor.payload import config_command_text
 from apprc_example_app import APPRC_EXAMPLE_APP_KIT
@@ -35,6 +36,16 @@ def _clear_process_apprc_example_app_env() -> None:
             and key != "APPRC_EXAMPLE_APP_STORAGE"
         ):
             del os.environ[key]
+
+
+def _invoke_root_config(
+    monkeypatch: pytest.MonkeyPatch,
+    runner: CliRunner,
+    args: list[str],
+) -> Result:
+    """Invoke the example CLI with argv matching the Typer command tokens."""
+    monkeypatch.setattr(sys, "argv", ["apprc", *args])
+    return runner.invoke(app, args)
 
 
 def test_standalone_cli_help_shows_config_command() -> None:
@@ -196,6 +207,96 @@ def test_demo_config_set_and_show_payload(tmp_path: Path) -> None:
     )
     assert payload["config"]["profile"] == "other-profile"
     assert payload["config"]["access_token"] == "<redacted>"
+
+
+def test_demo_root_config_app_init_and_set_skip_storage_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+
+    init_result = _invoke_root_config(
+        monkeypatch,
+        runner,
+        ["config", "app", "init"],
+    )
+    inferred_set = _invoke_root_config(
+        monkeypatch,
+        runner,
+        ["config", "set", "app.profile", "implicit-app"],
+    )
+    scoped_set = _invoke_root_config(
+        monkeypatch,
+        runner,
+        ["config", "set", "app.profile", "scoped-app", "--scope", "app"],
+    )
+
+    assert init_result.exit_code == 0, init_result.output
+    assert inferred_set.exit_code == 0, inferred_set.output
+    assert scoped_set.exit_code == 0, scoped_set.output
+    app_wide_env = APPRC_EXAMPLE_APP_KIT.spec.app_wide_env_path()
+    assert 'APPRC_EXAMPLE_APP_PROFILE="scoped-app"\n' in (
+        app_wide_env.read_text(encoding="utf-8")
+    )
+
+
+def test_demo_root_config_storage_set_uses_root_storage_selector(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    runner = CliRunner()
+
+    result = _invoke_root_config(
+        monkeypatch,
+        runner,
+        [
+            "--storage",
+            str(storage_root),
+            "config",
+            "set",
+            "access_token",
+            "secret-token",
+            "--scope",
+            "storage",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-token"\n' in (
+        storage_root / ".env.apprc-storage"
+    ).read_text(encoding="utf-8")
+
+
+def test_demo_root_config_set_requires_scope_when_app_and_storage_active(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    runner = CliRunner()
+
+    init_result = _invoke_root_config(
+        monkeypatch,
+        runner,
+        ["config", "app", "init"],
+    )
+    ambiguous = _invoke_root_config(
+        monkeypatch,
+        runner,
+        [
+            "--storage",
+            str(storage_root),
+            "config",
+            "set",
+            "app.profile",
+            "ambiguous",
+        ],
+    )
+
+    assert init_result.exit_code == 0, init_result.output
+    assert ambiguous.exit_code != 0
+    assert "--scope app or --scope storage" in ambiguous.output
 
 
 def test_demo_root_env_file_option_before_config_show(tmp_path: Path) -> None:

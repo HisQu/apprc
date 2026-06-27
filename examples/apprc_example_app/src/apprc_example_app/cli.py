@@ -39,7 +39,7 @@ def root_cmd(
         list[Path] | None,
         typer.Option(
             "--env-file",
-            help="Invocation-local dotenv file loaded after shared/local env. May be repeated.",
+            help="Invocation dotenv file loaded after AppRC layers. May be repeated.",
         ),
     ] = None,
     env_file_overrides_os_environ: Annotated[

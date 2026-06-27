@@ -20,11 +20,11 @@ from apprc.runtime_config.bootstrap.dotenv_layers import (
 )
 from apprc.runtime_config.kit import AppConfigKit
 from apprc.runtime_config.storage.loading import (
-    load_optional_runtime_storage_registry,
+    load_runtime_storage_registry_for_selector,
 )
 from apprc.runtime_config.storage.registry import StorageRegistry
 from apprc.runtime_config.storage.selector import (
-    resolve_active_storage_selection,
+    resolve_storage_selector_value,
     select_storage_selector,
 )
 
@@ -69,6 +69,7 @@ def config_request_skips_runtime_bootstrap(
         "doctor",
         "edit",
         "paths",
+        "set",
         "setup",
         "storage",
     }
@@ -91,14 +92,26 @@ def active_storage_root_from_state(
         and state.env_bootstrap.storage_root is not None
     ):
         return state.env_bootstrap.storage_root
-    registry = load_optional_runtime_storage_registry(kit.spec)
-    return active_storage_root_from_env(kit, registry=registry)
+    if state.storage is not None:
+        storage_env_key = kit.spec.require_storage_env_key()
+        selected_registry = load_runtime_storage_registry_for_selector(
+            kit.spec,
+            raw_selector=state.storage,
+        )
+        selection = resolve_storage_selector_value(
+            registry=selected_registry,
+            raw_value=state.storage,
+            storage_env_key=storage_env_key,
+            source="--storage",
+        )
+        return selection.root if selection is not None else None
+    return active_storage_root_from_env(kit)
 
 
 def active_storage_root_from_env(
     kit: AppConfigKit,
     *,
-    registry: StorageRegistry | None,
+    registry: StorageRegistry | None = None,
 ) -> Path | None:
     """Return the active storage root selected by the current environment.
 
@@ -112,13 +125,29 @@ def active_storage_root_from_env(
         return None
     storage_env_key = kit.spec.require_storage_env_key()
     fallback_values = read_storage_selector_fallback_values(kit.spec)
-    selection = resolve_active_storage_selection(
-        registry=registry,
+    storage_selector = select_storage_selector(
         storage=None,
         storage_env_key=storage_env_key,
         original_env=os.environ,
+        explicit_values={},
         app_wide_values=fallback_values.app_wide_values,
         shared_values=fallback_values.shared_values,
+        env_file_overrides_os_environ=False,
+    )
+    if storage_selector is None:
+        return None
+    source, raw_value = storage_selector
+    selected_registry = registry
+    if selected_registry is None:
+        selected_registry = load_runtime_storage_registry_for_selector(
+            kit.spec,
+            raw_selector=raw_value,
+        )
+    selection = resolve_storage_selector_value(
+        registry=selected_registry,
+        raw_value=raw_value,
+        storage_env_key=storage_env_key,
+        source=source,
     )
     return selection.root if selection is not None else None
 

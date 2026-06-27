@@ -41,7 +41,7 @@ def setup_finish_text(
 
     :param kit: Application config facade.
     :param storage_root: Storage root selected by setup, if any.
-    :param storage_env: Storage-local dotenv file initialized by setup, if any.
+    :param storage_env: Storage dotenv file initialized by setup, if any.
     :param app_wide_env: App-wide dotenv file initialized by setup, if any.
     :return: Human-facing setup completion text.
     """

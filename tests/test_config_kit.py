@@ -88,9 +88,7 @@ def test_doctor_named_storage_not_ready_for_bad_index(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
     kit = build_apprc_example_app_kit()
     index_path = kit.spec.index_path()
     index_path.parent.mkdir(parents=True)
@@ -101,6 +99,62 @@ def test_doctor_named_storage_not_ready_for_bad_index(
     assert payload["status"] == ConfigDoctorStatus.NAMED_STORAGE_NOT_READY.value
     assert payload["index_parse_ok"] is False
     assert payload["index_error"] is not None
+
+
+def test_doctor_warns_about_bad_optional_index_for_path_selector(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    kit = build_apprc_example_app_kit()
+    index_path = kit.spec.index_path()
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("[invalid", encoding="utf-8")
+
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
+    assert payload["index_parse_ok"] is False
+    assert any(
+        "Named-storage index is invalid" in warning
+        for warning in payload["warnings"]
+    )
+
+
+def test_doctor_ignores_bad_disabled_named_storage_index(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    kit = AppConfigKit(
+        app_name="apprc_example_app",
+        display_name="Example App",
+        config_package="apprc.runtime_config",
+        envs=(ApprcExampleAppEnv,),
+        storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
+        storage_layer=StorageLayerState.REQUIRED,
+        named_storage_layer=CapabilityState.DISABLED,
+        index_filename="apprc_example_app.apprc.toml",
+    )
+    index_path = kit.spec.index_path()
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("[invalid", encoding="utf-8")
+
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
+    assert payload["index_parse_ok"] is True
+    assert any(
+        "layer is disabled" in warning for warning in payload["warnings"]
+    )
 
 
 def test_doctor_storage_not_ready_for_missing_storage_env(

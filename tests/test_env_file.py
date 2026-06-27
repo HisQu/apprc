@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from apprc.runtime_config.storage.local_env import (
-    clear_local_env_value,
-    ensure_local_env_file,
+from apprc.runtime_config.env_file import (
+    clear_storage_env_value,
+    ensure_storage_env_file,
     normalize_env_value,
-    read_local_env,
-    set_local_env_value,
-    write_local_env,
+    read_env_file,
+    set_storage_env_value,
+    write_env_file,
 )
 from apprc.runtime_config.storage.paths import StorageRootPathError
 from apprc.runtime_config.contract.schema import ConfigField
@@ -20,12 +20,12 @@ from tests.support_config import (
 )
 
 
-def test_write_local_env_orders_known_keys_before_unknown_keys(
+def test_write_env_file_orders_known_keys_before_unknown_keys(
     tmp_path: Path,
 ) -> None:
     env_path = tmp_path / ".env.apprc_example_app"
 
-    write_local_env(
+    write_env_file(
         env_path,
         {
             "Z_USER_EXTRA": "last",
@@ -44,13 +44,13 @@ def test_write_local_env_orders_known_keys_before_unknown_keys(
     )
 
 
-def test_ensure_local_env_file_creates_file_in_existing_root(
+def test_ensure_storage_env_file_creates_file_in_existing_root(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
 
-    path = ensure_local_env_file(
+    path = ensure_storage_env_file(
         storage_root, filename=".env.apprc_example_app"
     )
 
@@ -58,37 +58,37 @@ def test_ensure_local_env_file_creates_file_in_existing_root(
     assert path.is_file()
 
 
-def test_ensure_local_env_file_rejects_missing_root(tmp_path: Path) -> None:
+def test_ensure_storage_env_file_rejects_missing_root(tmp_path: Path) -> None:
     storage_root = tmp_path / "storage"
 
     with pytest.raises(StorageRootPathError, match="does not exist"):
-        ensure_local_env_file(
+        ensure_storage_env_file(
             storage_root,
             filename=".env.apprc_example_app",
         )
 
 
-def test_set_local_env_value_accepts_env_key_config_path_or_unique_name(
+def test_set_storage_env_value_accepts_env_key_config_path_or_unique_name(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
 
-    update_by_env = set_local_env_value(
+    update_by_env = set_storage_env_value(
         storage_root=storage_root,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         raw_value="local-profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
         storage_env_filename=".env.apprc_example_app",
     )
-    update_by_path = set_local_env_value(
+    update_by_path = set_storage_env_value(
         storage_root=storage_root,
         reference="app.retry_count",
         raw_value="5",
         owners=APPRC_EXAMPLE_APP_OWNERS,
         storage_env_filename=".env.apprc_example_app",
     )
-    update_by_name = set_local_env_value(
+    update_by_name = set_storage_env_value(
         storage_root=storage_root,
         reference="enabled",
         raw_value="yes",
@@ -99,21 +99,21 @@ def test_set_local_env_value_accepts_env_key_config_path_or_unique_name(
     assert update_by_env.env_key == "APPRC_EXAMPLE_APP_PROFILE"
     assert update_by_path.value == "5"
     assert update_by_name.value == "true"
-    assert read_local_env(storage_root / ".env.apprc_example_app") == {
+    assert read_env_file(storage_root / ".env.apprc_example_app") == {
         "APPRC_EXAMPLE_APP_PROFILE": "local-profile",
         "APPRC_EXAMPLE_APP_ENABLED": "true",
         "APPRC_EXAMPLE_APP_RETRY_COUNT": "5",
     }
 
 
-def test_set_local_env_value_rejects_registry_owned_storage_root(
+def test_set_storage_env_value_rejects_registry_owned_storage_root(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(
         ValueError,
         match=r"managed outside \.env\.apprc_example_app",
     ):
-        set_local_env_value(
+        set_storage_env_value(
             storage_root=tmp_path / "storage",
             reference="APPRC_EXAMPLE_APP_STORAGE",
             raw_value="/tmp/storage",
@@ -122,12 +122,12 @@ def test_set_local_env_value_rejects_registry_owned_storage_root(
         )
 
 
-def test_clear_local_env_value_removes_existing_override(
+def test_clear_storage_env_value_removes_existing_override(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
-    set_local_env_value(
+    set_storage_env_value(
         storage_root=storage_root,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         raw_value="local-profile",
@@ -135,7 +135,7 @@ def test_clear_local_env_value_removes_existing_override(
         storage_env_filename=".env.apprc_example_app",
     )
 
-    update = clear_local_env_value(
+    update = clear_storage_env_value(
         storage_root=storage_root,
         reference="app.profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
@@ -145,17 +145,17 @@ def test_clear_local_env_value_removes_existing_override(
     assert update is not None
     assert update.env_key == "APPRC_EXAMPLE_APP_PROFILE"
     assert update.value == ""
-    assert read_local_env(storage_root / ".env.apprc_example_app") == {}
+    assert read_env_file(storage_root / ".env.apprc_example_app") == {}
 
 
-def test_clear_local_env_value_rejects_registry_owned_storage_root(
+def test_clear_storage_env_value_rejects_registry_owned_storage_root(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(
         ValueError,
         match=r"managed outside \.env\.apprc_example_app",
     ):
-        clear_local_env_value(
+        clear_storage_env_value(
             storage_root=tmp_path / "storage",
             reference="APPRC_EXAMPLE_APP_STORAGE",
             owners=APPRC_EXAMPLE_APP_OWNERS,

@@ -50,12 +50,14 @@ FIELD_TABLE_COLUMNS = (
     "#",
     "Section",
     "Key",
-    "Status",
-    "Local",
+    "Effective",
+    "Shell",
+    "App-wide",
+    "Storage",
     "Default",
     "Explanation",
 )
-_SEPARATOR_CELL_WIDTHS = (3, 14, 22, 8, 14, 14, 32)
+_SEPARATOR_CELL_WIDTHS = (3, 14, 22, 12, 10, 14, 14, 14, 32)
 
 type FieldTableCell = str | Text
 
@@ -80,18 +82,26 @@ class FieldTableRow:
 def build_field_table_rows(
     *,
     owners: Iterable[ConfigOwner],
-    local_values: Mapping[str, str],
+    app_values: Mapping[str, str],
+    storage_values: Mapping[str, str],
+    shared_values: Mapping[str, str] | None,
+    include_app: bool,
+    include_storage: bool,
     hidden_env_keys: set[str] | frozenset[str],
     shell_env: Mapping[str, str],
 ) -> tuple[FieldTableRow, ...]:
     """Return all editor table rows in declaration order.
 
     The function owns table-only decisions: row numbering, section separators,
-    shell status cells, local/default display values, and compact explanations.
+    source cells, effective values, defaults, and compact explanations.
     The Textual app owns widget lifecycle and persistence.
 
     :param owners: Declared config sections to show.
-    :param local_values: Parsed storage-local dotenv values.
+    :param app_values: Parsed app-wide dotenv values.
+    :param storage_values: Parsed storage dotenv values.
+    :param shared_values: Parsed packaged shared dotenv values, when known.
+    :param include_app: Whether to show the app-wide source column as active.
+    :param include_storage: Whether to show the storage source column as active.
     :param hidden_env_keys: Full env keys omitted from the editable key list.
     :param shell_env: Current shell/process environment mapping.
     :return: Rows ready for ``DataTable.add_row``.
@@ -112,8 +122,23 @@ def build_field_table_rows(
         rendered_section = True
         for spec in visible_specs:
             env_key = owner.env_key(spec.name)
-            local_value = local_values.get(env_key, "")
+            app_value = app_values.get(env_key) if include_app else None
+            storage_value = (
+                storage_values.get(env_key) if include_storage else None
+            )
+            shell_value = shell_env.get(env_key)
+            shared_value = shared_source_value(
+                spec=spec,
+                env_key=env_key,
+                shared_values=shared_values,
+            )
             env_is_set = env_key in shell_env
+            effective_value = first_effective_value(
+                shell_value=shell_value,
+                storage_value=storage_value,
+                app_value=app_value,
+                shared_value=shared_value,
+            )
             rows.append(
                 FieldTableRow(
                     env_key=env_key,
@@ -121,12 +146,16 @@ def build_field_table_rows(
                         str(row_number),
                         Text(owner.title, style="bold"),
                         env_key,
+                        source_value_cell(spec, effective_value),
                         shell_status_cell(env_is_set),
-                        local_value_cell(spec, local_value),
+                        source_value_cell(spec, app_value),
+                        source_value_cell(spec, storage_value),
                         default_value_cell(
                             spec,
-                            local_value=local_value,
+                            app_value=app_value,
+                            storage_value=storage_value,
                             env_is_set=env_is_set,
+                            shared_value=shared_value,
                         ),
                         Text(short_explanation(spec), style=LABEL_STYLE),
                     ),
@@ -139,8 +168,10 @@ def build_field_table_rows(
 def default_value_cell(
     spec: ConfigField,
     *,
-    local_value: str,
+    app_value: str | None,
+    storage_value: str | None,
     env_is_set: bool,
+    shared_value: str | None,
 ) -> FieldTableCell:
     """Return the table value for packaged/default config.
 
@@ -149,34 +180,63 @@ def default_value_cell(
     visually quiet because the value is satisfied elsewhere.
 
     :param spec: Field declaration that describes type and fallback.
-    :param local_value: Storage-local value currently shown in the row.
+    :param app_value: App-wide value currently shown in the row.
+    :param storage_value: Storage value currently shown in the row.
     :param env_is_set: Whether the process environment sets this env key.
+    :param shared_value: Packaged or declared default value.
     :return: Empty text, required marker, or styled default value.
     """
-    value = spec.shared_env_value()
-    if value is CONFIG_MISSING:
-        if local_value == "" and not env_is_set:
+    if shared_value is None:
+        if app_value is None and storage_value is None and not env_is_set:
             return Text("<required>", style=REQUIRED_STYLE)
         return ""
-    return Text(str(value), style=value_style(spec))
+    return Text(shared_value, style=value_style(spec))
 
 
-def local_value_cell(spec: ConfigField, value: str) -> FieldTableCell:
-    """Return the storage-local table value with redaction and type color.
+def source_value_cell(spec: ConfigField, value: str | None) -> FieldTableCell:
+    """Return one table source value with redaction and type color.
 
-    Empty values remain empty so unset overrides do not compete visually with
-    defaults. Secret values show only a placeholder but still use the same
-    muted secret style in every local cell.
+    Missing and empty values remain visually quiet so unset overrides do not
+    compete with defaults. Secret values show only a placeholder.
 
     :param spec: Field declaration that describes type and secrecy.
-    :param value: Parsed dotenv string from the storage-local file.
+    :param value: Parsed dotenv string from one source.
     :return: Empty text or a styled visible placeholder/value.
     """
-    if value == "":
+    if value is None or value == "":
         return ""
     if spec.secret:
         return Text("<secret>", style=value_style(spec))
     return Text(value, style=value_style(spec))
+
+
+def first_effective_value(
+    *,
+    shell_value: str | None,
+    storage_value: str | None,
+    app_value: str | None,
+    shared_value: str | None,
+) -> str | None:
+    """Return the effective editor-visible value by runtime precedence."""
+    for value in (shell_value, storage_value, app_value, shared_value):
+        if value is not None:
+            return value
+    return None
+
+
+def shared_source_value(
+    *,
+    spec: ConfigField,
+    env_key: str,
+    shared_values: Mapping[str, str] | None,
+) -> str | None:
+    """Return the packaged or declared shared value for one field."""
+    if shared_values is not None and env_key in shared_values:
+        return shared_values[env_key]
+    value = spec.shared_env_value()
+    if value is CONFIG_MISSING:
+        return None
+    return str(value)
 
 
 def value_style(spec: ConfigField) -> str:
@@ -272,30 +332,30 @@ def possible_values_label(spec: ConfigField) -> str:
     return "free text"
 
 
-def live_storage_title(record: StorageRecord, local_env: Path) -> Text:
+def live_storage_title(record: StorageRecord, storage_env: Path) -> Text:
     """Return the title shown for one editable live storage.
 
     :param record: Registry storage record.
-    :param local_env: Storage-local dotenv path.
+    :param storage_env: Storage dotenv path.
     :return: Multi-line title for the selected storage.
     """
     title = storage_name_text(record.name)
     title.append(": ")
     title.append_text(path_text(record.root))
-    return lines_text(title, path_text(local_env))
+    return lines_text(title, path_text(storage_env))
 
 
-def active_storage_title(storage_root: Path, local_env: Path) -> Text:
+def active_storage_title(storage_root: Path, storage_env: Path) -> Text:
     """Return the title shown for an unregistered active storage path.
 
     :param storage_root: Active storage root selected by ``<APP>_STORAGE``.
-    :param local_env: Storage-local dotenv path.
+    :param storage_env: Storage dotenv path.
     :return: Multi-line title for the selected path.
     """
     title = Text("Active storage", style="bold")
     title.append(": ")
     title.append_text(path_text(storage_root))
-    return lines_text(title, path_text(local_env))
+    return lines_text(title, path_text(storage_env))
 
 
 def missing_storage_title(record: StorageRecord) -> Text:
@@ -310,7 +370,7 @@ def missing_storage_title(record: StorageRecord) -> Text:
     return lines_text(
         title,
         label_value_text("Root", path_text(record.root)),
-        "No storage-local env file is available.",
+        "No storage env file is available.",
     )
 
 

@@ -19,11 +19,11 @@ from apprc.runtime_config.storage.loading import (
     StorageRegistryInspection,
     inspect_storage_registry,
 )
-from apprc.runtime_config.storage.registry import StorageRegistry
 from apprc.runtime_config.storage.selector import (
     StorageSelection,
     StorageSelectorError,
-    resolve_active_storage_selection,
+    resolve_storage_selector_value,
+    select_storage_selector,
 )
 
 if TYPE_CHECKING:
@@ -72,6 +72,7 @@ class _StorageDiagnosis:
     storage_env_exists: bool | None
     missing_env_keys: list[str]
     issues: list[str]
+    registry: StorageRegistryInspection
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,14 +129,14 @@ def build_config_doctor_payload(
     """
     paths = kit.spec.config_paths()
     app_wide = _diagnose_app_wide(kit, paths=paths)
-    registry = inspect_storage_registry(kit.spec)
     storage_diagnosis = _diagnose_storage(
         kit,
-        registry=registry.registry,
         storage=storage,
     )
+    registry = storage_diagnosis.registry
     warnings = [
         *_config_package_convention_warnings(kit),
+        *registry.warnings,
         *_legacy_file_warnings(
             app_wide_path=paths.app_wide_env,
             storage_env=storage_diagnosis.storage_env,
@@ -270,7 +271,6 @@ def _doctor_payload(
 def _diagnose_storage(
     kit: "AppConfigKit",
     *,
-    registry: StorageRegistry | None,
     storage: str | None,
 ) -> _StorageDiagnosis:
     """Return active storage state for diagnostics.
@@ -281,6 +281,7 @@ def _diagnose_storage(
     :return: Storage diagnosis with missing-env and storage-env issues.
     """
     if not kit.spec.storage_required():
+        registry = inspect_storage_registry(kit.spec)
         return _StorageDiagnosis(
             selection=None,
             storage_root_exists=None,
@@ -288,6 +289,7 @@ def _diagnose_storage(
             storage_env_exists=None,
             missing_env_keys=[],
             issues=[],
+            registry=registry,
         )
     storage_env_key = kit.spec.require_storage_env_key()
     issues: list[str] = []
@@ -298,23 +300,36 @@ def _diagnose_storage(
     issues.extend(fallback_values.issues)
     missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
-    selector_error = False
+    registry = inspect_storage_registry(kit.spec)
 
-    try:
-        selection = resolve_active_storage_selection(
-            registry=registry,
-            storage=storage,
-            storage_env_key=storage_env_key,
-            original_env=os.environ,
-            app_wide_values=fallback_values.app_wide_values,
-            shared_values=fallback_values.shared_values,
-        )
-    except StorageSelectorError as exc:
-        selector_error = True
-        issues.append(str(exc))
-    if selection is None and not selector_error:
+    storage_selector = select_storage_selector(
+        storage=storage,
+        storage_env_key=storage_env_key,
+        original_env=os.environ,
+        explicit_values={},
+        app_wide_values=fallback_values.app_wide_values,
+        shared_values=fallback_values.shared_values,
+        env_file_overrides_os_environ=False,
+    )
+    if storage_selector is None:
         missing_env_keys.append(storage_env_key)
         issues.append(_missing_env_issue(kit, missing_env_keys))
+    else:
+        selector_source, selector_value = storage_selector
+        registry = inspect_storage_registry(
+            kit.spec,
+            raw_selector=selector_value,
+        )
+        if not registry.issues:
+            try:
+                selection = resolve_storage_selector_value(
+                    registry=registry.registry,
+                    raw_value=selector_value,
+                    storage_env_key=storage_env_key,
+                    source=selector_source,
+                )
+            except StorageSelectorError as exc:
+                issues.append(str(exc))
 
     selected_storage_root = selection.root if selection is not None else None
     storage_env = (
@@ -345,6 +360,7 @@ def _diagnose_storage(
         storage_env_exists=storage_env_exists,
         missing_env_keys=missing_env_keys,
         issues=issues,
+        registry=registry,
     )
 
 

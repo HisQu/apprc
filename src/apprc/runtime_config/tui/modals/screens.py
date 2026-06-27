@@ -1,4 +1,4 @@
-"""Modal screens used by the storage-local config editor."""
+"""Modal screens used by the layer-aware config editor."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from textual.widgets import Button, Input, ProgressBar, Static
 from apprc.runtime_config.contract.schema import ConfigField
 from apprc.runtime_config.storage.archive import StorageArchiveProgress
 from apprc.runtime_config.tui.field_state import (
+    ConfigWriteScope,
     EditableConfigValueSource,
     EditableConfigValueSourceKey,
 )
@@ -37,14 +38,15 @@ from apprc.runtime_config.tui.styles import (
 from apprc.runtime_config.tui.value_modal_rendering import (
     config_value_source_key,
     field_type_text,
-    local_input_classes,
     possible_values_text,
+    scope_label,
     shell_status_text,
     source_copy_is_disabled,
     source_label,
     source_label_text,
     source_origin_text,
     source_value_text,
+    target_input_classes,
 )
 
 
@@ -55,6 +57,7 @@ class ValueEditResult:
     action: Literal["save", "clear"]
     env_key: str
     raw_value: str
+    scope: ConfigWriteScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +69,7 @@ class ArchiveOptionsResult:
 
 
 class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
-    """Modal editor for one storage-local value."""
+    """Modal editor for one AppRC layer value."""
 
     CSS = (
         """
@@ -159,7 +162,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         width: 8;
     }
 
-    Input.edit-local-input {
+    Input.edit-target-input {
         border: none;
         height: 1;
         padding: 0 1;
@@ -186,12 +189,14 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         spec: ConfigField,
         env_key: str,
         value_sources: Sequence[EditableConfigValueSource],
+        writable_scopes: Sequence[ConfigWriteScope],
     ) -> None:
         """Store field metadata for modal rendering."""
         super().__init__()
         self.spec = spec
         self.env_key = env_key
         self.value_sources = tuple(value_sources)
+        self.writable_scopes = tuple(writable_scopes)
         self.sources_by_key: dict[
             EditableConfigValueSourceKey, EditableConfigValueSource
         ] = {source.key: source for source in self.value_sources}
@@ -259,11 +264,34 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
                         id="edit-long-explanation",
                     )
             with Vertical(id="edit-source-panel"):
+                with Horizontal(
+                    id="edit-target-row",
+                    classes="edit-source-row",
+                ):
+                    yield Static(
+                        Text("Target value", style=LABEL_STYLE),
+                        classes="edit-source-label",
+                    )
+                    yield Input(
+                        value=self._target_value(),
+                        placeholder="Override value",
+                        password=self.spec.secret,
+                        id="edit-value-input",
+                        classes=target_input_classes(self.spec),
+                    )
+                    yield Static("", classes="edit-source-origin")
+                    yield Static("", classes="edit-source-copy")
                 for source in self.value_sources:
                     yield from self._compose_source_row(source)
             with Horizontal(id="edit-button-row"):
-                yield Button("Save", variant="primary", id="edit-save")
-                yield Button("Clear Local", id="edit-clear")
+                for scope in self.writable_scopes:
+                    label = scope_label(scope)
+                    yield Button(
+                        f"Save {label}",
+                        variant="primary",
+                        id=f"edit-save-{scope}",
+                    )
+                    yield Button(f"Clear {label}", id=f"edit-clear-{scope}")
                 yield Button("Cancel", id="edit-cancel")
 
     def on_mount(self) -> None:
@@ -284,20 +312,11 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
                 id=f"edit-source-{source.key}-label",
                 classes="edit-source-label",
             )
-            if source.key == "local":
-                yield Input(
-                    value=self._local_value(),
-                    placeholder="Local override value",
-                    password=self.spec.secret,
-                    id="edit-value-input",
-                    classes=local_input_classes(self.spec),
-                )
-            else:
-                yield Static(
-                    source_value_text(self.spec, source),
-                    id=f"edit-source-{source.key}-value",
-                    classes="edit-source-value",
-                )
+            yield Static(
+                source_value_text(self.spec, source),
+                id=f"edit-source-{source.key}-value",
+                classes="edit-source-value",
+            )
             yield Static(
                 source_origin_text(source),
                 id=f"edit-source-{source.key}-origin",
@@ -308,7 +327,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
                 id=f"edit-copy-{source.key}",
                 disabled=source_copy_is_disabled(
                     source,
-                    local_input_value=self._local_value(),
+                    target_input_value=self._target_value(),
                 ),
                 classes="edit-source-copy",
             )
@@ -320,17 +339,15 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         ):
             self._copy_source(event.button.id.removeprefix("edit-copy-"))
             return
-        if event.button.id == "edit-save":
-            self.action_save()
+        if event.button.id is not None and event.button.id.startswith(
+            "edit-save-"
+        ):
+            self._save_scope(event.button.id.removeprefix("edit-save-"))
             return
-        if event.button.id == "edit-clear":
-            self.dismiss(
-                ValueEditResult(
-                    action="clear",
-                    env_key=self.env_key,
-                    raw_value="",
-                )
-            )
+        if event.button.id is not None and event.button.id.startswith(
+            "edit-clear-"
+        ):
+            self._clear_scope(event.button.id.removeprefix("edit-clear-"))
             return
         if event.button.id == "edit-cancel":
             self.action_cancel()
@@ -344,23 +361,51 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         """Enable local copy once a new local value is visible."""
         if event.input.id != "edit-value-input":
             return
-        local = self._source_by_key("local")
-        if local is None:
-            return
-        self.query_one(
-            "#edit-copy-local", Button
-        ).disabled = source_copy_is_disabled(
-            local, local_input_value=event.value
-        )
+        for scope in self.writable_scopes:
+            source = self._source_by_key(scope)
+            if source is None:
+                continue
+            self.query_one(
+                f"#edit-copy-{scope}", Button
+            ).disabled = source_copy_is_disabled(
+                source, target_input_value=event.value
+            )
 
     def action_save(self) -> None:
         """Dismiss with the current input value."""
+        if not self.writable_scopes:
+            self.notify("No writable AppRC layer is active.", severity="error")
+            return
+        self._save_scope(self.writable_scopes[0])
+
+    def _save_scope(self, raw_scope: str) -> None:
+        """Dismiss with the current input value for one write scope."""
+        scope = self._write_scope(raw_scope)
+        if scope is None:
+            self.notify("Unknown write scope.", severity="error")
+            return
         raw_value = self.query_one("#edit-value-input", Input).value
         self.dismiss(
             ValueEditResult(
                 action="save",
                 env_key=self.env_key,
                 raw_value=raw_value,
+                scope=scope,
+            )
+        )
+
+    def _clear_scope(self, raw_scope: str) -> None:
+        """Dismiss with a clear action for one write scope."""
+        scope = self._write_scope(raw_scope)
+        if scope is None:
+            self.notify("Unknown write scope.", severity="error")
+            return
+        self.dismiss(
+            ValueEditResult(
+                action="clear",
+                env_key=self.env_key,
+                raw_value="",
+                scope=scope,
             )
         )
 
@@ -374,8 +419,8 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         if source is None:
             self.notify("No value to copy.", severity="warning")
             return
-        if source.key == "local":
-            self._copy_local_source(source)
+        if source.key in {"app", "storage"}:
+            self._copy_target_source(source)
             return
         if source.raw_value is None:
             self.notify("No value to copy.", severity="warning")
@@ -383,8 +428,8 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         self.app.copy_to_clipboard(source.raw_value)
         self.notify(f"Copied {source_label(source)}")
 
-    def _copy_local_source(self, source: EditableConfigValueSource) -> None:
-        """Copy the visible local input value."""
+    def _copy_target_source(self, source: EditableConfigValueSource) -> None:
+        """Copy a saved layer value or the visible target input value."""
         raw_value = self.query_one("#edit-value-input", Input).value
         if raw_value == "" and not source.is_available:
             self.notify("No value to copy.", severity="warning")
@@ -401,12 +446,22 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
             return None
         return self.sources_by_key.get(resolved_key)
 
-    def _local_value(self) -> str:
-        """Return the saved local value shown when the modal opens."""
-        local = self._source_by_key("local")
-        if local is None or local.raw_value is None:
-            return ""
-        return local.raw_value
+    def _target_value(self) -> str:
+        """Return the saved target value shown when the modal opens."""
+        for scope in self.writable_scopes:
+            source = self._source_by_key(scope)
+            if source is not None and source.raw_value is not None:
+                return source.raw_value
+        return ""
+
+    def _write_scope(self, raw_scope: str) -> ConfigWriteScope | None:
+        """Return a validated write scope from widget id text."""
+        if raw_scope in self.writable_scopes and raw_scope in {
+            "app",
+            "storage",
+        }:
+            return raw_scope
+        return None
 
 
 class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):

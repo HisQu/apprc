@@ -6,8 +6,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from apprc.runtime_config.app_spec import CapabilityState
+from apprc.runtime_config.kit import AppConfigKit
 from tests.support_config import (
     ApprcExampleAppConfigState,
+    StorageFreeExampleEnv,
     StorageFreeExampleConfigState,
     apprc_example_app_state,
     build_apprc_example_app_kit,
@@ -150,3 +153,34 @@ def test_config_setup_storage_only_writes_only_storage_env(
     assert (storage_root / ".env.apprc-storage").is_file()
     assert not kit.spec.app_wide_env_path().exists()
     assert not kit.spec.index_path().exists()
+
+
+def test_disabled_capability_command_groups_are_absent() -> None:
+    storage_free = build_storage_free_example_kit()
+    storage_free_app = storage_free.typer_app(
+        state_type=StorageFreeExampleConfigState,
+    )
+    app_disabled = AppConfigKit(
+        app_name="env_app",
+        display_name="Env App",
+        config_package="apprc.runtime_config",
+        envs=(StorageFreeExampleEnv,),
+        app_wide_layer=CapabilityState.DISABLED,
+        index_filename="env_app.apprc.toml",
+    )
+    app_disabled_cli = app_disabled.typer_app(
+        state_type=StorageFreeExampleConfigState,
+    )
+    runner = CliRunner()
+
+    storage_help = runner.invoke(storage_free_app, ["--help"])
+    storage_command = runner.invoke(storage_free_app, ["storage", "list"])
+    app_help = runner.invoke(app_disabled_cli, ["--help"])
+    app_command = runner.invoke(app_disabled_cli, ["app", "init"])
+
+    assert storage_help.exit_code == 0, storage_help.output
+    assert "storage" not in storage_help.output
+    assert storage_command.exit_code != 0
+    assert app_help.exit_code == 0, app_help.output
+    assert "app" not in app_help.output
+    assert app_command.exit_code != 0

@@ -21,7 +21,7 @@ class EnvBootstrapResult:
 
     :param shared_env: Packaged shared dotenv path loaded into the process, or
         ``None`` when dotenv layers were skipped.
-    :param storage_env: Active storage-local dotenv candidate considered during
+    :param storage_env: Active storage dotenv candidate considered during
         loading, or ``None`` when dotenv layers were skipped or no storage root
         is known. The path may not exist because missing storage files are
         optional.

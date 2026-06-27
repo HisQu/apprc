@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # == Internal ================================
+from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.local_env import ensure_local_env_file
+from apprc.runtime_config.env_file import ensure_storage_env_file
 from apprc.runtime_config.storage.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
@@ -41,7 +42,7 @@ class ConfigSetupResult:
     """Files initialized by one capability-layer setup run.
 
     :param active_storage_root: Storage root selected by setup, if any.
-    :param storage_env: Storage-local dotenv file initialized by setup, if any.
+    :param storage_env: Storage dotenv file initialized by setup, if any.
     :param app_wide_env: App-wide dotenv file initialized by setup, if any.
     """
 
@@ -80,14 +81,45 @@ class ConfigSetupFlow:
         return root.resolve()
 
     def ensure_storage_env(self, storage_root: Path) -> Path:
-        """Create the storage-local dotenv file under one root.
+        """Create the storage dotenv file under one root.
 
         :param storage_root: Storage root that should own the dotenv file.
-        :return: Storage-local dotenv path.
+        :return: Storage dotenv path.
         """
-        return ensure_local_env_file(
-            storage_root,
-            filename=self.kit.spec.storage_env_filename,
+        try:
+            return ensure_storage_env_file(
+                storage_root,
+                filename=self.kit.spec.storage_env_filename,
+            )
+        except StorageRootPathError as exc:
+            raise ConfigSetupError(
+                str(exc),
+                param_hint="--storage-root",
+            ) from exc
+
+    def ensure_app_wide_env(self) -> Path:
+        """Create the app-wide dotenv file for an app-wide setup run.
+
+        :return: App-wide dotenv path.
+        """
+        try:
+            return self.kit.spec.ensure_app_wide_env()
+        except ConfigHomeError as exc:
+            raise ConfigSetupError(
+                str(exc),
+                param_hint="config-home",
+            ) from exc
+
+    def run_app_wide_setup(self) -> ConfigSetupResult:
+        """Initialize the app-wide dotenv file for this kit.
+
+        :return: Files initialized by setup.
+        """
+        app_wide_env = self.ensure_app_wide_env()
+        return ConfigSetupResult(
+            active_storage_root=None,
+            storage_env=None,
+            app_wide_env=app_wide_env,
         )
 
     def run_storage_setup(self, storage_root: Path) -> ConfigSetupResult:

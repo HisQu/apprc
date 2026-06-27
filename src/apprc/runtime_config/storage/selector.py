@@ -189,7 +189,7 @@ def resolve_storage_selector_value(
             storage_name=record.name,
             root=record.root,
         )
-    if _is_storage_path_like(selector) or not registry.storages:
+    if storage_selector_is_path_like(selector) or not registry.storages:
         return StorageSelection(
             source=selection_source,
             raw_value=selector,
@@ -271,7 +271,7 @@ def select_storage_selector(
     return None
 
 
-def _is_storage_path_like(value: str) -> bool:
+def storage_selector_is_path_like(value: str) -> bool:
     """Return whether selector text should be interpreted as a path."""
     path = Path(value).expanduser()
     return (

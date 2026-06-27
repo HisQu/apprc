@@ -12,7 +12,7 @@ from apprc.runtime_config.storage.io import (
     ordered_storage_names,
     write_storage_registry,
 )
-from apprc.runtime_config.storage.local_env import ensure_local_env_file
+from apprc.runtime_config.env_file import ensure_storage_env_file
 from apprc.runtime_config.storage.model import (
     ArchivedStorageRecord,
     StorageRecord,
@@ -56,13 +56,13 @@ def register_storage(
     :param name: Storage selector to create or update.
     :param root: Storage root directory.
     :param path: AppRC TOML location.
-    :param storage_env_filename: Storage-local dotenv filename to create.
+    :param storage_env_filename: Storage dotenv filename to create.
     :return: Updated registry.
     """
     validate_storage_name(name)
     resolved_root = normalize_storage_root_path(root).resolve()
     resolved_root.mkdir(parents=True, exist_ok=True)
-    ensure_local_env_file(resolved_root, filename=storage_env_filename)
+    ensure_storage_env_file(resolved_root, filename=storage_env_filename)
 
     current = load_storage_registry_or_empty(path)
     storages = dict(current.storages)

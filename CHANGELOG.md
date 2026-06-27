@@ -35,8 +35,8 @@ This project follows Semantic Versioning.
     `AppConfigKit.app_wide_storage(...)`.
 
   - Breaking: AppRC no longer reads or writes `.env.global` and `.env.local`.
-    Affected: Users with existing app-global values in `.env.global` or
-    storage-local values in `.env.local`.
+    Affected: Users with existing app-wide values in `.env.global` or
+    storage values in `.env.local`.
     Migration: Move app-wide values to `.env.apprc-app` and storage values to
     `.env.apprc-storage`. `config doctor` reports legacy-file warnings.
 
@@ -63,6 +63,15 @@ This project follows Semantic Versioning.
     `global_env_filename`, or `local_env_filename`.
     Migration: Use `index_filename`, `app_wide_env_filename`, and
     `storage_env_filename`.
+
+  - Breaking: Public local-env helper names were removed.
+    Affected: Integrations importing `LocalEnvUpdate`, `local_env_path`,
+    `read_local_env`, `write_local_env`, `set_local_env_value`, or
+    `clear_local_env_value` from AppRC facades or storage modules.
+    Migration: Use `EnvFileUpdate`, `storage_env_path`, `read_env_file`,
+    `write_env_file`, `set_storage_env_value`, and
+    `clear_storage_env_value`. Use `set_env_file_value` and
+    `clear_env_file_value` for app-wide or other explicit env-file paths.
 
 <br>
 
@@ -95,6 +104,9 @@ This project follows Semantic Versioning.
     named-storage index, while named selectors use `<app>.apprc.toml` only when
     the index is allowed and exists.
 
+  - Changed the Textual editor to show layer-oriented source columns:
+    `Effective`, `Shell`, `App-wide`, `Storage`, `Default`, and `Explanation`.
+
   - Changed `<APP>_APPRC_TOML` to mean only named-storage index relocation.
 
   - Changed `config setup` to follow the constructor instead of prompting for
@@ -120,6 +132,10 @@ This project follows Semantic Versioning.
 
   - Fixed storage-only runtime use so a single `APP_STORAGE=/path` selector no
     longer requires a config-home file or named-storage index.
+
+  - Fixed optional named-storage handling so path selectors ignore corrupt
+    optional indexes at runtime and report them as doctor warnings, while bare
+    named selectors fail only when they need the invalid index.
 
 <br>
 

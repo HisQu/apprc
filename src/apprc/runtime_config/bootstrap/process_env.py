@@ -91,8 +91,8 @@ def merged_env_value_origins(
     :param shared_values: Parsed packaged shared dotenv values.
     :param app_wide_env_path: App-wide dotenv path.
     :param app_wide_values: Parsed app-wide dotenv values.
-    :param storage_env_path: Active storage-local dotenv path.
-    :param storage_values: Parsed storage-local dotenv values.
+    :param storage_env_path: Active storage dotenv path.
+    :param storage_values: Parsed storage dotenv values.
     :param explicit_layers: Parsed explicit env files in command/API order.
     :param original_env: Process environment captured before bootstrap writes.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat

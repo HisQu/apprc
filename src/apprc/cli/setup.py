@@ -10,10 +10,8 @@ import typer
 from rich.console import Console
 
 # == Internal ================================
-from apprc.cli.errors import config_home_bad_parameter
-from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.local_env import ensure_local_env_file
+from apprc.runtime_config.setup.flow import ConfigSetupError, ConfigSetupFlow
 from apprc.runtime_config.storage.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
@@ -47,51 +45,49 @@ def run_config_setup(
             )
         if kit.spec.app_wide_default():
             try:
-                app_wide_path = kit.spec.ensure_app_wide_env()
-            except ConfigHomeError as exc:
-                raise config_home_bad_parameter(exc) from exc
-            _print_app_wide_setup(kit, app_wide_path=app_wide_path)
+                result = ConfigSetupFlow(kit).run_app_wide_setup()
+            except ConfigSetupError as exc:
+                raise typer.BadParameter(
+                    str(exc),
+                    param_hint=exc.param_hint,
+                ) from exc
+            _print_app_wide_setup(kit, app_wide_path=result.app_wide_env)
             return
         _print_env_only_setup(kit)
         return
 
-    root = _prepare_storage_root(
+    root = _select_storage_root(
         kit,
         storage_root=storage_root,
         assume_yes=assume_yes,
     )
     try:
-        storage_env = ensure_local_env_file(
-            root,
-            filename=kit.spec.storage_env_filename,
-        )
-        app_wide_path = (
-            kit.spec.ensure_app_wide_env()
-            if kit.spec.app_wide_default()
-            else None
-        )
-    except (ConfigHomeError, StorageRootPathError) as exc:
-        raise typer.BadParameter(str(exc), param_hint="--storage-root") from exc
+        result = ConfigSetupFlow(kit).run_storage_setup(root)
+    except ConfigSetupError as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint=exc.param_hint or "--storage-root",
+        ) from exc
     _print_storage_setup(
         kit,
-        storage_root=root,
-        storage_env=storage_env,
-        app_wide_path=app_wide_path,
+        storage_root=result.active_storage_root,
+        storage_env=result.storage_env,
+        app_wide_path=result.app_wide_env,
     )
 
 
-def _prepare_storage_root(
+def _select_storage_root(
     kit: AppConfigKit,
     *,
     storage_root: Path | None,
     assume_yes: bool,
 ) -> Path:
-    """Return the storage root selected for setup, creating directories.
+    """Return the storage root selected for setup before creation.
 
     :param kit: Application config facade.
     :param storage_root: Optional CLI-provided root.
     :param assume_yes: Whether setup may run without prompts.
-    :return: Existing storage root directory.
+    :return: Normalized storage root.
     :raises typer.Exit: If the user cancels.
     :raises typer.BadParameter: If the path cannot be used as a directory.
     """
@@ -121,8 +117,7 @@ def _prepare_storage_root(
             f"Reuse non-empty storage root for {kit.spec.display_name}?"
         ):
             raise typer.Exit(code=1)
-    root.mkdir(parents=True, exist_ok=True)
-    return root.resolve()
+    return root
 
 
 def _print_env_only_setup(kit: AppConfigKit) -> None:
@@ -144,9 +139,11 @@ def _print_env_only_setup(kit: AppConfigKit) -> None:
 def _print_app_wide_setup(
     kit: AppConfigKit,
     *,
-    app_wide_path: Path,
+    app_wide_path: Path | None,
 ) -> None:
     """Print setup completion for app-wide config."""
+    if app_wide_path is None:
+        raise typer.BadParameter("App-wide setup did not create a dotenv file.")
     text = "\n".join(
         (
             f"{kit.spec.display_name} app-wide config is ready.",
@@ -165,11 +162,13 @@ def _print_app_wide_setup(
 def _print_storage_setup(
     kit: AppConfigKit,
     *,
-    storage_root: Path,
-    storage_env: Path,
+    storage_root: Path | None,
+    storage_env: Path | None,
     app_wide_path: Path | None,
 ) -> None:
     """Print setup completion for storage-capable integrations."""
+    if storage_root is None or storage_env is None:
+        raise typer.BadParameter("Storage setup did not create a dotenv file.")
     storage_key = kit.spec.require_storage_env_key()
     lines = [
         f"{kit.spec.display_name} storage config is ready.",

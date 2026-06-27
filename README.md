@@ -2,8 +2,8 @@
 
 `apprc` is a Python library for typed, env-backed application configuration. It
 gives an app packaged defaults, optional app-wide dotenv config, optional
-storage-local dotenv config, optional named storage roots, a generated Typer
-`config` CLI, and a Textual editor.
+storage dotenv config, optional named storage roots, a generated Typer `config`
+CLI, and a Textual editor.
 
 ## Table Of Contents
 
@@ -88,6 +88,19 @@ APP_CONFIG = AppConfigKit.storage_only(
 Use `storage_env_key="MYAPP_STORAGE"` only with storage-capable constructors.
 Passing `storage_mode=` is removed and raises `TypeError`.
 
+Public dotenv helpers use neutral env-file names:
+
+- `EnvFileUpdate`
+- `read_env_file(path)` / `write_env_file(path, values, owners=...)`
+- `ensure_env_file(path)`
+- `set_env_file_value(...)` / `clear_env_file_value(...)`
+- `storage_env_path(root)`, `ensure_storage_env_file(root)`,
+  `set_storage_env_value(...)`, and `clear_storage_env_value(...)`
+
+The old `LocalEnvUpdate`, `read_local_env`, `write_local_env`,
+`local_env_path`, `set_local_env_value`, and `clear_local_env_value` names are
+removed.
+
 Mount the generated config CLI:
 
 ```python
@@ -117,7 +130,10 @@ Storage selector resolution uses:
 5. packaged `.env.shared`
 
 Named selectors resolve through `<app>.apprc.toml` only when named storage is
-allowed and the index file exists. Path selectors work without an index file.
+allowed and the index file exists. Path selectors work without an index file and
+ignore corrupt optional indexes at runtime; `config doctor` reports those stray
+index problems as warnings. Bare selectors need the index when it exists, so a
+corrupt index is fatal for named-selector resolution.
 
 ## Generated CLI
 
@@ -175,6 +191,25 @@ Optional upgrades are separate commands, not setup prompts.
   `--scope storage`.
 - Env-only apps have no writable scope until an app-wide file is explicitly
   initialized with `config app init`.
+
+`config set` skips runtime bootstrap so `--scope app` does not require storage
+readiness. Storage is resolved only for `--scope storage` or when scope
+inference needs to know whether storage is writable.
+
+### `config edit`
+
+`config edit` is the primary interactive view. It opens without creating files
+and shows source columns for `Effective`, `Shell`, `App-wide`, `Storage`,
+`Default`, and `Explanation`.
+
+- The app-wide column appears when the app-wide layer is default-active or when
+  `.env.apprc-app` exists.
+- The storage column appears when a storage root is selected; a missing
+  `.env.apprc-storage` is shown as empty until the user saves to storage.
+- Saving chooses `app` or `storage` when both are writable, and creates only the
+  selected target file.
+- Named-storage controls are available only when named storage is enabled and an
+  index is loaded; direct path-selected storage editing works without an index.
 
 ## Upgrade Paths
 

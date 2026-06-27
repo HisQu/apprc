@@ -14,7 +14,6 @@ from apprc.runtime_config.config_home import (
     AppConfigHome,
     app_config_file,
     app_config_home,
-    ensure_app_config_home,
     ensure_text_file,
     require_config_filename,
     resolve_app_config_home,
@@ -26,7 +25,7 @@ from apprc.runtime_config.contract.schema import ConfigOwner
 from apprc.runtime_config.contract.schema_validation import (
     validate_config_owner_inventory,
 )
-from apprc.runtime_config.storage.local_env import local_env_path
+from apprc.runtime_config.env_file import storage_env_path
 
 
 class CapabilityState(StrEnum):
@@ -49,7 +48,7 @@ class AppConfigSpec:
     """Complete reusable configuration contract for one application.
 
     Applications declare this once. The spec owns naming rules such as env
-    keys, app-wide paths, storage-local paths, and named-storage index paths,
+    keys, app-wide paths, storage dotenv paths, and named-storage index paths,
     while :class:`AppConfigKit` delegates runtime workflows to focused modules.
 
     :param app_name: Lowercase application name used in env var derivation.
@@ -68,7 +67,7 @@ class AppConfigSpec:
     :param index_filename: Per-app named-storage index filename.
     :param shared_env_filename: Packaged shared dotenv filename.
     :param app_wide_env_filename: App-wide dotenv override filename.
-    :param storage_env_filename: Storage-local dotenv override filename.
+    :param storage_env_filename: Storage dotenv override filename.
     """
 
     app_name: str
@@ -117,7 +116,7 @@ class AppConfigSpec:
         :param command_name: Optional executable name shown in CLI copy.
         :param shared_env_filename: Packaged shared dotenv filename.
         :param app_wide_env_filename: App-wide dotenv override filename.
-        :param storage_env_filename: Storage-local dotenv override filename.
+        :param storage_env_filename: Storage dotenv override filename.
         """
         resolved_storage_layer = StorageLayerState(storage_layer)
         resolved_app_wide_layer = CapabilityState(app_wide_layer)
@@ -242,12 +241,14 @@ class AppConfigSpec:
         return self.config_home() / self.app_wide_env_filename
 
     def storage_env_path(self, storage_root: Path) -> Path:
-        """Return the storage-local dotenv path for one storage root.
+        """Return the storage dotenv path for one storage root.
 
         :param storage_root: Active storage root.
         :return: Dotenv path below ``storage_root``.
         """
-        return local_env_path(storage_root, filename=self.storage_env_filename)
+        return storage_env_path(
+            storage_root, filename=self.storage_env_filename
+        )
 
     def config_paths(
         self,
@@ -259,26 +260,6 @@ class AppConfigSpec:
         :return: Resolved app-wide and index paths.
         """
         return resolve_app_config_home(
-            app_name=self.app_name,
-            app_wide_env_filename=self.app_wide_env_filename,
-            index_filename=self.index_filename,
-            index_path=self.index_path(proc_env=proc_env),
-        )
-
-    def ensure_config_home(
-        self,
-        proc_env: Mapping[str, str] | None = None,
-    ) -> AppConfigHome:
-        """Create both optional app-wide files for explicit write flows.
-
-        Runtime and diagnostics should call :meth:`config_paths` instead. This
-        helper exists for explicit write commands that intentionally initialize
-        both the app-wide dotenv file and named-storage index.
-
-        :param proc_env: Optional environment mapping for tests and bootstrap.
-        :return: Resolved AppRC-managed config paths.
-        """
-        return ensure_app_config_home(
             app_name=self.app_name,
             app_wide_env_filename=self.app_wide_env_filename,
             index_filename=self.index_filename,

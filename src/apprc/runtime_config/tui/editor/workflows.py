@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 
 # == Internal ================================
-from apprc.runtime_config.storage.local_env import read_local_env
+from apprc.runtime_config.env_file import read_env_file
 from apprc.runtime_config.storage.paths import normalize_storage_root_path
 from apprc.runtime_config.storage.archive import (
     StorageArchiveProgress,
@@ -230,7 +230,7 @@ class ConfigEditorStorageWorkflows:
                 name=name,
                 root=guarded_root,
                 path=registry.path,
-                storage_env_filename=self.editor.current_env_filename,
+                storage_env_filename=self.editor.kit.spec.storage_env_filename,
             )
         except (TypeError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -281,21 +281,22 @@ class ConfigEditorStorageWorkflows:
         if not any(resolved_root.iterdir()):
             return resolved_root
 
-        env_path = resolved_root / self.editor.current_env_filename
+        storage_env_filename = self.editor.kit.spec.storage_env_filename
+        env_path = resolved_root / storage_env_filename
         if env_path.is_file():
-            keys = list(read_local_env(env_path))[:10]
+            keys = list(read_env_file(env_path))[:10]
             preview = ", ".join(keys) if keys else "<none>"
             message = (
-                f"Storage not empty, found {self.editor.current_env_filename} "
+                f"Storage not empty, found {storage_env_filename} "
                 f"with these env vars: {preview}.\n"
-                "All these local env vars will be exported on runtime. "
+                "All these storage env vars will be exported on runtime. "
                 "Proceed?"
             )
         else:
             message = lines_text(
                 "Storage not empty, but no "
-                f"{self.editor.current_env_filename} found, initialize with "
-                f"empty {self.editor.current_env_filename}?",
+                f"{storage_env_filename} found, initialize with "
+                f"empty {storage_env_filename}?",
                 path_text(resolved_root),
             )
         action = await self.editor.push_screen_wait(

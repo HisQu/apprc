@@ -12,7 +12,7 @@ import apprc.runtime_config as config_api
 from apprc.runtime_config import EnvConfig
 from apprc.runtime_config.app_spec import AppConfigSpec
 from apprc.runtime_config.contract.schema import ConfigField, ConfigOwner
-from apprc.runtime_config.storage.local_env import LocalEnvUpdate
+from apprc.runtime_config.env_file import EnvFileUpdate
 from apprc.runtime_config.storage.registry import StorageRegistry
 
 
@@ -35,12 +35,12 @@ def test_old_provenance_names_are_not_public_api() -> None:
 def test_top_level_facade_exports_stable_config_interfaces() -> None:
     assert apprc.ConfigOwner is ConfigOwner
     assert apprc.ConfigField is ConfigField
-    assert apprc.LocalEnvUpdate is LocalEnvUpdate
+    assert apprc.EnvFileUpdate is EnvFileUpdate
     assert apprc.StorageRegistry is StorageRegistry
     assert callable(apprc.iter_config_fields)
     assert callable(apprc.resolve_package_root)
     assert callable(apprc.register_storage)
-    assert callable(apprc.set_local_env_value)
+    assert callable(apprc.set_storage_env_value)
     assert not hasattr(apprc, "ConfigEditorApp")
 
 
@@ -49,7 +49,7 @@ def test_runtime_config_facade_stays_narrow() -> None:
     assert not hasattr(config_api, "ConfigField")
     assert not hasattr(config_api, "ConfigDoctorPayload")
     assert not hasattr(config_api, "StorageRegistry")
-    assert not hasattr(config_api, "LocalEnvUpdate")
+    assert not hasattr(config_api, "EnvFileUpdate")
     assert not hasattr(contract_api, "AppConfigSpec")
 
 

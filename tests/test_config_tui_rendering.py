@@ -66,10 +66,15 @@ def _text_cell(row: FieldTableRow, index: int) -> Text:
 def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     rows = build_field_table_rows(
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        local_values={
+        app_values={
             "APPRC_EXAMPLE_APP_ACCESS_TOKEN": "secret",
+        },
+        storage_values={
             "APPRC_EXAMPLE_APP_RETRY_COUNT": "9",
         },
+        shared_values=None,
+        include_app=True,
+        include_storage=True,
         hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_STORAGE"}),
         shell_env={"APPRC_EXAMPLE_APP_MODE": "MANUAL"},
     )
@@ -79,31 +84,33 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
         "#",
         "Section",
         "Key",
-        "Status",
-        "Local",
+        "Effective",
+        "Shell",
+        "App-wide",
+        "Storage",
         "Default",
         "Explanation",
     )
     assert "APPRC_EXAMPLE_APP_STORAGE" not in rows_by_key
     assert (
-        str(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"].cells[4])
+        str(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"].cells[3])
         == "<secret>"
     )
     assert (
-        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"], 4).style
+        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"], 5).style
         == SECRET_STYLE
     )
-    assert _text_cell(rows_by_key["APPRC_EXAMPLE_APP_MODE"], 3).plain == "shell"
+    assert _text_cell(rows_by_key["APPRC_EXAMPLE_APP_MODE"], 4).plain == "shell"
     assert (
-        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_MODE"], 5).style
+        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_MODE"], 7).style
         == CHOICE_STYLE
     )
     assert (
-        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"], 4).style
+        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"], 6).style
         == NUMBER_STYLE
     )
     assert (
-        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"], 5).style
+        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"], 7).style
         == PATH_STYLE
     )
 
@@ -133,28 +140,31 @@ def test_value_modal_rendering_formats_sources_and_metadata() -> None:
     effective = EditableConfigValueSource(
         key="effective",
         raw_value="super-secret",
-        origin_key="local",
+        origin_key="storage",
     )
     shell = EditableConfigValueSource(key="shell", raw_value=None)
     shell_set = EditableConfigValueSource(key="shell", raw_value="MANUAL")
-    local = EditableConfigValueSource(key="local", raw_value="super-secret")
-    empty_local = EditableConfigValueSource(key="local", raw_value="")
+    storage = EditableConfigValueSource(
+        key="storage",
+        raw_value="super-secret",
+    )
+    empty_storage = EditableConfigValueSource(key="storage", raw_value="")
     shared = EditableConfigValueSource(key="shared", raw_value=None)
 
     assert source_label(effective) == "Effective"
     assert source_label_text(effective).style == EFFECTIVE_SOURCE_STYLE
-    assert source_origin_text(effective).plain == "from Local"
+    assert source_origin_text(effective).plain == "from Storage"
     assert source_value_text(access_token, effective).plain == "<secret>"
     assert (
         source_value_text(access_token, effective).style
         == EFFECTIVE_SOURCE_STYLE
     )
-    assert source_value_text(access_token, local).plain == "<secret>"
-    assert source_value_text(access_token, local).style == SECRET_STYLE
+    assert source_value_text(access_token, storage).plain == "<secret>"
+    assert source_value_text(access_token, storage).style == SECRET_STYLE
     assert source_value_text(mode, shell).plain == "unset"
     assert source_value_text(mode, shell).style == LABEL_STYLE
     assert source_value_text(mode, shared).plain == "missing"
-    assert source_value_text(mode, empty_local).plain == "<empty>"
+    assert source_value_text(mode, empty_storage).plain == "<empty>"
     assert shell_status_text(shell).plain == "unset"
     assert shell_status_text(shell_set).plain == "set"
     assert shell_status_text(shell_set).style == DEFAULT_STYLE
@@ -182,7 +192,7 @@ def test_storage_titles_match_editor_text() -> None:
     assert missing_title.plain == (
         "alpha: Missing storage root\n"
         "Root: /tmp/demo-storage\n"
-        "No storage-local env file is available."
+        "No storage env file is available."
     )
     assert archived_title.plain == (
         "beta: Last Archived\n"

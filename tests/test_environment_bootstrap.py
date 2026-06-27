@@ -58,6 +58,51 @@ def test_bootstrap_storage_path_selector_does_not_create_files(
     )
 
 
+def test_bootstrap_path_selector_ignores_corrupt_optional_index(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    kit = _kit()
+    index_path = kit.spec.index_path()
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("[invalid", encoding="utf-8")
+
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.storage_root == storage_root.resolve()
+    assert result.index_path == index_path
+    assert result.storage_name is None
+
+
+def test_bootstrap_bare_selector_fails_with_corrupt_existing_index(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
+    kit = _kit()
+    index_path = kit.spec.index_path()
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("[invalid", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        kit.bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage=None,
+        )
+
+
 def test_bootstrap_reads_app_wide_selector_only_when_file_exists(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

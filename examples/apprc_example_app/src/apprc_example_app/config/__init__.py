@@ -70,7 +70,7 @@ class ApprcExampleAppEnv(EnvConfig):
         "CACHE_DIR",
         default=Path("cache"),
         title="Cache directory",
-        explanation_short="Storage-local cache directory used by the example app.",
+        explanation_short="Storage cache directory used by the example app.",
     )
     access_token: str = env_field(
         "ACCESS_TOKEN",

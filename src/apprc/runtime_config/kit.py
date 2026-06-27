@@ -140,7 +140,7 @@ class AppConfigKit:
         :param index_filename: Optional named-storage index filename override.
         :param shared_env_filename: Packaged shared dotenv filename.
         :param app_wide_env_filename: App-wide dotenv override filename.
-        :param storage_env_filename: Storage-local dotenv override filename.
+        :param storage_env_filename: Storage dotenv override filename.
         :return: Kit with storage and named-storage disabled.
         """
         return cls(
@@ -184,7 +184,7 @@ class AppConfigKit:
         :param index_filename: Optional named-storage index filename override.
         :param shared_env_filename: Packaged shared dotenv filename.
         :param app_wide_env_filename: App-wide dotenv override filename.
-        :param storage_env_filename: Storage-local dotenv override filename.
+        :param storage_env_filename: Storage dotenv override filename.
         :return: Kit with storage required and app-wide/index upgrades enabled.
         """
         return cls(
@@ -227,7 +227,7 @@ class AppConfigKit:
         :param index_filename: Optional named-storage index filename override.
         :param shared_env_filename: Packaged shared dotenv filename.
         :param app_wide_env_filename: App-wide dotenv override filename.
-        :param storage_env_filename: Storage-local dotenv override filename.
+        :param storage_env_filename: Storage dotenv override filename.
         :return: Kit with app-wide config enabled by default.
         """
         return cls(
@@ -271,7 +271,7 @@ class AppConfigKit:
         :param index_filename: Optional named-storage index filename override.
         :param shared_env_filename: Packaged shared dotenv filename.
         :param app_wide_env_filename: App-wide dotenv override filename.
-        :param storage_env_filename: Storage-local dotenv override filename.
+        :param storage_env_filename: Storage dotenv override filename.
         :return: Kit with app-wide config and storage enabled.
         """
         return cls(
@@ -303,12 +303,12 @@ class AppConfigKit:
 
         :param env_files: Optional invocation-local dotenv files that outrank
             packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
-            storage-local ``.env.apprc-storage``.
+            storage ``.env.apprc-storage``.
         :param env_file_overrides_os_environ: Whether explicit dotenv values beat
             existing values in ``os.environ`` inside this process. The parent
             shell is never mutated.
         :param load_dotenv_layers: Whether packaged ``.env.shared``,
-            app-wide ``.env.apprc-app``, active storage-local
+            app-wide ``.env.apprc-app``, active storage
             ``.env.apprc-storage``,
             and explicit ``env_files`` values should be merged into this
             process. Storage selection still runs for storage-required apps

@@ -56,8 +56,10 @@ def build_config_typer_app(
     )
     app_group = typer.Typer(help="Manage the app-wide dotenv layer.")
     storage_group = typer.Typer(help="Manage the named-storage index.")
-    app.add_typer(app_group, name="app")
-    app.add_typer(storage_group, name="storage")
+    if kit.spec.app_wide_allowed():
+        app.add_typer(app_group, name="app")
+    if kit.spec.named_storage_allowed():
+        app.add_typer(storage_group, name="storage")
 
     handlers = ConfigCommandHandlers(
         kit,

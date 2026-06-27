@@ -28,9 +28,9 @@ from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.doctor.payload import build_config_doctor_payload
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.local_env import (
+from apprc.runtime_config.env_file import (
     set_env_file_value,
-    set_local_env_value,
+    set_storage_env_value,
 )
 from apprc.runtime_config.storage.loading import (
     index_path_for_create,
@@ -218,6 +218,8 @@ class ConfigCommandBase:
         except ConfigHomeError as exc:
             raise self.config_home_bad_parameter(exc) from exc
         except StorageSelectorError:
+            return None
+        except ValueError:
             return None
 
     def default_runtime_payload(
@@ -444,10 +446,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
     ) -> None:
         """Write one config override to the selected writable layer."""
         current_state = (
-            self.state(ctx)
-            if self.kit.spec.storage_required()
-            or isinstance(ctx.obj, self.state_type)
-            else None
+            ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         resolved_scope = self._resolve_write_scope(
             current_state,
@@ -481,7 +480,6 @@ class RuntimeConfigCommands(ConfigCommandBase):
         :return: Concrete write scope.
         :raises typer.BadParameter: If no layer or multiple layers qualify.
         """
-        active_scopes = self._active_write_scopes(state)
         if requested_scope is not None:
             if requested_scope not in {"app", "storage"}:
                 raise typer.BadParameter(
@@ -489,12 +487,16 @@ class RuntimeConfigCommands(ConfigCommandBase):
                     param_hint="--scope",
                 )
             resolved_requested_scope = cast(ConfigSetScope, requested_scope)
-            if resolved_requested_scope not in active_scopes:
+            if not self._write_scope_is_active(
+                state,
+                resolved_requested_scope,
+            ):
                 raise typer.BadParameter(
                     _inactive_scope_message(self.kit, resolved_requested_scope),
                     param_hint="--scope",
                 )
             return resolved_requested_scope
+        active_scopes = self._active_write_scopes(state)
         if len(active_scopes) == 1:
             return active_scopes[0]
         if not active_scopes:
@@ -514,17 +516,27 @@ class RuntimeConfigCommands(ConfigCommandBase):
         state: Any | None,
     ) -> list[ConfigSetScope]:
         """Return write scopes currently active for ``config set``."""
-        scopes: list[ConfigSetScope] = []
-        app_path = self.kit.spec.app_wide_env_path()
-        if self.kit.spec.app_wide_allowed() and (
-            self.kit.spec.app_wide_default() or app_path.is_file()
-        ):
-            scopes.append("app")
-        if self.kit.spec.storage_required() and state is not None:
-            storage_root = self.active_storage_root_for_cli(state)
-            if storage_root is not None and storage_root.is_dir():
-                scopes.append("storage")
-        return scopes
+        return [
+            scope
+            for scope in ("app", "storage")
+            if self._write_scope_is_active(state, scope)
+        ]
+
+    def _write_scope_is_active(
+        self,
+        state: Any | None,
+        scope: ConfigSetScope,
+    ) -> bool:
+        """Return whether one write scope can be updated now."""
+        if scope == "app":
+            app_path = self.kit.spec.app_wide_env_path()
+            return self.kit.spec.app_wide_allowed() and (
+                self.kit.spec.app_wide_default() or app_path.is_file()
+            )
+        if not self.kit.spec.storage_required() or state is None:
+            return False
+        storage_root = self.active_storage_root_for_cli(state)
+        return storage_root is not None and storage_root.is_dir()
 
     def _set_app_value(self, *, key: str, value: str):
         """Write one value to the app-wide dotenv file."""
@@ -544,7 +556,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
     def _set_storage_value(self, *, root: Path, key: str, value: str):
         """Write one value to the selected storage dotenv file."""
         try:
-            return set_local_env_value(
+            return set_storage_env_value(
                 storage_root=root,
                 reference=key,
                 raw_value=value,
@@ -582,18 +594,23 @@ class EditorConfigCommands(ConfigCommandBase):
 
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for AppRC dotenv override files."""
-        optional_registry = self.load_optional_storage_registry()
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         try:
             active_storage_root = (
                 self.best_effort_active_storage_root_from_env(
-                    storage_registry=optional_registry,
+                    storage_registry=None,
                 )
                 if self.kit.spec.storage_required()
                 else None
             )
+            try:
+                optional_registry = self.load_optional_storage_registry()
+            except typer.BadParameter:
+                if active_storage_root is None:
+                    raise
+                optional_registry = None
             self.launch_config_editor(
                 current_state=current_state,
                 storage_registry=optional_registry,

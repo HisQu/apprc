@@ -278,6 +278,69 @@ def test_storage_required_config_commands_report_config_home_errors(
     assert_config_home_cli_error(edit_result)
 
 
+@pytest.mark.allow_missing_apprc_env
+def test_storage_required_list_and_edit_report_unreadable_global_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    paths = kit.spec.ensure_config_home()
+    storage_root = tmp_path / "alpha-storage"
+    storage_root.mkdir()
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
+    paths.global_env.write_text(
+        'APPRC_EXAMPLE_APP_STORAGE="alpha"\n',
+        encoding="utf-8",
+    )
+    paths.global_env.chmod(0)
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    try:
+        list_result = runner.invoke(app, ["list"])
+        edit_result = runner.invoke(app, ["edit"])
+    finally:
+        paths.global_env.chmod(0o600)
+
+    assert_config_home_cli_error(list_result)
+    assert_config_home_cli_error(edit_result)
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_storage_required_set_reports_storage_local_read_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    local_env = storage_root / ".env.apprc_example_app"
+    local_env.write_text('APPRC_EXAMPLE_APP_PROFILE="old"\n', encoding="utf-8")
+    local_env.chmod(0)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    state = ApprcExampleAppConfigState(env_bootstrap=None)
+    runner = CliRunner()
+
+    try:
+        result = runner.invoke(
+            app,
+            ["set", "app.profile", "new-profile"],
+            obj=state,
+        )
+    finally:
+        local_env.chmod(0o600)
+
+    assert result.exit_code == 2, result.output
+    assert "--storage" in result.output
+    assert "config-home" not in result.output
+    assert "Invalid value for KEY" not in result.output
+    assert "PermissionError" not in result.output
+
+
 def test_generated_config_edit_creates_missing_apprc_toml_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

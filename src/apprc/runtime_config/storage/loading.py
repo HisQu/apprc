@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apprc.runtime_config.app_spec import AppConfigSpec, StorageMode
+from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.contract.apprc_toml_env import (
     ApprcTomlEnvError,
     missing_apprc_toml_file_message,
@@ -29,16 +30,11 @@ class StorageRegistryInspection:
     registry: StorageRegistry | None
     storage_count: int
     issues: list[str]
-    parse_ok_override: bool | None = None
 
     @property
     def parse_ok(self) -> bool:
-        """Return whether the optional AppRC TOML is absent or parseable."""
-        if self.parse_ok_override is not None:
-            return self.parse_ok_override
-        if self.path is None:
-            return True
-        return self.exists and self.error is None
+        """Return whether the AppRC TOML was readable and parseable."""
+        return self.error is None
 
 
 def apprc_toml_path_for_create(spec: AppConfigSpec) -> Path:
@@ -60,7 +56,10 @@ def load_create_or_empty_storage_registry(path: Path) -> StorageRegistry:
     :return: Parsed or empty storage table.
     :raises ValueError: If an existing AppRC TOML cannot be parsed.
     """
-    return load_storage_registry_or_empty(path)
+    try:
+        return load_storage_registry_or_empty(path)
+    except OSError as exc:
+        raise _apprc_toml_read_error(path, exc) from exc
 
 
 def load_existing_storage_registry(
@@ -85,7 +84,10 @@ def load_existing_storage_registry(
                 path=apprc_toml_path,
             )
         )
-    return load_storage_registry_or_empty(apprc_toml_path)
+    try:
+        return load_storage_registry_or_empty(apprc_toml_path)
+    except OSError as exc:
+        raise _apprc_toml_read_error(apprc_toml_path, exc) from exc
 
 
 def load_optional_runtime_storage_registry(
@@ -130,6 +132,20 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
 
     try:
         registry = load_storage_registry_or_empty(apprc_toml_path)
+    except OSError as exc:
+        apprc_toml_error = str(exc)
+        return StorageRegistryInspection(
+            path=apprc_toml_path,
+            env_value=raw_apprc_toml_env_value or None,
+            exists=True,
+            error=apprc_toml_error,
+            registry=None,
+            storage_count=0,
+            issues=[
+                "AppRC TOML file could not be read: "
+                f"{apprc_toml_path}: {apprc_toml_error}"
+            ],
+        )
     except ValueError as exc:
         apprc_toml_error = str(exc)
         return StorageRegistryInspection(
@@ -150,4 +166,16 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
         registry=registry,
         storage_count=len(registry.storages),
         issues=[],
+    )
+
+
+def _apprc_toml_read_error(path: Path, exc: OSError) -> ConfigHomeError:
+    """Return a config-home error for unreadable AppRC TOML files.
+
+    :param path: AppRC TOML path that could not be read.
+    :param exc: Filesystem read failure.
+    :return: Config-home error suitable for CLI adapters.
+    """
+    return ConfigHomeError(
+        f"AppRC-managed file could not be read: {Path(path).expanduser()}: {exc}"
     )

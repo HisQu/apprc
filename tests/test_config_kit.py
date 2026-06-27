@@ -263,6 +263,95 @@ def test_storage_free_config_commands_report_config_home_errors(
 
 
 @pytest.mark.allow_missing_apprc_env
+def test_storage_free_doctor_reports_unreadable_global_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STORAGE_FREE_APP_PROFILE", raising=False)
+    kit = build_storage_free_example_kit()
+    paths = kit.spec.ensure_config_home()
+    paths.global_env.write_text(
+        'STORAGE_FREE_APP_PROFILE="global-profile"\n',
+        encoding="utf-8",
+    )
+    paths.global_env.chmod(0)
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    runner = CliRunner()
+
+    try:
+        result = runner.invoke(app, ["doctor", "--json"])
+    finally:
+        paths.global_env.chmod(0o600)
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
+    assert payload["missing_env_keys"] == []
+    assert len(payload["issues"]) == 1
+    assert "could not be read" in payload["issues"][0]
+    assert payload["status"] != ConfigDoctorStatus.RUNNABLE.value
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_storage_required_doctor_reports_unreadable_global_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    paths = kit.spec.ensure_config_home()
+    paths.global_env.write_text(
+        'APPRC_EXAMPLE_APP_STORAGE="alpha"\n',
+        encoding="utf-8",
+    )
+    paths.global_env.chmod(0)
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    try:
+        result = runner.invoke(app, ["doctor", "--json"])
+    finally:
+        paths.global_env.chmod(0o600)
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
+    assert payload["missing_env_keys"] == []
+    assert len(payload["issues"]) == 1
+    assert "could not be read" in payload["issues"][0]
+    assert "PermissionError" not in result.output
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_config_doctor_reports_unreadable_apprc_toml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / ".env.apprc_example_app").write_text("", encoding="utf-8")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
+    kit = build_apprc_example_app_kit()
+    paths = kit.spec.ensure_config_home()
+    paths.apprc_toml.chmod(0)
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    try:
+        result = runner.invoke(app, ["doctor", "--json"])
+    finally:
+        paths.apprc_toml.chmod(0o600)
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
+    assert payload["missing_env_keys"] == []
+    assert len(payload["issues"]) == 1
+    assert "could not be read" in payload["issues"][0]
+    assert "PermissionError" not in result.output
+
+
+@pytest.mark.allow_missing_apprc_env
 def test_config_doctor_reports_runnable_single_storage_without_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

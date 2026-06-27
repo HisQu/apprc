@@ -15,6 +15,14 @@ from dotenv import dotenv_values
 
 # == Internal ================================
 from apprc.runtime_config.app_spec import AppConfigSpec
+from apprc.runtime_config.config_home import ConfigHomeError
+
+
+class ExplicitEnvFileError(ValueError):
+    """Raised when an explicit ``--env-file`` cannot be read.
+
+    :param message: Human-readable read failure.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +93,12 @@ def read_explicit_env_files(
                 f"Explicit env file does not exist: {resolved}"
             )
         loaded_paths.append(resolved)
-        values = read_dotenv_file(resolved)
+        try:
+            values = read_dotenv_file(resolved)
+        except OSError as exc:
+            raise ExplicitEnvFileError(
+                f"Explicit env file could not be read: {resolved}: {exc}"
+            ) from exc
         layers.append(ExplicitEnvLayer(path=resolved, values=values))
         merged_values.update(values)
     return tuple(loaded_paths), tuple(layers), merged_values
@@ -105,29 +118,43 @@ def read_dotenv_file(path: Path | None) -> dict[str, str]:
 
 def read_storage_selector_fallback_values(
     spec: AppConfigSpec,
+    *,
+    collect_global_issues: bool = False,
 ) -> StorageSelectorFallbackValues:
     """Read persistent dotenv values used for storage selection.
 
-    Bootstrap, skipped-bootstrap config commands, and doctor must resolve
-    persistent storage selectors with the same file-reading rules. Selector
-    precedence stays in :mod:`apprc.runtime_config.storage.selector`.
+    Skipped-bootstrap config commands and doctor must resolve persistent
+    storage selectors with the same file-reading rules. Selector precedence
+    stays in :mod:`apprc.runtime_config.storage.selector`.
 
     :param spec: Application-specific config contract.
+    :param collect_global_issues: Whether app-global dotenv read errors should
+        be returned as diagnostic issues instead of raised.
     :return: Parsed fallback values and any diagnostic issues.
     """
     global_values = {}
-    if spec.global_env_path().is_file():
-        global_values = read_dotenv_file(spec.global_env_path())
+    issues: list[str] = []
+    global_env_path = spec.global_env_path()
+    if global_env_path.is_file():
+        try:
+            global_values = read_dotenv_file(global_env_path)
+        except OSError as exc:
+            issue = (
+                "AppRC-managed file could not be read: "
+                f"{global_env_path}: {exc}"
+            )
+            if collect_global_issues:
+                issues.append(issue)
+            else:
+                raise ConfigHomeError(issue) from exc
     try:
         _, shared_values = read_shared_env_values(spec)
     except (ImportError, OSError, TypeError) as exc:
         shared_values = {}
-        issues = [
+        issues.append(
             "Packaged shared env could not be read for "
             f"{spec.config_package!r}: {exc}"
-        ]
-    else:
-        issues = []
+        )
     return StorageSelectorFallbackValues(
         global_values=global_values,
         shared_values=shared_values,

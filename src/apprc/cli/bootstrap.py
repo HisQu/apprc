@@ -12,6 +12,7 @@ import typer
 
 # == Internal ================================
 from apprc.cli.errors import config_home_bad_parameter
+from apprc.runtime_config.bootstrap.dotenv_layers import ExplicitEnvFileError
 from apprc.runtime_config.bootstrap.result import (
     BootstrapLogger,
     EnvBootstrapResult,
@@ -79,6 +80,8 @@ def bootstrap_cli_env(
         )
     except FileNotFoundError as exc:
         raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
+    except ExplicitEnvFileError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
     except ApprcTomlEnvError as exc:
         raise typer.BadParameter(
             str(exc),
@@ -89,7 +92,7 @@ def bootstrap_cli_env(
             str(exc),
             param_hint=exc.param_hint,
         ) from exc
-    except (ConfigHomeError, OSError) as exc:
+    except ConfigHomeError as exc:
         raise config_home_bad_parameter(exc) from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint="--storage") from exc

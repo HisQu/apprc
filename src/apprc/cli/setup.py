@@ -85,14 +85,14 @@ def run_config_setup(
             )
         try:
             _print_global_setup_finish(kit)
-        except (ConfigHomeError, OSError) as exc:
+        except ConfigHomeError as exc:
             raise config_home_bad_parameter(exc) from exc
         return
 
     if not assume_yes:
         try:
             result = ConfigSetupApp(kit=kit).run()
-        except (ConfigHomeError, OSError) as exc:
+        except ConfigHomeError as exc:
             raise config_home_bad_parameter(exc) from exc
         if result is None:
             raise typer.Exit(code=1)
@@ -131,7 +131,7 @@ def run_config_setup(
             result = flow.ensure_single_storage(
                 storage_root=root,
             )
-    except (ConfigHomeError, OSError) as exc:
+    except ConfigHomeError as exc:
         raise config_home_bad_parameter(exc) from exc
     except setup_flow.ConfigSetupError as exc:
         _raise_setup_error(exc)

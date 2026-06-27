@@ -137,6 +137,13 @@ This project follows Semantic Versioning.
     AppRC-managed file readiness instead of adding secondary AppRC TOML or
     storage diagnosis issues caused by the blocked write.
 
+  - Fixed unreadable `.env.global` and AppRC TOML files so `config doctor`
+    reports `config_not_ready` instead of crashing or reporting runnable.
+
+  - Fixed CLI error hints so unreadable explicit `--env-file` paths no longer
+    appear as `config-home` failures, and storage-local dotenv write/read
+    failures no longer appear as `KEY` or config-home failures.
+
 <br>
 
 ---

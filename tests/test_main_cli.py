@@ -206,6 +206,31 @@ def test_demo_root_bootstrap_reports_config_home_error() -> None:
     assert_config_home_cli_error(result)
 
 
+def test_demo_root_bootstrap_reports_env_file_read_error(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "unreadable.env"
+    env_file.write_text(
+        'APPRC_EXAMPLE_APP_PROFILE="explicit"\n',
+        encoding="utf-8",
+    )
+    env_file.chmod(0)
+    runner = CliRunner()
+
+    try:
+        result = runner.invoke(
+            app,
+            ["--env-file", str(env_file), "config", "show"],
+        )
+    finally:
+        env_file.chmod(0o600)
+
+    assert result.exit_code == 2, result.output
+    assert "--env-file" in result.output
+    assert "config-home" not in result.output
+    assert "PermissionError" not in result.output
+
+
 def test_demo_config_set_and_show_payload(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

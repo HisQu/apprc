@@ -354,7 +354,12 @@ class ConfigSetupFlow:
     def remove_apprc_toml_file(apprc_toml_path: Path) -> None:
         """Delete only AppRC TOML state, never registered storage roots."""
         resolved_path = normalize_apprc_toml_path(apprc_toml_path)
-        resolved_path.unlink(missing_ok=True)
+        try:
+            resolved_path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise ConfigHomeError(
+                f"AppRC-managed file could not be removed: {resolved_path}: {exc}"
+            ) from exc
 
     def move_existing_apprc_toml(
         self,
@@ -379,9 +384,19 @@ class ConfigSetupFlow:
                     f"AppRC TOML target already exists: {target}",
                     param_hint="APPRC_TOML",
                 )
-            target.unlink()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(source), str(target))
+            try:
+                target.unlink()
+            except OSError as exc:
+                raise ConfigHomeError(
+                    f"AppRC-managed file could not be removed: {target}: {exc}"
+                ) from exc
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(target))
+        except OSError as exc:
+            raise ConfigHomeError(
+                f"AppRC-managed file could not be moved to {target}: {exc}"
+            ) from exc
         return self.load_storage_registry(target)
 
     @staticmethod
@@ -389,6 +404,8 @@ class ConfigSetupFlow:
         """Load a storage table and convert parse failures to setup errors."""
         try:
             return load_create_or_empty_storage_registry(apprc_toml_path)
+        except ConfigHomeError:
+            raise
         except ValueError as exc:
             raise ConfigSetupError(
                 str(exc),

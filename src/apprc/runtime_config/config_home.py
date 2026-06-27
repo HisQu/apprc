@@ -115,7 +115,12 @@ def ensure_app_config_home(
         raise ConfigHomeError(
             f"AppRC config home exists but is not a directory: {paths.root}"
         )
-    paths.root.mkdir(parents=True, exist_ok=True)
+    try:
+        paths.root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigHomeError(
+            f"AppRC config home could not be created: {paths.root}: {exc}"
+        ) from exc
     ensure_text_file(paths.global_env)
     ensure_text_file(paths.apprc_toml)
     return paths
@@ -164,6 +169,31 @@ def ensure_text_file(path: Path) -> Path:
             raise ConfigHomeError(
                 f"AppRC-managed file path exists but is not a file: {resolved}"
             )
+    except OSError as exc:
+        raise ConfigHomeError(
+            f"AppRC-managed file could not be created: {resolved}: {exc}"
+        ) from exc
+    return resolved
+
+
+def require_readable_text_file(path: Path) -> Path:
+    """Return a managed text file path after proving it can be opened.
+
+    :param path: File path that should be readable by the current process.
+    :return: Resolved file path.
+    :raises ConfigHomeError: If the target is not a readable file.
+    """
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise ConfigHomeError(
+            f"AppRC-managed file path exists but is not a file: {resolved}"
+        )
+    try:
+        resolved.open("r", encoding="utf-8").close()
+    except OSError as exc:
+        raise ConfigHomeError(
+            f"AppRC-managed file could not be read: {resolved}: {exc}"
+        ) from exc
     return resolved
 
 
@@ -182,8 +212,13 @@ def write_text_atomic(path: Path, text: str) -> Path:
             f"AppRC-managed file path exists but is not a file: {resolved}"
         )
     temp_path = resolved.with_name(f".{resolved.name}.{os.getpid()}.tmp")
-    temp_path.write_text(text, encoding="utf-8")
-    temp_path.replace(resolved)
+    try:
+        temp_path.write_text(text, encoding="utf-8")
+        temp_path.replace(resolved)
+    except OSError as exc:
+        raise ConfigHomeError(
+            f"AppRC-managed file could not be written: {resolved}: {exc}"
+        ) from exc
     return resolved
 
 
@@ -198,4 +233,9 @@ def _ensure_parent_dir(path: Path) -> None:
         raise ConfigHomeError(
             f"AppRC-managed file parent exists but is not a directory: {parent}"
         )
-    parent.mkdir(parents=True, exist_ok=True)
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigHomeError(
+            f"AppRC-managed file parent could not be created: {parent}: {exc}"
+        ) from exc

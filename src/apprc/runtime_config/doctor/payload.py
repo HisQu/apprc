@@ -13,7 +13,11 @@ from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.bootstrap.dotenv_layers import (
     read_storage_selector_fallback_values,
 )
-from apprc.runtime_config.config_home import AppConfigHome, ConfigHomeError
+from apprc.runtime_config.config_home import (
+    AppConfigHome,
+    ConfigHomeError,
+    require_readable_text_file,
+)
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.storage.loading import (
     StorageRegistryInspection,
@@ -188,6 +192,17 @@ def _diagnose_config_home(kit: "AppConfigKit") -> _ConfigHomeDiagnosis:
             paths=intended_paths,
             issues=[str(exc)],
         )
+    issues: list[str] = []
+    for managed_file in (
+        ensured_paths.global_env,
+        ensured_paths.apprc_toml,
+    ):
+        try:
+            require_readable_text_file(managed_file)
+        except ConfigHomeError as exc:
+            issues.append(str(exc))
+    if issues:
+        return _ConfigHomeDiagnosis(paths=ensured_paths, issues=issues)
     return _ConfigHomeDiagnosis(paths=ensured_paths, issues=[])
 
 
@@ -217,7 +232,6 @@ def _undiscovered_storage_registry(
         registry=None,
         storage_count=0,
         issues=[],
-        parse_ok_override=True,
     )
 
 
@@ -308,7 +322,10 @@ def _diagnose_storage(
         )
     storage_env_key = kit.spec.require_storage_env_key()
     issues: list[str] = []
-    fallback_values = read_storage_selector_fallback_values(kit.spec)
+    fallback_values = read_storage_selector_fallback_values(
+        kit.spec,
+        collect_global_issues=True,
+    )
     issues.extend(fallback_values.issues)
     missing_env_keys: list[str] = []
     selection: StorageSelection | None = None

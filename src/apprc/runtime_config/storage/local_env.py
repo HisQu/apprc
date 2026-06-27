@@ -24,7 +24,11 @@ from dotenv import dotenv_values
 from typed_settings.exceptions import InvalidSettingsError
 
 # == Internal ================================
-from apprc.runtime_config.config_home import ensure_text_file, write_text_atomic
+from apprc.runtime_config.config_home import (
+    ConfigHomeError,
+    ensure_text_file,
+    write_text_atomic,
+)
 from apprc.runtime_config._env_loading import (
     parse_env_field_value,
 )
@@ -73,7 +77,10 @@ def ensure_local_env_file(
     """
     root = _require_existing_storage_root(storage_root)
     path = root / filename
-    return ensure_text_file(path)
+    try:
+        return ensure_text_file(path)
+    except ConfigHomeError as exc:
+        raise StorageRootPathError(str(exc)) from exc
 
 
 def ensure_env_file(path: Path) -> Path:
@@ -114,7 +121,10 @@ def write_local_env(
     """
     env_path = Path(path).expanduser()
     _require_existing_storage_root(env_path.parent)
-    return write_env_file(env_path, values, owners=owners)
+    try:
+        return write_env_file(env_path, values, owners=owners)
+    except (ConfigHomeError, OSError) as exc:
+        raise StorageRootPathError(str(exc)) from exc
 
 
 def write_env_file(
@@ -175,13 +185,16 @@ def set_local_env_value(
     :raises ValueError: If the key is unknown, read-only, or invalid.
     """
     path = local_env_path(storage_root, filename=local_env_filename)
-    return set_env_file_value(
-        path=path,
-        reference=reference,
-        raw_value=raw_value,
-        owners=owners,
-        layer_name=".env.local",
-    )
+    try:
+        return set_env_file_value(
+            path=path,
+            reference=reference,
+            raw_value=raw_value,
+            owners=owners,
+            layer_name=".env.local",
+        )
+    except (ConfigHomeError, OSError) as exc:
+        raise StorageRootPathError(str(exc)) from exc
 
 
 def set_env_file_value(
@@ -233,12 +246,15 @@ def clear_local_env_value(
     :raises ValueError: If the key is unknown or read-only.
     """
     path = local_env_path(storage_root, filename=local_env_filename)
-    return clear_env_file_value(
-        path=path,
-        reference=reference,
-        owners=owners,
-        layer_name=".env.local",
-    )
+    try:
+        return clear_env_file_value(
+            path=path,
+            reference=reference,
+            owners=owners,
+            layer_name=".env.local",
+        )
+    except (ConfigHomeError, OSError) as exc:
+        raise StorageRootPathError(str(exc)) from exc
 
 
 def clear_env_file_value(

@@ -43,12 +43,14 @@ from apprc.runtime_config.bootstrap.result import (
     EnvBootstrapResult,
 )
 from apprc.runtime_config.app_spec import AppConfigSpec, StorageMode
+from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.provenance import EnvValueOrigin
 from apprc.runtime_config.provenance import register_env_value_origins
 from apprc.runtime_config.storage.loading import (
     load_optional_runtime_storage_registry,
 )
 from apprc.runtime_config.storage.selector import (
+    StorageSelectorError,
     missing_storage_selector_error,
     resolve_storage_selector_value,
     select_storage_selector,
@@ -109,7 +111,13 @@ def bootstrap_env(
     )
     config_home = spec.ensure_config_home(proc_env=selector_env)
     shared_env_path, shared_values = read_shared_env_values(spec)
-    global_values = read_dotenv_file(config_home.global_env)
+    try:
+        global_values = read_dotenv_file(config_home.global_env)
+    except OSError as exc:
+        raise ConfigHomeError(
+            "AppRC-managed file could not be read: "
+            f"{config_home.global_env}: {exc}"
+        ) from exc
     owned_env_keys = app_env_keys(spec)
     emit.info(
         "AppRC bootstrap starting for %s: explicit_env_files=%s "
@@ -180,7 +188,14 @@ def bootstrap_env(
             raise FileNotFoundError(
                 f"Did not find packaged .env.shared for {spec.config_package}."
             )
-        local_values = read_dotenv_file(active_local_env)
+        try:
+            local_values = read_dotenv_file(active_local_env)
+        except OSError as exc:
+            raise StorageSelectorError(
+                "Storage-local env file could not be read: "
+                f"{active_local_env}: {exc}",
+                param_hint="--storage",
+            ) from exc
         merged = merged_env_values(
             shared_values=shared_values,
             global_values=global_values,

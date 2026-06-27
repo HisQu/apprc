@@ -58,6 +58,12 @@ This project follows Semantic Versioning.
     `.env.apprc-app` and a storage root.
     Migration: Pass `--scope app` or `--scope storage`.
 
+  - Breaking: The Textual editor no longer infers a write target when
+    app-wide and storage scopes are both writable.
+    Affected: Users pressing Enter or Ctrl+S in the value editor while both
+    writable layers are active.
+    Migration: Click `Save App-wide` or `Save Storage`.
+
   - Breaking: Public filename constructor arguments were renamed.
     Affected: Integrations passing `apprc_toml_filename`,
     `global_env_filename`, or `local_env_filename`.
@@ -112,6 +118,9 @@ This project follows Semantic Versioning.
   - Changed `config setup` to follow the constructor instead of prompting for
     optional upgrades.
 
+  - Changed the Textual editor to hide named-storage management controls when
+    named storage is disabled, while keeping active path editing available.
+
 <br>
 
 ### Deprecated
@@ -136,6 +145,22 @@ This project follows Semantic Versioning.
   - Fixed optional named-storage handling so path selectors ignore corrupt
     optional indexes at runtime and report them as doctor warnings, while bare
     named selectors fail only when they need the invalid index.
+
+  - Fixed `config edit` so root storage selectors are honored and editor open
+    remains zero-write when optional named-storage indexes are corrupt but not
+    needed.
+
+  - Fixed `config doctor` so corrupt optional indexes are warnings when no
+    selector exists or the active selector is path-like.
+
+  - Fixed storage-env helper writes so storage roots must already exist, and
+    no-op clears no longer create empty dotenv files.
+
+  - Fixed `config setup` for app-wide storage constructors so config-home
+    errors are reported as clean CLI validation errors.
+
+  - Fixed Textual editor source-copy buttons so app-wide and storage copy
+    actions copy only actual source values.
 
 <br>
 

@@ -26,31 +26,31 @@ This project follows Semantic Versioning.
 
 <br>
 
-### Breaking changes
+### 💥 Breaking Change Summary
 
 <br>
 
-### Added
+### ➕ Added
 
 <br>
 
-### Changed
+### 💔 Changed
 
 <br>
 
-### Deprecated
+### ⚠️ Deprecated
 
 <br>
 
-### Removed
+### 🗑️ Removed
 
 <br>
 
-### Fixed
+### 🔨 Fixed
 
 <br>
 
-### Security
+### 🔒 Security
 
 <br>
 
@@ -64,7 +64,7 @@ This project follows Semantic Versioning.
 
 <br>
 
-### Breaking changes
+### 💥 Breaking Change Summary
 
   - Breaking: `StorageMode` and `storage_mode=` were removed from the public
     API.
@@ -120,7 +120,7 @@ This project follows Semantic Versioning.
 
 <br>
 
-### Added
+### ➕ Added
 
   - Added explicit capability constructors:
     `AppConfigKit.env_only(...)`, `AppConfigKit.storage_only(...)`,
@@ -139,7 +139,7 @@ This project follows Semantic Versioning.
 
 <br>
 
-### Changed
+### 💔 Changed
 
   - Changed runtime bootstrap precedence to packaged `.env.shared`,
     app-wide `.env.apprc-app`, storage `.env.apprc-storage`, explicit env
@@ -162,11 +162,7 @@ This project follows Semantic Versioning.
 
 <br>
 
-### Deprecated
-
-<br>
-
-### Removed
+### 🗑️ Removed
 
   - Removed `StorageMode`.
 
@@ -176,7 +172,7 @@ This project follows Semantic Versioning.
 
 <br>
 
-### Fixed
+### 🔨 Fixed
 
   - Fixed storage-only runtime use so a single `APP_STORAGE=/path` selector no
     longer requires a config-home file or named-storage index.
@@ -203,10 +199,6 @@ This project follows Semantic Versioning.
 
 <br>
 
-### Security
-
-<br>
-
 ---
 
 <br>
@@ -225,26 +217,6 @@ This project follows Semantic Versioning.
     Affected: Users calling `setup_logging()` after installing bare `apprc`.
     Migration: Install AppRC with `python -m pip install "apprc[logging]"` or
     add `apprc[logging]` to the application's dependency declaration.
-
-<br>
-
-### ➕ Added
-
-<br>
-
-### 💔 Changed
-
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
-### 🔨 Fixed
 
 <br>
 

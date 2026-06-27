@@ -1,9 +1,9 @@
-"""Interactive Textual editor for storage-local config overrides.
+"""Interactive Textual editor for AppRC dotenv override files.
 
 Applications declare config fields once through :mod:`apprc.runtime_config.contract.schema`.
-This module turns those declarations into a terminal UI that selects one
-registered storage root, reads that storage's local dotenv file, and edits
-only the values owned by the local override layer.
+This module turns those declarations into a terminal UI that edits the
+app-global dotenv file for storage-free apps or the active storage-local dotenv
+file for storage-required apps.
 
 Rendering rules for table cells live in :mod:`apprc.runtime_config.tui.rendering` so
 the widget code here stays focused on Textual events, modal handling, and file

@@ -25,7 +25,7 @@ def setup_overview_text(kit: "AppConfigKit") -> str:
     :return: Host-app-specific setup explanation.
     """
     storage_env_key = kit.spec.require_storage_env_key()
-    apprc_toml_path = kit.spec.optional_apprc_toml_path()
+    apprc_toml_path = kit.spec.apprc_toml_path()
     apprc_toml_path_text = str(apprc_toml_path)
     return (
         f"{kit.spec.display_name} needs one active storage root selected by "
@@ -272,8 +272,12 @@ def shell_export_commands(
     :return: Ordered shell export commands.
     """
     commands: list[str] = []
-    if registry is not None:
-        commands.append(export_apprc_toml_command(kit, registry.path))
+    custom_apprc_toml_path = custom_apprc_toml_path_for_export(
+        kit,
+        registry,
+    )
+    if custom_apprc_toml_path is not None:
+        commands.append(export_apprc_toml_command(kit, custom_apprc_toml_path))
     commands.append(
         export_storage_selector_command(kit, str(active_storage_root))
     )
@@ -293,12 +297,37 @@ def dotenv_assignment_commands(
     :return: Ordered dotenv assignment lines.
     """
     assignments: list[str] = []
-    if registry is not None:
-        assignments.append(dotenv_apprc_toml_assignment(kit, registry.path))
+    custom_apprc_toml_path = custom_apprc_toml_path_for_export(
+        kit,
+        registry,
+    )
+    if custom_apprc_toml_path is not None:
+        assignments.append(
+            dotenv_apprc_toml_assignment(kit, custom_apprc_toml_path)
+        )
     assignments.append(
         dotenv_storage_selector_assignment(kit, str(active_storage_root))
     )
     return assignments
+
+
+def custom_apprc_toml_path_for_export(
+    kit: "AppConfigKit",
+    registry: StorageRegistry | None,
+) -> Path | None:
+    """Return a custom AppRC TOML path that future shells must export.
+
+    :param kit: Application config facade.
+    :param registry: Storage table selected when multi-storage is enabled.
+    :return: Normalized custom path, or ``None`` for the config-home default.
+    """
+    if registry is None:
+        return None
+    registry_path = normalize_apprc_toml_path(registry.path)
+    default_path = normalize_apprc_toml_path(kit.spec.default_apprc_toml_path())
+    if registry_path == default_path:
+        return None
+    return registry_path
 
 
 def export_apprc_toml_command(

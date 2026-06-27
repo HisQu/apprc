@@ -6,7 +6,11 @@ from apprc.runtime_config.app_spec import (
     AppConfigSpec,
     StorageMode,
 )
-from apprc.runtime_config.config_home import app_config_file, app_config_home
+from apprc.runtime_config.config_home import (
+    ConfigHomeError,
+    app_config_file,
+    app_config_home,
+)
 from apprc.runtime_config.config_objects.base_config import (
     BaseConfig,
 )

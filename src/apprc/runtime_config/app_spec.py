@@ -15,6 +15,7 @@ from apprc.runtime_config.config_home import (
     app_config_file,
     app_config_home,
     ensure_app_config_home,
+    require_config_filename,
 )
 from apprc.runtime_config.contract.paths import normalize_apprc_toml_path
 from apprc.runtime_config.contract.schema import ConfigOwner
@@ -110,6 +111,22 @@ class AppConfigSpec:
             storage_mode=resolved_storage_mode,
             storage_mode_was_explicit=storage_mode is not None,
         )
+        resolved_apprc_toml_filename = require_config_filename(
+            apprc_toml_filename,
+            field_name="apprc_toml_filename",
+        )
+        resolved_shared_env_filename = require_config_filename(
+            shared_env_filename,
+            field_name="shared_env_filename",
+        )
+        resolved_global_env_filename = require_config_filename(
+            global_env_filename,
+            field_name="global_env_filename",
+        )
+        resolved_local_env_filename = require_config_filename(
+            local_env_filename,
+            field_name="local_env_filename",
+        )
         object.__setattr__(self, "app_name", app_name)
         object.__setattr__(self, "display_name", display_name)
         object.__setattr__(self, "config_package", config_package)
@@ -117,11 +134,27 @@ class AppConfigSpec:
         object.__setattr__(self, "envs", tuple(envs))
         object.__setattr__(self, "storage_mode", resolved_storage_mode)
         object.__setattr__(self, "storage_env_key", resolved_storage_env_key)
-        object.__setattr__(self, "apprc_toml_filename", apprc_toml_filename)
+        object.__setattr__(
+            self,
+            "apprc_toml_filename",
+            resolved_apprc_toml_filename,
+        )
         object.__setattr__(self, "command_name", command_name)
-        object.__setattr__(self, "shared_env_filename", shared_env_filename)
-        object.__setattr__(self, "global_env_filename", global_env_filename)
-        object.__setattr__(self, "local_env_filename", local_env_filename)
+        object.__setattr__(
+            self,
+            "shared_env_filename",
+            resolved_shared_env_filename,
+        )
+        object.__setattr__(
+            self,
+            "global_env_filename",
+            resolved_global_env_filename,
+        )
+        object.__setattr__(
+            self,
+            "local_env_filename",
+            resolved_local_env_filename,
+        )
 
     def config_command_name(self) -> str:
         """Return the executable name shown in generated config commands."""

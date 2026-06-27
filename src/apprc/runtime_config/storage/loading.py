@@ -47,7 +47,7 @@ def apprc_toml_path_for_create(spec: AppConfigSpec) -> Path:
     :param spec: Application-specific config contract.
     :return: Override or default AppRC TOML path.
     """
-    return spec.required_apprc_toml_path()
+    return spec.apprc_toml_path()
 
 
 def load_create_or_empty_storage_registry(path: Path) -> StorageRegistry:
@@ -73,7 +73,7 @@ def load_existing_storage_registry(
     :raises ApprcTomlEnvError: If the AppRC TOML file is missing.
     :raises ValueError: If the AppRC TOML cannot be parsed.
     """
-    apprc_toml_path = spec.required_apprc_toml_path(proc_env=proc_env)
+    apprc_toml_path = spec.apprc_toml_path(proc_env=proc_env)
     if not apprc_toml_path.is_file():
         raise ApprcTomlEnvError(
             missing_apprc_toml_file_message(
@@ -112,7 +112,7 @@ def inspect_storage_registry(spec: AppConfigSpec) -> StorageRegistryInspection:
     raw_apprc_toml_env_value = os.environ.get(
         spec.apprc_toml_env_key, ""
     ).strip()
-    apprc_toml_path = spec.optional_apprc_toml_path()
+    apprc_toml_path = spec.apprc_toml_path()
     apprc_toml_exists = apprc_toml_path.is_file()
     if not apprc_toml_exists:
         return StorageRegistryInspection(

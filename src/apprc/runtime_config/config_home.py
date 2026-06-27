@@ -5,10 +5,14 @@ from __future__ import annotations
 # == Standard Library ========================
 import os
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 # == 3rd Party ===============================
 from platformdirs import user_config_path
+
+
+class ConfigHomeError(ValueError):
+    """Invalid AppRC-managed config-home path or filename."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +49,10 @@ def app_config_file(app_name: str, filename: str) -> Path:
     :param filename: File basename owned by the host application.
     :return: Path below the platform-native config directory.
     """
-    return app_config_home(app_name) / filename
+    return app_config_home(app_name) / require_config_filename(
+        filename,
+        field_name="filename",
+    )
 
 
 def resolve_app_config_home(
@@ -64,13 +71,21 @@ def resolve_app_config_home(
     :return: Resolved config-home paths.
     """
     root = app_config_home(app_name)
+    global_name = require_config_filename(
+        global_env_filename,
+        field_name="global_env_filename",
+    )
+    apprc_name = require_config_filename(
+        apprc_toml_filename,
+        field_name="apprc_toml_filename",
+    )
     return AppConfigHome(
         root=root,
-        global_env=root / global_env_filename,
+        global_env=root / global_name,
         apprc_toml=(
             apprc_toml_path
             if apprc_toml_path is not None
-            else root / apprc_toml_filename
+            else root / apprc_name
         ),
     )
 
@@ -96,10 +111,37 @@ def ensure_app_config_home(
         apprc_toml_filename=apprc_toml_filename,
         apprc_toml_path=apprc_toml_path,
     )
+    if paths.root.exists() and not paths.root.is_dir():
+        raise ConfigHomeError(
+            f"AppRC config home exists but is not a directory: {paths.root}"
+        )
     paths.root.mkdir(parents=True, exist_ok=True)
     ensure_text_file(paths.global_env)
     ensure_text_file(paths.apprc_toml)
     return paths
+
+
+def require_config_filename(filename: str, *, field_name: str) -> str:
+    """Return a config-home basename or raise for path-like input.
+
+    :param filename: Candidate file basename from an integration spec.
+    :param field_name: Human-facing attribute name for error messages.
+    :return: The original filename when it is safe to join under config home.
+    :raises ConfigHomeError: If the value is empty or path-like.
+    """
+    if not filename:
+        raise ConfigHomeError(f"{field_name} must not be empty.")
+    if (
+        filename in {".", ".."}
+        or "/" in filename
+        or "\\" in filename
+        or Path(filename).is_absolute()
+        or PureWindowsPath(filename).drive
+    ):
+        raise ConfigHomeError(
+            f"{field_name} must be a single filename, not a path: {filename!r}"
+        )
+    return filename
 
 
 def ensure_text_file(path: Path) -> Path:
@@ -107,13 +149,21 @@ def ensure_text_file(path: Path) -> Path:
 
     :param path: File path that should exist.
     :return: Resolved file path.
+    :raises ConfigHomeError: If the target or parent is not file-compatible.
     """
     resolved = Path(path).expanduser().resolve()
-    resolved.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_parent_dir(resolved)
+    if resolved.exists() and not resolved.is_file():
+        raise ConfigHomeError(
+            f"AppRC-managed file path exists but is not a file: {resolved}"
+        )
     try:
         resolved.open("x", encoding="utf-8").close()
     except FileExistsError:
-        pass
+        if not resolved.is_file():
+            raise ConfigHomeError(
+                f"AppRC-managed file path exists but is not a file: {resolved}"
+            )
     return resolved
 
 
@@ -123,10 +173,29 @@ def write_text_atomic(path: Path, text: str) -> Path:
     :param path: Destination file path.
     :param text: UTF-8 text to write.
     :return: Resolved destination path.
+    :raises ConfigHomeError: If the target or parent is not file-compatible.
     """
     resolved = Path(path).expanduser().resolve()
-    resolved.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_parent_dir(resolved)
+    if resolved.exists() and not resolved.is_file():
+        raise ConfigHomeError(
+            f"AppRC-managed file path exists but is not a file: {resolved}"
+        )
     temp_path = resolved.with_name(f".{resolved.name}.{os.getpid()}.tmp")
     temp_path.write_text(text, encoding="utf-8")
     temp_path.replace(resolved)
     return resolved
+
+
+def _ensure_parent_dir(path: Path) -> None:
+    """Create a path parent or raise when a non-directory blocks it.
+
+    :param path: File path whose parent should be writable.
+    :raises ConfigHomeError: If an existing parent is not a directory.
+    """
+    parent = path.parent
+    if parent.exists() and not parent.is_dir():
+        raise ConfigHomeError(
+            f"AppRC-managed file parent exists but is not a directory: {parent}"
+        )
+    parent.mkdir(parents=True, exist_ok=True)

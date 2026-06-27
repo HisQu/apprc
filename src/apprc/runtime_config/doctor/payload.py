@@ -10,12 +10,8 @@ from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
 from apprc.runtime_config.app_spec import StorageMode
-from apprc.runtime_config.config_home import AppConfigHome
+from apprc.runtime_config.config_home import AppConfigHome, ConfigHomeError
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
-from apprc.runtime_config.bootstrap.dotenv_layers import (
-    read_dotenv_file,
-    read_shared_env_values,
-)
 from apprc.runtime_config.storage.loading import (
     StorageRegistryInspection,
     inspect_storage_registry,
@@ -25,6 +21,9 @@ from apprc.runtime_config.storage.selector import (
     StorageSelection,
     StorageSelectorError,
     resolve_active_storage_selection,
+)
+from apprc.runtime_config.storage.selector_fallbacks import (
+    read_storage_selector_fallback_values,
 )
 
 if TYPE_CHECKING:
@@ -68,6 +67,18 @@ class _StorageDiagnosis:
     local_env: Path | None
     local_env_exists: bool | None
     missing_env_keys: list[str]
+    issues: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _ConfigHomeDiagnosis:
+    """Config-home state discovered for one doctor run.
+
+    :param paths: Intended AppRC-managed paths.
+    :param issues: Readiness-affecting config-home problems.
+    """
+
+    paths: AppConfigHome
     issues: list[str]
 
 
@@ -122,7 +133,7 @@ def build_config_doctor_payload(
     :param storage: Optional selector passed by ``--storage``.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    config_home = kit.spec.ensure_config_home()
+    config_home_diagnosis = _diagnose_config_home(kit)
     storage_registry_diagnosis = inspect_storage_registry(kit.spec)
     storage_diagnosis = _diagnose_storage(
         kit,
@@ -130,24 +141,47 @@ def build_config_doctor_payload(
         storage=storage,
     )
     issues = [
+        *config_home_diagnosis.issues,
         *storage_registry_diagnosis.issues,
         *storage_diagnosis.issues,
     ]
     warnings = _config_package_convention_warnings(kit)
     status = _doctor_status(
         kit,
+        config_home_issues=config_home_diagnosis.issues,
         registry=storage_registry_diagnosis,
         storage=storage_diagnosis,
     )
     return _doctor_payload(
         kit,
-        config_home=config_home,
+        config_home=config_home_diagnosis.paths,
         registry=storage_registry_diagnosis,
         storage=storage_diagnosis,
         status=status,
         issues=issues,
         warnings=warnings,
     )
+
+
+def _diagnose_config_home(kit: "AppConfigKit") -> _ConfigHomeDiagnosis:
+    """Create AppRC-managed files or capture path-level failures.
+
+    :param kit: Application config facade.
+    :return: Intended config-home paths plus any creation issue.
+    """
+    intended_paths = AppConfigHome(
+        root=kit.spec.config_home(),
+        global_env=kit.spec.global_env_path(),
+        apprc_toml=kit.spec.apprc_toml_path(),
+    )
+    try:
+        ensured_paths = kit.spec.ensure_config_home()
+    except (ConfigHomeError, OSError) as exc:
+        return _ConfigHomeDiagnosis(
+            paths=intended_paths,
+            issues=[str(exc)],
+        )
+    return _ConfigHomeDiagnosis(paths=ensured_paths, issues=[])
 
 
 def _doctor_payload(
@@ -237,17 +271,8 @@ def _diagnose_storage(
         )
     storage_env_key = kit.spec.require_storage_env_key()
     issues: list[str] = []
-    global_values = {}
-    if kit.spec.global_env_path().is_file():
-        global_values = read_dotenv_file(kit.spec.global_env_path())
-    try:
-        _, shared_values = read_shared_env_values(kit.spec)
-    except (ImportError, OSError, TypeError) as exc:
-        shared_values = {}
-        issues.append(
-            "Packaged shared env could not be read for "
-            f"{kit.spec.config_package!r}: {exc}"
-        )
+    fallback_values = read_storage_selector_fallback_values(kit.spec)
+    issues.extend(fallback_values.issues)
     missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
     selector_error = False
@@ -258,8 +283,8 @@ def _diagnose_storage(
             storage=storage,
             storage_env_key=storage_env_key,
             original_env=os.environ,
-            global_values=global_values,
-            shared_values=shared_values,
+            global_values=fallback_values.global_values,
+            shared_values=fallback_values.shared_values,
         )
     except StorageSelectorError as exc:
         selector_error = True
@@ -301,6 +326,7 @@ def _diagnose_storage(
 def _doctor_status(
     kit: "AppConfigKit",
     *,
+    config_home_issues: list[str],
     registry: StorageRegistryInspection,
     storage: _StorageDiagnosis,
 ) -> ConfigDoctorStatus:
@@ -310,6 +336,8 @@ def _doctor_status(
     :param storage: Active storage diagnosis.
     :return: Public doctor status.
     """
+    if config_home_issues:
+        return ConfigDoctorStatus.CONFIG_NOT_READY
     if storage.missing_env_keys:
         return ConfigDoctorStatus.ENV_NOT_SET
     if registry.issues:

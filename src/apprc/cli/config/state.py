@@ -23,6 +23,10 @@ from apprc.runtime_config.storage.loading import (
 from apprc.runtime_config.storage.registry import StorageRegistry
 from apprc.runtime_config.storage.selector import (
     resolve_active_storage_selection,
+    select_storage_selector,
+)
+from apprc.runtime_config.storage.selector_fallbacks import (
+    read_storage_selector_fallback_values,
 )
 
 
@@ -87,9 +91,6 @@ def active_storage_root_from_state(
         and state.env_bootstrap.storage_root is not None
     ):
         return state.env_bootstrap.storage_root
-    storage_env_key = kit.spec.require_storage_env_key()
-    if not os.environ.get(storage_env_key, "").strip():
-        return None
     kit.spec.ensure_config_home()
     registry = load_optional_runtime_storage_registry(kit.spec)
     return active_storage_root_from_env(kit, registry=registry)
@@ -111,14 +112,14 @@ def active_storage_root_from_env(
     if kit.spec.storage_mode == StorageMode.DISABLED:
         return None
     storage_env_key = kit.spec.require_storage_env_key()
-    env_storage = os.environ.get(storage_env_key, "").strip()
-    if not env_storage:
-        return None
+    fallback_values = read_storage_selector_fallback_values(kit.spec)
     selection = resolve_active_storage_selection(
         registry=registry,
         storage=None,
         storage_env_key=storage_env_key,
         original_env=os.environ,
+        global_values=fallback_values.global_values,
+        shared_values=fallback_values.shared_values,
     )
     return selection.root if selection is not None else None
 
@@ -142,7 +143,19 @@ def initial_storage_from_state(
     if kit.spec.storage_mode == StorageMode.DISABLED:
         return None
     storage_env_key = kit.spec.require_storage_env_key()
-    env_storage = os.environ.get(storage_env_key, "").strip()
-    if registry is not None and env_storage in registry.storages:
-        return env_storage
+    fallback_values = read_storage_selector_fallback_values(kit.spec)
+    storage_selector = select_storage_selector(
+        storage=None,
+        storage_env_key=storage_env_key,
+        original_env=os.environ,
+        explicit_values={},
+        global_values=fallback_values.global_values,
+        shared_values=fallback_values.shared_values,
+        env_file_overrides_os_environ=False,
+    )
+    if storage_selector is None:
+        return None
+    _, raw_value = storage_selector
+    if registry is not None and raw_value in registry.storages:
+        return raw_value
     return None

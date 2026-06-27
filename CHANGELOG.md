@@ -25,7 +25,7 @@ This project follows Semantic Versioning.
 
 <br>
 
-### 💥 Breaking Change Summary
+### Breaking changes
 
   - Breaking: `AppConfigKit` and `AppConfigSpec` no longer require storage by
     default when `storage_env_key` is omitted.
@@ -58,9 +58,18 @@ This project follows Semantic Versioning.
     Migration: Pass `storage_mode="required"` or `storage_env_key` for apps
     that need `config init`, `config list`, archive, or register workflows.
 
+  - Breaking: Filename-style config inputs now accept only basenames.
+    Affected: Integrations passing path-like values to `apprc_toml_filename`,
+    `shared_env_filename`, `global_env_filename`, `local_env_filename`, or
+    `app_config_file(..., filename)`.
+    Migration: Pass only a file name for these attributes. Use
+    `<APP>_APPRC_TOML` for a full AppRC TOML override path, and use
+    `app_config_home(...)` or `app_config_file(...)` to build conventional
+    config-home paths.
+
 <br>
 
-### ➕ Added
+### Added
 
   - Added `platformdirs` as a runtime dependency behind AppRC config-home
     helpers.
@@ -77,9 +86,12 @@ This project follows Semantic Versioning.
   - Added the `config_not_ready` doctor status for AppRC config-home readiness
     problems.
 
+  - Added `ConfigHomeError` for invalid AppRC-managed config-home paths and
+    filename-style inputs.
+
 <br>
 
-### 💔 Changed
+### Changed
 
   - Changed runtime bootstrap so storage-disabled apps never require, write, or
     mutate `<APP>_STORAGE`.
@@ -94,17 +106,28 @@ This project follows Semantic Versioning.
   - Changed `config doctor` to report config-home and `.env.global` readiness
     for storage-free apps instead of treating missing storage as central.
 
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
+  - Changed generated setup output to print `<APP>_APPRC_TOML` exports only
+    when the AppRC TOML path is custom. The config-home default no longer
+    needs an export line.
 
 <br>
 
-### 🔨 Fixed
+### Deprecated
+
+<br>
+
+### Removed
+
+<br>
+
+### Fixed
+
+  - Fixed `config doctor` so wrong filesystem types in the config home,
+    `.env.global`, or AppRC TOML path report `config_not_ready` instead of
+    silently appearing runnable.
+
+  - Fixed skipped-bootstrap generated config commands so `config list` and
+    `config edit` honor storage selectors stored in `.env.global`.
 
 <br>
 

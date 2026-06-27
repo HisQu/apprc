@@ -209,7 +209,7 @@ class ConfigCommandBase:
         storage_root: Path | None,
     ) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
-        apprc_toml_path = self.kit.spec.optional_apprc_toml_path()
+        apprc_toml_path = self.kit.spec.apprc_toml_path()
         return {
             "app_name": self.kit.spec.app_name,
             "display_name": self.kit.spec.display_name,

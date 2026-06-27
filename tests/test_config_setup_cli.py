@@ -64,6 +64,39 @@ def test_generated_config_setup_creates_single_storage_files(
 
 
 @pytest.mark.allow_missing_apprc_env
+def test_generated_config_setup_omits_default_apprc_toml_export_for_multi_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "storage"
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "setup",
+            "--yes",
+            "--multi-storage",
+            "--storage-root",
+            str(storage_root),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert kit.spec.apprc_toml_path().is_file()
+    assert "export APPRC_EXAMPLE_APP_APPRC_TOML" not in result.output
+    assert "APPRC_EXAMPLE_APP_APPRC_TOML=" not in result.output
+    assert (
+        f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
+        in result.output
+    )
+
+
+@pytest.mark.allow_missing_apprc_env
 def test_generated_config_setup_accepts_apprc_dir_without_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

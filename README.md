@@ -267,6 +267,12 @@ the platform-native config directory, `.env.global`, and
 such as `myapp.toml`; use `kit.spec.app_config_file("myapp.toml")` when the
 host app wants a conventional path beside AppRC files.
 
+> [!IMPORTANT]
+> AppRC filename-style inputs are basenames only. Values such as
+> `apprc_toml_filename`, `shared_env_filename`, `global_env_filename`,
+> `local_env_filename`, and `app_config_file(..., filename)` reject empty
+> names, absolute paths, parent paths, and path separators.
+
 Apps that need a selected storage root opt in by passing
 `storage_env_key="MYAPP_STORAGE"` or `storage_mode="required"`. Storage-enabled
 apps additionally get:
@@ -301,6 +307,9 @@ storages.
 `<APP>_APPRC_TOML` is an optional override path. When it is unset, AppRC uses
 the platform config-home default. When it is set, AppRC creates or reads that
 file and uses it for storage registry and archive metadata.
+
+Generated setup output only prints `<APP>_APPRC_TOML` exports when the AppRC
+TOML path is custom. The config-home default does not need an export.
 
 <br>
 
@@ -680,6 +689,7 @@ log.success("Workspace ready", extra_struct={"storage": "myapp_stor-1"})
 | `AppConfigKit` | Convenient object applications keep around. |
 | `AppConfigSpec` | Frozen declaration behind the kit. |
 | `StorageMode` | `disabled` or `required`, controlling whether bootstrap needs a storage selector. |
+| `ConfigHomeError` | Raised when an AppRC-managed config-home path or filename is invalid. |
 | `app_config_home(...)` | Platform-native AppRC config-home path for an app name. |
 | `app_config_file(...)` | Conventional app-owned config-file path inside the app config home. |
 | `env_owner(...)` | Decorator that turns an `EnvConfig` class into one config section. |

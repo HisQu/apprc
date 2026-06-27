@@ -103,8 +103,8 @@ class ConfigSetupFlow:
 
     def find_existing_apprc_toml_path(self) -> Path | None:
         """Return the env-selected AppRC TOML path when setup can reuse it."""
-        active_path = self.kit.spec.optional_apprc_toml_path()
-        if active_path is not None and active_path.is_file():
+        active_path = self.kit.spec.apprc_toml_path()
+        if active_path.is_file():
             return normalize_apprc_toml_path(active_path)
         return None
 
@@ -320,18 +320,7 @@ class ConfigSetupFlow:
         """Return the AppRC TOML path selected by setup directory input."""
         if apprc_dir is not None:
             return self.apprc_toml_path_from_dir(apprc_dir)
-        active_path = self.kit.spec.optional_apprc_toml_path()
-        if active_path is not None:
-            return normalize_apprc_toml_path(active_path)
-        raise ConfigSetupError(
-            f"{self.kit.spec.display_name} setup needs the "
-            f"{self.kit.spec.display_name} directory (AppRC) because "
-            f"{self.kit.spec.apprc_toml_env_key} is not set.\n"
-            "Run setup again with an explicit directory:\n"
-            f"{self.kit.spec.config_command_name()} config setup --yes "
-            "--apprc-dir /absolute/path/to/config-dir",
-            param_hint="--apprc-dir",
-        )
+        return normalize_apprc_toml_path(self.kit.spec.apprc_toml_path())
 
     def apprc_dir(self, apprc_dir: Path) -> Path:
         """Return the directory that should contain the AppRC TOML file."""

@@ -187,6 +187,75 @@ def test_generated_config_edit_opens_single_storage_without_apprc_toml(
     assert editor.kwargs["active_storage_root"] == storage_root.resolve()
 
 
+@pytest.mark.allow_missing_apprc_env
+def test_generated_config_list_uses_global_env_storage_selector(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    paths = kit.spec.ensure_config_home()
+    storage_root = tmp_path / "alpha-storage"
+    storage_root.mkdir()
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
+    paths.global_env.write_text(
+        'APPRC_EXAMPLE_APP_STORAGE="alpha"\n',
+        encoding="utf-8",
+    )
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["storages"][0]["name"] == "alpha"
+    assert payload["storages"][0]["active"] is True
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_generated_config_edit_uses_global_env_storage_selector(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class RecordingEditor:
+        instances: list["RecordingEditor"] = []
+
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+            self.ran = False
+            self.instances.append(self)
+
+        def run(self) -> None:
+            self.ran = True
+
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    paths = kit.spec.ensure_config_home()
+    storage_root = tmp_path / "alpha-storage"
+    storage_root.mkdir()
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
+    paths.global_env.write_text(
+        'APPRC_EXAMPLE_APP_STORAGE="alpha"\n',
+        encoding="utf-8",
+    )
+    app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        editor_app_cls=cast(type[ConfigEditorApp], RecordingEditor),
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["edit"])
+
+    assert result.exit_code == 0, result.output
+    assert len(RecordingEditor.instances) == 1
+    editor = RecordingEditor.instances[0]
+    assert editor.ran
+    assert editor.kwargs["active_storage_root"] == storage_root.resolve()
+
+
 def test_generated_config_edit_creates_missing_apprc_toml_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

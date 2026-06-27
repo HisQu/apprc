@@ -111,10 +111,8 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
 
     async def _show_overview(self) -> None:
         """Render the first setup screen."""
-        active_apprc_toml_path = self.kit.spec.optional_apprc_toml_path()
-        active_paths = (
-            () if active_apprc_toml_path is None else (active_apprc_toml_path,)
-        )
+        active_apprc_toml_path = self.kit.spec.apprc_toml_path()
+        active_paths = (active_apprc_toml_path,)
         await self._set_screen(
             title=f"{self.kit.spec.display_name} config setup",
             body=self._style_setup_text(
@@ -370,9 +368,7 @@ class ConfigSetupApp(App[setup_flow.ConfigSetupResult | None]):
 
     def _default_apprc_dir(self) -> Path | None:
         """Return the env-selected AppRC TOML parent directory, if known."""
-        active_path = self.kit.spec.optional_apprc_toml_path()
-        if active_path is None:
-            return None
+        active_path = self.kit.spec.apprc_toml_path()
         return active_path.parent
 
     async def _finish_multi_storage_setup(

@@ -173,6 +173,68 @@ def test_storage_free_config_cli_uses_global_env(
 
 
 @pytest.mark.allow_missing_apprc_env
+def test_config_doctor_reports_config_not_ready_for_global_env_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STORAGE_FREE_APP_PROFILE", raising=False)
+    kit = build_storage_free_example_kit()
+    kit.spec.global_env_path().mkdir(parents=True)
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    runner = CliRunner()
+
+    json_result = runner.invoke(app, ["doctor", "--json"])
+    human_result = runner.invoke(app, ["doctor"])
+
+    assert json_result.exit_code == 1, json_result.output
+    payload = json.loads(json_result.output)
+    assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
+    assert payload["global_env_exists"] is False
+    assert any("not a file" in issue for issue in payload["issues"])
+    assert human_result.exit_code == 1, human_result.output
+    assert "config not ready" in human_result.output
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_config_doctor_reports_config_not_ready_for_apprc_toml_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STORAGE_FREE_APP_PROFILE", raising=False)
+    kit = build_storage_free_example_kit()
+    kit.spec.apprc_toml_path().mkdir(parents=True)
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
+    assert payload["apprc_toml_exists"] is False
+    assert any("not a file" in issue for issue in payload["issues"])
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_config_doctor_reports_config_not_ready_for_config_home_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STORAGE_FREE_APP_PROFILE", raising=False)
+    kit = build_storage_free_example_kit()
+    config_home = kit.spec.config_home()
+    config_home.parent.mkdir(parents=True)
+    config_home.write_text("not a directory", encoding="utf-8")
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
+    assert payload["config_home_exists"] is False
+    assert any("config home" in issue for issue in payload["issues"])
+
+
+@pytest.mark.allow_missing_apprc_env
 def test_config_doctor_reports_runnable_single_storage_without_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

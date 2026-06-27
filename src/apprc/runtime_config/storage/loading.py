@@ -29,10 +29,13 @@ class StorageRegistryInspection:
     registry: StorageRegistry | None
     storage_count: int
     issues: list[str]
+    parse_ok_override: bool | None = None
 
     @property
     def parse_ok(self) -> bool:
         """Return whether the optional AppRC TOML is absent or parseable."""
+        if self.parse_ok_override is not None:
+            return self.parse_ok_override
         if self.path is None:
             return True
         return self.exists and self.error is None

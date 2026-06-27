@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pytest import MonkeyPatch
+from typer.testing import Result
 
 from apprc import AppConfigKit
 from apprc.runtime_config import (
@@ -119,6 +120,42 @@ class StorageFreeExampleEnv(EnvConfig):
 
 
 STORAGE_FREE_EXAMPLE_OWNER = config_owner_for(StorageFreeExampleEnv)
+
+
+def assert_config_home_cli_error(result: Result) -> None:
+    """Assert that a CLI failure reports AppRC config-home readiness.
+
+    :param result: Captured Typer invocation result.
+    """
+    assert result.exit_code != 0, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "config-home" in result.output
+    assert (
+        "AppRC config home" in result.output
+        or "AppRC-managed file" in result.output
+    )
+    assert "Traceback" not in result.output
+    assert "ConfigHomeError" not in result.output
+    assert "Invalid value for KEY" not in result.output
+    assert "Invalid value for 'KEY'" not in result.output
+    assert "Invalid value for --storage" not in result.output
+    assert 'Invalid value for "--storage"' not in result.output
+    assert "Invalid value for '--storage'" not in result.output
+    assert "Invalid value for --name" not in result.output
+    assert 'Invalid value for "--name"' not in result.output
+    assert "Invalid value for '--name'" not in result.output
+
+
+def block_config_home_with_file(kit: AppConfigKit) -> Path:
+    """Replace the app config home directory with a blocking file.
+
+    :param kit: App config facade under test.
+    :return: Path that now blocks config-home creation.
+    """
+    config_home = kit.spec.config_home()
+    config_home.parent.mkdir(parents=True, exist_ok=True)
+    config_home.write_text("not a directory", encoding="utf-8")
+    return config_home
 
 
 @dataclass(slots=True)

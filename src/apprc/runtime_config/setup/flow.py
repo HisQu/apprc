@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 # == Internal ================================
+from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.storage.local_env import ensure_local_env_file
 from apprc.runtime_config.contract.paths import normalize_apprc_toml_path
 from apprc.runtime_config.storage.paths import (
@@ -204,6 +205,8 @@ class ConfigSetupFlow:
                 active_storage_root=record.root,
                 registered_storage_name=storage_name,
             )
+        except ConfigHomeError:
+            raise
         except StorageRootPathError as exc:
             raise ConfigSetupError(
                 str(exc),

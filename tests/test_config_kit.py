@@ -18,6 +18,8 @@ from tests.support_config import (
     ApprcExampleAppConfigState,
     ApprcExampleAppEnv,
     StorageFreeExampleConfigState,
+    assert_config_home_cli_error,
+    block_config_home_with_file,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
     register_storage_for_kit,
@@ -189,7 +191,10 @@ def test_config_doctor_reports_config_not_ready_for_global_env_directory(
     payload = json.loads(json_result.output)
     assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
     assert payload["global_env_exists"] is False
-    assert any("not a file" in issue for issue in payload["issues"])
+    assert payload["apprc_toml_parse_ok"] is True
+    assert len(payload["issues"]) == 1
+    assert "not a file" in payload["issues"][0]
+    assert "AppRC TOML file does not exist" not in payload["issues"][0]
     assert human_result.exit_code == 1, human_result.output
     assert "config not ready" in human_result.output
 
@@ -210,7 +215,9 @@ def test_config_doctor_reports_config_not_ready_for_apprc_toml_directory(
     payload = json.loads(result.output)
     assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
     assert payload["apprc_toml_exists"] is False
-    assert any("not a file" in issue for issue in payload["issues"])
+    assert payload["apprc_toml_parse_ok"] is True
+    assert len(payload["issues"]) == 1
+    assert "not a file" in payload["issues"][0]
 
 
 @pytest.mark.allow_missing_apprc_env
@@ -231,7 +238,28 @@ def test_config_doctor_reports_config_not_ready_for_config_home_file(
     payload = json.loads(result.output)
     assert payload["status"] == ConfigDoctorStatus.CONFIG_NOT_READY.value
     assert payload["config_home_exists"] is False
-    assert any("config home" in issue for issue in payload["issues"])
+    assert payload["apprc_toml_parse_ok"] is True
+    assert len(payload["issues"]) == 1
+    assert "config home" in payload["issues"][0]
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_storage_free_config_commands_report_config_home_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STORAGE_FREE_APP_PROFILE", raising=False)
+    kit = build_storage_free_example_kit()
+    block_config_home_with_file(kit)
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    runner = CliRunner()
+
+    setup_result = runner.invoke(app, ["setup"])
+    set_result = runner.invoke(app, ["set", "profile", "value"])
+    edit_result = runner.invoke(app, ["edit"])
+
+    assert_config_home_cli_error(setup_result)
+    assert_config_home_cli_error(set_result)
+    assert_config_home_cli_error(edit_result)
 
 
 @pytest.mark.allow_missing_apprc_env

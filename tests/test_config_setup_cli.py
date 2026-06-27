@@ -12,6 +12,8 @@ from apprc.runtime_config.storage.registry import (
 )
 from tests.support_config import (
     ApprcExampleAppConfigState,
+    assert_config_home_cli_error,
+    block_config_home_with_file,
     build_apprc_example_app_kit,
     register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
@@ -94,6 +96,43 @@ def test_generated_config_setup_omits_default_apprc_toml_export_for_multi_storag
         f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"'
         in result.output
     )
+
+
+def test_setup_reports_config_home_error_single_storage() -> None:
+    kit = build_apprc_example_app_kit()
+    block_config_home_with_file(kit)
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["setup", "--yes"])
+
+    assert_config_home_cli_error(result)
+
+
+@pytest.mark.allow_missing_apprc_env
+def test_generated_config_setup_reports_config_home_error_multi_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(tmp_path / "storage"))
+    kit = build_apprc_example_app_kit()
+    block_config_home_with_file(kit)
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "setup",
+            "--yes",
+            "--multi-storage",
+            "--storage-root",
+            str(tmp_path / "storage"),
+        ],
+    )
+
+    assert_config_home_cli_error(result)
 
 
 @pytest.mark.allow_missing_apprc_env

@@ -11,10 +11,12 @@ from typing import Any
 import typer
 
 # == Internal ================================
+from apprc.cli.errors import config_home_bad_parameter
 from apprc.runtime_config.bootstrap.result import (
     BootstrapLogger,
     EnvBootstrapResult,
 )
+from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.kit import AppConfigKit
 from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
 from apprc.runtime_config.storage.selector import StorageSelectorError
@@ -87,5 +89,7 @@ def bootstrap_cli_env(
             str(exc),
             param_hint=exc.param_hint,
         ) from exc
+    except (ConfigHomeError, OSError) as exc:
+        raise config_home_bad_parameter(exc) from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint="--storage") from exc

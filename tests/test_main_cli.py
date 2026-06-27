@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import tomllib
@@ -12,6 +13,8 @@ from apprc.runtime_config.doctor.payload import config_command_text
 from apprc_example_app import APPRC_EXAMPLE_APP_KIT
 from apprc_example_app.cli import app
 from tests.support_config import (
+    assert_config_home_cli_error,
+    block_config_home_with_file,
     build_apprc_example_app_kit,
     set_apprc_example_app_bootstrap,
 )
@@ -122,6 +125,41 @@ def test_core_package_does_not_import_demo_package() -> None:
     assert offenders == []
 
 
+def test_storage_modules_do_not_import_bootstrap_layer() -> None:
+    storage_files = (
+        Path(__file__).parents[1]
+        / "src"
+        / "apprc"
+        / "runtime_config"
+        / "storage"
+    ).rglob("*.py")
+
+    offenders = [
+        path
+        for path in storage_files
+        if _imports_runtime_config_bootstrap(path)
+    ]
+    assert offenders == []
+
+
+def _imports_runtime_config_bootstrap(path: Path) -> bool:
+    """Return whether one Python file imports the bootstrap package.
+
+    :param path: Python source file to inspect.
+    :return: Whether it imports ``apprc.runtime_config.bootstrap``.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            if node.module.startswith("apprc.runtime_config.bootstrap"):
+                return True
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("apprc.runtime_config.bootstrap"):
+                    return True
+    return False
+
+
 def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -157,6 +195,15 @@ def test_demo_config_setup_accepts_quickstart_storage_export_and_command_text(
     assert "apprc config show" in result.output
     assert "apprc config doctor" in result.output
     assert "apprc_example_app config" not in result.output
+
+
+def test_demo_root_bootstrap_reports_config_home_error() -> None:
+    block_config_home_with_file(APPRC_EXAMPLE_APP_KIT)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "show"])
+
+    assert_config_home_cli_error(result)
 
 
 def test_demo_config_set_and_show_payload(

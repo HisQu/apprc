@@ -11,7 +11,9 @@ from rich.console import Console
 from rich.text import Text
 
 # == Internal ================================
+from apprc.cli.errors import config_home_bad_parameter
 from apprc.runtime_config.app_spec import StorageMode
+from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.kit import AppConfigKit
 import apprc.runtime_config.setup.flow as setup_flow
 import apprc.runtime_config.setup.text as setup_text
@@ -81,11 +83,18 @@ def run_config_setup(
                 f"{kit.spec.display_name} does not use AppRC storage.",
                 param_hint="storage",
             )
-        _print_global_setup_finish(kit)
+        try:
+            _print_global_setup_finish(kit)
+        except (ConfigHomeError, OSError) as exc:
+            raise config_home_bad_parameter(exc) from exc
         return
 
     if not assume_yes:
-        if ConfigSetupApp(kit=kit).run() is None:
+        try:
+            result = ConfigSetupApp(kit=kit).run()
+        except (ConfigHomeError, OSError) as exc:
+            raise config_home_bad_parameter(exc) from exc
+        if result is None:
             raise typer.Exit(code=1)
         return
 
@@ -122,6 +131,8 @@ def run_config_setup(
             result = flow.ensure_single_storage(
                 storage_root=root,
             )
+    except (ConfigHomeError, OSError) as exc:
+        raise config_home_bad_parameter(exc) from exc
     except setup_flow.ConfigSetupError as exc:
         _raise_setup_error(exc)
     _print_setup_finish(kit, result)

@@ -15,6 +15,9 @@ from apprc.cli.options import (
 )
 from apprc.cli.typer_utils import args_after_command, strip_leading_options
 from apprc.runtime_config.bootstrap.result import EnvBootstrapResult
+from apprc.runtime_config.bootstrap.dotenv_layers import (
+    read_storage_selector_fallback_values,
+)
 from apprc.runtime_config.app_spec import StorageMode
 from apprc.runtime_config.kit import AppConfigKit
 from apprc.runtime_config.storage.loading import (
@@ -24,9 +27,6 @@ from apprc.runtime_config.storage.registry import StorageRegistry
 from apprc.runtime_config.storage.selector import (
     resolve_active_storage_selection,
     select_storage_selector,
-)
-from apprc.runtime_config.storage.selector_fallbacks import (
-    read_storage_selector_fallback_values,
 )
 
 

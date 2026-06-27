@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING, TypedDict
 
 # == Internal ================================
 from apprc.runtime_config.app_spec import StorageMode
+from apprc.runtime_config.bootstrap.dotenv_layers import (
+    read_storage_selector_fallback_values,
+)
 from apprc.runtime_config.config_home import AppConfigHome, ConfigHomeError
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.storage.loading import (
@@ -21,9 +24,6 @@ from apprc.runtime_config.storage.selector import (
     StorageSelection,
     StorageSelectorError,
     resolve_active_storage_selection,
-)
-from apprc.runtime_config.storage.selector_fallbacks import (
-    read_storage_selector_fallback_values,
 )
 
 if TYPE_CHECKING:
@@ -134,12 +134,19 @@ def build_config_doctor_payload(
     :return: Stable JSON-friendly diagnostic payload.
     """
     config_home_diagnosis = _diagnose_config_home(kit)
-    storage_registry_diagnosis = inspect_storage_registry(kit.spec)
-    storage_diagnosis = _diagnose_storage(
-        kit,
-        registry=storage_registry_diagnosis.registry,
-        storage=storage,
-    )
+    if config_home_diagnosis.issues:
+        storage_registry_diagnosis = _undiscovered_storage_registry(
+            kit,
+            config_home=config_home_diagnosis.paths,
+        )
+        storage_diagnosis = _empty_storage_diagnosis()
+    else:
+        storage_registry_diagnosis = inspect_storage_registry(kit.spec)
+        storage_diagnosis = _diagnose_storage(
+            kit,
+            registry=storage_registry_diagnosis.registry,
+            storage=storage,
+        )
     issues = [
         *config_home_diagnosis.issues,
         *storage_registry_diagnosis.issues,
@@ -182,6 +189,36 @@ def _diagnose_config_home(kit: "AppConfigKit") -> _ConfigHomeDiagnosis:
             issues=[str(exc)],
         )
     return _ConfigHomeDiagnosis(paths=ensured_paths, issues=[])
+
+
+def _undiscovered_storage_registry(
+    kit: "AppConfigKit",
+    *,
+    config_home: AppConfigHome,
+) -> StorageRegistryInspection:
+    """Return AppRC TOML path fields when config-home writes are blocked.
+
+    ``config doctor`` keeps its JSON field shape even when the managed config
+    home is not usable. This placeholder reports the intended AppRC TOML path
+    without pretending that a parse or missing-file diagnosis ran.
+
+    :param kit: Application config facade.
+    :param config_home: Intended AppRC-managed paths.
+    :return: Storage registry placeholder with no downstream issues.
+    """
+    raw_apprc_toml_env_value = os.environ.get(
+        kit.spec.apprc_toml_env_key, ""
+    ).strip()
+    return StorageRegistryInspection(
+        path=config_home.apprc_toml,
+        env_value=raw_apprc_toml_env_value or None,
+        exists=config_home.apprc_toml.is_file(),
+        error=None,
+        registry=None,
+        storage_count=0,
+        issues=[],
+        parse_ok_override=True,
+    )
 
 
 def _doctor_payload(
@@ -320,6 +357,21 @@ def _diagnose_storage(
         local_env_exists=local_env_exists,
         missing_env_keys=missing_env_keys,
         issues=issues,
+    )
+
+
+def _empty_storage_diagnosis() -> _StorageDiagnosis:
+    """Return a storage placeholder when config-home readiness is decisive.
+
+    :return: Storage diagnosis with no selected storage or secondary issues.
+    """
+    return _StorageDiagnosis(
+        selection=None,
+        storage_root_exists=None,
+        local_env=None,
+        local_env_exists=None,
+        missing_env_keys=[],
+        issues=[],
     )
 
 

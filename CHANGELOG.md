@@ -129,6 +129,14 @@ This project follows Semantic Versioning.
   - Fixed skipped-bootstrap generated config commands so `config list` and
     `config edit` honor storage selectors stored in `.env.global`.
 
+  - Fixed generated config commands, `config setup`, and root CLI bootstrap so
+    AppRC config-home path failures report a `config-home` error instead of raw
+    exceptions or misleading `KEY`, `--storage`, or `--name` hints.
+
+  - Fixed `config doctor` so config-home creation failures stay focused on
+    AppRC-managed file readiness instead of adding secondary AppRC TOML or
+    storage diagnosis issues caused by the blocked write.
+
 <br>
 
 ---

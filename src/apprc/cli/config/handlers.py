@@ -21,9 +21,11 @@ from apprc.cli.config.state import (
     initial_storage_from_state,
 )
 from apprc.cli.doctor import print_config_doctor
+from apprc.cli.errors import config_home_bad_parameter
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
 from apprc.runtime_config.app_spec import StorageMode
+from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.doctor.payload import build_config_doctor_payload
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.kit import AppConfigKit
@@ -108,19 +110,34 @@ class ConfigCommandBase:
     def load_required_storage_registry(self) -> StorageRegistry:
         """Return the storage table required by multi-storage CLI commands."""
         self.require_storage_enabled()
-        self.kit.spec.ensure_config_home()
         try:
+            self.kit.spec.ensure_config_home()
             return load_existing_storage_registry(self.kit.spec)
+        except (ConfigHomeError, OSError) as exc:
+            raise self.config_home_bad_parameter(exc) from exc
         except (ApprcTomlEnvError, ValueError) as exc:
             raise self.apprc_toml_bad_parameter(exc) from exc
 
     def load_optional_storage_registry(self) -> StorageRegistry | None:
         """Return the storage table only when multi-storage mode is enabled."""
-        self.kit.spec.ensure_config_home()
         try:
+            self.kit.spec.ensure_config_home()
             return load_optional_runtime_storage_registry(self.kit.spec)
+        except (ConfigHomeError, OSError) as exc:
+            raise self.config_home_bad_parameter(exc) from exc
         except (ApprcTomlEnvError, ValueError) as exc:
             raise self.apprc_toml_bad_parameter(exc) from exc
+
+    def config_home_bad_parameter(
+        self,
+        exc: ConfigHomeError | OSError,
+    ) -> typer.BadParameter:
+        """Return Typer's error type for AppRC config-home failures.
+
+        :param exc: Path preparation failure from AppRC-managed files.
+        :return: Typer parameter error with the shared config-home hint.
+        """
+        return config_home_bad_parameter(exc)
 
     def apprc_toml_bad_parameter(
         self,
@@ -161,6 +178,8 @@ class ConfigCommandBase:
                 str(exc),
                 param_hint=exc.param_hint,
             ) from exc
+        except (ConfigHomeError, OSError) as exc:
+            raise self.config_home_bad_parameter(exc) from exc
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--storage") from exc
 
@@ -297,9 +316,11 @@ class MultiStorageConfigCommands(ConfigCommandBase):
     ) -> None:
         """Register one storage root and create its local env file."""
         self.require_storage_enabled()
-        self.kit.spec.ensure_config_home()
         try:
+            self.kit.spec.ensure_config_home()
             apprc_toml_path = apprc_toml_path_for_create(self.kit.spec)
+        except (ConfigHomeError, OSError) as exc:
+            raise self.config_home_bad_parameter(exc) from exc
         except ApprcTomlEnvError as exc:
             raise self.apprc_toml_bad_parameter(exc) from exc
         normalized_root = guard_storage_root_init(
@@ -315,6 +336,8 @@ class MultiStorageConfigCommands(ConfigCommandBase):
                 path=apprc_toml_path,
                 local_env_filename=self.kit.spec.local_env_filename,
             )
+        except (ConfigHomeError, OSError) as exc:
+            raise self.config_home_bad_parameter(exc) from exc
         except StorageRootPathError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -407,6 +430,8 @@ class RuntimeConfigCommands(ConfigCommandBase):
                     owners=self.kit.spec.owners,
                     local_env_filename=self.kit.spec.local_env_filename,
                 )
+        except (ConfigHomeError, OSError) as exc:
+            raise self.config_home_bad_parameter(exc) from exc
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="KEY") from exc
         typer.echo(f"updated: {update.env_key}")
@@ -425,12 +450,17 @@ class EditorConfigCommands(ConfigCommandBase):
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
-        if self.kit.spec.storage_mode == StorageMode.DISABLED:
-            active_storage_root = self.kit.spec.ensure_config_home().root
-        else:
-            active_storage_root = self.best_effort_active_storage_root_from_env(
-                storage_registry=optional_registry,
-            )
+        try:
+            if self.kit.spec.storage_mode == StorageMode.DISABLED:
+                active_storage_root = self.kit.spec.ensure_config_home().root
+            else:
+                active_storage_root = (
+                    self.best_effort_active_storage_root_from_env(
+                        storage_registry=optional_registry,
+                    )
+                )
+        except (ConfigHomeError, OSError) as exc:
+            raise self.config_home_bad_parameter(exc) from exc
         self.launch_config_editor(
             current_state=current_state,
             storage_registry=optional_registry,

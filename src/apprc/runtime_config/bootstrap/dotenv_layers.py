@@ -29,6 +29,20 @@ class ExplicitEnvLayer:
     values: dict[str, str]
 
 
+@dataclass(frozen=True, slots=True)
+class StorageSelectorFallbackValues:
+    """Dotenv values used after process env storage selectors.
+
+    :param global_values: Values from the app-global dotenv file.
+    :param shared_values: Values from the packaged shared dotenv file.
+    :param issues: Non-fatal read problems suitable for diagnostics.
+    """
+
+    global_values: dict[str, str]
+    shared_values: dict[str, str]
+    issues: list[str]
+
+
 def shared_env_resource(spec: AppConfigSpec) -> Traversable:
     """Return the packaged shared dotenv resource."""
     return files(spec.config_package).joinpath(spec.shared_env_filename)
@@ -87,6 +101,38 @@ def read_dotenv_file(path: Path | None) -> dict[str, str]:
         for key, value in raw_values.items()
         if isinstance(value, str)
     }
+
+
+def read_storage_selector_fallback_values(
+    spec: AppConfigSpec,
+) -> StorageSelectorFallbackValues:
+    """Read persistent dotenv values used for storage selection.
+
+    Bootstrap, skipped-bootstrap config commands, and doctor must resolve
+    persistent storage selectors with the same file-reading rules. Selector
+    precedence stays in :mod:`apprc.runtime_config.storage.selector`.
+
+    :param spec: Application-specific config contract.
+    :return: Parsed fallback values and any diagnostic issues.
+    """
+    global_values = {}
+    if spec.global_env_path().is_file():
+        global_values = read_dotenv_file(spec.global_env_path())
+    try:
+        _, shared_values = read_shared_env_values(spec)
+    except (ImportError, OSError, TypeError) as exc:
+        shared_values = {}
+        issues = [
+            "Packaged shared env could not be read for "
+            f"{spec.config_package!r}: {exc}"
+        ]
+    else:
+        issues = []
+    return StorageSelectorFallbackValues(
+        global_values=global_values,
+        shared_values=shared_values,
+        issues=issues,
+    )
 
 
 def merged_env_values(

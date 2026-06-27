@@ -15,6 +15,8 @@ from apprc.runtime_config.doctor.payload import (
 from tests.support_config import (
     ApprcExampleAppConfigState,
     apprc_example_app_state,
+    assert_config_home_cli_error,
+    block_config_home_with_file,
     build_apprc_example_app_kit,
     register_storage_for_kit,
     set_apprc_example_app_apprc_toml,
@@ -254,6 +256,26 @@ def test_generated_config_edit_uses_global_env_storage_selector(
     editor = RecordingEditor.instances[0]
     assert editor.ran
     assert editor.kwargs["active_storage_root"] == storage_root.resolve()
+
+
+def test_storage_required_config_commands_report_config_home_errors(
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    block_config_home_with_file(kit)
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    runner = CliRunner()
+
+    list_result = runner.invoke(app, ["list"])
+    init_result = runner.invoke(
+        app,
+        ["init", str(tmp_path / "storage"), "--name", "alpha", "--yes"],
+    )
+    edit_result = runner.invoke(app, ["edit"])
+
+    assert_config_home_cli_error(list_result)
+    assert_config_home_cli_error(init_result)
+    assert_config_home_cli_error(edit_result)
 
 
 def test_generated_config_edit_creates_missing_apprc_toml_file(

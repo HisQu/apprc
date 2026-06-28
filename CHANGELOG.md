@@ -98,17 +98,6 @@ This project follows Semantic Versioning.
   - Added `replace_existing=False` to `extract_archive(...)` so callers must
     opt in before replacing a non-empty destination.
 
-<br>
-
-### 💔 Changed
-
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
 
 <br>
 
@@ -150,9 +139,6 @@ This project follows Semantic Versioning.
   - Fixed config help detection to honor custom root value options and to
     ignore `--help` or `-h` after a `--` separator.
 
-<br>
-
-### 🔒 Security
 
 <br>
 

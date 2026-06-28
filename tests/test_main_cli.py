@@ -187,6 +187,121 @@ def test_real_cli_env_file_override_policy_for_storage_selector(
     )
 
 
+def test_real_cli_env_file_index_for_storage_add(tmp_path: Path) -> None:
+    explicit_index = tmp_path / "explicit" / "apprc_example_app.apprc.toml"
+    index_env = tmp_path / "index.env"
+    index_env.write_text(
+        f"APPRC_EXAMPLE_APP_APPRC_TOML={explicit_index}\n",
+        encoding="utf-8",
+    )
+    storage_root = tmp_path / "alpha"
+
+    result = _run_example_cli(
+        [
+            "--env-file",
+            str(index_env),
+            "config",
+            "storage",
+            "add",
+            "alpha",
+            str(storage_root),
+            "--yes",
+        ],
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert explicit_index.is_file()
+    assert str(explicit_index) in result.stdout
+    assert (storage_root / ".env.apprc-storage").is_file()
+
+
+def test_real_cli_env_file_index_override_policy_for_storage_add(
+    tmp_path: Path,
+) -> None:
+    exported_index = tmp_path / "exported" / "apprc_example_app.apprc.toml"
+    explicit_index = tmp_path / "explicit" / "apprc_example_app.apprc.toml"
+    index_env = tmp_path / "index.env"
+    index_env.write_text(
+        f"APPRC_EXAMPLE_APP_APPRC_TOML={explicit_index}\n",
+        encoding="utf-8",
+    )
+    exported_env = {"APPRC_EXAMPLE_APP_APPRC_TOML": str(exported_index)}
+
+    exported_wins = _run_example_cli(
+        [
+            "--env-file",
+            str(index_env),
+            "config",
+            "storage",
+            "add",
+            "alpha",
+            str(tmp_path / "alpha"),
+            "--yes",
+        ],
+        tmp_path,
+        env=exported_env,
+    )
+    explicit_wins = _run_example_cli(
+        [
+            "--env-file",
+            str(index_env),
+            "--env-file-overrides-os-environ",
+            "config",
+            "storage",
+            "add",
+            "beta",
+            str(tmp_path / "beta"),
+            "--yes",
+        ],
+        tmp_path,
+        env=exported_env,
+    )
+
+    assert exported_wins.returncode == 0, exported_wins.stderr
+    assert explicit_wins.returncode == 0, explicit_wins.stderr
+    assert "[storages.alpha]" in exported_index.read_text(encoding="utf-8")
+    assert "[storages.beta]" in explicit_index.read_text(encoding="utf-8")
+
+
+def test_real_cli_env_file_index_for_storage_remove(tmp_path: Path) -> None:
+    explicit_index = tmp_path / "explicit" / "apprc_example_app.apprc.toml"
+    index_env = tmp_path / "index.env"
+    index_env.write_text(
+        f"APPRC_EXAMPLE_APP_APPRC_TOML={explicit_index}\n",
+        encoding="utf-8",
+    )
+
+    add = _run_example_cli(
+        [
+            "--env-file",
+            str(index_env),
+            "config",
+            "storage",
+            "add",
+            "alpha",
+            str(tmp_path / "alpha"),
+            "--yes",
+        ],
+        tmp_path,
+    )
+    remove = _run_example_cli(
+        [
+            "--env-file",
+            str(index_env),
+            "config",
+            "storage",
+            "remove",
+            "alpha",
+        ],
+        tmp_path,
+    )
+
+    assert add.returncode == 0, add.stderr
+    assert remove.returncode == 0, remove.stderr
+    assert "storages.alpha" not in explicit_index.read_text(encoding="utf-8")
+
+
 def test_console_script_points_to_demo_cli() -> None:
     root = Path(__file__).parents[1]
     root_pyproject = tomllib.loads(

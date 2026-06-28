@@ -89,6 +89,12 @@ def test_config_request_skips_runtime_bootstrap_for_setup_only_commands() -> (
         tokens=["--env-file", "local.env", "config", "doctor"],
         root_value_options={"--env-file"},
     )
+    assert skips(
+        tokens=["config", "--custom-env", "local.env", "doctor"],
+        root_value_options={"--custom-env"},
+    )
+    assert skips(tokens=["config", "show", "--", "--help"]) is False
+    assert skips(tokens=["config", "--", "--help"]) is False
     assert skips(tokens=["config", "app", "init"])
     assert skips(tokens=["config", "storage", "add", "alpha", "/tmp/storage"])
     assert skips(tokens=["config", "paths"])

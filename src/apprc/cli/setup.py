@@ -27,7 +27,7 @@ def run_config_setup(
     kit: AppConfigKit,
     *,
     assume_yes: bool = False,
-    storage_root: Path | None = None,
+    storage_root: str | Path | None = None,
 ) -> None:
     """Configure files for the declared AppRC capability layers.
 
@@ -79,7 +79,7 @@ def run_config_setup(
 def _select_storage_root(
     kit: AppConfigKit,
     *,
-    storage_root: Path | None,
+    storage_root: str | Path | None,
     assume_yes: bool,
 ) -> Path:
     """Return the storage root selected for setup before creation.
@@ -98,8 +98,7 @@ def _select_storage_root(
             param_hint="--storage-root",
         )
     if selected is None:
-        raw_value = typer.prompt("Storage root")
-        selected = Path(raw_value)
+        selected = typer.prompt("Storage root")
     try:
         root = normalize_storage_root_path(selected)
     except StorageRootPathError as exc:

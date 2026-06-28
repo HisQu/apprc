@@ -46,12 +46,14 @@ def confirm_existing_storage_root(
     storage_root: Path,
     *,
     storage_name: str,
+    index_path: Path | None = None,
 ) -> None:
     """Ask whether a non-empty existing storage root may be reused.
 
     :param kit: Application config facade.
     :param storage_root: Existing non-empty storage directory.
     :param storage_name: Registry selector that will point at the directory.
+    :param index_path: Named-storage index path selected for this write.
     :raises typer.Exit: If the user refuses or input cannot be read.
     """
     console = Console(soft_wrap=True)
@@ -64,7 +66,7 @@ def confirm_existing_storage_root(
     )
     managed_files.add_row(
         "named-storage index",
-        str(index_path_for_create(kit.spec)),
+        str(index_path or index_path_for_create(kit.spec)),
     )
 
     panel_lines: list[RenderableType] = [
@@ -144,6 +146,7 @@ def guard_storage_root_init(
     *,
     storage_name: str,
     assume_yes: bool,
+    index_path: Path | None = None,
 ) -> Path:
     """Return a safe storage root path before registration writes.
 
@@ -176,5 +179,6 @@ def guard_storage_root_init(
             kit,
             root,
             storage_name=storage_name,
+            index_path=index_path,
         )
     return root

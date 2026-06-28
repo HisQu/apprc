@@ -61,19 +61,53 @@ def register_storage(
     """
     validate_storage_name(name)
     resolved_root = normalize_storage_root_path(root).resolve()
-    resolved_root.mkdir(parents=True, exist_ok=True)
-    ensure_storage_env_file(resolved_root, filename=storage_env_filename)
-
     current = load_storage_registry_or_empty(path)
-    storages = dict(current.storages)
-    storages[name] = StorageRecord(name=name, root=resolved_root)
+    root_existed = resolved_root.exists()
+    storage_env = resolved_root / storage_env_filename
+    storage_env_existed = storage_env.exists()
 
-    updated = replace(
-        current,
-        storages=storages,
-    )
-    write_storage_registry(updated)
+    try:
+        resolved_root.mkdir(parents=True, exist_ok=True)
+        ensure_storage_env_file(resolved_root, filename=storage_env_filename)
+        updated = replace(
+            current,
+            storages={
+                **dict(current.storages),
+                name: StorageRecord(name=name, root=resolved_root),
+            },
+        )
+        write_storage_registry(updated)
+    except Exception:
+        _rollback_created_storage_artifacts(
+            root=resolved_root,
+            root_existed=root_existed,
+            storage_env=storage_env,
+            storage_env_existed=storage_env_existed,
+        )
+        raise
     return updated
+
+
+def _rollback_created_storage_artifacts(
+    *,
+    root: Path,
+    root_existed: bool,
+    storage_env: Path,
+    storage_env_existed: bool,
+) -> None:
+    """Best-effort removal of empty storage artifacts from a failed register."""
+    if not storage_env_existed:
+        try:
+            if storage_env.is_file() and storage_env.stat().st_size == 0:
+                storage_env.unlink()
+        except OSError:
+            pass
+    if root_existed:
+        return
+    try:
+        root.rmdir()
+    except OSError:
+        pass
 
 
 def unregister_storage(

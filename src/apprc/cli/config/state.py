@@ -63,14 +63,17 @@ def config_request_skips_runtime_bootstrap(
     )
     if args is None:
         return False
+    if _help_requested_before_separator(
+        args,
+        value_options=root_value_options,
+    ):
+        return True
     action_args = strip_leading_options(
         args,
         flag_options=COMMON_ROOT_FLAG_OPTIONS,
-        value_options=COMMON_ROOT_VALUE_OPTIONS,
+        value_options=root_value_options,
     )
     if not action_args:
-        return True
-    if any(token in {"--help", "-h"} for token in action_args):
         return True
     return action_args[0] in {
         "app",
@@ -81,6 +84,27 @@ def config_request_skips_runtime_bootstrap(
         "setup",
         "storage",
     }
+
+
+def _help_requested_before_separator(
+    tokens: Sequence[str],
+    *,
+    value_options: Collection[str],
+) -> bool:
+    """Return whether a help flag appears before an option separator."""
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--":
+            return False
+        option_name = token.split("=", maxsplit=1)[0]
+        if option_name in value_options:
+            i += 1 if "=" in token else 2
+            continue
+        if token in {"--help", "-h"}:
+            return True
+        i += 1
+    return False
 
 
 def active_storage_root_from_state(

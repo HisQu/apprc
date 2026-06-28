@@ -9,8 +9,10 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
+import shutil
 import stat
 import tarfile
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -108,12 +110,14 @@ def extract_archive(
     archive_path: Path,
     destination_root: Path,
     progress: ProgressCallback | None = None,
+    replace_existing: bool = False,
 ) -> Path:
     """Restore a storage archive into a destination directory.
 
     :param archive_path: Existing ``*.apprc.tar.xz`` file.
     :param destination_root: Directory that should receive archive contents.
     :param progress: Optional callback for progress bar updates.
+    :param replace_existing: Whether a non-empty destination may be replaced.
     :return: Destination directory.
     :raises ValueError: If the archive path, destination, or member names are
         unsafe.
@@ -125,24 +129,40 @@ def extract_archive(
         raise ValueError(f"Storage archive does not exist: {archive}")
 
     destination = Path(destination_root).expanduser().resolve()
-    destination.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive, "r:xz") as tar:
         members = tar.getmembers()
+        _validate_archive_members(destination, members)
+        _validate_destination(destination, replace_existing=replace_existing)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        staged_destination = Path(
+            tempfile.mkdtemp(
+                prefix=f".{destination.name}.apprc-extract-",
+                dir=destination.parent,
+            )
+        )
         total = len(members)
-        for index, member in enumerate(members, start=1):
-            _validate_member(destination, member)
-            tar.extract(
-                member,
-                path=destination,
-                set_attrs=True,
-                filter="data",
+        try:
+            for index, member in enumerate(members, start=1):
+                tar.extract(
+                    member,
+                    path=staged_destination,
+                    set_attrs=True,
+                    filter="data",
+                )
+                _report_progress(
+                    progress,
+                    completed=index,
+                    total=total,
+                    path=member.name,
+                )
+            _install_staged_extract(
+                staged_destination=staged_destination,
+                destination=destination,
+                replace_existing=replace_existing,
             )
-            _report_progress(
-                progress,
-                completed=index,
-                total=total,
-                path=member.name,
-            )
+        finally:
+            if staged_destination.exists():
+                shutil.rmtree(staged_destination, ignore_errors=True)
     return destination
 
 
@@ -198,6 +218,87 @@ def _validate_member(destination: Path, member: tarfile.TarInfo) -> None:
         raise ValueError(
             f"Storage archive member escapes destination: {member.name}"
         )
+
+
+def _validate_archive_members(
+    destination: Path,
+    members: list[tarfile.TarInfo],
+) -> None:
+    """Reject unsafe archive members before extraction starts."""
+    names: set[str] = set()
+    for member in members:
+        if member.name in names:
+            raise ValueError(
+                f"Storage archive contains duplicate member: {member.name}"
+            )
+        names.add(member.name)
+        _validate_member(destination, member)
+
+
+def _validate_destination(
+    destination: Path,
+    *,
+    replace_existing: bool,
+) -> None:
+    """Reject destination states that cannot be restored safely."""
+    if destination.is_symlink():
+        raise ValueError(
+            f"Storage archive destination must not be a symlink: {destination}"
+        )
+    if not destination.exists():
+        return
+    if not destination.is_dir():
+        raise ValueError(
+            "Storage archive destination exists but is not a directory: "
+            f"{destination}"
+        )
+    if any(destination.iterdir()) and not replace_existing:
+        raise ValueError(
+            "Storage archive destination is not empty: "
+            f"{destination}. Pass replace_existing=True to replace it."
+        )
+
+
+def _install_staged_extract(
+    *,
+    staged_destination: Path,
+    destination: Path,
+    replace_existing: bool,
+) -> None:
+    """Move a completed staged restore into its final destination."""
+    if not destination.exists():
+        os.replace(staged_destination, destination)
+        return
+    if any(destination.iterdir()) and not replace_existing:
+        raise ValueError(
+            "Storage archive destination is not empty: "
+            f"{destination}. Pass replace_existing=True to replace it."
+        )
+    backup = _backup_path(destination)
+    replaced_original = False
+    try:
+        os.replace(destination, backup)
+        replaced_original = True
+        os.replace(staged_destination, destination)
+    except Exception:
+        if replaced_original and not destination.exists() and backup.exists():
+            os.replace(backup, destination)
+        raise
+    finally:
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+
+
+def _backup_path(destination: Path) -> Path:
+    """Return a non-existing sibling path for restore rollback."""
+    backup_parent = Path(
+        tempfile.mkdtemp(
+            prefix=f".{destination.name}.apprc-backup-",
+            dir=destination.parent,
+        )
+    )
+    backup_parent.rmdir()
+    return backup_parent
 
 
 def _report_progress(

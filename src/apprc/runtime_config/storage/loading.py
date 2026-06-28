@@ -36,16 +36,21 @@ class StorageRegistryInspection:
         return self.error is None
 
 
-def index_path_for_create(spec: AppConfigSpec) -> Path:
+def index_path_for_create(
+    spec: AppConfigSpec,
+    *,
+    proc_env: Mapping[str, str] | None = None,
+) -> Path:
     """Return the configured named-storage index path for write flows.
 
     Missing files are valid for this intent because the caller is about to
     create or update the storage table.
 
     :param spec: Application-specific config contract.
+    :param proc_env: Optional environment mapping for bootstrap-time selection.
     :return: Override or default named-storage index path.
     """
-    return spec.index_path()
+    return spec.index_path(proc_env=proc_env)
 
 
 def load_create_or_empty_storage_registry(path: Path) -> StorageRegistry:

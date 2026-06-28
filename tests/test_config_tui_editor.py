@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from textual.widgets import Button, DataTable
 
 from apprc.runtime_config.app_spec import CapabilityState, StorageLayerState
 from apprc.runtime_config.kit import AppConfigKit
+from apprc.runtime_config.storage.registry import (
+    load_storage_registry_or_empty,
+    register_storage,
+)
 from apprc.runtime_config.tui.editor import ConfigEditorApp
+from apprc.runtime_config.tui.editor.workflows import (
+    ConfigEditorStorageWorkflows,
+)
 from tests.support_config import (
     ApprcExampleAppEnv,
     build_apprc_example_app_kit,
@@ -26,6 +35,162 @@ def test_editor_uses_new_storage_env_and_index_labels() -> None:
     assert editor.kit.spec.storage_env_filename == ".env.apprc-storage"
     assert editor.index_label == "apprc_example_app.apprc.toml"
     assert editor.init_command.endswith("config storage add NAME PATH")
+
+
+class RestoreFakeEditor:
+    """Minimal editor facade for archive-import workflow tests."""
+
+    def __init__(self, *, responses: list[object | None]) -> None:
+        """Store modal responses returned by ``push_screen_wait``."""
+        self.responses = responses
+        self.notifications: list[tuple[str, dict[str, object]]] = []
+
+    async def push_screen_wait(self, screen: object) -> object | None:
+        """Return the next scripted modal response."""
+        return self.responses.pop(0)
+
+    def notify(self, message: str, **kwargs: object) -> None:
+        """Capture workflow notifications."""
+        self.notifications.append((message, kwargs))
+
+    def _suggest_storage_name(self, path: Path) -> str:
+        """Return a stable storage name for restored paths."""
+        return path.name
+
+
+@pytest.mark.asyncio
+async def test_editor_restore_replacement_mode_requires_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "alpha.apprc.tar.xz"
+    archive.write_bytes(b"placeholder")
+    destination = tmp_path / "alpha"
+    destination.mkdir()
+    (destination / "old.txt").write_text("old", encoding="utf-8")
+    editor = RestoreFakeEditor(
+        responses=[SimpleNamespace(path=destination), "confirm"],
+    )
+    workflow = ConfigEditorStorageWorkflows(cast(Any, editor))
+    replace_modes: list[bool] = []
+    registered: list[Path] = []
+
+    async def run_extract_progress(
+        *,
+        archive_path: Path,
+        destination_root: Path,
+        replace_existing: bool = False,
+    ) -> Path:
+        replace_modes.append(replace_existing)
+        return destination_root
+
+    async def register_storage_directory_flow(
+        storage_root: Path,
+        *,
+        default_name: str,
+    ) -> None:
+        registered.append(storage_root)
+
+    monkeypatch.setattr(
+        workflow,
+        "run_extract_progress",
+        run_extract_progress,
+    )
+    monkeypatch.setattr(
+        workflow,
+        "register_storage_directory_flow",
+        register_storage_directory_flow,
+    )
+
+    await workflow.open_archive_import_flow(archive)
+
+    assert replace_modes == [True]
+    assert registered == [destination.resolve()]
+
+
+@pytest.mark.asyncio
+async def test_editor_restore_cancel_does_not_replace_destination(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "alpha.apprc.tar.xz"
+    archive.write_bytes(b"placeholder")
+    destination = tmp_path / "alpha"
+    destination.mkdir()
+    (destination / "old.txt").write_text("old", encoding="utf-8")
+    editor = RestoreFakeEditor(
+        responses=[SimpleNamespace(path=destination), None]
+    )
+    workflow = ConfigEditorStorageWorkflows(cast(Any, editor))
+    extract_called = False
+
+    async def run_extract_progress(
+        *,
+        archive_path: Path,
+        destination_root: Path,
+        replace_existing: bool = False,
+    ) -> Path:
+        nonlocal extract_called
+        extract_called = True
+        return destination_root
+
+    monkeypatch.setattr(
+        workflow,
+        "run_extract_progress",
+        run_extract_progress,
+    )
+
+    await workflow.open_archive_import_flow(archive)
+
+    assert extract_called is False
+    assert (destination / "old.txt").read_text(encoding="utf-8") == "old"
+
+
+@pytest.mark.asyncio
+async def test_editor_storage_delete_unregisters_before_content_delete(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    index_path = tmp_path / "demo.apprc.toml"
+    storage_root = tmp_path / "alpha"
+    register_storage(name="alpha", root=storage_root, path=index_path)
+    registry = load_storage_registry_or_empty(index_path)
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=registry,
+    )
+    notifications: list[tuple[str, dict[str, object]]] = []
+
+    async def refresh_storage_list(
+        *,
+        select_name: str | None = None,
+    ) -> None:
+        return None
+
+    def notify(message: str, **kwargs: object) -> None:
+        notifications.append((message, kwargs))
+
+    def fail_rmtree(path: Path) -> None:
+        raise OSError("blocked")
+
+    monkeypatch.setattr(editor, "_refresh_storage_list", refresh_storage_list)
+    monkeypatch.setattr(editor, "_registered_active_storage_name", lambda: None)
+    monkeypatch.setattr(editor, "notify", notify)
+    monkeypatch.setattr(
+        "apprc.runtime_config.tui.editor.workflows.shutil.rmtree",
+        fail_rmtree,
+    )
+
+    removed = await editor.storage_workflows.remove_live_storage(
+        "alpha",
+        delete_content=True,
+    )
+
+    assert removed is True
+    assert load_storage_registry_or_empty(index_path).storages == {}
+    assert storage_root.exists()
+    assert notifications[-1][1]["severity"] == "warning"
 
 
 @pytest.mark.asyncio

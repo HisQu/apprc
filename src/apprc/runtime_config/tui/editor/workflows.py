@@ -149,6 +149,7 @@ class ConfigEditorStorageWorkflows:
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
+        replace_existing = False
         if normalized_destination.exists() and any(
             normalized_destination.iterdir()
         ):
@@ -156,7 +157,7 @@ class ConfigEditorStorageWorkflows:
                 ConfirmScreen(
                     title="Destination is not empty",
                     message=lines_text(
-                        "Extracting the archive may overwrite files in:",
+                        "Restoring the archive will replace files in:",
                         path_text(normalized_destination),
                         "",
                         "Proceed?",
@@ -166,10 +167,12 @@ class ConfigEditorStorageWorkflows:
             )
             if action != "confirm":
                 return
+            replace_existing = True
         try:
             await self.run_extract_progress(
                 archive_path=archive,
                 destination_root=normalized_destination,
+                replace_existing=replace_existing,
             )
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -427,22 +430,26 @@ class ConfigEditorStorageWorkflows:
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return False
-        if delete_content and record.root.exists():
-            try:
-                shutil.rmtree(record.root)
-            except OSError as exc:
-                self.editor.notify(str(exc), severity="error", markup=False)
-                return False
         try:
             self.editor.storage_registry = unregister_storage(
                 name=name,
                 path=registry.path,
             )
-        except ValueError as exc:
+        except (OSError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return False
         select_name = self.editor._registered_active_storage_name()
         await self.editor._refresh_storage_list(select_name=select_name)
+        if delete_content and record.root.exists():
+            try:
+                shutil.rmtree(record.root)
+            except OSError as exc:
+                self.editor.notify(
+                    f"Removed storage {name!r}; directory deletion failed: {exc}",
+                    severity="warning",
+                    markup=False,
+                )
+                return True
         self.editor.notify(f"Removed storage {name!r}")
         return True
 
@@ -500,11 +507,14 @@ class ConfigEditorStorageWorkflows:
         *,
         archive_path: Path,
         destination_root: Path,
+        replace_existing: bool = False,
     ) -> Path:
         """Run archive extraction with a progress modal.
 
         :param archive_path: Existing archive to extract.
         :param destination_root: Directory that receives archive contents.
+        :param replace_existing: Whether a non-empty destination may be
+            replaced.
         :return: Destination directory.
         """
         return await self.run_storage_progress(
@@ -513,6 +523,7 @@ class ConfigEditorStorageWorkflows:
                 archive_path=archive_path,
                 destination_root=destination_root,
                 progress=progress,
+                replace_existing=replace_existing,
             ),
         )
 

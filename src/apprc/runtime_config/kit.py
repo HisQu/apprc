@@ -34,6 +34,7 @@ StateT = TypeVar("StateT")
 if TYPE_CHECKING:
     import typer
 
+    from apprc.cli.config import ConfigSelectorContext
     from apprc.runtime_config.tui import ConfigEditorApp
 
 
@@ -335,7 +336,13 @@ class AppConfigKit:
         state_type: type[StateT],
         runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
         active_storage_root: Callable[[StateT], Path | None] | None = None,
+        active_storage_root_with_context: (
+            Callable[[StateT, ConfigSelectorContext], Path | None] | None
+        ) = None,
         initial_storage: Callable[[StateT], str | None] | None = None,
+        initial_storage_with_context: (
+            Callable[[StateT, ConfigSelectorContext], str | None] | None
+        ) = None,
         editor_app_cls: type[ConfigEditorApp] | None = None,
         help: str | None = None,
         setup_message: str | None = None,
@@ -348,7 +355,11 @@ class AppConfigKit:
         :param runtime_payload: Optional serializer for ``config show``.
         :param active_storage_root: Optional storage-root resolver for custom
             CLI state objects.
+        :param active_storage_root_with_context: Optional storage-root resolver
+            that can inspect explicit env-file selector context.
         :param initial_storage: Optional editor initial-selection resolver.
+        :param initial_storage_with_context: Optional editor initial-selection
+            resolver that can inspect explicit env-file selector context.
         :param editor_app_cls: Optional Textual subclass.
         :param help: Optional Typer group help.
         :param setup_message: Optional setup text for missing storage.
@@ -363,7 +374,9 @@ class AppConfigKit:
             state_type=state_type,
             runtime_payload=runtime_payload,
             active_storage_root=active_storage_root,
+            active_storage_root_with_context=active_storage_root_with_context,
             initial_storage=initial_storage,
+            initial_storage_with_context=initial_storage_with_context,
             editor_app_cls=editor_app_cls,
             help=help,
             setup_message=setup_message,

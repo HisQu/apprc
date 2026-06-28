@@ -3,16 +3,17 @@
 AppRC imports are side-effect free: importing a config dataclass does not read
 ``.env`` files or modify the process environment. Application entrypoints call
 ``bootstrap_env`` once, before runtime config objects are created, to merge the
-    packaged shared defaults, app-wide dotenv values, optional storage
+packaged shared defaults, app-wide dotenv values, optional storage
 dotenv values, explicit ``--env-file`` values, and the values already present
 in ``os.environ``.
 
 The helper mutates only the current Python process because runtime config
 binding and some application dependencies intentionally read from
 ``os.environ``. It resolves AppRC-managed paths but never creates files,
-storage roots, or parent shell changes. Named-storage index path lookup is delegated to
+storage roots, or parent shell changes. Named-storage index path lookup is
+delegated to
 :mod:`apprc.runtime_config.app_spec`, active storage selection is delegated
-    to :mod:`apprc.runtime_config.storage.selector`, and storage dotenv editing is
+to :mod:`apprc.runtime_config.storage.selector`, and storage dotenv editing is
 delegated to :mod:`apprc.runtime_config.env_file`.
 """
 
@@ -88,7 +89,7 @@ def bootstrap_env(
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
-        :param load_dotenv_layers: Whether packaged ``.env.shared``, app-wide
+    :param load_dotenv_layers: Whether packaged ``.env.shared``, app-wide
         ``.env.apprc-app``, storage ``.env.apprc-storage``, and explicit dotenv
         values should be merged into this process. Storage selection still runs
         for storage-required apps when this is ``False``.

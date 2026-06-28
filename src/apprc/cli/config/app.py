@@ -12,6 +12,7 @@ import typer
 
 # == Internal ================================
 from apprc.cli.config.handlers import ConfigCommandHandlers
+from apprc.cli.config.handlers import ConfigSelectorContext
 from apprc.runtime_config.doctor.payload import config_setup_message
 from apprc.runtime_config.kit import AppConfigKit
 
@@ -27,7 +28,13 @@ def build_config_typer_app(
     state_type: type[StateT],
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
     active_storage_root: Callable[[StateT], Path | None] | None = None,
+    active_storage_root_with_context: (
+        Callable[[StateT, ConfigSelectorContext], Path | None] | None
+    ) = None,
     initial_storage: Callable[[StateT], str | None] | None = None,
+    initial_storage_with_context: (
+        Callable[[StateT, ConfigSelectorContext], str | None] | None
+    ) = None,
     editor_app_cls: type[ConfigEditorApp] | None = None,
     help: str | None = None,
     setup_message: str | None = None,
@@ -39,7 +46,11 @@ def build_config_typer_app(
     :param state_type: Application root CLI state type stored on ``ctx.obj``.
     :param runtime_payload: Optional serializer for ``config show``.
     :param active_storage_root: Optional active storage resolver.
+    :param active_storage_root_with_context: Optional active storage resolver
+        that can inspect skipped-bootstrap selector context.
     :param initial_storage: Optional editor initial-selection resolver.
+    :param initial_storage_with_context: Optional editor initial-selection
+        resolver that can inspect skipped-bootstrap selector context.
     :param editor_app_cls: Optional Textual subclass.
     :param help: Optional command-group help.
     :param setup_message: Optional setup text for missing storage.
@@ -72,9 +83,17 @@ def build_config_typer_app(
             Callable[[Any], Path | None] | None,
             active_storage_root,
         ),
+        active_storage_root_with_context=cast(
+            Callable[[Any, ConfigSelectorContext], Path | None] | None,
+            active_storage_root_with_context,
+        ),
         initial_storage=cast(
             Callable[[Any], str | None] | None,
             initial_storage,
+        ),
+        initial_storage_with_context=cast(
+            Callable[[Any, ConfigSelectorContext], str | None] | None,
+            initial_storage_with_context,
         ),
         editor_app_cls=editor_app_cls,
         missing_setup=setup_message or config_setup_message(kit),
@@ -135,7 +154,7 @@ def build_config_typer_app(
             ),
         ] = False,
         storage_root: Annotated[
-            Path | None,
+            str | None,
             typer.Option(
                 "--storage-root",
                 help="Active storage root for non-interactive setup.",
@@ -189,6 +208,7 @@ def build_config_typer_app(
 
     @storage_group.command("add")
     def config_storage_add_cmd(
+        ctx: typer.Context,
         name: Annotated[
             str,
             typer.Argument(help="Storage selector name to create or update."),
@@ -207,7 +227,12 @@ def build_config_typer_app(
         ] = False,
     ) -> None:
         """Create or update one named storage entry."""
-        handlers.storage_add(name=name, path=path, assume_yes=assume_yes)
+        handlers.storage_add(
+            ctx,
+            name=name,
+            path=path,
+            assume_yes=assume_yes,
+        )
 
     @storage_group.command("list")
     def config_storage_list_cmd(
@@ -222,12 +247,13 @@ def build_config_typer_app(
 
     @storage_group.command("remove")
     def config_storage_remove_cmd(
+        ctx: typer.Context,
         name: Annotated[
             str,
             typer.Argument(help="Storage selector name to remove."),
         ],
     ) -> None:
         """Remove one named storage entry."""
-        handlers.storage_remove(name=name)
+        handlers.storage_remove(ctx, name=name)
 
     return app

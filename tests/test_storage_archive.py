@@ -135,3 +135,80 @@ def test_extract_archive_rejects_path_traversal(tmp_path: Path) -> None:
         )
 
     assert not (tmp_path / "evil.txt").exists()
+
+
+def test_extract_archive_validates_all_members_before_writing(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / f"mixed{ARCHIVE_SUFFIX}"
+    good = tarfile.TarInfo("good.txt")
+    good_payload = b"ok"
+    good.size = len(good_payload)
+    evil = tarfile.TarInfo("../evil.txt")
+    evil_payload = b"nope"
+    evil.size = len(evil_payload)
+    with tarfile.open(archive, "w:xz", preset=9) as tar:
+        tar.addfile(good, io.BytesIO(good_payload))
+        tar.addfile(evil, io.BytesIO(evil_payload))
+
+    with pytest.raises(ValueError, match="escapes destination"):
+        extract_archive(
+            archive_path=archive,
+            destination_root=tmp_path / "restored",
+        )
+
+    assert not (tmp_path / "restored").exists()
+    assert not (tmp_path / "evil.txt").exists()
+    assert not list(tmp_path.glob(".restored.apprc-extract-*"))
+
+
+def test_extract_archive_rejects_non_empty_destination_by_default(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "payload.txt").write_text("new", encoding="utf-8")
+    archive = archive_directory(
+        source_root=source,
+        archive_path=tmp_path / f"source{ARCHIVE_SUFFIX}",
+    )
+    destination = tmp_path / "restored"
+    destination.mkdir()
+    (destination / "payload.txt").write_text("old", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="not empty"):
+        extract_archive(
+            archive_path=archive,
+            destination_root=destination,
+        )
+
+    assert (destination / "payload.txt").read_text(encoding="utf-8") == "old"
+    assert not list(tmp_path.glob(".restored.apprc-extract-*"))
+
+
+def test_extract_archive_replace_existing_swaps_after_staged_extract(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "payload.txt").write_text("new", encoding="utf-8")
+    archive = archive_directory(
+        source_root=source,
+        archive_path=tmp_path / f"source{ARCHIVE_SUFFIX}",
+    )
+    destination = tmp_path / "restored"
+    destination.mkdir()
+    (destination / "payload.txt").write_text("old", encoding="utf-8")
+    (destination / "old-only.txt").write_text("remove", encoding="utf-8")
+
+    restored = extract_archive(
+        archive_path=archive,
+        destination_root=destination,
+        replace_existing=True,
+    )
+
+    assert restored == destination.resolve()
+    assert (destination / "payload.txt").read_text(encoding="utf-8") == "new"
+    assert not (destination / "old-only.txt").exists()
+    assert not list(tmp_path.glob(".restored.apprc-extract-*"))
+    assert not list(tmp_path.glob(".restored.apprc-backup-*"))

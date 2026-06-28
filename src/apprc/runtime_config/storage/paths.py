@@ -39,6 +39,8 @@ def normalize_storage_root_path(path: str | Path) -> Path:
     :return: Expanded local path without requiring the directory to exist.
     """
     path_text = str(path).strip()
+    if not path_text:
+        raise StorageRootPathError("Storage root path must not be empty.")
     if _is_malformed_windows_drive_path(path_text):
         raise StorageRootPathError(
             _malformed_windows_drive_path_message(path_text)

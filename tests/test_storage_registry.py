@@ -241,6 +241,12 @@ def test_normalize_storage_root_path_accepts_windows_drive_spellings(
     )
 
 
+def test_normalize_storage_root_path_rejects_blank_text() -> None:
+    for raw_path in ("", "   ", "\t"):
+        with pytest.raises(StorageRootPathError, match="must not be empty"):
+            normalize_storage_root_path(raw_path)
+
+
 def test_normalize_storage_root_path_rejects_damaged_windows_path() -> None:
     with pytest.raises(StorageRootPathError) as exc_info:
         normalize_storage_root_path("C:Projectsdemo-storage")
@@ -302,3 +308,75 @@ def test_register_storage_rejects_names_that_cannot_be_toml_keys(
                 root=tmp_path / "storage",
                 path=tmp_path / "demo.apprc.toml",
             )
+
+
+def test_register_storage_validates_existing_registry_before_creating_files(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    index_path.write_text("[invalid", encoding="utf-8")
+    storage_root = tmp_path / "alpha"
+
+    with pytest.raises(ValueError):
+        register_storage(
+            name="alpha",
+            root=storage_root,
+            path=index_path,
+        )
+
+    assert not storage_root.exists()
+    assert not (storage_root / ".env.apprc-storage").exists()
+
+
+def test_register_storage_rolls_back_new_empty_artifacts_on_write_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    storage_root = tmp_path / "alpha"
+
+    def fail_write(_: object) -> None:
+        raise OSError("blocked")
+
+    monkeypatch.setattr(
+        "apprc.runtime_config.storage.registry.write_storage_registry",
+        fail_write,
+    )
+
+    with pytest.raises(OSError, match="blocked"):
+        register_storage(
+            name="alpha",
+            root=storage_root,
+            path=index_path,
+        )
+
+    assert not storage_root.exists()
+    assert not (storage_root / ".env.apprc-storage").exists()
+
+
+def test_register_storage_keeps_existing_non_empty_root_on_write_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    storage_root = tmp_path / "alpha"
+    storage_root.mkdir()
+    (storage_root / "payload.txt").write_text("keep", encoding="utf-8")
+
+    def fail_write(_: object) -> None:
+        raise OSError("blocked")
+
+    monkeypatch.setattr(
+        "apprc.runtime_config.storage.registry.write_storage_registry",
+        fail_write,
+    )
+
+    with pytest.raises(OSError, match="blocked"):
+        register_storage(
+            name="alpha",
+            root=storage_root,
+            path=index_path,
+        )
+
+    assert (storage_root / "payload.txt").read_text(encoding="utf-8") == "keep"
+    assert not (storage_root / ".env.apprc-storage").exists()

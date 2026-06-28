@@ -36,9 +36,28 @@ This project follows Semantic Versioning.
     `logging.getLogger(NAME)` for names that need AppRC semantic helpers, or
     keep using the existing plain logger directly.
 
+  - Breaking: `extract_archive(...)` now refuses to restore into a non-empty
+    destination unless `replace_existing=True` is passed.
+    Affected: Integrations that called `extract_archive()` to merge or replace
+    existing directories.
+    Migration: Restore into an empty directory, or prompt/confirm externally
+    before calling `extract_archive(..., replace_existing=True)`.
+
+  - Breaking: Blank or whitespace-only storage root text now raises
+    `StorageRootPathError` instead of resolving to the current directory.
+    Affected: CLI or API callers passing `""` or whitespace as a storage root.
+    Migration: Pass `.` explicitly when the current directory is intended.
+
 <br>
 
 ### ➕ Added
+
+  - Added public `ConfigSelectorContext` plus context-aware config hooks:
+    `active_storage_root_with_context(state, selector_context)` and
+    `initial_storage_with_context(state, selector_context)`.
+
+  - Added `replace_existing=False` to `extract_archive(...)` so callers must
+    opt in before replacing a non-empty destination.
 
 <br>
 
@@ -68,6 +87,29 @@ This project follows Semantic Versioning.
   - Fixed skipped-bootstrap config commands so root `--env-file` storage
     selectors and `--env-file-overrides-os-environ` participate in storage
     selection without mutating `os.environ`.
+
+  - Fixed `config storage add` and `config storage remove` so root
+    `--env-file` values can select the named-storage index through
+    `<APP>_APPRC_TOML`.
+
+  - Fixed storage setup, registry writes, selector resolution, and TUI storage
+    registration so blank storage roots are rejected consistently.
+
+  - Fixed storage registration so corrupt existing registries are detected
+    before storage directories or dotenv files are created.
+
+  - Fixed storage registration rollback so failed registry writes remove only
+    empty artifacts created by that call and preserve existing storage content.
+
+  - Fixed archive restore so all members are validated before extraction, the
+    restore is staged in a sibling temp directory, and non-empty destinations
+    are replaced only after an explicit opt-in.
+
+  - Fixed TUI storage deletion so the registry row is removed before directory
+    deletion; deletion failures now warn without recreating the row.
+
+  - Fixed config help detection to honor custom root value options and to
+    ignore `--help` or `-h` after a `--` separator.
 
 <br>
 

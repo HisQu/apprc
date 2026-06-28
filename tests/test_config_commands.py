@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+import typer
+from apprc.cli.config import ConfigSelectorContext
 from typer.testing import CliRunner
 
 from apprc.runtime_config.app_spec import CapabilityState
@@ -60,6 +62,30 @@ class CapturingConfigEditorApp(ConfigEditorApp):
     def run(self, *args: object, **kwargs: object) -> None:
         """Record that the editor would have launched."""
         type(self).run_count += 1
+
+
+def root_app_with_config(
+    config_app: typer.Typer,
+    *,
+    state: ApprcExampleAppConfigState,
+) -> typer.Typer:
+    """Mount a config app below root options used by selector tests."""
+    app = typer.Typer()
+
+    @app.callback()
+    def root_cmd(
+        ctx: typer.Context,
+        env_files: list[Path] | None = typer.Option(None, "--env-file"),
+        env_file_overrides_os_environ: bool = typer.Option(
+            False,
+            "--env-file-overrides-os-environ",
+        ),
+    ) -> None:
+        """Store root params and the test state for child commands."""
+        ctx.obj = state
+
+    app.add_typer(config_app, name="config")
+    return app
 
 
 def test_config_paths_reports_zero_writes(
@@ -145,6 +171,155 @@ def test_config_set_infers_storage_scope(tmp_path: Path) -> None:
         storage_root / ".env.apprc-storage"
     ).read_text(encoding="utf-8")
     assert "storage_env:" in result.output
+
+
+def test_context_aware_active_storage_hook_receives_selector_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "selected-storage"
+    storage_root.mkdir()
+    selector_env = tmp_path / "selector.env"
+    selector_env.write_text(
+        f"APPRC_EXAMPLE_APP_STORAGE={storage_root}\n",
+        encoding="utf-8",
+    )
+    seen_contexts: list[ConfigSelectorContext] = []
+
+    def active_storage_root_with_context(
+        state: ApprcExampleAppConfigState,
+        selector_context: ConfigSelectorContext,
+    ) -> Path | None:
+        seen_contexts.append(selector_context)
+        return Path(
+            selector_context.explicit_values["APPRC_EXAMPLE_APP_STORAGE"]
+        )
+
+    config_app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        active_storage_root_with_context=active_storage_root_with_context,
+    )
+    app = root_app_with_config(
+        config_app,
+        state=ApprcExampleAppConfigState(env_bootstrap=None),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "--env-file",
+            str(selector_env),
+            "config",
+            "set",
+            "access_token",
+            "secret",
+            "--scope",
+            "storage",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen_contexts
+    assert seen_contexts[-1].explicit_values["APPRC_EXAMPLE_APP_STORAGE"] == (
+        str(storage_root)
+    )
+    assert seen_contexts[-1].proc_env["APPRC_EXAMPLE_APP_STORAGE"] == str(
+        storage_root
+    )
+    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret"\n' in (
+        storage_root / ".env.apprc-storage"
+    ).read_text(encoding="utf-8")
+
+
+def test_context_aware_initial_storage_hook_receives_selector_context(
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "selected-storage"
+    storage_root.mkdir()
+    selector_env = tmp_path / "selector.env"
+    selector_env.write_text(
+        f"APPRC_EXAMPLE_APP_STORAGE={storage_root}\n"
+        "APPRC_EXAMPLE_APP_STORAGE_NAME=alpha\n",
+        encoding="utf-8",
+    )
+    seen_contexts: list[ConfigSelectorContext] = []
+
+    def active_storage_root_with_context(
+        state: ApprcExampleAppConfigState,
+        selector_context: ConfigSelectorContext,
+    ) -> Path | None:
+        return Path(
+            selector_context.explicit_values["APPRC_EXAMPLE_APP_STORAGE"]
+        )
+
+    def initial_storage_with_context(
+        state: ApprcExampleAppConfigState,
+        selector_context: ConfigSelectorContext,
+    ) -> str | None:
+        seen_contexts.append(selector_context)
+        return selector_context.explicit_values[
+            "APPRC_EXAMPLE_APP_STORAGE_NAME"
+        ]
+
+    CapturingConfigEditorApp.reset()
+    config_app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        active_storage_root_with_context=active_storage_root_with_context,
+        initial_storage_with_context=initial_storage_with_context,
+        editor_app_cls=CapturingConfigEditorApp,
+    )
+    app = root_app_with_config(
+        config_app,
+        state=ApprcExampleAppConfigState(env_bootstrap=None),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "--env-file",
+            str(selector_env),
+            "--env-file-overrides-os-environ",
+            "config",
+            "edit",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert CapturingConfigEditorApp.run_count == 1
+    assert CapturingConfigEditorApp.initial_storage_seen == "alpha"
+    assert seen_contexts[-1].env_file_overrides_os_environ is True
+    assert CapturingConfigEditorApp.active_storage_root_seen == storage_root
+
+
+def test_legacy_active_storage_hook_still_works(tmp_path: Path) -> None:
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    state = ApprcExampleAppConfigState(env_bootstrap=None)
+    app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        active_storage_root=lambda _: storage_root,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "set",
+            "access_token",
+            "legacy-secret",
+            "--scope",
+            "storage",
+        ],
+        obj=state,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="legacy-secret"\n' in (
+        storage_root / ".env.apprc-storage"
+    ).read_text(encoding="utf-8")
 
 
 def test_config_set_requires_scope_when_app_and_storage_are_active(

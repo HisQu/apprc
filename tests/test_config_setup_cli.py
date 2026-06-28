@@ -60,6 +60,25 @@ def test_storage_only_setup_creates_storage_env_only(
     assert "export APPRC_EXAMPLE_APP_STORAGE" in result.output
 
 
+def test_storage_only_setup_rejects_blank_storage_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    result = CliRunner().invoke(
+        app,
+        ["setup", "--yes", "--storage-root", ""],
+    )
+
+    assert result.exit_code != 0, result.output
+    assert "must not be empty" in result.output
+    assert not (tmp_path / ".env.apprc-storage").exists()
+
+
 def test_app_wide_config_setup_creates_app_wide_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

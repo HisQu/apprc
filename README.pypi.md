@@ -115,6 +115,37 @@ config_app = APP_CONFIG.typer_app(state_type=MyCliState)
 app.add_typer(config_app, name="config")
 ```
 
+For custom root CLI state, prefer context-aware hooks when storage selection
+needs root `--env-file` values during skipped-bootstrap config commands:
+
+```python
+from apprc.cli.config import ConfigSelectorContext
+
+
+def active_storage_root(
+    state: MyCliState,
+    selector_context: ConfigSelectorContext,
+) -> Path | None:
+    return Path(selector_context.proc_env["MYAPP_STORAGE"])
+
+
+config_app = APP_CONFIG.typer_app(
+    state_type=MyCliState,
+    active_storage_root_with_context=active_storage_root,
+)
+```
+
+Legacy `active_storage_root=...` and `initial_storage=...` hooks still work.
+Use `active_storage_root_with_context=...` or
+`initial_storage_with_context=...` when the hook must see
+`ConfigSelectorContext.explicit_values`,
+`ConfigSelectorContext.env_file_overrides_os_environ`, or
+`ConfigSelectorContext.proc_env`.
+
+Storage archives reject symlinks and hardlinks. `extract_archive()` refuses to
+restore into a non-empty destination unless `replace_existing=True`; the TUI
+asks before using replacement mode.
+
 ## Runtime Precedence
 
 When dotenv layers are loaded, values are merged in this order:

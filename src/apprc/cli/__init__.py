@@ -5,6 +5,7 @@
 from apprc.cli.bootstrap import bootstrap_cli_env, parse_log_level
 from apprc.cli.config import (
     ConfigCliState,
+    ConfigSelectorContext,
     active_storage_root_from_state,
     build_config_typer_app,
     config_request_skips_runtime_bootstrap,
@@ -35,6 +36,7 @@ __all__ = [
     "COMMON_ROOT_VALUE_OPTIONS",
     "MISSING_ACTION_MESSAGE",
     "ConfigCliState",
+    "ConfigSelectorContext",
     "active_storage_root_from_state",
     "args_after_command",
     "bootstrap_cli_env",

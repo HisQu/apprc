@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
@@ -13,6 +14,7 @@ from apprc.runtime_config.bootstrap.dotenv_layers import (
     read_dotenv_file,
     read_storage_selector_fallback_values,
 )
+from apprc.runtime_config.bootstrap.process_env import selection_env
 from apprc.runtime_config.config_home import AppConfigHome
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.storage.loading import (
@@ -120,18 +122,32 @@ def build_config_doctor_payload(
     kit: "AppConfigKit",
     *,
     storage: str | None,
+    explicit_values: Mapping[str, str] | None = None,
+    env_file_overrides_os_environ: bool = False,
 ) -> ConfigDoctorPayload:
     """Return local setup diagnostics for one app's active layers.
 
     :param kit: Application config facade.
     :param storage: Optional selector passed by ``--storage``.
+    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+        process env values during selector resolution.
     :return: Stable JSON-friendly diagnostic payload.
     """
-    paths = kit.spec.config_paths()
+    explicit_selector_values = explicit_values or {}
+    selector_env = selection_env(
+        original_env=os.environ,
+        explicit_values=explicit_selector_values,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+    )
+    paths = kit.spec.config_paths(proc_env=selector_env)
     app_wide = _diagnose_app_wide(kit, paths=paths)
     storage_diagnosis = _diagnose_storage(
         kit,
         storage=storage,
+        explicit_values=explicit_selector_values,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        selector_env=selector_env,
     )
     registry = storage_diagnosis.registry
     warnings = [
@@ -272,16 +288,22 @@ def _diagnose_storage(
     kit: "AppConfigKit",
     *,
     storage: str | None,
+    explicit_values: Mapping[str, str],
+    env_file_overrides_os_environ: bool,
+    selector_env: Mapping[str, str],
 ) -> _StorageDiagnosis:
     """Return active storage state for diagnostics.
 
     :param kit: Application config facade.
-    :param registry: Optional named-storage table diagnosis result.
     :param storage: Optional selector passed by ``--storage``.
+    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+        process env values during selector resolution.
+    :param selector_env: Process plus explicit values used for selector paths.
     :return: Storage diagnosis with missing-env and storage-env issues.
     """
     if not kit.spec.storage_required():
-        registry = inspect_storage_registry(kit.spec)
+        registry = inspect_storage_registry(kit.spec, proc_env=selector_env)
         return _StorageDiagnosis(
             selection=None,
             storage_root_exists=None,
@@ -300,16 +322,16 @@ def _diagnose_storage(
     issues.extend(fallback_values.issues)
     missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
-    registry = inspect_storage_registry(kit.spec)
+    registry = inspect_storage_registry(kit.spec, proc_env=selector_env)
 
     storage_selector = select_storage_selector(
         storage=storage,
         storage_env_key=storage_env_key,
         original_env=os.environ,
-        explicit_values={},
+        explicit_values=explicit_values,
         app_wide_values=fallback_values.app_wide_values,
         shared_values=fallback_values.shared_values,
-        env_file_overrides_os_environ=False,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     if storage_selector is None:
         missing_env_keys.append(storage_env_key)
@@ -319,6 +341,7 @@ def _diagnose_storage(
         registry = inspect_storage_registry(
             kit.spec,
             raw_selector=selector_value,
+            proc_env=selector_env,
         )
         if not registry.issues:
             try:

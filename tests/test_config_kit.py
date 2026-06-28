@@ -4,12 +4,17 @@ from pathlib import Path
 
 import pytest
 
+from apprc.cli.config.state import (
+    active_storage_root_from_env,
+    initial_storage_from_state,
+)
 from apprc.runtime_config.app_spec import CapabilityState, StorageLayerState
 from apprc.runtime_config.doctor.payload import build_config_doctor_payload
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
 from apprc.runtime_config.kit import AppConfigKit
 from apprc.runtime_config.storage.registry import register_storage
 from tests.support_config import (
+    ApprcExampleAppConfigState,
     ApprcExampleAppEnv,
     StorageFreeExampleEnv,
     build_apprc_example_app_kit,
@@ -255,3 +260,74 @@ def test_doctor_named_storage_selector_uses_index(
 
     assert payload["selected_storage"] == "alpha"
     assert payload["selected_storage_root"] == str(storage_root.resolve())
+
+
+def test_doctor_payload_honors_explicit_selector_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    index_path = tmp_path / "explicit-index.toml"
+    storage_root = tmp_path / "alpha"
+    register_storage(
+        name="alpha",
+        root=storage_root,
+        path=index_path,
+        storage_env_filename=kit.spec.storage_env_filename,
+    )
+
+    payload = build_config_doctor_payload(
+        kit,
+        storage=None,
+        explicit_values={
+            "APPRC_EXAMPLE_APP_APPRC_TOML": str(index_path),
+            "APPRC_EXAMPLE_APP_STORAGE": "alpha",
+        },
+    )
+
+    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
+    assert payload["index_path"] == str(index_path)
+    assert payload["selected_storage"] == "alpha"
+    assert payload["selected_storage_root"] == str(storage_root.resolve())
+
+
+def test_selector_helpers_honor_explicit_storage_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_APPRC_TOML", raising=False)
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    index_path = tmp_path / "explicit-index.toml"
+    storage_root = tmp_path / "alpha"
+    registry = register_storage(
+        name="alpha",
+        root=storage_root,
+        path=index_path,
+        storage_env_filename=kit.spec.storage_env_filename,
+    )
+    explicit_values = {
+        "APPRC_EXAMPLE_APP_APPRC_TOML": str(index_path),
+        "APPRC_EXAMPLE_APP_STORAGE": "alpha",
+    }
+
+    assert (
+        active_storage_root_from_env(
+            kit,
+            explicit_values=explicit_values,
+        )
+        == storage_root.resolve()
+    )
+    assert (
+        initial_storage_from_state(
+            kit,
+            ApprcExampleAppConfigState(env_bootstrap=None, storage=None),
+            registry,
+            explicit_values=explicit_values,
+        )
+        == "alpha"
+    )

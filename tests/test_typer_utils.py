@@ -72,6 +72,9 @@ def test_config_request_skips_runtime_bootstrap_for_setup_only_commands() -> (
     skips = config_request_skips_runtime_bootstrap
 
     assert skips(tokens=["config"]) is True
+    assert skips(tokens=["config", "--help"]) is True
+    assert skips(tokens=["config", "show", "--help"]) is True
+    assert skips(tokens=["config", "show", "-h"]) is True
     assert skips(tokens=["config", "--json"]) is False
     assert skips(
         tokens=[

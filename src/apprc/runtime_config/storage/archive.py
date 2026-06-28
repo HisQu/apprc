@@ -9,6 +9,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
+import stat
 import tarfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -76,13 +77,13 @@ def archive_directory(
     archive = Path(archive_path).expanduser()
     if not is_storage_archive_path(archive):
         raise ValueError(f"Storage archives must end with {ARCHIVE_SUFFIX}.")
-    archive.parent.mkdir(parents=True, exist_ok=True)
     final_archive = archive.resolve()
     temp_archive = final_archive.with_name(f".{final_archive.name}.tmp")
     if temp_archive.exists():
         temp_archive.unlink()
 
-    members = _storage_members(root)
+    members = _validated_storage_members(root)
+    archive.parent.mkdir(parents=True, exist_ok=True)
     total = len(members)
     try:
         with tarfile.open(temp_archive, "w:xz", preset=9) as tar:
@@ -151,6 +152,39 @@ def _storage_members(root: Path) -> list[Path]:
         root.rglob("*"),
         key=lambda path: path.relative_to(root).as_posix(),
     )
+
+
+def _validated_storage_members(root: Path) -> list[Path]:
+    """Return source members after enforcing archive link policy."""
+    members = _storage_members(root)
+    _validate_source_members(root, members)
+    return members
+
+
+def _validate_source_members(root: Path, members: list[Path]) -> None:
+    """Reject source entries that would produce link archive members."""
+    linked_files: dict[tuple[int, int], Path] = {}
+    for member in members:
+        relative = member.relative_to(root).as_posix()
+        try:
+            member_stat = member.lstat()
+        except OSError as exc:
+            raise ValueError(
+                "Storage archive member could not be inspected: "
+                f"{relative}: {exc}"
+            ) from exc
+        if stat.S_ISLNK(member_stat.st_mode):
+            raise ValueError(
+                f"Storage archives may not contain links: {relative}"
+            )
+        if not stat.S_ISREG(member_stat.st_mode) or member_stat.st_nlink <= 1:
+            continue
+        identity = (member_stat.st_dev, member_stat.st_ino)
+        if identity in linked_files:
+            raise ValueError(
+                f"Storage archives may not contain links: {relative}"
+            )
+        linked_files[identity] = member
 
 
 def _validate_member(destination: Path, member: tarfile.TarInfo) -> None:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import os
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -24,6 +26,11 @@ from apprc.cli.doctor import print_config_doctor, print_config_paths
 from apprc.cli.errors import config_home_bad_parameter
 from apprc.cli.setup import run_config_setup
 from apprc.cli.typer_utils import dump_json, exit_missing_action, state_from
+from apprc.runtime_config.bootstrap.dotenv_layers import (
+    ExplicitEnvFileError,
+    read_explicit_env_files,
+)
+from apprc.runtime_config.bootstrap.process_env import selection_env
 from apprc.runtime_config.config_home import ConfigHomeError
 from apprc.runtime_config.doctor.payload import build_config_doctor_payload
 from apprc.runtime_config.doctor.status import ConfigDoctorStatus
@@ -49,6 +56,15 @@ if TYPE_CHECKING:
     from apprc.runtime_config.tui import ConfigEditorApp
 
 type ConfigSetScope = Literal["app", "storage"]
+
+
+@dataclass(frozen=True, slots=True)
+class CliSelectorContext:
+    """Root CLI explicit env values used only for selector resolution."""
+
+    explicit_values: Mapping[str, str]
+    env_file_overrides_os_environ: bool
+    proc_env: Mapping[str, str]
 
 
 class ConfigCommandBase:
@@ -98,9 +114,35 @@ class ConfigCommandBase:
         name: str,
     ) -> object | None:
         """Read one option value from the parent command context."""
-        if ctx.parent is None:
-            return None
-        return ctx.parent.params.get(name)
+        current = ctx.parent
+        while current is not None:
+            if name in current.params:
+                return current.params.get(name)
+            current = current.parent
+        return None
+
+    def cli_selector_context(self, ctx: typer.Context) -> CliSelectorContext:
+        """Return root explicit env-file values for selector-only reads."""
+        env_files = _root_env_files(self.root_context_param(ctx, "env_files"))
+        overrides = bool(
+            self.root_context_param(ctx, "env_file_overrides_os_environ")
+        )
+        try:
+            _, _, explicit_values = read_explicit_env_files(env_files)
+        except FileNotFoundError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint="--env-file",
+            ) from exc
+        except ExplicitEnvFileError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint="--env-file",
+            ) from exc
+        return _selector_context(
+            explicit_values=explicit_values,
+            env_file_overrides_os_environ=overrides,
+        )
 
     def config_home_bad_parameter(
         self,
@@ -139,35 +181,58 @@ class ConfigCommandBase:
                 param_hint="storage",
             )
 
-    def load_optional_storage_registry(self) -> StorageRegistry | None:
+    def load_optional_storage_registry(
+        self,
+        *,
+        selector_context: CliSelectorContext | None = None,
+    ) -> StorageRegistry | None:
         """Return the named-storage index only when it exists."""
+        context = selector_context or _empty_selector_context()
         try:
-            return load_optional_runtime_storage_registry(self.kit.spec)
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
-        except ValueError as exc:
-            raise self.index_bad_parameter(exc) from exc
-
-    def load_list_storage_registry(self) -> StorageRegistry:
-        """Return a parsed or empty named-storage registry without writing."""
-        self.require_named_storage_capability()
-        try:
-            return load_create_or_empty_storage_registry(
-                index_path_for_create(self.kit.spec)
+            return load_optional_runtime_storage_registry(
+                self.kit.spec,
+                proc_env=context.proc_env,
             )
         except ConfigHomeError as exc:
             raise self.config_home_bad_parameter(exc) from exc
         except ValueError as exc:
             raise self.index_bad_parameter(exc) from exc
 
-    def active_storage_root_for_cli(self, state: Any) -> Path | None:
+    def load_list_storage_registry(
+        self,
+        *,
+        selector_context: CliSelectorContext | None = None,
+    ) -> StorageRegistry:
+        """Return a parsed or empty named-storage registry without writing."""
+        self.require_named_storage_capability()
+        context = selector_context or _empty_selector_context()
+        try:
+            return load_create_or_empty_storage_registry(
+                self.kit.spec.index_path(proc_env=context.proc_env)
+            )
+        except ConfigHomeError as exc:
+            raise self.config_home_bad_parameter(exc) from exc
+        except ValueError as exc:
+            raise self.index_bad_parameter(exc) from exc
+
+    def active_storage_root_for_cli(
+        self,
+        state: Any,
+        *,
+        selector_context: CliSelectorContext | None = None,
+    ) -> Path | None:
         """Return the selected storage root using app overrides first."""
+        context = selector_context or _empty_selector_context()
         try:
             if self.active_storage_root_hook is not None:
                 return self.active_storage_root_hook(state)
             return active_storage_root_from_state(
                 self.kit,
                 cast(ConfigCliState, state),
+                explicit_values=context.explicit_values,
+                env_file_overrides_os_environ=(
+                    context.env_file_overrides_os_environ
+                ),
             )
         except StorageSelectorError as exc:
             raise typer.BadParameter(
@@ -179,9 +244,17 @@ class ConfigCommandBase:
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--storage") from exc
 
-    def required_storage_root_for_write(self, state: Any) -> Path:
+    def required_storage_root_for_write(
+        self,
+        state: Any,
+        *,
+        selector_context: CliSelectorContext | None = None,
+    ) -> Path:
         """Return a writable active storage root or raise a CLI error."""
-        storage_root = self.active_storage_root_for_cli(state)
+        storage_root = self.active_storage_root_for_cli(
+            state,
+            selector_context=selector_context,
+        )
         if storage_root is None:
             raise typer.BadParameter(
                 f"No active {self.kit.spec.display_name} storage root. Run "
@@ -205,12 +278,18 @@ class ConfigCommandBase:
         self,
         *,
         storage_registry: StorageRegistry | None,
+        selector_context: CliSelectorContext | None = None,
     ) -> Path | None:
         """Return the env-selected storage root, suppressing selector errors."""
+        context = selector_context or _empty_selector_context()
         try:
             storage_root = active_storage_root_from_env(
                 self.kit,
                 registry=storage_registry,
+                explicit_values=context.explicit_values,
+                env_file_overrides_os_environ=(
+                    context.env_file_overrides_os_environ
+                ),
             )
             if storage_root is None or not storage_root.is_dir():
                 return None
@@ -225,14 +304,26 @@ class ConfigCommandBase:
     def active_storage_root_for_editor(
         self,
         current_state: Any | None,
+        *,
+        selector_context: CliSelectorContext | None = None,
     ) -> Path | None:
         """Return the storage root selected for zero-write editor reads."""
         if not self.kit.spec.storage_required():
             return None
+        context = selector_context or _empty_selector_context()
         try:
             if current_state is not None:
-                return self.active_storage_root_for_cli(current_state)
-            return active_storage_root_from_env(self.kit)
+                return self.active_storage_root_for_cli(
+                    current_state,
+                    selector_context=context,
+                )
+            return active_storage_root_from_env(
+                self.kit,
+                explicit_values=context.explicit_values,
+                env_file_overrides_os_environ=(
+                    context.env_file_overrides_os_environ
+                ),
+            )
         except StorageSelectorError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -275,12 +366,14 @@ class ConfigCommandBase:
         current_state: Any | None,
         storage_registry: StorageRegistry | None,
         active_storage_root: Path | None,
+        selector_context: CliSelectorContext | None = None,
     ) -> None:
         """Create and run the Textual config editor."""
         selected_storage = (
             self.initial_storage_for_editor(
                 current_state,
                 storage_registry=storage_registry,
+                selector_context=selector_context,
             )
             if current_state is not None
             else None
@@ -308,28 +401,38 @@ class ConfigCommandBase:
         state: Any,
         *,
         storage_registry: StorageRegistry | None,
+        selector_context: CliSelectorContext | None = None,
     ) -> str | None:
         """Return the storage name the editor should select on startup."""
         if self.initial_storage_hook is not None:
             return self.initial_storage_hook(state)
+        context = selector_context or _empty_selector_context()
         return initial_storage_from_state(
             self.kit,
             cast(ConfigCliState, state),
             registry=storage_registry,
+            explicit_values=context.explicit_values,
+            env_file_overrides_os_environ=(
+                context.env_file_overrides_os_environ
+            ),
         )
 
 
 class StorageConfigCommands(ConfigCommandBase):
     """Named-storage config command implementations."""
 
-    def storage_list(self, *, json_output: bool) -> None:
+    def storage_list(self, ctx: typer.Context, *, json_output: bool) -> None:
         """List named storage roots from the optional index."""
-        registry = self.load_list_storage_registry()
+        selector_context = self.cli_selector_context(ctx)
+        registry = self.load_list_storage_registry(
+            selector_context=selector_context,
+        )
         payload = storage_list_payload(
             registry,
             storage_env_filename=self.kit.spec.storage_env_filename,
             active_storage_root=self.best_effort_active_storage_root_from_env(
                 storage_registry=registry,
+                selector_context=selector_context,
             ),
         )
         if json_output:
@@ -398,11 +501,16 @@ class RuntimeConfigCommands(ConfigCommandBase):
 
     def paths(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Show declared and active config paths without writing files."""
+        selector_context = self.cli_selector_context(ctx)
         storage = self.root_context_param(ctx, "storage")
         storage_selector = storage if isinstance(storage, str) else None
         payload = build_config_doctor_payload(
             self.kit,
             storage=storage_selector,
+            explicit_values=selector_context.explicit_values,
+            env_file_overrides_os_environ=(
+                selector_context.env_file_overrides_os_environ
+            ),
         )
         if json_output:
             dump_json(payload)
@@ -444,11 +552,16 @@ class RuntimeConfigCommands(ConfigCommandBase):
 
     def doctor(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Check AppRC config readiness and print suggested fixes."""
+        selector_context = self.cli_selector_context(ctx)
         storage = self.root_context_param(ctx, "storage")
         storage_selector = storage if isinstance(storage, str) else None
         payload = build_config_doctor_payload(
             self.kit,
             storage=storage_selector,
+            explicit_values=selector_context.explicit_values,
+            env_file_overrides_os_environ=(
+                selector_context.env_file_overrides_os_environ
+            ),
         )
         if json_output:
             dump_json(payload)
@@ -466,12 +579,14 @@ class RuntimeConfigCommands(ConfigCommandBase):
         scope: str | None,
     ) -> None:
         """Write one config override to the selected writable layer."""
+        selector_context = self.cli_selector_context(ctx)
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         resolved_scope = self._resolve_write_scope(
             current_state,
             requested_scope=scope,
+            selector_context=selector_context,
         )
         if resolved_scope == "app":
             update = self._set_app_value(key=key, value=value)
@@ -483,7 +598,10 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 "Storage scope requires runtime CLI state.",
                 param_hint="--scope",
             )
-        root = self.required_storage_root_for_write(current_state)
+        root = self.required_storage_root_for_write(
+            current_state,
+            selector_context=selector_context,
+        )
         update = self._set_storage_value(root=root, key=key, value=value)
         typer.echo(f"updated: {update.env_key}")
         typer.echo(f"storage_env: {update.path}")
@@ -493,6 +611,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         state: Any | None,
         *,
         requested_scope: str | None,
+        selector_context: CliSelectorContext,
     ) -> ConfigSetScope:
         """Return the target write scope or raise for ambiguous writes.
 
@@ -511,13 +630,17 @@ class RuntimeConfigCommands(ConfigCommandBase):
             if not self._write_scope_is_active(
                 state,
                 resolved_requested_scope,
+                selector_context=selector_context,
             ):
                 raise typer.BadParameter(
                     _inactive_scope_message(self.kit, resolved_requested_scope),
                     param_hint="--scope",
                 )
             return resolved_requested_scope
-        active_scopes = self._active_write_scopes(state)
+        active_scopes = self._active_write_scopes(
+            state,
+            selector_context=selector_context,
+        )
         if len(active_scopes) == 1:
             return active_scopes[0]
         if not active_scopes:
@@ -535,18 +658,26 @@ class RuntimeConfigCommands(ConfigCommandBase):
     def _active_write_scopes(
         self,
         state: Any | None,
+        *,
+        selector_context: CliSelectorContext,
     ) -> list[ConfigSetScope]:
         """Return write scopes currently active for ``config set``."""
         return [
             scope
             for scope in ("app", "storage")
-            if self._write_scope_is_active(state, scope)
+            if self._write_scope_is_active(
+                state,
+                scope,
+                selector_context=selector_context,
+            )
         ]
 
     def _write_scope_is_active(
         self,
         state: Any | None,
         scope: ConfigSetScope,
+        *,
+        selector_context: CliSelectorContext,
     ) -> bool:
         """Return whether one write scope can be updated now."""
         if scope == "app":
@@ -556,7 +687,10 @@ class RuntimeConfigCommands(ConfigCommandBase):
             )
         if not self.kit.spec.storage_required() or state is None:
             return False
-        storage_root = self.active_storage_root_for_cli(state)
+        storage_root = self.active_storage_root_for_cli(
+            state,
+            selector_context=selector_context,
+        )
         return storage_root is not None and storage_root.is_dir()
 
     def _set_app_value(self, *, key: str, value: str):
@@ -615,15 +749,19 @@ class EditorConfigCommands(ConfigCommandBase):
 
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for AppRC dotenv override files."""
+        selector_context = self.cli_selector_context(ctx)
         current_state = (
             ctx.obj if isinstance(ctx.obj, self.state_type) else None
         )
         try:
             active_storage_root = self.active_storage_root_for_editor(
-                current_state
+                current_state,
+                selector_context=selector_context,
             )
             try:
-                optional_registry = self.load_optional_storage_registry()
+                optional_registry = self.load_optional_storage_registry(
+                    selector_context=selector_context,
+                )
             except typer.BadParameter:
                 if (
                     active_storage_root is None
@@ -635,6 +773,7 @@ class EditorConfigCommands(ConfigCommandBase):
                 current_state=current_state,
                 storage_registry=optional_registry,
                 active_storage_root=active_storage_root,
+                selector_context=selector_context,
             )
         except ConfigHomeError as exc:
             raise self.config_home_bad_parameter(exc) from exc
@@ -686,4 +825,44 @@ def _inactive_scope_message(
     return (
         "The storage layer is not active. Select a storage root with --storage "
         f"or export {kit.spec.storage_env_key}."
+    )
+
+
+def _root_env_files(raw_value: object | None) -> tuple[Path, ...]:
+    """Return root ``--env-file`` option values as paths."""
+    if raw_value is None:
+        return ()
+    if isinstance(raw_value, Path):
+        return (raw_value,)
+    if isinstance(raw_value, str):
+        return (Path(raw_value),)
+    if isinstance(raw_value, list | tuple):
+        values = cast(list[str | Path] | tuple[str | Path, ...], raw_value)
+        return tuple(Path(value) for value in values)
+    return ()
+
+
+def _selector_context(
+    *,
+    explicit_values: Mapping[str, str],
+    env_file_overrides_os_environ: bool,
+) -> CliSelectorContext:
+    """Return the selector-only context for skipped-bootstrap commands."""
+    copied_values = dict(explicit_values)
+    return CliSelectorContext(
+        explicit_values=copied_values,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        proc_env=selection_env(
+            original_env=os.environ,
+            explicit_values=copied_values,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
+        ),
+    )
+
+
+def _empty_selector_context() -> CliSelectorContext:
+    """Return a selector context with no explicit env-file values."""
+    return _selector_context(
+        explicit_values={},
+        env_file_overrides_os_environ=False,
     )

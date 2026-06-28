@@ -29,6 +29,12 @@ Install optional structured logging support when the app calls
 python -m pip install "apprc[logging]"
 ```
 
+When using AppRC semantic logging helpers, create application loggers with
+`get_logger(name)` or call `install_app_logger_class()` before other code
+creates those logger names with `logging.getLogger(name)`. `get_logger(name)`
+raises `RuntimeError` when the name already belongs to a plain stdlib logger,
+because existing logger instances cannot be safely reclassed.
+
 ## Mental Model
 
 AppRC now uses explicit persistence capability layers.

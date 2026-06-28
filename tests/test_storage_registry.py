@@ -43,7 +43,7 @@ def test_suggested_storage_name_uses_valid_host_specific_selector() -> None:
     assert suggested_storage_name("???") == "apprc_stor-1"
 
 
-def test_register_storage_writes_sorted_toml_and_local_env(
+def test_register_storage_writes_sorted_toml_and_storage_env(
     tmp_path: Path,
 ) -> None:
     index_path = tmp_path / "config" / "demo.apprc.toml"

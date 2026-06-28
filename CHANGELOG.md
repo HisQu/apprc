@@ -28,6 +28,14 @@ This project follows Semantic Versioning.
 
 ### 💥 Breaking Change Summary
 
+  - Breaking: `get_logger(NAME)` now raises `RuntimeError` when `NAME` already
+    belongs to a pre-existing non-`AppLogger`.
+    Affected: Integrations that create stdlib loggers before requesting an
+    AppRC semantic logger for the same name.
+    Migration: Call `install_app_logger_class()` or `get_logger(NAME)` before
+    `logging.getLogger(NAME)` for names that need AppRC semantic helpers, or
+    keep using the existing plain logger directly.
+
 <br>
 
 ### ➕ Added
@@ -50,6 +58,16 @@ This project follows Semantic Versioning.
 
   - Fixed storage-free generated `config edit` commands so app state objects no
     longer need to define a storage selector field.
+
+  - Fixed storage archive creation so symlinks and in-archive hardlinks are
+    rejected before any archive file is written.
+
+  - Fixed generated `config --help` and `<config subcommand> --help` so help
+    output does not require runtime storage readiness.
+
+  - Fixed skipped-bootstrap config commands so root `--env-file` storage
+    selectors and `--env-file-overrides-os-environ` participate in storage
+    selection without mutating `os.environ`.
 
 <br>
 

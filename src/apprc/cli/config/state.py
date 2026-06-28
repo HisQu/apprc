@@ -4,7 +4,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -18,6 +18,7 @@ from apprc.runtime_config.bootstrap.result import EnvBootstrapResult
 from apprc.runtime_config.bootstrap.dotenv_layers import (
     read_storage_selector_fallback_values,
 )
+from apprc.runtime_config.bootstrap.process_env import selection_env
 from apprc.runtime_config.kit import AppConfigKit
 from apprc.runtime_config.storage.loading import (
     load_runtime_storage_registry_for_selector,
@@ -69,6 +70,8 @@ def config_request_skips_runtime_bootstrap(
     )
     if not action_args:
         return True
+    if any(token in {"--help", "-h"} for token in action_args):
+        return True
     return action_args[0] in {
         "app",
         "doctor",
@@ -83,11 +86,17 @@ def config_request_skips_runtime_bootstrap(
 def active_storage_root_from_state(
     kit: AppConfigKit,
     state: ConfigCliState,
+    *,
+    explicit_values: Mapping[str, str] | None = None,
+    env_file_overrides_os_environ: bool = False,
 ) -> Path | None:
     """Return the active storage root from generic CLI state.
 
     :param kit: Application config facade.
     :param state: Root CLI state object.
+    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+        process env values during selector resolution.
     :return: Resolved storage root, or ``None`` when no selector is active.
     """
     if not kit.spec.storage_required():
@@ -98,11 +107,17 @@ def active_storage_root_from_state(
         and storage_state.env_bootstrap.storage_root is not None
     ):
         return storage_state.env_bootstrap.storage_root
+    selector_env = selection_env(
+        original_env=os.environ,
+        explicit_values=explicit_values or {},
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+    )
     if storage_state.storage is not None:
         storage_env_key = kit.spec.require_storage_env_key()
         selected_registry = load_runtime_storage_registry_for_selector(
             kit.spec,
             raw_selector=storage_state.storage,
+            proc_env=selector_env,
         )
         selection = resolve_storage_selector_value(
             registry=selected_registry,
@@ -111,34 +126,49 @@ def active_storage_root_from_state(
             source="--storage",
         )
         return selection.root if selection is not None else None
-    return active_storage_root_from_env(kit)
+    return active_storage_root_from_env(
+        kit,
+        explicit_values=explicit_values,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+    )
 
 
 def active_storage_root_from_env(
     kit: AppConfigKit,
     *,
     registry: StorageRegistry | None = None,
+    explicit_values: Mapping[str, str] | None = None,
+    env_file_overrides_os_environ: bool = False,
 ) -> Path | None:
     """Return the active storage root selected by the current environment.
 
     :param kit: Application config facade.
     :param registry: Parsed storage table, or ``None`` for single-storage
         path mode.
+    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+        process env values during selector resolution.
     :return: Resolved storage root, or ``None`` when no env selector is set.
     :raises StorageSelectorError: If the env selector cannot be resolved.
     """
     if not kit.spec.storage_required():
         return None
     storage_env_key = kit.spec.require_storage_env_key()
+    explicit_selector_values = explicit_values or {}
+    selector_env = selection_env(
+        original_env=os.environ,
+        explicit_values=explicit_selector_values,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+    )
     fallback_values = read_storage_selector_fallback_values(kit.spec)
     storage_selector = select_storage_selector(
         storage=None,
         storage_env_key=storage_env_key,
         original_env=os.environ,
-        explicit_values={},
+        explicit_values=explicit_selector_values,
         app_wide_values=fallback_values.app_wide_values,
         shared_values=fallback_values.shared_values,
-        env_file_overrides_os_environ=False,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     if storage_selector is None:
         return None
@@ -148,6 +178,7 @@ def active_storage_root_from_env(
         selected_registry = load_runtime_storage_registry_for_selector(
             kit.spec,
             raw_selector=raw_value,
+            proc_env=selector_env,
         )
     selection = resolve_storage_selector_value(
         registry=selected_registry,
@@ -162,12 +193,18 @@ def initial_storage_from_state(
     kit: AppConfigKit,
     state: ConfigCliState,
     registry: StorageRegistry | None = None,
+    *,
+    explicit_values: Mapping[str, str] | None = None,
+    env_file_overrides_os_environ: bool = False,
 ) -> str | None:
     """Return the storage that should be selected first in editors.
 
     :param kit: Application config facade.
     :param state: Root CLI state object.
     :param registry: Optional already-loaded storage table.
+    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
+        process env values during selector resolution.
     :return: Storage selector to preselect, or ``None``.
     """
     if state.env_bootstrap is not None:
@@ -183,10 +220,10 @@ def initial_storage_from_state(
         storage=None,
         storage_env_key=storage_env_key,
         original_env=os.environ,
-        explicit_values={},
+        explicit_values=explicit_values or {},
         app_wide_values=fallback_values.app_wide_values,
         shared_values=fallback_values.shared_values,
-        env_file_overrides_os_environ=False,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     if storage_selector is None:
         return None

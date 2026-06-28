@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import tarfile
 from pathlib import Path
 
@@ -73,6 +74,49 @@ def test_archive_directory_atomically_replaces_existing_archive(
     )
 
     assert (restored / "payload.txt").read_text(encoding="utf-8") == "new"
+    assert not (tmp_path / f".source{ARCHIVE_SUFFIX}.tmp").exists()
+
+
+def test_archive_directory_rejects_symlinks_before_writing(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    archive = tmp_path / f"source{ARCHIVE_SUFFIX}"
+    temp_archive = tmp_path / f".source{ARCHIVE_SUFFIX}.tmp"
+    temp_archive.write_text("stale", encoding="utf-8")
+    (source / "payload.txt").write_text("demo", encoding="utf-8")
+    try:
+        (source / "linked-payload.txt").symlink_to("payload.txt")
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlinks are unavailable on this platform: {exc}")
+
+    with pytest.raises(ValueError, match="may not contain links"):
+        archive_directory(source_root=source, archive_path=archive)
+
+    assert not archive.exists()
+    assert not temp_archive.exists()
+
+
+def test_archive_directory_rejects_hardlinks_before_writing(
+    tmp_path: Path,
+) -> None:
+    if not hasattr(os, "link"):
+        pytest.skip("hardlinks are unavailable on this platform")
+    source = tmp_path / "source"
+    source.mkdir()
+    archive = tmp_path / f"source{ARCHIVE_SUFFIX}"
+    payload = source / "payload.txt"
+    payload.write_text("demo", encoding="utf-8")
+    try:
+        os.link(payload, source / "linked-payload.txt")
+    except OSError as exc:
+        pytest.skip(f"hardlinks are unavailable on this filesystem: {exc}")
+
+    with pytest.raises(ValueError, match="may not contain links"):
+        archive_directory(source_root=source, archive_path=archive)
+
+    assert not archive.exists()
     assert not (tmp_path / f".source{ARCHIVE_SUFFIX}.tmp").exists()
 
 

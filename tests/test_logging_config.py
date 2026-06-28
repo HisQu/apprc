@@ -9,10 +9,56 @@ from pathlib import Path
 
 import pytest
 
-from apprc.logging import clear_cid, get_logger, set_cid, setup_logging
+from apprc.logging import (
+    AppLogger,
+    clear_cid,
+    get_logger,
+    set_cid,
+    setup_logging,
+)
 from apprc.logging.context import CID
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_get_logger_returns_app_logger_for_new_names() -> None:
+    log = get_logger("apprc.tests.normal_contract")
+
+    assert isinstance(log, AppLogger)
+
+
+def test_get_logger_rejects_precreated_plain_logger() -> None:
+    script = textwrap.dedent(
+        """
+        import logging
+
+        plain_logger = logging.getLogger("apprc.tests.precreated_plain")
+        assert type(plain_logger) is logging.Logger
+
+        from apprc.logging import get_logger
+
+        try:
+            get_logger("apprc.tests.precreated_plain")
+        except RuntimeError as exc:
+            assert "install_app_logger_class()" in str(exc)
+            assert "get_logger()" in str(exc)
+        else:
+            raise AssertionError("pre-created plain logger was accepted")
+        """
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(
+            (str(ROOT / "src"), os.environ.get("PYTHONPATH", ""))
+        ),
+    }
+    subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
 
 
 def test_setup_logging_can_configure_named_logger_without_replacing_root() -> (

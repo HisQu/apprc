@@ -174,7 +174,7 @@ def test_value_modal_rendering_formats_sources_and_metadata() -> None:
 
 def test_storage_titles_match_editor_text() -> None:
     root = Path("/tmp/demo-storage")
-    local_env = root / ".env.apprc_example_app"
+    storage_env_path = root / ".env.apprc_example_app"
     live = StorageRecord(name="alpha", root=root)
     archived = ArchivedStorageRecord(
         name="beta",
@@ -182,7 +182,7 @@ def test_storage_titles_match_editor_text() -> None:
         source_root=Path("/tmp/beta"),
     )
 
-    live_title = live_storage_title(live, local_env)
+    live_title = live_storage_title(live, storage_env_path)
     missing_title = missing_storage_title(live)
     archived_title = archived_storage_title(archived)
 

@@ -211,13 +211,14 @@ def build_config_typer_app(
 
     @storage_group.command("list")
     def config_storage_list_cmd(
+        ctx: typer.Context,
         json_output: Annotated[
             bool,
             typer.Option("--json", help="Emit machine-readable JSON."),
         ] = False,
     ) -> None:
         """List named storage entries."""
-        handlers.storage_list(json_output=json_output)
+        handlers.storage_list(ctx, json_output=json_output)
 
     @storage_group.command("remove")
     def config_storage_remove_cmd(

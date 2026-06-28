@@ -147,15 +147,18 @@ def inspect_storage_registry(
     spec: AppConfigSpec,
     *,
     raw_selector: str | None = None,
+    proc_env: Mapping[str, str] | None = None,
 ) -> StorageRegistryInspection:
     """Inspect optional named-storage index state without raising.
 
     :param spec: Application-specific config contract.
     :param raw_selector: Selected storage value before resolution, if any.
+    :param proc_env: Optional environment mapping for bootstrap-time selection.
     :return: Named-storage index diagnosis for ``config doctor`` and paths.
     """
-    raw_index_env_value = os.environ.get(spec.index_env_key, "").strip()
-    index_path = spec.index_path()
+    env = os.environ if proc_env is None else proc_env
+    raw_index_env_value = env.get(spec.index_env_key, "").strip()
+    index_path = spec.index_path(proc_env=proc_env)
     index_exists = index_path.is_file()
     if not spec.named_storage_allowed():
         warning = (

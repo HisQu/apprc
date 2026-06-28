@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -14,6 +15,8 @@ from apprc.runtime_config.doctor.payload import config_command_text
 from apprc_example_app import APPRC_EXAMPLE_APP_KIT
 from apprc_example_app.cli import app
 from tests.support_config import build_apprc_example_app_kit
+
+ROOT = Path(__file__).parents[1]
 
 
 @pytest.fixture(autouse=True)
@@ -48,12 +51,140 @@ def _invoke_root_config(
     return runner.invoke(app, args)
 
 
+def _run_example_cli(
+    args: list[str],
+    tmp_path: Path,
+    *,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run the example CLI in a fresh process with controlled env values."""
+    process_env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("APPRC_EXAMPLE_APP_")
+    }
+    pythonpath = [
+        str(ROOT / "examples" / "apprc_example_app" / "src"),
+        str(ROOT / "src"),
+    ]
+    if process_env.get("PYTHONPATH"):
+        pythonpath.append(process_env["PYTHONPATH"])
+    process_env.update(
+        {
+            "PYTHONPATH": os.pathsep.join(pythonpath),
+            "XDG_CONFIG_HOME": str(tmp_path / "config-home"),
+        }
+    )
+    process_env.update(env or {})
+    return subprocess.run(
+        [sys.executable, "-m", "apprc_example_app.cli", *args],
+        cwd=ROOT,
+        env=process_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def test_standalone_cli_help_shows_config_command() -> None:
     result = CliRunner().invoke(app, ["--help"])
 
     assert result.exit_code == 0, result.output
     assert "config" in result.output
     assert "generated config CLI" in result.output
+
+
+def test_real_cli_config_help_skips_runtime_bootstrap(tmp_path: Path) -> None:
+    config_help = _run_example_cli(["config", "--help"], tmp_path)
+    show_help = _run_example_cli(["config", "show", "--help"], tmp_path)
+
+    assert config_help.returncode == 0, config_help.stderr
+    assert show_help.returncode == 0, show_help.stderr
+    assert "Usage:" in config_help.stdout
+    assert "Usage:" in show_help.stdout
+
+
+def test_real_cli_env_file_storage_selector_for_skipped_doctor_and_set(
+    tmp_path: Path,
+) -> None:
+    storage_root = tmp_path / "selected-storage"
+    storage_root.mkdir()
+    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
+    selector_env = tmp_path / "selector.env"
+    selector_env.write_text(
+        f"APPRC_EXAMPLE_APP_STORAGE={storage_root}\n",
+        encoding="utf-8",
+    )
+
+    doctor = _run_example_cli(
+        ["--env-file", str(selector_env), "config", "doctor", "--json"],
+        tmp_path,
+    )
+    update = _run_example_cli(
+        [
+            "--env-file",
+            str(selector_env),
+            "config",
+            "set",
+            "access_token",
+            "secret-token",
+            "--scope",
+            "storage",
+        ],
+        tmp_path,
+    )
+
+    assert doctor.returncode == 0, doctor.stderr
+    payload = json.loads(doctor.stdout)
+    assert payload["selected_storage_root"] == str(storage_root.resolve())
+    assert update.returncode == 0, update.stderr
+    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-token"\n' in (
+        storage_root / ".env.apprc-storage"
+    ).read_text(encoding="utf-8")
+
+
+def test_real_cli_env_file_override_policy_for_storage_selector(
+    tmp_path: Path,
+) -> None:
+    shell_storage = tmp_path / "shell-storage"
+    explicit_storage = tmp_path / "explicit-storage"
+    shell_storage.mkdir()
+    explicit_storage.mkdir()
+    (shell_storage / ".env.apprc-storage").write_text("", encoding="utf-8")
+    (explicit_storage / ".env.apprc-storage").write_text("", encoding="utf-8")
+    selector_env = tmp_path / "selector.env"
+    selector_env.write_text(
+        f"APPRC_EXAMPLE_APP_STORAGE={explicit_storage}\n",
+        encoding="utf-8",
+    )
+    exported_env = {"APPRC_EXAMPLE_APP_STORAGE": str(shell_storage)}
+
+    exported_wins = _run_example_cli(
+        ["--env-file", str(selector_env), "config", "doctor", "--json"],
+        tmp_path,
+        env=exported_env,
+    )
+    explicit_wins = _run_example_cli(
+        [
+            "--env-file",
+            str(selector_env),
+            "--env-file-overrides-os-environ",
+            "config",
+            "doctor",
+            "--json",
+        ],
+        tmp_path,
+        env=exported_env,
+    )
+
+    assert exported_wins.returncode == 0, exported_wins.stderr
+    assert explicit_wins.returncode == 0, explicit_wins.stderr
+    assert json.loads(exported_wins.stdout)["selected_storage_root"] == str(
+        shell_storage.resolve()
+    )
+    assert json.loads(explicit_wins.stdout)["selected_storage_root"] == str(
+        explicit_storage.resolve()
+    )
 
 
 def test_console_script_points_to_demo_cli() -> None:
@@ -76,9 +207,7 @@ def test_console_script_points_to_demo_cli() -> None:
 
 def test_build_backend_packages_only_library_in_root_wheel() -> None:
     pyproject = tomllib.loads(
-        (Path(__file__).parents[1] / "pyproject.toml").read_text(
-            encoding="utf-8"
-        )
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
 
     assert pyproject["tool"]["uv"]["build-backend"]["module-name"] == "apprc"
@@ -86,9 +215,7 @@ def test_build_backend_packages_only_library_in_root_wheel() -> None:
 
 def test_demo_package_is_dev_dependency_only() -> None:
     pyproject = tomllib.loads(
-        (Path(__file__).parents[1] / "pyproject.toml").read_text(
-            encoding="utf-8"
-        )
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
 
     assert pyproject["dependency-groups"]["demo"] == ["apprc_example_app"]
@@ -100,7 +227,7 @@ def test_demo_package_is_dev_dependency_only() -> None:
 
 
 def test_core_package_does_not_import_demo_package() -> None:
-    core_files = (Path(__file__).parents[1] / "src" / "apprc").rglob("*.py")
+    core_files = (ROOT / "src" / "apprc").rglob("*.py")
 
     offenders = [
         path
@@ -112,11 +239,7 @@ def test_core_package_does_not_import_demo_package() -> None:
 
 def test_storage_modules_do_not_import_bootstrap_layer() -> None:
     storage_files = (
-        Path(__file__).parents[1]
-        / "src"
-        / "apprc"
-        / "runtime_config"
-        / "storage"
+        ROOT / "src" / "apprc" / "runtime_config" / "storage"
     ).rglob("*.py")
 
     offenders = [

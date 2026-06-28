@@ -599,16 +599,27 @@ def get_logger(name: str) -> AppLogger:
 
     The helper installs ``AppLogger`` before it calls ``logging.getLogger`` so
     new application module loggers are real stdlib loggers with methods like
-    ``action_begin``. If a plain stdlib logger for ``name`` already exists,
-    stdlib returns that existing object; this function does not mutate its
-    class because that would be unsafe for arbitrary logger subclasses.
+    ``action_begin``. If a non-``AppLogger`` for ``name`` already exists,
+    stdlib returns that existing object; this function raises instead of
+    mutating its class because that would be unsafe for arbitrary logger
+    subclasses.
 
     :param name: Stdlib logger name, usually ``__name__``.
     :return: Named logger, typed as ``AppLogger`` for AppRC-created names.
+    :raises RuntimeError: If ``name`` was already created as another logger
+        class.
     """
 
     install_app_logger_class()
-    return cast(AppLogger, logging.getLogger(name))
+    logger = logging.getLogger(name)
+    if not isinstance(logger, AppLogger):
+        raise RuntimeError(
+            f"Logger {name!r} already exists as "
+            f"{type(logger).__name__}, not AppLogger. Call "
+            "install_app_logger_class() or get_logger() before creating that "
+            "logger name."
+        )
+    return logger
 
 
 __all__ = [

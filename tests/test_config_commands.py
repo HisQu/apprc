@@ -15,6 +15,7 @@ from tests.support_config import (
     ApprcExampleAppConfigState,
     StorageFreeExampleEnv,
     StorageFreeExampleConfigState,
+    StorageFreeExampleConfigStateWithoutStorage,
     apprc_example_app_state,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
@@ -285,3 +286,25 @@ def test_config_edit_ignores_corrupt_optional_index_without_selector(
     assert CapturingConfigEditorApp.active_storage_root_seen is None
     assert CapturingConfigEditorApp.storage_registry_seen is None
     assert not kit.spec.app_wide_env_path().exists()
+
+
+def test_storage_free_config_edit_accepts_state_without_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    kit = build_storage_free_example_kit()
+    state = StorageFreeExampleConfigStateWithoutStorage()
+    CapturingConfigEditorApp.reset()
+    app = kit.typer_app(
+        state_type=StorageFreeExampleConfigStateWithoutStorage,
+        editor_app_cls=CapturingConfigEditorApp,
+    )
+
+    result = CliRunner().invoke(app, ["edit"], obj=state)
+
+    assert result.exit_code == 0, result.output
+    assert CapturingConfigEditorApp.run_count == 1
+    assert CapturingConfigEditorApp.initial_storage_seen is None
+    assert CapturingConfigEditorApp.active_storage_root_seen is None
+    assert CapturingConfigEditorApp.storage_registry_seen is None

@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from collections.abc import Collection, Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 # == Internal ================================
 from apprc.cli.options import (
@@ -33,6 +33,11 @@ class ConfigCliState(Protocol):
     """Root CLI state fields understood by the generic config app."""
 
     env_bootstrap: EnvBootstrapResult | None
+
+
+class StorageConfigCliState(ConfigCliState, Protocol):
+    """Root CLI state fields used by storage-capable config commands."""
+
     storage: str | None
 
 
@@ -87,20 +92,21 @@ def active_storage_root_from_state(
     """
     if not kit.spec.storage_required():
         return None
+    storage_state = cast(StorageConfigCliState, state)
     if (
-        state.env_bootstrap is not None
-        and state.env_bootstrap.storage_root is not None
+        storage_state.env_bootstrap is not None
+        and storage_state.env_bootstrap.storage_root is not None
     ):
-        return state.env_bootstrap.storage_root
-    if state.storage is not None:
+        return storage_state.env_bootstrap.storage_root
+    if storage_state.storage is not None:
         storage_env_key = kit.spec.require_storage_env_key()
         selected_registry = load_runtime_storage_registry_for_selector(
             kit.spec,
-            raw_selector=state.storage,
+            raw_selector=storage_state.storage,
         )
         selection = resolve_storage_selector_value(
             registry=selected_registry,
-            raw_value=state.storage,
+            raw_value=storage_state.storage,
             storage_env_key=storage_env_key,
             source="--storage",
         )
@@ -166,10 +172,11 @@ def initial_storage_from_state(
     """
     if state.env_bootstrap is not None:
         return state.env_bootstrap.storage_name
-    if state.storage is not None:
-        return state.storage
     if not kit.spec.storage_required():
         return None
+    storage_state = cast(StorageConfigCliState, state)
+    if storage_state.storage is not None:
+        return storage_state.storage
     storage_env_key = kit.spec.require_storage_env_key()
     fallback_values = read_storage_selector_fallback_values(kit.spec)
     storage_selector = select_storage_selector(

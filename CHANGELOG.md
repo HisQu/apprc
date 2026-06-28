@@ -48,6 +48,9 @@ This project follows Semantic Versioning.
 
 ### 🔨 Fixed
 
+  - Fixed storage-free generated `config edit` commands so app state objects no
+    longer need to define a storage selector field.
+
 <br>
 
 ### 🔒 Security

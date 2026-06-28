@@ -174,6 +174,13 @@ class StorageFreeExampleConfigState:
     storage: str | None = None
 
 
+@dataclass(slots=True)
+class StorageFreeExampleConfigStateWithoutStorage:
+    """Storage-free root CLI state that has no storage selector field."""
+
+    env_bootstrap: EnvBootstrapResult | None = None
+
+
 def build_apprc_example_app_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that behaves like a real application."""
     return AppConfigKit.storage_only(

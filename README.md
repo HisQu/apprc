@@ -15,9 +15,15 @@ The three strongest parts:
 - **Generated operator UX:** mount ready-made Typer `config` commands and open
   the same contract in the Textual editor.
 
-| ![AppRC graphical abstract](docs/assets/apprc-abstract-user-journey.svg) |
-|:--:|
-| **Fig. 1 - AppRC Graphical Abstract:** AppRC lets developers ship one typed config contract with generated setup, diagnostics, editing, and runtime config workflows. |
+<p align="center">
+  <img src="docs/assets/apprc-abstract-user-journey.svg" alt="AppRC graphical abstract" width="100%">
+</p>
+
+<p align="center">
+  <strong>Fig. 1 - AppRC Graphical Abstract:</strong>
+  AppRC lets developers ship one typed config contract with generated setup,
+  diagnostics, editing, and runtime config workflows.
+</p>
 
 > [!NOTE]
 > For the full system model, see

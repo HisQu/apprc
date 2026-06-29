@@ -8,11 +8,24 @@ from graphviz.graphs import Digraph
 
 import graphigs as gg
 import graphigs.graphviz as gv
+from graphigs.figure_contract import FigureBounds
+from graphigs.figure_contract import SvgDisplayBounds
+from graphigs.graphviz.labels import edge_label
 
 from _graphigs_svg import export_svg_only
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent
 FIGURE_NAME = "apprc-abstract-user-journey"
+README_HERO_BOUNDS = FigureBounds(
+    page_width_mm=360.0,
+    page_height_mm=170.0,
+    page_margin_mm=16.0,
+    max_height_fraction=0.86,
+)
+README_HERO_SVG_BOUNDS = SvgDisplayBounds(
+    display_width_px=1180,
+    max_display_height_px=420,
+)
 
 
 def build_graph() -> Digraph:
@@ -35,7 +48,7 @@ def build_graph() -> Digraph:
         "config_contract",
         "Config contract",
         ("EnvConfig", "@env_owner", "env_field"),
-        pos=gv.fixed_position(0.15, 0.0),
+        pos=gv.fixed_position(0.40, 0.0),
         border_color=gg.BLUE,
     )
     gv.add_fixed_text_box(
@@ -43,7 +56,7 @@ def build_graph() -> Digraph:
         "shipped_app",
         "Shipped config UX",
         ("AppConfigKit", "bootstrap", "config CLI"),
-        pos=gv.fixed_position(1.42, 0.0),
+        pos=gv.fixed_position(2.35, 0.0),
         border_color=gg.BLUE,
     )
     figure.graph.subgraph(developer)
@@ -60,7 +73,7 @@ def build_graph() -> Digraph:
         "setup_and_doctor",
         "Setup + diagnose",
         ("config paths", "config setup", "config doctor"),
-        pos=gv.fixed_position(2.78, 0.0),
+        pos=gv.fixed_position(4.65, 0.0),
         border_color=gg.ORANGE,
     )
     gv.add_fixed_text_box(
@@ -68,7 +81,7 @@ def build_graph() -> Digraph:
         "edit_values",
         "Configure values",
         ("config set", "config edit", "dotenv writes"),
-        pos=gv.fixed_position(4.12, 0.0),
+        pos=gv.fixed_position(7.05, 0.0),
         border_color=gg.ORANGE,
     )
     gv.add_fixed_text_box(
@@ -76,7 +89,7 @@ def build_graph() -> Digraph:
         "runtime_app",
         "Run app",
         ("typed EnvConfig", "zero-write reads"),
-        pos=gv.fixed_position(5.44, 0.0),
+        pos=gv.fixed_position(9.30, 0.0),
         border_color=gg.GREEN,
     )
     gv.add_fixed_text_box(
@@ -84,7 +97,7 @@ def build_graph() -> Digraph:
         "inspect_loop",
         "Inspect loop",
         ("config doctor", "provenance"),
-        pos=gv.fixed_position(4.12, -1.20),
+        pos=gv.fixed_position(7.05, -1.45),
         border_color=gg.PURPLE,
     )
     figure.graph.subgraph(operator)
@@ -93,30 +106,24 @@ def build_graph() -> Digraph:
         figure.graph,
         "developer_label",
         "App developer",
-        pos=gv.fixed_position(0.78, 0.72),
+        pos=gv.fixed_position(1.38, 0.78),
         color=gg.BLUE,
     )
     gv.add_fixed_label(
         figure.graph,
         "operator_label",
         "App user / operator",
-        pos=gv.fixed_position(4.10, 0.72),
+        pos=gv.fixed_position(7.00, 0.78),
         color=gg.ORANGE,
     )
     gv.connect_fixed_arrow(
         figure.graph, "config_contract", "shipped_app", color=gg.BLUE
     )
-    gv.add_fixed_node(
+    gv.add_fixed_html_node(
         figure.graph,
         "declare_label",
-        "declare",
-        pos=gv.fixed_position(0.78, -0.62),
-        border_color=gg.BLUE,
-        fill_color=gv.NODE_SURFACE_FILL,
-        height="0.20",
-        shape="box",
-        style="rounded,filled",
-        width="0.58",
+        edge_label("declare", color=gg.BLUE),
+        pos=gv.fixed_position(1.38, 0.24),
     )
     gv.connect_fixed_arrow(
         figure.graph,
@@ -124,17 +131,11 @@ def build_graph() -> Digraph:
         "setup_and_doctor",
         color=gg.ORANGE,
     )
-    gv.add_fixed_node(
+    gv.add_fixed_html_node(
         figure.graph,
         "ship_label",
-        "ship",
-        pos=gv.fixed_position(2.10, -0.62),
-        border_color=gg.ORANGE,
-        fill_color=gv.NODE_SURFACE_FILL,
-        height="0.20",
-        shape="box",
-        style="rounded,filled",
-        width="0.44",
+        edge_label("ship", color=gg.ORANGE),
+        pos=gv.fixed_position(3.50, 0.24),
     )
     gv.connect_fixed_arrow(
         figure.graph,
@@ -142,17 +143,11 @@ def build_graph() -> Digraph:
         "edit_values",
         color=gg.ORANGE,
     )
-    gv.add_fixed_node(
+    gv.add_fixed_html_node(
         figure.graph,
         "configure_label",
-        "configure",
-        pos=gv.fixed_position(3.45, -0.62),
-        border_color=gg.ORANGE,
-        fill_color=gv.NODE_SURFACE_FILL,
-        height="0.20",
-        shape="box",
-        style="rounded,filled",
-        width="0.72",
+        edge_label("configure", color=gg.ORANGE),
+        pos=gv.fixed_position(5.85, 0.24),
     )
     gv.connect_fixed_arrow(
         figure.graph,
@@ -160,17 +155,11 @@ def build_graph() -> Digraph:
         "runtime_app",
         color=gg.GREEN,
     )
-    gv.add_fixed_node(
+    gv.add_fixed_html_node(
         figure.graph,
         "run_label",
-        "run",
-        pos=gv.fixed_position(4.78, -0.62),
-        border_color=gg.GREEN,
-        fill_color=gv.NODE_SURFACE_FILL,
-        height="0.20",
-        shape="box",
-        style="rounded,filled",
-        width="0.36",
+        edge_label("run", color=gg.GREEN),
+        pos=gv.fixed_position(8.18, 0.24),
     )
     gv.connect_fixed_arrow(
         figure.graph,
@@ -203,6 +192,8 @@ def export_figure(
         FIGURE_NAME,
         default_output_dir=DEFAULT_OUTPUT_DIR,
         output_dir=output_dir,
+        bounds=README_HERO_BOUNDS,
+        svg_bounds=README_HERO_SVG_BOUNDS,
     )
 
 

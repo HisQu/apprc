@@ -48,7 +48,7 @@ This project follows Semantic Versioning.
 ### 💔 Changed
 
   - Improved Graphigs-backed graphical abstract layouts with clearer groups,
-    a horizontal README abstract, looser labels, and documented figure color
+    a wide README hero format, looser labels, and documented figure color
     roles.
 
 <br>

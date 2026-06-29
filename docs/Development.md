@@ -207,6 +207,11 @@ Preview renders can target a temporary directory:
 The figure scripts keep tracked assets SVG-only. Temporary PNG files produced
 by Graphigs are removed by the AppRC export helper.
 
+The README graphical abstract intentionally uses a wide
+`FigureBounds`/`SvgDisplayBounds` export override so it can work as a
+landscape hero figure. Keep wide export settings local to figures that need
+that presentation.
+
 Figure color roles:
 
 | Color | Meaning |

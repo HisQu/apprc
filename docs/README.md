@@ -1,4 +1,7 @@
 <!-- ======================================================== -->
+
+<br>
+
 ## Table Of Contents
 <!-- ======================================================== -->
 
@@ -12,6 +15,9 @@
 # 1. Using These Docs
 
 <!-- ======================================================== -->
+
+<br>
+
 ## What Lives Here
 <!-- ======================================================== -->
 
@@ -32,6 +38,9 @@ explanations, and maintainer workflow.
 <br>
 
 <!-- ======================================================== -->
+
+<br>
+
 ## Reading Map
 <!-- ======================================================== -->
 
@@ -64,6 +73,9 @@ Recommended reading paths:
 <br>
 
 <!-- ======================================================== -->
+
+<br>
+
 ## Repository Terms
 <!-- ======================================================== -->
 
@@ -81,5 +93,3 @@ Use these terms consistently in every docs file:
 | storage dotenv | The `.env.apprc-storage` file inside one selected storage root. | [Configuration Files](References.md#configuration-files) |
 | named-storage index | The optional `<app>.apprc.toml` registry for named storage roots. | [Storage Selection](Explanations.md#storage-selection) |
 | zero-write read | A command or runtime operation that inspects config without creating files. | [Zero-Write Policy](Explanations.md#zero-write-policy) |
-
-<br>

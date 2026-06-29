@@ -13,7 +13,9 @@
 - Import logging helpers from `apprc.logging`, for example
   `from apprc.logging import get_logger`.
 - For facade `__init__.py` files, prefer clean batch re-export imports plus file-level `# ruff: noqa: F401`; do not use redundant `symbol as symbol` aliases solely to satisfy Ruff.
-- Update `README.md` if a change affects usage or setup.
+- Update `README.md`, docs, and changelogs when a change affects usage,
+  setup, CLI behavior, public APIs, environment variables, user-visible
+  workflows, or release-relevant behavior.
 - Add minimal `__main__` demo code only when it improves discoverability or manual testing.
 - If a test needs a lighter setup, add or reuse a dedicated test helper instead of widening production code to `Any`.
 - If a boundary is truly dynamic, model that boundary explicitly; do not probe strict domain objects defensively.

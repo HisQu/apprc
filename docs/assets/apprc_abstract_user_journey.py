@@ -20,8 +20,8 @@ def build_graph() -> Digraph:
     :return: Configured Graphviz diagram.
     """
 
-    figure = gg.diagram("apprc_abstract_user_journey", direction="LR")
-    figure.graph.attr(nodesep="0.18", ranksep="0.24")
+    figure = gg.diagram("apprc_abstract_user_journey", direction="TB")
+    figure.graph.attr(nodesep="0.20", ranksep="0.28")
 
     with figure.group(
         "developer",
@@ -64,12 +64,19 @@ def build_graph() -> Digraph:
             "config doctor",
             border_color=gg.ORANGE,
         )
-        operator.classifier(
-            "runtime_app",
-            "Runnable app",
+        operator.text(
+            "edit_values",
+            "Configure values",
             "config set",
             "config edit",
+            "dotenv writes",
+            border_color=gg.ORANGE,
+        )
+        operator.classifier(
+            "runtime_app",
+            "Run app",
             "typed EnvConfig",
+            "zero-write reads",
             stereotype="runtime",
             kind="interface",
             border_color=gg.GREEN,
@@ -79,8 +86,22 @@ def build_graph() -> Digraph:
     figure.edge("shipped_app", "setup_and_doctor", "ship", color=gg.ORANGE)
     figure.edge(
         "setup_and_doctor",
+        "edit_values",
+        "configure",
+        color=gg.ORANGE,
+    )
+    figure.edge(
+        "setup_and_doctor",
         "runtime_app",
-        ("configure", "run"),
+        "diagnose",
+        color=gg.PURPLE,
+        dashed=True,
+        constraint=False,
+    )
+    figure.edge(
+        "edit_values",
+        "runtime_app",
+        "run",
         color=gg.GREEN,
     )
     figure.edge(

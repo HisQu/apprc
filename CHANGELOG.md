@@ -43,6 +43,9 @@ This project follows Semantic Versioning.
 
 ### 💔 Changed
 
+  - Improved Graphigs-backed graphical abstract layouts with clearer groups,
+    looser arrow labels, and documented figure color roles.
+
 <br>
 
 ### ⚠️ Deprecated

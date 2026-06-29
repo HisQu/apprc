@@ -20,8 +20,8 @@ def build_graph() -> Digraph:
     :return: Configured Graphviz diagram.
     """
 
-    figure = gg.diagram("apprc_abstract_layer_cake", direction="LR")
-    figure.graph.attr(nodesep="0.20", ranksep="0.28")
+    figure = gg.diagram("apprc_abstract_layer_cake", direction="TB")
+    figure.graph.attr(nodesep="0.18", ranksep="0.24")
 
     with figure.group(
         "precedence",
@@ -30,13 +30,20 @@ def build_graph() -> Digraph:
         fill=gg.GREEN_GROUP_FILL,
     ) as layers:
         layers.text(
-            "layer_stack",
-            "Layer stack",
-            "lower: .env.shared",
+            "base_layers",
+            "Base layers",
+            ".env.shared",
             ".env.apprc-app",
+            "lower precedence",
+            border_color=gg.GREEN,
+        )
+        layers.text(
+            "selected_layers",
+            "Selected layers",
             ".env.apprc-storage",
             "--env-file",
-            "higher: os.environ",
+            "os.environ",
+            "higher precedence",
             border_color=gg.GREEN,
         )
 
@@ -47,11 +54,19 @@ def build_graph() -> Digraph:
         fill=gg.ORANGE_GROUP_FILL,
     ) as selector:
         selector.text(
-            "selector_inputs",
-            "Selector inputs",
+            "selector_sources",
+            "Selector sources",
             "--storage",
             "MYAPP_STORAGE",
             "named index",
+            border_color=gg.ORANGE,
+        )
+        selector.text(
+            "selected_storage",
+            "Selected storage",
+            "storage key",
+            "dotenv path",
+            "runtime owner",
             border_color=gg.ORANGE,
         )
 
@@ -73,22 +88,34 @@ def build_graph() -> Digraph:
         )
 
     figure.edge(
-        "layer_stack",
-        "effective_config",
-        ("merge", "higher wins"),
+        "base_layers",
+        "selected_layers",
+        "higher",
         color=gg.GREEN,
     )
     figure.edge(
-        "selector_inputs",
+        "selected_layers",
         "effective_config",
-        "select storage",
+        "merge",
+        color=gg.GREEN,
+    )
+    figure.edge(
+        "selector_sources",
+        "selected_storage",
+        "select",
         color=gg.ORANGE,
     )
     figure.edge(
-        "layer_stack",
-        "selector_inputs",
-        "lower precedence",
-        color=gg.NEUTRAL_STROKE,
+        "selected_storage",
+        "selected_layers",
+        "storage",
+        color=gg.ORANGE,
+    )
+    figure.edge(
+        "selected_storage",
+        "effective_config",
+        "path",
+        color=gg.PURPLE,
         dashed=True,
         constraint=False,
     )

@@ -207,6 +207,16 @@ Preview renders can target a temporary directory:
 The figure scripts keep tracked assets SVG-only. Temporary PNG files produced
 by Graphigs are removed by the AppRC export helper.
 
+Figure color roles:
+
+| Color | Meaning |
+|---|---|
+| Blue | Developer-declared contracts and schema inputs. |
+| Green | Runtime resolution, dotenv layers, and effective config. |
+| Orange | Explicit setup, write commands, and generated CLI workflows. |
+| Purple | Inspection surfaces, diagnostics, editor, and provenance. |
+| Neutral | AppRC metadata, boundaries, and captions. |
+
 Current assets:
 
 | Asset | Generator | Owner Markdown |

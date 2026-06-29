@@ -21,7 +21,7 @@ def build_graph() -> Digraph:
     """
 
     figure = gg.diagram("apprc_abstract_contract_workflows", direction="TB")
-    figure.graph.attr(nodesep="0.20", ranksep="0.26")
+    figure.graph.attr(nodesep="0.26", ranksep="0.32")
 
     with figure.group(
         "declared_contract",
@@ -55,11 +55,27 @@ def build_graph() -> Digraph:
         fill=gg.NEUTRAL_GROUP_FILL,
     ) as core:
         core.text(
-            "inventory",
-            "Contract metadata",
-            "owners",
-            "fields",
-            "layers",
+            "owner_metadata",
+            "Owner metadata",
+            "env prefixes",
+            "runtime paths",
+            "storage roots",
+            border_color=gg.NEUTRAL_STROKE,
+        )
+        core.text(
+            "field_metadata",
+            "Field metadata",
+            "env keys",
+            "defaults",
+            "edit policy",
+            border_color=gg.NEUTRAL_STROKE,
+        )
+        core.text(
+            "capability_metadata",
+            "Capability metadata",
+            "app-wide",
+            "storage",
+            "named index",
             border_color=gg.NEUTRAL_STROKE,
         )
 
@@ -115,13 +131,18 @@ def build_graph() -> Digraph:
             border_color=gg.PURPLE,
         )
 
-    figure.edge("contract_schema", "inventory", "derive", color=gg.BLUE)
-    figure.edge("kit", "inventory", "select layers", color=gg.BLUE)
-    figure.edge("inventory", "resolution", "resolve", color=gg.GREEN)
+    figure.edge("contract_schema", "owner_metadata", "derive", color=gg.BLUE)
+    figure.edge("contract_schema", "field_metadata", "derive", color=gg.BLUE)
+    figure.edge("kit", "capability_metadata", "select", color=gg.BLUE)
+    figure.edge("owner_metadata", "resolution", "resolve", color=gg.GREEN)
+    figure.edge("capability_metadata", "resolution", "layers", color=gg.GREEN)
+    figure.edge("field_metadata", "effective_config", "bind", color=gg.GREEN)
     figure.edge("resolution", "effective_config", "merge", color=gg.GREEN)
-    figure.edge("inventory", "config_cli", "generate", color=gg.ORANGE)
-    figure.edge("inventory", "diagnostics", "inspect", color=gg.PURPLE)
-    figure.edge("inventory", "textual_editor", "edit", color=gg.PURPLE)
+    figure.edge(
+        "capability_metadata", "config_cli", "generate", color=gg.ORANGE
+    )
+    figure.edge("owner_metadata", "diagnostics", "inspect", color=gg.PURPLE)
+    figure.edge("field_metadata", "textual_editor", "edit", color=gg.PURPLE)
     figure.edge(
         "effective_config",
         "diagnostics",

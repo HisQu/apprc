@@ -128,7 +128,7 @@ def mount_config_cli(
     setup_logging: Callable[..., Any] | None = None,
     logger: BootstrapLogger | None = None,
 ) -> typer.Typer:
-    """Mount AppRC root bootstrap options and the generated config group.
+    """Mount AppRC host-level bootstrap options and the generated config group.
 
     :param app: Host Typer application.
     :param kit: Application config facade.
@@ -157,8 +157,9 @@ def mount_config_cli(
         raise RuntimeError(
             "mount_config_cli() cannot register AppRC host-level options "
             "because this Typer app already has a callback. Use "
+            "ConfigCliBridge for host-owned callbacks, or use "
             "CliBootstrapOptions, prepare_typer_context(), and "
-            "kit.typer_app(...) in a custom callback instead."
+            "kit.typer_app(...) directly."
         )
     if state_factory is None and state_type is not DefaultConfigCliState:
         raise TypeError(

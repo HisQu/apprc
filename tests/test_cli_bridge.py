@@ -13,8 +13,6 @@ from typer.testing import CliRunner
 from apprc import AppConfigKit
 from apprc.cli import (
     BootstraplessCommand,
-    COMMON_ROOT_FLAG_OPTIONS,
-    COMMON_ROOT_VALUE_OPTIONS,
     CliArgvProvider,
     CliBootstrapContext,
     ConfigBootstrapPolicy,
@@ -121,13 +119,13 @@ def test_host_cli_bootstrap_policy_handles_haiu_shaped_commands() -> None:
             "cache",
         ],
     )
-    assert policy.request_skips_runtime_bootstrap(
-        _ctx("rag"),
-        tokens=["rag", "--help"],
-    )
     assert not policy.request_skips_runtime_bootstrap(
         _ctx("rag"),
         tokens=["rag", "query"],
+    )
+    assert not policy.request_skips_runtime_bootstrap(
+        _ctx("run"),
+        tokens=["run", "--text", "--help"],
     )
 
 
@@ -142,12 +140,66 @@ def test_host_cli_bootstrap_policy_delegates_config_policy() -> None:
 
     assert policy.request_skips_runtime_bootstrap(
         _ctx("config"),
-        tokens=["--workdir-base", "/tmp/project", "config", "paths"],
+        tokens=["config", "paths"],
     )
     assert not policy.request_skips_runtime_bootstrap(
         _ctx("config"),
         tokens=["config", "set", "profile", "demo"],
     )
+
+
+def test_host_cli_bootstrap_policy_merges_standard_options() -> None:
+    policy = HostCliBootstrapPolicy(
+        host_flag_options={"--ignore-haiu-cache"},
+        host_value_options={"--workdir-base"},
+    )
+
+    assert "--env-file-overrides-os-environ" in policy.host_flag_options
+    assert "--ignore-haiu-cache" in policy.host_flag_options
+    assert "--storage" in policy.host_value_options
+    assert "--workdir-base" in policy.host_value_options
+    assert policy.request_skips_runtime_bootstrap(
+        _ctx("config"),
+        tokens=[
+            "--storage",
+            "demo",
+            "--workdir-base",
+            "/tmp/project",
+            "config",
+            "paths",
+        ],
+    )
+
+
+def test_host_cli_bootstrap_policy_preserves_supplied_config_policy() -> None:
+    policy = HostCliBootstrapPolicy(
+        config_policy=ConfigBootstrapPolicy(
+            root_value_options={"--config-policy-value"},
+        ),
+        host_value_options={"--host-value"},
+    )
+
+    assert policy.request_skips_runtime_bootstrap(
+        _ctx("config"),
+        tokens=[
+            "--config-policy-value",
+            "demo",
+            "config",
+            "paths",
+        ],
+    )
+    assert not policy.request_skips_runtime_bootstrap(
+        _ctx("config"),
+        tokens=["--storage", "demo", "config", "paths"],
+    )
+
+
+def test_host_cli_bootstrap_policy_rejects_config_policy_group_drift() -> None:
+    with pytest.raises(ValueError, match="config_group_name"):
+        HostCliBootstrapPolicy(
+            config_group_name="settings",
+            config_policy=ConfigBootstrapPolicy(config_group_name="config"),
+        )
 
 
 def test_config_cli_bridge_builds_state_for_host_command(
@@ -215,11 +267,59 @@ def test_config_cli_bridge_builds_state_for_host_command(
     assert not sessions[0].skipped_runtime_bootstrap
 
 
+def test_config_cli_bridge_runtime_command_accepts_help_like_value() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+    args = ["run", "--text", "--help"]
+    app = typer.Typer()
+    factory_calls: list[tuple[CliBootstrapContext, HaiuLikeOptions]] = []
+    _install_haiu_like_bridge(
+        app,
+        kit,
+        args_provider=lambda: args,
+        factory_calls=factory_calls,
+    )
+
+    @app.command()
+    def run(
+        ctx: typer.Context,
+        text: Annotated[str, typer.Option("--text")],
+    ) -> None:
+        typer.echo(
+            json.dumps(
+                {
+                    "state": isinstance(ctx.obj, HaiuLikeState),
+                    "text": text,
+                },
+                sort_keys=True,
+            )
+        )
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        "state": True,
+        "text": "--help",
+    }
+    assert len(factory_calls) == 1
+
+
 def test_config_cli_bridge_bootstrapless_paths_uses_context_only(
     tmp_path: Path,
 ) -> None:
     kit = build_storage_free_example_kit()
+    first_env = tmp_path / "first.env"
+    second_env = tmp_path / "second.env"
+    first_env.write_text("STORAGE_FREE_APP_PROFILE=first\n", encoding="utf-8")
+    second_env.write_text(
+        "STORAGE_FREE_APP_PROFILE=second\n",
+        encoding="utf-8",
+    )
     args = [
+        "--env-file",
+        str(first_env),
+        "--env-file",
+        str(second_env),
         "--workdir-base",
         str(tmp_path),
         "settings",
@@ -243,6 +343,32 @@ def test_config_cli_bridge_bootstrapless_paths_uses_context_only(
     payload = json.loads(result.output)
     assert payload["writes"] == "none"
     assert payload["capabilities"]["app_wide"] == "default"
+
+
+def test_config_cli_bridge_rejects_config_policy_group_drift() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+
+    with pytest.raises(ValueError, match="config_group_name"):
+        ConfigCliBridge[HaiuLikeOptions, HaiuLikeState](
+            kit,
+            state_type=HaiuLikeState,
+            state_factory=_empty_state_factory,
+            config_group_name="settings",
+            bootstrap_policy=ConfigBootstrapPolicy(config_group_name="config"),
+        )
+
+
+def test_config_cli_bridge_rejects_host_policy_group_drift() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+
+    with pytest.raises(ValueError, match="config_group_name"):
+        ConfigCliBridge[HaiuLikeOptions, HaiuLikeState](
+            kit,
+            state_type=HaiuLikeState,
+            state_factory=_empty_state_factory,
+            config_group_name="settings",
+            bootstrap_policy=HostCliBootstrapPolicy(config_group_name="config"),
+        )
 
 
 def test_config_cli_bridge_bootstrapless_set_skips_state_factory(
@@ -389,10 +515,9 @@ def _haiu_policy(
                 actions={("cache",), ("benchmark",)},
             ),
         },
-        host_flag_options=(COMMON_ROOT_FLAG_OPTIONS | {"--ignore-haiu-cache"}),
+        host_flag_options={"--ignore-haiu-cache"},
         host_value_options=(
-            COMMON_ROOT_VALUE_OPTIONS
-            | {
+            {
                 "--base-url",
                 "--model-embed",
                 "--model-llm",
@@ -400,6 +525,13 @@ def _haiu_policy(
             }
         ),
     )
+
+
+def _empty_state_factory(
+    context: CliBootstrapContext,
+    options: HaiuLikeOptions,
+) -> HaiuLikeState:
+    return HaiuLikeState(env_bootstrap=context.env_bootstrap)
 
 
 def _install_haiu_like_bridge(

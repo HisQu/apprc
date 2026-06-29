@@ -5,7 +5,7 @@ from __future__ import annotations
 # == Standard Library ========================
 import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
@@ -117,6 +117,27 @@ class HostCliBootstrapPolicy:
     host_flag_options: Collection[str] = COMMON_ROOT_FLAG_OPTIONS
     host_value_options: Collection[str] = COMMON_ROOT_VALUE_OPTIONS
 
+    def __post_init__(self) -> None:
+        """Normalize host options and validate nested config policy names."""
+        if (
+            self.config_policy is not None
+            and self.config_policy.config_group_name != self.config_group_name
+        ):
+            raise ValueError(
+                "HostCliBootstrapPolicy config_group_name must match "
+                "config_policy.config_group_name."
+            )
+        object.__setattr__(
+            self,
+            "host_flag_options",
+            COMMON_ROOT_FLAG_OPTIONS | frozenset(self.host_flag_options),
+        )
+        object.__setattr__(
+            self,
+            "host_value_options",
+            COMMON_ROOT_VALUE_OPTIONS | frozenset(self.host_value_options),
+        )
+
     def request_skips_runtime_bootstrap(
         self,
         ctx: typer.Context,
@@ -129,14 +150,13 @@ class HostCliBootstrapPolicy:
         :param tokens: Command tokens without the executable name.
         :return: Whether app runtime state can be skipped.
         """
-        if _help_requested_before_separator(
-            tokens,
-            value_options=self.host_value_options,
-        ):
-            return True
         command_name = ctx.invoked_subcommand
         if command_name is None:
             return False
+        if command_name == self.config_group_name:
+            return self._config_policy().request_skips_runtime_bootstrap(
+                tokens=tokens,
+            )
         args = args_after_command(
             command_name,
             tokens=tokens,
@@ -144,15 +164,6 @@ class HostCliBootstrapPolicy:
         )
         if args is None:
             return False
-        if _help_requested_before_separator(
-            args,
-            value_options=self.host_value_options,
-        ):
-            return True
-        if command_name == self.config_group_name:
-            return self._config_policy().request_skips_runtime_bootstrap(
-                tokens=tokens,
-            )
         declaration = self.bootstrapless_commands.get(command_name)
         if declaration is None:
             return False
@@ -164,16 +175,16 @@ class HostCliBootstrapPolicy:
 
     def _config_policy(self) -> ConfigBootstrapPolicy:
         """Return a config policy aligned with this host command shape."""
-        return replace(
-            self.config_policy
-            or ConfigBootstrapPolicy(config_group_name=self.config_group_name),
+        if self.config_policy is not None:
+            return self.config_policy
+        return ConfigBootstrapPolicy(
             config_group_name=self.config_group_name,
             root_flag_options=self.host_flag_options,
             root_value_options=self.host_value_options,
         )
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class ConfigCliBridge(Generic[OptionsT, StateT]):
     """Compose AppRC config CLI behavior into a host-owned Typer callback.
 
@@ -219,6 +230,18 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
     runtime_error_param_hint: str = "CONFIG"
     setup_logging: Callable[..., Any] | None = None
     logger: BootstrapLogger | None = None
+
+    def __post_init__(self) -> None:
+        """Validate bridge and policy names before commands are mounted."""
+        if (
+            self.bootstrap_policy is not None
+            and self.bootstrap_policy.config_group_name
+            != self.config_group_name
+        ):
+            raise ValueError(
+                "ConfigCliBridge config_group_name must match "
+                "bootstrap_policy.config_group_name."
+            )
 
     def prepare(
         self,
@@ -294,24 +317,3 @@ def _provided_args(args_provider: CliArgvProvider | None) -> Sequence[str]:
     if args_provider is not None:
         return args_provider()
     return sys.argv[1:]
-
-
-def _help_requested_before_separator(
-    tokens: Sequence[str],
-    *,
-    value_options: Collection[str],
-) -> bool:
-    """Return whether a help flag appears before an option separator."""
-    i = 0
-    while i < len(tokens):
-        token = tokens[i]
-        if token == "--":
-            return False
-        option_name = token.split("=", maxsplit=1)[0]
-        if option_name in value_options:
-            i += 1 if "=" in token else 2
-            continue
-        if token in {"--help", "-h"}:
-            return True
-        i += 1
-    return False

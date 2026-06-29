@@ -104,6 +104,11 @@ This project follows Semantic Versioning.
     host-callback integrations and the convenience mount share one AppRC
     context, skip-policy, generated config group, and state-validation path.
 
+  - Tightened `HostCliBootstrapPolicy` and `ConfigCliBridge` validation so
+    help-like option values do not skip bootstrap, host option sets extend
+    AppRC defaults, and config group names cannot drift between bridge and
+    policy objects.
+
 <br>
 
 ### ⚠️ Deprecated

@@ -236,8 +236,11 @@ from apprc.cli import (
     BootstraplessCommand,
     ConfigCliBridge,
     CliBootstrapContext,
+    EnvFileOverridesOption,
     HostCliBootstrapPolicy,
     EnvFilesOption,
+    LogLevelOption,
+    SkipDotenvLayersOption,
     StorageOption,
 )
 from apprc.runtime_config import EnvBootstrapResult
@@ -291,12 +294,7 @@ bridge = ConfigCliBridge(
                 actions={("cache",), ("benchmark",)},
             ),
         },
-        host_value_options={
-            "--env-file",
-            "--log-level",
-            "--storage",
-            "--workdir",
-        },
+        host_value_options={"--workdir"},
     ),
 )
 bridge.mount_config_group(app)
@@ -306,18 +304,27 @@ bridge.mount_config_group(app)
 def cli(
     ctx: typer.Context,
     env_files: EnvFilesOption = None,
+    env_file_overrides_os_environ: EnvFileOverridesOption = False,
+    skip_dotenv_layers: SkipDotenvLayersOption = False,
     storage: StorageOption = None,
+    log_level: LogLevelOption = None,
     workdir: Annotated[Path | None, typer.Option("--workdir")] = None,
 ) -> None:
     options = MyCliOptions(
         env_files=env_files,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        load_dotenv_layers=not skip_dotenv_layers,
         storage=storage,
+        log_level=log_level,
         workdir=workdir,
     )
     session = bridge.prepare(ctx, options)
     if session.skipped_runtime_bootstrap:
         return
 ```
+
+`host_flag_options` and `host_value_options` are additions to AppRC's standard
+host-level options, so custom callbacks only list app-specific option names.
 
 > [!NOTE]
 > Related: use [References: generated CLI commands](References.md#generated-cli-commands)

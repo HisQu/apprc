@@ -309,8 +309,14 @@ display value in provenance and UI surfaces.
 ## Generated CLI
 <!-- ======================================================== -->
 
-`AppConfigKit.typer_app(...)` builds a reusable Typer command group. The group
-is generated from the app spec, so unavailable capabilities are not exposed.
+`mount_config_cli(...)` is the shortest Typer integration path: it registers
+standard AppRC root options, runs bootstrap only for commands that need runtime
+state, and mounts the generated `config` group.
+
+`AppConfigKit.typer_app(...)` builds only the reusable Typer command group. The
+group is generated from the app spec, so unavailable capabilities are not
+exposed. Apps with custom root callbacks can pair it with
+`CliBootstrapOptions` and `prepare_typer_context(...)`.
 
 The CLI has three jobs:
 

@@ -195,62 +195,30 @@ Call AppRC bootstrap before commands construct `EnvConfig` objects. Mount the
 generated `config` command group below the host app.
 
 ```python
-from pathlib import Path
-from typing import Annotated
-
 import typer
 
-from apprc.cli import bootstrap_cli_env, config_request_skips_runtime_bootstrap
+from apprc.cli import mount_config_cli
 
 from myapp.config import APP_CONFIG, MyAppEnv
 
 app = typer.Typer()
-
-
-class CliState:
-    env_bootstrap = None
-    storage: str | None = None
-
-
-@app.callback()
-def root_cmd(
-    ctx: typer.Context,
-    env_files: Annotated[list[Path] | None, typer.Option("--env-file")] = None,
-    env_file_overrides_os_environ: Annotated[
-        bool,
-        typer.Option("--env-file-overrides-os-environ"),
-    ] = False,
-    skip_dotenv_layers: Annotated[
-        bool,
-        typer.Option("--skip-dotenv-layers"),
-    ] = False,
-    storage: Annotated[str | None, typer.Option("--storage")] = None,
-) -> None:
-    state = CliState()
-    state.storage = storage
-    ctx.obj = state
-    if config_request_skips_runtime_bootstrap("config"):
-        return
-    state.env_bootstrap = bootstrap_cli_env(
-        APP_CONFIG,
-        env_files=tuple(env_files or ()),
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-        load_dotenv_layers=not skip_dotenv_layers,
-        storage=storage,
-    )
+mount_config_cli(app, APP_CONFIG)
 
 
 @app.command()
 def run() -> None:
     cfg = MyAppEnv()
     typer.echo(cfg.profile)
-
-
-app.add_typer(APP_CONFIG.typer_app(state_type=CliState), name="config")
 ```
 
-`config_request_skips_runtime_bootstrap("config")` lets setup and inspection
-commands run even when the application is not configured yet.
+`mount_config_cli(...)` registers the standard AppRC root options:
+`--env-file`, `--env-file-overrides-os-environ`, `--skip-dotenv-layers`,
+`--storage`, and `--log-level`. It also lets setup and inspection commands run
+before required runtime settings exist.
+
+Apps that already have a root callback can use `CliBootstrapOptions`,
+`prepare_typer_context(...)`, and `APP_CONFIG.typer_app(...)` directly instead
+of the mount helper.
 
 > [!NOTE]
 > Related: use [References: generated CLI commands](References.md#generated-cli-commands)

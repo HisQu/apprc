@@ -5,6 +5,7 @@ from __future__ import annotations
 # == Standard Library ========================
 import os
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -42,18 +43,98 @@ class StorageConfigCliState(ConfigCliState, Protocol):
     storage: str | None
 
 
+@dataclass(slots=True)
+class DefaultConfigCliState:
+    """Default root state understood by generated AppRC config commands.
+
+    :param env_bootstrap: Runtime bootstrap result, when bootstrap ran.
+    :param storage: Optional root ``--storage`` selector.
+    """
+
+    env_bootstrap: EnvBootstrapResult | None = None
+    storage: str | None = None
+
+
+DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS = frozenset(
+    {
+        "app",
+        "doctor",
+        "edit",
+        "paths",
+        "set",
+        "setup",
+        "storage",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigBootstrapPolicy:
+    """Runtime-bootstrap skip policy for a generated config command group.
+
+    :param command_name: Top-level config command name to inspect.
+    :param bootstrapless_actions: Config actions that can run without full
+        runtime state.
+    :param root_flag_options: Root options that consume no values.
+    :param root_value_options: Root options that consume one following value
+        before the config command.
+    :param skip_invalid_options: Whether unknown leading options under the
+        config group should avoid runtime bootstrap so Typer can report the
+        parse error without app config failures.
+    """
+
+    command_name: str = "config"
+    bootstrapless_actions: Collection[str] = (
+        DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
+    )
+    root_flag_options: Collection[str] = COMMON_ROOT_FLAG_OPTIONS
+    root_value_options: Collection[str] = COMMON_ROOT_VALUE_OPTIONS
+    skip_invalid_options: bool = True
+
+    def request_skips_runtime_bootstrap(
+        self,
+        *,
+        tokens: Sequence[str] | None = None,
+    ) -> bool:
+        """Return whether one invocation can skip runtime bootstrap.
+
+        :param tokens: Optional command tokens without the program name.
+        :return: Whether runtime bootstrap should be avoided.
+        """
+        return config_request_skips_runtime_bootstrap(
+            self.command_name,
+            tokens=tokens,
+            root_flag_options=self.root_flag_options,
+            root_value_options=self.root_value_options,
+            bootstrapless_actions=self.bootstrapless_actions,
+            skip_invalid_options=self.skip_invalid_options,
+        )
+
+
 def config_request_skips_runtime_bootstrap(
     command_name: str = "config",
     *,
     tokens: Sequence[str] | None = None,
+    root_flag_options: Collection[str] = COMMON_ROOT_FLAG_OPTIONS,
     root_value_options: Collection[str] = COMMON_ROOT_VALUE_OPTIONS,
+    bootstrapless_actions: Collection[str] = (
+        DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
+    ),
+    skip_invalid_options: bool = True,
 ) -> bool:
     """Return whether one config invocation avoids runtime bootstrap.
 
     :param command_name: Top-level config command name to inspect.
     :param tokens: Optional command tokens without the program name.
+    :param root_flag_options: Root options that consume no values before the
+        config action.
     :param root_value_options: Root options that consume a following value
         before the config command.
+    :param bootstrapless_actions: Config actions that can run before runtime
+        setup.
+    :param skip_invalid_options: Whether unknown leading options under the
+        config group should skip runtime bootstrap so Typer can report the
+        parse error directly.
     :return: Whether the config command can run without root config state.
     """
     args = args_after_command(
@@ -68,22 +149,18 @@ def config_request_skips_runtime_bootstrap(
         value_options=root_value_options,
     ):
         return True
+    if args and args[0] == "--":
+        return False
     action_args = strip_leading_options(
         args,
-        flag_options=COMMON_ROOT_FLAG_OPTIONS,
+        flag_options=root_flag_options,
         value_options=root_value_options,
     )
     if not action_args:
         return True
-    return action_args[0] in {
-        "app",
-        "doctor",
-        "edit",
-        "paths",
-        "set",
-        "setup",
-        "storage",
-    }
+    if skip_invalid_options and action_args[0].startswith("-"):
+        return True
+    return action_args[0] in bootstrapless_actions
 
 
 def _help_requested_before_separator(

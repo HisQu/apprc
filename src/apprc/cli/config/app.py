@@ -13,6 +13,7 @@ import typer
 # == Internal ================================
 from apprc.cli.config.handlers import ConfigCommandHandlers
 from apprc.cli.config.handlers import ConfigSelectorContext
+from apprc.cli.config.state import DefaultConfigCliState
 from apprc.runtime_config.doctor.payload import config_setup_message
 from apprc.runtime_config.kit import AppConfigKit
 
@@ -25,7 +26,7 @@ StateT = TypeVar("StateT")
 def build_config_typer_app(
     kit: AppConfigKit,
     *,
-    state_type: type[StateT],
+    state_type: type[StateT] | None = None,
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
     active_storage_root: Callable[[StateT], Path | None] | None = None,
     active_storage_root_with_context: (
@@ -44,6 +45,7 @@ def build_config_typer_app(
 
     :param kit: Application config facade.
     :param state_type: Application root CLI state type stored on ``ctx.obj``.
+        When omitted, AppRC uses its default config state.
     :param runtime_payload: Optional serializer for ``config show``.
     :param active_storage_root: Optional active storage resolver.
     :param active_storage_root_with_context: Optional active storage resolver
@@ -58,6 +60,7 @@ def build_config_typer_app(
         validation errors.
     :return: Configured Typer app.
     """
+    resolved_state_type = state_type or DefaultConfigCliState
     app = typer.Typer(
         help=help
         or f"Inspect and initialize {kit.spec.display_name} configuration.",
@@ -74,7 +77,7 @@ def build_config_typer_app(
 
     handlers = ConfigCommandHandlers(
         kit,
-        state_type=state_type,
+        state_type=resolved_state_type,
         runtime_payload=cast(
             Callable[[Any], Mapping[str, Any]] | None,
             runtime_payload,

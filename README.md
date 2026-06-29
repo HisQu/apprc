@@ -133,55 +133,27 @@ MYAPP_PROFILE="default"
 Bootstrap your app before constructing runtime config objects:
 
 ```python
-from pathlib import Path
-from typing import Annotated
-
 import typer
 
-from apprc.cli import bootstrap_cli_env, config_request_skips_runtime_bootstrap
+from apprc.cli import mount_config_cli
 
 from myapp.config import APP_CONFIG, MyAppEnv
 
 app = typer.Typer()
-
-
-class CliState:
-    env_bootstrap = None
-    storage: str | None = None
-
-
-@app.callback()
-def root_cmd(
-    ctx: typer.Context,
-    env_files: Annotated[list[Path] | None, typer.Option("--env-file")] = None,
-    env_file_overrides_os_environ: Annotated[
-        bool,
-        typer.Option("--env-file-overrides-os-environ"),
-    ] = False,
-    storage: Annotated[str | None, typer.Option("--storage")] = None,
-) -> None:
-    state = CliState()
-    state.storage = storage
-    ctx.obj = state
-    if config_request_skips_runtime_bootstrap("config"):
-        return
-    state.env_bootstrap = bootstrap_cli_env(
-        APP_CONFIG,
-        env_files=tuple(env_files or ()),
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-        load_dotenv_layers=True,
-        storage=storage,
-    )
+mount_config_cli(app, APP_CONFIG)
 
 
 @app.command()
 def run() -> None:
     cfg = MyAppEnv()
     typer.echo(f"profile={cfg.profile}")
-
-
-app.add_typer(APP_CONFIG.typer_app(state_type=CliState), name="config")
 ```
+
+`mount_config_cli(...)` adds the standard AppRC root options, performs runtime
+bootstrap for commands that need resolved config, and mounts the generated
+`config` command group. Apps with existing root callbacks can use the lower-level
+`CliBootstrapOptions`, `prepare_typer_context(...)`, and
+`APP_CONFIG.typer_app(...)` helpers instead.
 
 > [!NOTE]
 > For the step-by-step integration guide, see

@@ -333,7 +333,7 @@ class AppConfigKit:
     def typer_app(
         self,
         *,
-        state_type: type[StateT],
+        state_type: type[StateT] | None = None,
         runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
         active_storage_root: Callable[[StateT], Path | None] | None = None,
         active_storage_root_with_context: (
@@ -351,7 +351,7 @@ class AppConfigKit:
         """Build the generic Typer ``config`` command group.
 
         :param state_type: Application root CLI state type stored on
-            ``ctx.obj``.
+            ``ctx.obj``. When omitted, AppRC uses its default config state.
         :param runtime_payload: Optional serializer for ``config show``.
         :param active_storage_root: Optional storage-root resolver for custom
             CLI state objects.
@@ -367,11 +367,16 @@ class AppConfigKit:
             validation errors.
         :return: Configured Typer app.
         """
-        from apprc.cli.config import build_config_typer_app
+        from apprc.cli.config import (
+            DefaultConfigCliState,
+            build_config_typer_app,
+        )
+
+        resolved_state_type = state_type or DefaultConfigCliState
 
         return build_config_typer_app(
             self,
-            state_type=state_type,
+            state_type=resolved_state_type,
             runtime_payload=runtime_payload,
             active_storage_root=active_storage_root,
             active_storage_root_with_context=active_storage_root_with_context,

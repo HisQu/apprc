@@ -9,7 +9,7 @@ from apprc.cli.config import (
     config_request_skips_runtime_bootstrap,
 )
 from apprc.cli.context import CliBootstrapOptions
-from apprc.cli.integration import mount_config_cli
+from apprc.cli.integration import CliStateFactory, mount_config_cli
 from apprc.runtime_config import EnvConfig, env_field, env_owner
 from apprc.runtime_config.kit import AppConfigKit
 
@@ -30,6 +30,7 @@ def test_cli_facade_exports_bootstrap_symbols_needed_by_cunf() -> None:
     """Keep application CLI bootstrap imports on AppRC's public CLI facade."""
     assert apprc_cli.bootstrap_cli_env is bootstrap_cli_env
     assert apprc_cli.CliBootstrapOptions is CliBootstrapOptions
+    assert apprc_cli.CliStateFactory is CliStateFactory
     assert apprc_cli.ConfigSelectorContext is ConfigSelectorContext
     assert apprc_cli.DefaultConfigCliState is DefaultConfigCliState
     assert apprc_cli.mount_config_cli is mount_config_cli
@@ -39,6 +40,7 @@ def test_cli_facade_exports_bootstrap_symbols_needed_by_cunf() -> None:
     )
     assert "bootstrap_cli_env" in apprc_cli.__all__
     assert "CliBootstrapOptions" in apprc_cli.__all__
+    assert "CliStateFactory" in apprc_cli.__all__
     assert "ConfigSelectorContext" in apprc_cli.__all__
     assert "DefaultConfigCliState" in apprc_cli.__all__
     assert "config_request_skips_runtime_bootstrap" in apprc_cli.__all__

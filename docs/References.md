@@ -65,6 +65,7 @@ CLI facade imports from `apprc.cli`:
 | `mount_config_cli` | Mount standard AppRC root options and the generated `config` group on a Typer app. |
 | `CliBootstrapOptions` | Parsed standard AppRC root option values. |
 | `CliBootstrapContext` | Per-invocation AppRC bootstrap metadata stored on Typer context metadata. |
+| `CliStateFactory` | Callable type for custom root state created after runtime bootstrap. |
 | `DefaultConfigCliState` | Minimal config state for apps that do not need custom root state. |
 | `prepare_typer_context` | Store AppRC bootstrap metadata from a custom Typer root callback. |
 | `apprc_context_from` | Read AppRC bootstrap metadata from a Typer command. |

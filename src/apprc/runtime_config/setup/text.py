@@ -36,6 +36,7 @@ def setup_finish_text(
     storage_root: Path | None = None,
     storage_env: Path | None = None,
     app_wide_env: Path | None = None,
+    command_name: str = "config",
 ) -> str:
     """Return setup completion copy for initialized capability files.
 
@@ -43,6 +44,7 @@ def setup_finish_text(
     :param storage_root: Storage root selected by setup, if any.
     :param storage_env: Storage dotenv file initialized by setup, if any.
     :param app_wide_env: App-wide dotenv file initialized by setup, if any.
+    :param command_name: Host command group name used in generated guidance.
     :return: Human-facing setup completion text.
     """
     lines = [f"{kit.spec.display_name} AppRC setup complete.", ""]
@@ -52,7 +54,13 @@ def setup_finish_text(
         lines.append(f"storage_root: {storage_root}")
     if storage_env is not None:
         lines.append(f"storage_env: {storage_env}")
-    lines.extend(("", "Then verify:", *verification_commands(kit)))
+    lines.extend(
+        (
+            "",
+            "Then verify:",
+            *verification_commands(kit, command_name=command_name),
+        )
+    )
     return "\n".join(lines)
 
 
@@ -86,15 +94,20 @@ def dotenv_assignment_commands(
     return [f'{kit.spec.storage_env_key}="{storage_root}"']
 
 
-def verification_commands(kit: AppConfigKit) -> list[str]:
+def verification_commands(
+    kit: AppConfigKit,
+    *,
+    command_name: str = "config",
+) -> list[str]:
     """Return commands that inspect the resulting setup.
 
     :param kit: Application config facade.
+    :param command_name: Host command group name used in generated guidance.
     :return: Command lines.
     """
     return [
-        f"  {kit.spec.config_command_name()} config paths",
-        f"  {kit.spec.config_command_name()} config doctor",
+        f"  {kit.spec.config_command_name()} {command_name} paths",
+        f"  {kit.spec.config_command_name()} {command_name} doctor",
     ]
 
 

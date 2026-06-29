@@ -35,7 +35,8 @@ This project follows Semantic Versioning.
 
   - Added layered Typer integration helpers: `mount_config_cli(...)`,
     `CliBootstrapOptions`, AppRC Typer context metadata, reusable root option
-    aliases, and configurable config bootstrap skip policies.
+    aliases, `CliStateFactory`, explicit mount argument providers, and
+    configurable config bootstrap skip policies.
 
   - Added Graphigs-backed docs figure scripts for regenerating
     `docs-reading-map.svg` and `apprc-runtime-layers.svg`.

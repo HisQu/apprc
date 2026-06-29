@@ -311,12 +311,16 @@ display value in provenance and UI surfaces.
 
 `mount_config_cli(...)` is the shortest Typer integration path: it registers
 standard AppRC root options, runs bootstrap only for commands that need runtime
-state, and mounts the generated `config` group.
+state, and mounts the generated `config` group. It keeps AppRC bootstrap context
+separate from app-owned `ctx.obj` state, so bootstrapless config commands can run
+without constructing incomplete application state.
 
 `AppConfigKit.typer_app(...)` builds only the reusable Typer command group. The
 group is generated from the app spec, so unavailable capabilities are not
 exposed. Apps with custom root callbacks can pair it with
-`CliBootstrapOptions` and `prepare_typer_context(...)`.
+`CliBootstrapOptions` and `prepare_typer_context(...)`. Apps that only need
+custom state after bootstrap can keep the mount helper and pass
+`state_factory=...`.
 
 The CLI has three jobs:
 

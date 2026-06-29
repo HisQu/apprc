@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
-from pathlib import Path
-from typing import Annotated
-
 # == 3rd Party ===============================
 import typer
 
 # == Internal ================================
 from apprc.cli import (
-    bootstrap_cli_env,
-    config_request_skips_runtime_bootstrap,
+    CliBootstrapContext,
+    mount_config_cli,
 )
 from apprc.logging import setup_logging
 from apprc_example_app import (
@@ -32,68 +28,28 @@ app = typer.Typer(
 )
 
 
-@app.callback()
-def root_cmd(
-    ctx: typer.Context,
-    env_files: Annotated[
-        list[Path] | None,
-        typer.Option(
-            "--env-file",
-            help="Invocation dotenv file loaded after AppRC layers. May be repeated.",
-        ),
-    ] = None,
-    env_file_overrides_os_environ: Annotated[
-        bool,
-        typer.Option(
-            "--env-file-overrides-os-environ",
-            "-o",
-            help="Let --env-file values override existing process env values.",
-        ),
-    ] = False,
-    skip_dotenv_layers: Annotated[
-        bool,
-        typer.Option(
-            "--skip-dotenv-layers",
-            "-s",
-            help="Select storage but do not merge dotenv values into env.",
-        ),
-    ] = False,
-    storage: Annotated[
-        str | None,
-        typer.Option(
-            "--storage",
-            help="Example App storage path or registered selector for this command.",
-        ),
-    ] = None,
-    log_level: Annotated[
-        str | None,
-        typer.Option(
-            "--log-level",
-            help="Configure AppRC logging before runtime bootstrap.",
-        ),
-    ] = None,
-) -> None:
-    """Bootstrap Example App config state for commands that need runtime values."""
-    state = ApprcExampleAppState(storage=storage)
-    ctx.obj = state
-    if config_request_skips_runtime_bootstrap("config"):
-        return
-    state.env_bootstrap = bootstrap_cli_env(
-        APPRC_EXAMPLE_APP_KIT,
-        env_files=tuple(env_files or ()),
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-        load_dotenv_layers=not skip_dotenv_layers,
-        storage=storage,
-        log_level=log_level,
-        setup_logging=setup_logging,
+def _example_app_state(
+    context: CliBootstrapContext,
+) -> ApprcExampleAppState:
+    """Build Example App runtime state after AppRC bootstrap.
+
+    :param context: AppRC bootstrap context for this invocation.
+    :return: Example App state passed to runtime payload hooks.
+    """
+    return ApprcExampleAppState(
+        env_bootstrap=context.env_bootstrap,
+        storage=context.options.storage,
     )
 
 
-config_app = APPRC_EXAMPLE_APP_KIT.typer_app(
+config_app = mount_config_cli(
+    app,
+    APPRC_EXAMPLE_APP_KIT,
     state_type=ApprcExampleAppState,
+    state_factory=_example_app_state,
     runtime_payload=apprc_example_app_config_payload,
+    setup_logging=setup_logging,
 )
-app.add_typer(config_app, name="config")
 
 
 def main() -> None:

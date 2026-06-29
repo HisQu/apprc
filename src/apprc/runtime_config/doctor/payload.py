@@ -85,25 +85,35 @@ class _AppWideDiagnosis:
     issues: list[str]
 
 
-def config_command_text(kit: "AppConfigKit", action: str) -> str:
+def config_command_text(
+    kit: "AppConfigKit",
+    action: str,
+    *,
+    command_name: str = "config",
+) -> str:
     """Return one display command for this app's config group.
 
     :param kit: Application config facade.
     :param action: Command suffix after ``<app> config``.
+    :param command_name: Host command group name used in generated guidance.
     :return: Human-readable command text.
     """
-    return f"{kit.spec.config_command_name()} config {action}"
+    return f"{kit.spec.config_command_name()} {command_name} {action}"
 
 
-def config_setup_message(kit: "AppConfigKit") -> str:
+def config_setup_message(
+    kit: "AppConfigKit",
+    *,
+    command_name: str = "config",
+) -> str:
     """Return setup text shown when runtime storage is missing."""
     if not kit.spec.storage_required():
         return (
             f"{kit.spec.display_name} can run from packaged defaults, explicit "
             "env files, and shell environment variables.\n\n"
             "Inspect the current layer state:\n"
-            f"  {config_command_text(kit, 'paths')}\n"
-            f"  {config_command_text(kit, 'doctor')}"
+            f"  {config_command_text(kit, 'paths', command_name=command_name)}\n"
+            f"  {config_command_text(kit, 'doctor', command_name=command_name)}"
         )
     storage_key = kit.spec.require_storage_env_key()
     return (
@@ -111,10 +121,10 @@ def config_setup_message(kit: "AppConfigKit") -> str:
         f"Set {storage_key} to a storage path or pass --storage PATH. The "
         "named-storage index is optional and only needed for named selectors.\n"
         "For guided setup:\n"
-        f"  {config_command_text(kit, 'setup --yes --storage-root /absolute/path/to/storage-root')}\n\n"
+        f"  {config_command_text(kit, 'setup --yes --storage-root /absolute/path/to/storage-root', command_name=command_name)}\n\n"
         "Then inspect the setup:\n"
-        f"  {config_command_text(kit, 'paths')}\n"
-        f"  {config_command_text(kit, 'doctor')}"
+        f"  {config_command_text(kit, 'paths', command_name=command_name)}\n"
+        f"  {config_command_text(kit, 'doctor', command_name=command_name)}"
     )
 
 
@@ -124,6 +134,7 @@ def build_config_doctor_payload(
     storage: str | None,
     explicit_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool = False,
+    command_name: str = "config",
 ) -> ConfigDoctorPayload:
     """Return local setup diagnostics for one app's active layers.
 
@@ -132,6 +143,7 @@ def build_config_doctor_payload(
     :param explicit_values: Parsed values from root ``--env-file`` options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
+    :param command_name: Host command group name used in generated guidance.
     :return: Stable JSON-friendly diagnostic payload.
     """
     explicit_selector_values = explicit_values or {}
@@ -148,6 +160,7 @@ def build_config_doctor_payload(
         explicit_values=explicit_selector_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         selector_env=selector_env,
+        command_name=command_name,
     )
     registry = storage_diagnosis.registry
     warnings = [
@@ -177,6 +190,7 @@ def build_config_doctor_payload(
         status=status,
         issues=issues,
         warnings=warnings,
+        command_name=command_name,
     )
 
 
@@ -224,6 +238,7 @@ def _doctor_payload(
     status: ConfigDoctorStatus,
     issues: list[str],
     warnings: list[str],
+    command_name: str,
 ) -> ConfigDoctorPayload:
     """Serialize diagnosis objects into the public doctor payload.
 
@@ -235,6 +250,7 @@ def _doctor_payload(
     :param status: Public readiness status.
     :param issues: Readiness-affecting problems.
     :param warnings: Non-fatal convention or migration diagnostics.
+    :param command_name: Host command group name used in generated guidance.
     :return: Stable JSON-friendly diagnostic payload.
     """
     selection = storage.selection
@@ -280,7 +296,11 @@ def _doctor_payload(
         "missing_env_keys": storage.missing_env_keys,
         "issues": issues,
         "warnings": warnings,
-        "next_steps": _doctor_next_steps(kit, status),
+        "next_steps": _doctor_next_steps(
+            kit,
+            status,
+            command_name=command_name,
+        ),
     }
 
 
@@ -291,6 +311,7 @@ def _diagnose_storage(
     explicit_values: Mapping[str, str],
     env_file_overrides_os_environ: bool,
     selector_env: Mapping[str, str],
+    command_name: str,
 ) -> _StorageDiagnosis:
     """Return active storage state for diagnostics.
 
@@ -300,6 +321,7 @@ def _diagnose_storage(
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
     :param selector_env: Process plus explicit values used for selector paths.
+    :param command_name: Host command group name used in generated guidance.
     :return: Storage diagnosis with missing-env and storage-env issues.
     """
     if not kit.spec.storage_required():
@@ -335,7 +357,13 @@ def _diagnose_storage(
     )
     if storage_selector is None:
         missing_env_keys.append(storage_env_key)
-        issues.append(_missing_env_issue(kit, missing_env_keys))
+        issues.append(
+            _missing_env_issue(
+                kit,
+                missing_env_keys,
+                command_name=command_name,
+            )
+        )
     else:
         selector_source, selector_value = storage_selector
         registry = inspect_storage_registry(
@@ -480,11 +508,14 @@ def _legacy_file_warnings(
 def _doctor_next_steps(
     kit: "AppConfigKit",
     status: ConfigDoctorStatus,
+    *,
+    command_name: str,
 ) -> list[str]:
     """Return recovery steps tailored to one doctor status.
 
     :param kit: Application config facade.
     :param status: Public readiness status.
+    :param command_name: Host command group name used in generated guidance.
     :return: Ordered actions for human and JSON output.
     """
     if status == ConfigDoctorStatus.RUNNABLE:
@@ -494,22 +525,25 @@ def _doctor_next_steps(
             config_command_text(
                 kit,
                 "setup --yes --storage-root /absolute/path/to/storage-root",
+                command_name=command_name,
             ),
-            config_command_text(kit, "paths"),
-            config_command_text(kit, "doctor"),
+            config_command_text(kit, "paths", command_name=command_name),
+            config_command_text(kit, "doctor", command_name=command_name),
         ]
     if status == ConfigDoctorStatus.APP_CONFIG_NOT_READY:
         return [
-            config_command_text(kit, "app init"),
-            config_command_text(kit, "doctor"),
+            config_command_text(kit, "app init", command_name=command_name),
+            config_command_text(kit, "doctor", command_name=command_name),
         ]
     if status == ConfigDoctorStatus.NAMED_STORAGE_NOT_READY:
         return [
             "Fix the named-storage index or create a new entry:",
             config_command_text(
-                kit, "storage add NAME /absolute/path/to/storage-root"
+                kit,
+                "storage add NAME /absolute/path/to/storage-root",
+                command_name=command_name,
             ),
-            config_command_text(kit, "doctor"),
+            config_command_text(kit, "doctor", command_name=command_name),
         ]
     return [
         "Ensure the selected storage root exists and contains "
@@ -517,24 +551,28 @@ def _doctor_next_steps(
         config_command_text(
             kit,
             "setup --yes --storage-root /absolute/path/to/storage-root",
+            command_name=command_name,
         ),
-        config_command_text(kit, "doctor"),
+        config_command_text(kit, "doctor", command_name=command_name),
     ]
 
 
 def _missing_env_issue(
     kit: "AppConfigKit",
     missing_env_keys: list[str],
+    *,
+    command_name: str,
 ) -> str:
     """Return one readable issue for missing bootstrap env keys.
 
     :param kit: Application config facade.
     :param missing_env_keys: Required env keys absent from this process.
+    :param command_name: Host command group name used in generated guidance.
     :return: Human-facing doctor issue.
     """
     keys = ", ".join(missing_env_keys)
     return (
         f"Env not set. {kit.spec.display_name} requires {keys}. Export the "
         "storage path or add it to an explicit dotenv file, then run "
-        f"{config_command_text(kit, 'doctor')}."
+        f"{config_command_text(kit, 'doctor', command_name=command_name)}."
     )

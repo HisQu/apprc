@@ -24,7 +24,7 @@ from apprc.cli.context import (
     prepare_typer_context,
 )
 from apprc.cli.doctor import print_config_doctor
-from apprc.cli.integration import mount_config_cli
+from apprc.cli.integration import CliStateFactory, mount_config_cli
 from apprc.runtime_config.doctor.payload import (
     build_config_doctor_payload,
     config_command_text,
@@ -56,6 +56,7 @@ __all__ = [
     "CliBootstrapContext",
     "CliBootstrapOptions",
     "CliBootstrapOptionsProtocol",
+    "CliStateFactory",
     "ConfigBootstrapPolicy",
     "MISSING_ACTION_MESSAGE",
     "ConfigCliState",

@@ -26,7 +26,7 @@ class CliBootstrapOptionsProtocol(Protocol):
     """Fields accepted by AppRC CLI bootstrap helpers."""
 
     @property
-    def env_files(self) -> Sequence[Path]:
+    def env_files(self) -> Sequence[Path] | None:
         """Explicit dotenv files passed to the CLI."""
         ...
 
@@ -111,7 +111,7 @@ class CliBootstrapOptions:
         if isinstance(options, cls):
             return options
         return cls(
-            env_files=tuple(options.env_files),
+            env_files=tuple(options.env_files or ()),
             env_file_overrides_os_environ=(
                 options.env_file_overrides_os_environ
             ),

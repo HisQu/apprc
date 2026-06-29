@@ -81,6 +81,19 @@ type InitialStorageWithContextHook = Callable[
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedConfigState:
+    """Config state plus whether host hooks may inspect it.
+
+    :param state: State object used by generated config logic.
+    :param app_owned: Whether ``state`` came from the host application's
+        runtime bootstrap path.
+    """
+
+    state: Any
+    app_owned: bool
+
+
 class ConfigCommandBase:
     """Shared dependencies and adapters for generated config commands."""
 
@@ -99,6 +112,7 @@ class ConfigCommandBase:
         editor_app_cls: type[ConfigEditorApp] | None,
         missing_setup: str,
         runtime_error_param_hint: str,
+        command_name: str,
     ) -> None:
         """Store config command dependencies and extension hooks.
 
@@ -116,6 +130,7 @@ class ConfigCommandBase:
         :param missing_setup: Message shown when runtime storage is absent.
         :param runtime_error_param_hint: Parameter hint for runtime-payload
             validation errors.
+        :param command_name: Host command group name used in generated guidance.
         """
         self.kit = kit
         self.state_type = state_type
@@ -129,6 +144,7 @@ class ConfigCommandBase:
         self.editor_app_cls = editor_app_cls
         self.missing_setup = missing_setup
         self.runtime_error_param_hint = runtime_error_param_hint
+        self.command_name = command_name
 
     def state(self, ctx: typer.Context) -> Any:
         """Return the application root state stored by the parent CLI."""
@@ -144,19 +160,39 @@ class ConfigCommandBase:
             storage=context.options.storage,
         )
 
-    def config_state(self, ctx: typer.Context) -> Any | None:
-        """Return app state or generic AppRC context state for config logic."""
+    def resolved_config_state(
+        self,
+        ctx: typer.Context,
+    ) -> ResolvedConfigState | None:
+        """Return state plus whether app-owned hooks may inspect it."""
+        context = apprc_context_from(ctx)
+        if context is not None and context.skipped_runtime_bootstrap:
+            context_state = self.context_state(ctx)
+            if context_state is None:
+                return None
+            return ResolvedConfigState(context_state, app_owned=False)
         if isinstance(ctx.obj, self.state_type):
-            return ctx.obj
-        return self.context_state(ctx)
+            return ResolvedConfigState(ctx.obj, app_owned=True)
+        context_state = self.context_state(ctx)
+        if context_state is None:
+            return None
+        return ResolvedConfigState(context_state, app_owned=False)
 
-    def runtime_payload_state(self, ctx: typer.Context) -> Any | None:
+    def runtime_payload_state(
+        self,
+        resolved_state: ResolvedConfigState | None,
+    ) -> Any | None:
         """Return state that is valid for app-owned runtime payload hooks."""
-        if isinstance(ctx.obj, self.state_type):
-            return ctx.obj
-        if self.state_type is DefaultConfigCliState:
-            return self.context_state(ctx)
-        return None
+        if resolved_state is None or not resolved_state.app_owned:
+            return None
+        return resolved_state.state
+
+    def config_command_text(self, action: str) -> str:
+        """Return one host command line for generated CLI guidance."""
+        return (
+            f"{self.kit.spec.config_command_name()} "
+            f"{self.command_name} {action}"
+        )
 
     def root_context_param(
         self,
@@ -281,23 +317,26 @@ class ConfigCommandBase:
 
     def active_storage_root_for_cli(
         self,
-        state: Any,
+        resolved_state: ResolvedConfigState,
         *,
         selector_context: ConfigSelectorContext | None = None,
     ) -> Path | None:
         """Return the selected storage root using app overrides first."""
         context = selector_context or _empty_selector_context()
+        state = resolved_state.state
         try:
-            has_app_state = isinstance(state, self.state_type)
             if (
-                has_app_state
+                resolved_state.app_owned
                 and self.active_storage_root_with_context_hook is not None
             ):
                 return self.active_storage_root_with_context_hook(
                     state,
                     context,
                 )
-            if has_app_state and self.active_storage_root_hook is not None:
+            if (
+                resolved_state.app_owned
+                and self.active_storage_root_hook is not None
+            ):
                 return self.active_storage_root_hook(state)
             return active_storage_root_from_state(
                 self.kit,
@@ -319,20 +358,20 @@ class ConfigCommandBase:
 
     def required_storage_root_for_write(
         self,
-        state: Any,
+        resolved_state: ResolvedConfigState,
         *,
         selector_context: ConfigSelectorContext | None = None,
     ) -> Path:
         """Return a writable active storage root or raise a CLI error."""
         storage_root = self.active_storage_root_for_cli(
-            state,
+            resolved_state,
             selector_context=selector_context,
         )
         if storage_root is None:
             raise typer.BadParameter(
                 f"No active {self.kit.spec.display_name} storage root. Run "
-                f"`{self.kit.spec.config_command_name()} config setup --yes "
-                "--storage-root /absolute/path/to/storage` or pass --storage.",
+                f"`{self.config_command_text('setup --yes --storage-root /absolute/path/to/storage')}` "
+                "or pass --storage.",
                 param_hint="--storage",
             )
         return self.validate_storage_root_for_write(storage_root)
@@ -376,7 +415,7 @@ class ConfigCommandBase:
 
     def active_storage_root_for_editor(
         self,
-        current_state: Any | None,
+        current_state: ResolvedConfigState | None,
         *,
         selector_context: ConfigSelectorContext | None = None,
     ) -> Path | None:
@@ -436,7 +475,7 @@ class ConfigCommandBase:
     def launch_config_editor(
         self,
         *,
-        current_state: Any | None,
+        current_state: ResolvedConfigState | None,
         storage_registry: StorageRegistry | None,
         active_storage_root: Path | None,
         selector_context: ConfigSelectorContext | None = None,
@@ -471,17 +510,20 @@ class ConfigCommandBase:
 
     def initial_storage_for_editor(
         self,
-        state: Any,
+        resolved_state: ResolvedConfigState,
         *,
         storage_registry: StorageRegistry | None,
         selector_context: ConfigSelectorContext | None = None,
     ) -> str | None:
         """Return the storage name the editor should select on startup."""
         context = selector_context or _empty_selector_context()
-        has_app_state = isinstance(state, self.state_type)
-        if has_app_state and self.initial_storage_with_context_hook is not None:
+        state = resolved_state.state
+        if (
+            resolved_state.app_owned
+            and self.initial_storage_with_context_hook is not None
+        ):
             return self.initial_storage_with_context_hook(state, context)
-        if has_app_state and self.initial_storage_hook is not None:
+        if resolved_state.app_owned and self.initial_storage_hook is not None:
             return self.initial_storage_hook(state)
         return initial_storage_from_state(
             self.kit,
@@ -598,6 +640,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             env_file_overrides_os_environ=(
                 selector_context.env_file_overrides_os_environ
             ),
+            command_name=self.command_name,
         )
         if json_output:
             dump_json(payload)
@@ -606,7 +649,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
 
     def show(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Show the resolved runtime config available to this invocation."""
-        current_state = self.config_state(ctx)
+        current_state = self.resolved_config_state(ctx)
         storage_root = (
             self.active_storage_root_for_cli(current_state)
             if current_state is not None
@@ -617,7 +660,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             raise typer.Exit(code=1)
         try:
             if self.runtime_payload is not None:
-                payload_state = self.runtime_payload_state(ctx)
+                payload_state = self.runtime_payload_state(current_state)
                 if payload_state is None:
                     raise RuntimeError("CLI state is not initialized.")
                 payload = self.runtime_payload(payload_state)
@@ -647,6 +690,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             env_file_overrides_os_environ=(
                 selector_context.env_file_overrides_os_environ
             ),
+            command_name=self.command_name,
         )
         if json_output:
             dump_json(payload)
@@ -665,7 +709,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
     ) -> None:
         """Write one config override to the selected writable layer."""
         selector_context = self.cli_selector_context(ctx)
-        current_state = self.config_state(ctx)
+        current_state = self.resolved_config_state(ctx)
         resolved_scope = self._resolve_write_scope(
             current_state,
             requested_scope=scope,
@@ -691,14 +735,14 @@ class RuntimeConfigCommands(ConfigCommandBase):
 
     def _resolve_write_scope(
         self,
-        state: Any | None,
+        state: ResolvedConfigState | None,
         *,
         requested_scope: str | None,
         selector_context: ConfigSelectorContext,
     ) -> ConfigSetScope:
         """Return the target write scope or raise for ambiguous writes.
 
-        :param state: Optional application root CLI state.
+        :param state: Optional resolved CLI state.
         :param requested_scope: User-provided scope.
         :return: Concrete write scope.
         :raises typer.BadParameter: If no layer or multiple layers qualify.
@@ -716,7 +760,11 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 selector_context=selector_context,
             ):
                 raise typer.BadParameter(
-                    _inactive_scope_message(self.kit, resolved_requested_scope),
+                    _inactive_scope_message(
+                        self.kit,
+                        resolved_requested_scope,
+                        command_name=self.command_name,
+                    ),
                     param_hint="--scope",
                 )
             return resolved_requested_scope
@@ -728,8 +776,9 @@ class RuntimeConfigCommands(ConfigCommandBase):
             return active_scopes[0]
         if not active_scopes:
             raise typer.BadParameter(
-                "No writable AppRC layer is active. Run `config app init`, "
-                "select a storage root, or set environment variables directly.",
+                "No writable AppRC layer is active. Run "
+                f"`{self.config_command_text('app init')}`, select a storage "
+                "root, or set environment variables directly.",
                 param_hint="--scope",
             )
         raise typer.BadParameter(
@@ -740,7 +789,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
 
     def _active_write_scopes(
         self,
-        state: Any | None,
+        state: ResolvedConfigState | None,
         *,
         selector_context: ConfigSelectorContext,
     ) -> list[ConfigSetScope]:
@@ -757,7 +806,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
 
     def _write_scope_is_active(
         self,
-        state: Any | None,
+        state: ResolvedConfigState | None,
         scope: ConfigSetScope,
         *,
         selector_context: ConfigSelectorContext,
@@ -833,7 +882,7 @@ class EditorConfigCommands(ConfigCommandBase):
     def edit(self, ctx: typer.Context) -> None:
         """Open the Textual editor for AppRC dotenv override files."""
         selector_context = self.cli_selector_context(ctx)
-        current_state = self.config_state(ctx)
+        current_state = self.resolved_config_state(ctx)
         try:
             active_storage_root = self.active_storage_root_for_editor(
                 current_state,
@@ -885,23 +934,27 @@ class ConfigCommandHandlers(
             self.kit,
             assume_yes=assume_yes,
             storage_root=storage_root,
+            command_name=self.command_name,
         )
 
 
 def _inactive_scope_message(
     kit: AppConfigKit,
     scope: ConfigSetScope,
+    *,
+    command_name: str = "config",
 ) -> str:
     """Return a readable error for an unavailable write scope.
 
     :param kit: Application config facade.
     :param scope: Requested write scope.
+    :param command_name: Host command group name used in generated guidance.
     :return: Human-facing CLI error.
     """
     if scope == "app":
         return (
             "The app-wide layer is not active. Run "
-            f"`{kit.spec.config_command_name()} config app init` first."
+            f"`{kit.spec.config_command_name()} {command_name} app init` first."
         )
     return (
         "The storage layer is not active. Select a storage root with --storage "

@@ -361,10 +361,12 @@ Renderer values for `setup_logging(renderer=...)`:
 
 Docs assets live in [docs/assets](assets).
 
-| Asset | Purpose |
-|---|---|
-| `docs-reading-map.svg` | Shows how the root README routes readers into the docs scaffold. |
-| `apprc-runtime-layers.svg` | Shows the AppRC contract flowing into runtime and generated interfaces. |
+| Asset | Generator | Purpose |
+|---|---|---|
+| `docs-reading-map.svg` | [docs_reading_map.py](assets/docs_reading_map.py) | Shows how the root README routes readers into the docs scaffold. |
+| `apprc-runtime-layers.svg` | [apprc_runtime_layers.py](assets/apprc_runtime_layers.py) | Shows the AppRC contract flowing into runtime and generated interfaces. |
 
 Keep assets simple and readable in GitHub light and dark themes. Update the
 caption in the owning Markdown file when an asset changes meaning.
+Use [render_all.py](assets/render_all.py) to regenerate all Graphigs-backed
+docs figures.

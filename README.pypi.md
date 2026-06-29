@@ -25,18 +25,19 @@ command references, see [docs/References.md](docs/References.md).
 
 ## Table Of Contents
 
-1. [Start Here](#start-here)
-   1. [Installation](#installation)
-   2. [Quickstart](#quickstart)
-2. [How AppRC Works](#how-apprc-works)
+1. [`apprc`: Application Runtime Config](#apprc-application-runtime-config)
+   1. [Table Of Contents](#table-of-contents)
+2. [Installation](#installation)
+3. [Quickstart](#quickstart)
+4. [How AppRC Works](#how-apprc-works)
    1. [Mental Model](#mental-model)
    2. [Capability Layers](#capability-layers)
    3. [Runtime Precedence](#runtime-precedence)
-3. [Generated Workflows](#generated-workflows)
+5. [Generated Workflows](#generated-workflows)
    1. [Config CLI](#config-cli)
    2. [Setup And Diagnostics](#setup-and-diagnostics)
    3. [Optional Logging](#optional-logging)
-4. [More Documentation](#more-documentation)
+6. [More Documentation](#more-documentation)
    1. [Detailed Manual](#detailed-manual)
    2. [Development](#development)
 
@@ -44,14 +45,14 @@ command references, see [docs/References.md](docs/References.md).
 
 <br>
 
-# Start Here
+
 
 Install AppRC, declare the runtime contract, and mount the generated `config`
 commands in your Typer application.
 
 <br>
 
-## Installation
+# Installation
 
 ```shell
 python -m pip install apprc
@@ -75,7 +76,7 @@ APIs are listed in
 
 <br>
 
-## Quickstart
+# Quickstart
 
 Declare typed config sections with `EnvConfig`, `@env_owner`, and
 `env_field(...)`:

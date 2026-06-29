@@ -189,12 +189,30 @@ Rules:
 4. Replace placeholders before committing.
 5. Update the Markdown caption when the figure changes meaning.
 
+Generated figures use the `graphigs` dev dependency and the Graphviz
+executables `dot` and `neato`:
+
+```bash
+dot -V
+neato -V
+.venv/bin/python docs/assets/render_all.py
+```
+
+Preview renders can target a temporary directory:
+
+```bash
+.venv/bin/python docs/assets/render_all.py --output-dir /tmp/apprc-docs-figures
+```
+
+The figure scripts keep tracked assets SVG-only. Temporary PNG files produced
+by Graphigs are removed by the AppRC export helper.
+
 Current assets:
 
-| Asset | Owner Markdown |
-|---|---|
-| `docs-reading-map.svg` | [docs/README.md](README.md) |
-| `apprc-runtime-layers.svg` | [Explanations.md](Explanations.md) |
+| Asset | Generator | Owner Markdown |
+|---|---|---|
+| `docs-reading-map.svg` | [docs_reading_map.py](assets/docs_reading_map.py) | [docs/README.md](README.md) |
+| `apprc-runtime-layers.svg` | [apprc_runtime_layers.py](assets/apprc_runtime_layers.py) | [Explanations.md](Explanations.md) |
 
 <br>
 
@@ -210,6 +228,9 @@ Current assets:
 For docs-only changes:
 
 ```bash
+dot -V
+neato -V
+.venv/bin/python docs/assets/render_all.py
 python src/apprc_dev/packaging/pypi_readme.py
 .venv/bin/pytest tests/test_pypi_readme.py
 git diff --check

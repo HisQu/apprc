@@ -33,6 +33,9 @@ This project follows Semantic Versioning.
 
 ### ➕ Added
 
+  - Added Graphigs-backed docs figure scripts for regenerating
+    `docs-reading-map.svg` and `apprc-runtime-layers.svg`.
+
 <br>
 
 ### 💔 Changed

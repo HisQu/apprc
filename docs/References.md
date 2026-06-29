@@ -378,6 +378,7 @@ Docs assets live in [docs/assets](assets).
 | `apprc-abstract-user-journey.svg` | [apprc_abstract_user_journey.py](assets/apprc_abstract_user_journey.py) | README graphical abstract for developer and operator journeys. |
 | `apprc-abstract-contract-workflows.svg` | [apprc_abstract_contract_workflows.py](assets/apprc_abstract_contract_workflows.py) | Shows one AppRC contract feeding runtime and generated workflows. |
 | `apprc-abstract-layer-cake.svg` | [apprc_abstract_layer_cake.py](assets/apprc_abstract_layer_cake.py) | Shows dotenv and environment precedence during bootstrap. |
+| `apprc-storage-config-locations.svg` | [apprc_storage_config_locations.py](assets/apprc_storage_config_locations.py) | Shows AppRC dotenv locations and which kit shapes use them. |
 
 Keep assets simple and readable in GitHub light and dark themes. Update the
 caption in the owning Markdown file when an asset changes meaning.

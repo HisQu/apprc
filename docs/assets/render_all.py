@@ -11,6 +11,7 @@ import apprc_abstract_contract_workflows
 import apprc_abstract_layer_cake
 import apprc_abstract_user_journey
 import apprc_runtime_layers
+import apprc_storage_config_locations
 import docs_reading_map
 
 ExportFigure = Callable[
@@ -23,6 +24,7 @@ FIGURE_EXPORTS: tuple[ExportFigure, ...] = (
     apprc_abstract_contract_workflows.export_figure,
     apprc_abstract_user_journey.export_figure,
     apprc_abstract_layer_cake.export_figure,
+    apprc_storage_config_locations.export_figure,
 )
 
 

@@ -216,10 +216,11 @@ The parent shell is never changed.
 ## Storage Selection
 <!-- ======================================================== -->
 
-Storage selection answers one question: which directory owns the active
-storage-local config and data for this invocation?
+Choosing storage answers one question: which directory owns the active
+storage-local config and data for this run? The reference docs and public hook
+names call this choice a `storage selector`.
 
-Selection source precedence is:
+AppRC checks possible storage choices in this order:
 
 1. root `--storage`
 2. storage env key, for example `MYAPP_STORAGE`
@@ -227,15 +228,22 @@ Selection source precedence is:
 4. app-wide `.env.apprc-app`, when active
 5. packaged `.env.shared`
 
-Selector values have two forms:
+Storage choices can be written two ways:
 
-| Selector | Meaning |
+| Value | Meaning |
 |---|---|
-| Path-like value | Use that path as the storage root. This works without a named-storage index. |
-| Bare name | Resolve through `<app>.apprc.toml` when the index exists. |
+| Path-like value | Use that path as the storage folder. This works without a saved address book. |
+| Bare name | Resolve through `<app>.apprc.toml` when the storage address book exists. |
 
-A bare unknown name fails when an index exists and contains named storages.
-Use `./name` when a relative path is intended.
+A bare unknown name fails when the storage address book exists and already
+contains named storages. Use `./name` when a relative path is intended.
+
+The location map below separates AppRC-owned dotenv files from runtime-only
+inputs such as `--env-file` and shell variables.
+
+| ![AppRC storage and config locations](assets/apprc-storage-config-locations.svg) |
+|:--:|
+| **Fig. 3 - AppRC Dotenv Locations:** `.env.shared` lives with the installed app, `.env.apprc-app` lives in the user config folder, `.env.apprc-storage` lives in each storage folder, and runtime-only inputs are read at startup. |
 
 <br>
 

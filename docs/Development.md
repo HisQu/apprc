@@ -231,6 +231,7 @@ Current assets:
 | `apprc-abstract-user-journey.svg` | [apprc_abstract_user_journey.py](assets/apprc_abstract_user_journey.py) | [README.md](../README.md) |
 | `apprc-abstract-contract-workflows.svg` | [apprc_abstract_contract_workflows.py](assets/apprc_abstract_contract_workflows.py) | [README.md](../README.md#how-apprc-works) |
 | `apprc-abstract-layer-cake.svg` | [apprc_abstract_layer_cake.py](assets/apprc_abstract_layer_cake.py) | [Explanations.md](Explanations.md#runtime-bootstrap) |
+| `apprc-storage-config-locations.svg` | [apprc_storage_config_locations.py](assets/apprc_storage_config_locations.py) | [Explanations.md](Explanations.md#storage-selection) - dotenv locations and kit-shape use |
 
 <br>
 

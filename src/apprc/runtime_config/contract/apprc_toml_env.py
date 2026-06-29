@@ -21,12 +21,15 @@ def missing_apprc_toml_env_message(
     apprc_toml_env_key: str,
     apprc_toml_filename: str,
     command_name: str,
+    config_group_name: str = "config",
 ) -> str:
     """Return guidance for named-storage commands without an index env var.
 
     :param apprc_toml_env_key: App-specific env var that relocates the index.
     :param apprc_toml_filename: Filename derived from the index contract.
     :param command_name: Executable name shown in setup guidance.
+    :param config_group_name: Config command group name shown in setup
+        guidance.
     :return: Human-facing setup instructions.
     """
     return (
@@ -34,7 +37,8 @@ def missing_apprc_toml_env_message(
         "named-storage index from the platform config home default:\n"
         f"  <config-home>/{apprc_toml_filename}\n"
         "Create named storage entries with:\n"
-        f"  {command_name} config storage add NAME /absolute/path/to/storage"
+        f"  {command_name} {config_group_name} storage add NAME "
+        "/absolute/path/to/storage"
     )
 
 
@@ -42,12 +46,15 @@ def missing_apprc_toml_file_message(
     *,
     apprc_toml_env_key: str,
     command_name: str,
+    config_group_name: str = "config",
     path: str | Path,
 ) -> str:
     """Return guidance when a configured named-storage index is missing.
 
     :param apprc_toml_env_key: App-specific env var that relocates the index.
     :param command_name: Executable name shown in setup guidance.
+    :param config_group_name: Config command group name shown in setup
+        guidance.
     :param path: Missing named-storage index path.
     :return: Human-facing recovery instructions.
     """
@@ -56,5 +63,6 @@ def missing_apprc_toml_file_message(
         f"{apprc_toml_env_key} points to a missing named-storage index: "
         f"{resolved_path}. Remove {apprc_toml_env_key} to use the default "
         "index path, or create an entry with "
-        f"{command_name} config storage add NAME /absolute/path/to/storage."
+        f"{command_name} {config_group_name} storage add NAME "
+        "/absolute/path/to/storage."
     )

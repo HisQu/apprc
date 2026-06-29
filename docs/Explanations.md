@@ -320,7 +320,8 @@ group is generated from the app spec, so unavailable capabilities are not
 exposed. Apps with custom root callbacks can pair it with
 `CliBootstrapOptions` and `prepare_typer_context(...)`. Apps that only need
 custom state after bootstrap can keep the mount helper and pass
-`state_factory=...`.
+`state_type=...` plus `state_factory=...`. Apps that need a non-default generated
+group name can pass `config_group_name=...`.
 
 The CLI has three jobs:
 

@@ -70,11 +70,14 @@ def load_existing_storage_registry(
     spec: AppConfigSpec,
     *,
     proc_env: Mapping[str, str] | None = None,
+    config_group_name: str = "config",
 ) -> StorageRegistry:
     """Read a named-storage index that must already exist.
 
     :param spec: Application-specific config contract.
     :param proc_env: Optional environment mapping for bootstrap-time selection.
+    :param config_group_name: Config command group name used in generated
+        guidance.
     :return: Parsed storage table.
     :raises ApprcTomlEnvError: If the index file is missing.
     :raises ValueError: If the index cannot be parsed.
@@ -85,7 +88,8 @@ def load_existing_storage_registry(
         raise ApprcTomlEnvError(
             f"{spec.index_env_key} points to a missing named-storage index: "
             f"{index_path}. Create one with "
-            f"`{spec.config_command_name()} config storage add NAME PATH` "
+            f"`{spec.config_command_name()} {config_group_name} "
+            "storage add NAME PATH` "
             "or unset the variable to use path selectors only."
         )
     try:

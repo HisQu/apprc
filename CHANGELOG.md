@@ -35,7 +35,7 @@ This project follows Semantic Versioning.
 
   - Added layered Typer integration helpers: `mount_config_cli(...)`,
     `CliBootstrapOptions`, AppRC Typer context metadata, reusable root option
-    aliases, `CliStateFactory`, explicit mount argument providers, and
+    aliases, `CliStateFactory`, `CliArgvProvider`, and
     configurable config bootstrap skip policies.
 
   - Added Graphigs-backed docs figure scripts for regenerating
@@ -51,6 +51,11 @@ This project follows Semantic Versioning.
   - Improved Graphigs-backed graphical abstract layouts with clearer groups,
     a wide README hero format, looser labels, and documented figure color
     roles.
+
+  - Tightened unreleased Typer convenience helpers before release:
+    custom `mount_config_cli(...)` state now requires `state_factory=...`,
+    generated config group renaming uses `config_group_name=...`, and explicit
+    mount hook parameters replace loose keyword forwarding.
 
 <br>
 

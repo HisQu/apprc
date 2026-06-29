@@ -214,9 +214,11 @@ def run() -> None:
 `mount_config_cli(...)` registers the standard AppRC root options:
 `--env-file`, `--env-file-overrides-os-environ`, `--skip-dotenv-layers`,
 `--storage`, and `--log-level`. It also lets setup and inspection commands run
-before required runtime settings exist. Pass `state_factory=...` when the app
-needs custom root state after bootstrap, and `args_provider=...` when a wrapper
-or test harness needs to provide command tokens explicitly.
+before required runtime settings exist. Pass `state_type=...` plus
+`state_factory=...` when the app needs custom root state after bootstrap, and
+`args_provider=...` when a wrapper or test harness needs to provide
+`CliArgvProvider` command tokens explicitly. Pass `config_group_name=...` only
+when the generated command group should not be named `config`.
 
 Apps that already have a root callback can use `CliBootstrapOptions`,
 `prepare_typer_context(...)`, and `APP_CONFIG.typer_app(...)` directly instead

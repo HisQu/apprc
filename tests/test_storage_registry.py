@@ -4,6 +4,11 @@ from pathlib import Path
 
 import pytest
 
+from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
+from apprc.runtime_config.contract.apprc_toml_env import (
+    missing_apprc_toml_env_message,
+)
+from apprc.runtime_config.storage.loading import load_existing_storage_registry
 from apprc.runtime_config.storage.registry import (
     app_data_dir,
     load_storage_registry_or_empty,
@@ -21,6 +26,7 @@ from apprc.runtime_config.storage.paths import (
     normalize_storage_root_path,
     windows_drive_path_to_posix,
 )
+from tests.support_config import build_apprc_example_app_kit
 
 
 def test_app_data_dir_uses_xdg_data_home(
@@ -41,6 +47,35 @@ def test_suggested_storage_name_uses_valid_host_specific_selector() -> None:
     assert suggested_storage_name("my-app.rc") == "my-app_rc_stor-1"
     assert suggested_storage_name("") == "apprc_stor-1"
     assert suggested_storage_name("???") == "apprc_stor-1"
+
+
+def test_missing_existing_storage_registry_uses_custom_config_group_name(
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    missing_index = tmp_path / "missing.apprc.toml"
+
+    with pytest.raises(ApprcTomlEnvError) as exc_info:
+        load_existing_storage_registry(
+            kit.spec,
+            proc_env={kit.spec.index_env_key: str(missing_index)},
+            config_group_name="settings",
+        )
+
+    assert " settings storage add NAME PATH`" in str(exc_info.value)
+    assert " config storage add NAME PATH`" not in str(exc_info.value)
+
+
+def test_apprc_toml_env_guidance_uses_custom_config_group_name() -> None:
+    message = missing_apprc_toml_env_message(
+        apprc_toml_env_key="DEMO_APPRC_TOML",
+        apprc_toml_filename="demo.apprc.toml",
+        command_name="demo",
+        config_group_name="settings",
+    )
+
+    assert "demo settings storage add NAME /absolute/path/to/storage" in message
+    assert "demo config storage add NAME" not in message
 
 
 def test_register_storage_writes_sorted_toml_and_storage_env(

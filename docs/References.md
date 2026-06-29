@@ -66,6 +66,7 @@ CLI facade imports from `apprc.cli`:
 | `CliBootstrapOptions` | Parsed standard AppRC root option values. |
 | `CliBootstrapContext` | Per-invocation AppRC bootstrap metadata stored on Typer context metadata. |
 | `CliStateFactory` | Callable type for custom root state created after runtime bootstrap. |
+| `CliArgvProvider` | Callable type for explicit command tokens used by mount skip-policy tests and forwarding CLIs. |
 | `DefaultConfigCliState` | Minimal config state for apps that do not need custom root state. |
 | `prepare_typer_context` | Store AppRC bootstrap metadata from a custom Typer root callback. |
 | `apprc_context_from` | Read AppRC bootstrap metadata from a Typer command. |
@@ -104,7 +105,7 @@ Constructor arguments:
 | `config_package` | Package containing `.env.shared`. |
 | `envs` | Tuple of `EnvConfig` classes decorated with `@env_owner(...)`. |
 | `storage_env_key` | Optional explicit active-storage selector env key. Storage-capable constructors only. |
-| `command_name` | Optional command name shown in generated CLI copy. |
+| `command_name` | Optional executable/app command name shown in generated CLI copy. |
 | `index_filename` | Optional named-storage index basename. |
 | `shared_env_filename` | Packaged shared dotenv filename. Default: `.env.shared`. |
 | `app_wide_env_filename` | App-wide dotenv filename. Default: `.env.apprc-app`. |

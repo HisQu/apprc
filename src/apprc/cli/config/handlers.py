@@ -112,7 +112,7 @@ class ConfigCommandBase:
         editor_app_cls: type[ConfigEditorApp] | None,
         missing_setup: str,
         runtime_error_param_hint: str,
-        command_name: str,
+        config_group_name: str,
     ) -> None:
         """Store config command dependencies and extension hooks.
 
@@ -130,7 +130,8 @@ class ConfigCommandBase:
         :param missing_setup: Message shown when runtime storage is absent.
         :param runtime_error_param_hint: Parameter hint for runtime-payload
             validation errors.
-        :param command_name: Host command group name used in generated guidance.
+        :param config_group_name: Config command group name used in generated
+            guidance.
         """
         self.kit = kit
         self.state_type = state_type
@@ -144,7 +145,7 @@ class ConfigCommandBase:
         self.editor_app_cls = editor_app_cls
         self.missing_setup = missing_setup
         self.runtime_error_param_hint = runtime_error_param_hint
-        self.command_name = command_name
+        self.config_group_name = config_group_name
 
     def state(self, ctx: typer.Context) -> Any:
         """Return the application root state stored by the parent CLI."""
@@ -191,7 +192,7 @@ class ConfigCommandBase:
         """Return one host command line for generated CLI guidance."""
         return (
             f"{self.kit.spec.config_command_name()} "
-            f"{self.command_name} {action}"
+            f"{self.config_group_name} {action}"
         )
 
     def root_context_param(
@@ -505,6 +506,7 @@ class ConfigCommandBase:
                 storage_registry=storage_registry,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
+                config_group_name=self.config_group_name,
             )
         editor_app.run()
 
@@ -640,7 +642,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             env_file_overrides_os_environ=(
                 selector_context.env_file_overrides_os_environ
             ),
-            command_name=self.command_name,
+            config_group_name=self.config_group_name,
         )
         if json_output:
             dump_json(payload)
@@ -690,7 +692,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             env_file_overrides_os_environ=(
                 selector_context.env_file_overrides_os_environ
             ),
-            command_name=self.command_name,
+            config_group_name=self.config_group_name,
         )
         if json_output:
             dump_json(payload)
@@ -763,7 +765,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
                     _inactive_scope_message(
                         self.kit,
                         resolved_requested_scope,
-                        command_name=self.command_name,
+                        config_group_name=self.config_group_name,
                     ),
                     param_hint="--scope",
                 )
@@ -934,7 +936,7 @@ class ConfigCommandHandlers(
             self.kit,
             assume_yes=assume_yes,
             storage_root=storage_root,
-            command_name=self.command_name,
+            config_group_name=self.config_group_name,
         )
 
 
@@ -942,19 +944,21 @@ def _inactive_scope_message(
     kit: AppConfigKit,
     scope: ConfigSetScope,
     *,
-    command_name: str = "config",
+    config_group_name: str = "config",
 ) -> str:
     """Return a readable error for an unavailable write scope.
 
     :param kit: Application config facade.
     :param scope: Requested write scope.
-    :param command_name: Host command group name used in generated guidance.
+    :param config_group_name: Config command group name used in generated
+        guidance.
     :return: Human-facing CLI error.
     """
     if scope == "app":
         return (
             "The app-wide layer is not active. Run "
-            f"`{kit.spec.config_command_name()} {command_name} app init` first."
+            f"`{kit.spec.config_command_name()} {config_group_name} app init` "
+            "first."
         )
     return (
         "The storage layer is not active. Select a storage root with --storage "

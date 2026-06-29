@@ -36,7 +36,7 @@ def setup_finish_text(
     storage_root: Path | None = None,
     storage_env: Path | None = None,
     app_wide_env: Path | None = None,
-    command_name: str = "config",
+    config_group_name: str = "config",
 ) -> str:
     """Return setup completion copy for initialized capability files.
 
@@ -44,7 +44,8 @@ def setup_finish_text(
     :param storage_root: Storage root selected by setup, if any.
     :param storage_env: Storage dotenv file initialized by setup, if any.
     :param app_wide_env: App-wide dotenv file initialized by setup, if any.
-    :param command_name: Host command group name used in generated guidance.
+    :param config_group_name: Config command group name used in generated
+        guidance.
     :return: Human-facing setup completion text.
     """
     lines = [f"{kit.spec.display_name} AppRC setup complete.", ""]
@@ -58,7 +59,10 @@ def setup_finish_text(
         (
             "",
             "Then verify:",
-            *verification_commands(kit, command_name=command_name),
+            *verification_commands(
+                kit,
+                config_group_name=config_group_name,
+            ),
         )
     )
     return "\n".join(lines)
@@ -97,17 +101,18 @@ def dotenv_assignment_commands(
 def verification_commands(
     kit: AppConfigKit,
     *,
-    command_name: str = "config",
+    config_group_name: str = "config",
 ) -> list[str]:
     """Return commands that inspect the resulting setup.
 
     :param kit: Application config facade.
-    :param command_name: Host command group name used in generated guidance.
+    :param config_group_name: Config command group name used in generated
+        guidance.
     :return: Command lines.
     """
     return [
-        f"  {kit.spec.config_command_name()} {command_name} paths",
-        f"  {kit.spec.config_command_name()} {command_name} doctor",
+        f"  {kit.spec.config_command_name()} {config_group_name} paths",
+        f"  {kit.spec.config_command_name()} {config_group_name} doctor",
     ]
 
 

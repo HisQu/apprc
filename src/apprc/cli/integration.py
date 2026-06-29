@@ -5,7 +5,8 @@ from __future__ import annotations
 # == Standard Library ========================
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 # == 3rd Party ===============================
 import typer
@@ -30,41 +31,144 @@ from apprc.cli.options import (
 from apprc.runtime_config.bootstrap.result import BootstrapLogger
 from apprc.runtime_config.kit import AppConfigKit
 
-type CliArgsProvider = Callable[[], Sequence[str]]
-type CliStateFactory = Callable[[CliBootstrapContext], Any]
+if TYPE_CHECKING:
+    from apprc.cli.config import ConfigSelectorContext
+    from apprc.runtime_config.tui import ConfigEditorApp
+
+StateT = TypeVar("StateT")
+
+type CliArgvProvider = Callable[[], Sequence[str]]
+type CliStateFactory[StateT] = Callable[[CliBootstrapContext], StateT]
+
+
+@overload
+def mount_config_cli(
+    app: typer.Typer,
+    kit: AppConfigKit,
+    *,
+    config_group_name: str = "config",
+    state_type: type[DefaultConfigCliState] = DefaultConfigCliState,
+    state_factory: CliStateFactory[DefaultConfigCliState] | None = None,
+    args_provider: CliArgvProvider | None = None,
+    runtime_payload: (
+        Callable[[DefaultConfigCliState], Mapping[str, Any]] | None
+    ) = None,
+    active_storage_root: (
+        Callable[[DefaultConfigCliState], Path | None] | None
+    ) = None,
+    active_storage_root_with_context: (
+        Callable[
+            [DefaultConfigCliState, "ConfigSelectorContext"],
+            Path | None,
+        ]
+        | None
+    ) = None,
+    initial_storage: Callable[[DefaultConfigCliState], str | None]
+    | None = None,
+    initial_storage_with_context: (
+        Callable[[DefaultConfigCliState, "ConfigSelectorContext"], str | None]
+        | None
+    ) = None,
+    editor_app_cls: type["ConfigEditorApp"] | None = None,
+    help: str | None = None,
+    setup_message: str | None = None,
+    runtime_error_param_hint: str = "CONFIG",
+    setup_logging: Callable[..., Any] | None = None,
+    logger: BootstrapLogger | None = None,
+) -> typer.Typer: ...
+
+
+@overload
+def mount_config_cli(
+    app: typer.Typer,
+    kit: AppConfigKit,
+    *,
+    config_group_name: str = "config",
+    state_type: type[StateT],
+    state_factory: CliStateFactory[StateT],
+    args_provider: CliArgvProvider | None = None,
+    runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
+    active_storage_root: Callable[[StateT], Path | None] | None = None,
+    active_storage_root_with_context: (
+        Callable[[StateT, "ConfigSelectorContext"], Path | None] | None
+    ) = None,
+    initial_storage: Callable[[StateT], str | None] | None = None,
+    initial_storage_with_context: (
+        Callable[[StateT, "ConfigSelectorContext"], str | None] | None
+    ) = None,
+    editor_app_cls: type["ConfigEditorApp"] | None = None,
+    help: str | None = None,
+    setup_message: str | None = None,
+    runtime_error_param_hint: str = "CONFIG",
+    setup_logging: Callable[..., Any] | None = None,
+    logger: BootstrapLogger | None = None,
+) -> typer.Typer: ...
 
 
 def mount_config_cli(
     app: typer.Typer,
     kit: AppConfigKit,
     *,
-    command_name: str = "config",
+    config_group_name: str = "config",
     state_type: type[Any] = DefaultConfigCliState,
-    state_factory: CliStateFactory | None = None,
-    args_provider: CliArgsProvider | None = None,
+    state_factory: CliStateFactory[Any] | None = None,
+    args_provider: CliArgvProvider | None = None,
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None,
+    active_storage_root: Callable[[Any], Path | None] | None = None,
+    active_storage_root_with_context: (
+        Callable[[Any, "ConfigSelectorContext"], Path | None] | None
+    ) = None,
+    initial_storage: Callable[[Any], str | None] | None = None,
+    initial_storage_with_context: (
+        Callable[[Any, "ConfigSelectorContext"], str | None] | None
+    ) = None,
+    editor_app_cls: type["ConfigEditorApp"] | None = None,
+    help: str | None = None,
+    setup_message: str | None = None,
+    runtime_error_param_hint: str = "CONFIG",
     setup_logging: Callable[..., Any] | None = None,
     logger: BootstrapLogger | None = None,
-    config_kwargs: Mapping[str, Any] | None = None,
 ) -> typer.Typer:
     """Mount AppRC root bootstrap options and the generated config group.
 
     :param app: Host Typer application.
     :param kit: Application config facade.
-    :param command_name: Name used for the mounted config command group.
+    :param config_group_name: Name used for the mounted config command group.
     :param state_type: Root state type created by the standard callback.
     :param state_factory: Optional app-owned state factory used after runtime
         bootstrap has run.
     :param args_provider: Optional token provider for testing or forwarding.
         Returned tokens exclude the executable/program name.
     :param runtime_payload: Optional serializer for ``config show``.
+    :param active_storage_root: Optional storage-root resolver for app state.
+    :param active_storage_root_with_context: Optional storage-root resolver that
+        can inspect explicit env-file selector context.
+    :param initial_storage: Optional editor initial-selection resolver.
+    :param initial_storage_with_context: Optional editor initial-selection
+        resolver that can inspect explicit env-file selector context.
+    :param editor_app_cls: Optional Textual subclass.
+    :param help: Optional generated config group help text.
+    :param setup_message: Optional setup text for missing storage.
+    :param runtime_error_param_hint: Parameter hint for runtime-payload errors.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status.
-    :param config_kwargs: Additional keyword arguments forwarded to
-        :meth:`AppConfigKit.typer_app`.
     :return: Mounted generated config Typer application.
     """
-    policy = ConfigBootstrapPolicy(command_name=command_name)
+    if app.registered_callback is not None:
+        raise RuntimeError(
+            "mount_config_cli() cannot register AppRC root options because "
+            "this Typer app already has a callback. Use CliBootstrapOptions, "
+            "prepare_typer_context(), and kit.typer_app(...) in a custom "
+            "callback instead."
+        )
+    if state_factory is None and state_type is not DefaultConfigCliState:
+        raise TypeError(
+            "mount_config_cli() requires state_factory when state_type is "
+            "custom. Pass state_factory=... or omit state_type to use "
+            "DefaultConfigCliState."
+        )
+
+    policy = ConfigBootstrapPolicy(config_group_name=config_group_name)
     provide_args = args_provider or _default_args_provider
 
     @app.callback()
@@ -103,7 +207,10 @@ def mount_config_cli(
         state = (
             state_factory(context)
             if state_factory is not None
-            else _legacy_state_from_context(state_type, context)
+            else DefaultConfigCliState(
+                env_bootstrap=context.env_bootstrap,
+                storage=context.options.storage,
+            )
         )
         if not isinstance(state, state_type):
             raise RuntimeError(
@@ -112,14 +219,20 @@ def mount_config_cli(
             )
         ctx.obj = state
 
-    kwargs = dict(config_kwargs or {})
-    kwargs["command_name"] = command_name
     config_app = kit.typer_app(
         state_type=state_type,
         runtime_payload=runtime_payload,
-        **kwargs,
+        active_storage_root=active_storage_root,
+        active_storage_root_with_context=active_storage_root_with_context,
+        initial_storage=initial_storage,
+        initial_storage_with_context=initial_storage_with_context,
+        editor_app_cls=editor_app_cls,
+        help=help,
+        setup_message=setup_message,
+        runtime_error_param_hint=runtime_error_param_hint,
+        config_group_name=config_group_name,
     )
-    app.add_typer(config_app, name=command_name)
+    app.add_typer(config_app, name=config_group_name)
     return config_app
 
 
@@ -129,19 +242,3 @@ def _default_args_provider() -> Sequence[str]:
     :return: Command-line tokens without the executable name.
     """
     return sys.argv[1:]
-
-
-def _legacy_state_from_context(
-    state_type: type[Any],
-    context: CliBootstrapContext,
-) -> Any:
-    """Create the backward-compatible default state object.
-
-    :param state_type: Application state type with a zero-argument constructor.
-    :param context: AppRC bootstrap context for this invocation.
-    :return: Mutable state object populated with AppRC bootstrap fields.
-    """
-    state = state_type()
-    state.env_bootstrap = context.env_bootstrap
-    state.storage = context.options.storage
-    return state

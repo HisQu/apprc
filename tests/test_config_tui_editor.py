@@ -37,6 +37,19 @@ def test_editor_uses_new_storage_env_and_index_labels() -> None:
     assert editor.init_command.endswith("config storage add NAME PATH")
 
 
+def test_editor_init_command_uses_custom_config_group_name() -> None:
+    kit = build_apprc_example_app_kit()
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=None,
+        active_storage_root=Path("/tmp/storage"),
+        config_group_name="settings",
+    )
+
+    assert editor.init_command.endswith("settings storage add NAME PATH")
+    assert " config storage add " not in editor.init_command
+
+
 class RestoreFakeEditor:
     """Minimal editor facade for archive-import workflow tests."""
 

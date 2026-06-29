@@ -158,7 +158,10 @@ def run() -> None:
 `mount_config_cli(...)` adds the standard AppRC root options, performs runtime
 bootstrap for commands that need resolved config, and mounts the generated
 `config` command group. Apps with custom runtime state can pass
-`state_factory=...`; tests or lazy-forwarding CLIs can pass `args_provider=...`.
+`state_type=...` and `state_factory=...`; tests or lazy-forwarding CLIs can pass
+`args_provider=...` with tokens shaped like `CliArgvProvider`. Use
+`config_group_name=...` only when the generated group should not be named
+`config`.
 Apps with existing root callbacks can use the lower-level `CliBootstrapOptions`,
 `prepare_typer_context(...)`, and `APP_CONFIG.typer_app(...)` helpers instead.
 

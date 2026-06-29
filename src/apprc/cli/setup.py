@@ -28,14 +28,15 @@ def run_config_setup(
     *,
     assume_yes: bool = False,
     storage_root: str | Path | None = None,
-    command_name: str = "config",
+    config_group_name: str = "config",
 ) -> None:
     """Configure files for the declared AppRC capability layers.
 
     :param kit: Application config facade mounted by the host CLI.
     :param assume_yes: Whether to run without prompts.
     :param storage_root: Optional active storage root.
-    :param command_name: Host command group name used in generated guidance.
+    :param config_group_name: Config command group name used in generated
+        guidance.
     :raises typer.Exit: If the user cancels.
     :raises typer.BadParameter: If setup inputs are invalid.
     """
@@ -56,10 +57,10 @@ def run_config_setup(
             _print_app_wide_setup(
                 kit,
                 app_wide_path=result.app_wide_env,
-                command_name=command_name,
+                config_group_name=config_group_name,
             )
             return
-        _print_env_only_setup(kit, command_name=command_name)
+        _print_env_only_setup(kit, config_group_name=config_group_name)
         return
 
     root = _select_storage_root(
@@ -79,7 +80,7 @@ def run_config_setup(
         storage_root=result.active_storage_root,
         storage_env=result.storage_env,
         app_wide_path=result.app_wide_env,
-        command_name=command_name,
+        config_group_name=config_group_name,
     )
 
 
@@ -129,7 +130,7 @@ def _select_storage_root(
 def _print_env_only_setup(
     kit: AppConfigKit,
     *,
-    command_name: str,
+    config_group_name: str,
 ) -> None:
     """Print setup-free guidance for env-only integrations."""
     text = "\n".join(
@@ -140,7 +141,7 @@ def _print_env_only_setup(
             "",
             "Set environment variables in your shell or pass explicit env files.",
             "Inspect the current paths:",
-            f"  {kit.spec.config_command_name()} {command_name} paths",
+            f"  {kit.spec.config_command_name()} {config_group_name} paths",
         )
     )
     Console(soft_wrap=True).print(text)
@@ -150,7 +151,7 @@ def _print_app_wide_setup(
     kit: AppConfigKit,
     *,
     app_wide_path: Path | None,
-    command_name: str,
+    config_group_name: str,
 ) -> None:
     """Print setup completion for app-wide config."""
     if app_wide_path is None:
@@ -162,7 +163,7 @@ def _print_app_wide_setup(
             f"app_wide_env: {app_wide_path}",
             "",
             "Then verify:",
-            f"  {kit.spec.config_command_name()} {command_name} doctor",
+            f"  {kit.spec.config_command_name()} {config_group_name} doctor",
         )
     )
     Console(soft_wrap=True).print(
@@ -176,7 +177,7 @@ def _print_storage_setup(
     storage_root: Path | None,
     storage_env: Path | None,
     app_wide_path: Path | None,
-    command_name: str,
+    config_group_name: str,
 ) -> None:
     """Print setup completion for storage-capable integrations."""
     if storage_root is None or storage_env is None:
@@ -197,7 +198,7 @@ def _print_storage_setup(
             f'  export {storage_key}="{storage_root}"',
             "",
             "Then verify:",
-            f"  {kit.spec.config_command_name()} {command_name} doctor",
+            f"  {kit.spec.config_command_name()} {config_group_name} doctor",
         )
     )
     paths = {str(storage_root): PATH_STYLE, str(storage_env): PATH_STYLE}

@@ -347,7 +347,7 @@ class AppConfigKit:
         help: str | None = None,
         setup_message: str | None = None,
         runtime_error_param_hint: str = "CONFIG",
-        command_name: str = "config",
+        config_group_name: str = "config",
     ) -> typer.Typer:
         """Build the generic Typer ``config`` command group.
 
@@ -366,7 +366,8 @@ class AppConfigKit:
         :param setup_message: Optional setup text for missing storage.
         :param runtime_error_param_hint: Parameter hint for runtime-payload
             validation errors.
-        :param command_name: Host command group name used in generated guidance.
+        :param config_group_name: Config command group name used in generated
+            guidance.
         :return: Configured Typer app.
         """
         from apprc.cli.config import (
@@ -388,5 +389,5 @@ class AppConfigKit:
             help=help,
             setup_message=setup_message,
             runtime_error_param_hint=runtime_error_param_hint,
-            command_name=command_name,
+            config_group_name=config_group_name,
         )

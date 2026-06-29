@@ -40,7 +40,7 @@ def build_config_typer_app(
     help: str | None = None,
     setup_message: str | None = None,
     runtime_error_param_hint: str = "CONFIG",
-    command_name: str = "config",
+    config_group_name: str = "config",
 ) -> typer.Typer:
     """Build the reusable ``config`` command group.
 
@@ -59,7 +59,8 @@ def build_config_typer_app(
     :param setup_message: Optional setup text for missing storage.
     :param runtime_error_param_hint: Parameter hint for runtime-payload
         validation errors.
-    :param command_name: Host command group name used in generated guidance.
+    :param config_group_name: Config command group name used in generated
+        guidance.
     :return: Configured Typer app.
     """
     resolved_state_type = state_type or DefaultConfigCliState
@@ -102,9 +103,9 @@ def build_config_typer_app(
         ),
         editor_app_cls=editor_app_cls,
         missing_setup=setup_message
-        or config_setup_message(kit, command_name=command_name),
+        or config_setup_message(kit, config_group_name=config_group_name),
         runtime_error_param_hint=runtime_error_param_hint,
-        command_name=command_name,
+        config_group_name=config_group_name,
     )
 
     @app.callback(invoke_without_command=True)

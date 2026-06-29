@@ -120,8 +120,19 @@ class ConfigEditorApp(App[None]):
         storage_registry: StorageRegistry | None,
         initial_storage: str | None = None,
         active_storage_root: Path | None = None,
+        config_group_name: str = "config",
     ) -> None:
-        """Keep storage table and field metadata while editing dotenv state."""
+        """Keep storage table and field metadata while editing dotenv state.
+
+        :param kit: Application config facade.
+        :param storage_registry: Optional named-storage index shown by the
+            editor.
+        :param initial_storage: Optional storage entry selected on startup.
+        :param active_storage_root: Optional path-backed storage selected by
+            the current CLI invocation.
+        :param config_group_name: Config command group name used in generated
+            guidance.
+        """
         super().__init__()
         self.kit = kit
         self.storage_registry = storage_registry
@@ -130,7 +141,8 @@ class ConfigEditorApp(App[None]):
         self.storage_enabled = kit.spec.storage_required()
         self.named_storage_enabled = kit.spec.named_storage_allowed()
         self.init_command = (
-            f"{kit.spec.config_command_name()} config storage add NAME PATH"
+            f"{kit.spec.config_command_name()} "
+            f"{config_group_name} storage add NAME PATH"
         )
         self.index_label = kit.spec.index_filename
         self.hidden_env_keys = (

@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 from apprc import AppConfigKit
 from apprc.cli import (
     DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS,
+    CliArgvProvider,
     CliBootstrapContext,
     CliBootstrapOptions,
     ConfigBootstrapPolicy,
@@ -25,6 +26,7 @@ from apprc.cli import (
     StorageOption,
     apprc_context_from,
     apprc_options_to_args,
+    build_config_doctor_payload,
     mount_config_cli,
     prepare_typer_context,
 )
@@ -342,7 +344,7 @@ def test_mount_config_cli_bootstrapless_set_uses_context_not_app_hooks(
         state_type=CustomState,
         state_factory=state_factory,
         args_provider=lambda: args,
-        config_kwargs={"active_storage_root": active_storage_root},
+        active_storage_root=active_storage_root,
     )
 
     result = CliRunner().invoke(app, args)
@@ -404,39 +406,16 @@ def test_mount_config_cli_runtime_payload_receives_factory_state(
     }
 
 
-def test_mount_config_cli_legacy_zero_arg_state_type_still_works() -> None:
+def test_mount_config_cli_requires_factory_for_custom_state_type() -> None:
     kit = _build_storage_free_kit_with_shared_env()
     app = typer.Typer()
 
     @dataclass(slots=True)
-    class LegacyState(DefaultConfigCliState):
-        payload_marker: str = "legacy-state"
+    class CustomState(DefaultConfigCliState):
+        payload_marker: str = "custom-state"
 
-    mount_config_cli(app, kit, state_type=LegacyState)
-
-    @app.command()
-    def run(ctx: typer.Context) -> None:
-        """Print state created through legacy zero-arg construction."""
-        state = ctx.obj
-        if not isinstance(state, LegacyState):
-            raise RuntimeError("legacy state missing")
-        typer.echo(
-            json.dumps(
-                {
-                    "marker": state.payload_marker,
-                    "bootstrapped": state.env_bootstrap is not None,
-                },
-                sort_keys=True,
-            )
-        )
-
-    result = CliRunner().invoke(app, ["run"])
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output) == {
-        "bootstrapped": True,
-        "marker": "legacy-state",
-    }
+    with pytest.raises(TypeError, match="state_factory"):
+        mount_config_cli(app, kit, state_type=CustomState)
 
 
 def test_mount_config_cli_args_provider_controls_skip_policy(
@@ -467,7 +446,7 @@ def test_mount_config_cli_args_provider_controls_skip_policy(
     assert factory_calls == []
 
 
-def test_mount_config_cli_custom_command_name_appears_in_guidance(
+def test_mount_config_cli_custom_config_group_name_appears_in_guidance(
     tmp_path: Path,
 ) -> None:
     from apprc_example_app import APPRC_EXAMPLE_APP_KIT
@@ -479,7 +458,7 @@ def test_mount_config_cli_custom_command_name_appears_in_guidance(
     mount_config_cli(
         app,
         kit,
-        command_name="settings",
+        config_group_name="settings",
         args_provider=lambda: current_args,
     )
 
@@ -509,6 +488,51 @@ def test_mount_config_cli_custom_command_name_appears_in_guidance(
     assert "apprc settings doctor" in setup.output
     assert inactive_scope.exit_code != 0
     assert "settings app init" in " ".join(inactive_scope.output.split())
+
+
+def test_config_doctor_payload_custom_config_group_name_next_steps(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+
+    kit = APPRC_EXAMPLE_APP_KIT
+    monkeypatch.delenv(kit.spec.require_storage_env_key(), raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+
+    payload = build_config_doctor_payload(
+        kit,
+        storage=None,
+        config_group_name="settings",
+    )
+
+    assert any(
+        step.startswith("apprc settings setup")
+        for step in payload["next_steps"]
+    )
+    assert all("apprc config" not in step for step in payload["next_steps"])
+
+
+def test_mount_config_cli_rejects_existing_root_callback() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+    app = typer.Typer()
+
+    @app.callback()
+    def root_cmd() -> None:
+        """Existing callback owned by the host app."""
+
+    with pytest.raises(RuntimeError, match="already has a callback"):
+        mount_config_cli(app, kit)
+
+
+def test_cli_argv_provider_alias_accepts_token_provider() -> None:
+    def provide_args() -> list[str]:
+        """Return command tokens without the program name."""
+        return ["config", "paths"]
+
+    provider: CliArgvProvider = provide_args
+
+    assert provider() == ["config", "paths"]
 
 
 def test_generated_config_set_uses_context_without_ctx_obj(

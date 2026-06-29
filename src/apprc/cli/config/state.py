@@ -72,7 +72,7 @@ DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS = frozenset(
 class ConfigBootstrapPolicy:
     """Runtime-bootstrap skip policy for a generated config command group.
 
-    :param command_name: Top-level config command name to inspect.
+    :param config_group_name: Top-level config command group to inspect.
     :param bootstrapless_actions: Config actions that can run without full
         runtime state.
     :param root_flag_options: Root options that consume no values.
@@ -83,7 +83,7 @@ class ConfigBootstrapPolicy:
         parse error without app config failures.
     """
 
-    command_name: str = "config"
+    config_group_name: str = "config"
     bootstrapless_actions: Collection[str] = (
         DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
     )
@@ -102,7 +102,7 @@ class ConfigBootstrapPolicy:
         :return: Whether runtime bootstrap should be avoided.
         """
         return config_request_skips_runtime_bootstrap(
-            self.command_name,
+            self.config_group_name,
             tokens=tokens,
             root_flag_options=self.root_flag_options,
             root_value_options=self.root_value_options,

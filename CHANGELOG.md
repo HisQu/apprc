@@ -10,10 +10,11 @@ This project follows Semantic Versioning.
 
 1. [Changelog](#changelog)
 2. [\[Unreleased\]](#unreleased)
-3. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-4. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-5. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-6. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+4. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+5. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+6. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+7. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -24,6 +25,44 @@ This project follows Semantic Versioning.
 <!-- ======================================================== -->
 
 # [Unreleased]
+
+<br>
+
+### 💥 Breaking Change Summary
+
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.16.3 - 2026-06-29
 
 <br>
 
@@ -52,7 +91,7 @@ This project follows Semantic Versioning.
     a wide README hero format, looser labels, and documented figure color
     roles.
 
-  - Tightened unreleased Typer convenience helpers before release:
+  - Tightened the new Typer convenience helper API before its first release:
     custom `mount_config_cli(...)` state now requires `state_factory=...`,
     generated config group renaming uses `config_group_name=...`, and explicit
     mount hook parameters replace loose keyword forwarding.

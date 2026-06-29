@@ -62,13 +62,18 @@ CLI facade imports from `apprc.cli`:
 
 | Import | Purpose |
 |---|---|
-| `mount_config_cli` | Mount standard AppRC root options and the generated `config` group on a Typer app. |
-| `CliBootstrapOptions` | Parsed standard AppRC root option values. |
-| `CliBootstrapContext` | Per-invocation AppRC bootstrap metadata stored on Typer context metadata. |
-| `CliStateFactory` | Callable type for custom root state created after runtime bootstrap. |
+| `mount_config_cli` | Mount standard AppRC host-level options and the generated `config` group on a Typer app. |
+| `CliBootstrapOptions` | Parsed standard AppRC host-level option values. |
+| `CliBootstrapContext` | Per-CLI-run AppRC bootstrap metadata stored on Typer context metadata. |
+| `CliStateFactory` | Callable type for custom host state created after runtime bootstrap. |
 | `CliArgvProvider` | Callable type for explicit command tokens used by mount skip-policy tests and forwarding CLIs. |
-| `DefaultConfigCliState` | Minimal config state for apps that do not need custom root state. |
-| `prepare_typer_context` | Store AppRC bootstrap metadata from a custom Typer root callback. |
+| `ConfigCliBridge` | Composable Typer bridge for apps that own their host callback and app-specific options. |
+| `ConfigCliSession` | Result returned by `ConfigCliBridge.prepare(...)`, including AppRC context and optional app state. |
+| `ConfigCliStateFactory` | Callable type for bridge state factories that receive AppRC context plus the app option object. |
+| `BootstraplessCommand` | Declaration for host command actions that can run without app runtime state. |
+| `HostCliBootstrapPolicy` | Skip policy for generated config commands plus app-declared bootstrapless host commands. |
+| `DefaultConfigCliState` | Minimal config state for apps that do not need custom host state. |
+| `prepare_typer_context` | Store AppRC bootstrap metadata from a custom Typer host callback. |
 | `apprc_context_from` | Read AppRC bootstrap metadata from a Typer command. |
 | `apprc_options_to_args` | Convert parsed AppRC options back into CLI tokens for lazy forwarding. |
 | `ConfigBootstrapPolicy` | Config-command bootstrap skip policy with customizable bootstrapless actions. |

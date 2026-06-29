@@ -157,15 +157,17 @@ def run() -> None:
     typer.echo(f"profile={cfg.profile}")
 ```
 
-`mount_config_cli(...)` adds the standard AppRC root options, performs runtime
+`mount_config_cli(...)` adds the standard AppRC host-level options, performs runtime
 bootstrap for commands that need resolved config, and mounts the generated
 `config` command group. Apps with custom runtime state can pass
 `state_type=...` and `state_factory=...`; tests or lazy-forwarding CLIs can pass
 `args_provider=...` with tokens shaped like `CliArgvProvider`. Use
 `config_group_name=...` only when the generated group should not be named
 `config`.
-Apps with existing root callbacks can use the lower-level `CliBootstrapOptions`,
-`prepare_typer_context(...)`, and `APP_CONFIG.typer_app(...)` helpers instead.
+Apps that own their host callback and extra options can use `ConfigCliBridge`
+as the composable middle layer: the app builds its runtime state, while AppRC
+owns config command mounting, skip policy, context storage, and state
+validation.
 
 **Note**
 

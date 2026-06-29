@@ -211,18 +211,113 @@ def run() -> None:
     typer.echo(cfg.profile)
 ```
 
-`mount_config_cli(...)` registers the standard AppRC root options:
+`mount_config_cli(...)` registers the standard AppRC host-level options:
 `--env-file`, `--env-file-overrides-os-environ`, `--skip-dotenv-layers`,
 `--storage`, and `--log-level`. It also lets setup and inspection commands run
 before required runtime settings exist. Pass `state_type=...` plus
-`state_factory=...` when the app needs custom root state after bootstrap, and
+`state_factory=...` when the app needs custom host state after bootstrap, and
 `args_provider=...` when a wrapper or test harness needs to provide
 `CliArgvProvider` command tokens explicitly. Pass `config_group_name=...` only
 when the generated command group should not be named `config`.
 
-Apps that already have a root callback can use `CliBootstrapOptions`,
-`prepare_typer_context(...)`, and `APP_CONFIG.typer_app(...)` directly instead
-of the mount helper.
+Apps that own their host callback and extra options can use
+`ConfigCliBridge`. The bridge keeps AppRC's deterministic config CLI behavior
+in AppRC, while the app still builds its own runtime state.
+
+```python
+from dataclasses import dataclass
+from pathlib import Path
+from collections.abc import Sequence
+from typing import Annotated
+
+import typer
+
+from apprc.cli import (
+    BootstraplessCommand,
+    ConfigCliBridge,
+    CliBootstrapContext,
+    HostCliBootstrapPolicy,
+    EnvFilesOption,
+    StorageOption,
+)
+from apprc.runtime_config import EnvBootstrapResult
+
+from myapp.config import APP_CONFIG
+
+
+@dataclass(frozen=True, slots=True)
+class MyCliOptions:
+    env_files: Sequence[Path] | None = None
+    env_file_overrides_os_environ: bool = False
+    load_dotenv_layers: bool = True
+    storage: str | None = None
+    log_level: str | None = None
+    workdir: Path | None = None
+
+
+@dataclass(slots=True)
+class MyCliState:
+    env_bootstrap: EnvBootstrapResult | None
+    storage: str | None
+    workdir: Path | None
+
+
+def build_state(
+    context: CliBootstrapContext,
+    options: MyCliOptions,
+) -> MyCliState:
+    return MyCliState(
+        env_bootstrap=context.env_bootstrap,
+        storage=options.storage,
+        workdir=options.workdir,
+    )
+
+
+app = typer.Typer()
+bridge = ConfigCliBridge(
+    APP_CONFIG,
+    state_type=MyCliState,
+    state_factory=build_state,
+    bootstrap_policy=HostCliBootstrapPolicy(
+        config_group_name="config",
+        bootstrapless_commands={
+            "tool": BootstraplessCommand(skip_empty=True),
+            "llm": BootstraplessCommand(
+                skip_empty=True,
+                actions={("benchmark",)},
+            ),
+            "rag": BootstraplessCommand(
+                skip_empty=True,
+                actions={("cache",), ("benchmark",)},
+            ),
+        },
+        host_value_options={
+            "--env-file",
+            "--log-level",
+            "--storage",
+            "--workdir",
+        },
+    ),
+)
+bridge.mount_config_group(app)
+
+
+@app.callback()
+def cli(
+    ctx: typer.Context,
+    env_files: EnvFilesOption = None,
+    storage: StorageOption = None,
+    workdir: Annotated[Path | None, typer.Option("--workdir")] = None,
+) -> None:
+    options = MyCliOptions(
+        env_files=env_files,
+        storage=storage,
+        workdir=workdir,
+    )
+    session = bridge.prepare(ctx, options)
+    if session.skipped_runtime_bootstrap:
+        return
+```
 
 > [!NOTE]
 > Related: use [References: generated CLI commands](References.md#generated-cli-commands)

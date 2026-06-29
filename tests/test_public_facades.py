@@ -3,6 +3,13 @@ from __future__ import annotations
 import apprc
 import apprc.cli as apprc_cli
 from apprc.cli.bootstrap import bootstrap_cli_env
+from apprc.cli.bridge import (
+    BootstraplessCommand,
+    ConfigCliBridge,
+    ConfigCliSession,
+    ConfigCliStateFactory,
+    HostCliBootstrapPolicy,
+)
 from apprc.cli.config import (
     ConfigSelectorContext,
     DefaultConfigCliState,
@@ -36,6 +43,11 @@ def test_cli_facade_exports_bootstrap_symbols_needed_by_cunf() -> None:
     assert apprc_cli.CliBootstrapOptions is CliBootstrapOptions
     assert apprc_cli.CliArgvProvider is CliArgvProvider
     assert apprc_cli.CliStateFactory is CliStateFactory
+    assert apprc_cli.ConfigCliBridge is ConfigCliBridge
+    assert apprc_cli.ConfigCliSession is ConfigCliSession
+    assert apprc_cli.ConfigCliStateFactory is ConfigCliStateFactory
+    assert apprc_cli.BootstraplessCommand is BootstraplessCommand
+    assert apprc_cli.HostCliBootstrapPolicy is HostCliBootstrapPolicy
     assert apprc_cli.ConfigSelectorContext is ConfigSelectorContext
     assert apprc_cli.DefaultConfigCliState is DefaultConfigCliState
     assert apprc_cli.mount_config_cli is mount_config_cli
@@ -47,6 +59,11 @@ def test_cli_facade_exports_bootstrap_symbols_needed_by_cunf() -> None:
     assert "CliBootstrapOptions" in apprc_cli.__all__
     assert "CliArgvProvider" in apprc_cli.__all__
     assert "CliStateFactory" in apprc_cli.__all__
+    assert "ConfigCliBridge" in apprc_cli.__all__
+    assert "ConfigCliSession" in apprc_cli.__all__
+    assert "ConfigCliStateFactory" in apprc_cli.__all__
+    assert "BootstraplessCommand" in apprc_cli.__all__
+    assert "HostCliBootstrapPolicy" in apprc_cli.__all__
     assert "ConfigSelectorContext" in apprc_cli.__all__
     assert "DefaultConfigCliState" in apprc_cli.__all__
     assert "config_request_skips_runtime_bootstrap" in apprc_cli.__all__

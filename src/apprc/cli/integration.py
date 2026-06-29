@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
@@ -12,14 +11,17 @@ from typing import TYPE_CHECKING, Any, TypeVar, overload
 import typer
 
 # == Internal ================================
+from apprc.cli.bridge import (
+    CliArgvProvider,
+    CliStateFactory,
+    ConfigCliBridge,
+)
 from apprc.cli.config.state import (
-    ConfigBootstrapPolicy,
     DefaultConfigCliState,
 )
 from apprc.cli.context import (
     CliBootstrapContext,
     CliBootstrapOptions,
-    prepare_typer_context,
 )
 from apprc.cli.options import (
     EnvFileOverridesOption,
@@ -36,9 +38,6 @@ if TYPE_CHECKING:
     from apprc.runtime_config.tui import ConfigEditorApp
 
 StateT = TypeVar("StateT")
-
-type CliArgvProvider = Callable[[], Sequence[str]]
-type CliStateFactory[StateT] = Callable[[CliBootstrapContext], StateT]
 
 
 @overload
@@ -134,7 +133,7 @@ def mount_config_cli(
     :param app: Host Typer application.
     :param kit: Application config facade.
     :param config_group_name: Name used for the mounted config command group.
-    :param state_type: Root state type created by the standard callback.
+    :param state_type: Host state type created by the standard callback.
     :param state_factory: Optional app-owned state factory used after runtime
         bootstrap has run.
     :param args_provider: Optional token provider for testing or forwarding.
@@ -156,10 +155,10 @@ def mount_config_cli(
     """
     if app.registered_callback is not None:
         raise RuntimeError(
-            "mount_config_cli() cannot register AppRC root options because "
-            "this Typer app already has a callback. Use CliBootstrapOptions, "
-            "prepare_typer_context(), and kit.typer_app(...) in a custom "
-            "callback instead."
+            "mount_config_cli() cannot register AppRC host-level options "
+            "because this Typer app already has a callback. Use "
+            "CliBootstrapOptions, prepare_typer_context(), and "
+            "kit.typer_app(...) in a custom callback instead."
         )
     if state_factory is None and state_type is not DefaultConfigCliState:
         raise TypeError(
@@ -168,8 +167,36 @@ def mount_config_cli(
             "DefaultConfigCliState."
         )
 
-    policy = ConfigBootstrapPolicy(config_group_name=config_group_name)
-    provide_args = args_provider or _default_args_provider
+    def bridge_state_factory(
+        context: CliBootstrapContext,
+        options: CliBootstrapOptions,
+    ) -> Any:
+        """Build state through the legacy mount factory contract."""
+        if state_factory is not None:
+            return state_factory(context)
+        return DefaultConfigCliState(
+            env_bootstrap=context.env_bootstrap,
+            storage=options.storage,
+        )
+
+    bridge = ConfigCliBridge(
+        kit,
+        state_type=state_type,
+        state_factory=bridge_state_factory,
+        config_group_name=config_group_name,
+        args_provider=args_provider,
+        runtime_payload=runtime_payload,
+        active_storage_root=active_storage_root,
+        active_storage_root_with_context=active_storage_root_with_context,
+        initial_storage=initial_storage,
+        initial_storage_with_context=initial_storage_with_context,
+        editor_app_cls=editor_app_cls,
+        help=help,
+        setup_message=setup_message,
+        runtime_error_param_hint=runtime_error_param_hint,
+        setup_logging=setup_logging,
+        logger=logger,
+    )
 
     @app.callback()
     def apprc_root_callback(
@@ -188,57 +215,6 @@ def mount_config_cli(
             storage=storage,
             log_level=log_level,
         )
-        should_skip = ctx.resilient_parsing
-        if not should_skip:
-            should_skip = policy.request_skips_runtime_bootstrap(
-                tokens=provide_args(),
-            )
-        context = prepare_typer_context(
-            ctx,
-            kit,
-            options,
-            skip_bootstrap=should_skip,
-            setup_logging=setup_logging,
-            logger=logger,
-        )
-        if context.skipped_runtime_bootstrap:
-            ctx.obj = None
-            return
-        state = (
-            state_factory(context)
-            if state_factory is not None
-            else DefaultConfigCliState(
-                env_bootstrap=context.env_bootstrap,
-                storage=context.options.storage,
-            )
-        )
-        if not isinstance(state, state_type):
-            raise RuntimeError(
-                "AppRC CLI state factory returned "
-                f"{type(state).__name__}; expected {state_type.__name__}."
-            )
-        ctx.obj = state
+        bridge.prepare(ctx, options)
 
-    config_app = kit.typer_app(
-        state_type=state_type,
-        runtime_payload=runtime_payload,
-        active_storage_root=active_storage_root,
-        active_storage_root_with_context=active_storage_root_with_context,
-        initial_storage=initial_storage,
-        initial_storage_with_context=initial_storage_with_context,
-        editor_app_cls=editor_app_cls,
-        help=help,
-        setup_message=setup_message,
-        runtime_error_param_hint=runtime_error_param_hint,
-        config_group_name=config_group_name,
-    )
-    app.add_typer(config_app, name=config_group_name)
-    return config_app
-
-
-def _default_args_provider() -> Sequence[str]:
-    """Read process command tokens for the default mount skip policy.
-
-    :return: Command-line tokens without the executable name.
-    """
-    return sys.argv[1:]
+    return bridge.mount_config_group(app)

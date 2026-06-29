@@ -76,9 +76,10 @@ This project follows Semantic Versioning.
 ### ➕ Added
 
   - Added layered Typer integration helpers: `mount_config_cli(...)`,
-    `CliBootstrapOptions`, AppRC Typer context metadata, reusable root option
-    aliases, `CliStateFactory`, `CliArgvProvider`, and
-    configurable config bootstrap skip policies.
+    `CliBootstrapOptions`, AppRC Typer context metadata, reusable host-level
+    option aliases, `CliStateFactory`, `CliArgvProvider`, `ConfigCliBridge`,
+    `ConfigCliSession`, `ConfigCliStateFactory`, `BootstraplessCommand`,
+    `HostCliBootstrapPolicy`, and configurable config bootstrap skip policies.
 
   - Added Graphigs-backed docs figure scripts for regenerating
     `docs-reading-map.svg` and `apprc-runtime-layers.svg`.
@@ -98,6 +99,10 @@ This project follows Semantic Versioning.
     custom `mount_config_cli(...)` state now requires `state_factory=...`,
     generated config group renaming uses `config_group_name=...`, and explicit
     mount hook parameters replace loose keyword forwarding.
+
+  - Refactored `mount_config_cli(...)` to use `ConfigCliBridge` internally so
+    host-callback integrations and the convenience mount share one AppRC
+    context, skip-policy, generated config group, and state-validation path.
 
 <br>
 

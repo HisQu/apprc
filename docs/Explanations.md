@@ -318,16 +318,17 @@ display value in provenance and UI surfaces.
 <!-- ======================================================== -->
 
 `mount_config_cli(...)` is the shortest Typer integration path: it registers
-standard AppRC root options, runs bootstrap only for commands that need runtime
+standard AppRC host-level options, runs bootstrap only for commands that need runtime
 state, and mounts the generated `config` group. It keeps AppRC bootstrap context
 separate from app-owned `ctx.obj` state, so bootstrapless config commands can run
 without constructing incomplete application state.
 
 `AppConfigKit.typer_app(...)` builds only the reusable Typer command group. The
 group is generated from the app spec, so unavailable capabilities are not
-exposed. Apps with custom root callbacks can pair it with
-`CliBootstrapOptions` and `prepare_typer_context(...)`. Apps that only need
-custom state after bootstrap can keep the mount helper and pass
+exposed. `ConfigCliBridge` is the middle layer for apps that own their host
+callback and extra options: the bridge prepares AppRC context, applies skip
+policy, mounts the generated group, and validates app-owned state. Apps that
+only need custom state after bootstrap can keep the mount helper and pass
 `state_type=...` plus `state_factory=...`. Apps that need a non-default generated
 group name can pass `config_group_name=...`.
 

@@ -36,6 +36,9 @@ This project follows Semantic Versioning.
   - Added Graphigs-backed docs figure scripts for regenerating
     `docs-reading-map.svg` and `apprc-runtime-layers.svg`.
 
+  - Added and placed Graphigs-backed graphical abstracts for the README
+    overview, README system model, and runtime bootstrap docs.
+
 <br>
 
 ### 💔 Changed

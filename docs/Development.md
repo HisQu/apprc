@@ -213,6 +213,9 @@ Current assets:
 |---|---|---|
 | `docs-reading-map.svg` | [docs_reading_map.py](assets/docs_reading_map.py) | [docs/README.md](README.md) |
 | `apprc-runtime-layers.svg` | [apprc_runtime_layers.py](assets/apprc_runtime_layers.py) | [Explanations.md](Explanations.md) |
+| `apprc-abstract-user-journey.svg` | [apprc_abstract_user_journey.py](assets/apprc_abstract_user_journey.py) | [README.md](../README.md) |
+| `apprc-abstract-contract-workflows.svg` | [apprc_abstract_contract_workflows.py](assets/apprc_abstract_contract_workflows.py) | [README.md](../README.md#how-apprc-works) |
+| `apprc-abstract-layer-cake.svg` | [apprc_abstract_layer_cake.py](assets/apprc_abstract_layer_cake.py) | [Explanations.md](Explanations.md#runtime-bootstrap) |
 
 <br>
 

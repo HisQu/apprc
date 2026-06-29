@@ -15,6 +15,10 @@ The three strongest parts:
 - **Generated operator UX:** mount ready-made Typer `config` commands and open
   the same contract in the Textual editor.
 
+| ![AppRC graphical abstract](docs/assets/apprc-abstract-user-journey.svg) |
+|:--:|
+| **Fig. 1 - AppRC Graphical Abstract:** AppRC lets developers ship one typed config contract with generated setup, diagnostics, editing, and runtime config workflows. |
+
 > [!NOTE]
 > For the full system model, see
 > [docs/Explanations.md](docs/Explanations.md). For exact public names and
@@ -194,6 +198,10 @@ app.add_typer(APP_CONFIG.typer_app(state_type=CliState), name="config")
 AppRC starts from one declared contract, then uses that contract to load
 runtime values, inspect configuration health, write explicit setup files, and
 generate user-facing configuration tools.
+
+| ![One AppRC contract feeding many workflows](docs/assets/apprc-abstract-contract-workflows.svg) |
+|:--:|
+| **Fig. 2 - One Contract, Many Workflows:** AppRC reuses the same contract metadata for runtime loading, provenance, diagnostics, generated CLI commands, and the editor. |
 
 <br>
 

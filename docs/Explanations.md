@@ -201,6 +201,10 @@ The host app calls bootstrap once near process startup. Bootstrap:
 7. Writes the merged values into this Python process only.
 8. Registers provenance for app-owned env keys.
 
+| ![AppRC runtime layer precedence](assets/apprc-abstract-layer-cake.svg) |
+|:--:|
+| **Fig. 2 - Runtime Layer Precedence:** AppRC merges lower-precedence defaults, app-wide config, storage config, explicit env files, and shell env into one typed runtime view. |
+
 The parent shell is never changed.
 
 <br>

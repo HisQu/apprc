@@ -7,6 +7,9 @@ from collections.abc import Callable
 from collections.abc import Sequence
 from pathlib import Path
 
+import apprc_abstract_contract_workflows
+import apprc_abstract_layer_cake
+import apprc_abstract_user_journey
 import apprc_runtime_layers
 import docs_reading_map
 
@@ -17,6 +20,9 @@ ExportFigure = Callable[
 FIGURE_EXPORTS: tuple[ExportFigure, ...] = (
     docs_reading_map.export_figure,
     apprc_runtime_layers.export_figure,
+    apprc_abstract_contract_workflows.export_figure,
+    apprc_abstract_user_journey.export_figure,
+    apprc_abstract_layer_cake.export_figure,
 )
 
 

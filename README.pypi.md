@@ -1,19 +1,23 @@
 # `apprc`: Application Runtime Config
 
-`apprc` is a Python library for typed, env-backed application configuration. It
-gives an app packaged defaults, optional app-wide dotenv config, optional
-storage dotenv config, optional named storage roots, a generated Typer `config`
-CLI, and a Textual editor.
+`apprc` is a runtime configuration toolkit for Python applications. You
+declare typed config sections once, choose which persistence layers your app
+supports, and AppRC gives you deterministic dotenv loading, storage-root
+selection, zero-write diagnostics, generated Typer `config` commands, a
+Textual editor, and optional structured logging helpers.
+
+Runtime reads are side-effect free. Files are created only by explicit setup,
+storage, or save commands.
 
 ## Table Of Contents
 
 1. [Installation](#installation)
-2. [Mental Model](#mental-model)
-3. [Developer API](#developer-api)
-4. [Runtime Precedence](#runtime-precedence)
-5. [Generated CLI](#generated-cli)
-6. [Upgrade Paths](#upgrade-paths)
-7. [Filenames And Env Vars](#filenames-and-env-vars)
+2. [Quickstart](#quickstart)
+3. [Mental Model](#mental-model)
+4. [Generated Config CLI](#generated-config-cli)
+5. [Runtime Precedence](#runtime-precedence)
+6. [Optional Logging](#optional-logging)
+7. [Detailed Documentation](#detailed-documentation)
 8. [Development](#development)
 
 ## Installation
@@ -22,43 +26,19 @@ CLI, and a Textual editor.
 python -m pip install apprc
 ```
 
-Install optional structured logging support when the app calls
+Install optional structured logging support when your app calls
 `setup_logging()`:
 
 ```shell
 python -m pip install "apprc[logging]"
 ```
 
-When using AppRC semantic logging helpers, create application loggers with
-`get_logger(name)` or call `install_app_logger_class()` before other code
-creates those logger names with `logging.getLogger(name)`. `get_logger(name)`
-raises `RuntimeError` when the name already belongs to a plain stdlib logger,
-because existing logger instances cannot be safely reclassed.
+AppRC supports Python 3.12 and newer.
 
-## Mental Model
+## Quickstart
 
-AppRC now uses explicit persistence capability layers.
-
-| Layer | File or selector | Writes by default? |
-| --- | --- | --- |
-| Packaged shared defaults | package `.env.shared` | never |
-| Shell / explicit env files | `os.environ`, `--env-file` | never |
-| App-wide config | platform config home `.env.apprc-app` | only `config app init`, `config setup` for app-wide constructors, or explicit app-scope saves |
-| Storage config | `<storage-root>/.env.apprc-storage` | only `config setup`, `config storage add`, or explicit storage-scope saves |
-| Named-storage index | `<app>.apprc.toml` | only `config storage add/remove` |
-
-Runtime reads and diagnostics are zero-write. `config paths`, `config doctor`,
-normal bootstrap, and opening the editor do not create files.
-
-**Important**
-
-AppRC no longer reads `.env.global` or `.env.local`. `config doctor` warns
-when those legacy files are found and tells users to move values to
-`.env.apprc-app` or `.env.apprc-storage`.
-
-## Developer API
-
-Declare config fields with `EnvConfig`, then choose one constructor.
+Declare typed config sections with `EnvConfig`, `@env_owner`, and
+`env_field(...)`:
 
 ```python
 from pathlib import Path
@@ -73,8 +53,24 @@ from apprc import AppConfigKit, EnvConfig, env_field, env_owner
     rc_path=("app",),
 )
 class MyAppEnv(EnvConfig):
-    storage_root: Path = env_field("STORAGE", editable=False, required=True)
-    profile: str = env_field("PROFILE", default="default")
+    storage_root: Path = env_field(
+        "STORAGE",
+        editable=False,
+        required=True,
+        title="Storage root",
+    )
+    profile: str = env_field(
+        "PROFILE",
+        default="default",
+        title="Profile",
+        explanation_short="Named runtime profile.",
+    )
+    access_token: str = env_field(
+        "ACCESS_TOKEN",
+        required=True,
+        secret=True,
+        title="Access token",
+    )
 
 
 APP_CONFIG = AppConfigKit.storage_only(
@@ -85,74 +81,145 @@ APP_CONFIG = AppConfigKit.storage_only(
 )
 ```
 
-| Constructor | Storage layer | App-wide layer | Named-storage index |
+Add packaged defaults in `myapp/config/.env.shared`:
+
+```dotenv
+MYAPP_PROFILE="default"
+```
+
+Bootstrap your app before constructing runtime config objects:
+
+```python
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from apprc.cli import bootstrap_cli_env, config_request_skips_runtime_bootstrap
+
+from myapp.config import APP_CONFIG, MyAppEnv
+
+app = typer.Typer()
+
+
+class CliState:
+    env_bootstrap = None
+    storage: str | None = None
+
+
+@app.callback()
+def root_cmd(
+    ctx: typer.Context,
+    env_files: Annotated[list[Path] | None, typer.Option("--env-file")] = None,
+    env_file_overrides_os_environ: Annotated[
+        bool,
+        typer.Option("--env-file-overrides-os-environ"),
+    ] = False,
+    storage: Annotated[str | None, typer.Option("--storage")] = None,
+) -> None:
+    state = CliState()
+    state.storage = storage
+    ctx.obj = state
+    if config_request_skips_runtime_bootstrap("config"):
+        return
+    state.env_bootstrap = bootstrap_cli_env(
+        APP_CONFIG,
+        env_files=tuple(env_files or ()),
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        load_dotenv_layers=True,
+        storage=storage,
+    )
+
+
+@app.command()
+def run() -> None:
+    cfg = MyAppEnv()
+    typer.echo(f"profile={cfg.profile}")
+
+
+app.add_typer(APP_CONFIG.typer_app(state_type=CliState), name="config")
+```
+
+Then initialize a storage-backed app:
+
+```shell
+myapp config paths
+myapp config setup --yes --storage-root /absolute/path/to/storage
+export MYAPP_STORAGE="/absolute/path/to/storage"
+myapp config doctor
+myapp config set access_token secret-value --scope storage
+myapp run
+```
+
+## Mental Model
+
+AppRC has one contract and several workflows built from it.
+
+| Concept | Meaning |
+| --- | --- |
+| Config field | One typed setting declared with `env_field(...)`. |
+| Config owner | A related group of fields declared by `@env_owner(...)`. |
+| App config kit | The app-level contract that selects supported persistence layers. |
+| Bootstrap | A startup step that merges dotenv layers into this Python process. |
+| Generated CLI | A reusable Typer `config` command group for inspection and edits. |
+| Editor | A Textual view over the same owners, fields, and dotenv layers. |
+
+Choose one capability constructor:
+
+| Constructor | Storage root | App-wide dotenv | Named storage index |
 | --- | --- | --- | --- |
 | `AppConfigKit.env_only(...)` | disabled | optional | disabled |
 | `AppConfigKit.storage_only(...)` | required | optional | optional |
 | `AppConfigKit.app_wide_config(...)` | disabled | default | disabled |
 | `AppConfigKit.app_wide_storage(...)` | required | default | optional |
 
-Use `storage_env_key="MYAPP_STORAGE"` only with storage-capable constructors.
-Passing `storage_mode=` is removed and raises `TypeError`.
+AppRC-managed persistence files are explicit:
 
-Public dotenv helpers use neutral env-file names:
+| Layer | Default location | Created by |
+| --- | --- | --- |
+| Packaged shared defaults | package `.env.shared` | the application package |
+| App-wide config | platform config home `.env.apprc-app` | `config app init`, app-wide setup, or app-scope save |
+| Storage config | `<storage-root>/.env.apprc-storage` | storage setup, `config storage add`, or storage-scope save |
+| Named-storage index | `<config-home>/<app>.apprc.toml` | `config storage add/remove` |
 
-- `EnvFileUpdate`
-- `read_env_file(path)` / `write_env_file(path, values, owners=...)`
-- `ensure_env_file(path)`
-- `set_env_file_value(...)` / `clear_env_file_value(...)`
-- `storage_env_path(root)`, `ensure_storage_env_file(root)`,
-  `set_storage_env_value(...)`, and `clear_storage_env_value(...)`
+**Important**
 
-The old `LocalEnvUpdate`, `read_local_env`, `write_local_env`,
-`local_env_path`, `set_local_env_value`, and `clear_local_env_value` names are
-removed.
+Runtime reads and diagnostics do not create files. `bootstrap`, `config
+paths`, `config doctor`, and opening `config edit` are zero-write.
 
-Mount the generated config CLI:
+## Generated Config CLI
 
-```python
-config_app = APP_CONFIG.typer_app(state_type=MyCliState)
-app.add_typer(config_app, name="config")
+Mounting `APP_CONFIG.typer_app(...)` gives your app these commands:
+
+```shell
+myapp config paths
+myapp config doctor
+myapp config show
+myapp config setup
+myapp config set KEY VALUE --scope app
+myapp config set KEY VALUE --scope storage
+myapp config edit
+myapp config app init
+myapp config storage add NAME PATH
+myapp config storage list
+myapp config storage remove NAME
 ```
 
-For custom root CLI state, prefer context-aware hooks when storage selection
-needs root `--env-file` values during skipped-bootstrap config commands:
+The command group follows the selected capabilities. For example, storage-free
+apps do not expose named-storage commands.
 
-```python
-from apprc.cli.config import ConfigSelectorContext
-
-
-def active_storage_root(
-    state: MyCliState,
-    selector_context: ConfigSelectorContext,
-) -> Path | None:
-    return Path(selector_context.proc_env["MYAPP_STORAGE"])
-
-
-config_app = APP_CONFIG.typer_app(
-    state_type=MyCliState,
-    active_storage_root_with_context=active_storage_root,
-)
-```
-
-Legacy `active_storage_root=...` and `initial_storage=...` hooks still work.
-Use `active_storage_root_with_context=...` or
-`initial_storage_with_context=...` when the hook must see
-`ConfigSelectorContext.explicit_values`,
-`ConfigSelectorContext.env_file_overrides_os_environ`, or
-`ConfigSelectorContext.proc_env`.
-
-Storage archives reject symlinks and hardlinks. `extract_archive()` refuses to
-restore into a non-empty destination unless `replace_existing=True`; the TUI
-asks before using replacement mode.
+Use `config paths` before setup to see candidate paths and declared
+capabilities without writing anything. Use `config doctor` when a machine is
+not runnable; it reports a status such as `env_not_set`, `storage_not_ready`,
+`app_config_not_ready`, `named_storage_not_ready`, or `runnable`.
 
 ## Runtime Precedence
 
-When dotenv layers are loaded, values are merged in this order:
+When dotenv layers are loaded, AppRC merges values in this order:
 
 1. packaged `.env.shared`
-2. app-wide `.env.apprc-app`, only when the layer is allowed and the file exists
-3. selected storage `.env.apprc-storage`, only when storage is selected and the file exists
+2. app-wide `.env.apprc-app`, when allowed and present
+3. selected storage `.env.apprc-storage`, when storage is selected and present
 4. explicit `--env-file` values
 5. existing `os.environ`
 
@@ -167,133 +234,40 @@ Storage selector resolution uses:
 4. app-wide `.env.apprc-app`, when active
 5. packaged `.env.shared`
 
-Named selectors resolve through `<app>.apprc.toml` only when named storage is
-allowed and the index file exists. Path selectors work without an index file and
-ignore corrupt optional indexes at runtime; `config doctor` reports those stray
-index problems as warnings. Bare selectors need the index when it exists, so a
-corrupt index is fatal for named-selector resolution.
+Path selectors work without a named-storage index. Bare named selectors use
+`<app>.apprc.toml` when the index exists.
 
-## Generated CLI
+## Optional Logging
 
-All commands below are shown with `myapp` as the application command name.
+AppRC also includes stdlib-compatible semantic logging helpers. The base
+logger API imports without `structlog`; `setup_logging()` requires the
+`logging` extra.
 
-```shell
-myapp config paths
-myapp config doctor
-myapp config show
-myapp config setup
-myapp config set KEY VALUE --scope app
-myapp config set KEY VALUE --scope storage
-myapp config edit
+```python
+from apprc.logging import get_logger, setup_logging
 
-myapp config app init
-
-myapp config storage add NAME PATH
-myapp config storage list
-myapp config storage remove NAME
+setup_logging(level="INFO", renderer="cli")
+log = get_logger(__name__)
+log.success("configured", extra_struct={"profile": "default"})
 ```
 
-Removed commands:
+Create application loggers with `get_logger(name)` or call
+`install_app_logger_class()` before other code creates those names with
+`logging.getLogger(name)`. Existing plain stdlib logger instances cannot be
+safely reclassed, so `get_logger(name)` raises `RuntimeError` for those names.
 
-- `myapp config init`
-- `myapp config list`
+## Detailed Documentation
 
-Use `myapp config storage add NAME PATH` and
-`myapp config storage list` instead.
+The root README is the short adopter path. The detailed manual lives in
+[docs](docs/README.md):
 
-### `config paths`
+- [How-To User Guides](docs/How-To-User-Guides.md) for integration recipes.
+- [Explanations](docs/Explanations.md) for the AppRC system model.
+- [References](docs/References.md) for exact commands, files, and APIs.
+- [Development](docs/Development.md) for maintainer workflow and docs rules.
 
-`config paths` is always zero-write. It reports declared capabilities, active
-layers, candidate paths, existing files, selected storage, named-storage index
-status, and `writes: none`.
-
-### `config setup`
-
-`config setup` follows the constructor:
-
-| Constructor | Setup behavior |
-| --- | --- |
-| `env_only` | prints env guidance; writes nothing |
-| `storage_only` | asks for or accepts `--storage-root`; creates `.env.apprc-storage`; prints `export MYAPP_STORAGE=...` |
-| `app_wide_config` | creates `.env.apprc-app` |
-| `app_wide_storage` | creates `.env.apprc-app` and selected storage `.env.apprc-storage` |
-
-Optional upgrades are separate commands, not setup prompts.
-
-### `config set`
-
-`config set` writes to app-wide or storage dotenv files.
-
-- If exactly one writable layer is active, `--scope` may be omitted.
-- If app-wide and storage are both active, pass `--scope app` or
-  `--scope storage`.
-- Env-only apps have no writable scope until an app-wide file is explicitly
-  initialized with `config app init`.
-
-`config set` skips runtime bootstrap so `--scope app` does not require storage
-readiness. Storage is resolved only for `--scope storage` or when scope
-inference needs to know whether storage is writable.
-
-### `config edit`
-
-`config edit` is the primary interactive view. It opens without creating files
-and shows source columns for `Effective`, `Shell`, `App-wide`, `Storage`,
-`Default`, and `Explanation`.
-
-- The app-wide column appears when the app-wide layer is default-active or when
-  `.env.apprc-app` exists.
-- The storage column appears when a storage root is selected; a missing
-  `.env.apprc-storage` is shown as empty until the user saves to storage.
-- Saving chooses `app` or `storage` when both are writable, and creates only the
-  selected target file.
-- Named-storage controls are available only when named storage is enabled and an
-  index is loaded; direct path-selected storage editing works without an index.
-
-## Upgrade Paths
-
-Storage-only users can start with one env var:
-
-```shell
-export MYAPP_STORAGE="/absolute/path/to/storage"
-```
-
-That path selector does not require a named-storage index.
-
-To add app-wide config later:
-
-```shell
-myapp config app init
-myapp config set app.profile work --scope app
-```
-
-To add named storages later:
-
-```shell
-myapp config storage add alpha /absolute/path/to/alpha
-myapp config storage add beta /absolute/path/to/beta
-export MYAPP_STORAGE="alpha"
-```
-
-`MYAPP_APPRC_TOML` only relocates the named-storage index. It is not required
-for the default `<config-home>/<app>.apprc.toml` path.
-
-## Filenames And Env Vars
-
-| Purpose | Default |
-| --- | --- |
-| Packaged shared dotenv | `.env.shared` |
-| App-wide dotenv | `.env.apprc-app` |
-| Storage dotenv | `.env.apprc-storage` |
-| Named-storage index | `<app>.apprc.toml` |
-| Storage selector env key | derived as `<APP>_STORAGE` |
-| Index relocation env key | derived as `<APP>_APPRC_TOML` |
-
-Filename-style constructor inputs accept basenames only:
-
-- `index_filename`
-- `shared_env_filename`
-- `app_wide_env_filename`
-- `storage_env_filename`
+The repository also ships a runnable example app in
+[examples/apprc_example_app](examples/apprc_example_app).
 
 ## Development
 
@@ -302,4 +276,10 @@ Filename-style constructor inputs accept basenames only:
 .venv/bin/ruff check .
 .venv/bin/pyright
 .venv/bin/pytest
+```
+
+Regenerate the PyPI README after editing this file:
+
+```shell
+python src/apprc_dev/packaging/pypi_readme.py
 ```

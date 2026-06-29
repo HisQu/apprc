@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="480" viewBox="0 0 1080 480" role="img" aria-labelledby="title desc">
+  <title id="title">AppRC runtime layers</title>
+  <desc id="desc">A typed AppRC config contract feeds dotenv layers, runtime bootstrap, diagnostics, generated CLI commands, and the Textual editor.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555555" />
+    </marker>
+    <style>
+      text { font-family: sans-serif; fill: #111111; }
+      .title { font-size: 22px; font-weight: 700; }
+      .label { font-size: 16px; font-weight: 700; }
+      .small { font-size: 13px; }
+      .box { fill: #f7f7f7; stroke: #555555; stroke-width: 2; rx: 8; }
+      .contract { fill: #e8f3ff; }
+      .layer { fill: #eef8e9; }
+      .runtime { fill: #fff1d8; }
+      .surface { fill: #f2ecff; }
+      .line { stroke: #555555; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="28" y="18" width="320" height="42" fill="#f7f7f7" stroke="#555555" stroke-width="1.5" rx="8" />
+  <text class="title" x="42" y="46">AppRC Runtime Layers</text>
+
+  <rect class="box contract" x="70" y="120" width="230" height="116" />
+  <text class="label" x="104" y="154">Config Contract</text>
+  <text class="small" x="98" y="180">EnvConfig classes</text>
+  <text class="small" x="98" y="202">env_owner metadata</text>
+  <text class="small" x="98" y="224">env_field metadata</text>
+
+  <rect class="box layer" x="420" y="88" width="245" height="178" />
+  <text class="label" x="466" y="122">Dotenv Layers</text>
+  <text class="small" x="450" y="150">package .env.shared</text>
+  <text class="small" x="450" y="174">app .env.apprc-app</text>
+  <text class="small" x="450" y="198">storage .env.apprc-storage</text>
+  <text class="small" x="450" y="222">explicit --env-file</text>
+  <text class="small" x="450" y="246">existing os.environ</text>
+
+  <rect class="box runtime" x="780" y="120" width="230" height="116" />
+  <text class="label" x="832" y="154">Bootstrap</text>
+  <text class="small" x="822" y="180">select storage</text>
+  <text class="small" x="822" y="202">merge values</text>
+  <text class="small" x="822" y="224">record provenance</text>
+
+  <line class="line" x1="300" y1="178" x2="410" y2="178" />
+  <line class="line" x1="665" y1="178" x2="770" y2="178" />
+
+  <rect class="box surface" x="120" y="344" width="190" height="72" />
+  <text class="label" x="168" y="374">Runtime</text>
+  <text class="small" x="154" y="398">typed EnvConfig</text>
+
+  <rect class="box surface" x="350" y="344" width="190" height="72" />
+  <text class="label" x="394" y="374">Diagnostics</text>
+  <text class="small" x="394" y="398">paths, doctor</text>
+
+  <rect class="box surface" x="580" y="344" width="190" height="72" />
+  <text class="label" x="628" y="374">Config CLI</text>
+  <text class="small" x="626" y="398">setup, set, storage</text>
+
+  <rect class="box surface" x="810" y="344" width="190" height="72" />
+  <text class="label" x="858" y="374">Textual TUI</text>
+  <text class="small" x="846" y="398">inspect and edit</text>
+
+  <line class="line" x1="850" y1="236" x2="250" y2="336" />
+  <line class="line" x1="875" y1="236" x2="465" y2="336" />
+  <line class="line" x1="920" y1="236" x2="665" y2="336" />
+  <line class="line" x1="950" y1="236" x2="900" y2="336" />
+</svg>

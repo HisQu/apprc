@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="360" viewBox="0 0 980 360" role="img" aria-labelledby="title desc">
+  <title id="title">AppRC documentation reading map</title>
+  <desc id="desc">The root README points to the docs index, which points to how-to guides, development notes, references, and explanations.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555555" />
+    </marker>
+    <style>
+      text { font-family: sans-serif; fill: #111111; }
+      .title { font-size: 20px; font-weight: 700; }
+      .label { font-size: 16px; font-weight: 700; }
+      .small { font-size: 13px; }
+      .box { fill: #f7f7f7; stroke: #555555; stroke-width: 2; rx: 8; }
+      .guide { fill: #e8f3ff; }
+      .dev { fill: #fff1d8; }
+      .ref { fill: #eef8e9; }
+      .explain { fill: #f2ecff; }
+      .line { stroke: #555555; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="28" y="18" width="350" height="40" fill="#f7f7f7" stroke="#555555" stroke-width="1.5" rx="8" />
+  <text class="title" x="40" y="44">AppRC Documentation Map</text>
+
+  <rect class="box" x="60" y="92" width="180" height="88" />
+  <text class="label" x="96" y="128">Root README</text>
+  <text class="small" x="90" y="154">Adopter entry point</text>
+
+  <rect class="box" x="400" y="92" width="180" height="88" />
+  <text class="label" x="430" y="128">docs/README</text>
+  <text class="small" x="420" y="154">Manual reading map</text>
+
+  <line class="line" x1="240" y1="136" x2="390" y2="136" />
+
+  <rect class="box guide" x="90" y="248" width="170" height="70" />
+  <text class="label" x="120" y="278">How-To</text>
+  <text class="small" x="116" y="302">Task recipes</text>
+
+  <rect class="box dev" x="305" y="248" width="170" height="70" />
+  <text class="label" x="342" y="278">Development</text>
+  <text class="small" x="334" y="302">Maintainer loop</text>
+
+  <rect class="box ref" x="520" y="248" width="170" height="70" />
+  <text class="label" x="558" y="278">References</text>
+  <text class="small" x="556" y="302">Exact names</text>
+
+  <rect class="box explain" x="735" y="248" width="170" height="70" />
+  <text class="label" x="766" y="278">Explanations</text>
+  <text class="small" x="766" y="302">System model</text>
+
+  <line class="line" x1="458" y1="180" x2="198" y2="240" />
+  <line class="line" x1="482" y1="180" x2="400" y2="240" />
+  <line class="line" x1="508" y1="180" x2="590" y2="240" />
+  <line class="line" x1="532" y1="180" x2="792" y2="240" />
+</svg>

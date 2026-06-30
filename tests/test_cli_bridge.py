@@ -746,6 +746,38 @@ def test_config_cli_bridge_mount_config_group_custom_name() -> None:
     assert "storage_free_app" in result.output
 
 
+def test_config_cli_bridge_rejects_existing_config_group_name() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+    app = typer.Typer()
+    app.add_typer(typer.Typer(), name="config")
+    bridge = ConfigCliBridge[HaiuLikeOptions, DefaultConfigCliState](kit)
+
+    with pytest.raises(RuntimeError, match="already has a command or group"):
+        bridge.mount_config_group(app)
+
+
+def test_config_cli_bridge_runtimeful_config_requires_app_state() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+    args = ["config", "show", "--json"]
+    app = typer.Typer()
+    bridge = ConfigCliBridge[HaiuLikeOptions, HaiuLikeState](
+        kit,
+        state_type=HaiuLikeState,
+        state_factory=_empty_state_factory,
+        args_provider=lambda: args,
+    )
+
+    @app.callback()
+    def host_callback(ctx: typer.Context) -> None:
+        bridge.prepare(ctx, HaiuLikeOptions())
+        ctx.obj = object()
+
+    bridge.mount_config_group(app)
+
+    with pytest.raises(RuntimeError, match="CLI state is not initialized"):
+        CliRunner().invoke(app, args, catch_exceptions=False)
+
+
 def _ctx(command_name: str | None) -> typer.Context:
     return cast(typer.Context, _FakeContext(command_name))
 

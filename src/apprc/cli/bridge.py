@@ -28,7 +28,11 @@ from apprc.cli.context import (
     CliBootstrapOptionsProtocol,
     prepare_typer_context,
 )
-from apprc.cli.typer_utils import args_after_command
+from apprc.cli.typer_utils import (
+    args_after_host_command,
+    parse_leading_options,
+    structural_help_requested,
+)
 from apprc.runtime_config.bootstrap.result import BootstrapLogger
 from apprc.runtime_config.kit import AppConfigKit
 
@@ -119,14 +123,14 @@ class BootstraplessCommand:
         :param value_options: Options that consume one following value.
         :return: Whether app runtime bootstrap may be skipped.
         """
-        action_tokens = _strip_leading_host_options(
+        parsed = parse_leading_options(
             args,
             flag_options=flag_options,
             value_options=value_options,
         )
-        if action_tokens is None:
+        if parsed.separator_before_action:
             return False
-        return self.matches_action_tokens(action_tokens)
+        return self.matches_action_tokens(parsed.action_tokens)
 
     def matches_action_tokens(self, action_tokens: Sequence[str]) -> bool:
         """Return whether already-stripped action tokens may skip bootstrap.
@@ -160,7 +164,7 @@ class BootstraplessCommand:
             prefix_length = len(prefix)
             if tuple(
                 action_tokens[:prefix_length]
-            ) == prefix and _is_structural_help_path(
+            ) == prefix and structural_help_requested(
                 action_tokens[prefix_length:]
             ):
                 return True
@@ -252,10 +256,10 @@ class HostCliBootstrapPolicy:
             return self._config_policy(
                 config_group_name,
             ).request_skips_runtime_bootstrap(tokens=tokens)
-        args = args_after_command(
+        args = args_after_host_command(
             command_name,
             tokens=tokens,
-            root_value_options=self.host_value_options,
+            host_value_options=self.host_value_options,
         )
         if args is None:
             return False
@@ -264,14 +268,14 @@ class HostCliBootstrapPolicy:
             return declaration.skip_help if declaration is not None else True
         if declaration is None:
             return False
-        action_tokens = _strip_leading_host_options(
+        parsed = parse_leading_options(
             args,
             flag_options=self.host_flag_options,
             value_options=self.host_value_options,
         )
-        if action_tokens is None:
+        if parsed.separator_before_action:
             return False
-        return declaration.matches_action_tokens(action_tokens)
+        return declaration.matches_action_tokens(parsed.action_tokens)
 
     def _config_policy(self, config_group_name: str) -> ConfigBootstrapPolicy:
         """Return a config policy aligned with this host command shape."""
@@ -395,10 +399,7 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
             return self.state_factory(apprc_context, options)
         return cast(
             StateT,
-            DefaultConfigCliState(
-                env_bootstrap=apprc_context.env_bootstrap,
-                storage=apprc_context.options.storage,
-            ),
+            DefaultConfigCliState.from_context(apprc_context),
         )
 
     def mount_config_group(self, app: typer.Typer) -> typer.Typer:
@@ -407,6 +408,7 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
         :param app: Host Typer application.
         :return: Mounted config Typer application.
         """
+        ensure_config_group_name_available(app, self.config_group_name)
         config_app = self.kit.typer_app(
             state_type=self.state_type,
             runtime_payload=self.runtime_payload,
@@ -447,45 +449,38 @@ def _provided_args(args_provider: CliArgvProvider | None) -> Sequence[str]:
     return sys.argv[1:]
 
 
+def ensure_config_group_name_available(
+    app: typer.Typer,
+    config_group_name: str,
+) -> None:
+    """Raise when a host Typer app already owns the config group name."""
+    if config_group_name not in _registered_typer_names(app):
+        return
+    raise RuntimeError(
+        "ConfigCliBridge cannot mount the generated config group because "
+        f"this Typer app already has a command or group named "
+        f"{config_group_name!r}."
+    )
+
+
+def _registered_typer_names(app: typer.Typer) -> set[str]:
+    """Return explicit and implicit command names registered on ``app``."""
+    names: set[str] = set()
+    for group in app.registered_groups:
+        if group.name is not None:
+            names.add(group.name)
+    for command in app.registered_commands:
+        if command.name is not None:
+            names.add(command.name)
+            continue
+        if command.callback is not None:
+            names.add(typer.main.get_command_name(command.callback.__name__))
+    return names
+
+
 def _is_help_request(tokens: Sequence[str]) -> bool:
     """Return whether tokens are exactly one recognized help option."""
     return len(tokens) == 1 and tokens[0] in _HELP_OPTIONS
-
-
-def _is_structural_help_path(tokens: Sequence[str]) -> bool:
-    """Return whether action-tail tokens structurally request help."""
-    if not tokens or tokens[-1] not in _HELP_OPTIONS:
-        return False
-    if "--" in tokens:
-        return False
-    return all(not token.startswith("-") for token in tokens[:-1])
-
-
-def _strip_leading_host_options(
-    tokens: Sequence[str],
-    *,
-    flag_options: Collection[str],
-    value_options: Collection[str],
-) -> list[str] | None:
-    """Strip host options before an action, preserving ``--`` semantics."""
-    remaining = list(tokens)
-    i = 0
-    while i < len(remaining):
-        token = remaining[i]
-        if token == "--":
-            return None
-        if not token.startswith("-"):
-            return remaining[i:]
-
-        option_name = token.split("=", maxsplit=1)[0]
-        if option_name in value_options:
-            i += 1 if "=" in token else 2
-            continue
-        if option_name in flag_options:
-            i += 1
-            continue
-        return remaining[i:]
-    return []
 
 
 def _normalize_action_paths(

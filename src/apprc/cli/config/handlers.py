@@ -4,16 +4,17 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 # == 3rd Party ===============================
 import typer
 from rich import print as rich_print
 
 # == Internal ================================
+from apprc.cli.config.group_options import ConfigGroupOptions
 from apprc.cli.config.output import print_storage_list, storage_list_payload
 from apprc.cli.config.prompts import guard_storage_root_init
 from apprc.cli.config.state import (
@@ -54,9 +55,6 @@ from apprc.runtime_config.storage.registry import (
 )
 from apprc.runtime_config.storage.selector import StorageSelectorError
 
-if TYPE_CHECKING:
-    from apprc.runtime_config.tui import ConfigEditorApp
-
 type ConfigSetScope = Literal["app", "storage"]
 
 
@@ -67,18 +65,6 @@ class ConfigSelectorContext:
     explicit_values: Mapping[str, str]
     env_file_overrides_os_environ: bool
     proc_env: Mapping[str, str]
-
-
-type ActiveStorageRootHook = Callable[[Any], Path | None]
-type ActiveStorageRootWithContextHook = Callable[
-    [Any, ConfigSelectorContext],
-    Path | None,
-]
-type InitialStorageHook = Callable[[Any], str | None]
-type InitialStorageWithContextHook = Callable[
-    [Any, ConfigSelectorContext],
-    str | None,
-]
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,58 +80,14 @@ class ResolvedConfigState:
     app_owned: bool
 
 
-class ConfigCommandBase:
-    """Shared dependencies and adapters for generated config commands."""
+@dataclass(frozen=True, slots=True)
+class ConfigStateResolver:
+    """Resolve host-owned state and context-derived generic state.
 
-    def __init__(
-        self,
-        kit: AppConfigKit,
-        *,
-        state_type: type[Any],
-        runtime_payload: Callable[[Any], Mapping[str, Any]] | None,
-        active_storage_root: ActiveStorageRootHook | None,
-        active_storage_root_with_context: (
-            ActiveStorageRootWithContextHook | None
-        ),
-        initial_storage: InitialStorageHook | None,
-        initial_storage_with_context: InitialStorageWithContextHook | None,
-        editor_app_cls: type[ConfigEditorApp] | None,
-        missing_setup: str,
-        runtime_error_param_hint: str,
-        config_group_name: str,
-    ) -> None:
-        """Store config command dependencies and extension hooks.
+    :param state_type: Application host CLI state type expected on ``ctx.obj``.
+    """
 
-        :param kit: Application config facade.
-        :param state_type: Application host CLI state type stored on
-            ``ctx.obj``.
-        :param runtime_payload: Optional serializer for ``config show``.
-        :param active_storage_root: Optional active storage resolver.
-        :param active_storage_root_with_context: Optional active storage
-            resolver that can inspect explicit env-file selector context.
-        :param initial_storage: Optional editor initial-selection resolver.
-        :param initial_storage_with_context: Optional editor initial-selection
-            resolver that can inspect explicit env-file selector context.
-        :param editor_app_cls: Optional Textual subclass.
-        :param missing_setup: Message shown when runtime storage is absent.
-        :param runtime_error_param_hint: Parameter hint for runtime-payload
-            validation errors.
-        :param config_group_name: Config command group name used in generated
-            guidance.
-        """
-        self.kit = kit
-        self.state_type = state_type
-        self.runtime_payload = runtime_payload
-        self.active_storage_root_hook = active_storage_root
-        self.active_storage_root_with_context_hook = (
-            active_storage_root_with_context
-        )
-        self.initial_storage_hook = initial_storage
-        self.initial_storage_with_context_hook = initial_storage_with_context
-        self.editor_app_cls = editor_app_cls
-        self.missing_setup = missing_setup
-        self.runtime_error_param_hint = runtime_error_param_hint
-        self.config_group_name = config_group_name
+    state_type: type[Any]
 
     def state(self, ctx: typer.Context) -> Any:
         """Return the application host state stored by the parent CLI."""
@@ -156,10 +98,7 @@ class ConfigCommandBase:
         context = apprc_context_from(ctx)
         if context is None:
             return None
-        return DefaultConfigCliState(
-            env_bootstrap=context.env_bootstrap,
-            storage=context.options.storage,
-        )
+        return DefaultConfigCliState.from_context(context)
 
     def resolved_config_state(
         self,
@@ -174,6 +113,12 @@ class ConfigCommandBase:
             return ResolvedConfigState(context_state, app_owned=False)
         if isinstance(ctx.obj, self.state_type):
             return ResolvedConfigState(ctx.obj, app_owned=True)
+        if context is not None:
+            raise RuntimeError(
+                "CLI state is not initialized. Runtime config commands require "
+                f"{self.state_type.__name__} on ctx.obj when runtime bootstrap "
+                "was not skipped."
+            )
         context_state = self.context_state(ctx)
         if context_state is None:
             return None
@@ -188,12 +133,10 @@ class ConfigCommandBase:
             return None
         return resolved_state.state
 
-    def config_command_text(self, action: str) -> str:
-        """Return one host command line for generated CLI guidance."""
-        return (
-            f"{self.kit.spec.config_command_name()} "
-            f"{self.config_group_name} {action}"
-        )
+
+@dataclass(frozen=True, slots=True)
+class SelectorContextReader:
+    """Read host-level selector options from Typer context metadata."""
 
     def host_context_param(
         self,
@@ -222,7 +165,10 @@ class ConfigCommandBase:
             current = current.parent
         return None
 
-    def cli_selector_context(self, ctx: typer.Context) -> ConfigSelectorContext:
+    def cli_selector_context(
+        self,
+        ctx: typer.Context,
+    ) -> ConfigSelectorContext:
         """Return host explicit env-file values for selector-only reads."""
         env_files = _host_env_files(self.host_context_param(ctx, "env_files"))
         overrides = bool(
@@ -244,6 +190,82 @@ class ConfigCommandBase:
             explicit_values=explicit_values,
             env_file_overrides_os_environ=overrides,
         )
+
+
+class ConfigCommandBase:
+    """Shared dependencies and adapters for generated config commands."""
+
+    def __init__(
+        self,
+        kit: AppConfigKit,
+        *,
+        options: ConfigGroupOptions,
+        missing_setup: str,
+    ) -> None:
+        """Store config command dependencies and extension hooks.
+
+        :param kit: Application config facade.
+        :param options: Generated config command hook bundle.
+        :param missing_setup: Message shown when runtime storage is absent.
+        """
+        self.kit = kit
+        self.state_type = options.state_type
+        self.runtime_payload = options.runtime_payload
+        self.active_storage_root_hook = options.active_storage_root
+        self.active_storage_root_with_context_hook = (
+            options.active_storage_root_with_context
+        )
+        self.initial_storage_hook = options.initial_storage
+        self.initial_storage_with_context_hook = (
+            options.initial_storage_with_context
+        )
+        self.editor_app_cls = options.editor_app_cls
+        self.missing_setup = missing_setup
+        self.runtime_error_param_hint = options.runtime_error_param_hint
+        self.config_group_name = options.config_group_name
+        self.state_resolver = ConfigStateResolver(options.state_type)
+        self.selector_context_reader = SelectorContextReader()
+
+    def state(self, ctx: typer.Context) -> Any:
+        """Return the application host state stored by the parent CLI."""
+        return self.state_resolver.state(ctx)
+
+    def context_state(self, ctx: typer.Context) -> DefaultConfigCliState | None:
+        """Return AppRC context as generic config state when available."""
+        return self.state_resolver.context_state(ctx)
+
+    def resolved_config_state(
+        self,
+        ctx: typer.Context,
+    ) -> ResolvedConfigState | None:
+        """Return state plus whether app-owned hooks may inspect it."""
+        return self.state_resolver.resolved_config_state(ctx)
+
+    def runtime_payload_state(
+        self,
+        resolved_state: ResolvedConfigState | None,
+    ) -> Any | None:
+        """Return state that is valid for app-owned runtime payload hooks."""
+        return self.state_resolver.runtime_payload_state(resolved_state)
+
+    def config_command_text(self, action: str) -> str:
+        """Return one host command line for generated CLI guidance."""
+        return (
+            f"{self.kit.spec.config_command_name()} "
+            f"{self.config_group_name} {action}"
+        )
+
+    def host_context_param(
+        self,
+        ctx: typer.Context,
+        name: str,
+    ) -> object | None:
+        """Read one option value from the parent command context."""
+        return self.selector_context_reader.host_context_param(ctx, name)
+
+    def cli_selector_context(self, ctx: typer.Context) -> ConfigSelectorContext:
+        """Return host explicit env-file values for selector-only reads."""
+        return self.selector_context_reader.cli_selector_context(ctx)
 
     def config_home_bad_parameter(
         self,
@@ -985,7 +1007,7 @@ def _selector_context(
     explicit_values: Mapping[str, str],
     env_file_overrides_os_environ: bool,
 ) -> ConfigSelectorContext:
-    """Return the selector-only context for skipped-bootstrap commands."""
+    """Return selector-only context for explicit env-file values."""
     copied_values = dict(explicit_values)
     return ConfigSelectorContext(
         explicit_values=copied_values,

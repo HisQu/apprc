@@ -10,11 +10,16 @@ from pathlib import Path
 from typing import Protocol, cast
 
 # == Internal ================================
+from apprc.cli.context import CliBootstrapContext
 from apprc.cli.options import (
     COMMON_HOST_FLAG_OPTIONS,
     COMMON_HOST_VALUE_OPTIONS,
 )
-from apprc.cli.typer_utils import args_after_command, strip_leading_options
+from apprc.cli.typer_utils import (
+    args_after_host_command,
+    help_requested_before_separator,
+    parse_leading_options,
+)
 from apprc.runtime_config.bootstrap.result import EnvBootstrapResult
 from apprc.runtime_config.bootstrap.dotenv_layers import (
     read_storage_selector_fallback_values,
@@ -53,6 +58,21 @@ class DefaultConfigCliState:
 
     env_bootstrap: EnvBootstrapResult | None = None
     storage: str | None = None
+
+    @classmethod
+    def from_context(
+        cls,
+        context: CliBootstrapContext,
+    ) -> DefaultConfigCliState:
+        """Build generic config state from stored AppRC bootstrap metadata.
+
+        :param context: AppRC bootstrap context stored on Typer metadata.
+        :return: Generic state for generated config commands.
+        """
+        return cls(
+            env_bootstrap=context.env_bootstrap,
+            storage=context.options.storage,
+        )
 
 
 DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS = frozenset(
@@ -137,51 +157,31 @@ def config_request_skips_runtime_bootstrap(
         parse error directly.
     :return: Whether the config command can run without runtime state.
     """
-    args = args_after_command(
+    args = args_after_host_command(
         command_name,
         tokens=tokens,
-        root_value_options=root_value_options,
+        host_value_options=root_value_options,
     )
     if args is None:
         return False
-    if _help_requested_before_separator(
+    if help_requested_before_separator(
         args,
         value_options=root_value_options,
     ):
         return True
-    if args and args[0] == "--":
-        return False
-    action_args = strip_leading_options(
+    parsed = parse_leading_options(
         args,
         flag_options=root_flag_options,
         value_options=root_value_options,
     )
+    if parsed.separator_before_action:
+        return False
+    action_args = parsed.action_tokens
     if not action_args:
         return True
     if skip_invalid_options and action_args[0].startswith("-"):
         return True
     return action_args[0] in bootstrapless_actions
-
-
-def _help_requested_before_separator(
-    tokens: Sequence[str],
-    *,
-    value_options: Collection[str],
-) -> bool:
-    """Return whether a help flag appears before an option separator."""
-    i = 0
-    while i < len(tokens):
-        token = tokens[i]
-        if token == "--":
-            return False
-        option_name = token.split("=", maxsplit=1)[0]
-        if option_name in value_options:
-            i += 1 if "=" in token else 2
-            continue
-        if token in {"--help", "-h"}:
-            return True
-        i += 1
-    return False
 
 
 def active_storage_root_from_state(

@@ -636,6 +636,18 @@ def test_mount_config_cli_rejects_existing_root_callback() -> None:
         mount_config_cli(app, kit)
 
 
+def test_mount_config_cli_rejects_existing_config_group_name() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+    app = typer.Typer()
+
+    @app.command()
+    def config() -> None:
+        """Host command that would collide with the generated config group."""
+
+    with pytest.raises(RuntimeError, match="already has a command or group"):
+        mount_config_cli(app, kit)
+
+
 def test_cli_argv_provider_alias_accepts_token_provider() -> None:
     def provide_args() -> list[str]:
         """Return command tokens without the program name."""

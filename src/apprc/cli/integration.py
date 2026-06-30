@@ -16,6 +16,7 @@ from apprc.cli.bridge import (
     ConfigCliBridge,
     HostCliBootstrapPolicy,
     MountConfigCliStateFactory,
+    ensure_config_group_name_available,
 )
 from apprc.cli.config.state import (
     ConfigBootstrapPolicy,
@@ -182,23 +183,26 @@ def mount_config_cli(
             "custom. Pass state_factory=... or omit state_type to use "
             "DefaultConfigCliState."
         )
+    ensure_config_group_name_available(app, config_group_name)
 
-    def bridge_state_factory(
-        context: CliBootstrapContext,
-        options: CliBootstrapOptions,
-    ) -> Any:
-        """Build state through the legacy mount factory contract."""
-        if state_factory is not None:
+    resolved_state_factory: (
+        Callable[[CliBootstrapContext, CliBootstrapOptions], Any] | None
+    ) = None
+    if state_factory is not None:
+
+        def adapt_mount_state_factory(
+            context: CliBootstrapContext,
+            _options: CliBootstrapOptions,
+        ) -> Any:
+            """Build state through the mount helper factory contract."""
             return state_factory(context)
-        return DefaultConfigCliState(
-            env_bootstrap=context.env_bootstrap,
-            storage=options.storage,
-        )
+
+        resolved_state_factory = adapt_mount_state_factory
 
     bridge = ConfigCliBridge(
         kit,
         state_type=state_type,
-        state_factory=bridge_state_factory,
+        state_factory=resolved_state_factory,
         config_group_name=config_group_name,
         args_provider=args_provider,
         bootstrap_policy=bootstrap_policy,

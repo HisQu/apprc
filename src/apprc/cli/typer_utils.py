@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Collection, Sequence
+from dataclasses import dataclass
 from importlib import import_module
 from typing import Any, NoReturn, TypeVar
 
@@ -18,6 +19,22 @@ except ModuleNotFoundError:
 
 MISSING_ACTION_MESSAGE = "error: no action specified"
 StateT = TypeVar("StateT")
+_HELP_OPTIONS = frozenset(("--help", "-h"))
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedCommandTokens:
+    """Parsed command tokens after known host-level options.
+
+    :param action_tokens: Tokens beginning with the first positional action.
+    :param separator_before_action: Whether ``--`` appeared before that action.
+    :param unknown_option_before_action: Whether parsing stopped on an option
+        that was not declared as a known flag or value option.
+    """
+
+    action_tokens: tuple[str, ...]
+    separator_before_action: bool = False
+    unknown_option_before_action: bool = False
 
 
 def dump_json(payload: Any) -> None:
@@ -68,14 +85,40 @@ def strip_leading_options(
         the value is supplied through ``--option=value``.
     :return: Tokens beginning with the first positional command/action.
     """
-    remaining = list(tokens)
+    return list(
+        parse_leading_options(
+            tokens,
+            flag_options=flag_options,
+            value_options=value_options,
+        ).action_tokens
+    )
+
+
+def parse_leading_options(
+    tokens: Sequence[str],
+    *,
+    flag_options: Collection[str],
+    value_options: Collection[str],
+) -> ParsedCommandTokens:
+    """Parse known leading options before command/action tokens.
+
+    :param tokens: Raw child command tokens.
+    :param flag_options: Option names that consume no value.
+    :param value_options: Option names that consume one following value unless
+        the value is supplied through ``--option=value``.
+    :return: Parsed action tokens and separator/unknown-option metadata.
+    """
+    remaining = tuple(tokens)
     i = 0
     while i < len(remaining):
         token = remaining[i]
         if token == "--":
-            return remaining[i + 1 :]
+            return ParsedCommandTokens(
+                action_tokens=remaining[i + 1 :],
+                separator_before_action=True,
+            )
         if not token.startswith("-"):
-            return remaining[i:]
+            return ParsedCommandTokens(action_tokens=remaining[i:])
 
         option_name = token.split("=", maxsplit=1)[0]
         if option_name in value_options:
@@ -84,8 +127,11 @@ def strip_leading_options(
         if option_name in flag_options:
             i += 1
             continue
-        return remaining[i:]
-    return []
+        return ParsedCommandTokens(
+            action_tokens=remaining[i:],
+            unknown_option_before_action=True,
+        )
+    return ParsedCommandTokens(action_tokens=())
 
 
 def args_after_command(
@@ -123,6 +169,68 @@ def args_after_command(
             continue
         return None
     return None
+
+
+def args_after_host_command(
+    command_name: str,
+    *,
+    tokens: Sequence[str] | None = None,
+    host_value_options: Collection[str] = (),
+) -> list[str] | None:
+    """Return tokens after one top-level host command.
+
+    :param command_name: Top-level command name to locate.
+    :param tokens: Optional command tokens without the program name.
+    :param host_value_options: Host-level options that consume a following value
+        when passed before the command.
+    :return: Child tokens after the command, or ``None`` for another command.
+    """
+    return args_after_command(
+        command_name,
+        tokens=tokens,
+        root_value_options=host_value_options,
+    )
+
+
+def help_requested_before_separator(
+    tokens: Sequence[str],
+    *,
+    value_options: Collection[str],
+) -> bool:
+    """Return whether a help flag appears before an option separator.
+
+    :param tokens: Command tokens to inspect.
+    :param value_options: Options whose following token is a value, not a help
+        request.
+    :return: Whether Typer should handle a structural help request.
+    """
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--":
+            return False
+        option_name = token.split("=", maxsplit=1)[0]
+        if option_name in value_options:
+            i += 1 if "=" in token else 2
+            continue
+        if token in _HELP_OPTIONS:
+            return True
+        i += 1
+    return False
+
+
+def structural_help_requested(tokens: Sequence[str]) -> bool:
+    """Return whether tokens structurally request command help.
+
+    :param tokens: Action tokens under a command group.
+    :return: Whether the final token is help and all prior tokens look like
+        positional command path pieces.
+    """
+    if not tokens or tokens[-1] not in _HELP_OPTIONS:
+        return False
+    if "--" in tokens:
+        return False
+    return all(not token.startswith("-") for token in tokens[:-1])
 
 
 def run_typer_app(

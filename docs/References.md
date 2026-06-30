@@ -41,7 +41,7 @@ procedure and [Explanations](Explanations.md) for concepts.
 ## Public Interfaces
 <!-- ======================================================== -->
 
-Root `apprc` imports for normal integrations:
+Top-level `apprc` imports for normal integrations:
 
 | Import | Purpose |
 |---|---|
@@ -200,7 +200,7 @@ Storage selector sources:
 
 | Order | Source |
 |---|---|
-| 1 | Root `--storage`. |
+| 1 | Host-level `--storage`. |
 | 2 | Shell env, for example `MYAPP_STORAGE`. |
 | 3 | Explicit env files, respecting `--env-file-overrides-os-environ`. |
 | 4 | App-wide `.env.apprc-app`, when active. |
@@ -241,6 +241,10 @@ Commands are shown with `myapp` as the host app command.
 | `myapp config storage remove NAME` | Remove a storage entry from the index. | yes |
 
 `--json` is available on `paths`, `doctor`, `show`, and `storage list`.
+Runtimeful generated commands use the app-owned `state_type` stored on
+`ctx.obj`; bootstrapless generated commands use AppRC context metadata. AppRC
+raises a clear error when that runtime state is missing after bootstrap, or when
+the requested generated config group name already belongs to the host Typer app.
 
 <br>
 
@@ -271,7 +275,7 @@ The JSON payload also includes `issues`, `warnings`, `missing_env_keys`, and
 ## Dotenv Helper APIs
 <!-- ======================================================== -->
 
-Root facade helpers:
+Top-level facade helpers:
 
 | Helper | Purpose |
 |---|---|

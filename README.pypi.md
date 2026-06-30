@@ -164,12 +164,16 @@ runtime bootstrap for commands that need resolved config, and mounts the generat
 `args_provider=...` with tokens shaped like `CliArgvProvider`. Apps whose
 config hooks must run for `config set` or `config edit` can pass
 `bootstrap_policy=...`. Use `config_group_name=...` only when the generated
-group should not be named `config`.
+group should not be named `config`; AppRC raises a clear error if the host app
+already owns that command or group name.
 Apps that own their host callback and extra options can use `ConfigCliBridge`
 as the composable middle layer: the app builds its runtime state, while AppRC
 owns config command mounting, skip policy, context storage, and state
 validation. When `bridge.prepare(...)` skips runtime bootstrap,
 `session.skipped_runtime_bootstrap` is true and `session.state` is `None`.
+Runtimeful generated config commands require the host callback to leave the
+declared `state_type` on `ctx.obj`; bootstrapless config commands use AppRC's
+stored context instead.
 
 **Note**
 

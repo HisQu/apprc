@@ -5,7 +5,7 @@ from __future__ import annotations
 # == Standard Library ========================
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Annotated, Any, TypeVar
 
 # == 3rd Party ===============================
 import typer
@@ -13,6 +13,7 @@ import typer
 # == Internal ================================
 from apprc.cli.config.handlers import ConfigCommandHandlers
 from apprc.cli.config.handlers import ConfigSelectorContext
+from apprc.cli.config.group_options import ConfigGroupOptions
 from apprc.cli.config.state import DefaultConfigCliState
 from apprc.runtime_config.doctor.payload import config_setup_message
 from apprc.runtime_config.kit import AppConfigKit
@@ -63,9 +64,35 @@ def build_config_typer_app(
         guidance.
     :return: Configured Typer app.
     """
-    resolved_state_type = state_type or DefaultConfigCliState
+    options = ConfigGroupOptions(
+        state_type=state_type or DefaultConfigCliState,
+        runtime_payload=runtime_payload,
+        active_storage_root=active_storage_root,
+        active_storage_root_with_context=active_storage_root_with_context,
+        initial_storage=initial_storage,
+        initial_storage_with_context=initial_storage_with_context,
+        editor_app_cls=editor_app_cls,
+        help=help,
+        setup_message=setup_message,
+        runtime_error_param_hint=runtime_error_param_hint,
+        config_group_name=config_group_name,
+    )
+    return build_config_typer_app_from_options(kit, options=options)
+
+
+def build_config_typer_app_from_options(
+    kit: AppConfigKit,
+    *,
+    options: ConfigGroupOptions,
+) -> typer.Typer:
+    """Build the reusable ``config`` command group from internal options.
+
+    :param kit: Application config facade.
+    :param options: Internal generated config command option bundle.
+    :return: Configured Typer app.
+    """
     app = typer.Typer(
-        help=help
+        help=options.help
         or f"Inspect and initialize {kit.spec.display_name} configuration.",
         invoke_without_command=True,
         no_args_is_help=False,
@@ -80,32 +107,12 @@ def build_config_typer_app(
 
     handlers = ConfigCommandHandlers(
         kit,
-        state_type=resolved_state_type,
-        runtime_payload=cast(
-            Callable[[Any], Mapping[str, Any]] | None,
-            runtime_payload,
+        options=options,
+        missing_setup=options.setup_message
+        or config_setup_message(
+            kit,
+            config_group_name=options.config_group_name,
         ),
-        active_storage_root=cast(
-            Callable[[Any], Path | None] | None,
-            active_storage_root,
-        ),
-        active_storage_root_with_context=cast(
-            Callable[[Any, ConfigSelectorContext], Path | None] | None,
-            active_storage_root_with_context,
-        ),
-        initial_storage=cast(
-            Callable[[Any], str | None] | None,
-            initial_storage,
-        ),
-        initial_storage_with_context=cast(
-            Callable[[Any, ConfigSelectorContext], str | None] | None,
-            initial_storage_with_context,
-        ),
-        editor_app_cls=editor_app_cls,
-        missing_setup=setup_message
-        or config_setup_message(kit, config_group_name=config_group_name),
-        runtime_error_param_hint=runtime_error_param_hint,
-        config_group_name=config_group_name,
     )
 
     @app.callback(invoke_without_command=True)

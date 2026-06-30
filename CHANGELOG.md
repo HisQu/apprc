@@ -106,6 +106,23 @@ This project follows Semantic Versioning.
     rejected empty bootstrapless action paths, and tightened host help parsing
     so `run --help` skips bootstrap while `run -- --help` remains runtime data.
 
+  - Refactored the generated Typer CLI internals to centralize command-token
+    parsing, route generated config hooks through one internal option bundle,
+    and split state/context resolution out of the command handler base class.
+
+<br>
+
+### 🔨 Fixed
+
+  - Fixed runtimeful generated config commands with custom state so they fail
+    clearly when AppRC bootstrap ran but the host callback did not leave the
+    declared `state_type` on `ctx.obj`, while bootstrapless config commands
+    still use AppRC's stored context.
+
+  - Fixed generated config group mounting so `ConfigCliBridge(...)` and
+    `mount_config_cli(...)` reject host Typer apps that already own the
+    requested config command or group name.
+
 <br>
 
 ---

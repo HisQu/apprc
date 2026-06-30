@@ -372,13 +372,12 @@ class AppConfigKit:
         """
         from apprc.cli.config import (
             DefaultConfigCliState,
-            build_config_typer_app,
         )
+        from apprc.cli.config.app import build_config_typer_app_from_options
+        from apprc.cli.config.group_options import ConfigGroupOptions
 
         resolved_state_type = state_type or DefaultConfigCliState
-
-        return build_config_typer_app(
-            self,
+        group_options = ConfigGroupOptions(
             state_type=resolved_state_type,
             runtime_payload=runtime_payload,
             active_storage_root=active_storage_root,
@@ -390,4 +389,9 @@ class AppConfigKit:
             setup_message=setup_message,
             runtime_error_param_hint=runtime_error_param_hint,
             config_group_name=config_group_name,
+        )
+
+        return build_config_typer_app_from_options(
+            self,
+            options=group_options,
         )

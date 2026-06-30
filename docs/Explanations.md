@@ -335,7 +335,11 @@ run for generated writes can pass `bootstrap_policy=...` or use the bridge
 directly.
 When `ConfigCliBridge.prepare(...)` skips runtime bootstrap, the returned
 session has `skipped_runtime_bootstrap=True` and `state=None`; existing
-host-owned `ctx.obj` values are left alone.
+host-owned `ctx.obj` values are left alone. When bootstrap runs, runtimeful
+generated config commands expect the host callback to leave the declared
+`state_type` on `ctx.obj`; AppRC reports a clear error if that state is missing.
+Generated config group mounting also fails early when the host app already owns
+the requested command or group name.
 
 The CLI has three jobs:
 

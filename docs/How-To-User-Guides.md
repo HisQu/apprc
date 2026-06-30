@@ -220,7 +220,8 @@ before required runtime settings exist. Pass `state_type=...` plus
 `CliArgvProvider` command tokens explicitly. Pass `bootstrap_policy=...` when
 custom config hooks must run for generated writes such as `config set` or
 `config edit`. Pass `config_group_name=...` only when the generated command
-group should not be named `config`.
+group should not be named `config`; AppRC raises a clear error if the host app
+already owns that command or group name.
 
 Apps that own their host callback and extra options can use
 `ConfigCliBridge`. The bridge keeps AppRC's deterministic config CLI behavior
@@ -331,7 +332,9 @@ declared command-group help such as `tool --help` render before runtime storage
 or required settings exist. Use `exact_actions` for complete action paths and
 `action_prefixes` for subtrees whose child commands have their own options. On
 skipped runs, `session.state` is `None`; AppRC still stores its bootstrap context
-for generated config commands.
+for generated config commands. Runtimeful generated config commands require the
+host callback to leave the declared `state_type` on `ctx.obj`; bootstrapless
+generated config commands use AppRC's stored context instead.
 
 > [!NOTE]
 > Related: use [References: generated CLI commands](References.md#generated-cli-commands)

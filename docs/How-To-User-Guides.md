@@ -282,16 +282,15 @@ bridge = ConfigCliBridge(
     state_type=MyCliState,
     state_factory=build_state,
     bootstrap_policy=HostCliBootstrapPolicy(
-        config_group_name="config",
         bootstrapless_commands={
             "tool": BootstraplessCommand(skip_empty=True),
             "llm": BootstraplessCommand(
                 skip_empty=True,
-                actions={("benchmark",)},
+                action_prefixes={("benchmark",)},
             ),
             "rag": BootstraplessCommand(
                 skip_empty=True,
-                actions={("cache",), ("benchmark",)},
+                action_prefixes={("cache",), ("benchmark",)},
             ),
         },
         extra_host_value_options={"--workdir"},
@@ -327,7 +326,10 @@ def cli(
 AppRC's standard host-level options, so custom callbacks only list app-specific
 option names. `BootstraplessCommand(skip_help=True)` is the default, which lets
 declared command-group help such as `tool --help` render before runtime storage
-or required settings exist.
+or required settings exist. Use `exact_actions` for complete action paths and
+`action_prefixes` for subtrees whose child commands have their own options. On
+skipped runs, `session.state` is `None`; AppRC still stores its bootstrap context
+for generated config commands.
 
 > [!NOTE]
 > Related: use [References: generated CLI commands](References.md#generated-cli-commands)

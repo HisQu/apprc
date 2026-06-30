@@ -176,7 +176,7 @@ class StorageFreeExampleConfigState:
 
 @dataclass(slots=True)
 class StorageFreeExampleConfigStateWithoutStorage:
-    """Storage-free root CLI state that has no storage selector field."""
+    """Storage-free host CLI state that has no storage selector field."""
 
     env_bootstrap: EnvBootstrapResult | None = None
 

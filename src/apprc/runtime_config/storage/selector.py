@@ -238,7 +238,7 @@ def select_storage_selector(
     explicit dotenv value or the already-exported process environment supplies
     ``<APP>_STORAGE``.
 
-    :param storage: Optional root CLI ``--storage`` value.
+    :param storage: Optional host-level CLI ``--storage`` value.
     :param original_env: Process environment captured before dotenv loading.
     :param explicit_values: Values read from ``--env-file``.
     :param app_wide_values: App-wide dotenv values used as a persistent

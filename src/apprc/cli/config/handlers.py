@@ -967,7 +967,7 @@ def _inactive_scope_message(
 
 
 def _root_env_files(raw_value: object | None) -> tuple[Path, ...]:
-    """Return root ``--env-file`` option values as paths."""
+    """Return host-level ``--env-file`` option values as paths."""
     if raw_value is None:
         return ()
     if isinstance(raw_value, Path):

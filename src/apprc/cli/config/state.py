@@ -11,8 +11,8 @@ from typing import Protocol, cast
 
 # == Internal ================================
 from apprc.cli.options import (
-    COMMON_ROOT_FLAG_OPTIONS,
-    COMMON_ROOT_VALUE_OPTIONS,
+    COMMON_HOST_FLAG_OPTIONS,
+    COMMON_HOST_VALUE_OPTIONS,
 )
 from apprc.cli.typer_utils import args_after_command, strip_leading_options
 from apprc.runtime_config.bootstrap.result import EnvBootstrapResult
@@ -87,8 +87,8 @@ class ConfigBootstrapPolicy:
     bootstrapless_actions: Collection[str] = (
         DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
     )
-    root_flag_options: Collection[str] = COMMON_ROOT_FLAG_OPTIONS
-    root_value_options: Collection[str] = COMMON_ROOT_VALUE_OPTIONS
+    root_flag_options: Collection[str] = COMMON_HOST_FLAG_OPTIONS
+    root_value_options: Collection[str] = COMMON_HOST_VALUE_OPTIONS
     skip_invalid_options: bool = True
 
     def request_skips_runtime_bootstrap(
@@ -115,8 +115,8 @@ def config_request_skips_runtime_bootstrap(
     command_name: str = "config",
     *,
     tokens: Sequence[str] | None = None,
-    root_flag_options: Collection[str] = COMMON_ROOT_FLAG_OPTIONS,
-    root_value_options: Collection[str] = COMMON_ROOT_VALUE_OPTIONS,
+    root_flag_options: Collection[str] = COMMON_HOST_FLAG_OPTIONS,
+    root_value_options: Collection[str] = COMMON_HOST_VALUE_OPTIONS,
     bootstrapless_actions: Collection[str] = (
         DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
     ),
@@ -247,7 +247,8 @@ def active_storage_root_from_env(
     :param kit: Application config facade.
     :param registry: Parsed storage table, or ``None`` for single-storage
         path mode.
-    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param explicit_values: Parsed values from host-level ``--env-file``
+        options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
     :return: Resolved storage root, or ``None`` when no env selector is set.

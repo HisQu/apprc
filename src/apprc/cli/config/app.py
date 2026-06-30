@@ -45,7 +45,7 @@ def build_config_typer_app(
     """Build the reusable ``config`` command group.
 
     :param kit: Application config facade.
-    :param state_type: Application root CLI state type stored on ``ctx.obj``.
+    :param state_type: Application host CLI state type stored on ``ctx.obj``.
         When omitted, AppRC uses its default config state.
     :param runtime_payload: Optional serializer for ``config show``.
     :param active_storage_root: Optional active storage resolver.

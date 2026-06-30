@@ -155,8 +155,8 @@ def run() -> None:
     typer.echo(f"profile={cfg.profile}")
 ```
 
-`mount_config_cli(...)` adds the standard AppRC host-level options, performs runtime
-bootstrap for commands that need resolved config, and mounts the generated
+`mount_config_cli(...)` adds the standard AppRC host-level options, performs
+runtime bootstrap for commands that need resolved config, and mounts the generated
 `config` command group. Apps with custom runtime state can pass
 `state_type=...` and `state_factory=...`; tests or lazy-forwarding CLIs can pass
 `args_provider=...` with tokens shaped like `CliArgvProvider`. Use
@@ -165,7 +165,8 @@ bootstrap for commands that need resolved config, and mounts the generated
 Apps that own their host callback and extra options can use `ConfigCliBridge`
 as the composable middle layer: the app builds its runtime state, while AppRC
 owns config command mounting, skip policy, context storage, and state
-validation.
+validation. When `bridge.prepare(...)` skips runtime bootstrap,
+`session.skipped_runtime_bootstrap` is true and `session.state` is `None`.
 
 > [!NOTE]
 > For the step-by-step integration guide, see
@@ -250,7 +251,7 @@ With `--env-file-overrides-os-environ`, explicit env files move after
 
 Storage selector resolution uses:
 
-1. root `--storage`
+1. host-level `--storage`
 2. shell env, for example `MYAPP_STORAGE`
 3. explicit env files, respecting `--env-file-overrides-os-environ`
 4. app-wide `.env.apprc-app`, when active

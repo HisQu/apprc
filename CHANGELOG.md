@@ -28,35 +28,11 @@ This project follows Semantic Versioning.
 
 <br>
 
-### 💥 Breaking Change Summary
-
-<br>
-
 ### ➕ Added
 
   - Added a Graphigs-backed structured dotenv/config-file map showing where
     AppRC keeps each `.env` and TOML file, which `AppConfigKit` shapes use
     them, and how startup inputs feed runtime config.
-
-<br>
-
-### 💔 Changed
-
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
-### 🔨 Fixed
-
-<br>
-
-### 🔒 Security
 
 <br>
 
@@ -70,15 +46,12 @@ This project follows Semantic Versioning.
 
 <br>
 
-### 💥 Breaking Change Summary
-
-<br>
-
 ### ➕ Added
 
   - Added layered Typer integration helpers: `mount_config_cli(...)`,
     `CliBootstrapOptions`, AppRC Typer context metadata, reusable host-level
-    option aliases, `MountConfigCliStateFactory`, `CliArgvProvider`,
+    option aliases including `COMMON_HOST_FLAG_OPTIONS` and
+    `COMMON_HOST_VALUE_OPTIONS`, `MountConfigCliStateFactory`, `CliArgvProvider`,
     `ConfigCliBridge`, `ConfigCliSession`, `ConfigCliStateFactory`,
     `BootstraplessCommand`, `HostCliBootstrapPolicy`, and configurable config
     bootstrap skip policies.
@@ -108,8 +81,8 @@ This project follows Semantic Versioning.
 
   - Tightened `HostCliBootstrapPolicy` and `ConfigCliBridge` validation so
     help-like option values do not skip bootstrap, host option sets extend
-    AppRC defaults, and config group names cannot drift between bridge and
-    policy objects.
+    AppRC defaults, and direct config bootstrap policies cannot drift from the
+    bridge config group name.
 
   - Renamed unreleased bridge policy option-extension parameters to
     `extra_host_flag_options=...` and `extra_host_value_options=...`, renamed
@@ -117,21 +90,16 @@ This project follows Semantic Versioning.
     structurally recognized host command help skip runtime bootstrap without
     treating option values such as `--text --help` as help requests.
 
-<br>
+  - Renamed unreleased bootstrapless host-command declarations from
+    `actions=...` to `exact_actions=...`, added `action_prefixes=...` for
+    command subtrees with child options, and moved generated config skip
+    composition fully under `ConfigCliBridge` so `HostCliBootstrapPolicy` only
+    declares host-command additions.
 
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
-### 🔨 Fixed
-
-<br>
-
-### 🔒 Security
+  - Simplified `ConfigCliBridge(...)` defaults so `ConfigCliBridge(kit)` uses
+    `DefaultConfigCliState`, while custom state still requires a
+    `state_factory`. Skipped bridge bootstrap now reports `session.state is
+    None` and leaves preexisting host-owned `ctx.obj` values untouched.
 
 <br>
 
@@ -192,7 +160,7 @@ This project follows Semantic Versioning.
   - Fixed generated `config --help` and `<config subcommand> --help` so help
     output does not require runtime storage readiness.
 
-  - Fixed skipped-bootstrap config commands so root `--env-file` storage
+  - Fixed skipped-bootstrap config commands so host-level `--env-file` storage
     selectors and `--env-file-overrides-os-environ` participate in storage
     selection without mutating `os.environ`.
 
@@ -216,7 +184,7 @@ This project follows Semantic Versioning.
   - Fixed TUI storage deletion so the registry row is removed before directory
     deletion; deletion failures now warn without recreating the row.
 
-  - Fixed config help detection to honor custom root value options and to
+  - Fixed config help detection to honor custom host-level value options and to
     ignore `--help` or `-h` after a `--` separator.
 
 
@@ -349,7 +317,7 @@ This project follows Semantic Versioning.
     optional indexes at runtime and report them as doctor warnings, while bare
     named selectors fail only when they need the invalid index.
 
-  - Fixed `config edit` so root storage selectors are honored and editor open
+  - Fixed `config edit` so host-level storage selectors are honored and editor open
     remains zero-write when optional named-storage indexes are corrupt but not
     needed.
 

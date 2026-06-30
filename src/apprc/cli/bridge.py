@@ -7,7 +7,8 @@ import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 # == 3rd Party ===============================
 import typer
@@ -15,10 +16,12 @@ import typer
 # == Internal ================================
 from apprc.cli.config.state import (
     ConfigBootstrapPolicy,
+    DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS,
+    DefaultConfigCliState,
 )
 from apprc.cli.options import (
-    COMMON_ROOT_FLAG_OPTIONS,
-    COMMON_ROOT_VALUE_OPTIONS,
+    COMMON_HOST_FLAG_OPTIONS,
+    COMMON_HOST_VALUE_OPTIONS,
 )
 from apprc.cli.context import (
     CliBootstrapContext,
@@ -71,15 +74,28 @@ class ConfigCliSession(Generic[StateT]):
 class BootstraplessCommand:
     """Declare host command actions that can run without app runtime state.
 
-    :param actions: Action-token sequences that do not need runtime state.
+    :param exact_actions: Complete action-token sequences that do not need
+        runtime state.
+    :param action_prefixes: Action-token prefixes whose whole subtrees do not
+        need runtime state.
     :param skip_empty: Whether a bare command group may skip runtime state.
     :param skip_help: Whether help for this command group or its declared
         actions may skip runtime state.
     """
 
-    actions: Collection[tuple[str, ...]] = ()
+    exact_actions: Collection[tuple[str, ...]] = ()
+    action_prefixes: Collection[tuple[str, ...]] = ()
     skip_empty: bool = False
     skip_help: bool = True
+
+    def __post_init__(self) -> None:
+        """Normalize action declarations for stable matching."""
+        object.__setattr__(self, "exact_actions", frozenset(self.exact_actions))
+        object.__setattr__(
+            self,
+            "action_prefixes",
+            frozenset(self.action_prefixes),
+        )
 
     def matches(
         self,
@@ -111,22 +127,32 @@ class BootstraplessCommand:
         """
         if not action_tokens:
             return self.skip_empty
-        if self.skip_help and _is_help_request(action_tokens):
+        if _is_help_request(action_tokens):
+            return self.skip_help
+        if self._matches_declared_action_help(action_tokens):
+            return self.skip_help
+        if _matches_any_exact(action_tokens, self.exact_actions):
             return True
-        if self.skip_help and self._matches_declared_action_help(action_tokens):
-            return True
-        return tuple(action_tokens) in self.actions
+        return _matches_any_prefix(action_tokens, self.action_prefixes)
 
     def _matches_declared_action_help(
         self,
         action_tokens: Sequence[str],
     ) -> bool:
         """Return whether tokens are help for one declared action path."""
-        for action in self.actions:
+        for action in self.exact_actions:
             action_length = len(action)
             if tuple(
                 action_tokens[:action_length]
             ) == action and _is_help_request(action_tokens[action_length:]):
+                return True
+        for prefix in self.action_prefixes:
+            prefix_length = len(prefix)
+            if tuple(
+                action_tokens[:prefix_length]
+            ) == prefix and _contains_help_request(
+                action_tokens[prefix_length:]
+            ):
                 return True
         return False
 
@@ -135,34 +161,41 @@ class BootstraplessCommand:
 class HostCliBootstrapPolicy:
     """Skip runtime bootstrap for config and declared host command paths.
 
-    :param config_group_name: Generated config command group name.
-    :param config_policy: Optional generated config command skip policy.
     :param bootstrapless_commands: Host command declarations keyed by command
         name.
+    :param config_bootstrapless_actions: Generated config actions that can run
+        without full runtime state.
+    :param config_skip_invalid_options: Whether unknown leading generated
+        config options should skip runtime bootstrap so Typer can report the
+        parse error directly.
     :param extra_host_flag_options: App-specific host options that consume no
         values.
     :param extra_host_value_options: App-specific host options that consume one
         value.
     """
 
-    config_group_name: str = "config"
-    config_policy: ConfigBootstrapPolicy | None = None
     bootstrapless_commands: Mapping[str, BootstraplessCommand] = field(
         default_factory=dict
     )
+    config_bootstrapless_actions: Collection[str] = (
+        DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
+    )
+    config_skip_invalid_options: bool = True
     extra_host_flag_options: Collection[str] = ()
     extra_host_value_options: Collection[str] = ()
 
     def __post_init__(self) -> None:
-        """Normalize extra host options and validate config policy names."""
-        if (
-            self.config_policy is not None
-            and self.config_policy.config_group_name != self.config_group_name
-        ):
-            raise ValueError(
-                "HostCliBootstrapPolicy config_group_name must match "
-                "config_policy.config_group_name."
-            )
+        """Normalize action and option declarations."""
+        object.__setattr__(
+            self,
+            "bootstrapless_commands",
+            MappingProxyType(dict(self.bootstrapless_commands)),
+        )
+        object.__setattr__(
+            self,
+            "config_bootstrapless_actions",
+            frozenset(self.config_bootstrapless_actions),
+        )
         object.__setattr__(
             self,
             "extra_host_flag_options",
@@ -177,14 +210,14 @@ class HostCliBootstrapPolicy:
     @property
     def host_flag_options(self) -> Collection[str]:
         """Return AppRC standard flag options plus app-specific additions."""
-        return COMMON_ROOT_FLAG_OPTIONS | frozenset(
+        return COMMON_HOST_FLAG_OPTIONS | frozenset(
             self.extra_host_flag_options
         )
 
     @property
     def host_value_options(self) -> Collection[str]:
         """Return AppRC standard value options plus app-specific additions."""
-        return COMMON_ROOT_VALUE_OPTIONS | frozenset(
+        return COMMON_HOST_VALUE_OPTIONS | frozenset(
             self.extra_host_value_options
         )
 
@@ -193,20 +226,22 @@ class HostCliBootstrapPolicy:
         ctx: typer.Context,
         *,
         tokens: Sequence[str],
+        config_group_name: str,
     ) -> bool:
         """Return whether one host CLI run can avoid runtime state.
 
         :param ctx: Active Typer context from the host callback.
         :param tokens: Command tokens without the executable name.
+        :param config_group_name: Generated config command group name.
         :return: Whether app runtime state can be skipped.
         """
         command_name = ctx.invoked_subcommand
         if command_name is None:
             return False
-        if command_name == self.config_group_name:
-            return self._config_policy().request_skips_runtime_bootstrap(
-                tokens=tokens,
-            )
+        if command_name == config_group_name:
+            return self._config_policy(
+                config_group_name,
+            ).request_skips_runtime_bootstrap(tokens=tokens)
         args = args_after_command(
             command_name,
             tokens=tokens,
@@ -226,14 +261,14 @@ class HostCliBootstrapPolicy:
             return False
         return declaration.matches_action_tokens(action_tokens)
 
-    def _config_policy(self) -> ConfigBootstrapPolicy:
+    def _config_policy(self, config_group_name: str) -> ConfigBootstrapPolicy:
         """Return a config policy aligned with this host command shape."""
-        if self.config_policy is not None:
-            return self.config_policy
         return ConfigBootstrapPolicy(
-            config_group_name=self.config_group_name,
+            config_group_name=config_group_name,
             root_flag_options=self.host_flag_options,
             root_value_options=self.host_value_options,
+            bootstrapless_actions=self.config_bootstrapless_actions,
+            skip_invalid_options=self.config_skip_invalid_options,
         )
 
 
@@ -261,8 +296,10 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
     """
 
     kit: AppConfigKit
-    state_type: type[StateT]
-    state_factory: ConfigCliStateFactory[OptionsT, StateT]
+    state_type: type[StateT] = field(
+        default=cast(type[StateT], DefaultConfigCliState)
+    )
+    state_factory: ConfigCliStateFactory[OptionsT, StateT] | None = None
     config_group_name: str = "config"
     bootstrap_policy: ConfigBootstrapPolicy | HostCliBootstrapPolicy | None = (
         None
@@ -285,9 +322,18 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
     logger: BootstrapLogger | None = None
 
     def __post_init__(self) -> None:
-        """Validate bridge and policy names before commands are mounted."""
+        """Validate custom state and direct config policy names."""
         if (
-            self.bootstrap_policy is not None
+            self.state_factory is None
+            and self.state_type is not DefaultConfigCliState
+        ):
+            raise TypeError(
+                "ConfigCliBridge requires state_factory when state_type is "
+                "custom. Pass state_factory=... or omit state_type to use "
+                "DefaultConfigCliState."
+            )
+        if (
+            isinstance(self.bootstrap_policy, ConfigBootstrapPolicy)
             and self.bootstrap_policy.config_group_name
             != self.config_group_name
         ):
@@ -316,10 +362,9 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
             logger=self.logger,
         )
         if apprc_context.skipped_runtime_bootstrap:
-            ctx.obj = None
             return ConfigCliSession(apprc_context=apprc_context)
 
-        state = self.state_factory(apprc_context, options)
+        state = self._build_state(apprc_context, options)
         if not isinstance(state, self.state_type):
             raise RuntimeError(
                 "ConfigCliBridge state_factory returned "
@@ -327,6 +372,22 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
             )
         ctx.obj = state
         return ConfigCliSession(apprc_context=apprc_context, state=state)
+
+    def _build_state(
+        self,
+        apprc_context: CliBootstrapContext,
+        options: OptionsT,
+    ) -> StateT:
+        """Build app-owned state after runtime bootstrap has completed."""
+        if self.state_factory is not None:
+            return self.state_factory(apprc_context, options)
+        return cast(
+            StateT,
+            DefaultConfigCliState(
+                env_bootstrap=apprc_context.env_bootstrap,
+                storage=apprc_context.options.storage,
+            ),
+        )
 
     def mount_config_group(self, app: typer.Typer) -> typer.Typer:
         """Mount the generated config group on a host Typer app.
@@ -361,7 +422,11 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
         )
         tokens = _provided_args(self.args_provider)
         if isinstance(policy, HostCliBootstrapPolicy):
-            return policy.request_skips_runtime_bootstrap(ctx, tokens=tokens)
+            return policy.request_skips_runtime_bootstrap(
+                ctx,
+                tokens=tokens,
+                config_group_name=self.config_group_name,
+            )
         return policy.request_skips_runtime_bootstrap(tokens=tokens)
 
 
@@ -375,3 +440,27 @@ def _provided_args(args_provider: CliArgvProvider | None) -> Sequence[str]:
 def _is_help_request(tokens: Sequence[str]) -> bool:
     """Return whether tokens are exactly one recognized help option."""
     return len(tokens) == 1 and tokens[0] in _HELP_OPTIONS
+
+
+def _contains_help_request(tokens: Sequence[str]) -> bool:
+    """Return whether the remaining action path is a help request."""
+    return bool(tokens) and tokens[-1] in _HELP_OPTIONS
+
+
+def _matches_any_exact(
+    tokens: Sequence[str],
+    exact_actions: Collection[tuple[str, ...]],
+) -> bool:
+    """Return whether tokens match one complete action declaration."""
+    return tuple(tokens) in exact_actions
+
+
+def _matches_any_prefix(
+    tokens: Sequence[str],
+    action_prefixes: Collection[tuple[str, ...]],
+) -> bool:
+    """Return whether tokens begin with one declared action prefix."""
+    for prefix in action_prefixes:
+        if prefix and tuple(tokens[: len(prefix)]) == prefix:
+            return True
+    return False

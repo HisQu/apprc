@@ -24,6 +24,10 @@ from apprc.cli.integration import (
     CliArgvProvider,
     mount_config_cli,
 )
+from apprc.cli.options import (
+    COMMON_HOST_FLAG_OPTIONS,
+    COMMON_HOST_VALUE_OPTIONS,
+)
 from apprc.runtime_config import EnvConfig, env_field, env_owner
 from apprc.runtime_config.kit import AppConfigKit
 
@@ -47,6 +51,10 @@ def test_cli_facade_exports_bootstrap_symbols_needed_by_cunf() -> None:
     assert apprc_cli.bootstrap_cli_env is bootstrap_cli_env
     assert apprc_cli.CliBootstrapOptions is CliBootstrapOptions
     assert apprc_cli.CliArgvProvider is CliArgvProvider
+    assert apprc_cli.COMMON_HOST_FLAG_OPTIONS is COMMON_HOST_FLAG_OPTIONS
+    assert apprc_cli.COMMON_HOST_VALUE_OPTIONS is COMMON_HOST_VALUE_OPTIONS
+    assert not hasattr(apprc_cli, "COMMON_ROOT_FLAG_OPTIONS")
+    assert not hasattr(apprc_cli, "COMMON_ROOT_VALUE_OPTIONS")
     assert not hasattr(apprc_cli, "CliStateFactory")
     assert apprc_cli.MountConfigCliStateFactory is MountConfigCliStateFactory
     assert apprc_cli.ConfigCliBridge is ConfigCliBridge
@@ -62,6 +70,10 @@ def test_cli_facade_exports_bootstrap_symbols_needed_by_cunf() -> None:
         is config_request_skips_runtime_bootstrap
     )
     assert "bootstrap_cli_env" in apprc_cli.__all__
+    assert "COMMON_HOST_FLAG_OPTIONS" in apprc_cli.__all__
+    assert "COMMON_HOST_VALUE_OPTIONS" in apprc_cli.__all__
+    assert "COMMON_ROOT_FLAG_OPTIONS" not in apprc_cli.__all__
+    assert "COMMON_ROOT_VALUE_OPTIONS" not in apprc_cli.__all__
     assert "CliBootstrapOptions" in apprc_cli.__all__
     assert "CliArgvProvider" in apprc_cli.__all__
     assert "CliStateFactory" not in apprc_cli.__all__
@@ -91,5 +103,10 @@ def test_public_docs_do_not_reference_unreleased_bridge_names() -> None:
     )
 
     assert "`CliStateFactory`" not in docs
+    assert "COMMON_ROOT_FLAG_OPTIONS" not in docs
+    assert "COMMON_ROOT_VALUE_OPTIONS" not in docs
+    assert "config_policy=" not in docs
+    assert 'config_group_name="config"' not in docs
+    assert "actions={" not in docs
     assert re.search(r"(?<!extra_)host_flag_options=", docs) is None
     assert re.search(r"(?<!extra_)host_value_options=", docs) is None

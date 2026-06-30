@@ -222,7 +222,7 @@ names call this choice a `storage selector`.
 
 AppRC checks possible storage choices in this order:
 
-1. root `--storage`
+1. host-level `--storage`
 2. storage env key, for example `MYAPP_STORAGE`
 3. explicit env files, respecting `--env-file-overrides-os-environ`
 4. app-wide `.env.apprc-app`, when active
@@ -318,10 +318,10 @@ display value in provenance and UI surfaces.
 <!-- ======================================================== -->
 
 `mount_config_cli(...)` is the shortest Typer integration path: it registers
-standard AppRC host-level options, runs bootstrap only for commands that need runtime
-state, and mounts the generated `config` group. It keeps AppRC bootstrap context
-separate from app-owned `ctx.obj` state, so bootstrapless config commands can run
-without constructing incomplete application state.
+standard AppRC host-level options, runs bootstrap only for commands that need
+runtime state, and mounts the generated `config` group. It keeps AppRC bootstrap
+context separate from app-owned `ctx.obj` state, so bootstrapless config commands
+can run without constructing incomplete application state.
 
 `AppConfigKit.typer_app(...)` builds only the reusable Typer command group. The
 group is generated from the app spec, so unavailable capabilities are not
@@ -331,6 +331,9 @@ policy, mounts the generated group, and validates app-owned state. Apps that
 only need custom state after bootstrap can keep the mount helper and pass
 `state_type=...` plus `state_factory=...`. Apps that need a non-default generated
 group name can pass `config_group_name=...`.
+When `ConfigCliBridge.prepare(...)` skips runtime bootstrap, the returned
+session has `skipped_runtime_bootstrap=True` and `state=None`; existing
+host-owned `ctx.obj` values are left alone.
 
 The CLI has three jobs:
 

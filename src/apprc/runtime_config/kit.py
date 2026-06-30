@@ -302,7 +302,7 @@ class AppConfigKit:
     ) -> EnvBootstrapResult:
         """Populate ``os.environ`` for this application.
 
-        :param env_files: Optional invocation-local dotenv files that outrank
+        :param env_files: Optional CLI-run-local dotenv files that outrank
             packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
             storage ``.env.apprc-storage``.
         :param env_file_overrides_os_environ: Whether explicit dotenv values beat
@@ -351,7 +351,7 @@ class AppConfigKit:
     ) -> typer.Typer:
         """Build the generic Typer ``config`` command group.
 
-        :param state_type: Application root CLI state type stored on
+        :param state_type: Application host CLI state type stored on
             ``ctx.obj``. When omitted, AppRC uses its default config state.
         :param runtime_payload: Optional serializer for ``config show``.
         :param active_storage_root: Optional storage-root resolver for custom

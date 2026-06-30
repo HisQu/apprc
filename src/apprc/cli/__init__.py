@@ -42,8 +42,8 @@ from apprc.runtime_config.doctor.payload import (
     config_setup_message,
 )
 from apprc.cli.options import (
-    COMMON_ROOT_FLAG_OPTIONS,
-    COMMON_ROOT_VALUE_OPTIONS,
+    COMMON_HOST_FLAG_OPTIONS,
+    COMMON_HOST_VALUE_OPTIONS,
     EnvFileOverridesOption,
     EnvFilesOption,
     LogLevelOption,
@@ -61,8 +61,8 @@ from apprc.cli.typer_utils import (
 )
 
 __all__ = [
-    "COMMON_ROOT_FLAG_OPTIONS",
-    "COMMON_ROOT_VALUE_OPTIONS",
+    "COMMON_HOST_FLAG_OPTIONS",
+    "COMMON_HOST_VALUE_OPTIONS",
     "DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS",
     "CliBootstrapContext",
     "CliBootstrapOptions",

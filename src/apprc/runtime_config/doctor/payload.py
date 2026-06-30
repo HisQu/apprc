@@ -141,7 +141,8 @@ def build_config_doctor_payload(
 
     :param kit: Application config facade.
     :param storage: Optional selector passed by ``--storage``.
-    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param explicit_values: Parsed values from host-level ``--env-file``
+        options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
     :param config_group_name: Config command group name used in generated
@@ -320,7 +321,8 @@ def _diagnose_storage(
 
     :param kit: Application config facade.
     :param storage: Optional selector passed by ``--storage``.
-    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param explicit_values: Parsed values from host-level ``--env-file``
+        options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
     :param selector_env: Process plus explicit values used for selector paths.

@@ -9,7 +9,7 @@ from typing import Annotated, TypeAlias
 # == 3rd Party ===============================
 import typer
 
-COMMON_ROOT_FLAG_OPTIONS = frozenset(
+COMMON_HOST_FLAG_OPTIONS = frozenset(
     {
         "--env-file-overrides-os-environ",
         "-o",
@@ -17,7 +17,7 @@ COMMON_ROOT_FLAG_OPTIONS = frozenset(
         "-s",
     }
 )
-COMMON_ROOT_VALUE_OPTIONS = frozenset(
+COMMON_HOST_VALUE_OPTIONS = frozenset(
     {
         "--env-file",
         "--log-level",
@@ -62,7 +62,7 @@ StorageOption: TypeAlias = Annotated[
     typer.Option(
         "--storage",
         help=(
-            "Storage selector for this invocation. Registered names resolve "
+            "Storage selector for this CLI run. Registered names resolve "
             "through the AppRC TOML index when one is active."
         ),
     ),

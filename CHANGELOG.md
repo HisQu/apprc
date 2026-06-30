@@ -26,6 +26,13 @@ This project follows Semantic Versioning.
 
 # [Unreleased]
 
+
+
+<br>
+
+### 💥 Breaking Change Summary
+
+
 <br>
 
 ### ➕ Added
@@ -34,7 +41,20 @@ This project follows Semantic Versioning.
     AppRC keeps each `.env` and TOML file, which `AppConfigKit` shapes use
     them, and how startup inputs feed runtime config.
 
+
 <br>
+
+### 💔 Changed
+
+<br>
+
+### 🔨 Fixed
+
+
+<br>
+
+### 🗑️ Removed
+
 
 ---
 
@@ -79,16 +99,9 @@ This project follows Semantic Versioning.
     host-callback integrations and the convenience mount share one AppRC
     context, skip-policy, generated config group, and state-validation path.
 
-  - Tightened `HostCliBootstrapPolicy` and `ConfigCliBridge` validation so
-    help-like option values do not skip bootstrap, host option sets extend
-    AppRC defaults, and direct config bootstrap policies cannot drift from the
-    bridge config group name.
-
   - Renamed unreleased bridge policy option-extension parameters to
     `extra_host_flag_options=...` and `extra_host_value_options=...`, renamed
-    the mount helper factory alias to `MountConfigCliStateFactory`, and made
-    structurally recognized host command help skip runtime bootstrap without
-    treating option values such as `--text --help` as help requests.
+    the mount helper factory alias to `MountConfigCliStateFactory`.
 
   - Renamed unreleased bootstrapless host-command declarations from
     `actions=...` to `exact_actions=...`, added `action_prefixes=...` for
@@ -102,9 +115,8 @@ This project follows Semantic Versioning.
     None` and leaves preexisting host-owned `ctx.obj` values untouched.
 
   - Made `HostCliBootstrapPolicy()` the default for `ConfigCliBridge(...)` and
-    `mount_config_cli(...)`, added `bootstrap_policy=...` to the mount helper,
-    rejected empty bootstrapless action paths, and tightened host help parsing
-    so `run --help` skips bootstrap while `run -- --help` remains runtime data.
+    `mount_config_cli(...)`, and added `bootstrap_policy=...` to the mount
+    helper.
 
   - Refactored the generated Typer CLI internals to centralize command-token
     parsing, route generated config hooks through one internal option bundle,
@@ -113,6 +125,19 @@ This project follows Semantic Versioning.
 <br>
 
 ### 🔨 Fixed
+
+  - Fixed host and generated-config help parsing so structurally recognized
+    help such as `run --help` can render without runtime storage, while
+    help-like option values such as `--text --help` and separator-protected
+    tokens such as `run -- --help` remain runtime data.
+
+  - Fixed bridge skip-policy composition so app-specific host option sets
+    extend AppRC's standard options, generated config commands strip those
+    custom host options correctly, and direct config bootstrap policies cannot
+    drift from the bridge config group name.
+
+  - Fixed bootstrapless host-command declarations so empty action tuples are
+    rejected clearly; use `skip_empty=True` for bare command groups.
 
   - Fixed runtimeful generated config commands with custom state so they fail
     clearly when AppRC bootstrap ran but the host callback did not leave the

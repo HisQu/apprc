@@ -101,6 +101,11 @@ This project follows Semantic Versioning.
     `state_factory`. Skipped bridge bootstrap now reports `session.state is
     None` and leaves preexisting host-owned `ctx.obj` values untouched.
 
+  - Made `HostCliBootstrapPolicy()` the default for `ConfigCliBridge(...)` and
+    `mount_config_cli(...)`, added `bootstrap_policy=...` to the mount helper,
+    rejected empty bootstrapless action paths, and tightened host help parsing
+    so `run --help` skips bootstrap while `run -- --help` remains runtime data.
+
 <br>
 
 ---

@@ -330,7 +330,9 @@ callback and extra options: the bridge prepares AppRC context, applies skip
 policy, mounts the generated group, and validates app-owned state. Apps that
 only need custom state after bootstrap can keep the mount helper and pass
 `state_type=...` plus `state_factory=...`. Apps that need a non-default generated
-group name can pass `config_group_name=...`.
+group name can pass `config_group_name=...`. Apps that need app-owned hooks to
+run for generated writes can pass `bootstrap_policy=...` or use the bridge
+directly.
 When `ConfigCliBridge.prepare(...)` skips runtime bootstrap, the returned
 session has `skipped_runtime_bootstrap=True` and `state=None`; existing
 host-owned `ctx.obj` values are left alone.

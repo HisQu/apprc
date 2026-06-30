@@ -50,10 +50,10 @@ def build_config_typer_app(
     :param runtime_payload: Optional serializer for ``config show``.
     :param active_storage_root: Optional active storage resolver.
     :param active_storage_root_with_context: Optional active storage resolver
-        that can inspect skipped-bootstrap selector context.
+        that can inspect explicit env-file selector context.
     :param initial_storage: Optional editor initial-selection resolver.
     :param initial_storage_with_context: Optional editor initial-selection
-        resolver that can inspect skipped-bootstrap selector context.
+        resolver that can inspect explicit env-file selector context.
     :param editor_app_cls: Optional Textual subclass.
     :param help: Optional command-group help.
     :param setup_message: Optional setup text for missing storage.

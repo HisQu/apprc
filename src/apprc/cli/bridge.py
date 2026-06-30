@@ -28,7 +28,7 @@ from apprc.cli.context import (
     CliBootstrapOptionsProtocol,
     prepare_typer_context,
 )
-from apprc.cli.typer_utils import args_after_command, strip_leading_options
+from apprc.cli.typer_utils import args_after_command
 from apprc.runtime_config.bootstrap.result import BootstrapLogger
 from apprc.runtime_config.kit import AppConfigKit
 
@@ -90,11 +90,19 @@ class BootstraplessCommand:
 
     def __post_init__(self) -> None:
         """Normalize action declarations for stable matching."""
-        object.__setattr__(self, "exact_actions", frozenset(self.exact_actions))
+        exact_actions = _normalize_action_paths(
+            self.exact_actions,
+            field_name="exact_actions",
+        )
+        action_prefixes = _normalize_action_paths(
+            self.action_prefixes,
+            field_name="action_prefixes",
+        )
+        object.__setattr__(self, "exact_actions", exact_actions)
         object.__setattr__(
             self,
             "action_prefixes",
-            frozenset(self.action_prefixes),
+            action_prefixes,
         )
 
     def matches(
@@ -111,11 +119,13 @@ class BootstraplessCommand:
         :param value_options: Options that consume one following value.
         :return: Whether app runtime bootstrap may be skipped.
         """
-        action_tokens = strip_leading_options(
+        action_tokens = _strip_leading_host_options(
             args,
             flag_options=flag_options,
             value_options=value_options,
         )
+        if action_tokens is None:
+            return False
         return self.matches_action_tokens(action_tokens)
 
     def matches_action_tokens(self, action_tokens: Sequence[str]) -> bool:
@@ -150,7 +160,7 @@ class BootstraplessCommand:
             prefix_length = len(prefix)
             if tuple(
                 action_tokens[:prefix_length]
-            ) == prefix and _contains_help_request(
+            ) == prefix and _is_structural_help_path(
                 action_tokens[prefix_length:]
             ):
                 return True
@@ -249,15 +259,17 @@ class HostCliBootstrapPolicy:
         )
         if args is None:
             return False
-        action_tokens = strip_leading_options(
+        declaration = self.bootstrapless_commands.get(command_name)
+        if _is_help_request(args):
+            return declaration.skip_help if declaration is not None else True
+        if declaration is None:
+            return False
+        action_tokens = _strip_leading_host_options(
             args,
             flag_options=self.host_flag_options,
             value_options=self.host_value_options,
         )
-        declaration = self.bootstrapless_commands.get(command_name)
-        if _is_help_request(action_tokens):
-            return declaration.skip_help if declaration is not None else True
-        if declaration is None:
+        if action_tokens is None:
             return False
         return declaration.matches_action_tokens(action_tokens)
 
@@ -417,9 +429,7 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
         """Return whether this CLI run can avoid app runtime state."""
         if ctx.resilient_parsing:
             return True
-        policy = self.bootstrap_policy or ConfigBootstrapPolicy(
-            config_group_name=self.config_group_name,
-        )
+        policy = self.bootstrap_policy or HostCliBootstrapPolicy()
         tokens = _provided_args(self.args_provider)
         if isinstance(policy, HostCliBootstrapPolicy):
             return policy.request_skips_runtime_bootstrap(
@@ -442,9 +452,55 @@ def _is_help_request(tokens: Sequence[str]) -> bool:
     return len(tokens) == 1 and tokens[0] in _HELP_OPTIONS
 
 
-def _contains_help_request(tokens: Sequence[str]) -> bool:
-    """Return whether the remaining action path is a help request."""
-    return bool(tokens) and tokens[-1] in _HELP_OPTIONS
+def _is_structural_help_path(tokens: Sequence[str]) -> bool:
+    """Return whether action-tail tokens structurally request help."""
+    if not tokens or tokens[-1] not in _HELP_OPTIONS:
+        return False
+    if "--" in tokens:
+        return False
+    return all(not token.startswith("-") for token in tokens[:-1])
+
+
+def _strip_leading_host_options(
+    tokens: Sequence[str],
+    *,
+    flag_options: Collection[str],
+    value_options: Collection[str],
+) -> list[str] | None:
+    """Strip host options before an action, preserving ``--`` semantics."""
+    remaining = list(tokens)
+    i = 0
+    while i < len(remaining):
+        token = remaining[i]
+        if token == "--":
+            return None
+        if not token.startswith("-"):
+            return remaining[i:]
+
+        option_name = token.split("=", maxsplit=1)[0]
+        if option_name in value_options:
+            i += 1 if "=" in token else 2
+            continue
+        if option_name in flag_options:
+            i += 1
+            continue
+        return remaining[i:]
+    return []
+
+
+def _normalize_action_paths(
+    paths: Collection[tuple[str, ...]],
+    *,
+    field_name: str,
+) -> frozenset[tuple[str, ...]]:
+    """Return immutable non-empty action paths for one declaration field."""
+    normalized = frozenset(tuple(path) for path in paths)
+    if () in normalized:
+        raise ValueError(
+            f"BootstraplessCommand {field_name} must not contain empty "
+            "action paths. Use skip_empty=True for bare command groups."
+        )
+    return normalized
 
 
 def _matches_any_exact(

@@ -144,6 +144,37 @@ def test_bootstrapless_command_can_require_runtime_for_help() -> None:
     )
 
 
+def test_bootstrapless_command_rejects_empty_action_paths() -> None:
+    with pytest.raises(ValueError, match="skip_empty=True"):
+        BootstraplessCommand(exact_actions={()})
+    with pytest.raises(ValueError, match="skip_empty=True"):
+        BootstraplessCommand(action_prefixes={()})
+
+
+def test_bootstrapless_command_exact_action_help_respects_skip_help() -> None:
+    help_skips = BootstraplessCommand(exact_actions={("benchmark",)})
+    help_bootstraps = BootstraplessCommand(
+        exact_actions={("benchmark",)},
+        skip_help=False,
+    )
+
+    assert help_skips.matches(
+        ["benchmark", "--help"],
+        flag_options=set(),
+        value_options=set(),
+    )
+    assert not help_bootstraps.matches(
+        ["benchmark", "--help"],
+        flag_options=set(),
+        value_options=set(),
+    )
+    assert help_bootstraps.matches(
+        ["benchmark"],
+        flag_options=set(),
+        value_options=set(),
+    )
+
+
 def test_host_cli_bootstrap_policy_handles_haiu_shaped_commands() -> None:
     policy = _haiu_policy()
 
@@ -201,6 +232,21 @@ def test_host_cli_bootstrap_policy_handles_haiu_shaped_commands() -> None:
     assert not policy.request_skips_runtime_bootstrap(
         _ctx("run"),
         tokens=["run", "--text", "--help"],
+        config_group_name="config",
+    )
+    assert policy.request_skips_runtime_bootstrap(
+        _ctx("run"),
+        tokens=["run", "-h"],
+        config_group_name="config",
+    )
+    assert not policy.request_skips_runtime_bootstrap(
+        _ctx("run"),
+        tokens=["run", "--", "--help"],
+        config_group_name="config",
+    )
+    assert not policy.request_skips_runtime_bootstrap(
+        _ctx("run"),
+        tokens=["run", "--", "--text"],
         config_group_name="config",
     )
 

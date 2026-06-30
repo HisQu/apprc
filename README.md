@@ -159,9 +159,10 @@ def run() -> None:
 runtime bootstrap for commands that need resolved config, and mounts the generated
 `config` command group. Apps with custom runtime state can pass
 `state_type=...` and `state_factory=...`; tests or lazy-forwarding CLIs can pass
-`args_provider=...` with tokens shaped like `CliArgvProvider`. Use
-`config_group_name=...` only when the generated group should not be named
-`config`.
+`args_provider=...` with tokens shaped like `CliArgvProvider`. Apps whose
+config hooks must run for `config set` or `config edit` can pass
+`bootstrap_policy=...`. Use `config_group_name=...` only when the generated
+group should not be named `config`.
 Apps that own their host callback and extra options can use `ConfigCliBridge`
 as the composable middle layer: the app builds its runtime state, while AppRC
 owns config command mounting, skip policy, context storage, and state

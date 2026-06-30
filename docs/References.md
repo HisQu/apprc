@@ -62,7 +62,7 @@ CLI facade imports from `apprc.cli`:
 
 | Import | Purpose |
 |---|---|
-| `mount_config_cli` | Mount standard AppRC host-level options and the generated `config` group on a Typer app. |
+| `mount_config_cli` | Mount standard AppRC host-level options, default help-safe skip policy, and the generated `config` group on a Typer app. |
 | `CliBootstrapOptions` | Parsed standard AppRC host-level option values. |
 | `CliBootstrapContext` | Per-CLI-run AppRC bootstrap metadata stored on Typer context metadata. |
 | `MountConfigCliStateFactory` | Callable type for `mount_config_cli(...)` state factories created after runtime bootstrap. |

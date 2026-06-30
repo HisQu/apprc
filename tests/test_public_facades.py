@@ -103,6 +103,7 @@ def test_public_docs_do_not_reference_unreleased_bridge_names() -> None:
     )
 
     assert "`CliStateFactory`" not in docs
+    assert "bootstrap_policy=..." in docs
     assert "COMMON_ROOT_FLAG_OPTIONS" not in docs
     assert "COMMON_ROOT_VALUE_OPTIONS" not in docs
     assert "config_policy=" not in docs

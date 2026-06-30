@@ -14,9 +14,11 @@ import typer
 from apprc.cli.bridge import (
     CliArgvProvider,
     ConfigCliBridge,
+    HostCliBootstrapPolicy,
     MountConfigCliStateFactory,
 )
 from apprc.cli.config.state import (
+    ConfigBootstrapPolicy,
     DefaultConfigCliState,
 )
 from apprc.cli.context import (
@@ -50,6 +52,9 @@ def mount_config_cli(
     state_factory: MountConfigCliStateFactory[DefaultConfigCliState]
     | None = None,
     args_provider: CliArgvProvider | None = None,
+    bootstrap_policy: ConfigBootstrapPolicy | HostCliBootstrapPolicy | None = (
+        None
+    ),
     runtime_payload: (
         Callable[[DefaultConfigCliState], Mapping[str, Any]] | None
     ) = None,
@@ -87,6 +92,9 @@ def mount_config_cli(
     state_type: type[StateT],
     state_factory: MountConfigCliStateFactory[StateT],
     args_provider: CliArgvProvider | None = None,
+    bootstrap_policy: ConfigBootstrapPolicy | HostCliBootstrapPolicy | None = (
+        None
+    ),
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
     active_storage_root: Callable[[StateT], Path | None] | None = None,
     active_storage_root_with_context: (
@@ -113,6 +121,9 @@ def mount_config_cli(
     state_type: type[Any] = DefaultConfigCliState,
     state_factory: MountConfigCliStateFactory[Any] | None = None,
     args_provider: CliArgvProvider | None = None,
+    bootstrap_policy: ConfigBootstrapPolicy | HostCliBootstrapPolicy | None = (
+        None
+    ),
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None,
     active_storage_root: Callable[[Any], Path | None] | None = None,
     active_storage_root_with_context: (
@@ -139,6 +150,9 @@ def mount_config_cli(
         bootstrap has run.
     :param args_provider: Optional token provider for testing or forwarding.
         Returned tokens exclude the executable/program name.
+    :param bootstrap_policy: Optional bootstrap skip policy. When omitted,
+        AppRC skips runtime bootstrap for generated config setup/inspection and
+        plain host command help.
     :param runtime_payload: Optional serializer for ``config show``.
     :param active_storage_root: Optional storage-root resolver for app state.
     :param active_storage_root_with_context: Optional storage-root resolver that
@@ -187,6 +201,7 @@ def mount_config_cli(
         state_factory=bridge_state_factory,
         config_group_name=config_group_name,
         args_provider=args_provider,
+        bootstrap_policy=bootstrap_policy,
         runtime_payload=runtime_payload,
         active_storage_root=active_storage_root,
         active_storage_root_with_context=active_storage_root_with_context,
@@ -201,7 +216,7 @@ def mount_config_cli(
     )
 
     @app.callback()
-    def apprc_root_callback(
+    def apprc_host_callback(
         ctx: typer.Context,
         env_files: EnvFilesOption = None,
         env_file_overrides_os_environ: EnvFileOverridesOption = False,

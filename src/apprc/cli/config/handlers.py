@@ -195,7 +195,7 @@ class ConfigCommandBase:
             f"{self.config_group_name} {action}"
         )
 
-    def root_context_param(
+    def host_context_param(
         self,
         ctx: typer.Context,
         name: str,
@@ -223,10 +223,10 @@ class ConfigCommandBase:
         return None
 
     def cli_selector_context(self, ctx: typer.Context) -> ConfigSelectorContext:
-        """Return root explicit env-file values for selector-only reads."""
-        env_files = _root_env_files(self.root_context_param(ctx, "env_files"))
+        """Return host explicit env-file values for selector-only reads."""
+        env_files = _host_env_files(self.host_context_param(ctx, "env_files"))
         overrides = bool(
-            self.root_context_param(ctx, "env_file_overrides_os_environ")
+            self.host_context_param(ctx, "env_file_overrides_os_environ")
         )
         try:
             _, _, explicit_values = read_explicit_env_files(env_files)
@@ -633,7 +633,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
     def paths(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Show declared and active config paths without writing files."""
         selector_context = self.cli_selector_context(ctx)
-        storage = self.root_context_param(ctx, "storage")
+        storage = self.host_context_param(ctx, "storage")
         storage_selector = storage if isinstance(storage, str) else None
         payload = build_config_doctor_payload(
             self.kit,
@@ -683,7 +683,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
     def doctor(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Check AppRC config readiness and print suggested fixes."""
         selector_context = self.cli_selector_context(ctx)
-        storage = self.root_context_param(ctx, "storage")
+        storage = self.host_context_param(ctx, "storage")
         storage_selector = storage if isinstance(storage, str) else None
         payload = build_config_doctor_payload(
             self.kit,
@@ -966,7 +966,7 @@ def _inactive_scope_message(
     )
 
 
-def _root_env_files(raw_value: object | None) -> tuple[Path, ...]:
+def _host_env_files(raw_value: object | None) -> tuple[Path, ...]:
     """Return host-level ``--env-file`` option values as paths."""
     if raw_value is None:
         return ()

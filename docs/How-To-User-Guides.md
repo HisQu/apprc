@@ -217,8 +217,10 @@ def run() -> None:
 before required runtime settings exist. Pass `state_type=...` plus
 `state_factory=...` when the app needs custom host state after bootstrap, and
 `args_provider=...` when a wrapper or test harness needs to provide
-`CliArgvProvider` command tokens explicitly. Pass `config_group_name=...` only
-when the generated command group should not be named `config`.
+`CliArgvProvider` command tokens explicitly. Pass `bootstrap_policy=...` when
+custom config hooks must run for generated writes such as `config set` or
+`config edit`. Pass `config_group_name=...` only when the generated command
+group should not be named `config`.
 
 Apps that own their host callback and extra options can use
 `ConfigCliBridge`. The bridge keeps AppRC's deterministic config CLI behavior

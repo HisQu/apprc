@@ -18,6 +18,7 @@ from apprc.cli import (
     CliBootstrapContext,
     CliBootstrapOptions,
     ConfigBootstrapPolicy,
+    ConfigCliBridge,
     DefaultConfigCliState,
     EnvFileOverridesOption,
     EnvFilesOption,
@@ -32,6 +33,7 @@ from apprc.cli import (
 )
 from tests.support_config import (
     StorageFreeExampleEnv,
+    build_apprc_example_app_kit,
     build_storage_free_example_kit,
 )
 
@@ -95,7 +97,7 @@ def test_cli_bootstrap_options_accept_option_like_none_env_files() -> None:
 def test_prepare_typer_context_stores_metadata_without_ctx_obj(
     tmp_path: Path,
 ) -> None:
-    kit = _build_storage_free_kit_with_shared_env()
+    kit = build_storage_free_example_kit()
     env_file = tmp_path / "explicit.env"
     env_file.write_text(
         "STORAGE_FREE_APP_PROFILE=from-file\n", encoding="utf-8"
@@ -249,6 +251,83 @@ def test_mount_config_cli_passes_storage_to_default_config_show(
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["storage_root"] == str(storage_root.resolve())
+
+
+def test_config_cli_bridge_default_policy_renders_storage_required_help() -> (
+    None
+):
+    kit = build_apprc_example_app_kit()
+    args = ["run", "--help"]
+    bridge = ConfigCliBridge(kit, args_provider=lambda: args)
+    app = typer.Typer()
+    sessions: list[bool] = []
+
+    @app.callback()
+    def host_callback(
+        ctx: typer.Context,
+        storage: StorageOption = None,
+    ) -> None:
+        session = bridge.prepare(
+            ctx,
+            CliBootstrapOptions.from_typer(storage=storage),
+        )
+        sessions.append(session.skipped_runtime_bootstrap)
+
+    @app.command()
+    def run() -> None:
+        typer.echo("should not run")
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "Usage:" in result.output
+    assert sessions == [True]
+
+
+def test_mount_config_cli_default_policy_renders_storage_required_help() -> (
+    None
+):
+    kit = build_apprc_example_app_kit()
+    args = ["run", "--help"]
+    app = typer.Typer()
+    mount_config_cli(app, kit, args_provider=lambda: args)
+
+    @app.command()
+    def run() -> None:
+        typer.echo("should not run")
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "Usage:" in result.output
+    assert "APPRC_EXAMPLE_APP_STORAGE is required" not in result.output
+
+
+def test_mount_config_cli_separator_help_is_runtime_argument() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+    args = ["run", "--", "--help"]
+    app = typer.Typer()
+    mount_config_cli(app, kit, args_provider=lambda: args)
+
+    @app.command()
+    def run(ctx: typer.Context, text: str) -> None:
+        typer.echo(
+            json.dumps(
+                {
+                    "state": isinstance(ctx.obj, DefaultConfigCliState),
+                    "text": text,
+                },
+                sort_keys=True,
+            )
+        )
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        "state": True,
+        "text": "--help",
+    }
 
 
 def test_mount_config_cli_state_factory_builds_app_state_for_runtime_command(
@@ -444,6 +523,38 @@ def test_mount_config_cli_args_provider_controls_skip_policy(
 
     assert result.exit_code == 0, result.output
     assert factory_calls == []
+
+
+def test_mount_config_cli_bootstrap_policy_can_force_config_set_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    kit = _build_storage_free_kit_with_shared_env()
+    args = ["config", "set", "profile", "forced"]
+    factory_calls: list[CliBootstrapContext] = []
+
+    def state_factory(context: CliBootstrapContext) -> DefaultConfigCliState:
+        factory_calls.append(context)
+        return DefaultConfigCliState(env_bootstrap=context.env_bootstrap)
+
+    app = typer.Typer()
+    mount_config_cli(
+        app,
+        kit,
+        state_factory=state_factory,
+        args_provider=lambda: args,
+        bootstrap_policy=ConfigBootstrapPolicy(
+            bootstrapless_actions=(
+                DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS - {"set"}
+            ),
+        ),
+    )
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert len(factory_calls) == 1
 
 
 def test_mount_config_cli_custom_config_group_name_appears_in_guidance(

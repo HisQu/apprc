@@ -243,7 +243,7 @@ inputs such as `--env-file` and shell variables.
 
 | ![AppRC storage and config locations](assets/apprc-storage-config-locations.svg) |
 |:--:|
-| **Fig. 3 - AppRC Dotenv Locations:** `.env.shared` lives with the installed app, `.env.apprc-app` lives in the user config folder, `.env.apprc-storage` lives in each storage folder, and runtime-only inputs are read at startup. |
+| **Fig. 3 - AppRC Dotenv Locations:** AppRC-owned config files stand out from device locations, startup inputs stay separate, and the runtime-read box summarizes what AppRC reads when the app starts. |
 
 <br>
 

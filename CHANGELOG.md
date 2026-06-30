@@ -34,8 +34,9 @@ This project follows Semantic Versioning.
 
 ### ➕ Added
 
-  - Added a Graphigs-backed dotenv location map showing where AppRC keeps each
-    `.env` file and which `AppConfigKit` shapes use it.
+  - Added a Graphigs-backed structured dotenv/config-file map showing where
+    AppRC keeps each `.env` and TOML file, which `AppConfigKit` shapes use
+    them, and how startup inputs feed runtime config.
 
 <br>
 

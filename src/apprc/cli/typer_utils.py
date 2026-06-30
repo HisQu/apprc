@@ -96,14 +96,14 @@ def args_after_command(
 ) -> list[str] | None:
     """Return tokens after one top-level command group.
 
-    Click's root callback does not expose child command arguments, so callers
+    Click's host callback does not expose child command arguments, so callers
     can inspect ``sys.argv`` before bootstrap produces runtime side effects for
     help-only usage errors.
 
     :param command_name: Top-level command name to locate.
     :param tokens: Optional command tokens without the program name.
-    :param root_value_options: Root options that consume a following value when
-        passed before the command.
+    :param root_value_options: Host-level options that consume a following
+        value when passed before the command.
     :return: Child tokens after the command, or ``None`` for another command.
     """
     args = list(sys.argv[1:] if tokens is None else tokens)

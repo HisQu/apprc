@@ -53,7 +53,7 @@ class CliBootstrapOptionsProtocol(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class CliBootstrapOptions:
-    """Parsed AppRC root options for one Typer invocation.
+    """Parsed AppRC host-level options for one Typer CLI run.
 
     :param env_files: Explicit dotenv files passed to the CLI.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
@@ -125,9 +125,9 @@ class CliBootstrapOptions:
 class CliBootstrapContext:
     """AppRC state stored on Typer context metadata.
 
-    :param options: Normalized AppRC root options.
+    :param options: Normalized AppRC host-level options.
     :param env_bootstrap: Bootstrap result when runtime bootstrap ran.
-    :param skipped_runtime_bootstrap: Whether this invocation intentionally
+    :param skipped_runtime_bootstrap: Whether this CLI run intentionally
         avoided runtime bootstrap.
     """
 
@@ -146,7 +146,7 @@ def bootstrap_cli_options(
     """Run AppRC bootstrap from a parsed options object.
 
     :param kit: Application config facade.
-    :param options: Parsed AppRC root options.
+    :param options: Parsed AppRC host-level options.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status.
     :return: Bootstrap summary for diagnostics and command state.
@@ -173,11 +173,11 @@ def prepare_typer_context(
     setup_logging: Callable[..., Any] | None = None,
     logger: BootstrapLogger | None = None,
 ) -> CliBootstrapContext:
-    """Store AppRC bootstrap context on a Typer invocation.
+    """Store AppRC bootstrap context for a Typer CLI run.
 
     :param ctx: Active Typer context.
     :param kit: Application config facade.
-    :param options: Parsed AppRC root options.
+    :param options: Parsed AppRC host-level options.
     :param skip_bootstrap: Whether runtime bootstrap should be skipped.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status.
@@ -220,9 +220,9 @@ def apprc_context_from(ctx: typer.Context) -> CliBootstrapContext | None:
 def apprc_options_to_args(
     options: CliBootstrapOptionsProtocol,
 ) -> list[str]:
-    """Return CLI tokens that preserve AppRC root option values.
+    """Return CLI tokens that preserve AppRC host-level option values.
 
-    :param options: Parsed AppRC root options.
+    :param options: Parsed AppRC host-level options.
     :return: Long-form CLI option tokens suitable for forwarding.
     """
     parsed = CliBootstrapOptions.from_options(options)
@@ -244,5 +244,5 @@ def _store_apprc_context(
     ctx: typer.Context,
     context: CliBootstrapContext,
 ) -> None:
-    """Attach AppRC context to Typer metadata for this invocation."""
+    """Attach AppRC context to Typer metadata for this CLI run."""
     ctx.meta[APPRC_CONTEXT_META_KEY] = context

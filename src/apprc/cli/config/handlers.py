@@ -62,7 +62,7 @@ type ConfigSetScope = Literal["app", "storage"]
 
 @dataclass(frozen=True, slots=True)
 class ConfigSelectorContext:
-    """Root CLI explicit env values used only for selector resolution."""
+    """Host CLI explicit env values used only for selector resolution."""
 
     explicit_values: Mapping[str, str]
     env_file_overrides_os_environ: bool
@@ -117,7 +117,7 @@ class ConfigCommandBase:
         """Store config command dependencies and extension hooks.
 
         :param kit: Application config facade.
-        :param state_type: Application root CLI state type stored on
+        :param state_type: Application host CLI state type stored on
             ``ctx.obj``.
         :param runtime_payload: Optional serializer for ``config show``.
         :param active_storage_root: Optional active storage resolver.
@@ -148,7 +148,7 @@ class ConfigCommandBase:
         self.config_group_name = config_group_name
 
     def state(self, ctx: typer.Context) -> Any:
-        """Return the application root state stored by the parent CLI."""
+        """Return the application host state stored by the parent CLI."""
         return state_from(ctx, self.state_type)
 
     def context_state(self, ctx: typer.Context) -> DefaultConfigCliState | None:
@@ -650,7 +650,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         print_config_paths(self.kit, payload)
 
     def show(self, ctx: typer.Context, *, json_output: bool) -> None:
-        """Show the resolved runtime config available to this invocation."""
+        """Show the resolved runtime config available to this CLI run."""
         current_state = self.resolved_config_state(ctx)
         storage_root = (
             self.active_storage_root_for_cli(current_state)

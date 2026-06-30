@@ -27,11 +27,11 @@ from apprc.cli.doctor import print_config_doctor
 from apprc.cli.bridge import (
     BootstraplessCommand,
     CliArgvProvider,
-    CliStateFactory,
     ConfigCliBridge,
     ConfigCliSession,
     ConfigCliStateFactory,
     HostCliBootstrapPolicy,
+    MountConfigCliStateFactory,
 )
 from apprc.cli.integration import (
     mount_config_cli,
@@ -68,7 +68,7 @@ __all__ = [
     "CliBootstrapOptions",
     "CliBootstrapOptionsProtocol",
     "CliArgvProvider",
-    "CliStateFactory",
+    "MountConfigCliStateFactory",
     "ConfigCliBridge",
     "ConfigCliSession",
     "ConfigCliStateFactory",

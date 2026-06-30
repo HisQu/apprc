@@ -32,23 +32,23 @@ from apprc.runtime_config.storage.selector import (
 
 
 class ConfigCliState(Protocol):
-    """Root CLI state fields understood by the generic config app."""
+    """Host CLI state fields understood by the generic config app."""
 
     env_bootstrap: EnvBootstrapResult | None
 
 
 class StorageConfigCliState(ConfigCliState, Protocol):
-    """Root CLI state fields used by storage-capable config commands."""
+    """Host CLI state fields used by storage-capable config commands."""
 
     storage: str | None
 
 
 @dataclass(slots=True)
 class DefaultConfigCliState:
-    """Default root state understood by generated AppRC config commands.
+    """Default host state understood by generated AppRC config commands.
 
     :param env_bootstrap: Runtime bootstrap result, when bootstrap ran.
-    :param storage: Optional root ``--storage`` selector.
+    :param storage: Optional host-level ``--storage`` selector.
     """
 
     env_bootstrap: EnvBootstrapResult | None = None
@@ -75,9 +75,9 @@ class ConfigBootstrapPolicy:
     :param config_group_name: Top-level config command group to inspect.
     :param bootstrapless_actions: Config actions that can run without full
         runtime state.
-    :param root_flag_options: Root options that consume no values.
-    :param root_value_options: Root options that consume one following value
-        before the config command.
+    :param root_flag_options: Host-level options that consume no values.
+    :param root_value_options: Host-level options that consume one following
+        value before the config command.
     :param skip_invalid_options: Whether unknown leading options under the
         config group should avoid runtime bootstrap so Typer can report the
         parse error without app config failures.
@@ -96,7 +96,7 @@ class ConfigBootstrapPolicy:
         *,
         tokens: Sequence[str] | None = None,
     ) -> bool:
-        """Return whether one invocation can skip runtime bootstrap.
+        """Return whether one CLI run can skip runtime bootstrap.
 
         :param tokens: Optional command tokens without the program name.
         :return: Whether runtime bootstrap should be avoided.
@@ -122,20 +122,20 @@ def config_request_skips_runtime_bootstrap(
     ),
     skip_invalid_options: bool = True,
 ) -> bool:
-    """Return whether one config invocation avoids runtime bootstrap.
+    """Return whether one config CLI run avoids runtime bootstrap.
 
     :param command_name: Top-level config command name to inspect.
     :param tokens: Optional command tokens without the program name.
-    :param root_flag_options: Root options that consume no values before the
-        config action.
-    :param root_value_options: Root options that consume a following value
+    :param root_flag_options: Host-level options that consume no values before
+        the config action.
+    :param root_value_options: Host-level options that consume a following value
         before the config command.
     :param bootstrapless_actions: Config actions that can run before runtime
         setup.
     :param skip_invalid_options: Whether unknown leading options under the
         config group should skip runtime bootstrap so Typer can report the
         parse error directly.
-    :return: Whether the config command can run without root config state.
+    :return: Whether the config command can run without runtime state.
     """
     args = args_after_command(
         command_name,
@@ -194,8 +194,9 @@ def active_storage_root_from_state(
     """Return the active storage root from generic CLI state.
 
     :param kit: Application config facade.
-    :param state: Root CLI state object.
-    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param state: Host CLI state object.
+    :param explicit_values: Parsed values from host-level ``--env-file``
+        options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
     :return: Resolved storage root, or ``None`` when no selector is active.
@@ -301,9 +302,10 @@ def initial_storage_from_state(
     """Return the storage that should be selected first in editors.
 
     :param kit: Application config facade.
-    :param state: Root CLI state object.
+    :param state: Host CLI state object.
     :param registry: Optional already-loaded storage table.
-    :param explicit_values: Parsed values from root ``--env-file`` options.
+    :param explicit_values: Parsed values from host-level ``--env-file``
+        options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
     :return: Storage selector to preselect, or ``None``.

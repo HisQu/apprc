@@ -294,7 +294,7 @@ bridge = ConfigCliBridge(
                 actions={("cache",), ("benchmark",)},
             ),
         },
-        host_value_options={"--workdir"},
+        extra_host_value_options={"--workdir"},
     ),
 )
 bridge.mount_config_group(app)
@@ -323,8 +323,11 @@ def cli(
         return
 ```
 
-`host_flag_options` and `host_value_options` are additions to AppRC's standard
-host-level options, so custom callbacks only list app-specific option names.
+`extra_host_flag_options` and `extra_host_value_options` are additions to
+AppRC's standard host-level options, so custom callbacks only list app-specific
+option names. `BootstraplessCommand(skip_help=True)` is the default, which lets
+declared command-group help such as `tool --help` render before runtime storage
+or required settings exist.
 
 > [!NOTE]
 > Related: use [References: generated CLI commands](References.md#generated-cli-commands)

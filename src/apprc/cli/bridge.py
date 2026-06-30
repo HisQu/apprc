@@ -37,11 +37,16 @@ OptionsT = TypeVar("OptionsT", bound=CliBootstrapOptionsProtocol)
 StateT = TypeVar("StateT")
 
 type CliArgvProvider = Callable[[], Sequence[str]]
-type CliStateFactory[StateT] = Callable[[CliBootstrapContext], StateT]
+type MountConfigCliStateFactory[StateT] = Callable[
+    [CliBootstrapContext],
+    StateT,
+]
 type ConfigCliStateFactory[OptionsT, StateT] = Callable[
     [CliBootstrapContext, OptionsT],
     StateT,
 ]
+
+_HELP_OPTIONS = frozenset(("--help", "-h"))
 
 
 @dataclass(slots=True)
@@ -68,10 +73,13 @@ class BootstraplessCommand:
 
     :param actions: Action-token sequences that do not need runtime state.
     :param skip_empty: Whether a bare command group may skip runtime state.
+    :param skip_help: Whether help for this command group or its declared
+        actions may skip runtime state.
     """
 
     actions: Collection[tuple[str, ...]] = ()
     skip_empty: bool = False
+    skip_help: bool = True
 
     def matches(
         self,
@@ -92,9 +100,35 @@ class BootstraplessCommand:
             flag_options=flag_options,
             value_options=value_options,
         )
+        return self.matches_action_tokens(action_tokens)
+
+    def matches_action_tokens(self, action_tokens: Sequence[str]) -> bool:
+        """Return whether already-stripped action tokens may skip bootstrap.
+
+        :param action_tokens: Tokens beginning with the child action or help
+            option.
+        :return: Whether app runtime bootstrap may be skipped.
+        """
         if not action_tokens:
             return self.skip_empty
+        if self.skip_help and _is_help_request(action_tokens):
+            return True
+        if self.skip_help and self._matches_declared_action_help(action_tokens):
+            return True
         return tuple(action_tokens) in self.actions
+
+    def _matches_declared_action_help(
+        self,
+        action_tokens: Sequence[str],
+    ) -> bool:
+        """Return whether tokens are help for one declared action path."""
+        for action in self.actions:
+            action_length = len(action)
+            if tuple(
+                action_tokens[:action_length]
+            ) == action and _is_help_request(action_tokens[action_length:]):
+                return True
+        return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +139,10 @@ class HostCliBootstrapPolicy:
     :param config_policy: Optional generated config command skip policy.
     :param bootstrapless_commands: Host command declarations keyed by command
         name.
-    :param host_flag_options: Host options that consume no values.
-    :param host_value_options: Host options that consume one value.
+    :param extra_host_flag_options: App-specific host options that consume no
+        values.
+    :param extra_host_value_options: App-specific host options that consume one
+        value.
     """
 
     config_group_name: str = "config"
@@ -114,11 +150,11 @@ class HostCliBootstrapPolicy:
     bootstrapless_commands: Mapping[str, BootstraplessCommand] = field(
         default_factory=dict
     )
-    host_flag_options: Collection[str] = COMMON_ROOT_FLAG_OPTIONS
-    host_value_options: Collection[str] = COMMON_ROOT_VALUE_OPTIONS
+    extra_host_flag_options: Collection[str] = ()
+    extra_host_value_options: Collection[str] = ()
 
     def __post_init__(self) -> None:
-        """Normalize host options and validate nested config policy names."""
+        """Normalize extra host options and validate config policy names."""
         if (
             self.config_policy is not None
             and self.config_policy.config_group_name != self.config_group_name
@@ -129,13 +165,27 @@ class HostCliBootstrapPolicy:
             )
         object.__setattr__(
             self,
-            "host_flag_options",
-            COMMON_ROOT_FLAG_OPTIONS | frozenset(self.host_flag_options),
+            "extra_host_flag_options",
+            frozenset(self.extra_host_flag_options),
         )
         object.__setattr__(
             self,
-            "host_value_options",
-            COMMON_ROOT_VALUE_OPTIONS | frozenset(self.host_value_options),
+            "extra_host_value_options",
+            frozenset(self.extra_host_value_options),
+        )
+
+    @property
+    def host_flag_options(self) -> Collection[str]:
+        """Return AppRC standard flag options plus app-specific additions."""
+        return COMMON_ROOT_FLAG_OPTIONS | frozenset(
+            self.extra_host_flag_options
+        )
+
+    @property
+    def host_value_options(self) -> Collection[str]:
+        """Return AppRC standard value options plus app-specific additions."""
+        return COMMON_ROOT_VALUE_OPTIONS | frozenset(
+            self.extra_host_value_options
         )
 
     def request_skips_runtime_bootstrap(
@@ -164,14 +214,17 @@ class HostCliBootstrapPolicy:
         )
         if args is None:
             return False
-        declaration = self.bootstrapless_commands.get(command_name)
-        if declaration is None:
-            return False
-        return declaration.matches(
+        action_tokens = strip_leading_options(
             args,
             flag_options=self.host_flag_options,
             value_options=self.host_value_options,
         )
+        declaration = self.bootstrapless_commands.get(command_name)
+        if _is_help_request(action_tokens):
+            return declaration.skip_help if declaration is not None else True
+        if declaration is None:
+            return False
+        return declaration.matches_action_tokens(action_tokens)
 
     def _config_policy(self) -> ConfigBootstrapPolicy:
         """Return a config policy aligned with this host command shape."""
@@ -317,3 +370,8 @@ def _provided_args(args_provider: CliArgvProvider | None) -> Sequence[str]:
     if args_provider is not None:
         return args_provider()
     return sys.argv[1:]
+
+
+def _is_help_request(tokens: Sequence[str]) -> bool:
+    """Return whether tokens are exactly one recognized help option."""
+    return len(tokens) == 1 and tokens[0] in _HELP_OPTIONS

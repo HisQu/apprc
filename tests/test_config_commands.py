@@ -69,7 +69,7 @@ def root_app_with_config(
     *,
     state: ApprcExampleAppConfigState,
 ) -> typer.Typer:
-    """Mount a config app below root options used by selector tests."""
+    """Mount a config app below host-level options used by selector tests."""
     app = typer.Typer()
 
     @app.callback()

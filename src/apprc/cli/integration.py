@@ -13,8 +13,8 @@ import typer
 # == Internal ================================
 from apprc.cli.bridge import (
     CliArgvProvider,
-    CliStateFactory,
     ConfigCliBridge,
+    MountConfigCliStateFactory,
 )
 from apprc.cli.config.state import (
     DefaultConfigCliState,
@@ -47,7 +47,8 @@ def mount_config_cli(
     *,
     config_group_name: str = "config",
     state_type: type[DefaultConfigCliState] = DefaultConfigCliState,
-    state_factory: CliStateFactory[DefaultConfigCliState] | None = None,
+    state_factory: MountConfigCliStateFactory[DefaultConfigCliState]
+    | None = None,
     args_provider: CliArgvProvider | None = None,
     runtime_payload: (
         Callable[[DefaultConfigCliState], Mapping[str, Any]] | None
@@ -84,7 +85,7 @@ def mount_config_cli(
     *,
     config_group_name: str = "config",
     state_type: type[StateT],
-    state_factory: CliStateFactory[StateT],
+    state_factory: MountConfigCliStateFactory[StateT],
     args_provider: CliArgvProvider | None = None,
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
     active_storage_root: Callable[[StateT], Path | None] | None = None,
@@ -110,7 +111,7 @@ def mount_config_cli(
     *,
     config_group_name: str = "config",
     state_type: type[Any] = DefaultConfigCliState,
-    state_factory: CliStateFactory[Any] | None = None,
+    state_factory: MountConfigCliStateFactory[Any] | None = None,
     args_provider: CliArgvProvider | None = None,
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None,
     active_storage_root: Callable[[Any], Path | None] | None = None,

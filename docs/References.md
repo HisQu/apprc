@@ -65,7 +65,7 @@ CLI facade imports from `apprc.cli`:
 | `mount_config_cli` | Mount standard AppRC host-level options and the generated `config` group on a Typer app. |
 | `CliBootstrapOptions` | Parsed standard AppRC host-level option values. |
 | `CliBootstrapContext` | Per-CLI-run AppRC bootstrap metadata stored on Typer context metadata. |
-| `CliStateFactory` | Callable type for custom host state created after runtime bootstrap. |
+| `MountConfigCliStateFactory` | Callable type for `mount_config_cli(...)` state factories created after runtime bootstrap. |
 | `CliArgvProvider` | Callable type for explicit command tokens used by mount skip-policy tests and forwarding CLIs. |
 | `ConfigCliBridge` | Composable Typer bridge for apps that own their host callback and app-specific options. |
 | `ConfigCliSession` | Result returned by `ConfigCliBridge.prepare(...)`, including AppRC context and optional app state. |

@@ -1,4 +1,4 @@
-"""Root CLI bootstrap helpers."""
+"""Host CLI bootstrap helpers."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def bootstrap_cli_env(
     """Initialize logging and dotenv layers for one CLI process.
 
     :param kit: Application config facade.
-    :param env_files: Optional invocation-local dotenv files that outrank
+    :param env_files: Optional CLI-run-local dotenv files that outrank
         packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
         storage ``.env.apprc-storage``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat

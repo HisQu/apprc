@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import FrozenInstanceError, dataclass
 from pathlib import Path
 from typing import Annotated, Any, cast
 
@@ -86,6 +86,11 @@ def test_bootstrapless_command_matches_empty_and_declared_actions() -> None:
         flag_options=flag_options,
         value_options=value_options,
     )
+    assert command.matches(
+        ["cache", "--help"],
+        flag_options=flag_options,
+        value_options=value_options,
+    )
     assert not command.matches(
         ["query"],
         flag_options=flag_options,
@@ -95,6 +100,29 @@ def test_bootstrapless_command_matches_empty_and_declared_actions() -> None:
         [],
         flag_options=flag_options,
         value_options=value_options,
+    )
+
+
+def test_bootstrapless_command_can_require_runtime_for_help() -> None:
+    command = BootstraplessCommand(
+        actions={("cache",)},
+        skip_help=False,
+    )
+
+    assert not command.matches(
+        ["--help"],
+        flag_options=set(),
+        value_options=set(),
+    )
+    assert not command.matches(
+        ["cache", "--help"],
+        flag_options=set(),
+        value_options=set(),
+    )
+    assert command.matches(
+        ["cache"],
+        flag_options=set(),
+        value_options=set(),
     )
 
 
@@ -118,6 +146,18 @@ def test_host_cli_bootstrap_policy_handles_haiu_shaped_commands() -> None:
             "--ignore-haiu-cache",
             "cache",
         ],
+    )
+    assert policy.request_skips_runtime_bootstrap(
+        _ctx("run"),
+        tokens=["run", "--help"],
+    )
+    assert policy.request_skips_runtime_bootstrap(
+        _ctx("tool"),
+        tokens=["tool", "--help"],
+    )
+    assert policy.request_skips_runtime_bootstrap(
+        _ctx("rag"),
+        tokens=["rag", "cache", "--help"],
     )
     assert not policy.request_skips_runtime_bootstrap(
         _ctx("rag"),
@@ -150,8 +190,8 @@ def test_host_cli_bootstrap_policy_delegates_config_policy() -> None:
 
 def test_host_cli_bootstrap_policy_merges_standard_options() -> None:
     policy = HostCliBootstrapPolicy(
-        host_flag_options={"--ignore-haiu-cache"},
-        host_value_options={"--workdir-base"},
+        extra_host_flag_options={"--ignore-haiu-cache"},
+        extra_host_value_options={"--workdir-base"},
     )
 
     assert "--env-file-overrides-os-environ" in policy.host_flag_options
@@ -176,7 +216,7 @@ def test_host_cli_bootstrap_policy_preserves_supplied_config_policy() -> None:
         config_policy=ConfigBootstrapPolicy(
             root_value_options={"--config-policy-value"},
         ),
-        host_value_options={"--host-value"},
+        extra_host_value_options={"--host-value"},
     )
 
     assert policy.request_skips_runtime_bootstrap(
@@ -304,6 +344,30 @@ def test_config_cli_bridge_runtime_command_accepts_help_like_value() -> None:
     assert len(factory_calls) == 1
 
 
+def test_config_cli_bridge_runtime_command_help_skips_state_factory() -> None:
+    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+
+    args = ["run", "--help"]
+    app = typer.Typer()
+    factory_calls: list[tuple[CliBootstrapContext, HaiuLikeOptions]] = []
+    _install_haiu_like_bridge(
+        app,
+        APPRC_EXAMPLE_APP_KIT,
+        args_provider=lambda: args,
+        factory_calls=factory_calls,
+    )
+
+    @app.command()
+    def run() -> None:
+        typer.echo("should not run")
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "Usage:" in result.output
+    assert factory_calls == []
+
+
 def test_config_cli_bridge_bootstrapless_paths_uses_context_only(
     tmp_path: Path,
 ) -> None:
@@ -369,6 +433,18 @@ def test_config_cli_bridge_rejects_host_policy_group_drift() -> None:
             config_group_name="settings",
             bootstrap_policy=HostCliBootstrapPolicy(config_group_name="config"),
         )
+
+
+def test_config_cli_bridge_is_frozen() -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+    bridge = ConfigCliBridge[HaiuLikeOptions, HaiuLikeState](
+        kit,
+        state_type=HaiuLikeState,
+        state_factory=_empty_state_factory,
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        setattr(bridge, "config_group_name", "settings")
 
 
 def test_config_cli_bridge_bootstrapless_set_skips_state_factory(
@@ -515,8 +591,8 @@ def _haiu_policy(
                 actions={("cache",), ("benchmark",)},
             ),
         },
-        host_flag_options={"--ignore-haiu-cache"},
-        host_value_options=(
+        extra_host_flag_options={"--ignore-haiu-cache"},
+        extra_host_value_options=(
             {
                 "--base-url",
                 "--model-embed",

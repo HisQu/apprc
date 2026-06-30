@@ -137,7 +137,7 @@ def build_config_typer_app(
             ),
         ] = False,
     ) -> None:
-        """Show the resolved runtime config available to this invocation."""
+        """Show the resolved runtime config available to this CLI run."""
         handlers.show(ctx, json_output=json_output)
 
     @app.command("doctor")

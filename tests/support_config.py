@@ -160,7 +160,7 @@ def block_config_home_with_file(kit: AppConfigKit) -> Path:
 
 @dataclass(slots=True)
 class ApprcExampleAppConfigState:
-    """Root CLI state used by generated config app tests."""
+    """Host CLI state used by generated config app tests."""
 
     env_bootstrap: EnvBootstrapResult | None
     storage: str | None = None
@@ -168,7 +168,7 @@ class ApprcExampleAppConfigState:
 
 @dataclass(slots=True)
 class StorageFreeExampleConfigState:
-    """Root CLI state used by storage-free generated config tests."""
+    """Host CLI state used by storage-free generated config tests."""
 
     env_bootstrap: EnvBootstrapResult | None = None
     storage: str | None = None

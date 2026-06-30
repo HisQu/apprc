@@ -77,9 +77,10 @@ This project follows Semantic Versioning.
 
   - Added layered Typer integration helpers: `mount_config_cli(...)`,
     `CliBootstrapOptions`, AppRC Typer context metadata, reusable host-level
-    option aliases, `CliStateFactory`, `CliArgvProvider`, `ConfigCliBridge`,
-    `ConfigCliSession`, `ConfigCliStateFactory`, `BootstraplessCommand`,
-    `HostCliBootstrapPolicy`, and configurable config bootstrap skip policies.
+    option aliases, `MountConfigCliStateFactory`, `CliArgvProvider`,
+    `ConfigCliBridge`, `ConfigCliSession`, `ConfigCliStateFactory`,
+    `BootstraplessCommand`, `HostCliBootstrapPolicy`, and configurable config
+    bootstrap skip policies.
 
   - Added Graphigs-backed docs figure scripts for regenerating
     `docs-reading-map.svg` and `apprc-runtime-layers.svg`.
@@ -108,6 +109,12 @@ This project follows Semantic Versioning.
     help-like option values do not skip bootstrap, host option sets extend
     AppRC defaults, and config group names cannot drift between bridge and
     policy objects.
+
+  - Renamed unreleased bridge policy option-extension parameters to
+    `extra_host_flag_options=...` and `extra_host_value_options=...`, renamed
+    the mount helper factory alias to `MountConfigCliStateFactory`, and made
+    structurally recognized host command help skip runtime bootstrap without
+    treating option values such as `--text --help` as help requests.
 
 <br>
 

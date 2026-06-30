@@ -4,6 +4,20 @@ All notable changes to `apprc` will be documented in this file.
 
 This project follows Semantic Versioning.
 
+> [!IMPORTANT]
+> ## Rules
+> - When bumping version, move changes from `[Unreleased]` to the new version
+>   section. Empty sections under released versions are removed.  Provide a new
+>   `[Unreleased]` section at the top of the changelog with all sections empty
+>   (don't remove).
+> - Do not remove emojis
+> - Changelog entries must describe the final net difference from the previous
+>   released version. Do not list intermediate pre-release names, helper shapes,
+>   fixes, or refactors that were overwritten before release.
+> - Use `🔨 Fixed` only for defects in previously released behavior. For new
+>   features, describe the final shipped behavior under `➕ Added`, even if the
+>   implementation went through pre-release fixes.
+
 <br>
 
 ### Table Of Contents
@@ -68,13 +82,18 @@ This project follows Semantic Versioning.
 
 ### ➕ Added
 
-  - Added layered Typer integration helpers: `mount_config_cli(...)`,
-    `CliBootstrapOptions`, AppRC Typer context metadata, reusable host-level
-    option aliases including `COMMON_HOST_FLAG_OPTIONS` and
-    `COMMON_HOST_VALUE_OPTIONS`, `MountConfigCliStateFactory`, `CliArgvProvider`,
-    `ConfigCliBridge`, `ConfigCliSession`, `ConfigCliStateFactory`,
-    `BootstraplessCommand`, `HostCliBootstrapPolicy`, and configurable config
-    bootstrap skip policies.
+  - Added the final layered Typer integration toolkit:
+    `mount_config_cli(...)`, `ConfigCliBridge`, `CliBootstrapOptions`,
+    AppRC Typer context metadata, reusable host-level option aliases,
+    `MountConfigCliStateFactory`, `CliArgvProvider`, `ConfigCliSession`,
+    `ConfigCliStateFactory`, `BootstraplessCommand`,
+    `HostCliBootstrapPolicy`, and configurable config bootstrap skip policies.
+    The shipped helper behavior includes default `DefaultConfigCliState`
+    support, explicit `state_factory` support for app-owned runtime state,
+    custom generated config group names, explicit argv/policy injection for
+    tests and forwarding CLIs, help-safe bootstrap skipping, generated config
+    group collision checks, and context-only handling for bootstrapless
+    generated config commands.
 
   - Added Graphigs-backed docs figure scripts for regenerating
     `docs-reading-map.svg` and `apprc-runtime-layers.svg`.
@@ -89,64 +108,6 @@ This project follows Semantic Versioning.
   - Improved Graphigs-backed graphical abstract layouts with clearer groups,
     a wide README hero format, looser labels, and documented figure color
     roles.
-
-  - Tightened the new Typer convenience helper API before its first release:
-    custom `mount_config_cli(...)` state now requires `state_factory=...`,
-    generated config group renaming uses `config_group_name=...`, and explicit
-    mount hook parameters replace loose keyword forwarding.
-
-  - Refactored `mount_config_cli(...)` to use `ConfigCliBridge` internally so
-    host-callback integrations and the convenience mount share one AppRC
-    context, skip-policy, generated config group, and state-validation path.
-
-  - Renamed unreleased bridge policy option-extension parameters to
-    `extra_host_flag_options=...` and `extra_host_value_options=...`, renamed
-    the mount helper factory alias to `MountConfigCliStateFactory`.
-
-  - Renamed unreleased bootstrapless host-command declarations from
-    `actions=...` to `exact_actions=...`, added `action_prefixes=...` for
-    command subtrees with child options, and moved generated config skip
-    composition fully under `ConfigCliBridge` so `HostCliBootstrapPolicy` only
-    declares host-command additions.
-
-  - Simplified `ConfigCliBridge(...)` defaults so `ConfigCliBridge(kit)` uses
-    `DefaultConfigCliState`, while custom state still requires a
-    `state_factory`. Skipped bridge bootstrap now reports `session.state is
-    None` and leaves preexisting host-owned `ctx.obj` values untouched.
-
-  - Made `HostCliBootstrapPolicy()` the default for `ConfigCliBridge(...)` and
-    `mount_config_cli(...)`, and added `bootstrap_policy=...` to the mount
-    helper.
-
-  - Refactored the generated Typer CLI internals to centralize command-token
-    parsing, route generated config hooks through one internal option bundle,
-    and split state/context resolution out of the command handler base class.
-
-<br>
-
-### 🔨 Fixed
-
-  - Fixed host and generated-config help parsing so structurally recognized
-    help such as `run --help` can render without runtime storage, while
-    help-like option values such as `--text --help` and separator-protected
-    tokens such as `run -- --help` remain runtime data.
-
-  - Fixed bridge skip-policy composition so app-specific host option sets
-    extend AppRC's standard options, generated config commands strip those
-    custom host options correctly, and direct config bootstrap policies cannot
-    drift from the bridge config group name.
-
-  - Fixed bootstrapless host-command declarations so empty action tuples are
-    rejected clearly; use `skip_empty=True` for bare command groups.
-
-  - Fixed runtimeful generated config commands with custom state so they fail
-    clearly when AppRC bootstrap ran but the host callback did not leave the
-    declared `state_type` on `ctx.obj`, while bootstrapless config commands
-    still use AppRC's stored context.
-
-  - Fixed generated config group mounting so `ConfigCliBridge(...)` and
-    `mount_config_cli(...)` reject host Typer apps that already own the
-    requested config command or group name.
 
 <br>
 

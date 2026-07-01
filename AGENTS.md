@@ -11,8 +11,8 @@
 ## Project rules
 - Do not duplicate helpers or re-implement existing utilities without checking first.
 - Import `apprc`-owned utility helpers through the facade: `import apprc.utils as ut`.
-- Import logging helpers from `apprc.logging`, for example
-  `from apprc.logging import get_logger`.
+- AppRC production code must use stdlib `logging`; semantic logging helpers
+  live outside this repository.
 - For facade `__init__.py` files, prefer clean batch re-export imports plus file-level `# ruff: noqa: F401`; do not use redundant `symbol as symbol` aliases solely to satisfy Ruff.
 - Update `README.md`, docs, and changelogs when a change affects usage,
   setup, CLI behavior, public APIs, environment variables, user-visible

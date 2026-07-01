@@ -20,6 +20,7 @@ delegated to :mod:`apprc.user_files.env_files.files`.
 from __future__ import annotations
 
 # == Standard Library ========================
+import logging
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -55,9 +56,8 @@ from apprc.user_files.storage_roots.selector import (
     resolve_storage_selector_value,
     select_storage_selector,
 )
-from apprc.logging import get_logger
 
-LOG = get_logger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 def bootstrap_env(

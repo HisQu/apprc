@@ -15,7 +15,11 @@ import typer
 # == Internal ================================
 import apprc
 from apprc_cli_bridge_example.config import BridgeConfig, KIT, OWNERS
-from apprc_example_apps._support import bootstrap_payload, config_values
+from apprc_example_apps._support import (
+    bootstrap_payload,
+    config_values,
+    setup_example_logging,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +91,7 @@ def build_app(
         args_provider=args_provider,
         runtime_payload=_runtime_payload,
         editor_app_cls=editor_app_cls,
-        setup_logging=apprc.setup_logging,
+        setup_logging=setup_example_logging,
     )
 
     @app.callback()

@@ -20,7 +20,6 @@
 4. [Generated Interfaces](#4-generated-interfaces)
    1. [Generated CLI](#generated-cli)
    2. [Textual Editor](#textual-editor)
-   3. [Optional Logging](#optional-logging)
 5. [Failure Model](#5-failure-model)
 
 <br>
@@ -106,7 +105,6 @@ Core AppRC areas:
 | `src/apprc/runtime` | Process-time dotenv bootstrap, provenance, and read-only diagnostics. |
 | `src/apprc/user_files` | AppRC-managed config homes, dotenv editing, storage registries, archive helpers, and setup flows. |
 | `src/apprc/interfaces` | Typer integration, generated `config` commands, CLI rendering, and Textual TUI presentation. |
-| `src/apprc/logging` | Optional semantic logging and structlog-backed formatting. |
 | `examples/example_apps` | Runnable example CLIs for each AppRC capability mode, selector precedence, and `ConfigCliBridge`, with one import package per example app. |
 | `tests` | Behavior checks for public contracts and generated workflows. |
 | `docs` | Long-form user, reference, explanation, and maintainer documentation. |
@@ -374,19 +372,6 @@ index is loaded. Direct path-selected storage editing works without an index.
 <br>
 
 <!-- ======================================================== -->
-
-<br>
-
-## Optional Logging
-<!-- ======================================================== -->
-
-AppRC logging is a companion feature, not required for runtime config. The
-base semantic logger API is stdlib-compatible. The `setup_logging()` formatter
-path uses `structlog` and therefore requires the `logging` extra.
-
-Use `get_logger(name)` for AppRC semantic methods such as `success` and
-`traceback`. Call `install_app_logger_class()` before external code creates
-plain stdlib loggers for names that should later use AppRC logger methods.
 
 <br>
 

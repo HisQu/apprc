@@ -83,7 +83,7 @@ Use these terms consistently in every docs file:
 
 | Term | Meaning | Main Reference |
 |---|---|---|
-| AppRC | This package, `apprc`, which supplies runtime config, generated config CLI, Textual editor, and logging helpers. | [System Model](Explanations.md#system-model) |
+| AppRC | This package, `apprc`, which supplies runtime config, generated config CLI, and Textual editor helpers. | [System Model](Explanations.md#system-model) |
 | host application | The downstream Python app that integrates AppRC. | [Integration Flow](Explanations.md#integration-flow) |
 | config contract | The `EnvConfig` classes plus the `AppConfigKit` spec for one host application. | [Config Contract Model](Explanations.md#config-contract-model) |
 | config owner | A related group of settings declared with `@env_owner(...)`. | [Public Interfaces](References.md#public-interfaces) |

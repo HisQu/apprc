@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import json
+import logging
 import os
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
@@ -17,6 +18,17 @@ import typer
 import apprc
 
 ResultT = TypeVar("ResultT")
+
+
+def setup_example_logging(level: str | int = "INFO", **_: object) -> None:
+    """Configure stdlib logging for repository example CLIs.
+
+    :param level: Logging level name or number supplied by AppRC's CLI hook.
+    :param _: Extra logger-specific keyword arguments ignored by the example.
+    :return: ``None``.
+    """
+
+    logging.basicConfig(level=level)
 
 
 def build_standard_app(
@@ -53,7 +65,7 @@ def build_standard_app(
             state=state,
         ),
         editor_app_cls=editor_app_cls,
-        setup_logging=apprc.setup_logging,
+        setup_logging=setup_example_logging,
     )
 
     @app.command("run")

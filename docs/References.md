@@ -16,7 +16,6 @@
    7. [Generated CLI Commands](#generated-cli-commands)
    8. [Doctor Statuses](#doctor-statuses)
    9. [Dotenv Helper APIs](#dotenv-helper-apis)
-   10. [Optional Logging APIs](#optional-logging-apis)
 3. [Repository Reference](#3-repository-reference)
    1. [Project Paths](#project-paths)
    2. [Dependency Surfaces](#dependency-surfaces)
@@ -299,33 +298,6 @@ References accepted by `set_*` and `clear_*` helpers:
 <br>
 
 <!-- ======================================================== -->
-
-<br>
-
-## Optional Logging APIs
-<!-- ======================================================== -->
-
-Root `apprc` names for optional logging:
-
-| API | Purpose |
-|---|---|
-| `get_logger(name)` | Return an AppRC semantic logger for a new logger name. |
-| `install_app_logger_class()` | Install AppRC's logger class for future stdlib loggers. |
-| `setup_logging(...)` | Configure stdlib handlers and structlog processors. Requires `apprc[logging]`. |
-| `LoggingConfig` | Dataclass for normalized logging setup. |
-| `set_cid(value)` | Set correlation ID context. |
-| `clear_cid()` | Clear correlation ID context. |
-| `new_cid()` | Create and set a new correlation ID. |
-| `log_init_lifecycle(...)` | Class decorator for initialization breadcrumbs. |
-
-Renderer values for `setup_logging(renderer=...)`:
-
-| Renderer | Output |
-|---|---|
-| `mini` | Compact human console output. |
-| `cli` | CLI-oriented human console output. |
-| `ipy` | Notebook-oriented human console output. |
-| `json` | Machine-readable JSON records. |
 
 <br>
 

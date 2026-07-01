@@ -12,7 +12,7 @@ build-backend = "uv_build"
 [project]
 name        = "apprc"
 version     = "0.17.0"
-description = "Reusable runtime configuration, config CLI, and logging helpers for Python applications."
+description = "Reusable runtime configuration and config CLI helpers for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
 readme      = { file = "README.pypi.md", content-type = "text/markdown" }
 license     = "MIT"
@@ -21,7 +21,6 @@ requires-python = ">=3.12"
 keywords = [
     "configuration",
     "dotenv",
-    "logging",
     "runtime-config",
     "typer",
 ]
@@ -68,25 +67,6 @@ Issues = "https://github.com/HisQu/apprc/issues"
 
 
 # =====================================================================
-# === Optional Feature Dependencies
-# =====================================================================
-
-# Optional dependencies are published package extras. Use them for feature
-# stacks that users may want at runtime, but that should not be installed by
-# default. Keep heavy feature sets here, not in [dependency-groups].
-#
-# Install commands:
-#   python -m pip install -e ".[logging]"
-#   uv sync --locked --all-extras --no-default-groups
-#
-[project.optional-dependencies]
-logging = [
-    "structlog>=25.5",  # < Stdlib-backed structured logging
-]
-
-
-
-# =====================================================================
 # === Local Dependency Groups
 # =====================================================================
 
@@ -96,9 +76,7 @@ logging = [
 #
 # Install commands:
 #   python -m pip install -e "." --group dev
-#   python -m pip install -e ".[logging]" --group dev
 #   uv sync --locked --all-groups
-#   uv sync --locked --all-extras --all-groups
 [dependency-groups]
 demo = [
     "apprc-example-apps",
@@ -114,7 +92,6 @@ dev = [
     "pytest>=8.2",
     "pytest-asyncio",  # < Async testing
     "pytest-xdist",    # < Multi-core testing
-    "structlog>=25.5",  # < Develop and test the optional logging extra
     # --- Code-Quality ---------
     "pyright>=1.1",  # < Type checker
     "ruff>=0.4",  # < Linter and formatter

@@ -67,13 +67,6 @@ Install the runtime package:
 python -m pip install apprc
 ```
 
-Install the optional logging extra only when the host app calls
-`setup_logging()`:
-
-```bash
-python -m pip install "apprc[logging]"
-```
-
 For editable local development of AppRC itself:
 
 ```bash

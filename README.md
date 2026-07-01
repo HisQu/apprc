@@ -45,7 +45,6 @@ The three strongest parts:
 5. [Generated Workflows](#generated-workflows)
    1. [Config CLI](#config-cli)
    2. [Setup And Diagnostics](#setup-and-diagnostics)
-   3. [Optional Logging](#optional-logging)
 6. [More Documentation](#more-documentation)
    1. [Detailed Manual](#detailed-manual)
    2. [Development](#development)
@@ -67,20 +66,11 @@ commands in your Typer application.
 python -m pip install apprc
 ```
 
-Install optional structured logging support when your app calls
-`setup_logging()`:
-
-```shell
-python -m pip install "apprc[logging]"
-```
-
 AppRC supports Python 3.12 and newer.
 
 > [!NOTE]
 > For installation and first-setup recipes, see
-> [docs/How-To-User-Guides.md](docs/How-To-User-Guides.md). Optional logging
-> APIs are listed in
-> [docs/References.md#optional-logging-apis](docs/References.md#optional-logging-apis).
+> [docs/How-To-User-Guides.md](docs/How-To-User-Guides.md).
 
 <br>
 
@@ -353,35 +343,6 @@ myapp run
 > [docs/How-To-User-Guides.md#troubleshoot-config-doctor](docs/How-To-User-Guides.md#troubleshoot-config-doctor).
 > For exact status names, see
 > [docs/References.md#doctor-statuses](docs/References.md#doctor-statuses).
-
-<br>
-
-## Optional Logging
-
-AppRC also includes stdlib-compatible semantic logging helpers. The base
-logger API imports without `structlog`; `setup_logging()` requires the
-`logging` extra.
-
-```python
-import apprc
-
-apprc.setup_logging(level="INFO", renderer="cli")
-log = apprc.get_logger(__name__)
-log.success("configured", extra_struct={"profile": "default"})
-```
-
-Create application loggers with `get_logger(name)` or call
-`install_app_logger_class()` before other code creates those names with
-`logging.getLogger(name)`. Existing plain stdlib logger instances cannot be
-safely reclassed, so `get_logger(name)` raises `RuntimeError` for those names.
-
-> [!NOTE]
-> For logging design context, see
-> [docs/Explanations.md#optional-logging](docs/Explanations.md#optional-logging).
-> For import names and dependency details, see
-> [docs/References.md#optional-logging-apis](docs/References.md#optional-logging-apis).
-
-<br>
 
 <br>
 

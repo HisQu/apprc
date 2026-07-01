@@ -69,6 +69,25 @@ def test_old_runtime_config_package_is_removed() -> None:
         importlib.import_module("apprc.runtime_config")
 
 
+def test_logging_package_is_removed() -> None:
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("apprc.logging")
+
+
+def test_logging_symbols_are_not_root_exports() -> None:
+    removed_names = {
+        "AppLogger",
+        "LoggingConfig",
+        "LoggingRenderer",
+        "get_logger",
+        "setup_logging",
+    }
+
+    assert removed_names.isdisjoint(apprc.__all__)
+    for name in removed_names:
+        assert not hasattr(apprc, name)
+
+
 def test_old_contract_app_spec_module_is_removed() -> None:
     removed_module = "apprc.definition.env_config.app_spec"
     with pytest.raises(ModuleNotFoundError):

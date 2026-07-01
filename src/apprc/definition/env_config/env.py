@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Self
 
@@ -34,9 +35,8 @@ from apprc.runtime.provenance import (
     source_for_origin,
 )
 from apprc.definition.env_config.schema import ConfigOwner
-from apprc.logging import get_logger
 
-LOG = get_logger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)

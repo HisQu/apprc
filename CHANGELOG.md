@@ -51,6 +51,16 @@ All notable changes to `{my_project}` will be documented in this file.
 
 ### 💥 Breaking Change Summary
 
+  - Breaking: Removed AppRC's semantic logging package and root logging
+    facade exports.
+    Affected: Users importing `apprc.logging`, `apprc.get_logger`,
+    `apprc.setup_logging`, `apprc.AppLogger`, `apprc.LoggingConfig`, or
+    related logging helpers from AppRC.
+    Migration: Add `holylog` as an application dependency and use
+    `import holylog as hlog`, then call `hlog.setup_logging(...)` and
+    `hlog.get_logger(...)`. AppRC's CLI bootstrap still accepts a
+    host-owned `setup_logging` callable.
+
 <br>
 
 ### ➕ Added

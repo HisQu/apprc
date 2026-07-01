@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Stdlib =============================
+import logging
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 
@@ -12,14 +13,13 @@ from typing import Any, Literal, Mapping, Self
 
 # == Internal ================================
 import apprc.runtime.provenance as provenance_api
-import apprc.definition.env_config._post_env_overrides as post_env_overrides
 import apprc.definition.env_config._state_transfer as state_transfer
-from apprc.logging import get_logger
+import apprc.definition.env_config._post_env_overrides as post_env_overrides
 from apprc._dotenv_guard import (
     _disable_dotenv_autoload as _disable_dotenv_autoload,
 )
 
-LOG = get_logger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 # ===============================================================

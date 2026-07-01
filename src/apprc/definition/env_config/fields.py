@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import logging
 import re
 from collections.abc import Callable
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields
+from functools import wraps
 from typing import Any, TypeVar, cast, get_type_hints
 
 # == Internal ================================
@@ -19,7 +21,6 @@ from apprc.definition.env_config.sentinels import (
     ENV_FIELD_METADATA_KEY,
     ENV_FIELD_MISSING,
 )
-from apprc.logging import log_init_lifecycle
 
 EnvClsT = TypeVar("EnvClsT", bound=type[Any])
 
@@ -205,6 +206,56 @@ def _derive_owner_fields(env_cls: type[Any]) -> tuple[ConfigField, ...]:
     return tuple(owner_fields)
 
 
+def _log_init_lifecycle(
+    label: str = "Runtime Config",
+    log_start: bool = True,
+    log_done: bool = False,
+) -> Callable[[EnvClsT], EnvClsT]:
+    """Return a class decorator that logs object initialization.
+
+    AppRC keeps this helper private because logging is no longer a public
+    package feature. It preserves the existing config-construction breadcrumbs
+    with stdlib logging so host applications can format them however they
+    choose.
+
+    :param label: Human-readable subsystem label.
+    :param log_start: Whether to emit a pre-initialization message.
+    :param log_done: Whether to emit a post-initialization message.
+    :return: Class decorator for an ``EnvConfig`` subclass.
+    """
+
+    def decorator(cls: EnvClsT) -> EnvClsT:
+        original_init = cast(Callable[..., None], cls.__init__)
+        if getattr(original_init, "__init_lifecycle_wrapped__", False):
+            return cls
+
+        @wraps(original_init)
+        def wrapped_init(self: Any, *args: Any, **kwargs: Any) -> None:
+            logger = logging.getLogger(cls.__module__)
+            name = self.__class__.__name__
+            if log_start:
+                logger.info(
+                    "⚙️🔜 INITIALIZING: %s '%s' ...",
+                    label,
+                    name,
+                    stacklevel=2,
+                )
+            original_init(self, *args, **kwargs)
+            if log_done:
+                logger.info(
+                    "⚙️✔️  %s '%s' initialized!",
+                    label,
+                    name,
+                    stacklevel=2,
+                )
+
+        setattr(wrapped_init, "__init_lifecycle_wrapped__", True)
+        setattr(cls, "__init__", wrapped_init)
+        return cls
+
+    return decorator
+
+
 def env_owner(
     *,
     key: str,
@@ -269,7 +320,7 @@ def env_owner(
         setattr(env_cls, "config_owner", owner)
         if not log_lifecycle:
             return env_cls
-        return log_init_lifecycle(
+        return _log_init_lifecycle(
             label=lifecycle_label,
             log_start=log_start,
             log_done=log_done,

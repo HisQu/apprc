@@ -135,3 +135,14 @@ def test_public_docs_do_not_reference_unreleased_bridge_names() -> None:
     assert "actions={" not in docs
     assert re.search(r"(?<!extra_)host_flag_options=", docs) is None
     assert re.search(r"(?<!extra_)host_value_options=", docs) is None
+    current_docs = "\n".join(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "README.pypi.md",
+            "docs/How-To-User-Guides.md",
+            "docs/References.md",
+        )
+    )
+    assert "apprc[logging]" not in current_docs
+    assert "Optional Logging" not in current_docs

@@ -106,9 +106,9 @@ def deep_right_merge(
 def timer(name: str = "block") -> Iterator[None]:
     """Print elapsed wall time when a manual diagnostic block exits.
 
-    The helper is intentionally simple and stdout-based. Production logging
-    should use :mod:`apprc.logging`; this context manager is for quick local
-    probes where setting up structured logging would be noise.
+    The helper is intentionally simple and stdout-based. Production code should
+    use stdlib ``logging`` or a host-owned logging package; this context
+    manager is for quick local probes where logging setup would be noise.
 
     :param name: Label printed with the elapsed duration.
     """

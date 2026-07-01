@@ -4,9 +4,9 @@ import re
 from pathlib import Path
 
 import apprc
-import apprc.cli as apprc_cli
-from apprc.cli.bootstrap import bootstrap_cli_env
-from apprc.cli.bridge import (
+import apprc.interfaces.cli as apprc_cli
+from apprc.interfaces.cli._bootstrap import bootstrap_cli_env
+from apprc.interfaces.cli.bridge import (
     BootstraplessCommand,
     ConfigCliBridge,
     ConfigCliSession,
@@ -14,22 +14,23 @@ from apprc.cli.bridge import (
     HostCliBootstrapPolicy,
     MountConfigCliStateFactory,
 )
-from apprc.cli.config import (
+from apprc.interfaces.cli.config_command import (
     ConfigSelectorContext,
     DefaultConfigCliState,
     config_request_skips_runtime_bootstrap,
 )
-from apprc.cli.context import CliBootstrapOptions
-from apprc.cli.integration import (
+from apprc.interfaces.cli.context import CliBootstrapOptions
+from apprc.interfaces.cli.mount import (
     CliArgvProvider,
     mount_config_cli,
 )
-from apprc.cli.options import (
+from apprc.interfaces.cli.options import (
     COMMON_HOST_FLAG_OPTIONS,
     COMMON_HOST_VALUE_OPTIONS,
 )
-from apprc.runtime_config import EnvConfig, env_field, env_owner
-from apprc.runtime_config.kit import AppConfigKit
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.env_config.env import EnvConfig
+from apprc.definition.env_config.fields import env_field, env_owner
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,6 +49,29 @@ def test_root_facade_exports_config_symbols_needed_by_cunf() -> None:
 
 def test_cli_facade_exports_bootstrap_symbols_needed_by_cunf() -> None:
     """Keep application CLI bootstrap imports on AppRC's public CLI facade."""
+    assert apprc.bootstrap_cli_env is bootstrap_cli_env
+    assert apprc.CliBootstrapOptions is CliBootstrapOptions
+    assert apprc.CliArgvProvider is CliArgvProvider
+    assert apprc.MountConfigCliStateFactory is MountConfigCliStateFactory
+    assert apprc.ConfigCliBridge is ConfigCliBridge
+    assert apprc.ConfigCliSession is ConfigCliSession
+    assert apprc.ConfigCliStateFactory is ConfigCliStateFactory
+    assert apprc.BootstraplessCommand is BootstraplessCommand
+    assert apprc.HostCliBootstrapPolicy is HostCliBootstrapPolicy
+    assert apprc.ConfigSelectorContext is ConfigSelectorContext
+    assert apprc.DefaultConfigCliState is DefaultConfigCliState
+    assert apprc.mount_config_cli is mount_config_cli
+    assert apprc.COMMON_HOST_FLAG_OPTIONS is COMMON_HOST_FLAG_OPTIONS
+    assert apprc.COMMON_HOST_VALUE_OPTIONS is COMMON_HOST_VALUE_OPTIONS
+    assert "EnvFilesOption" in apprc.__all__
+    assert "EnvFileOverridesOption" in apprc.__all__
+    assert "SkipDotenvLayersOption" in apprc.__all__
+    assert "StorageOption" in apprc.__all__
+    assert "LogLevelOption" in apprc.__all__
+    assert "apprc_options_to_args" in apprc.__all__
+    assert "prepare_typer_context" in apprc.__all__
+    assert "state_from" in apprc.__all__
+    assert "exit_missing_action" in apprc.__all__
     assert apprc_cli.bootstrap_cli_env is bootstrap_cli_env
     assert apprc_cli.CliBootstrapOptions is CliBootstrapOptions
     assert apprc_cli.CliArgvProvider is CliArgvProvider

@@ -3,16 +3,16 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from apprc.runtime_config.storage.registry import (
+from apprc.user_files.storage_roots.registry import (
     record_archived_storage,
     register_storage,
 )
-from apprc.runtime_config.tui.styles import (
+from apprc.interfaces.tui._styles import (
     ARCHIVE_STYLE,
     MISSING_STYLE,
     PATH_STYLE,
 )
-from apprc.runtime_config.tui.storage.entries import (
+from apprc.interfaces.tui.storage.entries import (
     ordered_storage_entries,
     storage_entry_index,
     storage_entry_label,

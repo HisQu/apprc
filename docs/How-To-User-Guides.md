@@ -100,30 +100,30 @@ and declare one or more `EnvConfig` classes.
 ```python
 from pathlib import Path
 
-from apprc import EnvConfig, env_field, env_owner
+import apprc
 
 
-@env_owner(
+@apprc.env_owner(
     key="app",
     title="App",
     env_prefix="MYAPP_",
     rc_path=("app",),
 )
-class MyAppEnv(EnvConfig):
-    storage_root: Path = env_field(
+class MyAppEnv(apprc.EnvConfig):
+    storage_root: Path = apprc.env_field(
         "STORAGE",
         editable=False,
         required=True,
         title="Storage root",
         explanation_short="Active storage root.",
     )
-    profile: str = env_field(
+    profile: str = apprc.env_field(
         "PROFILE",
         default="default",
         title="Profile",
         explanation_short="Named runtime profile.",
     )
-    access_token: str = env_field(
+    access_token: str = apprc.env_field(
         "ACCESS_TOKEN",
         required=True,
         secret=True,
@@ -157,12 +157,12 @@ Save that file as `.env.shared`. Do not put secrets in packaged defaults.
 Create one `AppConfigKit` for the host app:
 
 ```python
-from apprc import AppConfigKit
+import apprc
 
 from myapp.config import MyAppEnv
 
 
-APP_CONFIG = AppConfigKit.storage_only(
+APP_CONFIG = apprc.AppConfigKit.storage_only(
     app_name="myapp",
     display_name="My App",
     config_package="myapp.config",
@@ -197,12 +197,12 @@ generated `config` command group below the host app.
 ```python
 import typer
 
-from apprc.cli import mount_config_cli
+import apprc
 
 from myapp.config import APP_CONFIG, MyAppEnv
 
 app = typer.Typer()
-mount_config_cli(app, APP_CONFIG)
+apprc.mount_config_cli(app, APP_CONFIG)
 
 
 @app.command()
@@ -235,18 +235,7 @@ from typing import Annotated
 
 import typer
 
-from apprc.cli import (
-    BootstraplessCommand,
-    ConfigCliBridge,
-    CliBootstrapContext,
-    EnvFileOverridesOption,
-    HostCliBootstrapPolicy,
-    EnvFilesOption,
-    LogLevelOption,
-    SkipDotenvLayersOption,
-    StorageOption,
-)
-from apprc.runtime_config import EnvBootstrapResult
+import apprc
 
 from myapp.config import APP_CONFIG
 
@@ -263,13 +252,13 @@ class MyCliOptions:
 
 @dataclass(slots=True)
 class MyCliState:
-    env_bootstrap: EnvBootstrapResult | None
+    env_bootstrap: apprc.EnvBootstrapResult | None
     storage: str | None
     workdir: Path | None
 
 
 def build_state(
-    context: CliBootstrapContext,
+    context: apprc.CliBootstrapContext,
     options: MyCliOptions,
 ) -> MyCliState:
     return MyCliState(
@@ -280,18 +269,18 @@ def build_state(
 
 
 app = typer.Typer()
-bridge = ConfigCliBridge(
+bridge = apprc.ConfigCliBridge(
     APP_CONFIG,
     state_type=MyCliState,
     state_factory=build_state,
-    bootstrap_policy=HostCliBootstrapPolicy(
+    bootstrap_policy=apprc.HostCliBootstrapPolicy(
         bootstrapless_commands={
-            "tool": BootstraplessCommand(skip_empty=True),
-            "llm": BootstraplessCommand(
+            "tool": apprc.BootstraplessCommand(skip_empty=True),
+            "llm": apprc.BootstraplessCommand(
                 skip_empty=True,
                 action_prefixes={("benchmark",)},
             ),
-            "rag": BootstraplessCommand(
+            "rag": apprc.BootstraplessCommand(
                 skip_empty=True,
                 action_prefixes={("cache",), ("benchmark",)},
             ),
@@ -305,11 +294,11 @@ bridge.mount_config_group(app)
 @app.callback()
 def cli(
     ctx: typer.Context,
-    env_files: EnvFilesOption = None,
-    env_file_overrides_os_environ: EnvFileOverridesOption = False,
-    skip_dotenv_layers: SkipDotenvLayersOption = False,
-    storage: StorageOption = None,
-    log_level: LogLevelOption = None,
+    env_files: apprc.EnvFilesOption = None,
+    env_file_overrides_os_environ: apprc.EnvFileOverridesOption = False,
+    skip_dotenv_layers: apprc.SkipDotenvLayersOption = False,
+    storage: apprc.StorageOption = None,
+    log_level: apprc.LogLevelOption = None,
     workdir: Annotated[Path | None, typer.Option("--workdir")] = None,
 ) -> None:
     options = MyCliOptions(

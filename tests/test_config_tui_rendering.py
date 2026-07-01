@@ -4,12 +4,12 @@ from pathlib import Path
 
 from rich.text import Text
 
-from apprc.runtime_config.storage.registry import (
+from apprc.user_files.storage_roots.registry import (
     ArchivedStorageRecord,
     StorageRecord,
 )
-from apprc.runtime_config.tui.field_state import EditableConfigValueSource
-from apprc.runtime_config.tui.rendering import (
+from apprc.interfaces.tui._field_state import EditableConfigValueSource
+from apprc.interfaces.tui._rendering import (
     FIELD_TABLE_COLUMNS,
     FieldTableRow,
     archived_storage_title,
@@ -22,7 +22,7 @@ from apprc.runtime_config.tui.rendering import (
     possible_values_style,
     value_style,
 )
-from apprc.runtime_config.tui.styles import (
+from apprc.interfaces.tui._styles import (
     ARCHIVE_STYLE,
     CHOICE_STYLE,
     DEFAULT_STYLE,
@@ -35,7 +35,7 @@ from apprc.runtime_config.tui.styles import (
     SECRET_STYLE,
     TEXT_STYLE,
 )
-from apprc.runtime_config.tui.value_modal_rendering import (
+from apprc.interfaces.tui._value_modal_rendering import (
     field_type_text,
     possible_values_text,
     shell_status_text,

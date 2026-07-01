@@ -4,15 +4,18 @@ from pathlib import Path
 
 import pytest
 
-from apprc.cli.config.state import (
+from apprc.interfaces.cli.config_command.state import (
     active_storage_root_from_env,
     initial_storage_from_state,
 )
-from apprc.runtime_config.app_spec import CapabilityState, StorageLayerState
-from apprc.runtime_config.doctor.payload import build_config_doctor_payload
-from apprc.runtime_config.doctor.status import ConfigDoctorStatus
-from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.registry import register_storage
+from apprc.definition.app_config.capabilities import (
+    CapabilityState,
+    StorageLayerState,
+)
+from apprc.runtime.diagnostics.payload import build_config_doctor_payload
+from apprc.runtime.diagnostics.status import ConfigDoctorStatus
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.user_files.storage_roots.registry import register_storage
 from tests.support_config import (
     ApprcExampleAppConfigState,
     ApprcExampleAppEnv,
@@ -26,7 +29,7 @@ def test_kit_constructors_declare_expected_capabilities() -> None:
     env_only = AppConfigKit.env_only(
         app_name="env_app",
         display_name="Env App",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(StorageFreeExampleEnv,),
     )
     storage_only = build_apprc_example_app_kit()
@@ -34,7 +37,7 @@ def test_kit_constructors_declare_expected_capabilities() -> None:
     app_wide_storage = AppConfigKit.app_wide_storage(
         app_name="wide_storage",
         display_name="Wide Storage",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(ApprcExampleAppEnv,),
     )
 
@@ -54,7 +57,7 @@ def test_kit_rejects_removed_storage_mode_keyword() -> None:
         AppConfigKit(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.runtime_config",
+            config_package="apprc",
             storage_mode="required",  # pyright: ignore[reportCallIssue]
         )
 
@@ -166,7 +169,7 @@ def test_doctor_ignores_bad_disabled_named_storage_index(
     kit = AppConfigKit(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
         storage_layer=StorageLayerState.REQUIRED,

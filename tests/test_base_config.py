@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
 
-from apprc.runtime_config import (
+from apprc import (
     BaseConfig,
     ConfigProvenance,
     EnvConfig,
@@ -16,9 +16,9 @@ from apprc.runtime_config import (
     env_field,
     env_owner,
 )
-import apprc.runtime_config.config_objects as config_objects_api
-import apprc.runtime_config.config_objects.base_config as base_config
-import apprc.runtime_config.config_objects.env_config as env_config_module
+import apprc.definition.env_config as config_objects_api
+import apprc.definition.env_config.base as base_config
+import apprc.definition.env_config.env as env_config_module
 
 
 @dataclass(slots=True)
@@ -428,7 +428,7 @@ def test_base_config_deepcopy_logs_once_for_nested_configs(
     ]
 
 
-def test_runtime_config_config_objects_facade_hides_internal_helpers() -> None:
+def test_env_config_facade_hides_internal_helpers() -> None:
     assert config_objects_api.BaseConfig is BaseConfig
     assert config_objects_api.EnvConfig is EnvConfig
     assert config_objects_api.env_field is env_field

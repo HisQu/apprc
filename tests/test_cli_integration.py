@@ -12,7 +12,7 @@ import typer
 from typer.testing import CliRunner
 
 from apprc import AppConfigKit
-from apprc.cli import (
+from apprc.interfaces.cli import (
     DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS,
     CliArgvProvider,
     CliBootstrapContext,

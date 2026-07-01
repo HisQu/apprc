@@ -4,9 +4,9 @@ from typing import Any
 
 import pytest
 
-from apprc.runtime_config.tui.field_state import EditableConfigValueSource
-from apprc.runtime_config.tui.modals.screens import ConfigValueEditScreen
-from apprc.runtime_config.tui.value_modal_rendering import (
+from apprc.interfaces.tui._field_state import EditableConfigValueSource
+from apprc.interfaces.tui.modals.screens import ConfigValueEditScreen
+from apprc.interfaces.tui._value_modal_rendering import (
     source_copy_is_disabled,
 )
 from tests.support_config import APPRC_EXAMPLE_APP_OWNER

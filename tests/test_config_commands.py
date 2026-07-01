@@ -6,13 +6,13 @@ from typing import ClassVar
 
 import pytest
 import typer
-from apprc.cli.config import ConfigSelectorContext
+from apprc.interfaces.cli.config_command import ConfigSelectorContext
 from typer.testing import CliRunner
 
-from apprc.runtime_config.app_spec import CapabilityState
-from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.registry import StorageRegistry
-from apprc.runtime_config.tui.editor import ConfigEditorApp
+from apprc.definition.app_config.capabilities import CapabilityState
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.user_files.storage_roots.registry import StorageRegistry
+from apprc.interfaces.tui.editor import ConfigEditorApp
 from tests.support_config import (
     ApprcExampleAppConfigState,
     StorageFreeExampleEnv,
@@ -382,7 +382,7 @@ def test_disabled_capability_command_groups_are_absent() -> None:
     app_disabled = AppConfigKit(
         app_name="env_app",
         display_name="Env App",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(StorageFreeExampleEnv,),
         app_wide_layer=CapabilityState.DISABLED,
         index_filename="env_app.apprc.toml",

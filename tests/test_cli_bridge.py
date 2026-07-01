@@ -11,7 +11,7 @@ import typer
 from typer.testing import CliRunner
 
 from apprc import AppConfigKit
-from apprc.cli import (
+from apprc.interfaces.cli import (
     BootstraplessCommand,
     CliArgvProvider,
     CliBootstrapContext,

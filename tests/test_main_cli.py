@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner, Result
 
-from apprc.runtime_config.doctor.payload import config_command_text
+from apprc.runtime.diagnostics.messages import config_command_text
 from apprc_example_app import APPRC_EXAMPLE_APP_KIT
 from apprc_example_app.cli import app
 from tests.support_config import build_apprc_example_app_kit
@@ -354,31 +354,29 @@ def test_core_package_does_not_import_demo_package() -> None:
 
 def test_storage_modules_do_not_import_bootstrap_layer() -> None:
     storage_files = (
-        ROOT / "src" / "apprc" / "runtime_config" / "storage"
+        ROOT / "src" / "apprc" / "user_files" / "storage_roots"
     ).rglob("*.py")
 
     offenders = [
-        path
-        for path in storage_files
-        if _imports_runtime_config_bootstrap(path)
+        path for path in storage_files if _imports_runtime_bootstrap(path)
     ]
     assert offenders == []
 
 
-def _imports_runtime_config_bootstrap(path: Path) -> bool:
+def _imports_runtime_bootstrap(path: Path) -> bool:
     """Return whether one Python file imports the bootstrap package.
 
     :param path: Python source file to inspect.
-    :return: Whether it imports ``apprc.runtime_config.bootstrap``.
+    :return: Whether it imports ``apprc.runtime``.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module is not None:
-            if node.module.startswith("apprc.runtime_config.bootstrap"):
+            if node.module.startswith("apprc.runtime"):
                 return True
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.startswith("apprc.runtime_config.bootstrap"):
+                if alias.name.startswith("apprc.runtime"):
                     return True
     return False
 

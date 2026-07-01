@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from apprc import AppConfigKit
-from apprc.runtime_config.doctor.payload import build_config_doctor_payload
-from apprc.runtime_config.doctor.status import ConfigDoctorStatus
+from apprc.runtime.diagnostics.payload import build_config_doctor_payload
+from apprc.runtime.diagnostics.status import ConfigDoctorStatus
 from tests.support_config import (
     ApprcExampleAppEnv,
     build_apprc_example_app_kit,

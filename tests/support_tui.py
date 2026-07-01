@@ -13,7 +13,7 @@ from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
 if TYPE_CHECKING:
-    from apprc.runtime_config.tui.editor import ConfigEditorApp
+    from apprc.interfaces.tui.editor import ConfigEditorApp
 
 
 async def open_field_editor(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from apprc.runtime_config.setup.text import setup_overview_text
-from apprc.runtime_config.tui.setup import ConfigSetupApp
+from apprc.user_files.setup.text import setup_overview_text
+from apprc.interfaces.tui.setup import ConfigSetupApp
 from tests.support_config import (
     build_apprc_example_app_kit,
     build_storage_free_example_kit,

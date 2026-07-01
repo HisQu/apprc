@@ -4,12 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from apprc.runtime_config.contract.apprc_toml_env import ApprcTomlEnvError
-from apprc.runtime_config.contract.apprc_toml_env import (
+from apprc.user_files.app_home.index import ApprcTomlEnvError
+from apprc.user_files.app_home.index import (
     missing_apprc_toml_env_message,
 )
-from apprc.runtime_config.storage.loading import load_existing_storage_registry
-from apprc.runtime_config.storage.registry import (
+from apprc.user_files.storage_roots._loading import (
+    load_existing_storage_registry,
+)
+from apprc.user_files.storage_roots.registry import (
     app_data_dir,
     load_storage_registry_or_empty,
     ordered_storage_names,
@@ -21,7 +23,7 @@ from apprc.runtime_config.storage.registry import (
     suggested_storage_root,
     unregister_storage,
 )
-from apprc.runtime_config.storage.paths import (
+from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
     windows_drive_path_to_posix,
@@ -238,7 +240,7 @@ def test_register_storage_normalizes_windows_root(
     normalized_root = tmp_path / "demo-storage"
 
     monkeypatch.setattr(
-        "apprc.runtime_config.storage.registry.normalize_storage_root_path",
+        "apprc.user_files.storage_roots.registry.normalize_storage_root_path",
         lambda path: normalized_root,
     )
 
@@ -374,7 +376,7 @@ def test_register_storage_rolls_back_new_empty_artifacts_on_write_failure(
         raise OSError("blocked")
 
     monkeypatch.setattr(
-        "apprc.runtime_config.storage.registry.write_storage_registry",
+        "apprc.user_files.storage_roots.registry.write_storage_registry",
         fail_write,
     )
 
@@ -402,7 +404,7 @@ def test_register_storage_keeps_existing_non_empty_root_on_write_failure(
         raise OSError("blocked")
 
     monkeypatch.setattr(
-        "apprc.runtime_config.storage.registry.write_storage_registry",
+        "apprc.user_files.storage_roots.registry.write_storage_registry",
         fail_write,
     )
 

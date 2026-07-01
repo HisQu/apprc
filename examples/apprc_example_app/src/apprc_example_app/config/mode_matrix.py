@@ -4,46 +4,46 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from apprc import AppConfigKit, EnvConfig, env_field, env_owner
+import apprc
 
 
-@env_owner(
+@apprc.env_owner(
     key="simple",
     title="Simple",
     env_prefix="APPRC_MATRIX_",
     rc_path=("simple",),
 )
-class MatrixSimpleEnv(EnvConfig):
+class MatrixSimpleEnv(apprc.EnvConfig):
     """Config fields for non-storage examples."""
 
-    profile: str = env_field("PROFILE", default="default")
+    profile: str = apprc.env_field("PROFILE", default="default")
 
 
-@env_owner(
+@apprc.env_owner(
     key="storage",
     title="Storage",
     env_prefix="APPRC_MATRIX_",
     rc_path=("storage",),
 )
-class MatrixStorageEnv(EnvConfig):
+class MatrixStorageEnv(apprc.EnvConfig):
     """Config fields for storage-capable examples."""
 
-    storage_root: Path = env_field(
+    storage_root: Path = apprc.env_field(
         "STORAGE",
         editable=False,
         required=True,
     )
-    profile: str = env_field("PROFILE", default="default")
+    profile: str = apprc.env_field("PROFILE", default="default")
 
 
-ENV_ONLY_KIT = AppConfigKit.env_only(
+ENV_ONLY_KIT = apprc.AppConfigKit.env_only(
     app_name="apprc_matrix_env_only",
     display_name="Matrix Env Only",
     config_package="apprc_example_app.config",
     envs=(MatrixSimpleEnv,),
 )
 
-STORAGE_ONLY_KIT = AppConfigKit.storage_only(
+STORAGE_ONLY_KIT = apprc.AppConfigKit.storage_only(
     app_name="apprc_matrix_storage_only",
     display_name="Matrix Storage Only",
     config_package="apprc_example_app.config",
@@ -51,14 +51,14 @@ STORAGE_ONLY_KIT = AppConfigKit.storage_only(
     storage_env_key="APPRC_MATRIX_STORAGE",
 )
 
-APP_WIDE_CONFIG_KIT = AppConfigKit.app_wide_config(
+APP_WIDE_CONFIG_KIT = apprc.AppConfigKit.app_wide_config(
     app_name="apprc_matrix_app_wide",
     display_name="Matrix App Wide",
     config_package="apprc_example_app.config",
     envs=(MatrixSimpleEnv,),
 )
 
-APP_WIDE_STORAGE_KIT = AppConfigKit.app_wide_storage(
+APP_WIDE_STORAGE_KIT = apprc.AppConfigKit.app_wide_storage(
     app_name="apprc_matrix_app_wide_storage",
     display_name="Matrix App Wide Storage",
     config_package="apprc_example_app.config",

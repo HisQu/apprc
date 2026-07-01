@@ -58,7 +58,7 @@ Top-level `apprc` imports for normal integrations:
 | `EnvBootstrapResult` | Files and storage selected during bootstrap. |
 | `ConfigDoctorStatus` | Readiness status enum used by `config doctor`. |
 
-CLI facade imports from `apprc.cli`:
+Root `apprc` names for CLI integrations:
 
 | Import | Purpose |
 |---|---|
@@ -305,7 +305,7 @@ References accepted by `set_*` and `clear_*` helpers:
 ## Optional Logging APIs
 <!-- ======================================================== -->
 
-Import from `apprc.logging`:
+Root `apprc` names for optional logging:
 
 | API | Purpose |
 |---|---|

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from apprc.runtime_config.kit import AppConfigKit
+from apprc.definition.app_config.kit import AppConfigKit
 from tests.support_config import (
     ApprcExampleAppConfigState,
     ApprcExampleAppEnv,
@@ -26,7 +26,7 @@ def test_env_only_setup_prints_guidance_without_writes(
     kit = AppConfigKit.env_only(
         app_name="env_app",
         display_name="Env App",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(StorageFreeExampleEnv,),
     )
     app = kit.typer_app(state_type=StorageFreeExampleConfigState)
@@ -102,7 +102,7 @@ def test_app_wide_storage_setup_creates_app_and_storage_env(
     kit = AppConfigKit.app_wide_storage(
         app_name="wide_storage",
         display_name="Wide Storage",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="WIDE_STORAGE",
     )
@@ -128,7 +128,7 @@ def test_app_wide_storage_setup_reports_config_home_errors(
     kit = AppConfigKit.app_wide_storage(
         app_name="wide_storage",
         display_name="Wide Storage",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="WIDE_STORAGE",
     )

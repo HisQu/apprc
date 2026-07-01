@@ -14,15 +14,15 @@ from pytest import MonkeyPatch
 from typer.testing import Result
 
 from apprc import AppConfigKit
-from apprc.runtime_config import (
+from apprc import (
     EnvConfig,
     EnvBootstrapResult,
     config_owner_for,
     env_field,
     env_owner,
 )
-from apprc.runtime_config.contract.sentinels import CONFIG_MISSING
-from apprc.runtime_config.storage.registry import (
+from apprc.definition.env_config.sentinels import CONFIG_MISSING
+from apprc.user_files.storage_roots.registry import (
     StorageRegistry,
     record_archived_storage,
     register_storage,
@@ -186,7 +186,7 @@ def build_apprc_example_app_kit() -> AppConfigKit:
     return AppConfigKit.storage_only(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
         index_filename="apprc_example_app.apprc.toml",
@@ -198,7 +198,7 @@ def build_storage_free_example_kit() -> AppConfigKit:
     return AppConfigKit.app_wide_config(
         app_name="storage_free_app",
         display_name="Storage-Free App",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(StorageFreeExampleEnv,),
         index_filename="storage_free_app.apprc.toml",
     )

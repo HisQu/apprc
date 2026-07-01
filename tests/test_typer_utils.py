@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from apprc.cli.config import config_request_skips_runtime_bootstrap
-from apprc.cli.typer_utils import (
+from apprc.interfaces.cli.config_command import (
+    config_request_skips_runtime_bootstrap,
+)
+from apprc.interfaces.cli._typer_utils import (
     args_after_command,
     args_after_host_command,
     help_requested_before_separator,

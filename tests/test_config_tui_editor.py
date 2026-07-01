@@ -7,14 +7,17 @@ from typing import Any, cast
 import pytest
 from textual.widgets import Button, DataTable
 
-from apprc.runtime_config.app_spec import CapabilityState, StorageLayerState
-from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.registry import (
+from apprc.definition.app_config.capabilities import (
+    CapabilityState,
+    StorageLayerState,
+)
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
     register_storage,
 )
-from apprc.runtime_config.tui.editor import ConfigEditorApp
-from apprc.runtime_config.tui.editor.workflows import (
+from apprc.interfaces.tui.editor import ConfigEditorApp
+from apprc.interfaces.tui.editor.workflows import (
     ConfigEditorStorageWorkflows,
 )
 from tests.support_config import (
@@ -191,7 +194,7 @@ async def test_editor_storage_delete_unregisters_before_content_delete(
     monkeypatch.setattr(editor, "_registered_active_storage_name", lambda: None)
     monkeypatch.setattr(editor, "notify", notify)
     monkeypatch.setattr(
-        "apprc.runtime_config.tui.editor.workflows.shutil.rmtree",
+        "apprc.interfaces.tui.editor.workflows.shutil.rmtree",
         fail_rmtree,
     )
 
@@ -273,7 +276,7 @@ async def test_editor_hides_named_storage_controls_when_disabled(
     kit = AppConfigKit(
         app_name="path_only_app",
         display_name="Path-Only App",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="PATH_ONLY_APP_STORAGE",
         storage_layer=StorageLayerState.REQUIRED,

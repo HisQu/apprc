@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from apprc.runtime_config import EnvConfig, env_field, env_owner
-from apprc.runtime_config.app_spec import (
+from apprc import EnvConfig, env_field, env_owner
+from apprc.definition.app_config.spec import (
     AppConfigSpec,
     CapabilityState,
     StorageLayerState,
@@ -66,7 +66,7 @@ def _spec(
     return AppConfigSpec(
         app_name="demo",
         display_name="Demo",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         index_filename="demo.apprc.toml",
         storage_layer=storage_layer,
         app_wide_layer=app_wide_layer,
@@ -137,7 +137,7 @@ def test_app_config_spec_rejects_manual_owner_argument() -> None:
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.runtime_config",
+            config_package="apprc",
             owners=(),  # pyright: ignore[reportCallIssue]
             index_filename="demo.apprc.toml",
         )
@@ -148,7 +148,7 @@ def test_app_config_spec_rejects_duplicate_owner_keys() -> None:
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.runtime_config",
+            config_package="apprc",
             index_filename="demo.apprc.toml",
             envs=(_DuplicateOwnerA, _DuplicateOwnerB),
         )
@@ -159,7 +159,7 @@ def test_app_config_spec_rejects_duplicate_env_keys() -> None:
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.runtime_config",
+            config_package="apprc",
             index_filename="demo.apprc.toml",
             envs=(_DuplicateEnvA, _DuplicateEnvB),
         )

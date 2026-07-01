@@ -8,29 +8,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # == Internal ================================
-from apprc import (
-    AppConfigKit,
-    EnvConfig,
-    EnvBootstrapResult,
-    config_owner_for,
-    env_field,
-    env_owner,
-)
-from apprc.runtime_config.contract.lookup import iter_config_fields
-from apprc.runtime_config.contract.schema import ConfigField
-from apprc.runtime_config.contract.sentinels import CONFIG_MISSING
+import apprc
 
 
-@env_owner(
+@apprc.env_owner(
     key="app",
     title="App",
     env_prefix="APPRC_EXAMPLE_APP_",
     rc_path=("app",),
 )
-class ApprcExampleAppEnv(EnvConfig):
+class ApprcExampleAppEnv(apprc.EnvConfig):
     """Example App env section used by the standalone ``apprc`` CLI."""
 
-    storage_root: Path = env_field(
+    storage_root: Path = apprc.env_field(
         "STORAGE",
         title="Storage root",
         explanation_short="Active storage root.",
@@ -41,38 +31,38 @@ class ApprcExampleAppEnv(EnvConfig):
         editable=False,
         required=True,
     )
-    profile: str = env_field(
+    profile: str = apprc.env_field(
         "PROFILE",
         default="default",
         title="Profile",
         explanation_short="Named profile used by the example app.",
     )
-    mode: str = env_field(
+    mode: str = apprc.env_field(
         "MODE",
         default="AUTO",
         title="Mode",
         explanation_short="Operating mode selected for Example App commands.",
         choices=("AUTO", "MANUAL"),
     )
-    enabled: bool = env_field(
+    enabled: bool = apprc.env_field(
         "ENABLED",
         default=True,
         title="Enabled",
         explanation_short="Turns the example app on or off.",
     )
-    retry_count: int = env_field(
+    retry_count: int = apprc.env_field(
         "RETRY_COUNT",
         default=3,
         title="Retry count",
         explanation_short="Maximum number of retry attempts.",
     )
-    cache_dir: Path = env_field(
+    cache_dir: Path = apprc.env_field(
         "CACHE_DIR",
         default=Path("cache"),
         title="Cache directory",
         explanation_short="Storage cache directory used by the example app.",
     )
-    access_token: str = env_field(
+    access_token: str = apprc.env_field(
         "ACCESS_TOKEN",
         title="Access token",
         explanation_short="Required secret token.",
@@ -85,10 +75,10 @@ class ApprcExampleAppEnv(EnvConfig):
     )
 
 
-APPRC_EXAMPLE_APP_OWNER = config_owner_for(ApprcExampleAppEnv)
+APPRC_EXAMPLE_APP_OWNER = apprc.config_owner_for(ApprcExampleAppEnv)
 APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
 
-APPRC_EXAMPLE_APP_KIT = AppConfigKit.storage_only(
+APPRC_EXAMPLE_APP_KIT = apprc.AppConfigKit.storage_only(
     app_name="apprc_example_app",
     display_name="Example App",
     config_package="apprc_example_app.config",
@@ -103,7 +93,7 @@ APPRC_EXAMPLE_APP_KIT = AppConfigKit.storage_only(
 class ApprcExampleAppState:
     """Root CLI state for the standalone ``apprc`` Example App command."""
 
-    env_bootstrap: EnvBootstrapResult | None = None
+    env_bootstrap: apprc.EnvBootstrapResult | None = None
     storage: str | None = None
 
 
@@ -125,7 +115,7 @@ def apprc_example_app_config_payload(
 
 
 def _bootstrap_payload(
-    bootstrap: EnvBootstrapResult | None,
+    bootstrap: apprc.EnvBootstrapResult | None,
 ) -> dict[str, object]:
     """Return JSON-friendly bootstrap state for the current invocation."""
     index_path = APPRC_EXAMPLE_APP_KIT.spec.optional_index_path()
@@ -159,13 +149,13 @@ def _bootstrap_payload(
 def _config_values() -> dict[str, object]:
     """Return current process config values declared by the Example App owner."""
     values: dict[str, object] = {}
-    for owner, spec in iter_config_fields(APPRC_EXAMPLE_APP_OWNERS):
+    for owner, spec in apprc.iter_config_fields(APPRC_EXAMPLE_APP_OWNERS):
         env_key = owner.env_key(spec.name)
         values[spec.name] = _display_value(spec, os.environ.get(env_key))
     return values
 
 
-def _display_value(spec: ConfigField, raw_value: str | None) -> object:
+def _display_value(spec: apprc.ConfigField, raw_value: str | None) -> object:
     """Return one config value with defaults and secret redaction applied."""
     if spec.secret:
         if raw_value:
@@ -175,12 +165,12 @@ def _display_value(spec: ConfigField, raw_value: str | None) -> object:
         return None
     if raw_value is not None:
         return _coerce_display_value(spec, raw_value)
-    if spec.default is CONFIG_MISSING:
+    if spec.default is apprc.CONFIG_MISSING:
         return "<required>" if spec.required else None
     return _json_value(spec.default)
 
 
-def _coerce_display_value(spec: ConfigField, raw_value: str) -> object:
+def _coerce_display_value(spec: apprc.ConfigField, raw_value: str) -> object:
     """Coerce dotenv strings into the value type shown by Example App output."""
     if spec.python_type is bool:
         normalized = raw_value.strip().lower()

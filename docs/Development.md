@@ -67,12 +67,15 @@ Put changes where the repo already has an owner:
 
 | Change Type | Owner |
 |---|---|
-| Runtime config contracts, bootstrap, storage, dotenv, doctor, setup, TUI | [src/apprc/runtime_config](../src/apprc/runtime_config) |
-| Typer command integration and CLI presentation | [src/apprc/cli](../src/apprc/cli) |
+| Developer-declared app specs, env config classes, owner metadata, and schema lookup | [src/apprc/definition](../src/apprc/definition) |
+| Process-time dotenv bootstrap, provenance, and read-only diagnostics | [src/apprc/runtime](../src/apprc/runtime) |
+| AppRC-managed config-home files, dotenv editing, setup flows, and storage roots | [src/apprc/user_files](../src/apprc/user_files) |
+| Typer command integration, CLI presentation, and Textual TUI surfaces | [src/apprc/interfaces](../src/apprc/interfaces) |
 | Optional semantic logging | [src/apprc/logging](../src/apprc/logging) |
 | Broad AppRC utility helpers | [src/apprc/utils](../src/apprc/utils) |
 | Public facade exports | [src/apprc/__init__.py](../src/apprc/__init__.py) and package `__init__.py` files |
 | Example host app | [examples/apprc_example_app](../examples/apprc_example_app) |
+| Capability-mode examples | [examples/example_apps](../examples/example_apps) |
 | Tests | [tests](../tests) |
 | Documentation | [docs](.) and [README.md](../README.md) |
 | PyPI README generation helper | [src/apprc_dev/packaging](../src/apprc_dev/packaging) |

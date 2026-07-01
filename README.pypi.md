@@ -94,29 +94,29 @@ Declare typed config sections with `EnvConfig`, `@env_owner`, and
 ```python
 from pathlib import Path
 
-from apprc import AppConfigKit, EnvConfig, env_field, env_owner
+import apprc
 
 
-@env_owner(
+@apprc.env_owner(
     key="app",
     title="App",
     env_prefix="MYAPP_",
     rc_path=("app",),
 )
-class MyAppEnv(EnvConfig):
-    storage_root: Path = env_field(
+class MyAppEnv(apprc.EnvConfig):
+    storage_root: Path = apprc.env_field(
         "STORAGE",
         editable=False,
         required=True,
         title="Storage root",
     )
-    profile: str = env_field(
+    profile: str = apprc.env_field(
         "PROFILE",
         default="default",
         title="Profile",
         explanation_short="Named runtime profile.",
     )
-    access_token: str = env_field(
+    access_token: str = apprc.env_field(
         "ACCESS_TOKEN",
         required=True,
         secret=True,
@@ -124,7 +124,7 @@ class MyAppEnv(EnvConfig):
     )
 
 
-APP_CONFIG = AppConfigKit.storage_only(
+APP_CONFIG = apprc.AppConfigKit.storage_only(
     app_name="myapp",
     display_name="My App",
     config_package="myapp.config",
@@ -143,12 +143,12 @@ Bootstrap your app before constructing runtime config objects:
 ```python
 import typer
 
-from apprc.cli import mount_config_cli
+import apprc
 
 from myapp.config import APP_CONFIG, MyAppEnv
 
 app = typer.Typer()
-mount_config_cli(app, APP_CONFIG)
+apprc.mount_config_cli(app, APP_CONFIG)
 
 
 @app.command()
@@ -174,6 +174,15 @@ validation. When `bridge.prepare(...)` skips runtime bootstrap,
 Runtimeful generated config commands require the host callback to leave the
 declared `state_type` on `ctx.obj`; bootstrapless config commands use AppRC's
 stored context instead.
+
+Run the compact capability examples from a checkout with:
+
+```bash
+python examples/example_apps/run_all.py
+```
+
+They cover `env_only`, `storage_only`, `app_wide_config`,
+`app_wide_storage`, named storage, and explicit env-file selector precedence.
 
 **Note**
 
@@ -356,10 +365,10 @@ logger API imports without `structlog`; `setup_logging()` requires the
 `logging` extra.
 
 ```python
-from apprc.logging import get_logger, setup_logging
+import apprc
 
-setup_logging(level="INFO", renderer="cli")
-log = get_logger(__name__)
+apprc.setup_logging(level="INFO", renderer="cli")
+log = apprc.get_logger(__name__)
 log.success("configured", extra_struct={"profile": "default"})
 ```
 

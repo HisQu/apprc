@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from apprc.cli.config.output import storage_list_payload
-from apprc.runtime_config.storage.registry import register_storage
+from apprc.interfaces.cli.config_command._output import storage_list_payload
+from apprc.user_files.storage_roots.registry import register_storage
 
 
 def test_storage_list_payload_reports_storage_env_status(

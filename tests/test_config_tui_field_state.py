@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from apprc.runtime_config.tui.field_state import (
+from apprc.interfaces.tui._field_state import (
     config_value_sources,
     selected_field_for_row,
 )

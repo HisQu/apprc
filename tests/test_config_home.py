@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from apprc.runtime_config.app_spec import AppConfigSpec
-from apprc.runtime_config.config_home import (
+from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.user_files.app_home.locations import (
     ConfigHomeError,
     app_config_file,
     write_text_atomic,
@@ -48,7 +48,7 @@ def test_app_config_spec_rejects_path_like_filenames(field_name: str) -> None:
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
-            config_package="apprc.runtime_config",
+            config_package="apprc",
             index_filename=filenames["index_filename"],
             shared_env_filename=filenames["shared_env_filename"],
             app_wide_env_filename=filenames["app_wide_env_filename"],
@@ -68,7 +68,7 @@ def test_ensure_app_wide_env_rejects_config_home_file(
     spec = AppConfigSpec(
         app_name="demo",
         display_name="Demo",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         index_filename="demo.apprc.toml",
     )
 
@@ -86,7 +86,7 @@ def test_ensure_app_wide_env_rejects_app_wide_env_directory(
     spec = AppConfigSpec(
         app_name="demo",
         display_name="Demo",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         index_filename="demo.apprc.toml",
     )
 
@@ -104,7 +104,7 @@ def test_ensure_index_file_rejects_index_directory(
     spec = AppConfigSpec(
         app_name="demo",
         display_name="Demo",
-        config_package="apprc.runtime_config",
+        config_package="apprc",
         index_filename="demo.apprc.toml",
     )
 

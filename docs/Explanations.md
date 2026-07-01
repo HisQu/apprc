@@ -102,16 +102,19 @@ Core AppRC areas:
 
 | Area | Responsibility |
 |---|---|
-| `src/apprc/runtime_config` | Config contracts, bootstrap, storage, doctor payloads, TUI, setup, and dotenv file helpers. |
-| `src/apprc/cli` | Typer integration and generated `config` command rendering. |
+| `src/apprc/definition` | Developer-declared app specs, capability choices, env-backed config classes, owner metadata, and schema lookup. |
+| `src/apprc/runtime` | Process-time dotenv bootstrap, provenance, and read-only diagnostics. |
+| `src/apprc/user_files` | AppRC-managed config homes, dotenv editing, storage registries, archive helpers, and setup flows. |
+| `src/apprc/interfaces` | Typer integration, generated `config` commands, CLI rendering, and Textual TUI presentation. |
 | `src/apprc/logging` | Optional semantic logging and structlog-backed formatting. |
 | `examples/apprc_example_app` | Runnable example host application. |
+| `examples/example_apps` | Small executable examples for each AppRC capability mode and selector precedence. |
 | `tests` | Behavior checks for public contracts and generated workflows. |
 | `docs` | Long-form user, reference, explanation, and maintainer documentation. |
 
-The root `apprc` package facade re-exports the main stable runtime config and
-logging helpers. More specialized modules remain importable for advanced
-integrations and tests.
+The root `apprc` facade re-exports normal integration APIs so applications can
+use one import statement. More specialized modules remain importable for AppRC
+internals, tests, and advanced debugging.
 
 <br>
 

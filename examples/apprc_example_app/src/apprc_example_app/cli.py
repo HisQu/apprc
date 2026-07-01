@@ -6,11 +6,7 @@ from __future__ import annotations
 import typer
 
 # == Internal ================================
-from apprc.cli import (
-    CliBootstrapContext,
-    mount_config_cli,
-)
-from apprc.logging import setup_logging
+import apprc
 from apprc_example_app import (
     APPRC_EXAMPLE_APP_KIT,
     ApprcExampleAppState,
@@ -29,7 +25,7 @@ app = typer.Typer(
 
 
 def _example_app_state(
-    context: CliBootstrapContext,
+    context: apprc.CliBootstrapContext,
 ) -> ApprcExampleAppState:
     """Build Example App runtime state after AppRC bootstrap.
 
@@ -42,13 +38,13 @@ def _example_app_state(
     )
 
 
-config_app = mount_config_cli(
+config_app = apprc.mount_config_cli(
     app,
     APPRC_EXAMPLE_APP_KIT,
     state_type=ApprcExampleAppState,
     state_factory=_example_app_state,
     runtime_payload=apprc_example_app_config_payload,
-    setup_logging=setup_logging,
+    setup_logging=apprc.setup_logging,
 )
 
 

@@ -99,7 +99,7 @@ def build_graph() -> Digraph:
     )
     _runtime_card(
         runtime_read,
-        "runtime_config",
+        "runtime_output",
         pos=gv.fixed_position(11.45, -0.95),
     )
     figure.graph.subgraph(runtime_read)
@@ -293,7 +293,7 @@ def build_graph() -> Digraph:
     _arrow(
         figure.graph,
         "read_stack",
-        "runtime_config",
+        "runtime_output",
         "builds",
         gg.GREEN,
         11.48,

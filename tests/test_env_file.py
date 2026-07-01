@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.runtime_config.env_file import (
+from apprc.user_files.env_files import (
     clear_env_file_value,
     clear_storage_env_value,
     ensure_storage_env_file,
@@ -13,8 +13,8 @@ from apprc.runtime_config.env_file import (
     set_storage_env_value,
     write_env_file,
 )
-from apprc.runtime_config.storage.paths import StorageRootPathError
-from apprc.runtime_config.contract.schema import ConfigField
+from apprc.user_files.storage_roots.paths import StorageRootPathError
+from apprc.definition.env_config.schema import ConfigField
 from tests.support_config import (
     APPRC_EXAMPLE_APP_OWNER,
     APPRC_EXAMPLE_APP_OWNERS,

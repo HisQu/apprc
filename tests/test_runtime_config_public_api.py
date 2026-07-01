@@ -7,29 +7,30 @@ from pathlib import Path
 import pytest
 
 import apprc
-import apprc.runtime_config.contract as contract_api
-import apprc.runtime_config as config_api
-from apprc.runtime_config import EnvConfig
-from apprc.runtime_config.app_spec import AppConfigSpec
-from apprc.runtime_config.contract.schema import ConfigField, ConfigOwner
-from apprc.runtime_config.env_file import EnvFileUpdate
-from apprc.runtime_config.storage.registry import StorageRegistry
+import apprc.definition as definition_api
+import apprc.definition.env_config as contract_api
+import apprc.runtime as runtime_api
+from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.env_config.env import EnvConfig
+from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.user_files.env_files.updates import EnvFileUpdate
+from apprc.user_files.storage_roots.model import StorageRegistry
 
 
-def test_top_level_runtime_config_exports_are_public_api() -> None:
+def test_root_facade_exports_public_config_api() -> None:
     assert apprc.EnvConfig is EnvConfig
     assert apprc.AppConfigSpec is AppConfigSpec
-    assert config_api.AppConfigSpec is AppConfigSpec
-    assert apprc.EnvBootstrapResult is config_api.EnvBootstrapResult
+    assert definition_api.AppConfigSpec is AppConfigSpec
+    assert apprc.EnvBootstrapResult is runtime_api.EnvBootstrapResult
     assert not hasattr(apprc, "BaseEnv")
-    assert not hasattr(config_api, "BaseEnv")
+    assert not hasattr(definition_api, "BaseEnv")
 
 
 def test_old_provenance_names_are_not_public_api() -> None:
     assert not hasattr(apprc, "ConfigFieldSource")
-    assert not hasattr(config_api, "ConfigFieldSource")
+    assert not hasattr(runtime_api, "ConfigFieldSource")
     assert not hasattr(apprc, "owner_default")
-    assert not hasattr(config_api, "owner_default")
+    assert not hasattr(runtime_api, "owner_default")
 
 
 def test_top_level_facade_exports_stable_config_interfaces() -> None:
@@ -41,15 +42,14 @@ def test_top_level_facade_exports_stable_config_interfaces() -> None:
     assert callable(apprc.resolve_package_root)
     assert callable(apprc.register_storage)
     assert callable(apprc.set_storage_env_value)
-    assert not hasattr(apprc, "ConfigEditorApp")
+    assert apprc.ConfigEditorApp is not None
 
 
-def test_runtime_config_facade_stays_narrow() -> None:
-    assert not hasattr(config_api, "ConfigOwner")
-    assert not hasattr(config_api, "ConfigField")
-    assert not hasattr(config_api, "ConfigDoctorPayload")
-    assert not hasattr(config_api, "StorageRegistry")
-    assert not hasattr(config_api, "EnvFileUpdate")
+def test_definition_and_runtime_facades_stay_owned() -> None:
+    assert definition_api.ConfigOwner is ConfigOwner
+    assert definition_api.ConfigField is ConfigField
+    assert not hasattr(runtime_api, "StorageRegistry")
+    assert not hasattr(runtime_api, "EnvFileUpdate")
     assert not hasattr(contract_api, "AppConfigSpec")
 
 
@@ -64,25 +64,30 @@ def test_old_runtime_config_fields_package_is_removed() -> None:
         importlib.import_module("apprc.runtime_config.fields")
 
 
+def test_old_runtime_config_package_is_removed() -> None:
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("apprc.runtime_config")
+
+
 def test_old_contract_app_spec_module_is_removed() -> None:
-    removed_module = "apprc.runtime_config.contract.app_spec"
+    removed_module = "apprc.definition.env_config.app_spec"
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module(removed_module)
 
 
-def test_contract_modules_do_not_import_config_objects_layer() -> None:
-    contract_root = (
+def test_env_config_modules_do_not_import_app_config_layer() -> None:
+    env_config_root = (
         Path(__file__).resolve().parents[1]
         / "src"
         / "apprc"
-        / "runtime_config"
-        / "contract"
+        / "definition"
+        / "env_config"
     )
-    for path in contract_root.rglob("*.py"):
+    for path in env_config_root.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom) or node.module is None:
                 continue
-            assert not node.module.startswith(
-                "apprc.runtime_config.config_objects"
-            ), f"{path} imports {node.module}"
+            assert not node.module.startswith("apprc.definition.app_config"), (
+                f"{path} imports {node.module}"
+            )

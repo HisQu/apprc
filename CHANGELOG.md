@@ -51,6 +51,17 @@ All notable changes to `{my_project}` will be documented in this file.
 
 ### 💥 Breaking Change Summary
 
+  - Breaking: Replaced the old `apprc.runtime_config` and `apprc.cli`
+    public import paths with the clearer `definition`, `runtime`,
+    `user_files`, and `interfaces` architecture.
+    Affected: Users importing AppRC internals from `apprc.runtime_config.*`
+    or `apprc.cli.*`.
+    Migration: Prefer one root import, `import apprc`, and access stable
+    integration APIs through that handle, such as `apprc.AppConfigKit`,
+    `apprc.EnvConfig`, `apprc.mount_config_cli`, and
+    `apprc.build_config_doctor_payload`. Advanced internal imports now live
+    under `apprc.definition`, `apprc.runtime`, `apprc.user_files`, and
+    `apprc.interfaces`.
 
 <br>
 
@@ -60,19 +71,32 @@ All notable changes to `{my_project}` will be documented in this file.
     AppRC keeps each `.env` and TOML file, which `AppConfigKit` shapes use
     them, and how startup inputs feed runtime config.
 
+  - Added executable capability-mode examples under
+    `examples/example_apps`, covering `env_only`, `storage_only`,
+    `app_wide_config`, `app_wide_storage`, named storage, and explicit
+    env-file selector precedence.
+
 
 <br>
 
 ### 💔 Changed
 
-<br>
+  - Changed AppRC's package tree to make ownership visible from paths:
+    declarations live in `apprc.definition`, process-time behavior in
+    `apprc.runtime`, managed user files in `apprc.user_files`, and CLI/TUI
+    surfaces in `apprc.interfaces`.
 
-### 🔨 Fixed
-
+  - Changed the root `apprc` facade into the stable application import surface
+    for config definitions, runtime bootstrap, diagnostics, generated CLI
+    integration, TUI app classes, dotenv helpers, storage helpers, and optional
+    logging.
 
 <br>
 
 ### 🗑️ Removed
+
+  - Removed the old `apprc.runtime_config` and `apprc.cli` compatibility
+    packages after moving their implementation into the new architecture.
 
 
 ---

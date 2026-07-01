@@ -38,9 +38,9 @@
 <title>storage_choice:s&#45;&gt;storage_choice_project_b_env_route_0</title>
 <path fill="none" stroke="#32bc00" stroke-width="2.3" d="M609.53,-274.14C609.53,-274.14 463.26,-236.19 451.83,-233.22"/>
 </g>
-<!-- read_stack&#45;&gt;runtime_config -->
+<!-- read_stack&#45;&gt;runtime_output -->
 <g id="edge9" class="edge">
-<title>read_stack:s&#45;&gt;runtime_config:n</title>
+<title>read_stack:s&#45;&gt;runtime_output:n</title>
 <path fill="none" stroke="#32bc00" stroke-width="2.3" d="M789.52,-121.72C789.52,-121.72 789.52,-111.01 789.52,-102.47"/>
 <polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.3" points="791.98,-102.59 789.53,-95.59 787.08,-102.59 791.98,-102.59"/>
 </g>
@@ -120,9 +120,9 @@
 <text xml:space="preserve" text-anchor="start" x="744.9" y="-128.45" font-family="sans-serif" font-size="10.00">process: os.environ</text>
 <path fill="none" stroke="#32bc00" stroke-width="2" d="M740.77,-122.45C740.77,-122.45 838.27,-122.45 838.27,-122.45 844.27,-122.45 850.27,-128.45 850.27,-134.45 850.27,-134.45 850.27,-227.95 850.27,-227.95 850.27,-233.95 844.27,-239.95 838.27,-239.95 838.27,-239.95 740.77,-239.95 740.77,-239.95 734.77,-239.95 728.77,-233.95 728.77,-227.95 728.77,-227.95 728.77,-134.45 728.77,-134.45 728.77,-128.45 734.77,-122.45 740.77,-122.45"/>
 </g>
-<!-- runtime_config -->
+<!-- runtime_output -->
 <g id="node5" class="node">
-<title>runtime_config</title>
+<title>runtime_output</title>
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M747.4,-19.2C747.4,-19.2 831.65,-19.2 831.65,-19.2 837.65,-19.2 843.65,-25.2 843.65,-31.2 843.65,-31.2 843.65,-79.2 843.65,-79.2 843.65,-85.2 837.65,-91.2 831.65,-91.2 831.65,-91.2 747.4,-91.2 747.4,-91.2 741.4,-91.2 735.4,-85.2 735.4,-79.2 735.4,-79.2 735.4,-31.2 735.4,-31.2 735.4,-25.2 741.4,-19.2 747.4,-19.2"/>
 <polygon fill="#b4a7e5" stroke="none" points="743.4,-63.2 743.4,-83.2 750.57,-83.2 750.57,-63.2 743.4,-63.2"/>
 <polygon fill="none" stroke="#181818" points="743.4,-63.2 743.4,-83.2 750.57,-83.2 750.57,-63.2 743.4,-63.2"/>
@@ -317,9 +317,9 @@
 <text xml:space="preserve" text-anchor="start" x="524.86" y="-227.65" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">path</text>
 <polygon fill="none" stroke="#32bc00" points="519.24,-223.2 519.24,-247.2 551.49,-247.2 551.49,-223.2 519.24,-223.2"/>
 </g>
-<!-- read_stack_runtime_config_label -->
+<!-- read_stack_runtime_output_label -->
 <g id="node27" class="node">
-<title>read_stack_runtime_config_label</title>
+<title>read_stack_runtime_output_label</title>
 <polygon fill="#32bc00" stroke="none" points="774.44,-108.47 774.44,-127.22 808.94,-127.22 808.94,-108.47 774.44,-108.47"/>
 <text xml:space="preserve" text-anchor="start" x="777.44" y="-116.67" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">builds</text>
 <polygon fill="none" stroke="#32bc00" points="774.44,-108.47 774.44,-127.22 808.94,-127.22 808.94,-108.47 774.44,-108.47"/>

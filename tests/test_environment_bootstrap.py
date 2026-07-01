@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from apprc.runtime_config.kit import AppConfigKit
-from apprc.runtime_config.storage.registry import register_storage
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.user_files.storage_roots.registry import register_storage
 from apprc_example_app.config import ApprcExampleAppEnv
 
 

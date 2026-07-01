@@ -1,54 +1,55 @@
-"""App-wide plus named-storage AppRC app."""
+"""App-wide storage AppRC example CLI."""
 
 from __future__ import annotations
 
 # == Standard Library ========================
 from pathlib import Path
 
+# == 3rd Party ===============================
+import typer
+
 # == Internal ================================
 import apprc
-
-from example_apps._support import config_values, run_isolated
-
-
-@apprc.env_owner(
-    key="app_wide_storage",
-    title="App Wide Storage",
-    env_prefix="APPRC_EXAMPLE_APP_WIDE_STORAGE_",
-    rc_path=("app_wide_storage",),
+from apprc_app_wide_storage_example.config import (
+    AppWideStorageConfig,
+    KIT,
+    OWNERS,
 )
-class AppWideStorageConfig(apprc.EnvConfig):
-    """Config fields resolved from app-wide and storage layers."""
-
-    storage_root: Path = apprc.env_field(
-        "ROOT",
-        editable=False,
-        required=True,
-    )
-    region: str = apprc.env_field("REGION", default="local")
-    access_token: str = apprc.env_field(
-        "ACCESS_TOKEN",
-        required=True,
-        secret=True,
-    )
-
-
-KIT = apprc.AppConfigKit.app_wide_storage(
-    app_name="apprc_example_app_wide_storage",
-    display_name="Example App Wide Storage",
-    config_package="example_apps",
-    envs=(AppWideStorageConfig,),
-    storage_env_key="APPRC_EXAMPLE_APP_WIDE_STORAGE_ROOT",
+from apprc_example_apps._support import (
+    build_standard_app,
+    config_values,
+    run_isolated,
 )
 
-OWNERS = (apprc.config_owner_for(AppWideStorageConfig),)
+
+def build_app(
+    *,
+    args_provider: apprc.CliArgvProvider | None = None,
+    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+) -> typer.Typer:
+    """Return the app-wide storage example CLI.
+
+    :param args_provider: Optional command-token provider for tests.
+    :param editor_app_cls: Optional editor replacement for tests.
+    :return: Typer application.
+    """
+    return build_standard_app(
+        kit=KIT,
+        config_cls=AppWideStorageConfig,
+        help_text="Exercise AppRC's app-wide storage capability mode.",
+        args_provider=args_provider,
+        editor_app_cls=editor_app_cls,
+    )
 
 
-def run(root: Path) -> dict[str, object]:
-    """Execute the app-wide storage example app.
+app = build_app()
+
+
+def run_demo(root: Path) -> dict[str, object]:
+    """Execute a compact app-wide storage scenario.
 
     :param root: Temporary run directory.
-    :return: JSON-friendly summary of the scenario.
+    :return: JSON-friendly scenario summary.
     """
 
     def scenario() -> dict[str, object]:
@@ -99,5 +100,10 @@ def run(root: Path) -> dict[str, object]:
     )
 
 
+def main() -> None:
+    """Run the app-wide storage example CLI."""
+    app()
+
+
 if __name__ == "__main__":
-    print(run(Path.cwd() / ".apprc-example-app-wide-storage"))
+    main()

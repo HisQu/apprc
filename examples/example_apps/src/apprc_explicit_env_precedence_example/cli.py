@@ -1,4 +1,4 @@
-"""Explicit env-file precedence example for storage selectors."""
+"""Explicit env-file precedence AppRC example CLI."""
 
 from __future__ import annotations
 
@@ -6,43 +6,50 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# == 3rd Party ===============================
+import typer
+
 # == Internal ================================
 import apprc
-
-from example_apps._support import run_isolated, write_env
-
-
-@apprc.env_owner(
-    key="precedence",
-    title="Precedence",
-    env_prefix="APPRC_EXAMPLE_PRECEDENCE_",
-    rc_path=("precedence",),
+from apprc_example_apps._support import (
+    build_standard_app,
+    run_isolated,
+    write_env,
 )
-class PrecedenceConfig(apprc.EnvConfig):
-    """Config fields used to demonstrate selector precedence."""
+from apprc_explicit_env_precedence_example.config import (
+    ExplicitEnvPrecedenceConfig,
+    KIT,
+)
 
-    storage_root: Path = apprc.env_field(
-        "ROOT",
-        editable=False,
-        required=True,
+
+def build_app(
+    *,
+    args_provider: apprc.CliArgvProvider | None = None,
+    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+) -> typer.Typer:
+    """Return the explicit env precedence example CLI.
+
+    :param args_provider: Optional command-token provider for tests.
+    :param editor_app_cls: Optional editor replacement for tests.
+    :return: Typer application.
+    """
+    return build_standard_app(
+        kit=KIT,
+        config_cls=ExplicitEnvPrecedenceConfig,
+        help_text="Exercise explicit env-file storage selector precedence.",
+        args_provider=args_provider,
+        editor_app_cls=editor_app_cls,
     )
-    label: str = apprc.env_field("LABEL", default="default")
 
 
-KIT = apprc.AppConfigKit.storage_only(
-    app_name="apprc_example_precedence",
-    display_name="Example Precedence",
-    config_package="example_apps",
-    envs=(PrecedenceConfig,),
-    storage_env_key="APPRC_EXAMPLE_PRECEDENCE_ROOT",
-)
+app = build_app()
 
 
-def run(root: Path) -> dict[str, object]:
-    """Execute the explicit-env precedence edge case.
+def run_demo(root: Path) -> dict[str, object]:
+    """Execute the explicit env-file precedence scenario.
 
     :param root: Temporary run directory.
-    :return: JSON-friendly summary of the scenario.
+    :return: JSON-friendly scenario summary.
     """
 
     def scenario() -> dict[str, object]:
@@ -53,7 +60,7 @@ def run(root: Path) -> dict[str, object]:
         apprc.ensure_storage_env_file(shell_root)
         apprc.ensure_storage_env_file(explicit_root)
         selector_env = write_env(
-            root / "selector.env",
+            root / ".env",
             {"APPRC_EXAMPLE_PRECEDENCE_ROOT": str(explicit_root)},
         )
         os.environ["APPRC_EXAMPLE_PRECEDENCE_ROOT"] = str(shell_root)
@@ -82,5 +89,10 @@ def run(root: Path) -> dict[str, object]:
     )
 
 
+def main() -> None:
+    """Run the explicit env precedence example CLI."""
+    app()
+
+
 if __name__ == "__main__":
-    print(run(Path.cwd() / ".apprc-example-precedence"))
+    main()

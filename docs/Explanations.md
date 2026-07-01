@@ -107,8 +107,7 @@ Core AppRC areas:
 | `src/apprc/user_files` | AppRC-managed config homes, dotenv editing, storage registries, archive helpers, and setup flows. |
 | `src/apprc/interfaces` | Typer integration, generated `config` commands, CLI rendering, and Textual TUI presentation. |
 | `src/apprc/logging` | Optional semantic logging and structlog-backed formatting. |
-| `examples/apprc_example_app` | Runnable example host application. |
-| `examples/example_apps` | Small executable examples for each AppRC capability mode and selector precedence. |
+| `examples/example_apps` | Runnable example CLIs for each AppRC capability mode, selector precedence, and `ConfigCliBridge`, with one import package per example app. |
 | `tests` | Behavior checks for public contracts and generated workflows. |
 | `docs` | Long-form user, reference, explanation, and maintainer documentation. |
 

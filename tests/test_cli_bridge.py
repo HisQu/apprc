@@ -523,7 +523,7 @@ def test_config_cli_bridge_bootstrapless_command_preserves_existing_ctx_obj() ->
 
 
 def test_config_cli_bridge_runtime_command_help_skips_state_factory() -> None:
-    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
 
     args = ["run", "--help"]
     app = typer.Typer()
@@ -786,7 +786,7 @@ def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
     return AppConfigKit.app_wide_config(
         app_name="storage_free_app",
         display_name="Storage-Free App",
-        config_package="apprc_example_app.config",
+        config_package="apprc_storage_only_example",
         envs=(StorageFreeExampleEnv,),
         index_filename="storage_free_app.apprc.toml",
     )

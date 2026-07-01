@@ -173,14 +173,21 @@ Runtimeful generated config commands require the host callback to leave the
 declared `state_type` on `ctx.obj`; bootstrapless config commands use AppRC's
 stored context instead.
 
-Run the compact capability examples from a checkout with:
+Run the capability examples from a checkout with:
 
 ```bash
-python examples/example_apps/run_all.py
+python -m pip install -e examples/example_apps --no-build-isolation
+python -m apprc_dev.example_apps.bootstrap --clean
+set -a; source .apprc-example-storage-only/.env; set +a
+apprc-storage-only config doctor
+apprc-examples-run-all
 ```
 
 They cover `env_only`, `storage_only`, `app_wide_config`,
-`app_wide_storage`, named storage, and explicit env-file selector precedence.
+`app_wide_storage`, named storage, explicit env-file selector precedence, and
+the `ConfigCliBridge` host-callback integration. Each `.apprc-example*/`
+directory contains a sourceable `.env` plus commented app-wide, storage-local,
+and TOML files showing where the same files would live for a real app.
 
 > [!NOTE]
 > For the step-by-step integration guide, see
@@ -396,8 +403,11 @@ The detailed manual starts at [docs/README.md](docs/README.md).
 > and APIs, and [docs/Development.md](docs/Development.md) for maintainer
 > workflow and docs rules.
 
-The repository also ships a runnable example app in
-[examples/apprc_example_app](examples/apprc_example_app).
+The repository also ships runnable example CLIs in
+[examples/example_apps](examples/example_apps). Each example is its own
+package, such as `apprc_storage_only_example`, with local `config.py`,
+`cli.py`, and `.env.shared` files so the source tree mirrors a real app
+integration.
 
 <br>
 

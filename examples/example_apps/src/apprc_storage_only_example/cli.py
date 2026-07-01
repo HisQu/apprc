@@ -1,50 +1,51 @@
-"""Storage-required AppRC app selected by a direct storage path."""
+"""Storage-only AppRC example CLI."""
 
 from __future__ import annotations
 
 # == Standard Library ========================
 from pathlib import Path
 
+# == 3rd Party ===============================
+import typer
+
 # == Internal ================================
 import apprc
-
-from example_apps._support import config_values, run_isolated
-
-
-@apprc.env_owner(
-    key="storage_only",
-    title="Storage Only",
-    env_prefix="APPRC_EXAMPLE_STORAGE_",
-    rc_path=("storage_only",),
+from apprc_example_apps._support import (
+    build_standard_app,
+    config_values,
+    run_isolated,
 )
-class StorageOnlyConfig(apprc.EnvConfig):
-    """Config fields resolved from a selected storage root."""
+from apprc_storage_only_example.config import KIT, OWNERS, StorageOnlyConfig
 
-    storage_root: Path = apprc.env_field(
-        "ROOT",
-        editable=False,
-        required=True,
+
+def build_app(
+    *,
+    args_provider: apprc.CliArgvProvider | None = None,
+    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+) -> typer.Typer:
+    """Return the storage-only example CLI.
+
+    :param args_provider: Optional command-token provider for tests.
+    :param editor_app_cls: Optional editor replacement for tests.
+    :return: Typer application.
+    """
+    return build_standard_app(
+        kit=KIT,
+        config_cls=StorageOnlyConfig,
+        help_text="Exercise AppRC's storage-only capability mode.",
+        args_provider=args_provider,
+        editor_app_cls=editor_app_cls,
     )
-    profile: str = apprc.env_field("PROFILE", default="default")
-    api_token: str = apprc.env_field("API_TOKEN", required=True, secret=True)
 
 
-KIT = apprc.AppConfigKit.storage_only(
-    app_name="apprc_example_storage_only",
-    display_name="Example Storage Only",
-    config_package="example_apps",
-    envs=(StorageOnlyConfig,),
-    storage_env_key="APPRC_EXAMPLE_STORAGE_ROOT",
-)
-
-OWNERS = (apprc.config_owner_for(StorageOnlyConfig),)
+app = build_app()
 
 
-def run(root: Path) -> dict[str, object]:
-    """Execute the direct-path storage example app.
+def run_demo(root: Path) -> dict[str, object]:
+    """Execute a compact storage-only scenario.
 
     :param root: Temporary run directory.
-    :return: JSON-friendly summary of the scenario.
+    :return: JSON-friendly scenario summary.
     """
 
     def scenario() -> dict[str, object]:
@@ -78,5 +79,10 @@ def run(root: Path) -> dict[str, object]:
     )
 
 
+def main() -> None:
+    """Run the storage-only example CLI."""
+    app()
+
+
 if __name__ == "__main__":
-    print(run(Path.cwd() / ".apprc-example-storage-only"))
+    main()

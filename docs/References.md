@@ -347,7 +347,7 @@ Renderer values for `setup_logging(renderer=...)`:
 | [justfile](../justfile) | Development and release commands. |
 | [src/apprc](../src/apprc) | Runtime package source. |
 | [src/apprc_dev](../src/apprc_dev) | Repository-local development helpers. |
-| [examples/apprc_example_app](../examples/apprc_example_app) | Runnable example host app. |
+| [examples/example_apps](../examples/example_apps) | Runnable example CLIs for every AppRC capability mode. Each app has its own package with local `config.py`, `cli.py`, and `.env.shared`. |
 | [tests](../tests) | Test suite. |
 | [docs](.) | Long-form documentation. |
 | [assets](../assets) | Repository assets. |

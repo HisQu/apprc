@@ -57,10 +57,10 @@ logging = [
 
 [package.dev-dependencies]
 demo = [
-    { name = "apprc-example-app" },
+    { name = "apprc-example-apps" },
 ]
 dev = [
-    { name = "apprc-example-app" },
+    { name = "apprc-example-apps" },
     { name = "graphigs" },
     { name = "ipywidgets" },
     { name = "jupyterlab" },
@@ -87,9 +87,9 @@ requires-dist = [
 provides-extras = ["logging"]
 
 [package.metadata.requires-dev]
-demo = [{ name = "apprc-example-app", editable = "examples/apprc_example_app" }]
+demo = [{ name = "apprc-example-apps", editable = "examples/example_apps" }]
 dev = [
-    { name = "apprc-example-app", editable = "examples/apprc_example_app" },
+    { name = "apprc-example-apps", editable = "examples/example_apps" },
     { name = "graphigs", editable = "../graphigs" },
     { name = "ipywidgets" },
     { name = "jupyterlab" },
@@ -104,9 +104,9 @@ dev = [
 ]
 
 [[package]]
-name = "apprc-example-app"
+name = "apprc-example-apps"
 version = "0.0.0"
-source = { editable = "examples/apprc_example_app" }
+source = { editable = "examples/example_apps" }
 dependencies = [
     { name = "apprc" },
 ]

@@ -18,6 +18,7 @@ db/
 .devtools/
 .vscode/
 # .gitignore
+.apprc-example*/
 
 # === .env ======================================================
 .envrc.private

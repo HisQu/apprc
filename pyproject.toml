@@ -57,7 +57,7 @@ dependencies = [
 # Local-only dependency sources used by uv. These are not published as package
 # requirements in AppRC wheel metadata.
 [tool.uv.sources]
-"apprc_example_app" = { path = "examples/apprc_example_app", editable = true }
+"apprc-example-apps" = { path = "examples/example_apps", editable = true }
 "graphigs" = { path = "../graphigs", editable = true }
 
 
@@ -101,7 +101,7 @@ logging = [
 #   uv sync --locked --all-extras --all-groups
 [dependency-groups]
 demo = [
-    "apprc_example_app",
+    "apprc-example-apps",
 ]
 dev = [
     { include-group = "demo" },
@@ -156,8 +156,8 @@ pythonVersion = "3.12"  # Enforce the minimum supported python version
 pythonPlatform = "All"
 venvPath = "."
 venv = ".venv"
-include = ["src", "tests", "examples/apprc_example_app/src"]
-extraPaths = ["src", "tests", "examples/apprc_example_app/src"]
+include = ["src", "tests", "examples/example_apps/src"]
+extraPaths = ["src", "tests", "examples/example_apps/src"]
 exclude = [
     "**/example_data",
     "**/old",

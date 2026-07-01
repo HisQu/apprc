@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=82"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apprc-example-apps"
+version = "0.0.0"
+description = "Repository-local example CLIs for exercising every AppRC mode."
+requires-python = ">=3.12"
+dependencies = [
+    "apprc",
+]
+
+[project.scripts]
+apprc-env-only = "apprc_env_only_example.cli:main"
+apprc-storage-only = "apprc_storage_only_example.cli:main"
+apprc-app-wide-config = "apprc_app_wide_config_example.cli:main"
+apprc-app-wide-storage = "apprc_app_wide_storage_example.cli:main"
+apprc-explicit-env-precedence = "apprc_explicit_env_precedence_example.cli:main"
+apprc-cli-bridge = "apprc_cli_bridge_example.cli:main"
+apprc-examples-run-all = "apprc_example_apps.run_all:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = [
+    "apprc_app_wide_config_example",
+    "apprc_app_wide_storage_example",
+    "apprc_cli_bridge_example",
+    "apprc_env_only_example",
+    "apprc_example_apps",
+    "apprc_explicit_env_precedence_example",
+    "apprc_storage_only_example",
+]
+
+[tool.setuptools.package-data]
+"*" = [".env.shared"]

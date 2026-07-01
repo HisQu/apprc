@@ -29,11 +29,13 @@ All notable changes to `{my_project}` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-4. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-5. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-6. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-7. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+4. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+5. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+6. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+7. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+8. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+9. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -45,7 +47,43 @@ All notable changes to `{my_project}` will be documented in this file.
 
 # [Unreleased]
 
+<br>
 
+### 💥 Breaking Change Summary
+
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.17.0 - 2026-07-01
 
 <br>
 
@@ -63,18 +101,29 @@ All notable changes to `{my_project}` will be documented in this file.
     under `apprc.definition`, `apprc.runtime`, `apprc.user_files`, and
     `apprc.interfaces`.
 
+  - Breaking: Removed the repository-local `apprc_example_app` demo package
+    and its ambiguous `apprc` console script.
+    Affected: Maintainers or downstream test harnesses using the checkout's
+    old `examples/apprc_example_app` package or `apprc` demo executable.
+    Migration: Use the new dev-only `apprc-example-apps` package and its
+    explicit scripts, such as `apprc-storage-only config doctor`,
+    `apprc-app-wide-storage config show`, or
+    `apprc-cli-bridge status`.
+
 <br>
 
 ### ➕ Added
 
-  - Added a Graphigs-backed structured dotenv/config-file map showing where
-    AppRC keeps each `.env` and TOML file, which `AppConfigKit` shapes use
-    them, and how startup inputs feed runtime config.
-
   - Added executable capability-mode examples under
     `examples/example_apps`, covering `env_only`, `storage_only`,
-    `app_wide_config`, `app_wide_storage`, named storage, and explicit
-    env-file selector precedence.
+    `app_wide_config`, `app_wide_storage`, named storage, explicit env-file
+    selector precedence, and the `ConfigCliBridge` host-callback path. Each
+    example lives in its own import package with local `config.py`, `cli.py`,
+    and `.env.shared` files, matching the structure downstream apps should use.
+
+  - Added `python -m apprc_dev.example_apps.bootstrap` to create ignored
+    example sandboxes with commented `.env`, `.env.apprc-app`,
+    `.env.apprc-storage`, and `.apprc.toml` files.
 
 
 <br>
@@ -105,24 +154,79 @@ All notable changes to `{my_project}` will be documented in this file.
 
 <!-- ======================================================== -->
 
+# 0.16.4 - 2026-06-30
+
+<br>
+
+### ➕ Added
+
+  - Added `ConfigCliBridge`, `ConfigCliSession`, `ConfigCliStateFactory`,
+    `BootstraplessCommand`, `HostCliBootstrapPolicy`, and
+    `MountConfigCliStateFactory` for apps that need a composable Typer
+    integration layer around custom host callbacks.
+
+  - Added a Graphigs-backed structured dotenv/config-file map showing where
+    AppRC keeps each `.env` and TOML file, which `AppConfigKit` shapes use
+    them, and how startup inputs feed runtime config.
+
+<br>
+
+### 💔 Changed
+
+  - Changed `mount_config_cli(...)` and `ConfigCliBridge(...)` so the shipped
+    behavior includes default `DefaultConfigCliState` support, explicit
+    `state_factory` support for app-owned runtime state, custom generated
+    config group names, explicit argv/policy injection for tests and forwarding
+    CLIs, help-safe bootstrap skipping, generated config group collision
+    checks, and context-only handling for bootstrapless generated config
+    commands.
+
+  - Changed CLI bridge docs and config selector wording to use host-level
+    option terminology consistently.
+
+<br>
+
+### 🔨 Fixed
+
+  - Fixed host and generated-config help parsing so structurally recognized
+    help such as `run --help` can render without runtime storage, while
+    help-like option values such as `--text --help` and separator-protected
+    tokens such as `run -- --help` remain runtime data.
+
+  - Fixed bridge skip-policy composition so app-specific host option sets
+    extend AppRC's standard options, generated config commands strip those
+    custom host options correctly, and direct config bootstrap policies cannot
+    drift from the bridge config group name.
+
+  - Fixed bootstrapless host-command declarations so empty action tuples are
+    rejected clearly; use `skip_empty=True` for bare command groups.
+
+  - Fixed runtimeful generated config commands with custom state so they fail
+    clearly when AppRC bootstrap ran but the host callback did not leave the
+    declared `state_type` on `ctx.obj`, while bootstrapless config commands
+    still use AppRC's stored context.
+
+  - Fixed generated config group mounting so `ConfigCliBridge(...)` and
+    `mount_config_cli(...)` reject host Typer apps that already own the
+    requested config command or group name.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
 # 0.16.3 - 2026-06-29
 
 <br>
 
 ### ➕ Added
 
-  - Added the final layered Typer integration toolkit:
-    `mount_config_cli(...)`, `ConfigCliBridge`, `CliBootstrapOptions`,
-    AppRC Typer context metadata, reusable host-level option aliases,
-    `MountConfigCliStateFactory`, `CliArgvProvider`, `ConfigCliSession`,
-    `ConfigCliStateFactory`, `BootstraplessCommand`,
-    `HostCliBootstrapPolicy`, and configurable config bootstrap skip policies.
-    The shipped helper behavior includes default `DefaultConfigCliState`
-    support, explicit `state_factory` support for app-owned runtime state,
-    custom generated config group names, explicit argv/policy injection for
-    tests and forwarding CLIs, help-safe bootstrap skipping, generated config
-    group collision checks, and context-only handling for bootstrapless
-    generated config commands.
+  - Added layered Typer integration helpers: `mount_config_cli(...)`,
+    `CliBootstrapOptions`, AppRC Typer context metadata, reusable root option
+    aliases, and configurable config bootstrap skip policies.
 
   - Added Graphigs-backed docs figure scripts for regenerating
     `docs-reading-map.svg` and `apprc-runtime-layers.svg`.
@@ -137,6 +241,11 @@ All notable changes to `{my_project}` will be documented in this file.
   - Improved Graphigs-backed graphical abstract layouts with clearer groups,
     a wide README hero format, looser labels, and documented figure color
     roles.
+
+  - Tightened the new Typer convenience helper API before its first release:
+    custom `mount_config_cli(...)` state now requires `state_factory=...`,
+    generated config group renaming uses `config_group_name=...`, and explicit
+    mount hook parameters replace loose keyword forwarding.
 
 <br>
 

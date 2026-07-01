@@ -55,7 +55,7 @@ def pytest_configure(config: pytest.Config) -> None:
     example_src = (
         Path(__file__).resolve().parents[1]
         / "examples"
-        / "apprc_example_app"
+        / "example_apps"
         / "src"
     )
     example_src_text = str(example_src)

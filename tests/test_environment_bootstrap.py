@@ -7,7 +7,7 @@ import pytest
 
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.user_files.storage_roots.registry import register_storage
-from apprc_example_app.config import ApprcExampleAppEnv
+from tests.support_config import ApprcExampleAppEnv
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +22,7 @@ def _kit() -> AppConfigKit:
     return AppConfigKit.storage_only(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="apprc_example_app.config",
+        config_package="apprc_storage_only_example",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
         index_filename="apprc_example_app.apprc.toml",

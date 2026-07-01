@@ -43,7 +43,7 @@ def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
     return AppConfigKit.app_wide_config(
         app_name="storage_free_app",
         display_name="Storage-Free App",
-        config_package="apprc_example_app.config",
+        config_package="apprc_env_only_example",
         envs=(StorageFreeExampleEnv,),
         index_filename="storage_free_app.apprc.toml",
     )
@@ -229,7 +229,7 @@ def test_mount_config_cli_bootstraps_simple_storage_free_app(
 def test_mount_config_cli_passes_storage_to_default_config_show(
     tmp_path: Path,
 ) -> None:
-    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"
@@ -382,7 +382,7 @@ def test_mount_config_cli_state_factory_builds_app_state_for_runtime_command(
 def test_mount_config_cli_bootstrapless_set_uses_context_not_app_hooks(
     tmp_path: Path,
 ) -> None:
-    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"
@@ -439,7 +439,7 @@ def test_mount_config_cli_bootstrapless_set_uses_context_not_app_hooks(
 def test_mount_config_cli_runtime_payload_receives_factory_state(
     tmp_path: Path,
 ) -> None:
-    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"
@@ -560,7 +560,7 @@ def test_mount_config_cli_bootstrap_policy_can_force_config_set_bootstrap(
 def test_mount_config_cli_custom_config_group_name_appears_in_guidance(
     tmp_path: Path,
 ) -> None:
-    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"
@@ -596,7 +596,7 @@ def test_mount_config_cli_custom_config_group_name_appears_in_guidance(
     )
 
     assert setup.exit_code == 0, setup.output
-    assert "apprc settings doctor" in setup.output
+    assert f"{kit.spec.app_name} settings doctor" in setup.output
     assert inactive_scope.exit_code != 0
     assert "settings app init" in " ".join(inactive_scope.output.split())
 
@@ -605,7 +605,7 @@ def test_config_doctor_payload_custom_config_group_name_next_steps(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
 
     kit = APPRC_EXAMPLE_APP_KIT
     monkeypatch.delenv(kit.spec.require_storage_env_key(), raising=False)
@@ -618,7 +618,7 @@ def test_config_doctor_payload_custom_config_group_name_next_steps(
     )
 
     assert any(
-        step.startswith("apprc settings setup")
+        step.startswith(f"{kit.spec.app_name} settings setup")
         for step in payload["next_steps"]
     )
     assert all("apprc config" not in step for step in payload["next_steps"])
@@ -661,7 +661,7 @@ def test_cli_argv_provider_alias_accepts_token_provider() -> None:
 def test_generated_config_set_uses_context_without_ctx_obj(
     tmp_path: Path,
 ) -> None:
-    from apprc_example_app import APPRC_EXAMPLE_APP_KIT
+    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"

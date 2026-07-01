@@ -3,321 +3,402 @@ from __future__ import annotations
 import ast
 import json
 import os
-import subprocess
-import sys
 import tomllib
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
+import typer
 from typer.testing import CliRunner, Result
 
+import apprc
+from apprc_app_wide_config_example import cli as app_wide_config
+from apprc_app_wide_config_example.config import KIT as APP_WIDE_CONFIG_KIT
+from apprc_app_wide_storage_example import cli as app_wide_storage
+from apprc_app_wide_storage_example.config import KIT as APP_WIDE_STORAGE_KIT
+from apprc_cli_bridge_example import cli as cli_bridge
+from apprc_cli_bridge_example.config import KIT as BRIDGE_KIT
+from apprc_env_only_example import cli as env_only
+from apprc_env_only_example.config import KIT as ENV_ONLY_KIT
+from apprc_explicit_env_precedence_example import (
+    cli as explicit_env_precedence,
+)
+from apprc_explicit_env_precedence_example.config import (
+    KIT as EXPLICIT_ENV_PRECEDENCE_KIT,
+)
 from apprc.runtime.diagnostics.messages import config_command_text
-from apprc_example_app import APPRC_EXAMPLE_APP_KIT
-from apprc_example_app.cli import app
+from apprc_storage_only_example import cli as storage_only
+from apprc_storage_only_example.config import KIT as STORAGE_ONLY_KIT
+from apprc_dev.example_apps.bootstrap import bootstrap_example_apps
 from tests.support_config import build_apprc_example_app_kit
 
 ROOT = Path(__file__).parents[1]
 
 
+class HeadlessConfigEditorApp(apprc.ConfigEditorApp):
+    """Test editor that records launch state without starting Textual."""
+
+    run_count: ClassVar[int] = 0
+
+    @classmethod
+    def reset(cls) -> None:
+        """Clear recorded launch state."""
+        cls.run_count = 0
+
+    def run(self, *args: object, **kwargs: object) -> None:
+        """Record that the editor would have launched."""
+        type(self).run_count += 1
+
+
+@dataclass(frozen=True, slots=True)
+class ExampleCliDefinition:
+    """One example CLI and the command data needed to exercise it."""
+
+    mode: str
+    command_name: str
+    kit: apprc.AppConfigKit
+    build_app: Callable[..., typer.Typer]
+    app_key: str
+    app_value: str
+    storage_key: str | None = None
+    storage_value: str | None = None
+    bridge: bool = False
+
+    @property
+    def uses_storage(self) -> bool:
+        """Return whether this example mounts storage commands."""
+        return self.kit.spec.storage_required()
+
+
+EXAMPLE_CLIS = (
+    ExampleCliDefinition(
+        mode="env_only",
+        command_name="apprc-env-only",
+        kit=ENV_ONLY_KIT,
+        build_app=env_only.build_app,
+        app_key="profile",
+        app_value="env-only-app-profile",
+    ),
+    ExampleCliDefinition(
+        mode="storage_only",
+        command_name="apprc-storage-only",
+        kit=STORAGE_ONLY_KIT,
+        build_app=storage_only.build_app,
+        app_key="profile",
+        app_value="storage-only-app-profile",
+        storage_key="api_token",
+        storage_value="storage-only-secret",
+    ),
+    ExampleCliDefinition(
+        mode="app_wide_config",
+        command_name="apprc-app-wide-config",
+        kit=APP_WIDE_CONFIG_KIT,
+        build_app=app_wide_config.build_app,
+        app_key="region",
+        app_value="app-wide-region",
+    ),
+    ExampleCliDefinition(
+        mode="app_wide_storage",
+        command_name="apprc-app-wide-storage",
+        kit=APP_WIDE_STORAGE_KIT,
+        build_app=app_wide_storage.build_app,
+        app_key="region",
+        app_value="app-wide-storage-region",
+        storage_key="access_token",
+        storage_value="app-wide-storage-secret",
+    ),
+    ExampleCliDefinition(
+        mode="explicit_env_precedence",
+        command_name="apprc-explicit-env-precedence",
+        kit=EXPLICIT_ENV_PRECEDENCE_KIT,
+        build_app=explicit_env_precedence.build_app,
+        app_key="label",
+        app_value="precedence-app-label",
+        storage_key="label",
+        storage_value="precedence-storage-label",
+    ),
+    ExampleCliDefinition(
+        mode="cli_bridge",
+        command_name="apprc-cli-bridge",
+        kit=BRIDGE_KIT,
+        build_app=cli_bridge.build_app,
+        app_key="profile",
+        app_value="bridge-app-profile",
+        storage_key="api_token",
+        storage_value="bridge-secret",
+        bridge=True,
+    ),
+)
+
+
 @pytest.fixture(autouse=True)
-def _isolate_apprc_example_app_env(
+def _isolate_example_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Remove example env values and isolate platform config paths."""
     for key in tuple(os.environ):
-        if key.startswith("APPRC_EXAMPLE_APP_"):
+        if key.startswith("APPRC_EXAMPLE_"):
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
 
 
-def _clear_process_apprc_example_app_env() -> None:
-    """Remove Example App env values mutated by in-process CLI invocations."""
-    for key in tuple(os.environ):
-        if (
-            key.startswith("APPRC_EXAMPLE_APP_")
-            and key != "APPRC_EXAMPLE_APP_APPRC_TOML"
-            and key != "APPRC_EXAMPLE_APP_STORAGE"
-        ):
-            del os.environ[key]
+class ExampleCliHarness:
+    """Small invoker that keeps AppRC's args provider aligned with Typer."""
+
+    def __init__(self, definition: ExampleCliDefinition) -> None:
+        """Build one test CLI app for a definition."""
+        self.definition = definition
+        self.current_args: list[str] = []
+        self.runner = CliRunner()
+        self.app = definition.build_app(
+            args_provider=lambda: self.current_args,
+            editor_app_cls=HeadlessConfigEditorApp,
+        )
+
+    def invoke(
+        self,
+        args: list[str],
+        *,
+        env: dict[str, str] | None = None,
+    ) -> Result:
+        """Invoke the example CLI with matching skip-policy tokens."""
+        self.current_args = args
+        return self.runner.invoke(
+            self.app,
+            args,
+            env=env,
+            prog_name=self.definition.command_name,
+        )
 
 
-def _invoke_root_config(
-    monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
-    args: list[str],
-) -> Result:
-    """Invoke the example CLI with argv matching the Typer command tokens."""
-    monkeypatch.setattr(sys, "argv", ["apprc", *args])
-    return runner.invoke(app, args)
-
-
-def _run_example_cli(
-    args: list[str],
-    tmp_path: Path,
-    *,
-    env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run the example CLI in a fresh process with controlled env values."""
-    process_env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("APPRC_EXAMPLE_APP_")
-    }
-    pythonpath = [
-        str(ROOT / "examples" / "apprc_example_app" / "src"),
-        str(ROOT / "src"),
-    ]
-    if process_env.get("PYTHONPATH"):
-        pythonpath.append(process_env["PYTHONPATH"])
-    process_env.update(
-        {
-            "PYTHONPATH": os.pathsep.join(pythonpath),
-            "XDG_CONFIG_HOME": str(tmp_path / "config-home"),
-        }
-    )
-    process_env.update(env or {})
-    return subprocess.run(
-        [sys.executable, "-m", "apprc_example_app.cli", *args],
-        cwd=ROOT,
-        env=process_env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-def test_standalone_cli_help_shows_config_command() -> None:
-    result = CliRunner().invoke(app, ["--help"])
-
-    assert result.exit_code == 0, result.output
-    assert "config" in result.output
-    assert "generated config CLI" in result.output
-
-
-def test_real_cli_config_help_skips_runtime_bootstrap(tmp_path: Path) -> None:
-    config_help = _run_example_cli(["config", "--help"], tmp_path)
-    show_help = _run_example_cli(["config", "show", "--help"], tmp_path)
-
-    assert config_help.returncode == 0, config_help.stderr
-    assert show_help.returncode == 0, show_help.stderr
-    assert "Usage:" in config_help.stdout
-    assert "Usage:" in show_help.stdout
-
-
-def test_real_cli_env_file_storage_selector_for_skipped_doctor_and_set(
+@pytest.mark.parametrize("definition", EXAMPLE_CLIS, ids=lambda item: item.mode)
+def test_example_cli_runs_every_supported_config_command(
+    definition: ExampleCliDefinition,
     tmp_path: Path,
 ) -> None:
-    storage_root = tmp_path / "selected-storage"
-    storage_root.mkdir()
-    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
-    selector_env = tmp_path / "selector.env"
-    selector_env.write_text(
-        f"APPRC_EXAMPLE_APP_STORAGE={storage_root}\n",
-        encoding="utf-8",
-    )
+    harness = ExampleCliHarness(definition)
+    storage_root = tmp_path / definition.mode / "active-storage"
+    named_storage = tmp_path / definition.mode / "named-storage"
 
-    doctor = _run_example_cli(
-        ["--env-file", str(selector_env), "config", "doctor", "--json"],
-        tmp_path,
+    _assert_success(harness.invoke(["--help"]))
+    _assert_success(harness.invoke(["config", "--help"]))
+    _assert_success(harness.invoke(["config", "paths"]))
+    paths_json = _assert_json_success(
+        harness.invoke(["--log-level", "INFO", "config", "paths", "--json"])
     )
-    update = _run_example_cli(
+    assert str(paths_json["config_home"]).endswith(definition.kit.spec.app_name)
+
+    setup_args = ["config", "setup", "--yes"]
+    if definition.uses_storage:
+        setup_args.extend(["--storage-root", str(storage_root)])
+    _assert_success(harness.invoke(setup_args))
+    _assert_success(harness.invoke(["config", "app", "init"]))
+
+    if definition.uses_storage:
+        _assert_success(
+            harness.invoke(
+                [
+                    "config",
+                    "storage",
+                    "add",
+                    "alpha",
+                    str(named_storage),
+                    "--yes",
+                ]
+            )
+        )
+        _assert_success(harness.invoke(["config", "storage", "list"]))
+        storage_list = _assert_json_success(
+            harness.invoke(["config", "storage", "list", "--json"])
+        )
+        storages = storage_list["storages"]
+        assert isinstance(storages, list)
+        first_storage = storages[0]
+        assert isinstance(first_storage, dict)
+        assert first_storage["name"] == "alpha"
+        _assert_success(
+            harness.invoke(["config", "storage", "remove", "alpha"])
+        )
+
+        assert definition.storage_key is not None
+        assert definition.storage_value is not None
+        storage_prefix = ["--storage", str(storage_root)]
+        _assert_success(
+            harness.invoke(
+                [
+                    *storage_prefix,
+                    "config",
+                    "set",
+                    definition.storage_key,
+                    definition.storage_value,
+                    "--scope",
+                    "storage",
+                ]
+            )
+        )
+        _assert_success(
+            harness.invoke(
+                [
+                    *storage_prefix,
+                    "config",
+                    "set",
+                    definition.app_key,
+                    definition.app_value,
+                    "--scope",
+                    "app",
+                ]
+            )
+        )
+        runtime_prefix = storage_prefix
+    else:
+        unavailable = harness.invoke(["config", "storage", "list"])
+        assert unavailable.exit_code != 0
+        _assert_success(
+            harness.invoke(
+                [
+                    "config",
+                    "set",
+                    definition.app_key,
+                    definition.app_value,
+                    "--scope",
+                    "app",
+                ]
+            )
+        )
+        runtime_prefix = []
+
+    _assert_success(harness.invoke([*runtime_prefix, "config", "doctor"]))
+    doctor_json = _assert_json_success(
+        harness.invoke([*runtime_prefix, "config", "doctor", "--json"])
+    )
+    assert doctor_json["status"] == "runnable"
+
+    _assert_success(harness.invoke([*runtime_prefix, "config", "show"]))
+    show_json = _assert_json_success(
+        harness.invoke([*runtime_prefix, "config", "show", "--json"])
+    )
+    assert show_json["app_name"] == definition.kit.spec.app_name
+
+    HeadlessConfigEditorApp.reset()
+    _assert_success(harness.invoke([*runtime_prefix, "config", "edit"]))
+    assert HeadlessConfigEditorApp.run_count == 1
+
+    run_args = [*runtime_prefix]
+    if definition.bridge:
+        run_args.extend(
+            [
+                "--workspace",
+                str(tmp_path / definition.mode / "workspace"),
+                "--model",
+                "test-model",
+                "--dry-run",
+            ]
+        )
+    run_payload = _assert_json_success(harness.invoke([*run_args, "run"]))
+    assert run_payload["app_name"] == definition.kit.spec.app_name
+
+
+def test_cli_bridge_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
+    definition = EXAMPLE_CLIS[-1]
+    harness = ExampleCliHarness(definition)
+
+    result = harness.invoke(
         [
-            "--env-file",
-            str(selector_env),
-            "config",
-            "set",
-            "access_token",
-            "secret-token",
-            "--scope",
-            "storage",
-        ],
-        tmp_path,
+            "--workspace",
+            str(tmp_path / "workspace"),
+            "--model",
+            "no-bootstrap",
+            "--dry-run",
+            "status",
+        ]
     )
 
-    assert doctor.returncode == 0, doctor.stderr
-    payload = json.loads(doctor.stdout)
-    assert payload["selected_storage_root"] == str(storage_root.resolve())
-    assert update.returncode == 0, update.stderr
-    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-token"\n' in (
-        storage_root / ".env.apprc-storage"
-    ).read_text(encoding="utf-8")
+    _assert_success(result)
+    assert result.output.strip() == "bridge_status: bootstrapless"
 
 
-def test_real_cli_env_file_override_policy_for_storage_selector(
+def test_example_cli_env_file_options_control_index_paths(
     tmp_path: Path,
 ) -> None:
-    shell_storage = tmp_path / "shell-storage"
-    explicit_storage = tmp_path / "explicit-storage"
-    shell_storage.mkdir()
-    explicit_storage.mkdir()
-    (shell_storage / ".env.apprc-storage").write_text("", encoding="utf-8")
-    (explicit_storage / ".env.apprc-storage").write_text("", encoding="utf-8")
-    selector_env = tmp_path / "selector.env"
-    selector_env.write_text(
-        f"APPRC_EXAMPLE_APP_STORAGE={explicit_storage}\n",
-        encoding="utf-8",
-    )
-    exported_env = {"APPRC_EXAMPLE_APP_STORAGE": str(shell_storage)}
-
-    exported_wins = _run_example_cli(
-        ["--env-file", str(selector_env), "config", "doctor", "--json"],
-        tmp_path,
-        env=exported_env,
-    )
-    explicit_wins = _run_example_cli(
-        [
-            "--env-file",
-            str(selector_env),
-            "--env-file-overrides-os-environ",
-            "config",
-            "doctor",
-            "--json",
-        ],
-        tmp_path,
-        env=exported_env,
-    )
-
-    assert exported_wins.returncode == 0, exported_wins.stderr
-    assert explicit_wins.returncode == 0, explicit_wins.stderr
-    assert json.loads(exported_wins.stdout)["selected_storage_root"] == str(
-        shell_storage.resolve()
-    )
-    assert json.loads(explicit_wins.stdout)["selected_storage_root"] == str(
-        explicit_storage.resolve()
-    )
-
-
-def test_real_cli_env_file_index_for_storage_add(tmp_path: Path) -> None:
-    explicit_index = tmp_path / "explicit" / "apprc_example_app.apprc.toml"
-    index_env = tmp_path / "index.env"
-    index_env.write_text(
-        f"APPRC_EXAMPLE_APP_APPRC_TOML={explicit_index}\n",
-        encoding="utf-8",
-    )
-    storage_root = tmp_path / "alpha"
-
-    result = _run_example_cli(
-        [
-            "--env-file",
-            str(index_env),
-            "config",
-            "storage",
-            "add",
-            "alpha",
-            str(storage_root),
-            "--yes",
-        ],
-        tmp_path,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert explicit_index.is_file()
-    assert str(explicit_index) in result.stdout
-    assert (storage_root / ".env.apprc-storage").is_file()
-
-
-def test_real_cli_env_file_index_override_policy_for_storage_add(
-    tmp_path: Path,
-) -> None:
-    exported_index = tmp_path / "exported" / "apprc_example_app.apprc.toml"
-    explicit_index = tmp_path / "explicit" / "apprc_example_app.apprc.toml"
-    index_env = tmp_path / "index.env"
-    index_env.write_text(
-        f"APPRC_EXAMPLE_APP_APPRC_TOML={explicit_index}\n",
-        encoding="utf-8",
-    )
-    exported_env = {"APPRC_EXAMPLE_APP_APPRC_TOML": str(exported_index)}
-
-    exported_wins = _run_example_cli(
-        [
-            "--env-file",
-            str(index_env),
-            "config",
-            "storage",
-            "add",
-            "alpha",
-            str(tmp_path / "alpha"),
-            "--yes",
-        ],
-        tmp_path,
-        env=exported_env,
-    )
-    explicit_wins = _run_example_cli(
-        [
-            "--env-file",
-            str(index_env),
-            "--env-file-overrides-os-environ",
-            "config",
-            "storage",
-            "add",
-            "beta",
-            str(tmp_path / "beta"),
-            "--yes",
-        ],
-        tmp_path,
-        env=exported_env,
-    )
-
-    assert exported_wins.returncode == 0, exported_wins.stderr
-    assert explicit_wins.returncode == 0, explicit_wins.stderr
-    assert "[storages.alpha]" in exported_index.read_text(encoding="utf-8")
-    assert "[storages.beta]" in explicit_index.read_text(encoding="utf-8")
-
-
-def test_real_cli_env_file_index_for_storage_remove(tmp_path: Path) -> None:
-    explicit_index = tmp_path / "explicit" / "apprc_example_app.apprc.toml"
-    index_env = tmp_path / "index.env"
-    index_env.write_text(
-        f"APPRC_EXAMPLE_APP_APPRC_TOML={explicit_index}\n",
+    definition = EXAMPLE_CLIS[1]
+    harness = ExampleCliHarness(definition)
+    explicit_index = tmp_path / "explicit" / "storage.apprc.toml"
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f"{definition.kit.spec.index_env_key}={explicit_index}\n",
         encoding="utf-8",
     )
 
-    add = _run_example_cli(
-        [
-            "--env-file",
-            str(index_env),
-            "config",
-            "storage",
-            "add",
-            "alpha",
-            str(tmp_path / "alpha"),
-            "--yes",
-        ],
-        tmp_path,
-    )
-    remove = _run_example_cli(
-        [
-            "--env-file",
-            str(index_env),
-            "config",
-            "storage",
-            "remove",
-            "alpha",
-        ],
-        tmp_path,
+    result = _assert_json_success(
+        harness.invoke(
+            [
+                "--env-file",
+                str(env_file),
+                "--env-file-overrides-os-environ",
+                "config",
+                "paths",
+                "--json",
+            ]
+        )
     )
 
-    assert add.returncode == 0, add.stderr
-    assert remove.returncode == 0, remove.stderr
-    assert "storages.alpha" not in explicit_index.read_text(encoding="utf-8")
+    assert result["index_path"] == str(explicit_index.resolve())
 
 
-def test_console_script_points_to_demo_cli() -> None:
-    root = Path(__file__).parents[1]
+def test_example_bootstrap_writes_teaching_comments(tmp_path: Path) -> None:
+    env_files = bootstrap_example_apps(repo_root=tmp_path, clean=True)
+
+    assert {path.name for path in env_files} == {".env"}
+    for env_file in env_files:
+        text = env_file.read_text(encoding="utf-8")
+        assert "AppRC does not choose a location for this file" in text
+        assert "set -a; source .env; set +a" in text
+
+    generated_files = sorted(tmp_path.glob(".apprc-example*/**/.env.apprc-*"))
+    generated_files.extend(sorted(tmp_path.glob(".apprc-example*/**/*.toml")))
+    assert generated_files
+    for path in generated_files:
+        text = path.read_text(encoding="utf-8")
+        assert "Generated by python -m apprc_dev.example_apps.bootstrap" in text
+        assert "Real app location:" in text
+
+
+def test_console_scripts_point_to_example_clis() -> None:
     root_pyproject = tomllib.loads(
-        (root / "pyproject.toml").read_text(encoding="utf-8")
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
     demo_pyproject = tomllib.loads(
-        (root / "examples" / "apprc_example_app" / "pyproject.toml").read_text(
+        (ROOT / "examples" / "example_apps" / "pyproject.toml").read_text(
             encoding="utf-8"
         )
     )
 
     assert "scripts" not in root_pyproject["project"]
-    assert (
-        demo_pyproject["project"]["scripts"]["apprc"]
-        == "apprc_example_app.cli:main"
-    )
+    assert demo_pyproject["project"]["scripts"] == {
+        "apprc-env-only": "apprc_env_only_example.cli:main",
+        "apprc-storage-only": "apprc_storage_only_example.cli:main",
+        "apprc-app-wide-config": "apprc_app_wide_config_example.cli:main",
+        "apprc-app-wide-storage": "apprc_app_wide_storage_example.cli:main",
+        "apprc-explicit-env-precedence": (
+            "apprc_explicit_env_precedence_example.cli:main"
+        ),
+        "apprc-cli-bridge": "apprc_cli_bridge_example.cli:main",
+        "apprc-examples-run-all": "apprc_example_apps.run_all:main",
+    }
+    assert demo_pyproject["tool"]["setuptools"]["packages"]["find"][
+        "include"
+    ] == [
+        "apprc_app_wide_config_example",
+        "apprc_app_wide_storage_example",
+        "apprc_cli_bridge_example",
+        "apprc_env_only_example",
+        "apprc_example_apps",
+        "apprc_explicit_env_precedence_example",
+        "apprc_storage_only_example",
+    ]
 
 
 def test_build_backend_packages_only_library_in_root_wheel() -> None:
@@ -333,10 +414,10 @@ def test_demo_package_is_dev_dependency_only() -> None:
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
 
-    assert pyproject["dependency-groups"]["demo"] == ["apprc_example_app"]
+    assert pyproject["dependency-groups"]["demo"] == ["apprc-example-apps"]
     assert {"include-group": "demo"} in pyproject["dependency-groups"]["dev"]
-    assert pyproject["tool"]["uv"]["sources"]["apprc_example_app"] == {
-        "path": "examples/apprc_example_app",
+    assert pyproject["tool"]["uv"]["sources"]["apprc-example-apps"] == {
+        "path": "examples/example_apps",
         "editable": True,
     }
 
@@ -347,7 +428,7 @@ def test_core_package_does_not_import_demo_package() -> None:
     offenders = [
         path
         for path in core_files
-        if "apprc_example_app" in path.read_text(encoding="utf-8")
+        if "example_apps" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []
 
@@ -361,6 +442,30 @@ def test_storage_modules_do_not_import_bootstrap_layer() -> None:
         path for path in storage_files if _imports_runtime_bootstrap(path)
     ]
     assert offenders == []
+
+
+def test_command_name_falls_back_or_uses_declared_command() -> None:
+    assert config_command_text(build_apprc_example_app_kit(), "show") == (
+        "apprc_example_app config show"
+    )
+    assert (
+        config_command_text(STORAGE_ONLY_KIT, "show")
+        == "apprc-storage-only config show"
+    )
+
+
+def _assert_success(result: Result) -> Result:
+    """Return a successful CLI result or fail with output."""
+    assert result.exit_code == 0, result.output
+    return result
+
+
+def _assert_json_success(result: Result) -> dict[str, object]:
+    """Return parsed JSON from a successful CLI result."""
+    _assert_success(result)
+    payload = json.loads(result.output)
+    assert isinstance(payload, dict)
+    return payload
 
 
 def _imports_runtime_bootstrap(path: Path) -> bool:
@@ -379,191 +484,3 @@ def _imports_runtime_bootstrap(path: Path) -> bool:
                 if alias.name.startswith("apprc.runtime"):
                     return True
     return False
-
-
-def test_demo_config_setup_uses_storage_only_route(tmp_path: Path) -> None:
-    storage_root = tmp_path / "storage"
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "--storage",
-            str(storage_root),
-            "config",
-            "setup",
-            "--yes",
-            "--storage-root",
-            str(storage_root),
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert (storage_root / ".env.apprc-storage").is_file()
-    assert "export APPRC_EXAMPLE_APP_STORAGE" in result.output
-    assert "APPRC_EXAMPLE_APP_APPRC_TOML" not in result.output
-
-
-def test_demo_config_set_and_show_payload(tmp_path: Path) -> None:
-    storage_root = tmp_path / "storage"
-    runner = CliRunner()
-    setup_result = runner.invoke(
-        app,
-        [
-            "--storage",
-            str(storage_root),
-            "config",
-            "setup",
-            "--yes",
-            "--storage-root",
-            str(storage_root),
-        ],
-    )
-    assert setup_result.exit_code == 0, setup_result.output
-    os.environ["APPRC_EXAMPLE_APP_STORAGE"] = str(storage_root)
-
-    _clear_process_apprc_example_app_env()
-    profile_result = runner.invoke(
-        app,
-        ["config", "set", "app.profile", "other-profile"],
-    )
-    _clear_process_apprc_example_app_env()
-    token_result = runner.invoke(
-        app,
-        ["config", "set", "access_token", "secret-token"],
-    )
-    _clear_process_apprc_example_app_env()
-    show_result = runner.invoke(app, ["config", "show", "--json"])
-
-    assert profile_result.exit_code == 0, profile_result.output
-    assert token_result.exit_code == 0, token_result.output
-    assert show_result.exit_code == 0, show_result.output
-    payload = json.loads(show_result.output)
-    assert payload["bootstrap"]["storage_env"] == str(
-        storage_root.resolve() / ".env.apprc-storage"
-    )
-    assert payload["config"]["profile"] == "other-profile"
-    assert payload["config"]["access_token"] == "<redacted>"
-
-
-def test_demo_root_config_app_init_and_set_skip_storage_bootstrap(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runner = CliRunner()
-
-    init_result = _invoke_root_config(
-        monkeypatch,
-        runner,
-        ["config", "app", "init"],
-    )
-    inferred_set = _invoke_root_config(
-        monkeypatch,
-        runner,
-        ["config", "set", "app.profile", "implicit-app"],
-    )
-    scoped_set = _invoke_root_config(
-        monkeypatch,
-        runner,
-        ["config", "set", "app.profile", "scoped-app", "--scope", "app"],
-    )
-
-    assert init_result.exit_code == 0, init_result.output
-    assert inferred_set.exit_code == 0, inferred_set.output
-    assert scoped_set.exit_code == 0, scoped_set.output
-    app_wide_env = APPRC_EXAMPLE_APP_KIT.spec.app_wide_env_path()
-    assert 'APPRC_EXAMPLE_APP_PROFILE="scoped-app"\n' in (
-        app_wide_env.read_text(encoding="utf-8")
-    )
-
-
-def test_demo_root_config_storage_set_uses_root_storage_selector(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    runner = CliRunner()
-
-    result = _invoke_root_config(
-        monkeypatch,
-        runner,
-        [
-            "--storage",
-            str(storage_root),
-            "config",
-            "set",
-            "access_token",
-            "secret-token",
-            "--scope",
-            "storage",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-token"\n' in (
-        storage_root / ".env.apprc-storage"
-    ).read_text(encoding="utf-8")
-
-
-def test_demo_root_config_set_requires_scope_when_app_and_storage_active(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    runner = CliRunner()
-
-    init_result = _invoke_root_config(
-        monkeypatch,
-        runner,
-        ["config", "app", "init"],
-    )
-    ambiguous = _invoke_root_config(
-        monkeypatch,
-        runner,
-        [
-            "--storage",
-            str(storage_root),
-            "config",
-            "set",
-            "app.profile",
-            "ambiguous",
-        ],
-    )
-
-    assert init_result.exit_code == 0, init_result.output
-    assert ambiguous.exit_code != 0
-    assert "--scope app or --scope storage" in ambiguous.output
-
-
-def test_demo_root_env_file_option_before_config_show(tmp_path: Path) -> None:
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    (storage_root / ".env.apprc-storage").write_text(
-        'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-token"\n',
-        encoding="utf-8",
-    )
-    os.environ["APPRC_EXAMPLE_APP_STORAGE"] = str(storage_root)
-    env_file = tmp_path / "profile.env"
-    env_file.write_text(
-        'APPRC_EXAMPLE_APP_PROFILE="from-explicit"\n',
-        encoding="utf-8",
-    )
-
-    result = CliRunner().invoke(
-        app,
-        ["--env-file", str(env_file), "config", "show", "--json"],
-    )
-
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert payload["config"]["profile"] == "from-explicit"
-
-
-def test_command_name_falls_back_to_app_name() -> None:
-    assert config_command_text(build_apprc_example_app_kit(), "show") == (
-        "apprc_example_app config show"
-    )
-    assert (
-        config_command_text(APPRC_EXAMPLE_APP_KIT, "show")
-        == "apprc config show"
-    )

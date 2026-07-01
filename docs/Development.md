@@ -10,6 +10,7 @@
    1. [Before Editing](#before-editing)
    2. [Repository Routing](#repository-routing)
    3. [Environment Setup](#environment-setup)
+   4. [Example Apps](#example-apps)
 3. [Documentation Workflow](#3-documentation-workflow)
    1. [Documentation Rules](#documentation-rules)
    2. [README And PyPI README](#readme-and-pypi-readme)
@@ -74,8 +75,8 @@ Put changes where the repo already has an owner:
 | Optional semantic logging | [src/apprc/logging](../src/apprc/logging) |
 | Broad AppRC utility helpers | [src/apprc/utils](../src/apprc/utils) |
 | Public facade exports | [src/apprc/__init__.py](../src/apprc/__init__.py) and package `__init__.py` files |
-| Example host app | [examples/apprc_example_app](../examples/apprc_example_app) |
-| Capability-mode examples | [examples/example_apps](../examples/example_apps) |
+| Example CLIs | [examples/example_apps](../examples/example_apps) |
+| Example bootstrap helper | [src/apprc_dev/example_apps](../src/apprc_dev/example_apps) |
 | Tests | [tests](../tests) |
 | Documentation | [docs](.) and [README.md](../README.md) |
 | PyPI README generation helper | [src/apprc_dev/packaging](../src/apprc_dev/packaging) |
@@ -119,6 +120,95 @@ Use project-local tools when available:
 Do not edit shell startup files or `$PATH` to make tools resolvable. If a tool
 is missing, check whether the project environment is active and then try the
 `.venv/bin/<tool>` path.
+
+<br>
+
+<!-- ======================================================== -->
+
+<br>
+
+## Example Apps
+<!-- ======================================================== -->
+
+The example package is a dev-only editable install at
+[examples/example_apps](../examples/example_apps). It exposes one console
+script per AppRC mode:
+
+| Script | AppRC Surface |
+|---|---|
+| `apprc-env-only` | `AppConfigKit.env_only(...)` |
+| `apprc-storage-only` | `AppConfigKit.storage_only(...)` |
+| `apprc-app-wide-config` | `AppConfigKit.app_wide_config(...)` |
+| `apprc-app-wide-storage` | `AppConfigKit.app_wide_storage(...)` |
+| `apprc-explicit-env-precedence` | Explicit env-file selector precedence |
+| `apprc-cli-bridge` | `ConfigCliBridge` with a host-owned callback |
+| `apprc-examples-run-all` | Compact non-interactive scenario runner |
+
+The source tree intentionally uses one Python package per app so the examples
+match what a downstream project should copy:
+
+| Package | Purpose |
+|---|---|
+| `apprc_env_only_example` | Minimal env-only app with `config.py`, `cli.py`, and packaged `.env.shared`. |
+| `apprc_storage_only_example` | Storage-selected app with storage-local dotenv fields. |
+| `apprc_app_wide_config_example` | Storage-free app that uses the app-wide dotenv layer. |
+| `apprc_app_wide_storage_example` | App-wide defaults plus selected storage roots. |
+| `apprc_explicit_env_precedence_example` | Storage selector precedence with explicit env files. |
+| `apprc_cli_bridge_example` | Host callback integration through `ConfigCliBridge`. |
+| `apprc_example_apps` | Shared scenario runner helpers; not a user app template. |
+
+Each app package owns its own `config.py` and points `config_package` at that
+same package. Do not reintroduce a shared config module for the examples; that
+would teach the wrong integration shape.
+
+Install the example console scripts when the dev dependency group has not
+already installed them:
+
+```bash
+python -m pip install -e examples/example_apps --no-build-isolation
+```
+
+Bootstrap all local example files before manual testing:
+
+```bash
+python -m apprc_dev.example_apps.bootstrap --clean
+```
+
+This writes ignored `.apprc-example*/` directories. Each directory contains:
+
+| File | Purpose |
+|---|---|
+| `.env` | Arbitrary user env file. AppRC does not choose this location; source it manually or pass it with `--env-file` when path relocation is not needed. |
+| `xdg-config-home/<app>/.env.apprc-app` | App-wide dotenv layer. |
+| `xdg-config-home/<app>/<app>.apprc.toml` | Named-storage index for storage-capable examples. |
+| `storages/alpha/.env.apprc-storage` | Storage-local dotenv layer. |
+
+Every generated `.env` and `.toml` file starts with comments explaining the
+AppRC layer and where that file would normally live in a real application.
+
+Source one example environment when testing its console script:
+
+```bash
+set -a; source .apprc-example-storage-only/.env; set +a
+apprc-storage-only config paths
+apprc-storage-only config doctor
+apprc-storage-only config storage list
+apprc-storage-only config show --json
+```
+
+Use the bridge example to inspect the host-owned callback path:
+
+```bash
+set -a; source .apprc-example-cli-bridge/.env; set +a
+apprc-cli-bridge --workspace /tmp/apprc-workspace --model demo status
+apprc-cli-bridge --workspace /tmp/apprc-workspace --model demo run
+apprc-cli-bridge config doctor
+```
+
+The test suite exercises every generated command for every example mode:
+`config paths`, `config show`, `config doctor`, `config setup`, `config set`,
+`config edit`, `config app init`, and all mounted `config storage` commands.
+Storage-free modes also assert that storage commands are unavailable.
 
 <br>
 
@@ -277,6 +367,7 @@ For code changes:
 .venv/bin/ruff check .
 .venv/bin/pyright
 .venv/bin/pytest
+python -m apprc_dev.example_apps.bootstrap --clean
 ```
 
 Run focused tests first for narrow changes. Run the broader suite when shared

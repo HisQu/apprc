@@ -1,40 +1,30 @@
 # Todo list
 
-Treat this as the parking lot for actionable problems discovered while working
-but intentionally left unresolved.
+Treat this as the parking lot for actionable problems discovered while working but intentionally left unresolved.
+
 
 <br>
 
 > [!CAUTION]
-> This is git-tracked: Never record secrets, absolute paths, credentials,
-> private host data, or speculative security claims. Use only relative paths.
+> This is git-tracked: Never record secrets, absolute paths, credentials, private host data, or speculative security claims. Use only relative paths.
+
 
 > [!IMPORTANT]
 >
 > ## Rules
->
+> 1) Do not remove or change this header and TOC without very good reason.
 > 1) Newest at the top.
-> 1) Append a new entry only when the observation is real, actionable, not
-> already listed, and out of scope for the current change. Do not modify
-> `TODO.md` when there is nothing useful to add.
-> 1) If an issue is new and related to another issue, reference it in the
-> `Suggested next step`. Do not create a new entry for the same problem. Place
-> the reference in both entries (bi-directional).
-> 1) If no versioning exists (e.g. at 0.0.1), ignore that.
-> 1) If an issue was resolved, remove it and make an entry in the
-> `CHANGELOG.md`.
+> 1) Append a new entry only when the observation is real, actionable, not already listed, and out of scope for the current change. Do not modify `TODO.md` when there is nothing useful to add.
+> 1) If an issue is new and related to another issue, reference it in the `Suggested next step`. Do not create a new entry for the same problem. Place the reference in both entries (bi-directional).
+> 1) If an issue was resolved, remove it and make an entry in the CHANGELOG.md.
 > 1) **Types:**
->       - **Bug risk**: Potential defect with concrete evidence, not yet
-> confirmed.
->       - **Code smell**: Implementation, maintainability or clarity issue that
-> is not currently a defect.
+>       - **Bug risk**: Potential defect with concrete evidence, not yet confirmed.
+>       - **Code smell**: Implementation, architectural, maintainability or clarity issue that is not currently a defect.
 >       - **Docs drift**: Documentation is stale, incomplete, or inconsistent.
->       - **Tooling**: Issue with build, test, lint, type-check, and general
-> slowdown of developer workflow.
->       - **Security**: Evidence-backed security risk. Use Question for
-> uncertainty.
->       - **Question**: Design, behavior, or ownership uncertainty needing
-> investigation.
+>       - **Tooling**: Issue with build, test, lint, type-check, and general slowdown of developer workflow.
+>       - **Security**: Evidence-backed security risk. Use Question for uncertainty.
+>       - **Question**: Design, behavior, or ownership uncertainty needing investigation.
+>
 > 1) **Priorities:**
 >       - **P1**: Should be handled ASAP.
 >       - **P2**: Should be handled before next release or milestone.
@@ -48,16 +38,29 @@ but intentionally left unresolved.
 >
 > <br>
 >
-> # [<version>] YYYY-MM-DD
+> # YYYY-MM-DD
 >
 > ## <Priority> / <Effort> [<Type>] - *Short problem title*
-> - **Area:** [<version>] `path/or/symbol`
+> - **Area:** `path/or/symbol`
 > - **Observed while:** short context
 > - **Evidence:** concrete observation
 > - **Why not fixed now:** scope, risk, uncertainty, or user decision needed
-> - **Suggested next step:** smallest reasonable follow-up. If applicable,
-> reference related todos [here](#todo-list).
+> - **Suggested next step:** smallest reasonable follow-up. If applicable, reference related todos [here](#todo-list).
+>
+> ## <Priority> / <Effort> [<Type>] - *Short problem title*
+> - **Area:** `path/or/symbol`
+> - ...
+>
+> <br>
+>
+> # YYYY-MM-DD
+>
+> ## <Priority> / <Effort> [<Type>] - *Short problem title*
+> - **Area:** `path/or/symbol`
+> - ...
 > ```
+
+
 
 <br>
 
@@ -69,18 +72,18 @@ but intentionally left unresolved.
 
 1. [Todo list](#todo-list)
    1. [Table Of Contents](#table-of-contents)
-2. [[0.17.0] 2026-07-01](#0170-2026-07-01)
-   1. [P2 / E1 [Question] - *Host CLI runtime API names describe the mechanism*](#p2--e1-question---host-cli-runtime-api-names-describe-the-mechanism)
-   2. [P2 / E1 [Code smell] - *Host CLI option preservation loses host-only values*](#p2--e1-code-smell---host-cli-option-preservation-loses-host-only-values)
-   3. [P2 / E2 [Code smell] - *Default CLI state is awkward to subclass*](#p2--e2-code-smell---default-cli-state-is-awkward-to-subclass)
-   4. [P3 / E1 [Code smell] - *Lazy aggregate facades hide import cycles*](#p3--e1-code-smell---lazy-aggregate-facades-hide-import-cycles)
-   5. [P3 / E2 [Code smell] - *Root facade needs a public-surface snapshot*](#p3--e2-code-smell---root-facade-needs-a-public-surface-snapshot)
-   6. [P3 / E1 [Code smell] - *TUI internals still need workflow-level splits*](#p3--e1-code-smell---tui-internals-still-need-workflow-level-splits)
-   7. [P3 / E2 [Code smell] - *Config command base module still owns broad cross-command state*](#p3--e2-code-smell---config-command-base-module-still-owns-broad-cross-command-state)
-   8. [P3 / E1 [Code smell] - *Host CLI forwarding still needs local glue*](#p3--e1-code-smell---host-cli-forwarding-still-needs-local-glue)
-   9. [P3 / E2 [Question] - *Dev-only example kit registry may need a public helper*](#p3--e2-question---dev-only-example-kit-registry-may-need-a-public-helper)
-   10. [P3 / E1 [Question] - *Diagnostics payload shape may need a typed model*](#p3--e1-question---diagnostics-payload-shape-may-need-a-typed-model)
-   11. [P3 / E3 [Code smell] - *Runtime-config test names still reflect removed packages*](#p3--e3-code-smell---runtime-config-test-names-still-reflect-removed-packages)
+2. [2026-07-01](#2026-07-01)
+   1. [P2 / E1 \[Question\] - *Host CLI runtime API names describe the mechanism*](#p2--e1-question---host-cli-runtime-api-names-describe-the-mechanism)
+   2. [P2 / E1 \[Code smell\] - *Host CLI option preservation loses host-only values*](#p2--e1-code-smell---host-cli-option-preservation-loses-host-only-values)
+   3. [P2 / E2 \[Code smell\] - *Default CLI state is awkward to subclass*](#p2--e2-code-smell---default-cli-state-is-awkward-to-subclass)
+   4. [P3 / E1 \[Code smell\] - *Lazy aggregate facades hide import cycles*](#p3--e1-code-smell---lazy-aggregate-facades-hide-import-cycles)
+   5. [P3 / E2 \[Code smell\] - *Root facade needs a public-surface snapshot*](#p3--e2-code-smell---root-facade-needs-a-public-surface-snapshot)
+   6. [P3 / E1 \[Code smell\] - *TUI internals still need workflow-level splits*](#p3--e1-code-smell---tui-internals-still-need-workflow-level-splits)
+   7. [P3 / E2 \[Code smell\] - *Config command base module still owns broad cross-command state*](#p3--e2-code-smell---config-command-base-module-still-owns-broad-cross-command-state)
+   8. [P3 / E1 \[Code smell\] - *Host CLI forwarding still needs local glue*](#p3--e1-code-smell---host-cli-forwarding-still-needs-local-glue)
+   9. [P3 / E2 \[Question\] - *Dev-only example kit registry may need a public helper*](#p3--e2-question---dev-only-example-kit-registry-may-need-a-public-helper)
+   10. [P3 / E1 \[Question\] - *Diagnostics payload shape may need a typed model*](#p3--e1-question---diagnostics-payload-shape-may-need-a-typed-model)
+   11. [P3 / E3 \[Code smell\] - *Runtime-config test names still reflect removed packages*](#p3--e3-code-smell---runtime-config-test-names-still-reflect-removed-packages)
 
 <br>
 
@@ -88,7 +91,7 @@ but intentionally left unresolved.
 
 <br>
 
-# [0.17.0] 2026-07-01
+# 2026-07-01
 
 ## P2 / E1 [Question] - *Host CLI runtime API names describe the mechanism*
 - **Area:** [0.17.0] `apprc.ConfigCliBridge`

@@ -9,7 +9,7 @@ from typing import Annotated, TypeAlias
 # == 3rd Party ===============================
 import typer
 
-COMMON_HOST_FLAG_OPTIONS = frozenset(
+COMMON_CLI_FLAG_OPTIONS = frozenset(
     {
         "--env-file-overrides-os-environ",
         "-o",
@@ -17,7 +17,7 @@ COMMON_HOST_FLAG_OPTIONS = frozenset(
         "-s",
     }
 )
-COMMON_HOST_VALUE_OPTIONS = frozenset(
+COMMON_CLI_VALUE_OPTIONS = frozenset(
     {
         "--env-file",
         "--log-level",

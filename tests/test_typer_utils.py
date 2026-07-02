@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from apprc.interfaces.cli.config_command import (
-    config_request_skips_runtime_bootstrap,
+    config_request_skips_runtime,
 )
 from apprc.interfaces.cli._typer_utils import (
     args_after_command,
-    args_after_host_command,
+    args_after_cli_command,
     help_requested_before_separator,
     parse_leading_options,
     strip_leading_options,
@@ -93,10 +93,10 @@ def test_args_after_command_skips_root_options_before_command() -> None:
         )
         is None
     )
-    assert args_after_host_command(
+    assert args_after_cli_command(
         "config",
         tokens=["--env-file", "local.env", "config", "doctor"],
-        host_value_options={"--env-file"},
+        cli_value_options={"--env-file"},
     ) == ["doctor"]
 
 
@@ -117,10 +117,8 @@ def test_structural_help_helpers_preserve_value_and_separator_tokens() -> None:
     assert not structural_help_requested(["cache", "--json", "--help"])
 
 
-def test_config_request_skips_runtime_bootstrap_for_setup_only_commands() -> (
-    None
-):
-    skips = config_request_skips_runtime_bootstrap
+def test_config_request_skips_runtime_for_setup_only_commands() -> None:
+    skips = config_request_skips_runtime
 
     assert skips(tokens=["config"]) is True
     assert skips(tokens=["config", "--help"]) is True
@@ -133,7 +131,7 @@ def test_config_request_skips_runtime_bootstrap_for_setup_only_commands() -> (
     assert (
         skips(
             tokens=["config", "set", "profile", "demo"],
-            bootstrapless_actions={"doctor"},
+            runtime_independent_actions={"doctor"},
         )
         is False
     )

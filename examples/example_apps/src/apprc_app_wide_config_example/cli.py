@@ -68,8 +68,8 @@ def run_demo(root: Path) -> dict[str, object]:
         config = AppWideConfig()
         return {
             "mode": "app_wide_config",
-            "doctor_before": before["status"],
-            "doctor_after": after["status"],
+            "doctor_before": before.status,
+            "doctor_after": after.status,
             "app_wide_env": str(app_wide_env),
             "config": config_values(config),
         }

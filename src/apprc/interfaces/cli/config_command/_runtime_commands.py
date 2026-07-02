@@ -41,7 +41,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
     def paths(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Show declared and active config paths without writing files."""
         selector_context = self.cli_selector_context(ctx)
-        storage = self.host_context_param(ctx, "storage")
+        storage = self.cli_context_param(ctx, "storage")
         storage_selector = storage if isinstance(storage, str) else None
         payload = build_config_doctor_payload(
             self.kit,
@@ -53,7 +53,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             config_group_name=self.config_group_name,
         )
         if json_output:
-            dump_json(payload)
+            dump_json(payload.to_payload())
             return
         print_config_paths(self.kit, payload)
 
@@ -91,7 +91,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
     def doctor(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Check AppRC config readiness and print suggested fixes."""
         selector_context = self.cli_selector_context(ctx)
-        storage = self.host_context_param(ctx, "storage")
+        storage = self.cli_context_param(ctx, "storage")
         storage_selector = storage if isinstance(storage, str) else None
         payload = build_config_doctor_payload(
             self.kit,
@@ -103,10 +103,10 @@ class RuntimeConfigCommands(ConfigCommandBase):
             config_group_name=self.config_group_name,
         )
         if json_output:
-            dump_json(payload)
+            dump_json(payload.to_payload())
         else:
             print_config_doctor(self.kit, payload)
-        if payload["status"] != ConfigDoctorStatus.RUNNABLE.value:
+        if payload.status != ConfigDoctorStatus.RUNNABLE.value:
             raise typer.Exit(code=1)
 
     def set(

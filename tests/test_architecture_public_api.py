@@ -53,6 +53,13 @@ def test_definition_and_runtime_facades_stay_owned() -> None:
     assert not hasattr(contract_api, "AppConfigSpec")
 
 
+def test_lazy_aggregate_facades_are_import_cycle_boundaries() -> None:
+    """Keep intentional aggregate laziness from regressing into cycles."""
+    assert importlib.import_module("apprc.runtime").__all__
+    assert importlib.import_module("apprc.user_files").__all__
+    assert importlib.import_module("apprc.user_files.storage_roots").__all__
+
+
 def test_old_config_package_is_removed() -> None:
     removed_module = ".".join(("apprc", "config"))
     with pytest.raises(ModuleNotFoundError):

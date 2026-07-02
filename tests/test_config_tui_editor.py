@@ -74,6 +74,52 @@ class RestoreFakeEditor:
         return path.name
 
 
+class NewStorageFakeEditor(RestoreFakeEditor):
+    """Minimal editor facade for new-storage routing tests."""
+
+    def _require_storage_registry(self) -> object:
+        """Pretend a named-storage registry is available."""
+        return object()
+
+
+@pytest.mark.asyncio
+async def test_editor_new_storage_archive_path_opens_import_flow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "alpha.apprc.tar.xz"
+    editor = NewStorageFakeEditor(responses=[SimpleNamespace(path=archive)])
+    workflow = ConfigEditorStorageWorkflows(cast(Any, editor))
+    imported: list[Path] = []
+    registered: list[Path] = []
+
+    async def open_archive_import_flow(path: Path) -> None:
+        imported.append(path)
+
+    async def register_storage_directory_flow(
+        storage_root: Path,
+        *,
+        default_name: str,
+    ) -> None:
+        registered.append(storage_root)
+
+    monkeypatch.setattr(
+        workflow,
+        "open_archive_import_flow",
+        open_archive_import_flow,
+    )
+    monkeypatch.setattr(
+        workflow,
+        "register_storage_directory_flow",
+        register_storage_directory_flow,
+    )
+
+    await workflow.open_new_storage_flow()
+
+    assert imported == [archive]
+    assert registered == []
+
+
 @pytest.mark.asyncio
 async def test_editor_restore_replacement_mode_requires_confirmation(
     monkeypatch: pytest.MonkeyPatch,
@@ -194,7 +240,7 @@ async def test_editor_storage_delete_unregisters_before_content_delete(
     monkeypatch.setattr(editor, "_registered_active_storage_name", lambda: None)
     monkeypatch.setattr(editor, "notify", notify)
     monkeypatch.setattr(
-        "apprc.interfaces.tui.editor.workflows.shutil.rmtree",
+        "apprc.interfaces.tui.editor.storage_removal.shutil.rmtree",
         fail_rmtree,
     )
 

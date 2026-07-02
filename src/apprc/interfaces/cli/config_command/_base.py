@@ -19,12 +19,17 @@ from apprc.interfaces.cli.config_command._selector_context import (
     SelectorContextReader,
     _empty_selector_context,
 )
+from apprc.interfaces.cli.config_command._editor_launcher import (
+    ConfigEditorLauncher,
+)
+from apprc.interfaces.cli.config_command._runtime_payload import (
+    default_runtime_payload,
+)
 from apprc.interfaces.cli.config_command.state import (
     ConfigCliState,
     DefaultConfigCliState,
     active_storage_root_from_env,
     active_storage_root_from_state,
-    initial_storage_from_state,
 )
 from apprc.interfaces.cli._errors import config_home_bad_parameter
 from apprc.user_files.app_home.locations import ConfigHomeError
@@ -59,19 +64,23 @@ class ConfigCommandBase:
         self.active_storage_root_with_context_hook = (
             options.active_storage_root_with_context
         )
-        self.initial_storage_hook = options.initial_storage
-        self.initial_storage_with_context_hook = (
-            options.initial_storage_with_context
-        )
-        self.editor_app_cls = options.editor_app_cls
         self.missing_setup = missing_setup
         self.runtime_error_param_hint = options.runtime_error_param_hint
         self.config_group_name = options.config_group_name
         self.state_resolver = ConfigStateResolver(options.state_type)
         self.selector_context_reader = SelectorContextReader()
+        self.editor_launcher = ConfigEditorLauncher(
+            kit=kit,
+            editor_app_cls=options.editor_app_cls,
+            config_group_name=options.config_group_name,
+            initial_storage_hook=options.initial_storage,
+            initial_storage_with_context_hook=(
+                options.initial_storage_with_context
+            ),
+        )
 
     def state(self, ctx: typer.Context) -> Any:
-        """Return the application host state stored by the parent CLI."""
+        """Return the application CLI state stored by the parent CLI."""
         return self.state_resolver.state(ctx)
 
     def context_state(self, ctx: typer.Context) -> DefaultConfigCliState | None:
@@ -93,22 +102,22 @@ class ConfigCommandBase:
         return self.state_resolver.runtime_payload_state(resolved_state)
 
     def config_command_text(self, action: str) -> str:
-        """Return one host command line for generated CLI guidance."""
+        """Return one CLI command line for generated CLI guidance."""
         return (
             f"{self.kit.spec.config_command_name()} "
             f"{self.config_group_name} {action}"
         )
 
-    def host_context_param(
+    def cli_context_param(
         self,
         ctx: typer.Context,
         name: str,
     ) -> object | None:
         """Read one option value from the parent command context."""
-        return self.selector_context_reader.host_context_param(ctx, name)
+        return self.selector_context_reader.cli_context_param(ctx, name)
 
     def cli_selector_context(self, ctx: typer.Context) -> ConfigSelectorContext:
-        """Return host explicit env-file values for selector-only reads."""
+        """Return CLI explicit env-file values for selector-only reads."""
         return self.selector_context_reader.cli_selector_context(ctx)
 
     def config_home_bad_parameter(
@@ -319,25 +328,7 @@ class ConfigCommandBase:
         storage_root: Path | None,
     ) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
-        storage_env = (
-            str(self.kit.spec.storage_env_path(storage_root))
-            if storage_root is not None
-            else None
-        )
-        return {
-            "app_name": self.kit.spec.app_name,
-            "display_name": self.kit.spec.display_name,
-            "capabilities": {
-                "storage": self.kit.spec.storage_layer.value,
-                "app_wide": self.kit.spec.app_wide_layer.value,
-                "named_storage": self.kit.spec.named_storage_layer.value,
-            },
-            "config_home": str(self.kit.spec.config_home()),
-            "app_wide_env": str(self.kit.spec.app_wide_env_path()),
-            "index_path": str(self.kit.spec.index_path()),
-            "storage_root": str(storage_root) if storage_root else None,
-            "storage_env": storage_env,
-        }
+        return default_runtime_payload(self.kit, storage_root=storage_root)
 
     def launch_config_editor(
         self,
@@ -348,33 +339,12 @@ class ConfigCommandBase:
         selector_context: ConfigSelectorContext | None = None,
     ) -> None:
         """Create and run the Textual config editor."""
-        selected_storage = (
-            self.initial_storage_for_editor(
-                current_state,
-                storage_registry=storage_registry,
-                selector_context=selector_context,
-            )
-            if current_state is not None
-            else None
+        self.editor_launcher.launch(
+            current_state=current_state,
+            storage_registry=storage_registry,
+            active_storage_root=active_storage_root,
+            selector_context=selector_context,
         )
-        if self.editor_app_cls is not None:
-            editor_app = self.editor_app_cls(
-                kit=self.kit,
-                storage_registry=storage_registry,
-                initial_storage=selected_storage,
-                active_storage_root=active_storage_root,
-            )
-        else:
-            from apprc.interfaces.tui import ConfigEditorApp
-
-            editor_app = ConfigEditorApp(
-                kit=self.kit,
-                storage_registry=storage_registry,
-                initial_storage=selected_storage,
-                active_storage_root=active_storage_root,
-                config_group_name=self.config_group_name,
-            )
-        editor_app.run()
 
     def initial_storage_for_editor(
         self,
@@ -384,21 +354,8 @@ class ConfigCommandBase:
         selector_context: ConfigSelectorContext | None = None,
     ) -> str | None:
         """Return the storage name the editor should select on startup."""
-        context = selector_context or _empty_selector_context()
-        state = resolved_state.state
-        if (
-            resolved_state.app_owned
-            and self.initial_storage_with_context_hook is not None
-        ):
-            return self.initial_storage_with_context_hook(state, context)
-        if resolved_state.app_owned and self.initial_storage_hook is not None:
-            return self.initial_storage_hook(state)
-        return initial_storage_from_state(
-            self.kit,
-            cast(ConfigCliState, state),
-            registry=storage_registry,
-            explicit_values=context.explicit_values,
-            env_file_overrides_os_environ=(
-                context.env_file_overrides_os_environ
-            ),
+        return self.editor_launcher.initial_storage(
+            resolved_state,
+            storage_registry=storage_registry,
+            selector_context=selector_context,
         )

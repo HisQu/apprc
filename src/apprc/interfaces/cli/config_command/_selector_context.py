@@ -14,7 +14,7 @@ import typer
 
 # == Internal ================================
 from apprc.interfaces.cli.config_command.state import DefaultConfigCliState
-from apprc.interfaces.cli.context import apprc_context_from
+from apprc.interfaces.cli.context import cli_runtime_context_from
 from apprc.interfaces.cli._typer_utils import state_from
 from apprc.runtime._dotenv_layers import (
     ExplicitEnvFileError,
@@ -34,10 +34,10 @@ class ConfigSelectorContext:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedConfigState:
-    """Config state plus whether host hooks may inspect it.
+    """Config state plus whether app hooks may inspect it.
 
     :param state: State object used by generated config logic.
-    :param app_owned: Whether ``state`` came from the host application's
+    :param app_owned: Whether ``state`` came from the application's
         runtime bootstrap path.
     """
 
@@ -47,20 +47,20 @@ class ResolvedConfigState:
 
 @dataclass(frozen=True, slots=True)
 class ConfigStateResolver:
-    """Resolve host-owned state and context-derived generic state.
+    """Resolve app-owned state and context-derived generic state.
 
-    :param state_type: Application host CLI state type expected on ``ctx.obj``.
+    :param state_type: Application CLI state type expected on ``ctx.obj``.
     """
 
     state_type: type[Any]
 
     def state(self, ctx: typer.Context) -> Any:
-        """Return the application host state stored by the parent CLI."""
+        """Return the application CLI state stored by the parent CLI."""
         return state_from(ctx, self.state_type)
 
     def context_state(self, ctx: typer.Context) -> DefaultConfigCliState | None:
         """Return AppRC context as generic config state when available."""
-        context = apprc_context_from(ctx)
+        context = cli_runtime_context_from(ctx)
         if context is None:
             return None
         return DefaultConfigCliState.from_context(context)
@@ -70,8 +70,8 @@ class ConfigStateResolver:
         ctx: typer.Context,
     ) -> ResolvedConfigState | None:
         """Return state plus whether app-owned hooks may inspect it."""
-        context = apprc_context_from(ctx)
-        if context is not None and context.skipped_runtime_bootstrap:
+        context = cli_runtime_context_from(ctx)
+        if context is not None and context.runtime_setup_skipped:
             context_state = self.context_state(ctx)
             if context_state is None:
                 return None
@@ -101,25 +101,27 @@ class ConfigStateResolver:
 
 @dataclass(frozen=True, slots=True)
 class SelectorContextReader:
-    """Read host-level selector options from Typer context metadata."""
+    """Read CLI selector options from Typer context metadata."""
 
-    def host_context_param(
+    def cli_context_param(
         self,
         ctx: typer.Context,
         name: str,
     ) -> object | None:
         """Read one option value from the parent command context."""
-        context = apprc_context_from(ctx)
+        context = cli_runtime_context_from(ctx)
         if context is not None:
             option_values = {
-                "env_files": context.options.env_files,
+                "env_files": context.runtime_options.env_files,
                 "env_file_overrides_os_environ": (
-                    context.options.env_file_overrides_os_environ
+                    context.runtime_options.env_file_overrides_os_environ
                 ),
-                "load_dotenv_layers": context.options.load_dotenv_layers,
-                "log_level": context.options.log_level,
-                "skip_dotenv_layers": (not context.options.load_dotenv_layers),
-                "storage": context.options.storage,
+                "load_dotenv_layers": context.runtime_options.load_dotenv_layers,
+                "log_level": context.runtime_options.log_level,
+                "skip_dotenv_layers": (
+                    not context.runtime_options.load_dotenv_layers
+                ),
+                "storage": context.runtime_options.storage,
             }
             if name in option_values:
                 return option_values[name]
@@ -134,10 +136,10 @@ class SelectorContextReader:
         self,
         ctx: typer.Context,
     ) -> ConfigSelectorContext:
-        """Return host explicit env-file values for selector-only reads."""
-        env_files = _host_env_files(self.host_context_param(ctx, "env_files"))
+        """Return CLI explicit env-file values for selector-only reads."""
+        env_files = _cli_env_files(self.cli_context_param(ctx, "env_files"))
         overrides = bool(
-            self.host_context_param(ctx, "env_file_overrides_os_environ")
+            self.cli_context_param(ctx, "env_file_overrides_os_environ")
         )
         try:
             _, _, explicit_values = read_explicit_env_files(env_files)
@@ -157,8 +159,8 @@ class SelectorContextReader:
         )
 
 
-def _host_env_files(raw_value: object | None) -> tuple[Path, ...]:
-    """Return host-level ``--env-file`` option values as paths."""
+def _cli_env_files(raw_value: object | None) -> tuple[Path, ...]:
+    """Return CLI ``--env-file`` option values as paths."""
     if raw_value is None:
         return ()
     if isinstance(raw_value, Path):

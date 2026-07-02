@@ -72,8 +72,8 @@ def test_doctor_env_not_set_for_missing_storage_selector(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.ENV_NOT_SET.value
-    assert payload["missing_env_keys"] == ["APPRC_EXAMPLE_APP_STORAGE"]
+    assert payload.status == ConfigDoctorStatus.ENV_NOT_SET.value
+    assert payload.missing_env_keys == ("APPRC_EXAMPLE_APP_STORAGE",)
     assert not kit.spec.app_wide_env_path().exists()
     assert not kit.spec.index_path().exists()
 
@@ -87,8 +87,8 @@ def test_doctor_app_config_not_ready_for_default_app_wide_missing(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.APP_CONFIG_NOT_READY.value
-    assert payload["app_wide_env_exists"] is False
+    assert payload.status == ConfigDoctorStatus.APP_CONFIG_NOT_READY.value
+    assert payload.app_wide_env_exists is False
 
 
 def test_doctor_named_storage_not_ready_for_bad_index(
@@ -104,9 +104,9 @@ def test_doctor_named_storage_not_ready_for_bad_index(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.NAMED_STORAGE_NOT_READY.value
-    assert payload["index_parse_ok"] is False
-    assert payload["index_error"] is not None
+    assert payload.status == ConfigDoctorStatus.NAMED_STORAGE_NOT_READY.value
+    assert payload.index_parse_ok is False
+    assert payload.index_error is not None
 
 
 def test_doctor_warns_about_bad_optional_index_without_selector(
@@ -122,14 +122,14 @@ def test_doctor_warns_about_bad_optional_index_without_selector(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.ENV_NOT_SET.value
-    assert payload["index_parse_ok"] is False
+    assert payload.status == ConfigDoctorStatus.ENV_NOT_SET.value
+    assert payload.index_parse_ok is False
     assert any(
         "Named-storage index is invalid" in warning
-        for warning in payload["warnings"]
+        for warning in payload.warnings
     )
     assert not any(
-        "Named-storage index is invalid" in issue for issue in payload["issues"]
+        "Named-storage index is invalid" in issue for issue in payload.issues
     )
 
 
@@ -149,11 +149,11 @@ def test_doctor_warns_about_bad_optional_index_for_path_selector(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
-    assert payload["index_parse_ok"] is False
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
+    assert payload.index_parse_ok is False
     assert any(
         "Named-storage index is invalid" in warning
-        for warning in payload["warnings"]
+        for warning in payload.warnings
     )
 
 
@@ -182,11 +182,9 @@ def test_doctor_ignores_bad_disabled_named_storage_index(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
-    assert payload["index_parse_ok"] is True
-    assert any(
-        "layer is disabled" in warning for warning in payload["warnings"]
-    )
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
+    assert payload.index_parse_ok is True
+    assert any("layer is disabled" in warning for warning in payload.warnings)
 
 
 def test_doctor_storage_not_ready_for_missing_storage_env(
@@ -201,8 +199,8 @@ def test_doctor_storage_not_ready_for_missing_storage_env(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.STORAGE_NOT_READY.value
-    assert payload["selected_storage_env_exists"] is False
+    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_READY.value
+    assert payload.selected_storage_env_exists is False
 
 
 def test_doctor_runnable_for_storage_with_storage_env(
@@ -218,7 +216,7 @@ def test_doctor_runnable_for_storage_with_storage_env(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
 
 
 def test_doctor_warns_about_legacy_files(
@@ -238,8 +236,8 @@ def test_doctor_warns_about_legacy_files(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert any(".env.global" in warning for warning in payload["warnings"])
-    assert any(".env.local" in warning for warning in payload["warnings"])
+    assert any(".env.global" in warning for warning in payload.warnings)
+    assert any(".env.local" in warning for warning in payload.warnings)
 
 
 def test_doctor_named_storage_selector_uses_index(
@@ -261,8 +259,8 @@ def test_doctor_named_storage_selector_uses_index(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["selected_storage"] == "alpha"
-    assert payload["selected_storage_root"] == str(storage_root.resolve())
+    assert payload.selected_storage == "alpha"
+    assert payload.selected_storage_root == str(storage_root.resolve())
 
 
 def test_doctor_payload_honors_explicit_selector_values(
@@ -291,10 +289,10 @@ def test_doctor_payload_honors_explicit_selector_values(
         },
     )
 
-    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
-    assert payload["index_path"] == str(index_path)
-    assert payload["selected_storage"] == "alpha"
-    assert payload["selected_storage_root"] == str(storage_root.resolve())
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
+    assert payload.index_path == str(index_path)
+    assert payload.selected_storage == "alpha"
+    assert payload.selected_storage_root == str(storage_root.resolve())
 
 
 def test_selector_helpers_honor_explicit_storage_values(

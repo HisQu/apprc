@@ -19,6 +19,7 @@ from apprc import (
 import apprc.definition.env_config as config_objects_api
 import apprc.definition.env_config.base as base_config
 import apprc.definition.env_config.env as env_config_module
+import apprc.definition.env_config._loading as env_loading
 
 
 @dataclass(slots=True)
@@ -718,6 +719,29 @@ def test_env_config_required_field_raises_when_missing(
 
     with pytest.raises(RuntimeError, match="REQUIRED_VALUE"):
         _RequiredEnv()
+
+
+def test_env_config_synthetic_mapping_loaders_do_not_depend_on_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _NoCwdPath:
+        @staticmethod
+        def cwd() -> Path:
+            raise AssertionError("synthetic env loaders should not read cwd")
+
+    owner = config_owner_for(_DemoEnv)
+    retries_field = next(
+        spec for spec in owner.fields if spec.name == "retries"
+    )
+    monkeypatch.setattr(env_loading, "Path", _NoCwdPath)
+
+    loaded = env_loading.load_owner_from_env(
+        owner,
+        {owner.env_key("retries"): "11"},
+    )
+
+    assert loaded.retries == 11
+    assert env_loading.parse_env_field_value(retries_field, "12") == 12
 
 
 def test_env_config_python_assignment_survives_reload(

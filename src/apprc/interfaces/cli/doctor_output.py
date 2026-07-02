@@ -33,76 +33,76 @@ def print_config_doctor(
     console.print(_doctor_status_text(kit, payload))
     console.print("")
     for label, value in (
-        ("storage_layer", payload["capabilities"]["storage"]),
-        ("app_wide_layer", payload["capabilities"]["app_wide"]),
-        ("named_storage_layer", payload["capabilities"]["named_storage"]),
+        ("storage_layer", payload.capabilities["storage"]),
+        ("app_wide_layer", payload.capabilities["app_wide"]),
+        ("named_storage_layer", payload.capabilities["named_storage"]),
         ("writes", "none"),
     ):
         console.print(label_value_text(label, Text(value)))
     console.print("")
     for label, value in (
-        ("config_home", path_text(payload["config_home"])),
-        ("config_home_exists", _bool_text(payload["config_home_exists"])),
-        ("app_wide_env", path_text(payload["app_wide_env"])),
-        ("app_wide_env_exists", _bool_text(payload["app_wide_env_exists"])),
-        ("app_wide_active", _bool_text(payload["app_wide_active"])),
-        ("storage_env_key", _env_key_or_none_text(payload["storage_env_key"])),
-        ("index_env_key", env_key_text(payload["index_env_key"])),
-        ("index_env_value", _path_or_none_text(payload["index_env_value"])),
-        ("index_path", _path_or_none_text(payload["index_path"])),
-        ("index_exists", _bool_text(payload["index_exists"])),
-        ("index_parse_ok", _bool_text(payload["index_parse_ok"])),
-        ("storage_count", Text(str(payload["storage_count"]))),
-        ("selected_storage", _optional_text(payload["selected_storage"])),
+        ("config_home", path_text(payload.config_home)),
+        ("config_home_exists", _bool_text(payload.config_home_exists)),
+        ("app_wide_env", path_text(payload.app_wide_env)),
+        ("app_wide_env_exists", _bool_text(payload.app_wide_env_exists)),
+        ("app_wide_active", _bool_text(payload.app_wide_active)),
+        ("storage_env_key", _env_key_or_none_text(payload.storage_env_key)),
+        ("index_env_key", env_key_text(payload.index_env_key)),
+        ("index_env_value", _path_or_none_text(payload.index_env_value)),
+        ("index_path", _path_or_none_text(payload.index_path)),
+        ("index_exists", _bool_text(payload.index_exists)),
+        ("index_parse_ok", _bool_text(payload.index_parse_ok)),
+        ("storage_count", Text(str(payload.storage_count))),
+        ("selected_storage", _optional_text(payload.selected_storage)),
         (
             "selected_storage_source",
-            _optional_text(payload["selected_storage_source"]),
+            _optional_text(payload.selected_storage_source),
         ),
         (
             "selected_storage_selector",
-            _optional_text(payload["selected_storage_selector"]),
+            _optional_text(payload.selected_storage_selector),
         ),
         (
             "selected_storage_root",
-            _path_or_none_text(payload["selected_storage_root"]),
+            _path_or_none_text(payload.selected_storage_root),
         ),
         (
             "selected_storage_root_exists",
-            _bool_or_none_text(payload["selected_storage_root_exists"]),
+            _bool_or_none_text(payload.selected_storage_root_exists),
         ),
         (
             "selected_storage_env",
-            _path_or_none_text(payload["selected_storage_env"]),
+            _path_or_none_text(payload.selected_storage_env),
         ),
         (
             "selected_storage_env_exists",
-            _bool_or_none_text(payload["selected_storage_env_exists"]),
+            _bool_or_none_text(payload.selected_storage_env_exists),
         ),
     ):
         console.print(label_value_text(label, value))
-    if payload["missing_env_keys"]:
+    if payload.missing_env_keys:
         console.print(
             label_value_text(
                 "missing_env_keys",
-                _env_key_list_text(payload["missing_env_keys"]),
+                _env_key_list_text(payload.missing_env_keys),
             )
         )
 
-    issues = payload["issues"]
+    issues = payload.issues
     if issues:
         console.print("")
         console.print(Text("Issues:", style="bold"))
         for issue in issues:
             console.print(_styled_issue_text(kit, payload, issue))
 
-    warnings = payload["warnings"]
+    warnings = payload.warnings
     if warnings:
         console.print("")
         console.print(Text("Warnings:", style="bold"))
         for warning in warnings:
             console.print(_styled_issue_text(kit, payload, warning))
 
-    next_steps = payload["next_steps"]
+    next_steps = payload.next_steps
     if next_steps:
         console.print("")
         console.print(Text("Next steps:", style="bold"))
@@ -119,49 +119,49 @@ def print_config_paths(
     console.print(Text(f"{kit.spec.display_name} config paths", style="bold"))
     console.print("")
     for label, value in (
-        ("storage_layer", payload["capabilities"]["storage"]),
-        ("app_wide_layer", payload["capabilities"]["app_wide"]),
-        ("named_storage_layer", payload["capabilities"]["named_storage"]),
-        ("writes", payload["writes"]),
+        ("storage_layer", payload.capabilities["storage"]),
+        ("app_wide_layer", payload.capabilities["app_wide"]),
+        ("named_storage_layer", payload.capabilities["named_storage"]),
+        ("writes", payload.writes),
     ):
         console.print(label_value_text(label, Text(value)))
     console.print("")
     for label, value in (
-        ("config_home", path_text(payload["config_home"])),
-        ("config_home_exists", _bool_text(payload["config_home_exists"])),
-        ("app_wide_env", path_text(payload["app_wide_env"])),
-        ("app_wide_env_exists", _bool_text(payload["app_wide_env_exists"])),
-        ("app_wide_active", _bool_text(payload["app_wide_active"])),
-        ("storage_env_key", _env_key_or_none_text(payload["storage_env_key"])),
-        ("index_env_key", env_key_text(payload["index_env_key"])),
-        ("index_env_value", _path_or_none_text(payload["index_env_value"])),
-        ("index_path", _path_or_none_text(payload["index_path"])),
-        ("index_exists", _bool_text(payload["index_exists"])),
-        ("index_parse_ok", _bool_text(payload["index_parse_ok"])),
-        ("storage_count", Text(str(payload["storage_count"]))),
+        ("config_home", path_text(payload.config_home)),
+        ("config_home_exists", _bool_text(payload.config_home_exists)),
+        ("app_wide_env", path_text(payload.app_wide_env)),
+        ("app_wide_env_exists", _bool_text(payload.app_wide_env_exists)),
+        ("app_wide_active", _bool_text(payload.app_wide_active)),
+        ("storage_env_key", _env_key_or_none_text(payload.storage_env_key)),
+        ("index_env_key", env_key_text(payload.index_env_key)),
+        ("index_env_value", _path_or_none_text(payload.index_env_value)),
+        ("index_path", _path_or_none_text(payload.index_path)),
+        ("index_exists", _bool_text(payload.index_exists)),
+        ("index_parse_ok", _bool_text(payload.index_parse_ok)),
+        ("storage_count", Text(str(payload.storage_count))),
         (
             "selected_storage_source",
-            _optional_text(payload["selected_storage_source"]),
+            _optional_text(payload.selected_storage_source),
         ),
         (
             "selected_storage_selector",
-            _optional_text(payload["selected_storage_selector"]),
+            _optional_text(payload.selected_storage_selector),
         ),
         (
             "selected_storage_root",
-            _path_or_none_text(payload["selected_storage_root"]),
+            _path_or_none_text(payload.selected_storage_root),
         ),
         (
             "selected_storage_root_exists",
-            _bool_or_none_text(payload["selected_storage_root_exists"]),
+            _bool_or_none_text(payload.selected_storage_root_exists),
         ),
         (
             "selected_storage_env",
-            _path_or_none_text(payload["selected_storage_env"]),
+            _path_or_none_text(payload.selected_storage_env),
         ),
         (
             "selected_storage_env_exists",
-            _bool_or_none_text(payload["selected_storage_env_exists"]),
+            _bool_or_none_text(payload.selected_storage_env_exists),
         ),
     ):
         console.print(label_value_text(label, value))
@@ -196,7 +196,7 @@ def _doctor_status_text(
             DEFAULT_STYLE,
         ),
     }
-    label, style = status_labels[str(payload["status"])]
+    label, style = status_labels[str(payload.status)]
     return Text.assemble(
         (f"{kit.spec.display_name} config doctor", "bold"),
         ": ",
@@ -242,7 +242,7 @@ def _bool_or_none_text(value: bool | None) -> Text:
     return _bool_text(value)
 
 
-def _env_key_list_text(env_keys: list[str]) -> Text:
+def _env_key_list_text(env_keys: tuple[str, ...]) -> Text:
     """Return a comma-delimited env key list with semantic styling.
 
     :param env_keys: Missing env keys from the doctor payload.
@@ -280,12 +280,12 @@ def _styled_issue_text(
         {
             str(value): PATH_STYLE
             for value in (
-                payload["config_home"],
-                payload["app_wide_env"],
-                payload["index_env_value"],
-                payload["index_path"],
-                payload["selected_storage_root"],
-                payload["selected_storage_env"],
+                payload.config_home,
+                payload.app_wide_env,
+                payload.index_env_value,
+                payload.index_path,
+                payload.selected_storage_root,
+                payload.selected_storage_env,
             )
             if value
         }

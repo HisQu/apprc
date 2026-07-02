@@ -24,7 +24,7 @@ _HELP_OPTIONS = frozenset(("--help", "-h"))
 
 @dataclass(frozen=True, slots=True)
 class ParsedCommandTokens:
-    """Parsed command tokens after known host-level options.
+    """Parsed command tokens after known CLI options.
 
     :param action_tokens: Tokens beginning with the first positional action.
     :param separator_before_action: Whether ``--`` appeared before that action.
@@ -142,13 +142,13 @@ def args_after_command(
 ) -> list[str] | None:
     """Return tokens after one top-level command group.
 
-    Click's host callback does not expose child command arguments, so callers
+    Click's root callback does not expose child command arguments, so callers
     can inspect ``sys.argv`` before bootstrap produces runtime side effects for
     help-only usage errors.
 
     :param command_name: Top-level command name to locate.
     :param tokens: Optional command tokens without the program name.
-    :param root_value_options: Host-level options that consume a following
+    :param root_value_options: CLI options that consume a following
         value when passed before the command.
     :return: Child tokens after the command, or ``None`` for another command.
     """
@@ -171,24 +171,24 @@ def args_after_command(
     return None
 
 
-def args_after_host_command(
+def args_after_cli_command(
     command_name: str,
     *,
     tokens: Sequence[str] | None = None,
-    host_value_options: Collection[str] = (),
+    cli_value_options: Collection[str] = (),
 ) -> list[str] | None:
-    """Return tokens after one top-level host command.
+    """Return tokens after one top-level CLI command.
 
     :param command_name: Top-level command name to locate.
     :param tokens: Optional command tokens without the program name.
-    :param host_value_options: Host-level options that consume a following value
+    :param cli_value_options: CLI options that consume a following value
         when passed before the command.
     :return: Child tokens after the command, or ``None`` for another command.
     """
     return args_after_command(
         command_name,
         tokens=tokens,
-        root_value_options=host_value_options,
+        root_value_options=cli_value_options,
     )
 
 

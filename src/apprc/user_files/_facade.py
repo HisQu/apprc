@@ -1,4 +1,8 @@
-"""Lazy facade for AppRC-managed user files."""
+"""Lazy facade for AppRC-managed user files.
+
+The aggregate user-file package is intentionally lazy because app config specs
+import individual user-file modules during their own initialization.
+"""
 
 from __future__ import annotations
 

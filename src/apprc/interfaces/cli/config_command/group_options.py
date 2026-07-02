@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class ConfigGroupOptions:
     """Carry generated config command hooks through internal layers.
 
-    :param state_type: Application host CLI state type stored on ``ctx.obj``.
+    :param state_type: Application CLI state type stored on ``ctx.obj``.
     :param runtime_payload: Optional serializer for ``config show``.
     :param active_storage_root: Optional storage-root resolver.
     :param active_storage_root_with_context: Optional storage-root resolver that

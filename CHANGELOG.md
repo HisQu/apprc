@@ -61,13 +61,67 @@ All notable changes to `{my_project}` will be documented in this file.
     `hlog.get_logger(...)`. AppRC's CLI bootstrap still accepts a
     host-owned `setup_logging` callable.
 
+  - Breaking: Renamed the composable Typer bridge/bootstrap API to CLI runtime
+    terminology and removed compatibility aliases.
+    Affected: Users importing or calling `ConfigCliBridge`,
+    `ConfigCliSession`, `HostCliBootstrapPolicy`, `BootstraplessCommand`,
+    `CliBootstrapContext`, `CliBootstrapOptions`,
+    `ConfigBootstrapPolicy`, `bootstrap_policy=...`,
+    `prepare_typer_context(...)`, `apprc_context_from(...)`, or
+    `apprc_options_to_args(...)`.
+    Migration: Use `CliRuntime`, `CliRuntimeSession`,
+    `CliRuntimePolicy`, `RuntimeIndependentCommand`,
+    `CliRuntimeContext`, `CliRuntimeOptions`, `ConfigRuntimePolicy`,
+    `runtime_policy=...`, `prepare_cli_runtime_context(...)`,
+    `cli_runtime_context_from(...)`, and
+    `cli_runtime_options_to_args(...)`.
+
+  - Breaking: Changed `ConfigDoctorPayload` from a dictionary-shaped
+    `TypedDict` to a dataclass model.
+    Affected: Users indexing the result of
+    `build_config_doctor_payload(...)` directly.
+    Migration: Read dataclass attributes such as `payload.status`, or call
+    `payload.to_payload()` when a JSON-friendly dictionary is needed.
+
+  - Breaking: Made `DefaultConfigCliState` keyword-only so applications can
+    subclass it with required fields.
+    Affected: Users constructing `DefaultConfigCliState` with positional
+    arguments.
+    Migration: Pass `env_bootstrap=...` and `storage=...` by keyword, and
+    inherit from `DefaultConfigCliState` for app-owned config CLI state.
+
 <br>
 
 ### ➕ Added
 
+  - Added `cli_options_from(ctx, OptionsType)` so runtime-independent commands
+    can recover the full app CLI option object preserved by `CliRuntime`.
+
+  - Added `CliRuntime.forwarded_args(...)` and
+    `CliRuntime.run_forwarded(...)` for nested in-process Typer CLIs whose
+    child runtime policy must inspect forwarded child arguments.
+
+  - Added a dev-only `apprc_example_apps` registry helper exposing the
+    repository-local example kits and bootstrap metadata.
+
+  - Added a root facade snapshot test so changes to `apprc.__all__` are
+    explicit and reviewable.
+
 <br>
 
 ### 💔 Changed
+
+  - Changed generated config diagnostics to use a typed
+    `ConfigDoctorPayload` model internally while keeping explicit JSON
+    serialization through `to_payload()`.
+
+  - Changed the config editor storage workflows into action-specific
+    registration, archive, and removal modules behind the existing
+    `ConfigEditorStorageWorkflows` entrypoint.
+
+  - Changed the remaining lazy aggregate facades into documented import-cycle
+    boundaries after verifying that `apprc.runtime`, `apprc.user_files`, and
+    `apprc.user_files.storage_roots` still require lazy loading.
 
 <br>
 

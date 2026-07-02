@@ -141,7 +141,7 @@ script per AppRC mode:
 | `apprc-app-wide-config` | `AppConfigKit.app_wide_config(...)` |
 | `apprc-app-wide-storage` | `AppConfigKit.app_wide_storage(...)` |
 | `apprc-explicit-env-precedence` | Explicit env-file selector precedence |
-| `apprc-cli-bridge` | `ConfigCliBridge` with a host-owned callback |
+| `apprc-cli-runtime` | `CliRuntime` with an app-owned callback |
 | `apprc-examples-run-all` | Compact non-interactive scenario runner |
 
 The source tree intentionally uses one Python package per app so the examples
@@ -154,7 +154,7 @@ match what a downstream project should copy:
 | `apprc_app_wide_config_example` | Storage-free app that uses the app-wide dotenv layer. |
 | `apprc_app_wide_storage_example` | App-wide defaults plus selected storage roots. |
 | `apprc_explicit_env_precedence_example` | Storage selector precedence with explicit env files. |
-| `apprc_cli_bridge_example` | Host callback integration through `ConfigCliBridge`. |
+| `apprc_cli_runtime_example` | Typer callback integration through `CliRuntime`. |
 | `apprc_example_apps` | Shared scenario runner helpers; not a user app template. |
 
 Each app package owns its own `config.py` and points `config_package` at that
@@ -196,13 +196,13 @@ apprc-storage-only config storage list
 apprc-storage-only config show --json
 ```
 
-Use the bridge example to inspect the host-owned callback path:
+Use the runtime example to inspect the app-owned callback path:
 
 ```bash
-set -a; source .apprc-example-cli-bridge/.env; set +a
-apprc-cli-bridge --workspace /tmp/apprc-workspace --model demo status
-apprc-cli-bridge --workspace /tmp/apprc-workspace --model demo run
-apprc-cli-bridge config doctor
+set -a; source .apprc-example-cli-runtime/.env; set +a
+apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo status
+apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo run
+apprc-cli-runtime config doctor
 ```
 
 The test suite exercises every generated command for every example mode:

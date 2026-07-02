@@ -1,4 +1,8 @@
-"""Lazy facade for storage-root file helpers."""
+"""Lazy facade for storage-root file helpers.
+
+The aggregate storage-root package is intentionally lazy because storage path
+helpers are imported while app config specs are still initializing.
+"""
 
 from __future__ import annotations
 

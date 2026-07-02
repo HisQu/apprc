@@ -10,13 +10,13 @@ from pathlib import Path
 from typing import Protocol, cast
 
 # == Internal ================================
-from apprc.interfaces.cli.context import CliBootstrapContext
+from apprc.interfaces.cli.context import CliRuntimeContext
 from apprc.interfaces.cli.options import (
-    COMMON_HOST_FLAG_OPTIONS,
-    COMMON_HOST_VALUE_OPTIONS,
+    COMMON_CLI_FLAG_OPTIONS,
+    COMMON_CLI_VALUE_OPTIONS,
 )
 from apprc.interfaces.cli._typer_utils import (
-    args_after_host_command,
+    args_after_cli_command,
     help_requested_before_separator,
     parse_leading_options,
 )
@@ -48,12 +48,12 @@ class StorageConfigCliState(ConfigCliState, Protocol):
     storage: str | None
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class DefaultConfigCliState:
-    """Default host state understood by generated AppRC config commands.
+    """Default CLI state understood by generated AppRC config commands.
 
     :param env_bootstrap: Runtime bootstrap result, when bootstrap ran.
-    :param storage: Optional host-level ``--storage`` selector.
+    :param storage: Optional CLI ``--storage`` selector.
     """
 
     env_bootstrap: EnvBootstrapResult | None = None
@@ -62,7 +62,7 @@ class DefaultConfigCliState:
     @classmethod
     def from_context(
         cls,
-        context: CliBootstrapContext,
+        context: CliRuntimeContext,
     ) -> DefaultConfigCliState:
         """Build generic config state from stored AppRC bootstrap metadata.
 
@@ -71,11 +71,11 @@ class DefaultConfigCliState:
         """
         return cls(
             env_bootstrap=context.env_bootstrap,
-            storage=context.options.storage,
+            storage=context.runtime_options.storage,
         )
 
 
-DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS = frozenset(
+DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS = frozenset(
     {
         "app",
         "doctor",
@@ -89,14 +89,14 @@ DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS = frozenset(
 
 
 @dataclass(frozen=True, slots=True)
-class ConfigBootstrapPolicy:
-    """Runtime-bootstrap skip policy for a generated config command group.
+class ConfigRuntimePolicy:
+    """Runtime skip policy for a generated config command group.
 
     :param config_group_name: Top-level config command group to inspect.
-    :param bootstrapless_actions: Config actions that can run without full
-        runtime state.
-    :param root_flag_options: Host-level options that consume no values.
-    :param root_value_options: Host-level options that consume one following
+    :param runtime_independent_actions: Config actions that can run without
+        full runtime state.
+    :param root_flag_options: CLI options that consume no values.
+    :param root_value_options: CLI options that consume one following
         value before the config command.
     :param skip_invalid_options: Whether unknown leading options under the
         config group should avoid runtime bootstrap so Typer can report the
@@ -104,14 +104,14 @@ class ConfigBootstrapPolicy:
     """
 
     config_group_name: str = "config"
-    bootstrapless_actions: Collection[str] = (
-        DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
+    runtime_independent_actions: Collection[str] = (
+        DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS
     )
-    root_flag_options: Collection[str] = COMMON_HOST_FLAG_OPTIONS
-    root_value_options: Collection[str] = COMMON_HOST_VALUE_OPTIONS
+    root_flag_options: Collection[str] = COMMON_CLI_FLAG_OPTIONS
+    root_value_options: Collection[str] = COMMON_CLI_VALUE_OPTIONS
     skip_invalid_options: bool = True
 
-    def request_skips_runtime_bootstrap(
+    def request_skips_runtime(
         self,
         *,
         tokens: Sequence[str] | None = None,
@@ -121,24 +121,24 @@ class ConfigBootstrapPolicy:
         :param tokens: Optional command tokens without the program name.
         :return: Whether runtime bootstrap should be avoided.
         """
-        return config_request_skips_runtime_bootstrap(
+        return config_request_skips_runtime(
             self.config_group_name,
             tokens=tokens,
             root_flag_options=self.root_flag_options,
             root_value_options=self.root_value_options,
-            bootstrapless_actions=self.bootstrapless_actions,
+            runtime_independent_actions=self.runtime_independent_actions,
             skip_invalid_options=self.skip_invalid_options,
         )
 
 
-def config_request_skips_runtime_bootstrap(
+def config_request_skips_runtime(
     command_name: str = "config",
     *,
     tokens: Sequence[str] | None = None,
-    root_flag_options: Collection[str] = COMMON_HOST_FLAG_OPTIONS,
-    root_value_options: Collection[str] = COMMON_HOST_VALUE_OPTIONS,
-    bootstrapless_actions: Collection[str] = (
-        DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
+    root_flag_options: Collection[str] = COMMON_CLI_FLAG_OPTIONS,
+    root_value_options: Collection[str] = COMMON_CLI_VALUE_OPTIONS,
+    runtime_independent_actions: Collection[str] = (
+        DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS
     ),
     skip_invalid_options: bool = True,
 ) -> bool:
@@ -146,21 +146,21 @@ def config_request_skips_runtime_bootstrap(
 
     :param command_name: Top-level config command name to inspect.
     :param tokens: Optional command tokens without the program name.
-    :param root_flag_options: Host-level options that consume no values before
+    :param root_flag_options: CLI options that consume no values before
         the config action.
-    :param root_value_options: Host-level options that consume a following value
+    :param root_value_options: CLI options that consume a following value
         before the config command.
-    :param bootstrapless_actions: Config actions that can run before runtime
-        setup.
+    :param runtime_independent_actions: Config actions that can run before
+        runtime setup.
     :param skip_invalid_options: Whether unknown leading options under the
         config group should skip runtime bootstrap so Typer can report the
         parse error directly.
     :return: Whether the config command can run without runtime state.
     """
-    args = args_after_host_command(
+    args = args_after_cli_command(
         command_name,
         tokens=tokens,
-        host_value_options=root_value_options,
+        cli_value_options=root_value_options,
     )
     if args is None:
         return False
@@ -181,7 +181,7 @@ def config_request_skips_runtime_bootstrap(
         return True
     if skip_invalid_options and action_args[0].startswith("-"):
         return True
-    return action_args[0] in bootstrapless_actions
+    return action_args[0] in runtime_independent_actions
 
 
 def active_storage_root_from_state(
@@ -195,7 +195,7 @@ def active_storage_root_from_state(
 
     :param kit: Application config facade.
     :param state: Host CLI state object.
-    :param explicit_values: Parsed values from host-level ``--env-file``
+    :param explicit_values: Parsed values from CLI ``--env-file``
         options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
@@ -247,7 +247,7 @@ def active_storage_root_from_env(
     :param kit: Application config facade.
     :param registry: Parsed storage table, or ``None`` for single-storage
         path mode.
-    :param explicit_values: Parsed values from host-level ``--env-file``
+    :param explicit_values: Parsed values from CLI ``--env-file``
         options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.
@@ -305,7 +305,7 @@ def initial_storage_from_state(
     :param kit: Application config facade.
     :param state: Host CLI state object.
     :param registry: Optional already-loaded storage table.
-    :param explicit_values: Parsed values from host-level ``--env-file``
+    :param explicit_values: Parsed values from CLI ``--env-file``
         options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         process env values during selector resolution.

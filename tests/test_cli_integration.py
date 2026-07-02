@@ -13,23 +13,23 @@ from typer.testing import CliRunner
 
 from apprc import AppConfigKit
 from apprc.interfaces.cli import (
-    DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS,
+    DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS,
     CliArgvProvider,
-    CliBootstrapContext,
-    CliBootstrapOptions,
-    ConfigBootstrapPolicy,
-    ConfigCliBridge,
+    CliRuntimeContext,
+    CliRuntimeOptions,
+    ConfigRuntimePolicy,
+    CliRuntime,
     DefaultConfigCliState,
     EnvFileOverridesOption,
     EnvFilesOption,
     LogLevelOption,
     SkipDotenvLayersOption,
     StorageOption,
-    apprc_context_from,
-    apprc_options_to_args,
+    cli_runtime_context_from,
+    cli_runtime_options_to_args,
     build_config_doctor_payload,
     mount_config_cli,
-    prepare_typer_context,
+    prepare_cli_runtime_context,
 )
 from tests.support_config import (
     StorageFreeExampleEnv,
@@ -55,7 +55,7 @@ def test_cli_bootstrap_options_normalize_and_forward_repeated_env_files(
     first_env = tmp_path / "first.env"
     second_env = tmp_path / "second.env"
 
-    options = CliBootstrapOptions.from_typer(
+    options = CliRuntimeOptions.from_typer(
         env_files=[first_env, second_env],
         env_file_overrides_os_environ=True,
         load_dotenv_layers=False,
@@ -64,7 +64,7 @@ def test_cli_bootstrap_options_normalize_and_forward_repeated_env_files(
     )
 
     assert options.env_files == (first_env, second_env)
-    assert apprc_options_to_args(options) == [
+    assert cli_runtime_options_to_args(options) == [
         "--log-level",
         "DEBUG",
         "--env-file",
@@ -89,12 +89,12 @@ def test_cli_bootstrap_options_accept_option_like_none_env_files() -> None:
         storage: str | None = None
         log_level: str | None = None
 
-    options = CliBootstrapOptions.from_options(OptionLike())
+    options = CliRuntimeOptions.from_options(OptionLike())
 
     assert options.env_files == ()
 
 
-def test_prepare_typer_context_stores_metadata_without_ctx_obj(
+def test_prepare_cli_runtime_context_stores_metadata_without_ctx_obj(
     tmp_path: Path,
 ) -> None:
     kit = build_storage_free_example_kit()
@@ -114,34 +114,36 @@ def test_prepare_typer_context_stores_metadata_without_ctx_obj(
         log_level: LogLevelOption = None,
     ) -> None:
         """Store only AppRC metadata, leaving ``ctx.obj`` app-owned."""
-        options = CliBootstrapOptions.from_typer(
+        options = CliRuntimeOptions.from_typer(
             env_files=env_files,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=not skip_dotenv_layers,
             storage=storage,
             log_level=log_level,
         )
-        prepare_typer_context(ctx, kit, options, skip_bootstrap=True)
+        prepare_cli_runtime_context(ctx, kit, options, skip_runtime_setup=True)
 
     @app.command()
     def inspect(ctx: typer.Context) -> None:
         """Print the metadata seen by a child command."""
-        context = apprc_context_from(ctx)
+        context = cli_runtime_context_from(ctx)
         if context is None:
             raise RuntimeError("AppRC context missing.")
         typer.echo(
             json.dumps(
                 {
                     "env_files": [
-                        str(path) for path in context.options.env_files
+                        str(path) for path in context.runtime_options.env_files
                     ],
                     "overrides": (
-                        context.options.env_file_overrides_os_environ
+                        context.runtime_options.env_file_overrides_os_environ
                     ),
-                    "load_dotenv_layers": (context.options.load_dotenv_layers),
-                    "storage": context.options.storage,
-                    "log_level": context.options.log_level,
-                    "skipped": context.skipped_runtime_bootstrap,
+                    "load_dotenv_layers": (
+                        context.runtime_options.load_dotenv_layers
+                    ),
+                    "storage": context.runtime_options.storage,
+                    "log_level": context.runtime_options.log_level,
+                    "skipped": context.runtime_setup_skipped,
                 },
                 sort_keys=True,
             )
@@ -253,12 +255,12 @@ def test_mount_config_cli_passes_storage_to_default_config_show(
     assert payload["storage_root"] == str(storage_root.resolve())
 
 
-def test_config_cli_bridge_default_policy_renders_storage_required_help() -> (
+def test_config_cli_runtime_default_policy_renders_storage_required_help() -> (
     None
 ):
     kit = build_apprc_example_app_kit()
     args = ["run", "--help"]
-    bridge = ConfigCliBridge(kit, args_provider=lambda: args)
+    runtime = CliRuntime(kit, args_provider=lambda: args)
     app = typer.Typer()
     sessions: list[bool] = []
 
@@ -267,11 +269,11 @@ def test_config_cli_bridge_default_policy_renders_storage_required_help() -> (
         ctx: typer.Context,
         storage: StorageOption = None,
     ) -> None:
-        session = bridge.prepare(
+        session = runtime.prepare(
             ctx,
-            CliBootstrapOptions.from_typer(storage=storage),
+            CliRuntimeOptions.from_typer(storage=storage),
         )
-        sessions.append(session.skipped_runtime_bootstrap)
+        sessions.append(session.runtime_setup_skipped)
 
     @app.command()
     def run() -> None:
@@ -340,11 +342,11 @@ def test_mount_config_cli_state_factory_builds_app_state_for_runtime_command(
     class CustomState(DefaultConfigCliState):
         payload_marker: str = "factory-state"
 
-    def state_factory(context: CliBootstrapContext) -> CustomState:
+    def state_factory(context: CliRuntimeContext) -> CustomState:
         """Return app-owned state after runtime bootstrap."""
         return CustomState(
             env_bootstrap=context.env_bootstrap,
-            storage=context.options.storage,
+            storage=context.runtime_options.storage,
         )
 
     mount_config_cli(
@@ -379,7 +381,7 @@ def test_mount_config_cli_state_factory_builds_app_state_for_runtime_command(
     }
 
 
-def test_mount_config_cli_bootstrapless_set_uses_context_not_app_hooks(
+def test_mount_config_cli_runtime_independent_set_uses_context_not_app_hooks(
     tmp_path: Path,
 ) -> None:
     APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
@@ -397,23 +399,23 @@ def test_mount_config_cli_bootstrapless_set_uses_context_not_app_hooks(
         "--scope",
         "storage",
     ]
-    factory_calls: list[CliBootstrapContext] = []
+    factory_calls: list[CliRuntimeContext] = []
     hook_calls: list[DefaultConfigCliState] = []
 
     @dataclass(slots=True)
     class CustomState(DefaultConfigCliState):
         payload_marker: str = "factory-state"
 
-    def state_factory(context: CliBootstrapContext) -> CustomState:
-        """Record unexpected runtime bootstrap for a bootstrapless command."""
+    def state_factory(context: CliRuntimeContext) -> CustomState:
+        """Record unexpected runtime bootstrap for a runtime_independent command."""
         factory_calls.append(context)
         return CustomState(env_bootstrap=context.env_bootstrap)
 
     def active_storage_root(state: CustomState) -> Path | None:
-        """Record whether app hooks see bootstrapless generic state."""
+        """Record whether app hooks see runtime_independent generic state."""
         hook_calls.append(state)
         raise RuntimeError(
-            "app hook should not run for bootstrapless config set"
+            "app hook should not run for runtime_independent config set"
         )
 
     app = typer.Typer()
@@ -450,11 +452,11 @@ def test_mount_config_cli_runtime_payload_receives_factory_state(
     class CustomState(DefaultConfigCliState):
         payload_marker: str = "factory-state"
 
-    def state_factory(context: CliBootstrapContext) -> CustomState:
+    def state_factory(context: CliRuntimeContext) -> CustomState:
         """Return state that custom runtime payloads may inspect."""
         return CustomState(
             env_bootstrap=context.env_bootstrap,
-            storage=context.options.storage,
+            storage=context.runtime_options.storage,
         )
 
     def payload(state: CustomState) -> dict[str, Any]:
@@ -504,9 +506,9 @@ def test_mount_config_cli_args_provider_controls_skip_policy(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_storage_free_example_kit()
     args = ["config", "paths", "--json"]
-    factory_calls: list[CliBootstrapContext] = []
+    factory_calls: list[CliRuntimeContext] = []
 
-    def state_factory(context: CliBootstrapContext) -> DefaultConfigCliState:
+    def state_factory(context: CliRuntimeContext) -> DefaultConfigCliState:
         """Record runtime bootstrap when skip policy does not match."""
         factory_calls.append(context)
         return DefaultConfigCliState(env_bootstrap=context.env_bootstrap)
@@ -525,16 +527,16 @@ def test_mount_config_cli_args_provider_controls_skip_policy(
     assert factory_calls == []
 
 
-def test_mount_config_cli_bootstrap_policy_can_force_config_set_bootstrap(
+def test_mount_config_cli_runtime_policy_can_force_config_set_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = _build_storage_free_kit_with_shared_env()
     args = ["config", "set", "profile", "forced"]
-    factory_calls: list[CliBootstrapContext] = []
+    factory_calls: list[CliRuntimeContext] = []
 
-    def state_factory(context: CliBootstrapContext) -> DefaultConfigCliState:
+    def state_factory(context: CliRuntimeContext) -> DefaultConfigCliState:
         factory_calls.append(context)
         return DefaultConfigCliState(env_bootstrap=context.env_bootstrap)
 
@@ -544,9 +546,9 @@ def test_mount_config_cli_bootstrap_policy_can_force_config_set_bootstrap(
         kit,
         state_factory=state_factory,
         args_provider=lambda: args,
-        bootstrap_policy=ConfigBootstrapPolicy(
-            bootstrapless_actions=(
-                DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS - {"set"}
+        runtime_policy=ConfigRuntimePolicy(
+            runtime_independent_actions=(
+                DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS - {"set"}
             ),
         ),
     )
@@ -619,9 +621,9 @@ def test_config_doctor_payload_custom_config_group_name_next_steps(
 
     assert any(
         step.startswith(f"{kit.spec.app_name} settings setup")
-        for step in payload["next_steps"]
+        for step in payload.next_steps
     )
-    assert all("apprc config" not in step for step in payload["next_steps"])
+    assert all("apprc config" not in step for step in payload.next_steps)
 
 
 def test_mount_config_cli_rejects_existing_root_callback() -> None:
@@ -674,11 +676,11 @@ def test_generated_config_set_uses_context_without_ctx_obj(
         storage: StorageOption = None,
     ) -> None:
         """Provide AppRC context without application runtime state."""
-        options = CliBootstrapOptions.from_typer(
+        options = CliRuntimeOptions.from_typer(
             load_dotenv_layers=False,
             storage=storage,
         )
-        prepare_typer_context(ctx, kit, options, skip_bootstrap=True)
+        prepare_cli_runtime_context(ctx, kit, options, skip_runtime_setup=True)
 
     app.add_typer(kit.typer_app(), name="config")
 
@@ -702,15 +704,16 @@ def test_generated_config_set_uses_context_without_ctx_obj(
     ).read_text(encoding="utf-8")
 
 
-def test_config_bootstrap_policy_can_force_config_set_bootstrap(
+def test_config_runtime_policy_can_force_config_set_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_storage_free_example_kit()
     bootstrapped_commands: list[str | None] = []
-    policy = ConfigBootstrapPolicy(
-        bootstrapless_actions=DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS - {"set"},
+    policy = ConfigRuntimePolicy(
+        runtime_independent_actions=DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS
+        - {"set"},
     )
     app = typer.Typer()
 
@@ -727,19 +730,19 @@ def test_config_bootstrap_policy_can_force_config_set_bootstrap(
         storage: StorageOption = None,
     ) -> None:
         """Bootstrap only when the policy says this command needs runtime."""
-        options = CliBootstrapOptions.from_typer(
+        options = CliRuntimeOptions.from_typer(
             env_files=env_files,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=not skip_dotenv_layers,
             storage=storage,
         )
-        context = prepare_typer_context(
+        context = prepare_cli_runtime_context(
             ctx,
             kit,
             options,
-            skip_bootstrap=policy.request_skips_runtime_bootstrap(),
+            skip_runtime_setup=policy.request_skips_runtime(),
         )
-        if context.skipped_runtime_bootstrap:
+        if context.runtime_setup_skipped:
             return
         bootstrapped_commands.append(ctx.invoked_subcommand)
         ctx.obj = HaiuShapedState(env_bootstrap=context.env_bootstrap)

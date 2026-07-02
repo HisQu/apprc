@@ -87,7 +87,7 @@ python -m pip install -e "." --group dev
 ## Declare Typed Config Fields
 <!-- ======================================================== -->
 
-Create a config package in the host app, usually `<app>/config/__init__.py`,
+Create a config package in the app, usually `<app>/config/__init__.py`,
 and declare one or more `EnvConfig` classes.
 
 ```python
@@ -147,7 +147,7 @@ Save that file as `.env.shared`. Do not put secrets in packaged defaults.
 ## Choose A Capability Constructor
 <!-- ======================================================== -->
 
-Create one `AppConfigKit` for the host app:
+Create one `AppConfigKit` for the app:
 
 ```python
 import apprc
@@ -185,7 +185,7 @@ Storage-capable constructors derive `<APP>_STORAGE` unless
 <!-- ======================================================== -->
 
 Call AppRC bootstrap before commands construct `EnvConfig` objects. Mount the
-generated `config` command group below the host app.
+generated `config` command group below the app.
 
 ```python
 import typer
@@ -204,20 +204,20 @@ def run() -> None:
     typer.echo(cfg.profile)
 ```
 
-`mount_config_cli(...)` registers the standard AppRC host-level options:
+`mount_config_cli(...)` registers the standard AppRC CLI runtime options:
 `--env-file`, `--env-file-overrides-os-environ`, `--skip-dotenv-layers`,
 `--storage`, and `--log-level`. It also lets setup and inspection commands run
 before required runtime settings exist. Pass `state_type=...` plus
-`state_factory=...` when the app needs custom host state after bootstrap, and
+`state_factory=...` when the app needs custom CLI state after bootstrap, and
 `args_provider=...` when a wrapper or test harness needs to provide
-`CliArgvProvider` command tokens explicitly. Pass `bootstrap_policy=...` when
+`CliArgvProvider` command tokens explicitly. Pass `runtime_policy=...` when
 custom config hooks must run for generated writes such as `config set` or
 `config edit`. Pass `config_group_name=...` only when the generated command
-group should not be named `config`; AppRC raises a clear error if the host app
+group should not be named `config`; AppRC raises a clear error if the app
 already owns that command or group name.
 
-Apps that own their host callback and extra options can use
-`ConfigCliBridge`. The bridge keeps AppRC's deterministic config CLI behavior
+Apps that own their Typer callback and extra options can use
+`CliRuntime`. The runtime keeps AppRC's deterministic config CLI behavior
 in AppRC, while the app still builds its own runtime state.
 
 ```python
@@ -244,14 +244,12 @@ class MyCliOptions:
 
 
 @dataclass(slots=True)
-class MyCliState:
-    env_bootstrap: apprc.EnvBootstrapResult | None
-    storage: str | None
+class MyCliState(apprc.DefaultConfigCliState):
     workdir: Path | None
 
 
 def build_state(
-    context: apprc.CliBootstrapContext,
+    context: apprc.CliRuntimeContext,
     options: MyCliOptions,
 ) -> MyCliState:
     return MyCliState(
@@ -262,26 +260,26 @@ def build_state(
 
 
 app = typer.Typer()
-bridge = apprc.ConfigCliBridge(
+runtime = apprc.CliRuntime(
     APP_CONFIG,
     state_type=MyCliState,
     state_factory=build_state,
-    bootstrap_policy=apprc.HostCliBootstrapPolicy(
-        bootstrapless_commands={
-            "tool": apprc.BootstraplessCommand(skip_empty=True),
-            "llm": apprc.BootstraplessCommand(
+    runtime_policy=apprc.CliRuntimePolicy(
+        runtime_independent_commands={
+            "tool": apprc.RuntimeIndependentCommand(skip_empty=True),
+            "llm": apprc.RuntimeIndependentCommand(
                 skip_empty=True,
                 action_prefixes={("benchmark",)},
             ),
-            "rag": apprc.BootstraplessCommand(
+            "rag": apprc.RuntimeIndependentCommand(
                 skip_empty=True,
                 action_prefixes={("cache",), ("benchmark",)},
             ),
         },
-        extra_host_value_options={"--workdir"},
+        extra_cli_value_options={"--workdir"},
     ),
 )
-bridge.mount_config_group(app)
+runtime.mount_config_group(app)
 
 
 @app.callback()
@@ -302,21 +300,25 @@ def cli(
         log_level=log_level,
         workdir=workdir,
     )
-    session = bridge.prepare(ctx, options)
-    if session.skipped_runtime_bootstrap:
+    session = runtime.prepare(ctx, options)
+    if session.runtime_setup_skipped:
         return
 ```
 
-`extra_host_flag_options` and `extra_host_value_options` are additions to
-AppRC's standard host-level options, so custom callbacks only list app-specific
-option names. `BootstraplessCommand(skip_help=True)` is the default, which lets
+`extra_cli_flag_options` and `extra_cli_value_options` are additions to
+AppRC's standard CLI runtime options, so custom callbacks only list app-specific
+option names. `RuntimeIndependentCommand(skip_help=True)` is the default, which lets
 declared command-group help such as `tool --help` render before runtime storage
 or required settings exist. Use `exact_actions` for complete action paths and
 `action_prefixes` for subtrees whose child commands have their own options. On
 skipped runs, `session.state` is `None`; AppRC still stores its bootstrap context
 for generated config commands. Runtimeful generated config commands require the
-host callback to leave the declared `state_type` on `ctx.obj`; bootstrapless
+app callback to leave the declared `state_type` on `ctx.obj`; runtime-independent
 generated config commands use AppRC's stored context instead.
+Runtime-independent app commands can read the original app option object with
+`apprc.cli_options_from(ctx, MyCliOptions)` even when runtime setup was skipped.
+Nested in-process CLIs can call `runtime.run_forwarded(child_app, args=..., prog_name=...)`
+so the child runtime policy inspects the forwarded child arguments.
 
 > [!NOTE]
 > Related: use [References: generated CLI commands](References.md#generated-cli-commands)

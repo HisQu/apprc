@@ -1,10 +1,12 @@
-"""Composable Typer bridge for AppRC config command integration."""
+"""Composable Typer runtime for AppRC config command integration."""
 
 from __future__ import annotations
 
 # == Standard Library ========================
 import sys
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -15,22 +17,23 @@ import typer
 
 # == Internal ================================
 from apprc.interfaces.cli.config_command.state import (
-    ConfigBootstrapPolicy,
-    DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS,
+    ConfigRuntimePolicy,
+    DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS,
     DefaultConfigCliState,
 )
 from apprc.interfaces.cli.options import (
-    COMMON_HOST_FLAG_OPTIONS,
-    COMMON_HOST_VALUE_OPTIONS,
+    COMMON_CLI_FLAG_OPTIONS,
+    COMMON_CLI_VALUE_OPTIONS,
 )
 from apprc.interfaces.cli.context import (
-    CliBootstrapContext,
-    CliBootstrapOptionsProtocol,
-    prepare_typer_context,
+    CliRuntimeContext,
+    CliRuntimeOptionsProtocol,
+    prepare_cli_runtime_context,
 )
 from apprc.interfaces.cli._typer_utils import (
-    args_after_host_command,
+    args_after_cli_command,
     parse_leading_options,
+    run_typer_app,
     structural_help_requested,
 )
 from apprc.runtime.result import BootstrapLogger
@@ -40,24 +43,26 @@ if TYPE_CHECKING:
     from apprc.interfaces.cli.config_command import ConfigSelectorContext
     from apprc.interfaces.tui import ConfigEditorApp
 
-OptionsT = TypeVar("OptionsT", bound=CliBootstrapOptionsProtocol)
+OptionsT = TypeVar("OptionsT", bound=CliRuntimeOptionsProtocol)
 StateT = TypeVar("StateT")
 
 type CliArgvProvider = Callable[[], Sequence[str]]
-type MountConfigCliStateFactory[StateT] = Callable[
-    [CliBootstrapContext],
+type MountCliRuntimeStateFactory[StateT] = Callable[
+    [CliRuntimeContext[Any]],
     StateT,
 ]
-type ConfigCliStateFactory[OptionsT, StateT] = Callable[
-    [CliBootstrapContext, OptionsT],
-    StateT,
-]
+type CliRuntimeStateFactory[OptionsT: CliRuntimeOptionsProtocol, StateT] = (
+    Callable[
+        [CliRuntimeContext[OptionsT], OptionsT],
+        StateT,
+    ]
+)
 
 _HELP_OPTIONS = frozenset(("--help", "-h"))
 
 
 @dataclass(slots=True)
-class ConfigCliSession(Generic[StateT]):
+class CliRuntimeSession(Generic[StateT]):
     """Prepared AppRC CLI context plus app-owned runtime state.
 
     :param apprc_context: AppRC bootstrap context stored on Typer metadata.
@@ -65,18 +70,18 @@ class ConfigCliSession(Generic[StateT]):
         intentionally skipped.
     """
 
-    apprc_context: CliBootstrapContext
+    apprc_context: CliRuntimeContext[Any]
     state: StateT | None = None
 
     @property
-    def skipped_runtime_bootstrap(self) -> bool:
+    def runtime_setup_skipped(self) -> bool:
         """Return whether app runtime state was intentionally not built."""
-        return self.apprc_context.skipped_runtime_bootstrap
+        return self.apprc_context.runtime_setup_skipped
 
 
 @dataclass(frozen=True, slots=True)
-class BootstraplessCommand:
-    """Declare host command actions that can run without app runtime state.
+class RuntimeIndependentCommand:
+    """Declare CLI command actions that can run without app runtime state.
 
     :param exact_actions: Complete action-token sequences that do not need
         runtime state.
@@ -116,12 +121,12 @@ class BootstraplessCommand:
         flag_options: Collection[str],
         value_options: Collection[str],
     ) -> bool:
-        """Return whether child tokens match this bootstrapless declaration.
+        """Return whether child tokens match this runtime-independent command.
 
-        :param args: Tokens after the host command group.
+        :param args: Tokens after the CLI command group.
         :param flag_options: Options that consume no values.
         :param value_options: Options that consume one following value.
-        :return: Whether app runtime bootstrap may be skipped.
+        :return: Whether app runtime setup may be skipped.
         """
         parsed = parse_leading_options(
             args,
@@ -133,11 +138,11 @@ class BootstraplessCommand:
         return self.matches_action_tokens(parsed.action_tokens)
 
     def matches_action_tokens(self, action_tokens: Sequence[str]) -> bool:
-        """Return whether already-stripped action tokens may skip bootstrap.
+        """Return whether already-stripped action tokens may skip runtime.
 
         :param action_tokens: Tokens beginning with the child action or help
             option.
-        :return: Whether app runtime bootstrap may be skipped.
+        :return: Whether app runtime setup may be skipped.
         """
         if not action_tokens:
             return self.skip_empty
@@ -172,79 +177,77 @@ class BootstraplessCommand:
 
 
 @dataclass(frozen=True, slots=True)
-class HostCliBootstrapPolicy:
-    """Skip runtime bootstrap for config and declared host command paths.
+class CliRuntimePolicy:
+    """Skip runtime setup for config and declared CLI command paths.
 
-    :param bootstrapless_commands: Host command declarations keyed by command
+    :param runtime_independent_commands: CLI command declarations keyed by command
         name.
-    :param config_bootstrapless_actions: Generated config actions that can run
+    :param config_runtime_independent_actions: Generated config actions that can run
         without full runtime state.
     :param config_skip_invalid_options: Whether unknown leading generated
-        config options should skip runtime bootstrap so Typer can report the
+        config options should skip runtime setup so Typer can report the
         parse error directly.
-    :param extra_host_flag_options: App-specific host options that consume no
+    :param extra_cli_flag_options: App-specific CLI options that consume no
         values.
-    :param extra_host_value_options: App-specific host options that consume one
+    :param extra_cli_value_options: App-specific CLI options that consume one
         value.
     """
 
-    bootstrapless_commands: Mapping[str, BootstraplessCommand] = field(
-        default_factory=dict
+    runtime_independent_commands: Mapping[str, RuntimeIndependentCommand] = (
+        field(default_factory=dict)
     )
-    config_bootstrapless_actions: Collection[str] = (
-        DEFAULT_CONFIG_BOOTSTRAPLESS_ACTIONS
+    config_runtime_independent_actions: Collection[str] = (
+        DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS
     )
     config_skip_invalid_options: bool = True
-    extra_host_flag_options: Collection[str] = ()
-    extra_host_value_options: Collection[str] = ()
+    extra_cli_flag_options: Collection[str] = ()
+    extra_cli_value_options: Collection[str] = ()
 
     def __post_init__(self) -> None:
         """Normalize action and option declarations."""
         object.__setattr__(
             self,
-            "bootstrapless_commands",
-            MappingProxyType(dict(self.bootstrapless_commands)),
+            "runtime_independent_commands",
+            MappingProxyType(dict(self.runtime_independent_commands)),
         )
         object.__setattr__(
             self,
-            "config_bootstrapless_actions",
-            frozenset(self.config_bootstrapless_actions),
+            "config_runtime_independent_actions",
+            frozenset(self.config_runtime_independent_actions),
         )
         object.__setattr__(
             self,
-            "extra_host_flag_options",
-            frozenset(self.extra_host_flag_options),
+            "extra_cli_flag_options",
+            frozenset(self.extra_cli_flag_options),
         )
         object.__setattr__(
             self,
-            "extra_host_value_options",
-            frozenset(self.extra_host_value_options),
+            "extra_cli_value_options",
+            frozenset(self.extra_cli_value_options),
         )
 
     @property
-    def host_flag_options(self) -> Collection[str]:
+    def cli_flag_options(self) -> Collection[str]:
         """Return AppRC standard flag options plus app-specific additions."""
-        return COMMON_HOST_FLAG_OPTIONS | frozenset(
-            self.extra_host_flag_options
-        )
+        return COMMON_CLI_FLAG_OPTIONS | frozenset(self.extra_cli_flag_options)
 
     @property
-    def host_value_options(self) -> Collection[str]:
+    def cli_value_options(self) -> Collection[str]:
         """Return AppRC standard value options plus app-specific additions."""
-        return COMMON_HOST_VALUE_OPTIONS | frozenset(
-            self.extra_host_value_options
+        return COMMON_CLI_VALUE_OPTIONS | frozenset(
+            self.extra_cli_value_options
         )
 
-    def request_skips_runtime_bootstrap(
+    def request_skips_runtime(
         self,
         ctx: typer.Context,
         *,
         tokens: Sequence[str],
         config_group_name: str,
     ) -> bool:
-        """Return whether one host CLI run can avoid runtime state.
+        """Return whether one CLI run can avoid runtime state.
 
-        :param ctx: Active Typer context from the host callback.
+        :param ctx: Active Typer context from the app callback.
         :param tokens: Command tokens without the executable name.
         :param config_group_name: Generated config command group name.
         :return: Whether app runtime state can be skipped.
@@ -255,48 +258,50 @@ class HostCliBootstrapPolicy:
         if command_name == config_group_name:
             return self._config_policy(
                 config_group_name,
-            ).request_skips_runtime_bootstrap(tokens=tokens)
-        args = args_after_host_command(
+            ).request_skips_runtime(tokens=tokens)
+        args = args_after_cli_command(
             command_name,
             tokens=tokens,
-            host_value_options=self.host_value_options,
+            cli_value_options=self.cli_value_options,
         )
         if args is None:
             return False
-        declaration = self.bootstrapless_commands.get(command_name)
+        declaration = self.runtime_independent_commands.get(command_name)
         if _is_help_request(args):
             return declaration.skip_help if declaration is not None else True
         if declaration is None:
             return False
         parsed = parse_leading_options(
             args,
-            flag_options=self.host_flag_options,
-            value_options=self.host_value_options,
+            flag_options=self.cli_flag_options,
+            value_options=self.cli_value_options,
         )
         if parsed.separator_before_action:
             return False
         return declaration.matches_action_tokens(parsed.action_tokens)
 
-    def _config_policy(self, config_group_name: str) -> ConfigBootstrapPolicy:
-        """Return a config policy aligned with this host command shape."""
-        return ConfigBootstrapPolicy(
+    def _config_policy(self, config_group_name: str) -> ConfigRuntimePolicy:
+        """Return a config policy aligned with this CLI command shape."""
+        return ConfigRuntimePolicy(
             config_group_name=config_group_name,
-            root_flag_options=self.host_flag_options,
-            root_value_options=self.host_value_options,
-            bootstrapless_actions=self.config_bootstrapless_actions,
+            root_flag_options=self.cli_flag_options,
+            root_value_options=self.cli_value_options,
+            runtime_independent_actions=(
+                self.config_runtime_independent_actions
+            ),
             skip_invalid_options=self.config_skip_invalid_options,
         )
 
 
 @dataclass(frozen=True, slots=True)
-class ConfigCliBridge(Generic[OptionsT, StateT]):
-    """Compose AppRC config CLI behavior into a host-owned Typer callback.
+class CliRuntime(Generic[OptionsT, StateT]):
+    """Compose AppRC config CLI behavior into an app-owned Typer callback.
 
     :param kit: Application config facade.
     :param state_type: Runtime state type expected on ``ctx.obj``.
     :param state_factory: Factory that builds app state after AppRC bootstrap.
     :param config_group_name: Name used for the generated config command group.
-    :param bootstrap_policy: Optional bootstrap skip policy.
+    :param runtime_policy: Optional runtime skip policy.
     :param args_provider: Optional command-token provider for tests/forwarders.
     :param runtime_payload: Optional serializer for generated ``config show``.
     :param active_storage_root: Optional storage-root resolver for app state.
@@ -315,11 +320,9 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
     state_type: type[StateT] = field(
         default=cast(type[StateT], DefaultConfigCliState)
     )
-    state_factory: ConfigCliStateFactory[OptionsT, StateT] | None = None
+    state_factory: CliRuntimeStateFactory[OptionsT, StateT] | None = None
     config_group_name: str = "config"
-    bootstrap_policy: ConfigBootstrapPolicy | HostCliBootstrapPolicy | None = (
-        None
-    )
+    runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = None
     args_provider: CliArgvProvider | None = None
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None
     active_storage_root: Callable[[StateT], Path | None] | None = None
@@ -336,6 +339,15 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
     runtime_error_param_hint: str = "CONFIG"
     setup_logging: Callable[..., Any] | None = None
     logger: BootstrapLogger | None = None
+    _forwarded_args: ContextVar[tuple[str, ...] | None] = field(
+        default_factory=lambda: ContextVar(
+            "apprc_cli_runtime_forwarded_args",
+            default=None,
+        ),
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         """Validate custom state and direct config policy names."""
@@ -344,54 +356,53 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
             and self.state_type is not DefaultConfigCliState
         ):
             raise TypeError(
-                "ConfigCliBridge requires state_factory when state_type is "
+                "CliRuntime requires state_factory when state_type is "
                 "custom. Pass state_factory=... or omit state_type to use "
                 "DefaultConfigCliState."
             )
         if (
-            isinstance(self.bootstrap_policy, ConfigBootstrapPolicy)
-            and self.bootstrap_policy.config_group_name
-            != self.config_group_name
+            isinstance(self.runtime_policy, ConfigRuntimePolicy)
+            and self.runtime_policy.config_group_name != self.config_group_name
         ):
             raise ValueError(
-                "ConfigCliBridge config_group_name must match "
-                "bootstrap_policy.config_group_name."
+                "CliRuntime config_group_name must match "
+                "runtime_policy.config_group_name."
             )
 
     def prepare(
         self,
         ctx: typer.Context,
         options: OptionsT,
-    ) -> ConfigCliSession[StateT]:
+    ) -> CliRuntimeSession[StateT]:
         """Prepare AppRC metadata and app runtime state for one CLI run.
 
-        :param ctx: Active Typer context from the host callback.
-        :param options: Host option object carrying AppRC-compatible fields.
+        :param ctx: Active Typer context from the app callback.
+        :param options: CLI option object carrying AppRC-compatible fields.
         :return: Prepared session metadata and optional app state.
         """
-        apprc_context = prepare_typer_context(
+        apprc_context = prepare_cli_runtime_context(
             ctx,
             self.kit,
             options,
-            skip_bootstrap=self._request_skips_runtime_bootstrap(ctx),
+            skip_runtime_setup=self._request_skips_runtime(ctx),
             setup_logging=self.setup_logging,
             logger=self.logger,
         )
-        if apprc_context.skipped_runtime_bootstrap:
-            return ConfigCliSession(apprc_context=apprc_context)
+        if apprc_context.runtime_setup_skipped:
+            return CliRuntimeSession(apprc_context=apprc_context)
 
         state = self._build_state(apprc_context, options)
         if not isinstance(state, self.state_type):
             raise RuntimeError(
-                "ConfigCliBridge state_factory returned "
+                "CliRuntime state_factory returned "
                 f"{type(state).__name__}; expected {self.state_type.__name__}."
             )
         ctx.obj = state
-        return ConfigCliSession(apprc_context=apprc_context, state=state)
+        return CliRuntimeSession(apprc_context=apprc_context, state=state)
 
     def _build_state(
         self,
-        apprc_context: CliBootstrapContext,
+        apprc_context: CliRuntimeContext[OptionsT],
         options: OptionsT,
     ) -> StateT:
         """Build app-owned state after runtime bootstrap has completed."""
@@ -403,9 +414,9 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
         )
 
     def mount_config_group(self, app: typer.Typer) -> typer.Typer:
-        """Mount the generated config group on a host Typer app.
+        """Mount the generated config group on a Typer app.
 
-        :param app: Host Typer application.
+        :param app: Typer application.
         :return: Mounted config Typer application.
         """
         ensure_config_group_name_available(app, self.config_group_name)
@@ -427,37 +438,77 @@ class ConfigCliBridge(Generic[OptionsT, StateT]):
         app.add_typer(config_app, name=self.config_group_name)
         return config_app
 
-    def _request_skips_runtime_bootstrap(self, ctx: typer.Context) -> bool:
+    def _request_skips_runtime(self, ctx: typer.Context) -> bool:
         """Return whether this CLI run can avoid app runtime state."""
         if ctx.resilient_parsing:
             return True
-        policy = self.bootstrap_policy or HostCliBootstrapPolicy()
-        tokens = _provided_args(self.args_provider)
-        if isinstance(policy, HostCliBootstrapPolicy):
-            return policy.request_skips_runtime_bootstrap(
+        policy = self.runtime_policy or CliRuntimePolicy()
+        tokens = self.current_args()
+        if isinstance(policy, CliRuntimePolicy):
+            return policy.request_skips_runtime(
                 ctx,
                 tokens=tokens,
                 config_group_name=self.config_group_name,
             )
-        return policy.request_skips_runtime_bootstrap(tokens=tokens)
+        return policy.request_skips_runtime(tokens=tokens)
 
+    def current_args(self) -> Sequence[str]:
+        """Return the command tokens this runtime should inspect.
 
-def _provided_args(args_provider: CliArgvProvider | None) -> Sequence[str]:
-    """Return command tokens from a provider or this process."""
-    if args_provider is not None:
-        return args_provider()
-    return sys.argv[1:]
+        :return: Forwarded tokens during ``run_forwarded(...)`` or the app's
+            normal argument provider otherwise.
+        """
+        forwarded_args = self._forwarded_args.get()
+        if forwarded_args is not None:
+            return forwarded_args
+        if self.args_provider is not None:
+            return self.args_provider()
+        return sys.argv[1:]
+
+    @contextmanager
+    def forwarded_args(self, args: Sequence[str]) -> Iterator[None]:
+        """Temporarily make this runtime inspect forwarded child tokens.
+
+        :param args: Child app arguments without a program name.
+        :return: Context manager that restores the previous argument source.
+        """
+        token = self._forwarded_args.set(tuple(args))
+        try:
+            yield
+        finally:
+            self._forwarded_args.reset(token)
+
+    def run_forwarded(
+        self,
+        target_app: typer.Typer,
+        *,
+        args: Sequence[str],
+        prog_name: str,
+    ) -> None:
+        """Run a nested Typer app while preserving AppRC runtime inspection.
+
+        :param target_app: Typer app to execute in this process.
+        :param args: Child app arguments without a program name.
+        :param prog_name: Display program name for help and errors.
+        """
+        forwarded_args = tuple(args)
+        with self.forwarded_args(forwarded_args):
+            run_typer_app(
+                target_app,
+                args=list(forwarded_args),
+                prog_name=prog_name,
+            )
 
 
 def ensure_config_group_name_available(
     app: typer.Typer,
     config_group_name: str,
 ) -> None:
-    """Raise when a host Typer app already owns the config group name."""
+    """Raise when a Typer app already owns the config group name."""
     if config_group_name not in _registered_typer_names(app):
         return
     raise RuntimeError(
-        "ConfigCliBridge cannot mount the generated config group because "
+        "CliRuntime cannot mount the generated config group because "
         f"this Typer app already has a command or group named "
         f"{config_group_name!r}."
     )
@@ -492,7 +543,7 @@ def _normalize_action_paths(
     normalized = frozenset(tuple(path) for path in paths)
     if () in normalized:
         raise ValueError(
-            f"BootstraplessCommand {field_name} must not contain empty "
+            f"RuntimeIndependentCommand {field_name} must not contain empty "
             "action paths. Use skip_empty=True for bare command groups."
         )
     return normalized

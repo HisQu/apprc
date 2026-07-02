@@ -61,23 +61,24 @@ Root `apprc` names for CLI integrations:
 
 | Import | Purpose |
 |---|---|
-| `mount_config_cli` | Mount standard AppRC host-level options, default help-safe skip policy, and the generated `config` group on a Typer app. |
-| `CliBootstrapOptions` | Parsed standard AppRC host-level option values. |
-| `CliBootstrapContext` | Per-CLI-run AppRC bootstrap metadata stored on Typer context metadata. |
-| `MountConfigCliStateFactory` | Callable type for `mount_config_cli(...)` state factories created after runtime bootstrap. |
+| `mount_config_cli` | Mount standard AppRC CLI runtime options, default help-safe skip policy, and the generated `config` group on a Typer app. |
+| `CliRuntimeOptions` | Parsed standard AppRC CLI runtime option values. |
+| `CliRuntimeContext` | Per-CLI-run AppRC bootstrap metadata stored on Typer context metadata. |
+| `MountCliRuntimeStateFactory` | Callable type for `mount_config_cli(...)` state factories created after runtime setup. |
 | `CliArgvProvider` | Callable type for explicit command tokens used by mount skip-policy tests and forwarding CLIs. |
-| `ConfigCliBridge` | Composable Typer bridge for apps that own their host callback and app-specific options. |
-| `ConfigCliSession` | Result returned by `ConfigCliBridge.prepare(...)`, including AppRC context and optional app state. |
-| `ConfigCliStateFactory` | Callable type for bridge state factories that receive AppRC context plus the app option object. |
-| `BootstraplessCommand` | Declaration for host command actions that can run without app runtime state. |
-| `HostCliBootstrapPolicy` | Skip policy for generated config commands plus app-declared bootstrapless host commands. |
-| `DefaultConfigCliState` | Minimal config state for apps that do not need custom host state. |
-| `prepare_typer_context` | Store AppRC bootstrap metadata from a custom Typer host callback. |
-| `apprc_context_from` | Read AppRC bootstrap metadata from a Typer command. |
-| `apprc_options_to_args` | Convert parsed AppRC options back into CLI tokens for lazy forwarding. |
-| `ConfigBootstrapPolicy` | Config-command bootstrap skip policy with customizable bootstrapless actions. |
+| `CliRuntime` | Composable Typer runtime for apps that own their Typer callback and app-specific options. |
+| `CliRuntimeSession` | Result returned by `CliRuntime.prepare(...)`, including AppRC context and optional app state. |
+| `CliRuntimeStateFactory` | Callable type for runtime state factories that receive AppRC context plus the app option object. |
+| `RuntimeIndependentCommand` | Declaration for CLI command actions that can run without app runtime state. |
+| `CliRuntimePolicy` | Skip policy for generated config commands plus app-declared runtime-independent CLI commands. |
+| `DefaultConfigCliState` | Minimal config state for apps that do not need custom CLI state. |
+| `prepare_cli_runtime_context` | Store AppRC bootstrap metadata from a custom Typer callback. |
+| `cli_runtime_context_from` | Read AppRC bootstrap metadata from a Typer command. |
+| `cli_options_from` | Read the original app CLI option object from AppRC runtime metadata. |
+| `cli_runtime_options_to_args` | Convert parsed AppRC options back into CLI tokens for lazy forwarding. |
+| `ConfigRuntimePolicy` | Config-command runtime skip policy with customizable runtime-independent actions. |
 | `bootstrap_cli_env` | Typer-friendly wrapper around `AppConfigKit.bootstrap(...)`. |
-| `config_request_skips_runtime_bootstrap` | Detect generated config commands that can run before runtime setup. |
+| `config_request_skips_runtime` | Detect generated config commands that can run before runtime setup. |
 | `ConfigSelectorContext` | Context passed to selector-aware config CLI hooks. |
 
 Advanced storage and dotenv helpers are also exported from the root facade.
@@ -224,7 +225,7 @@ Selector forms:
 ## Generated CLI Commands
 <!-- ======================================================== -->
 
-Commands are shown with `myapp` as the host app command.
+Commands are shown with `myapp` as the app command.
 
 | Command | Purpose | Writes |
 |---|---|---|
@@ -241,9 +242,9 @@ Commands are shown with `myapp` as the host app command.
 
 `--json` is available on `paths`, `doctor`, `show`, and `storage list`.
 Runtimeful generated commands use the app-owned `state_type` stored on
-`ctx.obj`; bootstrapless generated commands use AppRC context metadata. AppRC
+`ctx.obj`; runtime-independent generated commands use AppRC context metadata. AppRC
 raises a clear error when that runtime state is missing after bootstrap, or when
-the requested generated config group name already belongs to the host Typer app.
+the requested generated config group name already belongs to the Typer app.
 
 <br>
 

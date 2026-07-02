@@ -18,8 +18,8 @@ from apprc_app_wide_config_example import cli as app_wide_config
 from apprc_app_wide_config_example.config import KIT as APP_WIDE_CONFIG_KIT
 from apprc_app_wide_storage_example import cli as app_wide_storage
 from apprc_app_wide_storage_example.config import KIT as APP_WIDE_STORAGE_KIT
-from apprc_cli_bridge_example import cli as cli_bridge
-from apprc_cli_bridge_example.config import KIT as BRIDGE_KIT
+from apprc_cli_runtime_example import cli as cli_runtime
+from apprc_cli_runtime_example.config import KIT as RUNTIME_KIT
 from apprc_env_only_example import cli as env_only
 from apprc_env_only_example.config import KIT as ENV_ONLY_KIT
 from apprc_explicit_env_precedence_example import (
@@ -64,7 +64,7 @@ class ExampleCliDefinition:
     app_value: str
     storage_key: str | None = None
     storage_value: str | None = None
-    bridge: bool = False
+    runtime: bool = False
 
     @property
     def uses_storage(self) -> bool:
@@ -120,15 +120,15 @@ EXAMPLE_CLIS = (
         storage_value="precedence-storage-label",
     ),
     ExampleCliDefinition(
-        mode="cli_bridge",
-        command_name="apprc-cli-bridge",
-        kit=BRIDGE_KIT,
-        build_app=cli_bridge.build_app,
+        mode="cli_runtime",
+        command_name="apprc-cli-runtime",
+        kit=RUNTIME_KIT,
+        build_app=cli_runtime.build_app,
         app_key="profile",
-        app_value="bridge-app-profile",
+        app_value="runtime-app-profile",
         storage_key="api_token",
-        storage_value="bridge-secret",
-        bridge=True,
+        storage_value="runtime-secret",
+        runtime=True,
     ),
 )
 
@@ -287,7 +287,7 @@ def test_example_cli_runs_every_supported_config_command(
     assert HeadlessConfigEditorApp.run_count == 1
 
     run_args = [*runtime_prefix]
-    if definition.bridge:
+    if definition.runtime:
         run_args.extend(
             [
                 "--workspace",
@@ -301,7 +301,7 @@ def test_example_cli_runs_every_supported_config_command(
     assert run_payload["app_name"] == definition.kit.spec.app_name
 
 
-def test_cli_bridge_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
+def test_cli_runtime_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
     definition = EXAMPLE_CLIS[-1]
     harness = ExampleCliHarness(definition)
 
@@ -317,7 +317,7 @@ def test_cli_bridge_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
     )
 
     _assert_success(result)
-    assert result.output.strip() == "bridge_status: bootstrapless"
+    assert result.output.strip() == "runtime_status: runtime-independent"
 
 
 def test_example_cli_env_file_options_control_index_paths(
@@ -385,7 +385,7 @@ def test_console_scripts_point_to_example_clis() -> None:
         "apprc-explicit-env-precedence": (
             "apprc_explicit_env_precedence_example.cli:main"
         ),
-        "apprc-cli-bridge": "apprc_cli_bridge_example.cli:main",
+        "apprc-cli-runtime": "apprc_cli_runtime_example.cli:main",
         "apprc-examples-run-all": "apprc_example_apps.run_all:main",
     }
     assert demo_pyproject["tool"]["setuptools"]["packages"]["find"][
@@ -393,7 +393,7 @@ def test_console_scripts_point_to_example_clis() -> None:
     ] == [
         "apprc_app_wide_config_example",
         "apprc_app_wide_storage_example",
-        "apprc_cli_bridge_example",
+        "apprc_cli_runtime_example",
         "apprc_env_only_example",
         "apprc_example_apps",
         "apprc_explicit_env_precedence_example",

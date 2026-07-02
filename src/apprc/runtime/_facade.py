@@ -1,4 +1,8 @@
-"""Lazy facade for process-time AppRC behavior."""
+"""Lazy facade for process-time AppRC behavior.
+
+The aggregate runtime package is intentionally lazy because eager imports pull
+``runtime.bootstrap`` into ``definition.app_config.spec`` initialization.
+"""
 
 from __future__ import annotations
 

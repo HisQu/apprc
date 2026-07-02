@@ -27,13 +27,13 @@ def test_config_doctor_reports_config_package_convention_warnings(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.RUNNABLE.value
-    assert payload["issues"] == []
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
+    assert payload.issues == ()
     assert any(
-        "prefer '<app>.config'" in warning for warning in payload["warnings"]
+        "prefer '<app>.config'" in warning for warning in payload.warnings
     )
     assert any(
-        "ApprcExampleAppEnv lives" in warning for warning in payload["warnings"]
+        "ApprcExampleAppEnv lives" in warning for warning in payload.warnings
     )
 
 
@@ -57,8 +57,8 @@ def test_config_doctor_reports_unreadable_config_package_as_issue(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload["status"] == ConfigDoctorStatus.STORAGE_NOT_READY.value
+    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_READY.value
     assert any(
         "Packaged shared env could not be read" in issue
-        for issue in payload["issues"]
+        for issue in payload.issues
     )

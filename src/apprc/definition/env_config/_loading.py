@@ -93,9 +93,6 @@ def load_owner_from_env(
                 owner,
                 env_values,
                 source_name="process-env",
-                # TODO: Revisit whether typed-settings metadata should use
-                # Path.cwd(); this makes parse context depend on invocation cwd.
-                base_dir=Path.cwd(),
             ),
         ),
     )
@@ -122,9 +119,6 @@ def parse_env_field_value(spec: ConfigField, raw_value: str) -> Any:
                 owner,
                 {spec.env_var: raw_value},
                 source_name="local-env-edit",
-                # TODO: Revisit whether typed-settings metadata should use
-                # Path.cwd(); this makes parse context depend on invocation cwd.
-                base_dir=Path.cwd(),
             ),
         ),
     )

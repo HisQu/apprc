@@ -42,7 +42,7 @@ Use [How-To User Guides](How-To-User-Guides.md) for ordered recipes and
 <!-- ======================================================== -->
 
 AppRC exists to keep application configuration from splitting into unrelated
-systems. A host app declares its config contract once. AppRC then uses that
+systems. A app declares its config contract once. AppRC then uses that
 same contract for runtime binding, dotenv loading, validation, CLI setup,
 diagnostics, editor rendering, and provenance.
 
@@ -60,7 +60,7 @@ The central objects are:
 
 | ![AppRC runtime layers](assets/apprc-runtime-layers.svg) |
 |:--:|
-| **Fig. 1 - Runtime Layers:** One config contract feeds runtime bootstrap, diagnostics, generated CLI commands, and the Textual editor. |
+| **Fig. 1 - Runtime Layers:** One config contract feeds runtime setup, diagnostics, generated CLI commands, and the Textual editor. |
 
 > [!NOTE]
 > Related: use [declare typed config fields](How-To-User-Guides.md#declare-typed-config-fields)
@@ -75,7 +75,7 @@ The central objects are:
 ## Integration Flow
 <!-- ======================================================== -->
 
-The normal host application flow is:
+The normal application flow is:
 
 1. Declare one or more `EnvConfig` classes.
 2. Add packaged defaults in `.env.shared`.
@@ -105,7 +105,7 @@ Core AppRC areas:
 | `src/apprc/runtime` | Process-time dotenv bootstrap, provenance, and read-only diagnostics. |
 | `src/apprc/user_files` | AppRC-managed config homes, dotenv editing, storage registries, archive helpers, and setup flows. |
 | `src/apprc/interfaces` | Typer integration, generated `config` commands, CLI rendering, and Textual TUI presentation. |
-| `examples/example_apps` | Runnable example CLIs for each AppRC capability mode, selector precedence, and `ConfigCliBridge`, with one import package per example app. |
+| `examples/example_apps` | Runnable example CLIs for each AppRC capability mode, selector precedence, and `CliRuntime`, with one import package per example app. |
 | `tests` | Behavior checks for public contracts and generated workflows. |
 | `docs` | Long-form user, reference, explanation, and maintainer documentation. |
 
@@ -145,7 +145,7 @@ An AppRC contract has two levels.
 - allowed choices
 - short and long explanations
 
-The host app writes normal dataclass-looking Python. AppRC derives the
+The app writes normal dataclass-looking Python. AppRC derives the
 normalized owner and field inventory from that code. The generated CLI and TUI
 therefore do not need a separate schema file.
 
@@ -189,7 +189,7 @@ The important distinction is "allowed" versus "active":
 AppRC imports are side-effect free. Importing a config class does not read
 dotenv files and does not mutate `os.environ`.
 
-The host app calls bootstrap once near process startup. Bootstrap:
+The app calls bootstrap once near process startup. Bootstrap:
 
 1. Captures the original process environment.
 2. Reads explicit `--env-file` values.
@@ -222,7 +222,7 @@ names call this choice a `storage selector`.
 
 AppRC checks possible storage choices in this order:
 
-1. host-level `--storage`
+1. CLI `--storage`
 2. storage env key, for example `MYAPP_STORAGE`
 3. explicit env files, respecting `--env-file-overrides-os-environ`
 4. app-wide `.env.apprc-app`, when active
@@ -259,7 +259,7 @@ be safe on a machine that has never run setup.
 
 Zero-write operations include:
 
-- runtime bootstrap
+- runtime setup
 - `config paths`
 - `config doctor`
 - opening `config edit`
@@ -318,27 +318,27 @@ display value in provenance and UI surfaces.
 <!-- ======================================================== -->
 
 `mount_config_cli(...)` is the shortest Typer integration path: it registers
-standard AppRC host-level options, runs bootstrap only for commands that need
+standard AppRC CLI runtime options, runs bootstrap only for commands that need
 runtime state, and mounts the generated `config` group. It keeps AppRC bootstrap
-context separate from app-owned `ctx.obj` state, so bootstrapless config commands
+context separate from app-owned `ctx.obj` state, so runtime-independent config commands
 can run without constructing incomplete application state.
 
 `AppConfigKit.typer_app(...)` builds only the reusable Typer command group. The
 group is generated from the app spec, so unavailable capabilities are not
-exposed. `ConfigCliBridge` is the middle layer for apps that own their host
-callback and extra options: the bridge prepares AppRC context, applies skip
+exposed. `CliRuntime` is the middle layer for apps that own their Typer
+callback and extra options: the runtime prepares AppRC context, applies skip
 policy, mounts the generated group, and validates app-owned state. Apps that
 only need custom state after bootstrap can keep the mount helper and pass
 `state_type=...` plus `state_factory=...`. Apps that need a non-default generated
 group name can pass `config_group_name=...`. Apps that need app-owned hooks to
-run for generated writes can pass `bootstrap_policy=...` or use the bridge
+run for generated writes can pass `runtime_policy=...` or use the runtime
 directly.
-When `ConfigCliBridge.prepare(...)` skips runtime bootstrap, the returned
-session has `skipped_runtime_bootstrap=True` and `state=None`; existing
-host-owned `ctx.obj` values are left alone. When bootstrap runs, runtimeful
-generated config commands expect the host callback to leave the declared
+When `CliRuntime.prepare(...)` skips runtime setup, the returned
+session has `runtime_setup_skipped=True` and `state=None`; existing
+app-owned `ctx.obj` values are left alone. When bootstrap runs, runtimeful
+generated config commands expect the app callback to leave the declared
 `state_type` on `ctx.obj`; AppRC reports a clear error if that state is missing.
-Generated config group mounting also fails early when the host app already owns
+Generated config group mounting also fails early when the app already owns
 the requested command or group name.
 
 The CLI has three jobs:
@@ -347,7 +347,7 @@ The CLI has three jobs:
 2. Initialize explicit files: `setup`, `app init`, `storage add`.
 3. Edit values: `set`, `edit`, `storage remove`.
 
-Some config commands intentionally skip full runtime bootstrap. That lets users
+Some config commands intentionally skip full runtime setup. That lets users
 run setup and diagnostics before required runtime settings exist.
 
 <br>

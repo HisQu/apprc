@@ -66,7 +66,7 @@ def run_demo(root: Path) -> dict[str, object]:
         config = EnvOnlyConfig()
         return {
             "mode": "env_only",
-            "doctor_status": doctor["status"],
+            "doctor_status": doctor.status,
             "shared_env": str(bootstrap.shared_env),
             "explicit_env_files": [str(path) for path in bootstrap.env_files],
             "config": config_values(config),

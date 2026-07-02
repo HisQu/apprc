@@ -145,23 +145,23 @@ def run() -> None:
     typer.echo(f"profile={cfg.profile}")
 ```
 
-`mount_config_cli(...)` adds the standard AppRC host-level options, performs
-runtime bootstrap for commands that need resolved config, and mounts the generated
+`mount_config_cli(...)` adds the standard AppRC CLI runtime options, performs
+runtime setup for commands that need resolved config, and mounts the generated
 `config` command group. Apps with custom runtime state can pass
 `state_type=...` and `state_factory=...`; tests or lazy-forwarding CLIs can pass
 `args_provider=...` with tokens shaped like `CliArgvProvider`. Apps whose
 config hooks must run for `config set` or `config edit` can pass
-`bootstrap_policy=...`. Use `config_group_name=...` only when the generated
-group should not be named `config`; AppRC raises a clear error if the host app
+`runtime_policy=...`. Use `config_group_name=...` only when the generated
+group should not be named `config`; AppRC raises a clear error if the app
 already owns that command or group name.
-Apps that own their host callback and extra options can use `ConfigCliBridge`
+Apps that own their Typer callback and extra options can use `CliRuntime`
 as the composable middle layer: the app builds its runtime state, while AppRC
 owns config command mounting, skip policy, context storage, and state
-validation. When `bridge.prepare(...)` skips runtime bootstrap,
-`session.skipped_runtime_bootstrap` is true and `session.state` is `None`.
-Runtimeful generated config commands require the host callback to leave the
-declared `state_type` on `ctx.obj`; bootstrapless config commands use AppRC's
-stored context instead.
+validation. When `runtime.prepare(...)` skips runtime setup,
+`session.runtime_setup_skipped` is true and `session.state` is `None`.
+Runtimeful generated config commands require the app callback to leave the
+declared `state_type` on `ctx.obj`; runtime-independent config commands use
+AppRC's stored context instead.
 
 Run the capability examples from a checkout with:
 
@@ -175,7 +175,7 @@ apprc-examples-run-all
 
 They cover `env_only`, `storage_only`, `app_wide_config`,
 `app_wide_storage`, named storage, explicit env-file selector precedence, and
-the `ConfigCliBridge` host-callback integration. Each `.apprc-example*/`
+the `CliRuntime` app-callback integration. Each `.apprc-example*/`
 directory contains a sourceable `.env` plus commented app-wide, storage-local,
 and TOML files showing where the same files would live for a real app.
 
@@ -262,7 +262,7 @@ With `--env-file-overrides-os-environ`, explicit env files move after
 
 Storage selector resolution uses:
 
-1. host-level `--storage`
+1. CLI `--storage`
 2. shell env, for example `MYAPP_STORAGE`
 3. explicit env files, respecting `--env-file-overrides-os-environ`
 4. app-wide `.env.apprc-app`, when active

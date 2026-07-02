@@ -1,4 +1,4 @@
-"""Host-owned callback example using ``ConfigCliBridge``."""
+"""App-owned callback example using ``CliRuntime``."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import typer
 
 # == Internal ================================
 import apprc
-from apprc_cli_bridge_example.config import BridgeConfig, KIT, OWNERS
+from apprc_cli_runtime_example.config import CliRuntimeConfig, KIT, OWNERS
 from apprc_example_apps._support import (
     bootstrap_payload,
     config_values,
@@ -23,8 +23,8 @@ from apprc_example_apps._support import (
 
 
 @dataclass(frozen=True, slots=True)
-class BridgeOptions:
-    """Host-owned options understood by the bridge example.
+class RuntimeOptions:
+    """App-owned options understood by the runtime example.
 
     :param env_files: Explicit dotenv files passed to AppRC.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
@@ -48,8 +48,8 @@ class BridgeOptions:
 
 
 @dataclass(slots=True)
-class BridgeState(apprc.DefaultConfigCliState):
-    """Runtime state built by the host callback after AppRC bootstrap.
+class RuntimeState(apprc.DefaultConfigCliState):
+    """Runtime state built by the app callback after AppRC setup.
 
     :param workspace: Example app-specific workspace path.
     :param model: Example app-specific model name.
@@ -66,27 +66,27 @@ def build_app(
     args_provider: apprc.CliArgvProvider | None = None,
     editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
-    """Return the CLI bridge example app.
+    """Return the CLI runtime example app.
 
     :param args_provider: Optional command-token provider for tests.
     :param editor_app_cls: Optional editor replacement for tests.
     :return: Typer application.
     """
     app = typer.Typer(
-        help="Exercise AppRC's ConfigCliBridge host-callback integration.",
+        help="Exercise AppRC's CliRuntime app-callback integration.",
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
     )
-    bridge = apprc.ConfigCliBridge[BridgeOptions, BridgeState](
+    runtime = apprc.CliRuntime[RuntimeOptions, RuntimeState](
         KIT,
-        state_type=BridgeState,
+        state_type=RuntimeState,
         state_factory=_build_state,
-        bootstrap_policy=apprc.HostCliBootstrapPolicy(
-            bootstrapless_commands={
-                "status": apprc.BootstraplessCommand(skip_empty=True),
+        runtime_policy=apprc.CliRuntimePolicy(
+            runtime_independent_commands={
+                "status": apprc.RuntimeIndependentCommand(skip_empty=True),
             },
-            extra_host_flag_options={"--dry-run"},
-            extra_host_value_options={"--workspace", "--model"},
+            extra_cli_flag_options={"--dry-run"},
+            extra_cli_value_options={"--workspace", "--model"},
         ),
         args_provider=args_provider,
         runtime_payload=_runtime_payload,
@@ -115,8 +115,8 @@ def build_app(
             typer.Option("--dry-run", help="Run without side effects."),
         ] = False,
     ) -> None:
-        """Prepare AppRC plus app-specific host state."""
-        options = BridgeOptions(
+        """Prepare AppRC plus app-specific CLI state."""
+        options = RuntimeOptions(
             env_files=env_files,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=not skip_dotenv_layers,
@@ -126,19 +126,19 @@ def build_app(
             model=model,
             dry_run=dry_run,
         )
-        session = bridge.prepare(ctx, options)
-        if session.skipped_runtime_bootstrap:
+        session = runtime.prepare(ctx, options)
+        if session.runtime_setup_skipped:
             return
 
     @app.command("status")
     def status_cmd() -> None:
-        """Show a bootstrapless host-owned status command."""
-        typer.echo("bridge_status: bootstrapless")
+        """Show a runtime-independent app-owned status command."""
+        typer.echo("runtime_status: runtime-independent")
 
     @app.command("run")
     def run_cmd(ctx: typer.Context) -> None:
-        """Print the runtime config resolved through the bridge."""
-        state = _require_bridge_state(ctx)
+        """Print the runtime config resolved through the runtime."""
+        state = _require_runtime_state(ctx)
         typer.echo(
             json.dumps(
                 _runtime_payload(state),
@@ -148,21 +148,21 @@ def build_app(
             )
         )
 
-    bridge.mount_config_group(app)
+    runtime.mount_config_group(app)
     return app
 
 
 def _build_state(
-    context: apprc.CliBootstrapContext,
-    options: BridgeOptions,
-) -> BridgeState:
-    """Build app-owned runtime state after AppRC bootstrap.
+    context: apprc.CliRuntimeContext,
+    options: RuntimeOptions,
+) -> RuntimeState:
+    """Build app-owned runtime state after AppRC setup.
 
-    :param context: AppRC bootstrap context for this invocation.
-    :param options: Host-owned callback options.
-    :return: Bridge example runtime state.
+    :param context: AppRC runtime context for this invocation.
+    :param options: App-owned callback options.
+    :return: Runtime example runtime state.
     """
-    return BridgeState(
+    return RuntimeState(
         env_bootstrap=context.env_bootstrap,
         storage=options.storage,
         workspace=options.workspace,
@@ -171,18 +171,18 @@ def _build_state(
     )
 
 
-def _runtime_payload(state: BridgeState) -> dict[str, object]:
-    """Return JSON-friendly bridge runtime state.
+def _runtime_payload(state: RuntimeState) -> dict[str, object]:
+    """Return JSON-friendly app runtime state.
 
-    :param state: Runtime state created by the bridge callback.
+    :param state: Runtime state created by the runtime callback.
     :return: Payload with app options, bootstrap paths, and redacted config.
     """
-    config = BridgeConfig()
+    config = CliRuntimeConfig()
     return {
         "app_name": KIT.spec.app_name,
         "command_name": KIT.spec.config_command_name(),
         "display_name": KIT.spec.display_name,
-        "host_options": {
+        "cli_options": {
             "workspace": str(state.workspace) if state.workspace else None,
             "model": state.model,
             "dry_run": state.dry_run,
@@ -192,31 +192,31 @@ def _runtime_payload(state: BridgeState) -> dict[str, object]:
     }
 
 
-def _require_bridge_state(ctx: typer.Context) -> BridgeState:
-    """Return bridge state from a runtimeful command context.
+def _require_runtime_state(ctx: typer.Context) -> RuntimeState:
+    """Return state from a command that needs runtime setup.
 
     :param ctx: Active Typer command context.
-    :return: Bridge runtime state.
-    :raises RuntimeError: If runtime bootstrap did not create state.
+    :return: App runtime state.
+    :raises RuntimeError: If runtime setup did not create state.
     """
-    if isinstance(ctx.obj, BridgeState):
+    if isinstance(ctx.obj, RuntimeState):
         return ctx.obj
-    raise RuntimeError("Bridge runtime state was not initialized.")
+    raise RuntimeError("CLI runtime state was not initialized.")
 
 
 def run_demo(root: Path) -> dict[str, object]:
-    """Execute a compact bridge scenario without invoking a subprocess.
+    """Execute a compact runtime scenario without invoking a subprocess.
 
     :param root: Temporary run directory.
     :return: JSON-friendly scenario summary.
     """
-    storage_root = root / "bridge-storage"
+    storage_root = root / "runtime-storage"
     storage_root.mkdir(parents=True)
     apprc.ensure_storage_env_file(storage_root)
     apprc.set_storage_env_value(
         storage_root=storage_root,
         reference="api_token",
-        raw_value="bridge-secret",
+        raw_value="runtime-secret",
         owners=OWNERS,
     )
     bootstrap = KIT.bootstrap(
@@ -225,7 +225,7 @@ def run_demo(root: Path) -> dict[str, object]:
         load_dotenv_layers=True,
         storage=str(storage_root),
     )
-    state = BridgeState(
+    state = RuntimeState(
         env_bootstrap=bootstrap,
         storage=str(storage_root),
         workspace=root / "workspace",
@@ -233,14 +233,14 @@ def run_demo(root: Path) -> dict[str, object]:
         dry_run=True,
     )
     return {
-        "mode": "cli_bridge",
+        "mode": "cli_runtime",
         "selected_storage_root": str(bootstrap.storage_root),
         "payload": _runtime_payload(state),
     }
 
 
 def main() -> None:
-    """Run the CLI bridge example."""
+    """Run the CLI runtime example."""
     app()
 
 

@@ -86,7 +86,7 @@ def run_demo(root: Path) -> dict[str, object]:
         config = AppWideStorageConfig()
         return {
             "mode": "app_wide_storage",
-            "doctor_status": doctor["status"],
+            "doctor_status": doctor.status,
             "index_path": str(index_path),
             "selected_storage_name": bootstrap.storage_name,
             "selected_storage_root": str(bootstrap.storage_root),

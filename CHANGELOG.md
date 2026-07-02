@@ -29,13 +29,14 @@ All notable changes to `{my_project}` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-4. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-5. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-6. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-7. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-8. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-9. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+4. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+5. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+6. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+7. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+8. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+9. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+10. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -51,6 +52,44 @@ All notable changes to `{my_project}` will be documented in this file.
 
 ### 💥 Breaking Change Summary
 
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.18.0 - 2026-07-02
+
+<br>
+
+### 💥 Breaking Change Summary
+
   - Breaking: Removed AppRC's semantic logging package and root logging
     facade exports.
     Affected: Users importing `apprc.logging`, `apprc.get_logger`,
@@ -58,8 +97,8 @@ All notable changes to `{my_project}` will be documented in this file.
     related logging helpers from AppRC.
     Migration: Add `holylog` as an application dependency and use
     `import holylog as hlog`, then call `hlog.setup_logging(...)` and
-    `hlog.get_logger(...)`. AppRC's CLI bootstrap still accepts a
-    host-owned `setup_logging` callable.
+    `hlog.get_logger(...)`. AppRC's CLI runtime setup still accepts an
+    app-owned `setup_logging` callable.
 
   - Breaking: Renamed the composable Typer bridge/bootstrap API to CLI runtime
     terminology and removed compatibility aliases.
@@ -122,22 +161,6 @@ All notable changes to `{my_project}` will be documented in this file.
   - Changed the remaining lazy aggregate facades into documented import-cycle
     boundaries after verifying that `apprc.runtime`, `apprc.user_files`, and
     `apprc.user_files.storage_roots` still require lazy loading.
-
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
-### 🔨 Fixed
-
-<br>
-
-### 🔒 Security
 
 <br>
 

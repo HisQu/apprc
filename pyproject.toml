@@ -42,7 +42,6 @@ dependencies = [
     "python-dotenv",       # < Loads .env files
     "typed-settings[dotenv]", # < Typed env/config binding
     "rich",                # < Exception rendering
-    "textual",             # < Terminal config editor
     "typer",               # < Reusable config CLI builder
     # "environs",     # < Higher-level .env parsing
     # "tyro",         # < CLI from dataclasses
@@ -50,6 +49,12 @@ dependencies = [
     # "tqdm",         # < Progress bars
     # "numpy",        # < Numeric arrays
     # "openpyxl",     # < Excel files
+]
+
+
+[project.optional-dependencies]
+tui = [
+    "textual",             # < Terminal config editor
 ]
 
 
@@ -90,6 +95,7 @@ dev = [
     # --- Interactive development -------
     "jupyterlab",    # < Brings notebook, widgets, ipykernel, etc.
     "ipywidgets",    # < Needed for interactive widgets; also installs/configures widget frontend support.
+    "textual",       # < Terminal config editor tests and manual runs.
     # "jupytext",    # < Needed for paired text notebooks / .py notebook workflows.
     # --- Testing ----------------------
     "pytest>=8.2",

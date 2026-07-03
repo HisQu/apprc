@@ -72,6 +72,13 @@ All notable changes to `{my_project}` will be documented in this file.
     `initial_storage_with_context=`. The hook may ignore
     `ConfigSelectorContext` when it only needs app state.
 
+  - Breaking: Moved the Textual editor dependency to the optional `tui` extra.
+    Affected: Users installing base `apprc` and running generated
+    `config edit` commands or importing TUI classes such as
+    `rc.cli.ConfigEditorApp`.
+    Migration: Install AppRC with `python -m pip install "apprc[tui]"` or add
+    `apprc[tui]` to the application's dependency declaration.
+
   - Breaking: Moved generated repository example app disk files from root
     `.apprc-example-*` directories to
     `examples/example_app_disk_files/.apprc-example-*`.

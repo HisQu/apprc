@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TYPE_CHECKING, cast
 
+# == 3rd Party ===============================
+import typer
+
 # == Internal ================================
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.interfaces.cli.config_command._selector_context import (
@@ -23,6 +26,11 @@ from apprc.user_files.storage_roots.registry import StorageRegistry
 
 if TYPE_CHECKING:
     from apprc.interfaces.tui import ConfigEditorApp
+
+MISSING_TUI_EXTRA_MESSAGE = (
+    "The Textual config editor requires the optional TUI dependency. "
+    'Install it with: python -m pip install "apprc[tui]"'
+)
 
 
 @dataclass(slots=True)
@@ -69,7 +77,12 @@ class ConfigEditorLauncher:
                 active_storage_root=active_storage_root,
             )
         else:
-            from apprc.interfaces.tui import ConfigEditorApp
+            try:
+                from apprc.interfaces.tui import ConfigEditorApp
+            except ModuleNotFoundError as exc:
+                if _module_not_found_is_textual(exc):
+                    raise typer.BadParameter(MISSING_TUI_EXTRA_MESSAGE) from exc
+                raise
 
             editor_app = ConfigEditorApp(
                 kit=self.kit,
@@ -104,3 +117,11 @@ class ConfigEditorLauncher:
                 context.env_file_overrides_os_environ
             ),
         )
+
+
+def _module_not_found_is_textual(exc: ModuleNotFoundError) -> bool:
+    """Return whether an import failure came from the optional TUI stack."""
+    missing_name = exc.name
+    return missing_name == "textual" or (
+        missing_name is not None and missing_name.startswith("textual.")
+    )

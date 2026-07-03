@@ -235,11 +235,13 @@ Commands are shown with `myapp` as the app command.
 | `myapp config show` | Show resolved runtime payload. | no |
 | `myapp config setup` | Initialize files for the selected capability constructor. | yes |
 | `myapp config set KEY VALUE` | Write one app-wide or storage dotenv value. | yes |
-| `myapp config edit` | Open the Textual editor. Opening is zero-write; saving writes. | save only |
+| `myapp config edit` | Open the optional Textual editor. Opening is zero-write; saving writes. | save only |
 | `myapp config app init` | Create the app-wide dotenv file. | yes |
 | `myapp config storage add NAME PATH` | Register a named storage and ensure its storage dotenv. | yes |
 | `myapp config storage list` | List registered storages. | no |
 | `myapp config storage remove NAME` | Remove a storage entry from the index. | yes |
+
+`config edit` requires `python -m pip install "apprc[tui]"`.
 
 `--json` is available on `paths`, `doctor`, `show`, and `storage list`.
 Runtimeful generated commands use the app-owned `state_type` stored on
@@ -343,6 +345,12 @@ References accepted by `set_*` and `clear_*` helpers:
 | Dependency groups | `[dependency-groups]` | Maintainers running tests, linting, typing, docs, or profiling. |
 | `uv` sources | `[tool.uv.sources]` | Local editable development sources. |
 | Lock files | `uv.lock`, `pylock.toml` | Reproducible local and exported environments. |
+
+Published optional extras:
+
+| Extra | Install Command | Enables |
+|---|---|---|
+| `tui` | `python -m pip install "apprc[tui]"` | Textual editor classes and generated `config edit`. |
 
 <br>
 

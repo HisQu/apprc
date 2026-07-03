@@ -72,6 +72,12 @@ commands in your Typer application.
 python -m pip install apprc
 ```
 
+Install the optional Textual editor when you want `config edit`:
+
+```shell
+python -m pip install "apprc[tui]"
+```
+
 AppRC supports Python 3.12 and newer.
 
 **Note**
@@ -368,6 +374,9 @@ myapp config storage remove NAME
 
 The command group follows the selected capabilities. For example, storage-free
 apps do not expose named-storage commands.
+
+`config edit` requires the optional TUI extra:
+`python -m pip install "apprc[tui]"`.
 
 **Note**
 

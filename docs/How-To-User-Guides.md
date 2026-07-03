@@ -67,6 +67,13 @@ Install the runtime package:
 python -m pip install apprc
 ```
 
+Install the optional Textual editor when you want generated `config edit`
+commands:
+
+```bash
+python -m pip install "apprc[tui]"
+```
+
 For editable local development of AppRC itself:
 
 ```bash

@@ -13,6 +13,7 @@ from typing import ClassVar
 
 import pytest
 import typer
+from packaging.requirements import Requirement
 from typer.testing import CliRunner, Result
 
 from app_wide_config import cli as app_wide_config
@@ -471,6 +472,28 @@ def test_demo_package_is_dev_dependency_only() -> None:
         "path": "examples/example_apps",
         "editable": True,
     }
+
+
+def test_textual_is_tui_extra_not_core_runtime_dependency() -> None:
+    """The Textual editor is opt-in while dev installs keep test coverage."""
+    pyproject = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert "textual" not in _dependency_names(
+        pyproject["project"]["dependencies"]
+    )
+    assert pyproject["project"]["optional-dependencies"]["tui"] == ["textual"]
+    assert "textual" in _dependency_names(pyproject["dependency-groups"]["dev"])
+
+
+def _dependency_names(requirements: list[object]) -> set[str]:
+    """Return requirement names from dependency strings in one pyproject list."""
+    names: set[str] = set()
+    for requirement in requirements:
+        if isinstance(requirement, str):
+            names.add(Requirement(requirement).name)
+    return names
 
 
 def test_core_package_does_not_import_demo_package() -> None:

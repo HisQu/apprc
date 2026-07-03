@@ -73,3 +73,33 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Todo list](#todo-list)
    1. [Table Of Contents](#table-of-contents)
+   1. [2026-07-03](#2026-07-03)
+
+
+<br>
+
+# 2026-07-03
+
+## P2 / E2 [Tooling] - *PyPI verification helper checks removed root API*
+- **Area:** `justfile:verify-pypi`
+- **Observed while:** pre-release bug and code-smell audit after moving the TUI behind the optional `tui` extra
+- **Why not fixed now:** this needs a small release-workflow decision about whether the helper should verify the published package, the local checkout, or both
+- **Evidence:** `just verify-pypi` still runs `python -c 'import apprc; print(apprc.AppConfigKit)'`, but the current public root facade intentionally does not export `AppConfigKit`.
+- **Context:** The helper is meant to validate a fresh plain-pip install before or after publishing. As written, it will fail for the new clean root facade even when the package install is healthy, which can block or confuse release verification.
+- **Suggested next step:** Update the helper to check stable public root names such as `apprc.AppRC`, `apprc.Config`, and `apprc.field`; add a no-extra smoke check for `import apprc` and, if desired, a separate `apprc[tui]` install check.
+
+## P3 / E2 [Tooling] - *Nested stale egg-info survives cleanup*
+- **Area:** `examples/example_apps/src/apprc_example_apps.egg-info`, `justfile:clean`
+- **Observed while:** pre-release audit of stale example-package paths and generated artifacts
+- **Why not fixed now:** deleting ignored local artifacts and changing cleanup behavior is useful but separate from the current release-surface audit
+- **Evidence:** the current example package is named `apprc-example-apps`, but an ignored nested `apprc_example_apps.egg-info` directory still exists under the example source tree. `just clean` removes only root-level `*.egg-info`, not nested metadata directories.
+- **Context:** Stale ignored package metadata can make IDEs, local import inspection, and manual debugging surface old package names even after the source package was renamed to `_example_apps_utils` plus short example app packages.
+- **Suggested next step:** Make `just clean` remove nested `*.egg-info` directories with `find . -type d -name "*.egg-info" ...`, then delete the stale ignored metadata locally.
+
+## P3 / E1 [Code smell] - *Lazy facade exports are duplicated for type checking*
+- **Area:** `src/apprc/cli/__init__.py`, `src/apprc/cli/_facade.py`, `src/apprc/interfaces/__init__.py`, `src/apprc/interfaces/_facade.py`
+- **Observed while:** implementing and auditing lazy TUI exports for optional Textual support
+- **Why not fixed now:** the current implementation is tested and type-checks; removing duplication needs a focused facade typing design rather than a quick release change
+- **Evidence:** runtime export lists live in each `_facade.py`, while matching `TYPE_CHECKING` imports in each `__init__.py` keep Pyright aware of lazy attributes. A missed addition or removal can drift between runtime `__all__` and the static type surface.
+- **Context:** Lazy facades are now important for keeping optional dependencies optional, but manually mirroring public names makes future public API changes easier to get half-right.
+- **Suggested next step:** Introduce a drift-proof lazy facade typing pattern, generated `.pyi` files included in source, or tests that compare facade `__all__` against the static export declarations.

@@ -1,5 +1,8 @@
 """Public facade and namespace surface tests."""
 
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 import apprc
@@ -96,9 +99,37 @@ def test_cli_namespace_exports_advanced_cli_symbols() -> None:
     assert "prepare_cli_runtime_context" in apprc_cli.__all__
     assert "state_from" in apprc_cli.__all__
     assert "exit_missing_action" in apprc_cli.__all__
+    assert "ConfigEditorApp" in apprc_cli.__all__
+    assert "ConfigSetupApp" in apprc_cli.__all__
     assert "COMMON_ROOT_FLAG_OPTIONS" not in apprc_cli.__all__
     assert "COMMON_ROOT_VALUE_OPTIONS" not in apprc_cli.__all__
     assert "CliStateFactory" not in apprc_cli.__all__
+
+
+def test_public_facades_do_not_eagerly_import_textual() -> None:
+    """Plain public imports must not require or load the optional TUI stack."""
+    code = """
+import json
+import sys
+
+import apprc
+import apprc.cli
+import apprc.interfaces
+
+print(json.dumps(any(
+    name == "textual" or name.startswith("textual.")
+    for name in sys.modules
+)))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) is False
 
 
 def test_storage_files_and_provenance_namespaces_export_helpers() -> None:

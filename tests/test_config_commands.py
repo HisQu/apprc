@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import builtins
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 import typer
-from apprc.interfaces.cli.config_command import ConfigSelectorContext
 from typer.testing import CliRunner
 
 from apprc.definition.app_config.capabilities import CapabilityState
 from apprc.definition.app_config.kit import AppConfigKit
-from apprc.user_files.storage_roots.registry import StorageRegistry
+from apprc.interfaces.cli.config_command import ConfigSelectorContext
 from apprc.interfaces.tui.editor import ConfigEditorApp
+from apprc.user_files.storage_roots.registry import StorageRegistry
 from tests.support_config import (
     ApprcExampleAppConfigState,
     StorageFreeExampleEnv,
@@ -455,3 +457,44 @@ def test_storage_free_config_edit_accepts_state_without_storage(
     assert CapturingConfigEditorApp.initial_storage_seen is None
     assert CapturingConfigEditorApp.active_storage_root_seen is None
     assert CapturingConfigEditorApp.storage_registry_seen is None
+
+
+def test_config_edit_without_tui_extra_reports_install_hint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Default editor launch explains how to install the optional TUI."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    original_import = builtins.__import__
+
+    def import_without_textual(
+        name: str,
+        globals_: dict[str, Any] | None = None,
+        locals_: Mapping[str, Any] | None = None,
+        fromlist: Sequence[str] = (),
+        level: int = 0,
+    ) -> Any:
+        """Raise the same missing-module error as a no-extra install."""
+        if name == "apprc.interfaces.tui":
+            raise ModuleNotFoundError(
+                "No module named 'textual'",
+                name="textual",
+            )
+        return original_import(name, globals_, locals_, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_textual)
+    kit = build_storage_free_example_kit()
+    state = StorageFreeExampleConfigStateWithoutStorage()
+    app = kit.typer_app(state_type=StorageFreeExampleConfigStateWithoutStorage)
+
+    result = CliRunner().invoke(
+        app,
+        ["edit"],
+        obj=state,
+        terminal_width=200,
+    )
+
+    assert result.exit_code != 0
+    normalized_output = " ".join(result.output.split())
+    assert "The Textual config editor requires" in normalized_output
+    assert 'python -m pip install "apprc[tui]"' in normalized_output

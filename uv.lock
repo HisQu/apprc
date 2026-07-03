@@ -45,9 +45,13 @@ dependencies = [
     { name = "platformdirs" },
     { name = "python-dotenv" },
     { name = "rich" },
-    { name = "textual" },
     { name = "typed-settings", extra = ["dotenv"] },
     { name = "typer" },
+]
+
+[package.optional-dependencies]
+tui = [
+    { name = "textual" },
 ]
 
 [package.dev-dependencies]
@@ -65,6 +69,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "textual" },
     { name = "twine" },
 ]
 
@@ -73,10 +78,11 @@ requires-dist = [
     { name = "platformdirs" },
     { name = "python-dotenv" },
     { name = "rich" },
-    { name = "textual" },
+    { name = "textual", marker = "extra == 'tui'" },
     { name = "typed-settings", extras = ["dotenv"] },
     { name = "typer" },
 ]
+provides-extras = ["tui"]
 
 [package.metadata.requires-dev]
 demo = [{ name = "apprc-example-apps", editable = "examples/example_apps" }]
@@ -91,6 +97,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
     { name = "ruff", specifier = ">=0.4" },
+    { name = "textual" },
     { name = "twine", specifier = ">=6.0" },
 ]
 

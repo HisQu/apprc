@@ -13,11 +13,12 @@ from typing import Annotated
 import typer
 
 # == Internal ================================
-import apprc
+import apprc as rc
 from apprc_cli_runtime_example.config import CliRuntimeConfig, KIT, OWNERS
 from apprc_example_apps._support import (
     bootstrap_payload,
     config_values,
+    run_isolated,
     setup_example_logging,
 )
 
@@ -48,7 +49,7 @@ class RuntimeOptions:
 
 
 @dataclass(slots=True)
-class RuntimeState(apprc.DefaultConfigCliState):
+class RuntimeState(rc.cli.DefaultConfigCliState):
     """Runtime state built by the app callback after AppRC setup.
 
     :param workspace: Example app-specific workspace path.
@@ -63,8 +64,8 @@ class RuntimeState(apprc.DefaultConfigCliState):
 
 def build_app(
     *,
-    args_provider: apprc.CliArgvProvider | None = None,
-    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+    args_provider: rc.cli.CliArgvProvider | None = None,
+    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the CLI runtime example app.
 
@@ -77,13 +78,13 @@ def build_app(
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
     )
-    runtime = apprc.CliRuntime[RuntimeOptions, RuntimeState](
+    runtime = rc.cli.CliRuntime[RuntimeOptions, RuntimeState](
         KIT,
         state_type=RuntimeState,
         state_factory=_build_state,
-        runtime_policy=apprc.CliRuntimePolicy(
+        runtime_policy=rc.cli.CliRuntimePolicy(
             runtime_independent_commands={
-                "status": apprc.RuntimeIndependentCommand(skip_empty=True),
+                "status": rc.cli.RuntimeIndependentCommand(skip_empty=True),
             },
             extra_cli_flag_options={"--dry-run"},
             extra_cli_value_options={"--workspace", "--model"},
@@ -97,11 +98,11 @@ def build_app(
     @app.callback()
     def cli(
         ctx: typer.Context,
-        env_files: apprc.EnvFilesOption = None,
-        env_file_overrides_os_environ: (apprc.EnvFileOverridesOption) = False,
-        skip_dotenv_layers: apprc.SkipDotenvLayersOption = False,
-        storage: apprc.StorageOption = None,
-        log_level: apprc.LogLevelOption = None,
+        env_files: rc.cli.EnvFilesOption = None,
+        env_file_overrides_os_environ: (rc.cli.EnvFileOverridesOption) = False,
+        skip_dotenv_layers: rc.cli.SkipDotenvLayersOption = False,
+        storage: rc.cli.StorageOption = None,
+        log_level: rc.cli.LogLevelOption = None,
         workspace: Annotated[
             Path | None,
             typer.Option("--workspace", help="Example app workspace path."),
@@ -153,7 +154,7 @@ def build_app(
 
 
 def _build_state(
-    context: apprc.CliRuntimeContext,
+    context: rc.cli.CliRuntimeContext,
     options: RuntimeOptions,
 ) -> RuntimeState:
     """Build app-owned runtime state after AppRC setup.
@@ -210,33 +211,42 @@ def run_demo(root: Path) -> dict[str, object]:
     :param root: Temporary run directory.
     :return: JSON-friendly scenario summary.
     """
-    storage_root = root / "runtime-storage"
-    storage_root.mkdir(parents=True)
-    apprc.ensure_storage_env_file(storage_root)
-    apprc.set_storage_env_value(
-        storage_root=storage_root,
-        reference="api_token",
-        raw_value="runtime-secret",
-        owners=OWNERS,
+
+    def scenario() -> dict[str, object]:
+        """Run the demo after environment isolation is active."""
+        storage_root = root / "runtime-storage"
+        storage_root.mkdir(parents=True)
+        rc.files.ensure_storage_env_file(storage_root)
+        rc.files.set_storage_env_value(
+            storage_root=storage_root,
+            reference="api_token",
+            raw_value="runtime-secret",
+            owners=OWNERS,
+        )
+        bootstrap = KIT.bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage=str(storage_root),
+        )
+        state = RuntimeState(
+            env_bootstrap=bootstrap,
+            storage=str(storage_root),
+            workspace=root / "workspace",
+            model="demo-model",
+            dry_run=True,
+        )
+        return {
+            "mode": "cli_runtime",
+            "selected_storage_root": str(bootstrap.storage_root),
+            "payload": _runtime_payload(state),
+        }
+
+    return run_isolated(
+        root,
+        env_prefixes=("APPRC_EXAMPLE_RUNTIME_",),
+        scenario=scenario,
     )
-    bootstrap = KIT.bootstrap(
-        env_files=(),
-        env_file_overrides_os_environ=False,
-        load_dotenv_layers=True,
-        storage=str(storage_root),
-    )
-    state = RuntimeState(
-        env_bootstrap=bootstrap,
-        storage=str(storage_root),
-        workspace=root / "workspace",
-        model="demo-model",
-        dry_run=True,
-    )
-    return {
-        "mode": "cli_runtime",
-        "selected_storage_root": str(bootstrap.storage_root),
-        "payload": _runtime_payload(state),
-    }
 
 
 def main() -> None:

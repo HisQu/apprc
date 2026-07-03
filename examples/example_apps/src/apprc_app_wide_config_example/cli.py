@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
-import apprc
+import apprc as rc
 from apprc_app_wide_config_example.config import AppWideConfig, KIT, OWNERS
 from apprc_example_apps._support import (
     build_standard_app,
@@ -20,8 +20,8 @@ from apprc_example_apps._support import (
 
 def build_app(
     *,
-    args_provider: apprc.CliArgvProvider | None = None,
-    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+    args_provider: rc.cli.CliArgvProvider | None = None,
+    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the app-wide config example CLI.
 
@@ -49,16 +49,16 @@ def run_demo(root: Path) -> dict[str, object]:
     """
 
     def scenario() -> dict[str, object]:
-        before = apprc.build_config_doctor_payload(KIT, storage=None)
+        before = rc.cli.build_config_doctor_payload(KIT, storage=None)
         app_wide_env = KIT.spec.ensure_app_wide_env()
-        apprc.set_env_file_value(
+        rc.files.set_env_file_value(
             path=app_wide_env,
             reference="workers",
             raw_value="4",
             owners=OWNERS,
             layer_name=KIT.spec.app_wide_env_filename,
         )
-        after = apprc.build_config_doctor_payload(KIT, storage=None)
+        after = rc.cli.build_config_doctor_payload(KIT, storage=None)
         KIT.bootstrap(
             env_files=(),
             env_file_overrides_os_environ=False,

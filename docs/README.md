@@ -85,10 +85,10 @@ Use these terms consistently in every docs file:
 |---|---|---|
 | AppRC | This package, `apprc`, which supplies runtime config, generated config CLI, and Textual editor helpers. | [System Model](Explanations.md#system-model) |
 | application | The downstream Python app that integrates AppRC. | [Integration Flow](Explanations.md#integration-flow) |
-| config contract | The `EnvConfig` classes plus the `AppConfigKit` spec for one application. | [Config Contract Model](Explanations.md#config-contract-model) |
-| config owner | A related group of settings declared with `@env_owner(...)`. | [Public Interfaces](References.md#public-interfaces) |
-| config field | One typed setting declared with `env_field(...)`. | [Public Interfaces](References.md#public-interfaces) |
-| capability layer | A persistence feature selected by the `AppConfigKit` constructor. | [Capability Constructors](References.md#capability-constructors) |
+| config contract | The `rc.Config` and `rc.ConfigBase` classes registered on one `rc.AppRC` facade. | [Config Contract Model](Explanations.md#config-contract-model) |
+| registered config | A related group of settings declared with `@MyRC.config(...)`. | [Public Interfaces](References.md#public-interfaces) |
+| config field | One typed setting declared with `rc.field("FULL_ENV_KEY", ...)`. | [Public Interfaces](References.md#public-interfaces) |
+| capability layer | A persistence feature selected by the `rc.AppRC` constructor. | [Capability Constructors](References.md#capability-constructors) |
 | app-wide dotenv | The per-user `.env.apprc-app` file below the platform config home. | [Configuration Files](References.md#configuration-files) |
 | storage dotenv | The `.env.apprc-storage` file inside one selected storage root. | [Configuration Files](References.md#configuration-files) |
 | named-storage index | The optional `<app>.apprc.toml` registry for named storage roots. | [Storage Selection](Explanations.md#storage-selection) |

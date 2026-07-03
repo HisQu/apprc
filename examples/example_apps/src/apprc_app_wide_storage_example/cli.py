@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
-import apprc
+import apprc as rc
 from apprc_app_wide_storage_example.config import (
     AppWideStorageConfig,
     KIT,
@@ -24,8 +24,8 @@ from apprc_example_apps._support import (
 
 def build_app(
     *,
-    args_provider: apprc.CliArgvProvider | None = None,
-    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+    args_provider: rc.cli.CliArgvProvider | None = None,
+    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the app-wide storage example CLI.
 
@@ -54,7 +54,7 @@ def run_demo(root: Path) -> dict[str, object]:
 
     def scenario() -> dict[str, object]:
         app_wide_env = KIT.spec.ensure_app_wide_env()
-        apprc.set_env_file_value(
+        rc.files.set_env_file_value(
             path=app_wide_env,
             reference="region",
             raw_value="eu",
@@ -63,20 +63,20 @@ def run_demo(root: Path) -> dict[str, object]:
         )
         index_path = KIT.spec.ensure_index_file()
         storage_root = root / "named-storage"
-        apprc.register_storage(
+        rc.storage.register_storage(
             name="alpha",
             root=storage_root,
             path=index_path,
             storage_env_filename=KIT.spec.storage_env_filename,
         )
-        apprc.set_storage_env_value(
+        rc.files.set_storage_env_value(
             storage_root=storage_root,
             reference="access_token",
             raw_value="named-storage-secret",
             owners=OWNERS,
             storage_env_filename=KIT.spec.storage_env_filename,
         )
-        doctor = apprc.build_config_doctor_payload(KIT, storage="alpha")
+        doctor = rc.cli.build_config_doctor_payload(KIT, storage="alpha")
         bootstrap = KIT.bootstrap(
             env_files=(),
             env_file_overrides_os_environ=False,

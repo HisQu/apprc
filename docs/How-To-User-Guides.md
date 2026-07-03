@@ -87,42 +87,56 @@ python -m pip install -e "." --group dev
 ## Declare Typed Config Fields
 <!-- ======================================================== -->
 
-Create a config package in the app, usually `<app>/config/__init__.py`,
-and declare one or more `EnvConfig` classes.
+Create a config package in the app, usually `<app>/config/__init__.py`, and
+declare one AppRC facade plus one or more registered config classes.
 
 ```python
 from pathlib import Path
 
-import apprc
+import apprc as rc
 
 
-@apprc.env_owner(
-    key="app",
-    title="App",
-    env_prefix="MYAPP_",
-    rc_path=("app",),
+MyRC = rc.AppRC.storage_only(
+    app_name="myapp",
+    display_name="My App",
+    config_package="myapp.config",
+    storage_env_key="MYAPP_STORAGE",
 )
-class MyAppEnv(apprc.EnvConfig):
-    storage_root: Path = apprc.env_field(
-        "STORAGE",
+
+
+@MyRC.config("app", prefix="MYAPP_", title="App")
+class MyAppConfig(rc.Config):
+    storage_root: Path = rc.field(
+        "MYAPP_STORAGE",
         editable=False,
         required=True,
         title="Storage root",
-        explanation_short="Active storage root.",
+        description="Active storage root.",
     )
-    profile: str = apprc.env_field(
-        "PROFILE",
+    profile: str = rc.field(
+        "MYAPP_PROFILE",
         default="default",
         title="Profile",
-        explanation_short="Named runtime profile.",
+        description="Named runtime profile.",
     )
-    access_token: str = apprc.env_field(
-        "ACCESS_TOKEN",
+    access_token: str = rc.field(
+        "MYAPP_ACCESS_TOKEN",
         required=True,
         secret=True,
         title="Access token",
-        explanation_short="Secret service token.",
+        description="Secret service token.",
     )
+
+
+@MyRC.config("resources", title="Resources")
+class PackageResources(rc.ConfigBase):
+    package: str = "myapp.resources"
+
+
+@MyRC.bundle
+class MyAppRC:
+    app: MyAppConfig
+    resources: PackageResources
 ```
 
 Put packaged defaults in the same config package:
@@ -134,9 +148,9 @@ MYAPP_PROFILE="default"
 Save that file as `.env.shared`. Do not put secrets in packaged defaults.
 
 > [!IMPORTANT]
-> Add fields to the AppRC owner before reading them from application code. The
-> owner metadata drives validation, generated CLI output, editor rows, and
-> provenance.
+> Register config classes with `@MyRC.config(...)` before constructing them.
+> The registration metadata drives validation, generated CLI output, editor
+> rows, and provenance.
 
 <br>
 
@@ -147,19 +161,17 @@ Save that file as `.env.shared`. Do not put secrets in packaged defaults.
 ## Choose A Capability Constructor
 <!-- ======================================================== -->
 
-Create one `AppConfigKit` for the app:
+Create one `rc.AppRC` facade for the app:
 
 ```python
-import apprc
-
-from myapp.config import MyAppEnv
+import apprc as rc
 
 
-APP_CONFIG = apprc.AppConfigKit.storage_only(
+MyRC = rc.AppRC.storage_only(
     app_name="myapp",
     display_name="My App",
     config_package="myapp.config",
-    envs=(MyAppEnv,),
+    storage_env_key="MYAPP_STORAGE",
 )
 ```
 
@@ -167,10 +179,10 @@ Choose the constructor by persistence needs:
 
 | Use Case | Constructor |
 |---|---|
-| Shell env and explicit env files are enough | `AppConfigKit.env_only(...)` |
-| App needs one active storage root | `AppConfigKit.storage_only(...)` |
-| App needs per-user config but no storage root | `AppConfigKit.app_wide_config(...)` |
-| App needs per-user config and storage roots | `AppConfigKit.app_wide_storage(...)` |
+| Shell env and explicit env files are enough | `rc.AppRC.env_only(...)` |
+| App needs one active storage root | `rc.AppRC.storage_only(...)` |
+| App needs per-user config but no storage root | `rc.AppRC.app_wide_config(...)` |
+| App needs per-user config and storage roots | `rc.AppRC.app_wide_storage(...)` |
 
 Storage-capable constructors derive `<APP>_STORAGE` unless
 `storage_env_key="MYAPP_STORAGE"` is passed.
@@ -184,40 +196,31 @@ Storage-capable constructors derive `<APP>_STORAGE` unless
 ## Bootstrap A Typer App
 <!-- ======================================================== -->
 
-Call AppRC bootstrap before commands construct `EnvConfig` objects. Mount the
+Call AppRC bootstrap before commands construct `rc.Config` objects. Mount the
 generated `config` command group below the app.
 
 ```python
 import typer
 
-import apprc
-
-from myapp.config import APP_CONFIG, MyAppEnv
+from myapp.config import MyAppRC, MyRC
 
 app = typer.Typer()
-apprc.mount_config_cli(app, APP_CONFIG)
+MyRC.mount_cli(app)
 
 
 @app.command()
 def run() -> None:
-    cfg = MyAppEnv()
-    typer.echo(cfg.profile)
+    cfg = MyAppRC()
+    typer.echo(cfg.app.profile)
 ```
 
-`mount_config_cli(...)` registers the standard AppRC CLI runtime options:
+`MyRC.mount_cli(...)` registers the standard AppRC CLI runtime options:
 `--env-file`, `--env-file-overrides-os-environ`, `--skip-dotenv-layers`,
 `--storage`, and `--log-level`. It also lets setup and inspection commands run
-before required runtime settings exist. Pass `state_type=...` plus
-`state_factory=...` when the app needs custom CLI state after bootstrap, and
-`args_provider=...` when a wrapper or test harness needs to provide
-`CliArgvProvider` command tokens explicitly. Pass `runtime_policy=...` when
-custom config hooks must run for generated writes such as `config set` or
-`config edit`. Pass `config_group_name=...` only when the generated command
-group should not be named `config`; AppRC raises a clear error if the app
-already owns that command or group name.
+before required runtime settings exist.
 
 Apps that own their Typer callback and extra options can use
-`CliRuntime`. The runtime keeps AppRC's deterministic config CLI behavior
+`rc.cli.CliRuntime`. The runtime keeps AppRC's deterministic config CLI behavior
 in AppRC, while the app still builds its own runtime state.
 
 ```python
@@ -228,9 +231,9 @@ from typing import Annotated
 
 import typer
 
-import apprc
+import apprc as rc
 
-from myapp.config import APP_CONFIG
+from myapp.config import MyRC
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,12 +247,12 @@ class MyCliOptions:
 
 
 @dataclass(slots=True)
-class MyCliState(apprc.DefaultConfigCliState):
+class MyCliState(rc.cli.DefaultConfigCliState):
     workdir: Path | None
 
 
 def build_state(
-    context: apprc.CliRuntimeContext,
+    context: rc.cli.CliRuntimeContext,
     options: MyCliOptions,
 ) -> MyCliState:
     return MyCliState(
@@ -260,18 +263,18 @@ def build_state(
 
 
 app = typer.Typer()
-runtime = apprc.CliRuntime(
-    APP_CONFIG,
+runtime = rc.cli.CliRuntime(
+    MyRC.kit,
     state_type=MyCliState,
     state_factory=build_state,
-    runtime_policy=apprc.CliRuntimePolicy(
+    runtime_policy=rc.cli.CliRuntimePolicy(
         runtime_independent_commands={
-            "tool": apprc.RuntimeIndependentCommand(skip_empty=True),
-            "llm": apprc.RuntimeIndependentCommand(
+            "tool": rc.cli.RuntimeIndependentCommand(skip_empty=True),
+            "llm": rc.cli.RuntimeIndependentCommand(
                 skip_empty=True,
                 action_prefixes={("benchmark",)},
             ),
-            "rag": apprc.RuntimeIndependentCommand(
+            "rag": rc.cli.RuntimeIndependentCommand(
                 skip_empty=True,
                 action_prefixes={("cache",), ("benchmark",)},
             ),
@@ -285,11 +288,11 @@ runtime.mount_config_group(app)
 @app.callback()
 def cli(
     ctx: typer.Context,
-    env_files: apprc.EnvFilesOption = None,
-    env_file_overrides_os_environ: apprc.EnvFileOverridesOption = False,
-    skip_dotenv_layers: apprc.SkipDotenvLayersOption = False,
-    storage: apprc.StorageOption = None,
-    log_level: apprc.LogLevelOption = None,
+    env_files: rc.cli.EnvFilesOption = None,
+    env_file_overrides_os_environ: rc.cli.EnvFileOverridesOption = False,
+    skip_dotenv_layers: rc.cli.SkipDotenvLayersOption = False,
+    storage: rc.cli.StorageOption = None,
+    log_level: rc.cli.LogLevelOption = None,
     workdir: Annotated[Path | None, typer.Option("--workdir")] = None,
 ) -> None:
     options = MyCliOptions(
@@ -316,7 +319,7 @@ for generated config commands. Runtimeful generated config commands require the
 app callback to leave the declared `state_type` on `ctx.obj`; runtime-independent
 generated config commands use AppRC's stored context instead.
 Runtime-independent app commands can read the original app option object with
-`apprc.cli_options_from(ctx, MyCliOptions)` even when runtime setup was skipped.
+`rc.cli.cli_options_from(ctx, MyCliOptions)` even when runtime setup was skipped.
 Nested in-process CLIs can call `runtime.run_forwarded(child_app, args=..., prog_name=...)`
 so the child runtime policy inspects the forwarded child arguments.
 

@@ -15,7 +15,11 @@ from typing import TypeVar
 import typer
 
 # == Internal ================================
-import apprc
+import apprc as rc
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.env_config.env import EnvConfig
+from apprc.definition.env_config.fields import config_owner_for
+from apprc.definition.env_config.lookup import iter_config_fields
 
 ResultT = TypeVar("ResultT")
 
@@ -33,11 +37,11 @@ def setup_example_logging(level: str | int = "INFO", **_: object) -> None:
 
 def build_standard_app(
     *,
-    kit: apprc.AppConfigKit,
-    config_cls: type[apprc.EnvConfig],
+    kit: AppConfigKit,
+    config_cls: type[EnvConfig],
     help_text: str,
-    args_provider: apprc.CliArgvProvider | None = None,
-    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+    args_provider: rc.cli.CliArgvProvider | None = None,
+    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Build a normal Typer example app through ``mount_config_cli``.
 
@@ -55,7 +59,7 @@ def build_standard_app(
         pretty_exceptions_show_locals=False,
     )
 
-    apprc.mount_config_cli(
+    rc.cli.mount_config_cli(
         app,
         kit,
         args_provider=args_provider,
@@ -88,23 +92,23 @@ def build_standard_app(
     return app
 
 
-def require_default_state(ctx: typer.Context) -> apprc.DefaultConfigCliState:
+def require_default_state(ctx: typer.Context) -> rc.cli.DefaultConfigCliState:
     """Return AppRC default state from a runtimeful example command.
 
     :param ctx: Active Typer command context.
     :return: Runtime state created by AppRC's standard callback.
     :raises RuntimeError: If a command that needs runtime state was skipped.
     """
-    if isinstance(ctx.obj, apprc.DefaultConfigCliState):
+    if isinstance(ctx.obj, rc.cli.DefaultConfigCliState):
         return ctx.obj
     raise RuntimeError("AppRC runtime state was not initialized.")
 
 
 def runtime_payload(
     *,
-    kit: apprc.AppConfigKit,
-    config_cls: type[apprc.EnvConfig],
-    state: apprc.DefaultConfigCliState,
+    kit: AppConfigKit,
+    config_cls: type[EnvConfig],
+    state: rc.cli.DefaultConfigCliState,
 ) -> dict[str, object]:
     """Return JSON-friendly runtime state for example output.
 
@@ -125,7 +129,7 @@ def runtime_payload(
 
 
 def bootstrap_payload(
-    bootstrap: apprc.EnvBootstrapResult | None,
+    bootstrap: rc.cli.EnvBootstrapResult | None,
 ) -> dict[str, object]:
     """Return JSON-friendly bootstrap metadata.
 
@@ -160,18 +164,16 @@ def bootstrap_payload(
     }
 
 
-def config_values(config: apprc.EnvConfig) -> dict[str, object]:
+def config_values(config: EnvConfig) -> dict[str, object]:
     """Return public config values with secrets redacted.
 
     :param config: Bound runtime config object.
     :return: JSON-friendly values keyed by Python field name.
     """
-    owner = apprc.config_owner_for(type(config))
-    specs = {
-        spec.name: spec for _owner, spec in apprc.iter_config_fields((owner,))
-    }
+    owner = config_owner_for(type(config))
+    specs = {spec.name: spec for _owner, spec in iter_config_fields((owner,))}
     values: dict[str, object] = {}
-    for field in apprc.public_config_fields(config):
+    for field in rc.provenance.public_config_fields(config):
         spec = specs[field.name]
         value = getattr(config, field.name)
         if spec.secret:
@@ -231,7 +233,7 @@ def write_env(path: Path, values: Mapping[str, str]) -> Path:
     :param values: Env key/value pairs.
     :return: Written dotenv path.
     """
-    return apprc.write_env_file(path, dict(values), owners=())
+    return rc.files.write_env_file(path, dict(values), owners=())
 
 
 def _path_text(path: Path | None) -> str | None:

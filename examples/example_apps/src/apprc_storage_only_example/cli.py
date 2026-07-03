@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
-import apprc
+import apprc as rc
 from apprc_example_apps._support import (
     build_standard_app,
     config_values,
@@ -20,8 +20,8 @@ from apprc_storage_only_example.config import KIT, OWNERS, StorageOnlyConfig
 
 def build_app(
     *,
-    args_provider: apprc.CliArgvProvider | None = None,
-    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+    args_provider: rc.cli.CliArgvProvider | None = None,
+    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the storage-only example CLI.
 
@@ -51,8 +51,8 @@ def run_demo(root: Path) -> dict[str, object]:
     def scenario() -> dict[str, object]:
         storage_root = root / "storage"
         storage_root.mkdir(parents=True)
-        apprc.ensure_storage_env_file(storage_root)
-        apprc.set_storage_env_value(
+        rc.files.ensure_storage_env_file(storage_root)
+        rc.files.set_storage_env_value(
             storage_root=storage_root,
             reference="api_token",
             raw_value="storage-secret",

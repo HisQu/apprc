@@ -3,36 +3,33 @@
 from __future__ import annotations
 
 # == Internal ================================
-import apprc
+import apprc as rc
 
 
-@apprc.env_owner(
-    key="env_only",
-    title="Env Only",
-    env_prefix="APPRC_EXAMPLE_ENV_ONLY_",
-    rc_path=("env_only",),
+MyRC = rc.AppRC.env_only(
+    app_name="apprc-example-env-only",
+    display_name="AppRC Env Only Example",
+    config_package="apprc_env_only_example",
+    command_name="apprc-env-only",
 )
-class EnvOnlyConfig(apprc.EnvConfig):
+
+
+@MyRC.config("env_only", prefix="APPRC_EXAMPLE_ENV_ONLY_", title="Env Only")
+class EnvOnlyConfig(rc.Config):
     """Config fields for the setup-light env-only example."""
 
-    profile: str = apprc.env_field(
-        "PROFILE",
+    profile: str = rc.field(
+        "APPRC_EXAMPLE_ENV_ONLY_PROFILE",
         default="default",
         title="Profile",
         explanation_short="Named profile resolved from env layers.",
     )
-    debug: bool = apprc.env_field(
-        "DEBUG",
+    debug: bool = rc.field(
+        "APPRC_EXAMPLE_ENV_ONLY_DEBUG",
         default=False,
         title="Debug",
         explanation_short="Boolean value used to show type coercion.",
     )
 
 
-KIT = apprc.AppConfigKit.env_only(
-    app_name="apprc-example-env-only",
-    display_name="AppRC Env Only Example",
-    config_package="apprc_env_only_example",
-    envs=(EnvOnlyConfig,),
-    command_name="apprc-env-only",
-)
+KIT = MyRC.kit

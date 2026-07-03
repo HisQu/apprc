@@ -48,14 +48,15 @@ diagnostics, editor rendering, and provenance.
 
 The central objects are:
 
-1. `EnvConfig` classes hold typed runtime values.
-2. `@env_owner(...)` gives each class owner metadata: title, env prefix, and
-   runtime config path.
-3. `env_field(...)` gives each field metadata: env name, type, default,
-   editability, secrecy, choices, and explanations.
-4. `AppConfigKit` stores the application-level contract and selected
-   persistence capabilities.
-5. Bootstrap resolves layers and writes merged values into the current Python
+1. `rc.Config` classes hold env-backed typed runtime values.
+2. `rc.ConfigBase` classes hold Python-only config objects.
+3. `@MyRC.config(...)` registers each config class with title, env prefix, and
+   runtime config path metadata.
+4. `rc.field("FULL_ENV_KEY", ...)` gives each env-backed field metadata: env
+   name, type, default, editability, secrecy, choices, and explanations.
+5. `rc.AppRC` stores the application-level contract and selected persistence
+   capabilities.
+6. Bootstrap resolves layers and writes merged values into the current Python
    process environment.
 
 | ![AppRC runtime layers](assets/apprc-runtime-layers.svg) |
@@ -77,14 +78,15 @@ The central objects are:
 
 The normal application flow is:
 
-1. Declare one or more `EnvConfig` classes.
-2. Add packaged defaults in `.env.shared`.
-3. Create one `AppConfigKit`.
+1. Create one `rc.AppRC` facade.
+2. Declare one or more `rc.Config` or `rc.ConfigBase` classes with
+   `@MyRC.config(...)`.
+3. Add packaged defaults in `.env.shared`.
 4. Bootstrap env layers at the CLI entrypoint.
 5. Construct runtime config objects after bootstrap.
 6. Mount the generated `config` CLI.
 
-This order matters because `EnvConfig` reads from `os.environ` during object
+This order matters because `rc.Config` reads from `os.environ` during object
 construction. AppRC bootstrap is the step that merges packaged, app-wide,
 storage, explicit env-file, and shell values into that process environment.
 
@@ -158,7 +160,7 @@ therefore do not need a separate schema file.
 ## Capability Layers
 <!-- ======================================================== -->
 
-`AppConfigKit` constructors select which persistence capabilities exist:
+`rc.AppRC` constructors select which persistence capabilities exist:
 
 | Constructor | Intended Shape |
 |---|---|
@@ -317,15 +319,16 @@ display value in provenance and UI surfaces.
 ## Generated CLI
 <!-- ======================================================== -->
 
-`mount_config_cli(...)` is the shortest Typer integration path: it registers
+`MyRC.mount_cli(...)` is the shortest Typer integration path: it registers
 standard AppRC CLI runtime options, runs bootstrap only for commands that need
 runtime state, and mounts the generated `config` group. It keeps AppRC bootstrap
 context separate from app-owned `ctx.obj` state, so runtime-independent config commands
 can run without constructing incomplete application state.
 
-`AppConfigKit.typer_app(...)` builds only the reusable Typer command group. The
-group is generated from the app spec, so unavailable capabilities are not
-exposed. `CliRuntime` is the middle layer for apps that own their Typer
+`rc.cli.mount_config_cli(...)` and the lower-level generated command group are
+available for advanced integrations. The group is generated from the app spec,
+so unavailable capabilities are not exposed. `rc.cli.CliRuntime` is the middle
+layer for apps that own their Typer
 callback and extra options: the runtime prepares AppRC context, applies skip
 policy, mounts the generated group, and validates app-owned state. Apps that
 only need custom state after bootstrap can keep the mount helper and pass

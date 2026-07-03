@@ -52,6 +52,18 @@ All notable changes to `{my_project}` will be documented in this file.
 
 ### 💥 Breaking Change Summary
 
+  - Breaking: Replaced the root public API with the clean `import apprc as rc`
+    facade: `rc.AppRC`, `rc.Config`, `rc.ConfigBase`, `rc.field`, and the
+    `rc.cli`, `rc.files`, `rc.storage`, and `rc.provenance` namespaces.
+    Affected: Users importing root names such as `AppConfigKit`, `EnvConfig`,
+    `env_field`, `env_owner`, `mount_config_cli`, or storage/file helpers
+    directly from `apprc`.
+    Migration: Create `MyRC = rc.AppRC.<mode>(...)`, register env-backed
+    classes with `@MyRC.config("key", prefix="FULL_PREFIX_")`, inherit
+    `rc.Config`, declare fields with `rc.field("FULL_ENV_KEY", ...)`, inherit
+    `rc.ConfigBase` for Python-only config, mount Typer with
+    `MyRC.mount_cli(app)`, and use namespace modules for advanced helpers.
+
 <br>
 
 ### ➕ Added

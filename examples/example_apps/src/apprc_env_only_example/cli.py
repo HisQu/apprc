@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
-import apprc
+import apprc as rc
 from apprc_env_only_example.config import EnvOnlyConfig, KIT
 from apprc_example_apps._support import (
     build_standard_app,
@@ -21,8 +21,8 @@ from apprc_example_apps._support import (
 
 def build_app(
     *,
-    args_provider: apprc.CliArgvProvider | None = None,
-    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+    args_provider: rc.cli.CliArgvProvider | None = None,
+    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the env-only example CLI.
 
@@ -56,7 +56,7 @@ def run_demo(root: Path) -> dict[str, object]:
                 "APPRC_EXAMPLE_ENV_ONLY_DEBUG": "true",
             },
         )
-        doctor = apprc.build_config_doctor_payload(KIT, storage=None)
+        doctor = rc.cli.build_config_doctor_payload(KIT, storage=None)
         bootstrap = KIT.bootstrap(
             env_files=(explicit_env,),
             env_file_overrides_os_environ=True,

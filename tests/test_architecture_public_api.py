@@ -9,19 +9,28 @@ import pytest
 import apprc
 import apprc.definition as definition_api
 import apprc.definition.env_config as contract_api
+import apprc.files as files_api
+import apprc.provenance as provenance_api
 import apprc.runtime as runtime_api
+import apprc.storage as storage_api
 from apprc.definition.app_config.spec import AppConfigSpec
-from apprc.definition.env_config.env import EnvConfig
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.public.app_rc import AppRC
+from apprc.public.config import Config, ConfigBase
+from apprc.runtime.result import EnvBootstrapResult
 from apprc.user_files.env_files.updates import EnvFileUpdate
 from apprc.user_files.storage_roots.model import StorageRegistry
 
 
 def test_root_facade_exports_public_config_api() -> None:
-    assert apprc.EnvConfig is EnvConfig
-    assert apprc.AppConfigSpec is AppConfigSpec
+    assert apprc.AppRC is AppRC
+    assert apprc.Config is Config
+    assert apprc.ConfigBase is ConfigBase
+    assert hasattr(apprc, "field")
+    assert not hasattr(apprc, "EnvConfig")
+    assert not hasattr(apprc, "AppConfigSpec")
     assert definition_api.AppConfigSpec is AppConfigSpec
-    assert apprc.EnvBootstrapResult is runtime_api.EnvBootstrapResult
+    assert runtime_api.EnvBootstrapResult is EnvBootstrapResult
     assert not hasattr(apprc, "BaseEnv")
     assert not hasattr(definition_api, "BaseEnv")
 
@@ -34,15 +43,14 @@ def test_old_provenance_names_are_not_public_api() -> None:
 
 
 def test_top_level_facade_exports_stable_config_interfaces() -> None:
-    assert apprc.ConfigOwner is ConfigOwner
-    assert apprc.ConfigField is ConfigField
-    assert apprc.EnvFileUpdate is EnvFileUpdate
-    assert apprc.StorageRegistry is StorageRegistry
-    assert callable(apprc.iter_config_fields)
-    assert callable(apprc.resolve_package_root)
-    assert callable(apprc.register_storage)
-    assert callable(apprc.set_storage_env_value)
-    assert apprc.ConfigEditorApp is not None
+    assert definition_api.ConfigOwner is ConfigOwner
+    assert definition_api.ConfigField is ConfigField
+    assert files_api.EnvFileUpdate is EnvFileUpdate
+    assert storage_api.StorageRegistry is StorageRegistry
+    assert callable(files_api.resolve_package_root)
+    assert callable(storage_api.register_storage)
+    assert callable(files_api.set_storage_env_value)
+    assert callable(provenance_api.provenance_of)
 
 
 def test_definition_and_runtime_facades_stay_owned() -> None:

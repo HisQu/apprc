@@ -3,38 +3,34 @@
 from __future__ import annotations
 
 # == Internal ================================
-import apprc
+import apprc as rc
 
 
-@apprc.env_owner(
-    key="app_wide",
-    title="App Wide",
-    env_prefix="APPRC_EXAMPLE_APP_WIDE_",
-    rc_path=("app_wide",),
+MyRC = rc.AppRC.app_wide_config(
+    app_name="apprc-example-app-wide-config",
+    display_name="AppRC App-Wide Config Example",
+    config_package="apprc_app_wide_config_example",
+    command_name="apprc-app-wide-config",
 )
-class AppWideConfig(apprc.EnvConfig):
+
+
+@MyRC.config("app_wide", prefix="APPRC_EXAMPLE_APP_WIDE_", title="App Wide")
+class AppWideConfig(rc.Config):
     """Config fields resolved from the app-wide dotenv layer."""
 
-    region: str = apprc.env_field(
-        "REGION",
+    region: str = rc.field(
+        "APPRC_EXAMPLE_APP_WIDE_REGION",
         default="local",
         title="Region",
         explanation_short="App-wide deployment region.",
     )
-    workers: int = apprc.env_field(
-        "WORKERS",
+    workers: int = rc.field(
+        "APPRC_EXAMPLE_APP_WIDE_WORKERS",
         default=1,
         title="Workers",
         explanation_short="App-wide worker count.",
     )
 
 
-KIT = apprc.AppConfigKit.app_wide_config(
-    app_name="apprc-example-app-wide-config",
-    display_name="AppRC App-Wide Config Example",
-    config_package="apprc_app_wide_config_example",
-    envs=(AppWideConfig,),
-    command_name="apprc-app-wide-config",
-)
-
-OWNERS = (apprc.config_owner_for(AppWideConfig),)
+KIT = MyRC.kit
+OWNERS = KIT.spec.owners

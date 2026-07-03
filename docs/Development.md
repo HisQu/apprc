@@ -136,10 +136,10 @@ script per AppRC mode:
 
 | Script | AppRC Surface |
 |---|---|
-| `apprc-env-only` | `AppConfigKit.env_only(...)` |
-| `apprc-storage-only` | `AppConfigKit.storage_only(...)` |
-| `apprc-app-wide-config` | `AppConfigKit.app_wide_config(...)` |
-| `apprc-app-wide-storage` | `AppConfigKit.app_wide_storage(...)` |
+| `apprc-env-only` | `rc.AppRC.env_only(...)` |
+| `apprc-storage-only` | `rc.AppRC.storage_only(...)` |
+| `apprc-app-wide-config` | `rc.AppRC.app_wide_config(...)` |
+| `apprc-app-wide-storage` | `rc.AppRC.app_wide_storage(...)` |
 | `apprc-explicit-env-precedence` | Explicit env-file selector precedence |
 | `apprc-cli-runtime` | `CliRuntime` with an app-owned callback |
 | `apprc-examples-run-all` | Compact non-interactive scenario runner |

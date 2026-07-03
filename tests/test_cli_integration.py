@@ -11,7 +11,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from apprc import AppConfigKit
+from apprc.definition.app_config.kit import AppConfigKit
 from apprc.interfaces.cli import (
     DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS,
     CliArgvProvider,

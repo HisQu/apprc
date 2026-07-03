@@ -13,15 +13,15 @@ from pathlib import Path
 from pytest import MonkeyPatch
 from typer.testing import Result
 
-from apprc import AppConfigKit
-from apprc import (
-    EnvConfig,
-    EnvBootstrapResult,
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.env_config.env import EnvConfig
+from apprc.definition.env_config.fields import (
     config_owner_for,
     env_field,
     env_owner,
 )
 from apprc.definition.env_config.sentinels import CONFIG_MISSING
+from apprc.runtime.result import EnvBootstrapResult
 from apprc.user_files.storage_roots.registry import (
     StorageRegistry,
     record_archived_storage,

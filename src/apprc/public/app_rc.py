@@ -1,0 +1,735 @@
+"""Public AppRC application facade."""
+
+# == Standard Library ========================
+import dataclasses
+import logging
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import (
+    Any,
+    ClassVar,
+    NoReturn,
+    TypeVar,
+    cast,
+    get_origin,
+    get_type_hints,
+)
+
+# == 3rd Party ===============================
+import typer
+
+# == Internal ================================
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.env_config._validation import validate_config_owner
+from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.interfaces.cli.mount import mount_config_cli
+from apprc.public.config import Config, ConfigBase
+from apprc.public.field import (
+    PUBLIC_FIELD_METADATA_KEY,
+    PublicFieldSpec,
+)
+from apprc.runtime.result import BootstrapLogger, EnvBootstrapResult
+
+ConfigClassT = TypeVar("ConfigClassT", bound=type[ConfigBase])
+BundleClassT = TypeVar("BundleClassT", bound=type[object])
+
+LOG = logging.getLogger("apprc")
+
+
+@dataclass(frozen=True, slots=True)
+class RegisteredConfig:
+    """Normalized public registration state for one config class.
+
+    :param key: Stable config key used by the AppRC public API.
+    :param config_type: Registered Python config class.
+    :param title: Human-readable display title.
+    :param rc_path: Runtime config path components.
+    :param prefix: Required env prefix for env-backed config classes.
+    :param env_fields: Public field markers declared on this class.
+    """
+
+    key: str
+    config_type: type[ConfigBase]
+    title: str
+    rc_path: tuple[str, ...]
+    prefix: str | None
+    env_fields: Mapping[str, PublicFieldSpec]
+
+
+class AppRC:
+    """Public facade for one application's AppRC integration.
+
+    App authors create one ``AppRC`` object with an explicit mode constructor,
+    register config classes through ``@MyRC.config(...)``, optionally aggregate
+    them with ``@MyRC.bundle``, and mount runtime behavior with
+    :meth:`mount_cli` or :meth:`bootstrap`.
+    """
+
+    def __init__(
+        self,
+        *,
+        mode: str,
+        app_name: str,
+        display_name: str | None,
+        config_package: str,
+        storage_env_key: str | None = None,
+        kit_kwargs: Mapping[str, object] | None = None,
+    ) -> None:
+        """Store mode metadata and build the initial empty internal kit.
+
+        :param mode: Name of the lower-level ``AppConfigKit`` constructor.
+        :param app_name: Lowercase application name.
+        :param display_name: Human-readable application name, or ``None`` to
+            use ``app_name``.
+        :param config_package: Package containing packaged config resources.
+        :param storage_env_key: Optional storage selector env key.
+        :param kit_kwargs: Additional lower-level kit constructor options.
+        """
+        self._mode = mode
+        self._kit_kwargs = self._build_kit_kwargs(
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            storage_env_key=storage_env_key,
+            kit_kwargs=kit_kwargs or {},
+        )
+        self._registered_by_key: dict[str, RegisteredConfig] = {}
+        self._registered_by_type: dict[type[ConfigBase], RegisteredConfig] = {}
+        self._env_key_index: dict[str, tuple[str, str]] = {}
+        self._kit = self._build_kit()
+
+    @classmethod
+    def env_only(
+        cls,
+        *,
+        app_name: str,
+        display_name: str | None = None,
+        config_package: str,
+        **kwargs: object,
+    ) -> "AppRC":
+        """Create an env/package/shell-only AppRC integration.
+
+        :param app_name: Lowercase application name.
+        :param display_name: Human-readable name, or ``None`` to use
+            ``app_name``.
+        :param config_package: Package containing packaged config resources.
+        :param kwargs: Lower-level AppRC kit constructor options.
+        :return: Public AppRC facade.
+        """
+        return cls(
+            mode="env_only",
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            kit_kwargs=kwargs,
+        )
+
+    @classmethod
+    def storage_only(
+        cls,
+        *,
+        app_name: str,
+        display_name: str | None = None,
+        config_package: str,
+        storage_env_key: str | None = None,
+        **kwargs: object,
+    ) -> "AppRC":
+        """Create an integration that requires one active storage selector.
+
+        :param app_name: Lowercase application name.
+        :param display_name: Human-readable name, or ``None`` to use
+            ``app_name``.
+        :param config_package: Package containing packaged config resources.
+        :param storage_env_key: Optional storage selector env key.
+        :param kwargs: Lower-level AppRC kit constructor options.
+        :return: Public AppRC facade.
+        """
+        return cls(
+            mode="storage_only",
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            storage_env_key=storage_env_key,
+            kit_kwargs=kwargs,
+        )
+
+    @classmethod
+    def app_wide_config(
+        cls,
+        *,
+        app_name: str,
+        display_name: str | None = None,
+        config_package: str,
+        **kwargs: object,
+    ) -> "AppRC":
+        """Create an integration centered on app-wide config.
+
+        :param app_name: Lowercase application name.
+        :param display_name: Human-readable name, or ``None`` to use
+            ``app_name``.
+        :param config_package: Package containing packaged config resources.
+        :param kwargs: Lower-level AppRC kit constructor options.
+        :return: Public AppRC facade.
+        """
+        return cls(
+            mode="app_wide_config",
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            kit_kwargs=kwargs,
+        )
+
+    @classmethod
+    def app_wide_storage(
+        cls,
+        *,
+        app_name: str,
+        display_name: str | None = None,
+        config_package: str,
+        storage_env_key: str | None = None,
+        **kwargs: object,
+    ) -> "AppRC":
+        """Create an integration with app-wide config and storage roots.
+
+        :param app_name: Lowercase application name.
+        :param display_name: Human-readable name, or ``None`` to use
+            ``app_name``.
+        :param config_package: Package containing packaged config resources.
+        :param storage_env_key: Optional storage selector env key.
+        :param kwargs: Lower-level AppRC kit constructor options.
+        :return: Public AppRC facade.
+        """
+        return cls(
+            mode="app_wide_storage",
+            app_name=app_name,
+            display_name=display_name,
+            config_package=config_package,
+            storage_env_key=storage_env_key,
+            kit_kwargs=kwargs,
+        )
+
+    @property
+    def kit(self) -> AppConfigKit:
+        """Return the lower-level kit used by advanced internal integrations."""
+        return self._kit
+
+    @property
+    def spec(self) -> AppConfigSpec:
+        """Return the current lower-level application spec."""
+        return self._kit.spec
+
+    def config(
+        self,
+        key: str,
+        *,
+        prefix: str | None = None,
+        title: str | None = None,
+        rc_path: tuple[str, ...] | None = None,
+    ) -> Callable[[ConfigClassT], ConfigClassT]:
+        """Return the public config registration decorator.
+
+        :param key: Stable config key.
+        :param prefix: Required full env prefix for ``rc.Config`` subclasses.
+        :param title: Optional display title. AppRC derives one from ``key``
+            when omitted.
+        :param rc_path: Optional runtime config path. Defaults to ``(key,)``.
+        :return: Decorator that registers a ``rc.Config`` or ``rc.ConfigBase``
+            subclass.
+        :raises TypeError: If ``key`` is missing or not a string.
+        :raises ValueError: If ``key`` is empty.
+        """
+        if not isinstance(key, str):
+            raise TypeError(
+                "@MyRC.config(...) requires a config key string, for example "
+                '@MyRC.config("llm", prefix="HAIU_LLM_").'
+            )
+        if not key:
+            raise ValueError("@MyRC.config(...) requires a non-empty key.")
+
+        def decorator(config_type: ConfigClassT) -> ConfigClassT:
+            """Register one public config class."""
+            return self._register_config(
+                config_type,
+                key=key,
+                prefix=prefix,
+                title=title,
+                rc_path=rc_path,
+            )
+
+        return decorator
+
+    def bundle(self, bundle_type: BundleClassT) -> BundleClassT:
+        """Register an eager aggregate runtime config class.
+
+        :param bundle_type: Class whose annotated fields reference registered
+            AppRC config classes.
+        :return: Dataclass-like bundle class with a custom eager constructor.
+        :raises TypeError: If an annotated field refers to an unregistered
+            config class.
+        """
+        bundle_fields = self._bundle_fields(bundle_type)
+        resolved_bundle = self._ensure_dataclass(
+            bundle_type,
+            init=False,
+            repr=False,
+        )
+        setattr(
+            resolved_bundle,
+            "__init__",
+            self._build_bundle_init(resolved_bundle, bundle_fields),
+        )
+        setattr(
+            resolved_bundle,
+            "__repr__",
+            self._build_bundle_repr(resolved_bundle, bundle_fields),
+        )
+        return cast(BundleClassT, resolved_bundle)
+
+    def mount_cli(self, cli: typer.Typer, **kwargs: Any) -> typer.Typer:
+        """Mount AppRC's generated CLI commands on a Typer app.
+
+        :param cli: Typer application that receives the AppRC config command
+            group.
+        :param kwargs: Advanced options forwarded to the lower-level Typer
+            mounting helper.
+        :return: Mounted generated config Typer application.
+        :raises TypeError: If ``cli`` is not a Typer application.
+        """
+        if not isinstance(cli, typer.Typer):
+            raise TypeError(
+                "AppRC.mount_cli currently supports typer.Typer instances only."
+            )
+        return mount_config_cli(cli, self._kit, **kwargs)
+
+    def bootstrap(
+        self,
+        *,
+        env_files: Sequence[Path] | None = None,
+        env_file_overrides_os_environ: bool = False,
+        load_dotenv_layers: bool = True,
+        storage: str | None = None,
+        logger: BootstrapLogger | None = None,
+    ) -> EnvBootstrapResult:
+        """Prepare AppRC runtime layers for non-Typer use.
+
+        :param env_files: Optional run-local dotenv files.
+        :param env_file_overrides_os_environ: Whether explicit dotenv values
+            beat existing process env values inside this process.
+        :param load_dotenv_layers: Whether packaged, app-wide, storage, and
+            explicit dotenv layers should be merged into ``os.environ``.
+        :param storage: Optional storage selector for storage-capable modes.
+        :param logger: Optional application logger for bootstrap status.
+        :return: Bootstrap summary for diagnostics and tests.
+        """
+        return self._kit.bootstrap(
+            env_files=tuple(env_files or ()),
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
+            load_dotenv_layers=load_dotenv_layers,
+            storage=storage,
+            logger=logger,
+        )
+
+    def _build_kit_kwargs(
+        self,
+        *,
+        app_name: str,
+        display_name: str | None,
+        config_package: str,
+        storage_env_key: str | None,
+        kit_kwargs: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Return normalized lower-level kit constructor arguments."""
+        if "envs" in kit_kwargs:
+            raise TypeError(
+                "AppRC mode constructors do not accept envs=.... Register "
+                "config classes with @MyRC.config(...)."
+            )
+        resolved: dict[str, object] = {
+            "app_name": app_name,
+            "display_name": display_name or app_name,
+            "config_package": config_package,
+            **kit_kwargs,
+        }
+        if storage_env_key is not None:
+            resolved["storage_env_key"] = storage_env_key
+        return resolved
+
+    def _build_kit(self) -> AppConfigKit:
+        """Build a lower-level kit from the current registrations."""
+        constructor = getattr(AppConfigKit, self._mode)
+        return constructor(
+            **self._kit_kwargs,
+            envs=tuple(
+                item.config_type
+                for item in self._registered_by_key.values()
+                if _is_env_config(item.config_type)
+            ),
+        )
+
+    def _register_config(
+        self,
+        config_type: ConfigClassT,
+        *,
+        key: str,
+        prefix: str | None,
+        title: str | None,
+        rc_path: tuple[str, ...] | None,
+    ) -> ConfigClassT:
+        """Validate and register one config class."""
+        _validate_config_class(config_type)
+        existing = self._registered_by_key.get(key)
+        if existing is not None:
+            if existing.config_type is config_type:
+                return config_type
+            raise ValueError(
+                f'AppRC config key "{key}" is already registered by '
+                f"{existing.config_type.__name__}."
+            )
+
+        resolved_type = self._ensure_dataclass(config_type)
+        resolved_title = title or _humanize_title(key)
+        resolved_rc_path = rc_path or (key,)
+        public_fields = _collect_public_fields(resolved_type)
+
+        if _is_env_config(resolved_type):
+            owner = self._build_owner(
+                resolved_type,
+                key=key,
+                title=resolved_title,
+                prefix=prefix,
+                rc_path=resolved_rc_path,
+                public_fields=public_fields,
+            )
+            self._validate_unique_env_keys(resolved_type, public_fields)
+            setattr(resolved_type, "config_owner", owner)
+        else:
+            self._validate_python_only_registration(
+                resolved_type,
+                prefix=prefix,
+                public_fields=public_fields,
+            )
+
+        registered = RegisteredConfig(
+            key=key,
+            config_type=resolved_type,
+            title=resolved_title,
+            rc_path=resolved_rc_path,
+            prefix=prefix,
+            env_fields=public_fields,
+        )
+        self._registered_by_key[key] = registered
+        self._registered_by_type[resolved_type] = registered
+        for field_name, spec in public_fields.items():
+            self._env_key_index[spec.env_key] = (
+                resolved_type.__name__,
+                field_name,
+            )
+        self._kit = self._build_kit()
+        return cast(ConfigClassT, resolved_type)
+
+    def _build_owner(
+        self,
+        config_type: type[ConfigBase],
+        *,
+        key: str,
+        title: str,
+        prefix: str | None,
+        rc_path: tuple[str, ...],
+        public_fields: Mapping[str, PublicFieldSpec],
+    ) -> ConfigOwner:
+        """Build an internal owner from public env field markers."""
+        if prefix is None or not prefix:
+            raise ValueError(
+                f"{config_type.__name__} inherits rc.Config, so "
+                f'@MyRC.config("{key}", ...) requires prefix="...".'
+            )
+        _validate_prefix(
+            config_type=config_type,
+            config_key=key,
+            prefix=prefix,
+            fields=public_fields,
+        )
+        owner = ConfigOwner(
+            key=key,
+            title=title,
+            env_prefix=prefix,
+            rc_path=rc_path,
+            fields=_derive_internal_fields(
+                config_type=config_type,
+                prefix=prefix,
+                public_fields=public_fields,
+            ),
+        )
+        validate_config_owner(owner)
+        return owner
+
+    def _validate_unique_env_keys(
+        self,
+        config_type: type[ConfigBase],
+        public_fields: Mapping[str, PublicFieldSpec],
+    ) -> None:
+        """Reject env keys that another registered config already owns."""
+        for field_name, spec in public_fields.items():
+            existing = self._env_key_index.get(spec.env_key)
+            current = (config_type.__name__, field_name)
+            if existing is not None and existing != current:
+                existing_class, existing_field = existing
+                raise ValueError(
+                    f"Env key {spec.env_key} is used by both "
+                    f"{existing_class}.{existing_field} and "
+                    f"{config_type.__name__}.{field_name}. Each AppRC field "
+                    "must use a unique env key."
+                )
+
+    def _validate_python_only_registration(
+        self,
+        config_type: type[ConfigBase],
+        *,
+        prefix: str | None,
+        public_fields: Mapping[str, PublicFieldSpec],
+    ) -> None:
+        """Validate a ``ConfigBase`` registration."""
+        if prefix is not None:
+            raise ValueError(
+                f"{config_type.__name__} inherits rc.ConfigBase, so it is "
+                "Python-only config. Do not pass prefix=... unless the class "
+                "inherits rc.Config."
+            )
+        if not public_fields:
+            return
+        field_name = next(iter(public_fields))
+        raise TypeError(
+            f"{config_type.__name__}.{field_name} uses rc.field(...), but "
+            f"{config_type.__name__} inherits rc.ConfigBase. Use rc.Config "
+            "for env-backed config, or use normal Python/dataclass defaults "
+            "for rc.ConfigBase."
+        )
+
+    def _bundle_fields(
+        self,
+        bundle_type: type[object],
+    ) -> dict[str, type[ConfigBase]]:
+        """Return registered config fields declared by one bundle."""
+        type_hints = get_type_hints(bundle_type, include_extras=True)
+        bundle_fields: dict[str, type[ConfigBase]] = {}
+        for field_name, annotation in type_hints.items():
+            if get_origin(annotation) is ClassVar:
+                continue
+            if not isinstance(annotation, type):
+                _raise_unregistered_bundle_field(
+                    bundle_type,
+                    field_name,
+                    annotation,
+                )
+            registered = self._registered_by_type.get(annotation)
+            if registered is None:
+                _raise_unregistered_bundle_field(
+                    bundle_type,
+                    field_name,
+                    annotation,
+                )
+            assert registered is not None
+            bundle_fields[field_name] = registered.config_type
+        return bundle_fields
+
+    def _build_bundle_init(
+        self,
+        bundle_type: type[object],
+        bundle_fields: Mapping[str, type[ConfigBase]],
+    ) -> Callable[..., None]:
+        """Build the custom eager bundle constructor."""
+
+        def __init__(self: object, **kwargs: object) -> None:
+            """Construct every child config eagerly."""
+            unknown = set(kwargs) - set(bundle_fields)
+            if unknown:
+                joined = ", ".join(sorted(unknown))
+                raise TypeError(
+                    f"{bundle_type.__name__} got unexpected config "
+                    f"argument(s): {joined}."
+                )
+            LOG.debug("Constructing AppRC bundle %s.", bundle_type.__name__)
+            for field_name, expected_type in bundle_fields.items():
+                if field_name in kwargs:
+                    value = kwargs[field_name]
+                    if not isinstance(value, expected_type):
+                        raise TypeError(
+                            f"{bundle_type.__name__}.{field_name} expected "
+                            f"{expected_type.__name__}, got "
+                            f"{type(value).__name__}."
+                        )
+                else:
+                    registered = self_app._registered_by_type[expected_type]
+                    LOG.debug(
+                        'Constructing config "%s" using %s.',
+                        registered.key,
+                        expected_type.__name__,
+                    )
+                    value = expected_type()
+                object.__setattr__(self, field_name, value)
+
+        self_app = self
+        return __init__
+
+    def _build_bundle_repr(
+        self,
+        bundle_type: type[object],
+        bundle_fields: Mapping[str, type[ConfigBase]],
+    ) -> Callable[[object], str]:
+        """Build a secret-safe bundle repr."""
+
+        def __repr__(self: object) -> str:
+            """Return a minimal repr that never prints child values."""
+            parts = [
+                f"{field_name}=<{expected_type.__name__}>"
+                for field_name, expected_type in bundle_fields.items()
+            ]
+            return f"{bundle_type.__name__}({', '.join(parts)})"
+
+        return __repr__
+
+    def _ensure_dataclass(
+        self,
+        cls: type[Any],
+        *,
+        init: bool = True,
+        repr: bool = True,
+    ) -> type[Any]:
+        """Return ``cls`` as a dataclass without reprocessing subclasses."""
+        if "__dataclass_fields__" in cls.__dict__:
+            return cls
+        return dataclasses.dataclass(
+            slots=True,
+            init=init,
+            repr=repr,
+        )(cls)
+
+
+def _validate_config_class(config_type: type[object]) -> None:
+    """Reject classes outside the public config inheritance model."""
+    if not isinstance(config_type, type):
+        raise TypeError("@MyRC.config(...) can only decorate classes.")
+    if not issubclass(config_type, ConfigBase):
+        raise TypeError(
+            f"{config_type.__name__} must inherit from rc.Config or "
+            "rc.ConfigBase before it can be registered with "
+            "@MyRC.config(...)."
+        )
+
+
+def _is_env_config(config_type: type[object]) -> bool:
+    """Return whether ``config_type`` reads env-backed AppRC fields."""
+    return issubclass(config_type, Config)
+
+
+def _collect_public_fields(
+    config_type: type[ConfigBase],
+) -> dict[str, PublicFieldSpec]:
+    """Collect ``rc.field(...)`` markers from one dataclass."""
+    public_fields: dict[str, PublicFieldSpec] = {}
+    for item in fields(config_type):
+        spec = item.metadata.get(PUBLIC_FIELD_METADATA_KEY)
+        if spec is None:
+            continue
+        if not isinstance(spec, PublicFieldSpec):
+            raise TypeError(
+                f"{PUBLIC_FIELD_METADATA_KEY!r} metadata must contain "
+                f"PublicFieldSpec, got {type(spec).__name__}."
+            )
+        public_fields[item.name] = spec
+    return public_fields
+
+
+def _validate_prefix(
+    *,
+    config_type: type[ConfigBase],
+    config_key: str,
+    prefix: str,
+    fields: Mapping[str, PublicFieldSpec],
+) -> None:
+    """Ensure every public env key starts with the config prefix."""
+    for field_name, spec in fields.items():
+        if spec.env_key.startswith(prefix) and spec.env_key != prefix:
+            continue
+        raise ValueError(
+            f"{config_type.__name__}.{field_name} uses env key "
+            f'{spec.env_key}, but config "{config_key}" requires prefix '
+            f"{prefix}. Use an env key starting with {prefix} or change the "
+            "config prefix."
+        )
+
+
+def _derive_internal_fields(
+    *,
+    config_type: type[ConfigBase],
+    prefix: str,
+    public_fields: Mapping[str, PublicFieldSpec],
+) -> tuple[ConfigField, ...]:
+    """Convert public field markers into internal owner-local fields."""
+    type_hints = get_type_hints(config_type, include_extras=True)
+    derived: list[ConfigField] = []
+    for field_name, spec in public_fields.items():
+        python_type = spec.python_type or type_hints.get(field_name, Any)
+        if python_type is Any:
+            raise TypeError(
+                f"{config_type.__name__}.{field_name} must have a type "
+                "annotation or rc.field(..., python_type=...)."
+            )
+        derived.append(
+            ConfigField(
+                name=field_name,
+                env_var=_derive_internal_env_suffix(
+                    full_env_key=spec.env_key,
+                    prefix=prefix,
+                ),
+                python_type=cast(type[Any], python_type),
+                default=spec.default,
+                default_factory=spec.default_factory,
+                shared_default=spec.shared_default,
+                title=spec.title or "",
+                explanation_short=spec.explanation_short,
+                explanation_long=spec.explanation_long,
+                secret=spec.secret,
+                editable=spec.editable,
+                required=spec.inferred_required(),
+                choices=spec.choices,
+            )
+        )
+    return tuple(derived)
+
+
+def _derive_internal_env_suffix(
+    *,
+    full_env_key: str,
+    prefix: str,
+) -> str:
+    """Return the owner-local env suffix for a public full env key."""
+    return full_env_key.removeprefix(prefix)
+
+
+def _humanize_title(key: str) -> str:
+    """Return a simple human display title from a config key."""
+    words = key.replace("-", "_").split("_")
+    return " ".join(word.capitalize() for word in words if word) or key
+
+
+def _raise_unregistered_bundle_field(
+    bundle_type: type[object],
+    field_name: str,
+    annotation: object,
+) -> NoReturn:
+    """Raise the standard error for invalid bundle annotations."""
+    type_name = getattr(annotation, "__name__", repr(annotation))
+    raise TypeError(
+        f"{bundle_type.__name__}.{field_name} refers to {type_name}, but "
+        f"{type_name} is not registered with this AppRC instance.\nDecorate "
+        "it with @MyRC.config(...)."
+    )
+
+
+__all__ = [
+    "AppRC",
+    "RegisteredConfig",
+]

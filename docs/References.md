@@ -44,20 +44,16 @@ Top-level `apprc` imports for normal integrations:
 
 | Import | Purpose |
 |---|---|
-| `AppConfigKit` | High-level app config facade. |
-| `AppConfigSpec` | Lower-level application config contract. |
-| `EnvConfig` | Base class for typed env-backed config sections. |
-| `BaseConfig` | Base class for Python config objects with provenance and scoped overrides. |
-| `env_owner` | Decorator that declares one config owner. |
-| `env_field` | Dataclass field helper for one env-backed setting. |
-| `config_owner_for` | Return the derived `ConfigOwner` for an `EnvConfig` class. |
-| `ConfigOwner` | Normalized owner metadata. |
-| `ConfigField` | Normalized field metadata. |
-| `ConfigProvenance` | Provenance record for an effective config value. |
-| `EnvBootstrapResult` | Files and storage selected during bootstrap. |
-| `ConfigDoctorStatus` | Readiness status enum used by `config doctor`. |
+| `AppRC` | Public facade that selects a capability mode, registers configs, mounts CLI runtime, and bootstraps non-Typer use. |
+| `Config` | Env-backed config base. Use `rc.field("FULL_ENV_KEY", ...)` on subclasses. |
+| `ConfigBase` | Python-only config base. Use normal Python/dataclass defaults; do not use `rc.field(...)`. |
+| `field` | Public env-backed field helper. The first argument is always the full env key. |
+| `cli` | Advanced CLI namespace, including `CliRuntime` and low-level mount helpers. |
+| `files` | AppRC-managed file and dotenv helper namespace. |
+| `storage` | Storage registry, selector, archive, and path helper namespace. |
+| `provenance` | Runtime provenance helper namespace. |
 
-Root `apprc` names for CLI integrations:
+`apprc.cli` names for advanced CLI integrations:
 
 | Import | Purpose |
 |---|---|
@@ -77,13 +73,13 @@ Root `apprc` names for CLI integrations:
 | `cli_options_from` | Read the original app CLI option object from AppRC runtime metadata. |
 | `cli_runtime_options_to_args` | Convert parsed AppRC options back into CLI tokens for lazy forwarding. |
 | `ConfigRuntimePolicy` | Config-command runtime skip policy with customizable runtime-independent actions. |
-| `bootstrap_cli_env` | Typer-friendly wrapper around `AppConfigKit.bootstrap(...)`. |
+| `bootstrap_cli_env` | Typer-friendly wrapper around the lower-level AppRC bootstrap engine. |
 | `config_request_skips_runtime` | Detect generated config commands that can run before runtime setup. |
 | `ConfigSelectorContext` | Context passed to selector-aware config CLI hooks. |
 
-Advanced storage and dotenv helpers are also exported from the root facade.
-Prefer the root facade for stable application imports unless a lower-level
-module is explicitly needed.
+Advanced storage and dotenv helpers are intentionally not root exports. Use
+`apprc.storage`, `apprc.files`, and `apprc.provenance` when application code
+needs those lower-level surfaces.
 
 <br>
 
@@ -96,10 +92,10 @@ module is explicitly needed.
 
 | Constructor | Storage layer | App-wide layer | Named-storage index | Setup behavior |
 |---|---|---|---|---|
-| `AppConfigKit.env_only(...)` | disabled | optional | disabled | Prints env guidance; writes nothing. |
-| `AppConfigKit.storage_only(...)` | required | optional | optional | Creates selected storage root and `.env.apprc-storage`. |
-| `AppConfigKit.app_wide_config(...)` | disabled | default | disabled | Creates `.env.apprc-app`. |
-| `AppConfigKit.app_wide_storage(...)` | required | default | optional | Creates `.env.apprc-app` and selected storage `.env.apprc-storage`. |
+| `rc.AppRC.env_only(...)` | disabled | optional | disabled | Prints env guidance; writes nothing. |
+| `rc.AppRC.storage_only(...)` | required | optional | optional | Creates selected storage root and `.env.apprc-storage`. |
+| `rc.AppRC.app_wide_config(...)` | disabled | default | disabled | Creates `.env.apprc-app`. |
+| `rc.AppRC.app_wide_storage(...)` | required | default | optional | Creates `.env.apprc-app` and selected storage `.env.apprc-storage`. |
 
 Constructor arguments:
 
@@ -108,7 +104,6 @@ Constructor arguments:
 | `app_name` | Lowercase app name used for config home and derived env vars. |
 | `display_name` | Human-readable app name for CLI output. |
 | `config_package` | Package containing `.env.shared`. |
-| `envs` | Tuple of `EnvConfig` classes decorated with `@env_owner(...)`. |
 | `storage_env_key` | Optional explicit active-storage selector env key. Storage-capable constructors only. |
 | `command_name` | Optional executable/app command name shown in generated CLI copy. |
 | `index_filename` | Optional named-storage index basename. |
@@ -117,6 +112,11 @@ Constructor arguments:
 | `storage_env_filename` | Storage dotenv filename. Default: `.env.apprc-storage`. |
 
 Filename arguments accept basenames only, not paths.
+
+Register env-backed classes with `@MyRC.config("key", prefix="MYAPP_")`.
+Every `rc.field(...)` env key in that class must start with the prefix, and
+the field still writes the full key explicitly. Register Python-only
+`rc.ConfigBase` classes without `prefix`.
 
 <br>
 

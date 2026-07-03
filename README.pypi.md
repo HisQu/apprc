@@ -9,7 +9,7 @@ workflows from that metadata.
 The three strongest parts:
 
 - **Typed config contracts:** declare application settings once with
-  `EnvConfig`, `env_field(...)`, and `@env_owner(...)`.
+  `rc.Config`, `rc.ConfigBase`, `rc.field(...)`, and `@MyRC.config(...)`.
 - **Deterministic runtime config:** load layered dotenv files predictably while
   keeping normal runtime reads and diagnostics zero-write.
 - **Generated operator UX:** mount ready-made Typer `config` commands and open
@@ -78,48 +78,54 @@ For installation and first-setup recipes, see
 
 # Quickstart
 
-Declare typed config sections with `EnvConfig`, `@env_owner`, and
-`env_field(...)`:
+Use one root import and declare the app contract from that handle:
 
 ```python
 from pathlib import Path
 
-import apprc
+import typer
+import apprc as rc
 
 
-@apprc.env_owner(
-    key="app",
-    title="App",
-    env_prefix="MYAPP_",
-    rc_path=("app",),
+MyRC = rc.AppRC.storage_only(
+    app_name="myapp",
+    display_name="My App",
+    config_package="myapp.config",
+    storage_env_key="MYAPP_STORAGE",
 )
-class MyAppEnv(apprc.EnvConfig):
-    storage_root: Path = apprc.env_field(
-        "STORAGE",
+
+
+@MyRC.config("app", prefix="MYAPP_", title="App")
+class MyAppConfig(rc.Config):
+    storage_root: Path = rc.field(
+        "MYAPP_STORAGE",
         editable=False,
         required=True,
         title="Storage root",
     )
-    profile: str = apprc.env_field(
-        "PROFILE",
+    profile: str = rc.field(
+        "MYAPP_PROFILE",
         default="default",
         title="Profile",
-        explanation_short="Named runtime profile.",
+        description="Named runtime profile.",
     )
-    access_token: str = apprc.env_field(
-        "ACCESS_TOKEN",
+    access_token: str = rc.field(
+        "MYAPP_ACCESS_TOKEN",
         required=True,
         secret=True,
         title="Access token",
     )
 
 
-APP_CONFIG = apprc.AppConfigKit.storage_only(
-    app_name="myapp",
-    display_name="My App",
-    config_package="myapp.config",
-    envs=(MyAppEnv,),
-)
+@MyRC.config("resources", title="Resources")
+class PackageResources(rc.ConfigBase):
+    package: str = "myapp.resources"
+
+
+@MyRC.bundle
+class MyAppRC:
+    app: MyAppConfig
+    resources: PackageResources
 ```
 
 Add packaged defaults in `myapp/config/.env.shared`:
@@ -128,42 +134,47 @@ Add packaged defaults in `myapp/config/.env.shared`:
 MYAPP_PROFILE="default"
 ```
 
-Bootstrap your app before constructing runtime config objects:
+Mount AppRC on your Typer application before commands construct runtime config
+objects:
 
 ```python
-import typer
-
-import apprc
-
-from myapp.config import APP_CONFIG, MyAppEnv
+from myapp.config import MyAppRC, MyRC
 
 app = typer.Typer()
-apprc.mount_config_cli(app, APP_CONFIG)
+MyRC.mount_cli(app)
 
 
 @app.command()
 def run() -> None:
-    cfg = MyAppEnv()
-    typer.echo(f"profile={cfg.profile}")
+    cfg = MyAppRC()
+    typer.echo(f"profile={cfg.app.profile}")
 ```
 
-`mount_config_cli(...)` adds the standard AppRC CLI runtime options, performs
+`MyRC.mount_cli(...)` adds the standard AppRC CLI runtime options, performs
 runtime setup for commands that need resolved config, and mounts the generated
 `config` command group. Apps with custom runtime state can pass
-`state_type=...` and `state_factory=...`; tests or lazy-forwarding CLIs can pass
-`args_provider=...` with tokens shaped like `CliArgvProvider`. Apps whose
-config hooks must run for `config set` or `config edit` can pass
-`runtime_policy=...`. Use `config_group_name=...` only when the generated
-group should not be named `config`; AppRC raises a clear error if the app
-already owns that command or group name.
-Apps that own their Typer callback and extra options can use `CliRuntime`
-as the composable middle layer: the app builds its runtime state, while AppRC
+advanced options through `rc.cli.mount_config_cli(...)` or `rc.cli.CliRuntime`.
+Apps that own their Typer callback and extra options can use
+`rc.cli.CliRuntime` as the composable middle layer: the app builds its runtime
+state, while AppRC
 owns config command mounting, skip policy, context storage, and state
 validation. When `runtime.prepare(...)` skips runtime setup,
 `session.runtime_setup_skipped` is true and `session.state` is `None`.
 Runtimeful generated config commands require the app callback to leave the
 declared `state_type` on `ctx.obj`; runtime-independent config commands use
 AppRC's stored context instead.
+
+For non-Typer usage, call bootstrap explicitly and then construct config:
+
+```python
+MyRC.bootstrap()
+cfg = MyAppRC()
+```
+
+`rc.field("ENV_KEY")` is required when no default is provided.
+`rc.field("ENV_KEY", default="x")` and `default_factory=...` are optional.
+`secret=True` redacts display output; it does not encrypt values, store them
+elsewhere, or imply that the field is required.
 
 Run the capability examples from a checkout with:
 
@@ -210,9 +221,9 @@ AppRC has one contract and several workflows built from it.
 
 | Concept | Meaning |
 | --- | --- |
-| Config field | One typed setting declared with `env_field(...)`. |
-| Config owner | A related group of fields declared by `@env_owner(...)`. |
-| App config kit | The app-level contract that selects supported persistence layers. |
+| Config field | One typed setting declared with `rc.field("FULL_ENV_KEY", ...)`. |
+| Registered config | A related group of fields declared by `@MyRC.config(...)`. |
+| AppRC facade | The app-level contract that selects supported persistence layers. |
 | Bootstrap | A startup step that merges dotenv layers into this Python process. |
 | Generated CLI | A reusable Typer `config` command group for inspection and edits. |
 | Editor | A Textual view over the same owners, fields, and dotenv layers. |
@@ -231,10 +242,10 @@ Choose one capability constructor:
 
 | Constructor | Storage root | App-wide dotenv | Named storage index |
 | --- | --- | --- | --- |
-| `AppConfigKit.env_only(...)` | disabled | optional | disabled |
-| `AppConfigKit.storage_only(...)` | required | optional | optional |
-| `AppConfigKit.app_wide_config(...)` | disabled | default | disabled |
-| `AppConfigKit.app_wide_storage(...)` | required | default | optional |
+| `rc.AppRC.env_only(...)` | disabled | optional | disabled |
+| `rc.AppRC.storage_only(...)` | required | optional | optional |
+| `rc.AppRC.app_wide_config(...)` | disabled | default | disabled |
+| `rc.AppRC.app_wide_storage(...)` | required | default | optional |
 
 AppRC-managed persistence files are explicit:
 

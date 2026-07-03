@@ -10,7 +10,7 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
-import apprc
+import apprc as rc
 from apprc_example_apps._support import (
     build_standard_app,
     run_isolated,
@@ -24,8 +24,8 @@ from apprc_explicit_env_precedence_example.config import (
 
 def build_app(
     *,
-    args_provider: apprc.CliArgvProvider | None = None,
-    editor_app_cls: type[apprc.ConfigEditorApp] | None = None,
+    args_provider: rc.cli.CliArgvProvider | None = None,
+    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the explicit env precedence example CLI.
 
@@ -57,8 +57,8 @@ def run_demo(root: Path) -> dict[str, object]:
         explicit_root = root / "explicit-storage"
         shell_root.mkdir(parents=True)
         explicit_root.mkdir(parents=True)
-        apprc.ensure_storage_env_file(shell_root)
-        apprc.ensure_storage_env_file(explicit_root)
+        rc.files.ensure_storage_env_file(shell_root)
+        rc.files.ensure_storage_env_file(explicit_root)
         selector_env = write_env(
             root / ".env",
             {"APPRC_EXAMPLE_PRECEDENCE_ROOT": str(explicit_root)},

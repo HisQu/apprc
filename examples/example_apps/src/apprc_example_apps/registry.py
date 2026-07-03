@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 # == Internal ================================
-import apprc
+from apprc.definition.app_config.kit import AppConfigKit
 from apprc_app_wide_config_example.config import KIT as APP_WIDE_CONFIG_KIT
 from apprc_app_wide_storage_example.config import KIT as APP_WIDE_STORAGE_KIT
 from apprc_cli_runtime_example.config import KIT as CLI_RUNTIME_KIT
@@ -34,7 +34,7 @@ class ExampleAppSpec:
 
     name: str
     root_name: str
-    kit: apprc.AppConfigKit
+    kit: AppConfigKit
     explicit_values: Mapping[str, str]
     app_wide_values: Mapping[str, str]
     storage_values: Mapping[str, str] | None = None
@@ -143,7 +143,7 @@ def example_app_specs() -> tuple[ExampleAppSpec, ...]:
     return EXAMPLE_APPS
 
 
-def example_kits() -> dict[str, apprc.AppConfigKit]:
+def example_kits() -> dict[str, AppConfigKit]:
     """Return example AppRC kits keyed by registry name.
 
     :return: Mapping from example registry name to AppRC kit.

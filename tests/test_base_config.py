@@ -8,18 +8,18 @@ from typing import Any, cast
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
 
-from apprc import (
-    BaseConfig,
-    ConfigProvenance,
-    EnvConfig,
+import apprc.definition.env_config as config_objects_api
+import apprc.definition.env_config.base as base_config
+import apprc.definition.env_config._loading as env_loading
+import apprc.definition.env_config.env as env_config_module
+from apprc.definition.env_config.base import BaseConfig
+from apprc.definition.env_config.env import EnvConfig
+from apprc.definition.env_config.fields import (
     config_owner_for,
     env_field,
     env_owner,
 )
-import apprc.definition.env_config as config_objects_api
-import apprc.definition.env_config.base as base_config
-import apprc.definition.env_config.env as env_config_module
-import apprc.definition.env_config._loading as env_loading
+from apprc.runtime.provenance import ConfigProvenance
 
 
 @dataclass(slots=True)

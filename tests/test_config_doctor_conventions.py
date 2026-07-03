@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc import AppConfigKit
+from apprc.definition.app_config.kit import AppConfigKit
 from apprc.runtime.diagnostics.payload import build_config_doctor_payload
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
 from tests.support_config import (

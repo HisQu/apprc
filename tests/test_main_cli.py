@@ -13,7 +13,6 @@ import pytest
 import typer
 from typer.testing import CliRunner, Result
 
-import apprc
 from apprc_app_wide_config_example import cli as app_wide_config
 from apprc_app_wide_config_example.config import KIT as APP_WIDE_CONFIG_KIT
 from apprc_app_wide_storage_example import cli as app_wide_storage
@@ -28,6 +27,8 @@ from apprc_explicit_env_precedence_example import (
 from apprc_explicit_env_precedence_example.config import (
     KIT as EXPLICIT_ENV_PRECEDENCE_KIT,
 )
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.runtime.diagnostics.messages import config_command_text
 from apprc_storage_only_example import cli as storage_only
 from apprc_storage_only_example.config import KIT as STORAGE_ONLY_KIT
@@ -37,7 +38,7 @@ from tests.support_config import build_apprc_example_app_kit
 ROOT = Path(__file__).parents[1]
 
 
-class HeadlessConfigEditorApp(apprc.ConfigEditorApp):
+class HeadlessConfigEditorApp(ConfigEditorApp):
     """Test editor that records launch state without starting Textual."""
 
     run_count: ClassVar[int] = 0
@@ -58,7 +59,7 @@ class ExampleCliDefinition:
 
     mode: str
     command_name: str
-    kit: apprc.AppConfigKit
+    kit: AppConfigKit
     build_app: Callable[..., typer.Typer]
     app_key: str
     app_value: str

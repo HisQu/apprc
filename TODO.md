@@ -73,3 +73,17 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Todo list](#todo-list)
    1. [Table Of Contents](#table-of-contents)
+2. [2026-07-03](#2026-07-03)
+
+
+<br>
+
+# 2026-07-03
+
+## P3 / E1 [Code smell] - *Config import facades look awkward*
+- **Area:** `src/apprc/scaffold/config_package.py`, `examples/example_apps/src/*/config/_facade.py`, `examples/example_apps/src/*/config/sections/_facade.py`
+- **Observed while:** Avoiding eager `config.sections` imports that can load unrelated optional section dependencies.
+- **Why not fixed now:** The lazy facade plus `.pyi` approach works and passes verification, but the shape is noisy and deserves a focused design pass instead of another quick patch.
+- **Evidence:** Generated config packages now need `_facade.py` modules and typed `__init__.pyi` files just to keep convenient package-level imports without eager import side effects.
+- **Context:** AppRC should prevent config-layer import nonsense, but the current prevention mechanism is visually and conceptually heavy. The `_facade.py` files solve the immediate dependency leak but make the scaffold look more complicated than the config model should feel.
+- **Suggested next step:** Revisit the config package import design and look for a cleaner pattern that preserves leaf-module imports, typed public surfaces, and lightweight package initialization with fewer generated support files.

@@ -1,7 +1,7 @@
 """Top-level config bundle for the explicit env precedence example."""
 
 from explicit_env_precedence.config.app import MyRC
-from explicit_env_precedence.config.sections import (
+from explicit_env_precedence.config.sections.app import (
     ExplicitEnvPrecedenceConfig,
 )
 

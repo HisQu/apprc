@@ -2,8 +2,8 @@
 
 # ruff: noqa: F401
 
-from app_wide_config.config.sections.app import AppWideConfig
-
-__all__ = [
-    "AppWideConfig",
-]
+from app_wide_config.config.sections._facade import (
+    __all__,
+    __dir__,
+    __getattr__,
+)

@@ -1,7 +1,7 @@
 """Top-level config bundle for the storage-only example."""
 
 from storage_only.config.app import MyRC
-from storage_only.config.sections import StorageOnlyConfig
+from storage_only.config.sections.app import StorageOnlyConfig
 
 
 @MyRC.bundle

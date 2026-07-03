@@ -2,26 +2,8 @@
 
 # ruff: noqa: F401
 
-from explicit_env_precedence.config.app import MyRC
-from explicit_env_precedence.config.bundle import (
-    ExplicitEnvPrecedenceExampleConfig,
+from explicit_env_precedence.config._facade import (
+    __all__,
+    __dir__,
+    __getattr__,
 )
-from explicit_env_precedence.config.catalog import (
-    CONFIG_SECTIONS,
-    CONFIG_SPEC,
-    KIT,
-    SECTION_BY_KEY,
-)
-from explicit_env_precedence.config.sections import (
-    ExplicitEnvPrecedenceConfig,
-)
-
-__all__ = [
-    "CONFIG_SECTIONS",
-    "CONFIG_SPEC",
-    "ExplicitEnvPrecedenceConfig",
-    "ExplicitEnvPrecedenceExampleConfig",
-    "KIT",
-    "MyRC",
-    "SECTION_BY_KEY",
-]

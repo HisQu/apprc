@@ -61,6 +61,12 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
+  - Changed `apprc scaffold config` and repository example apps so generated
+    config package facades resolve exports lazily, publish typed `.pyi`
+    surfaces, and bundles import section classes from leaf modules. This keeps
+    optional dependencies owned by one section from loading during unrelated
+    config imports.
+
 <br>
 
 ### ⚠️ Deprecated

@@ -1,4 +1,5 @@
 import importlib
+import sys
 from pathlib import Path
 
 import pytest
@@ -27,8 +28,12 @@ def test_scaffold_config_package_generates_importable_standard_layout(
 
     expected_files = {
         source_root / "demo_app" / "config" / "__init__.py",
+        source_root / "demo_app" / "config" / "__init__.pyi",
+        source_root / "demo_app" / "config" / "_facade.py",
         source_root / "demo_app" / "config" / "app.py",
         source_root / "demo_app" / "config" / "sections" / "__init__.py",
+        source_root / "demo_app" / "config" / "sections" / "__init__.pyi",
+        source_root / "demo_app" / "config" / "sections" / "_facade.py",
         source_root / "demo_app" / "config" / "sections" / "app.py",
         source_root / "demo_app" / "config" / "bundle.py",
         source_root / "demo_app" / "config" / "catalog.py",
@@ -45,6 +50,46 @@ def test_scaffold_config_package_generates_importable_standard_layout(
     assert "app" in config_module.SECTION_BY_KEY
     generated_bundle = config_module.DemoAppConfig()
     assert generated_bundle.app.profile == "default"
+
+
+def test_scaffold_config_package_keeps_leaf_imports_lightweight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Leaf section imports should not load unrelated config modules."""
+    source_root = tmp_path / "src"
+    scaffold_config_package(
+        ConfigScaffoldRequest(
+            package="leaf_demo",
+            mode="env-only",
+            app_name="leaf-demo",
+            target=source_root,
+        )
+    )
+
+    monkeypatch.syspath_prepend(str(source_root))
+    sections_pkg = importlib.import_module("leaf_demo.config.sections")
+
+    assert "leaf_demo.config.app" not in sys.modules
+    assert "leaf_demo.config.sections.app" not in sys.modules
+    assert "leaf_demo.config.bundle" not in sys.modules
+    assert "leaf_demo.config.catalog" not in sys.modules
+
+    section_cls = sections_pkg.AppSection
+
+    assert section_cls.__name__ == "AppSection"
+    assert "leaf_demo.config.app" in sys.modules
+    assert "leaf_demo.config.sections.app" in sys.modules
+    assert "leaf_demo.config.bundle" not in sys.modules
+    assert "leaf_demo.config.catalog" not in sys.modules
+
+    config_pkg = importlib.import_module("leaf_demo.config")
+    assert config_pkg.MyRC.kit.spec.app_name == "leaf-demo"
+    assert "leaf_demo.config.bundle" not in sys.modules
+    assert "leaf_demo.config.catalog" not in sys.modules
+
+    assert config_pkg.LeafDemoConfig().app.profile == "default"
+    assert "leaf_demo.config.bundle" in sys.modules
 
 
 def test_scaffold_config_package_refuses_unrelated_storage_prefix(

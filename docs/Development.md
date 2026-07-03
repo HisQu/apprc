@@ -170,9 +170,13 @@ The example config packages follow the standard AppRC app layout:
 ```text
 <example>/config/
   __init__.py
+  __init__.pyi
+  _facade.py
   app.py
   sections/
     __init__.py
+    __init__.pyi
+    _facade.py
     app.py
   bundle.py
   catalog.py
@@ -182,7 +186,9 @@ The example config packages follow the standard AppRC app layout:
 Simple sections stay as files under `sections/`. Larger sections become nested
 packages under `sections/<section>/`; `cli_runtime` uses
 `sections/runtime/` to exercise that layout. Do not create domain-specific
-sibling packages next to `sections/` for config declarations.
+sibling packages next to `sections/` for config declarations. Package
+`__init__.py` files should stay as lightweight facades, and bundles should
+import section classes from concrete leaf modules.
 
 New downstream apps can generate the same skeleton with:
 

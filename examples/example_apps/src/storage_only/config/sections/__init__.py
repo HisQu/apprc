@@ -2,8 +2,4 @@
 
 # ruff: noqa: F401
 
-from storage_only.config.sections.app import StorageOnlyConfig
-
-__all__ = [
-    "StorageOnlyConfig",
-]
+from storage_only.config.sections._facade import __all__, __dir__, __getattr__

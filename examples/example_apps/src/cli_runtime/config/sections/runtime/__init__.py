@@ -2,10 +2,8 @@
 
 # ruff: noqa: F401
 
-from cli_runtime.config.sections.runtime.settings import (
-    CliRuntimeConfig,
+from cli_runtime.config.sections.runtime._facade import (
+    __all__,
+    __dir__,
+    __getattr__,
 )
-
-__all__ = [
-    "CliRuntimeConfig",
-]

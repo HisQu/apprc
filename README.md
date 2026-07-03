@@ -95,9 +95,13 @@ Create this standard package layout by hand, or generate a starter with
 ```text
 myapp/config/
   __init__.py
+  __init__.pyi
+  _facade.py
   app.py
   sections/
     __init__.py
+    __init__.pyi
+    _facade.py
     app.py
   bundle.py
   catalog.py
@@ -120,7 +124,9 @@ Keep every app-declared config area under `config/sections/`. Small areas can
 be one module, for example `sections/client.py`. When an area grows, turn it
 into a package such as `sections/rag/` and keep its local bundle/resources next
 to its leaf settings there. Leave `config/bundle.py` for the top-level app
-bundle and `config/catalog.py` for metadata.
+bundle and `config/catalog.py` for metadata. Keep package `__init__.py` files
+lightweight; import section classes in `bundle.py` from leaf modules such as
+`config.sections.client`, not from the `config.sections` package facade.
 
 ```python
 from pathlib import Path

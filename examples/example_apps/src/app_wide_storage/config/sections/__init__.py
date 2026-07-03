@@ -2,10 +2,8 @@
 
 # ruff: noqa: F401
 
-from app_wide_storage.config.sections.app import (
-    AppWideStorageConfig,
+from app_wide_storage.config.sections._facade import (
+    __all__,
+    __dir__,
+    __getattr__,
 )
-
-__all__ = [
-    "AppWideStorageConfig",
-]

@@ -2,8 +2,4 @@
 
 # ruff: noqa: F401
 
-from env_only.config.sections.app import EnvOnlyConfig
-
-__all__ = [
-    "EnvOnlyConfig",
-]
+from env_only.config.sections._facade import __all__, __dir__, __getattr__

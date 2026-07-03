@@ -100,9 +100,13 @@ more registered config classes. The recommended layout is:
 ```text
 myapp/config/
   __init__.py
+  __init__.pyi
+  _facade.py
   app.py
   sections/
     __init__.py
+    __init__.pyi
+    _facade.py
     app.py
   bundle.py
   catalog.py
@@ -126,7 +130,10 @@ All app-declared config areas belong under `config/sections/`. Keep small areas
 as modules such as `sections/client.py`; use a nested package such as
 `sections/rag/` when one area needs its own bundle, resources, or several leaf
 settings. `config/bundle.py` should only assemble the app-level bundle, and
-`config/catalog.py` should only expose metadata.
+`config/catalog.py` should only expose metadata. Keep package `__init__.py`
+files lightweight; import section classes in `bundle.py` from leaf modules
+such as `config.sections.client`, not from the `config.sections` package
+facade.
 
 ```python
 from pathlib import Path

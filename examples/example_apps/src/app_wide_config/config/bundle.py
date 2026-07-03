@@ -1,7 +1,7 @@
 """Top-level config bundle for the app-wide config example."""
 
 from app_wide_config.config.app import MyRC
-from app_wide_config.config.sections import AppWideConfig
+from app_wide_config.config.sections.app import AppWideConfig
 
 
 @MyRC.bundle

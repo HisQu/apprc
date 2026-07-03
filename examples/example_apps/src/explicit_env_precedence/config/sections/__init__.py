@@ -2,10 +2,8 @@
 
 # ruff: noqa: F401
 
-from explicit_env_precedence.config.sections.app import (
-    ExplicitEnvPrecedenceConfig,
+from explicit_env_precedence.config.sections._facade import (
+    __all__,
+    __dir__,
+    __getattr__,
 )
-
-__all__ = [
-    "ExplicitEnvPrecedenceConfig",
-]

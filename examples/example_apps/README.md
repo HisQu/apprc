@@ -31,8 +31,9 @@ not source templates.
 | [`cli_runtime`](src/cli_runtime/README.md) | `apprc-cli-runtime` | App-owned Typer callback integrated with `CliRuntime`. |
 | [`_example_apps_utils`](src/_example_apps_utils/README.md) | `apprc-examples-run-all` | Internal registry and runner support. |
 
-Each runnable app owns a `config/` package with `app.py`, `sections/`,
-`bundle.py`, `catalog.py`, and `config/.env.shared`.
+Each runnable app owns a `config/` package with `__init__.pyi`,
+`_facade.py`, `app.py`, `sections/`, `bundle.py`, `catalog.py`, and
+`config/.env.shared`.
 
 ## Docs
 

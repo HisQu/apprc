@@ -69,9 +69,12 @@ _check-pypi-api-key:
 # Remove transient junk: uv cache,  __pycache__, .pytest_cache, .mypy_cache, .ruff_cache. Does NOT touch uv.lock or your venv.
 clean:
     @echo "🧹 Cleaning caches and build artifacts..."
-    find . -type d -name "__pycache__" -prune -exec rm -rf {} + || true
-    rm -rf .pytest_cache .mypy_cache .ruff_cache dist build *.egg-info || true
-    uv cache prune -y || true
+    find . \
+      \( -path "./.git" -o -path "./.venv" -o -path "./.direnv" \) -prune -o \
+      -type d \( -name "__pycache__" -o -name "*.egg-info" \) \
+      -prune -exec rm -rf {} + || true
+    rm -rf .pytest_cache .mypy_cache .ruff_cache dist build || true
+    uv cache prune || true
 
 
 # Rebuilds python venv from uv.lock
@@ -201,11 +204,48 @@ alias bump := bump-version
 
 # Verify the published PyPI package in a fresh plain-pip virtualenv.
 verify-pypi requirement="apprc":
-    rm -rf /tmp/apprc-pypi-check
-    python -m venv /tmp/apprc-pypi-check
-    /tmp/apprc-pypi-check/bin/python -m pip install --upgrade pip
-    /tmp/apprc-pypi-check/bin/python -m pip install --no-cache-dir "{{requirement}}"
-    /tmp/apprc-pypi-check/bin/python -c 'import apprc; print(apprc.AppConfigKit)'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    check_env="/tmp/apprc-pypi-check"
+    rm -rf "$check_env"
+    python -m venv "$check_env"
+    "$check_env/bin/python" -m pip install --upgrade pip
+    "$check_env/bin/python" -m pip install --no-cache-dir "{{requirement}}"
+    "$check_env/bin/python" - <<'PY'
+    import importlib.metadata as metadata
+    import importlib.util
+    import sys
+
+    import apprc
+
+    assert apprc.AppRC.__name__ == "AppRC"
+    assert apprc.Config.__name__ == "Config"
+    assert isinstance(apprc.ConfigBase, type)
+    assert callable(apprc.field)
+    assert {"AppRC", "Config", "ConfigBase", "field"}.issubset(apprc.__all__)
+
+    requirements = metadata.requires("apprc") or []
+    core_requirements = [
+        requirement
+        for requirement in requirements
+        if "extra ==" not in requirement
+    ]
+    assert not any(
+        requirement.lower().split(";", maxsplit=1)[0].strip().startswith("textual")
+        for requirement in core_requirements
+    )
+    assert "tui" in (metadata.metadata("apprc").get_all("Provides-Extra") or [])
+    assert any(
+        requirement.lower().startswith("textual") and "tui" in requirement
+        for requirement in requirements
+    )
+    assert importlib.util.find_spec("textual") is None
+    assert not any(
+        module_name == "textual" or module_name.startswith("textual.")
+        for module_name in sys.modules
+    )
+    print("apprc base install smoke passed")
+    PY
 
 # Run GitHub Actions triggered by push locally using act
 gitactions:

@@ -132,6 +132,11 @@ All notable changes to `{my_project}` will be documented in this file.
     archive/delete orchestration live on the coordinator instead of relying on
     runtime stubs inherited by leaf workflow classes.
 
+  - Changed release maintenance helpers so `just verify-pypi` checks the
+    current base public API and optional `tui` metadata, `just clean` removes
+    nested package metadata, and lazy facade type surfaces live in `.pyi`
+    stubs.
+
 <br>
 
 ### ⚠️ Deprecated

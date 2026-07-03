@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import shlex
 import subprocess
 import tomllib
@@ -487,6 +488,32 @@ def test_textual_is_tui_extra_not_core_runtime_dependency() -> None:
     assert "textual" in _dependency_names(pyproject["dependency-groups"]["dev"])
 
 
+def test_verify_pypi_recipe_checks_current_base_install_surface() -> None:
+    """The package smoke helper must track the clean public root facade."""
+    recipe = _just_recipe("verify-pypi")
+
+    assert "AppConfigKit" not in recipe
+    assert "apprc.AppRC" in recipe
+    assert "apprc.Config" in recipe
+    assert "apprc.ConfigBase" in recipe
+    assert "apprc.field" in recipe
+    assert "Provides-Extra" in recipe
+    assert 'find_spec("textual") is None' in recipe
+    assert 'startswith("textual")' in recipe
+
+
+def test_clean_recipe_removes_nested_egg_info_without_touching_envs() -> None:
+    """Cleaning should remove nested package metadata but skip environments."""
+    recipe = _just_recipe("clean")
+
+    assert '-name "*.egg-info"' in recipe
+    assert "./.git" in recipe
+    assert "./.venv" in recipe
+    assert "./.direnv" in recipe
+    assert "find ." in recipe
+    assert "uv cache prune -y" not in recipe
+
+
 def _dependency_names(requirements: list[object]) -> set[str]:
     """Return requirement names from dependency strings in one pyproject list."""
     names: set[str] = set()
@@ -494,6 +521,17 @@ def _dependency_names(requirements: list[object]) -> set[str]:
         if isinstance(requirement, str):
             names.add(Requirement(requirement).name)
     return names
+
+
+def _just_recipe(name: str) -> str:
+    """Return one recipe body from the project justfile."""
+    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+    match = re.search(
+        rf"(?ms)^{re.escape(name)}(?:[^\n]*):\n(?P<body>.*?)(?=^\S|\Z)",
+        justfile,
+    )
+    assert match is not None
+    return match.group("body")
 
 
 def test_core_package_does_not_import_demo_package() -> None:

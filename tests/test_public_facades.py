@@ -1,5 +1,6 @@
 """Public facade and namespace surface tests."""
 
+import ast
 import json
 import subprocess
 import sys
@@ -8,6 +9,7 @@ from pathlib import Path
 import apprc
 import apprc.cli as apprc_cli
 import apprc.files as apprc_files
+import apprc.interfaces as apprc_interfaces
 import apprc.provenance as apprc_provenance
 import apprc.storage as apprc_storage
 from apprc.interfaces.cli._bootstrap import bootstrap_cli_env
@@ -132,6 +134,27 @@ print(json.dumps(any(
     assert json.loads(result.stdout) is False
 
 
+def test_lazy_facade_stubs_match_runtime_exports() -> None:
+    """Typed lazy facades must describe the same public names as runtime."""
+    assert _stub_import_names(
+        ROOT / "src" / "apprc" / "cli" / "__init__.pyi"
+    ) == set(apprc_cli.__all__)
+    assert _stub_import_names(
+        ROOT / "src" / "apprc" / "interfaces" / "__init__.pyi"
+    ) == set(apprc_interfaces.__all__)
+
+
+def test_lazy_facade_runtime_inits_do_not_duplicate_type_exports() -> None:
+    """Keep type-only facade declarations in stubs, not runtime modules."""
+    for path in (
+        ROOT / "src" / "apprc" / "cli" / "__init__.py",
+        ROOT / "src" / "apprc" / "interfaces" / "__init__.py",
+    ):
+        text = path.read_text(encoding="utf-8")
+        assert "TYPE_CHECKING" not in text
+        assert "from apprc.interfaces.tui import" not in text
+
+
 def test_storage_files_and_provenance_namespaces_export_helpers() -> None:
     """Advanced non-CLI helpers live under explicit namespaces."""
     assert apprc_storage.StorageRegistry is StorageRegistry
@@ -140,6 +163,17 @@ def test_storage_files_and_provenance_namespaces_export_helpers() -> None:
     assert apprc_files.set_env_file_value is set_env_file_value
     assert apprc_provenance.ConfigProvenance is ConfigProvenance
     assert apprc_provenance.provenance_of is provenance_of
+
+
+def _stub_import_names(path: Path) -> set[str]:
+    """Return public names imported by one facade stub."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        names.update(alias.asname or alias.name for alias in node.names)
+    return names
 
 
 def test_public_docs_do_not_reference_unreleased_runtime_names() -> None:

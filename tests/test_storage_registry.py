@@ -391,6 +391,91 @@ def test_register_storage_rolls_back_new_empty_artifacts_on_write_failure(
     assert not (storage_root / ".env.apprc-storage").exists()
 
 
+def test_register_storage_warns_when_storage_env_rollback_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    storage_root = tmp_path / "alpha"
+    original_unlink = Path.unlink
+
+    def fail_write(_: object) -> None:
+        raise OSError("blocked")
+
+    def fail_storage_env_unlink(
+        self: Path,
+        missing_ok: bool = False,
+    ) -> None:
+        if self.name == ".env.apprc-storage":
+            raise OSError("unlink blocked")
+        original_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(
+        "apprc.user_files.storage_roots.registry.write_storage_registry",
+        fail_write,
+    )
+    monkeypatch.setattr(Path, "unlink", fail_storage_env_unlink)
+    caplog.set_level(
+        "WARNING",
+        logger="apprc.user_files.storage_roots.registry",
+    )
+
+    with pytest.raises(OSError, match="blocked") as exc_info:
+        register_storage(
+            name="alpha",
+            root=storage_root,
+            path=index_path,
+        )
+
+    notes = getattr(exc_info.value, "__notes__", ())
+    assert any("remove empty storage env file" in note for note in notes)
+    assert any("unlink blocked" in message for message in caplog.messages)
+    assert storage_root.exists()
+    assert (storage_root / ".env.apprc-storage").exists()
+
+
+def test_register_storage_warns_when_root_rollback_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    storage_root = tmp_path / "alpha"
+    original_rmdir = Path.rmdir
+
+    def fail_write(_: object) -> None:
+        raise OSError("blocked")
+
+    def fail_created_root_rmdir(self: Path) -> None:
+        if self == storage_root.resolve():
+            raise OSError("rmdir blocked")
+        original_rmdir(self)
+
+    monkeypatch.setattr(
+        "apprc.user_files.storage_roots.registry.write_storage_registry",
+        fail_write,
+    )
+    monkeypatch.setattr(Path, "rmdir", fail_created_root_rmdir)
+    caplog.set_level(
+        "WARNING",
+        logger="apprc.user_files.storage_roots.registry",
+    )
+
+    with pytest.raises(OSError, match="blocked") as exc_info:
+        register_storage(
+            name="alpha",
+            root=storage_root,
+            path=index_path,
+        )
+
+    notes = getattr(exc_info.value, "__notes__", ())
+    assert any("remove created storage root" in note for note in notes)
+    assert any("rmdir blocked" in message for message in caplog.messages)
+    assert storage_root.exists()
+    assert not (storage_root / ".env.apprc-storage").exists()
+
+
 def test_register_storage_keeps_existing_non_empty_root_on_write_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

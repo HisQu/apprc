@@ -64,6 +64,14 @@ All notable changes to `{my_project}` will be documented in this file.
     `rc.ConfigBase` for Python-only config, mount Typer with
     `MyRC.mount_cli(app)`, and use namespace modules for advanced helpers.
 
+  - Breaking: Removed selector-unaware config CLI hooks.
+    Affected: Users passing `active_storage_root=` or `initial_storage=` to
+    `AppConfigKit.typer_app(...)`, `rc.cli.mount_config_cli(...)`,
+    `rc.cli.build_config_typer_app(...)`, or `rc.cli.CliRuntime(...)`.
+    Migration: Use `active_storage_root_with_context=` or
+    `initial_storage_with_context=`. The hook may ignore
+    `ConfigSelectorContext` when it only needs app state.
+
 <br>
 
 ### ➕ Added
@@ -89,6 +97,10 @@ All notable changes to `{my_project}` will be documented in this file.
     `config/.env.shared` defaults. Complex config areas now live as nested
     packages under `sections/`, as shown by the CLI runtime example.
 
+  - Changed config editor storage workflow ownership so archive import and
+    archive/delete orchestration live on the coordinator instead of relying on
+    runtime stubs inherited by leaf workflow classes.
+
 <br>
 
 ### ⚠️ Deprecated
@@ -100,6 +112,10 @@ All notable changes to `{my_project}` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+  - Fixed failed storage registration rollback so cleanup failures are logged,
+    attached to the original exception as notes, and shown as warning
+    notifications in the config editor.
 
 <br>
 

@@ -31,11 +31,9 @@ def build_config_typer_app(
     *,
     state_type: type[StateT] | None = None,
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
-    active_storage_root: Callable[[StateT], Path | None] | None = None,
     active_storage_root_with_context: (
         Callable[[StateT, ConfigSelectorContext], Path | None] | None
     ) = None,
-    initial_storage: Callable[[StateT], str | None] | None = None,
     initial_storage_with_context: (
         Callable[[StateT, ConfigSelectorContext], str | None] | None
     ) = None,
@@ -51,12 +49,10 @@ def build_config_typer_app(
     :param state_type: Application CLI state type stored on ``ctx.obj``.
         When omitted, AppRC uses its default config state.
     :param runtime_payload: Optional serializer for ``config show``.
-    :param active_storage_root: Optional active storage resolver.
     :param active_storage_root_with_context: Optional active storage resolver
-        that can inspect explicit env-file selector context.
-    :param initial_storage: Optional editor initial-selection resolver.
+        that receives explicit env-file selector context.
     :param initial_storage_with_context: Optional editor initial-selection
-        resolver that can inspect explicit env-file selector context.
+        resolver that receives explicit env-file selector context.
     :param editor_app_cls: Optional Textual subclass.
     :param help: Optional command-group help.
     :param setup_message: Optional setup text for missing storage.
@@ -69,9 +65,7 @@ def build_config_typer_app(
     options = ConfigGroupOptions(
         state_type=state_type or DefaultConfigCliState,
         runtime_payload=runtime_payload,
-        active_storage_root=active_storage_root,
         active_storage_root_with_context=active_storage_root_with_context,
-        initial_storage=initial_storage,
         initial_storage_with_context=initial_storage_with_context,
         editor_app_cls=editor_app_cls,
         help=help,

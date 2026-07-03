@@ -20,6 +20,7 @@ from apprc.public.config import Config, ConfigBase
 from apprc.runtime.result import EnvBootstrapResult
 from apprc.user_files.env_files.updates import EnvFileUpdate
 from apprc.user_files.storage_roots.model import StorageRegistry
+from apprc.interfaces.tui.editor.storage_base import StorageWorkflowBase
 
 
 def test_root_facade_exports_public_config_api() -> None:
@@ -66,6 +67,12 @@ def test_lazy_aggregate_facades_are_import_cycle_boundaries() -> None:
     assert importlib.import_module("apprc.runtime").__all__
     assert importlib.import_module("apprc.user_files").__all__
     assert importlib.import_module("apprc.user_files.storage_roots").__all__
+
+
+def test_storage_workflow_base_does_not_define_cross_workflow_stubs() -> None:
+    """Storage leaf workflows must not inherit placeholder cross-actions."""
+    assert not hasattr(StorageWorkflowBase, "register_storage_directory_flow")
+    assert not hasattr(StorageWorkflowBase, "remove_live_storage")
 
 
 def test_old_config_package_is_removed() -> None:

@@ -76,7 +76,7 @@ Top-level `apprc` imports for normal integrations:
 | `ConfigRuntimePolicy` | Config-command runtime skip policy with customizable runtime-independent actions. |
 | `bootstrap_cli_env` | Typer-friendly wrapper around the lower-level AppRC bootstrap engine. |
 | `config_request_skips_runtime` | Detect generated config commands that can run before runtime setup. |
-| `ConfigSelectorContext` | Context passed to selector-aware config CLI hooks. |
+| `ConfigSelectorContext` | Context passed to selector-aware config CLI hooks. Hooks that only need app state can ignore this argument. |
 
 Advanced storage and dotenv helpers are intentionally not root exports. Use
 `apprc.storage`, `apprc.files`, and `apprc.provenance` when application code

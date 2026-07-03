@@ -12,6 +12,7 @@ from apprc.definition.app_config.capabilities import (
     StorageLayerState,
 )
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.interfaces.tui._primitives import StorageNameResult
 from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
     register_storage,
@@ -253,6 +254,69 @@ async def test_editor_storage_delete_unregisters_before_content_delete(
     assert load_storage_registry_or_empty(index_path).storages == {}
     assert storage_root.exists()
     assert notifications[-1][1]["severity"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_editor_storage_registration_shows_rollback_cleanup_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    index_path = tmp_path / "demo.apprc.toml"
+    storage_root = tmp_path / "alpha"
+    storage_root.mkdir()
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=load_storage_registry_or_empty(index_path),
+    )
+    responses: list[object | None] = [StorageNameResult(name="alpha")]
+    notifications: list[tuple[str, dict[str, object]]] = []
+    original_unlink = Path.unlink
+
+    async def push_screen_wait(screen: object) -> object | None:
+        return responses.pop(0)
+
+    async def refresh_storage_list(
+        *,
+        select_name: str | None = None,
+    ) -> None:
+        return None
+
+    def notify(message: str, **kwargs: object) -> None:
+        notifications.append((message, kwargs))
+
+    def fail_write(_: object) -> None:
+        raise OSError("blocked")
+
+    def fail_storage_env_unlink(
+        self: Path,
+        missing_ok: bool = False,
+    ) -> None:
+        if self.name == ".env.apprc-storage":
+            raise OSError("unlink blocked")
+        original_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
+    monkeypatch.setattr(editor, "_refresh_storage_list", refresh_storage_list)
+    monkeypatch.setattr(editor, "notify", notify)
+    monkeypatch.setattr(
+        "apprc.user_files.storage_roots.registry.write_storage_registry",
+        fail_write,
+    )
+    monkeypatch.setattr(Path, "unlink", fail_storage_env_unlink)
+
+    await editor.storage_workflows.register_storage_directory_flow(
+        storage_root,
+        default_name="alpha",
+    )
+
+    assert notifications[0][1]["severity"] == "error"
+    assert "blocked" in notifications[0][0]
+    assert any(
+        kwargs["severity"] == "warning"
+        and "remove empty storage env file" in message
+        for message, kwargs in notifications
+    )
 
 
 @pytest.mark.asyncio

@@ -57,9 +57,6 @@ def mount_config_cli(
     runtime_payload: (
         Callable[[DefaultConfigCliState], Mapping[str, Any]] | None
     ) = None,
-    active_storage_root: (
-        Callable[[DefaultConfigCliState], Path | None] | None
-    ) = None,
     active_storage_root_with_context: (
         Callable[
             [DefaultConfigCliState, "ConfigSelectorContext"],
@@ -67,8 +64,6 @@ def mount_config_cli(
         ]
         | None
     ) = None,
-    initial_storage: Callable[[DefaultConfigCliState], str | None]
-    | None = None,
     initial_storage_with_context: (
         Callable[[DefaultConfigCliState, "ConfigSelectorContext"], str | None]
         | None
@@ -93,11 +88,9 @@ def mount_config_cli(
     args_provider: CliArgvProvider | None = None,
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = (None),
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
-    active_storage_root: Callable[[StateT], Path | None] | None = None,
     active_storage_root_with_context: (
         Callable[[StateT, "ConfigSelectorContext"], Path | None] | None
     ) = None,
-    initial_storage: Callable[[StateT], str | None] | None = None,
     initial_storage_with_context: (
         Callable[[StateT, "ConfigSelectorContext"], str | None] | None
     ) = None,
@@ -120,11 +113,9 @@ def mount_config_cli(
     args_provider: CliArgvProvider | None = None,
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = (None),
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None,
-    active_storage_root: Callable[[Any], Path | None] | None = None,
     active_storage_root_with_context: (
         Callable[[Any, "ConfigSelectorContext"], Path | None] | None
     ) = None,
-    initial_storage: Callable[[Any], str | None] | None = None,
     initial_storage_with_context: (
         Callable[[Any, "ConfigSelectorContext"], str | None] | None
     ) = None,
@@ -149,12 +140,10 @@ def mount_config_cli(
         skips runtime setup for generated config setup/inspection and plain
         command help.
     :param runtime_payload: Optional serializer for ``config show``.
-    :param active_storage_root: Optional storage-root resolver for app state.
     :param active_storage_root_with_context: Optional storage-root resolver that
-        can inspect explicit env-file selector context.
-    :param initial_storage: Optional editor initial-selection resolver.
+        receives explicit env-file selector context.
     :param initial_storage_with_context: Optional editor initial-selection
-        resolver that can inspect explicit env-file selector context.
+        resolver that receives explicit env-file selector context.
     :param editor_app_cls: Optional Textual subclass.
     :param help: Optional generated config group help text.
     :param setup_message: Optional setup text for missing storage.
@@ -201,9 +190,7 @@ def mount_config_cli(
         args_provider=args_provider,
         runtime_policy=runtime_policy,
         runtime_payload=runtime_payload,
-        active_storage_root=active_storage_root,
         active_storage_root_with_context=active_storage_root_with_context,
-        initial_storage=initial_storage,
         initial_storage_with_context=initial_storage_with_context,
         editor_app_cls=editor_app_cls,
         help=help,

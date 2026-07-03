@@ -60,7 +60,6 @@ class ConfigCommandBase:
         self.kit = kit
         self.state_type = options.state_type
         self.runtime_payload = options.runtime_payload
-        self.active_storage_root_hook = options.active_storage_root
         self.active_storage_root_with_context_hook = (
             options.active_storage_root_with_context
         )
@@ -73,7 +72,6 @@ class ConfigCommandBase:
             kit=kit,
             editor_app_cls=options.editor_app_cls,
             config_group_name=options.config_group_name,
-            initial_storage_hook=options.initial_storage,
             initial_storage_with_context_hook=(
                 options.initial_storage_with_context
             ),
@@ -209,11 +207,6 @@ class ConfigCommandBase:
                     state,
                     context,
                 )
-            if (
-                resolved_state.app_owned
-                and self.active_storage_root_hook is not None
-            ):
-                return self.active_storage_root_hook(state)
             return active_storage_root_from_state(
                 self.kit,
                 cast(ConfigCliState, state),

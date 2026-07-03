@@ -95,8 +95,10 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
                 path=registry.path,
                 storage_env_filename=self.editor.kit.spec.storage_env_filename,
             )
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OSError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
+            for note in _exception_notes(exc):
+                self.editor.notify(note, severity="warning", markup=False)
             return
         await self.editor._refresh_storage_list(select_name=name)
         self.editor.notify(f"Registered storage {name!r}")
@@ -170,3 +172,12 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
             )
         )
         return resolved_root if action == "proceed" else None
+
+
+def _exception_notes(exc: BaseException) -> tuple[str, ...]:
+    """Return notes attached by lower-level cleanup code.
+
+    :param exc: Exception that may carry ``BaseException.add_note()`` details.
+    :return: Attached notes, or an empty tuple when none exist.
+    """
+    return tuple(getattr(exc, "__notes__", ()))

@@ -32,7 +32,6 @@ class ConfigEditorLauncher:
     :param kit: Application config facade.
     :param editor_app_cls: Optional app-provided editor subclass.
     :param config_group_name: Generated config command group name.
-    :param initial_storage_hook: Optional app state based initial selection.
     :param initial_storage_with_context_hook: Optional selector-aware initial
         selection.
     """
@@ -40,7 +39,6 @@ class ConfigEditorLauncher:
     kit: AppConfigKit
     editor_app_cls: type["ConfigEditorApp"] | None
     config_group_name: str
-    initial_storage_hook: Callable[[Any], str | None] | None
     initial_storage_with_context_hook: (
         Callable[[Any, ConfigSelectorContext], str | None] | None
     )
@@ -97,8 +95,6 @@ class ConfigEditorLauncher:
             and self.initial_storage_with_context_hook is not None
         ):
             return self.initial_storage_with_context_hook(state, context)
-        if resolved_state.app_owned and self.initial_storage_hook is not None:
-            return self.initial_storage_hook(state)
         return initial_storage_from_state(
             self.kit,
             cast(ConfigCliState, state),

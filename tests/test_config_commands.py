@@ -294,34 +294,6 @@ def test_context_aware_initial_storage_hook_receives_selector_context(
     assert CapturingConfigEditorApp.active_storage_root_seen == storage_root
 
 
-def test_legacy_active_storage_hook_still_works(tmp_path: Path) -> None:
-    kit = build_apprc_example_app_kit()
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    state = ApprcExampleAppConfigState(env_bootstrap=None)
-    app = kit.typer_app(
-        state_type=ApprcExampleAppConfigState,
-        active_storage_root=lambda _: storage_root,
-    )
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "set",
-            "access_token",
-            "legacy-secret",
-            "--scope",
-            "storage",
-        ],
-        obj=state,
-    )
-
-    assert result.exit_code == 0, result.output
-    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="legacy-secret"\n' in (
-        storage_root / ".env.apprc-storage"
-    ).read_text(encoding="utf-8")
-
-
 def test_config_set_requires_scope_when_app_and_storage_are_active(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

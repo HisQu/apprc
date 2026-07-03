@@ -304,9 +304,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
     :param runtime_policy: Optional runtime skip policy.
     :param args_provider: Optional command-token provider for tests/forwarders.
     :param runtime_payload: Optional serializer for generated ``config show``.
-    :param active_storage_root: Optional storage-root resolver for app state.
     :param active_storage_root_with_context: Optional selector-aware resolver.
-    :param initial_storage: Optional editor initial-selection resolver.
     :param initial_storage_with_context: Optional selector-aware editor resolver.
     :param editor_app_cls: Optional Textual config editor subclass.
     :param help: Optional generated config group help text.
@@ -325,11 +323,9 @@ class CliRuntime(Generic[OptionsT, StateT]):
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = None
     args_provider: CliArgvProvider | None = None
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None
-    active_storage_root: Callable[[StateT], Path | None] | None = None
     active_storage_root_with_context: (
         Callable[[StateT, "ConfigSelectorContext"], Path | None] | None
     ) = None
-    initial_storage: Callable[[StateT], str | None] | None = None
     initial_storage_with_context: (
         Callable[[StateT, "ConfigSelectorContext"], str | None] | None
     ) = None
@@ -423,11 +419,9 @@ class CliRuntime(Generic[OptionsT, StateT]):
         config_app = self.kit.typer_app(
             state_type=self.state_type,
             runtime_payload=self.runtime_payload,
-            active_storage_root=self.active_storage_root,
             active_storage_root_with_context=(
                 self.active_storage_root_with_context
             ),
-            initial_storage=self.initial_storage,
             initial_storage_with_context=self.initial_storage_with_context,
             editor_app_cls=self.editor_app_cls,
             help=self.help,

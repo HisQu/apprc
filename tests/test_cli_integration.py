@@ -17,6 +17,7 @@ from apprc.interfaces.cli import (
     CliArgvProvider,
     CliRuntimeContext,
     CliRuntimeOptions,
+    ConfigSelectorContext,
     ConfigRuntimePolicy,
     CliRuntime,
     DefaultConfigCliState,
@@ -411,7 +412,10 @@ def test_mount_config_cli_runtime_independent_set_uses_context_not_app_hooks(
         factory_calls.append(context)
         return CustomState(env_bootstrap=context.env_bootstrap)
 
-    def active_storage_root(state: CustomState) -> Path | None:
+    def active_storage_root_with_context(
+        state: CustomState,
+        _selector_context: ConfigSelectorContext,
+    ) -> Path | None:
         """Record whether app hooks see runtime_independent generic state."""
         hook_calls.append(state)
         raise RuntimeError(
@@ -425,7 +429,7 @@ def test_mount_config_cli_runtime_independent_set_uses_context_not_app_hooks(
         state_type=CustomState,
         state_factory=state_factory,
         args_provider=lambda: args,
-        active_storage_root=active_storage_root,
+        active_storage_root_with_context=active_storage_root_with_context,
     )
 
     result = CliRunner().invoke(app, args)

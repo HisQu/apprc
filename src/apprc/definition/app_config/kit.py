@@ -335,11 +335,9 @@ class AppConfigKit:
         *,
         state_type: type[StateT] | None = None,
         runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
-        active_storage_root: Callable[[StateT], Path | None] | None = None,
         active_storage_root_with_context: (
             Callable[[StateT, ConfigSelectorContext], Path | None] | None
         ) = None,
-        initial_storage: Callable[[StateT], str | None] | None = None,
         initial_storage_with_context: (
             Callable[[StateT, ConfigSelectorContext], str | None] | None
         ) = None,
@@ -354,13 +352,10 @@ class AppConfigKit:
         :param state_type: Application host CLI state type stored on
             ``ctx.obj``. When omitted, AppRC uses its default config state.
         :param runtime_payload: Optional serializer for ``config show``.
-        :param active_storage_root: Optional storage-root resolver for custom
-            CLI state objects.
         :param active_storage_root_with_context: Optional storage-root resolver
-            that can inspect explicit env-file selector context.
-        :param initial_storage: Optional editor initial-selection resolver.
+            that receives explicit env-file selector context.
         :param initial_storage_with_context: Optional editor initial-selection
-            resolver that can inspect explicit env-file selector context.
+            resolver that receives explicit env-file selector context.
         :param editor_app_cls: Optional Textual subclass.
         :param help: Optional Typer group help.
         :param setup_message: Optional setup text for missing storage.
@@ -384,9 +379,7 @@ class AppConfigKit:
         group_options = ConfigGroupOptions(
             state_type=resolved_state_type,
             runtime_payload=runtime_payload,
-            active_storage_root=active_storage_root,
             active_storage_root_with_context=active_storage_root_with_context,
-            initial_storage=initial_storage,
             initial_storage_with_context=initial_storage_with_context,
             editor_app_cls=editor_app_cls,
             help=help,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import logging
 from dataclasses import replace
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from apprc.user_files.storage_roots._naming import (
     validate_storage_name,
 )
 from apprc.user_files.storage_roots.paths import normalize_storage_root_path
+
+LOG = logging.getLogger(__name__)
 
 __all__ = [
     "ArchivedStorageRecord",
@@ -77,12 +80,13 @@ def register_storage(
             },
         )
         write_storage_registry(updated)
-    except Exception:
+    except Exception as exc:
         _rollback_created_storage_artifacts(
             root=resolved_root,
             root_existed=root_existed,
             storage_env=storage_env,
             storage_env_existed=storage_env_existed,
+            original_error=exc,
         )
         raise
     return updated
@@ -94,20 +98,60 @@ def _rollback_created_storage_artifacts(
     root_existed: bool,
     storage_env: Path,
     storage_env_existed: bool,
+    original_error: Exception,
 ) -> None:
-    """Best-effort removal of empty storage artifacts from a failed register."""
+    """Best-effort removal of empty artifacts from a failed registration.
+
+    :param root: Storage root that may have been created by registration.
+    :param root_existed: Whether the root existed before registration.
+    :param storage_env: Storage dotenv path that may have been created.
+    :param storage_env_existed: Whether the dotenv file existed beforehand.
+    :param original_error: Registration error that receives cleanup notes.
+    """
     if not storage_env_existed:
         try:
             if storage_env.is_file() and storage_env.stat().st_size == 0:
                 storage_env.unlink()
-        except OSError:
-            pass
+        except OSError as exc:
+            _record_rollback_cleanup_failure(
+                original_error=original_error,
+                action="remove empty storage env file",
+                path=storage_env,
+                cleanup_error=exc,
+            )
     if root_existed:
         return
     try:
         root.rmdir()
-    except OSError:
-        pass
+    except OSError as exc:
+        _record_rollback_cleanup_failure(
+            original_error=original_error,
+            action="remove created storage root",
+            path=root,
+            cleanup_error=exc,
+        )
+
+
+def _record_rollback_cleanup_failure(
+    *,
+    original_error: Exception,
+    action: str,
+    path: Path,
+    cleanup_error: OSError,
+) -> None:
+    """Expose one rollback cleanup failure without masking the root cause.
+
+    :param original_error: Registration error that remains the raised error.
+    :param action: Human-readable cleanup action that failed.
+    :param path: Filesystem path targeted by cleanup.
+    :param cleanup_error: Cleanup failure raised by the filesystem.
+    """
+    message = (
+        "Storage registration rollback could not "
+        f"{action} {path}: {cleanup_error}"
+    )
+    LOG.warning(message)
+    original_error.add_note(message)
 
 
 def unregister_storage(

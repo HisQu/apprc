@@ -29,14 +29,15 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-4. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-5. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-6. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-7. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-8. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-9. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-10. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+4. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+5. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+6. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+7. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+8. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+9. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+10. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+11. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -47,6 +48,44 @@ All notable changes to `AppRC` will be documented in this file.
 <!-- ======================================================== -->
 
 # [Unreleased]
+
+<br>
+
+### 💥 Breaking Change Summary
+
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.19.0 - 2026-07-03
 
 <br>
 
@@ -163,14 +202,6 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
 ### 🔨 Fixed
 
   - Fixed the CI compile step so it covers current source roots with
@@ -183,10 +214,6 @@ All notable changes to `AppRC` will be documented in this file.
   - Fixed failed storage registration rollback so cleanup failures are logged,
     attached to the original exception as notes, and shown as warning
     notifications in the config editor.
-
-<br>
-
-### 🔒 Security
 
 <br>
 

@@ -86,7 +86,8 @@ All notable changes to `{my_project}` will be documented in this file.
 
   - Changed repository example apps to use app-local `config/` packages with
     `app.py`, `sections/`, `bundle.py`, `catalog.py`, and packaged
-    `config/.env.shared` defaults.
+    `config/.env.shared` defaults. Complex config areas now live as nested
+    packages under `sections/`, as shown by the CLI runtime example.
 
 <br>
 

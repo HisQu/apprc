@@ -321,7 +321,7 @@ References accepted by `set_*` and `clear_*` helpers:
 | [justfile](../justfile) | Development and release commands. |
 | [src/apprc](../src/apprc) | Runtime package source. |
 | [src/apprc_dev](../src/apprc_dev) | Repository-local development helpers. |
-| [examples/example_apps](../examples/example_apps) | Runnable example CLIs for every AppRC capability mode. Each app has its own package with `config/app.py`, `config/sections/`, `config/bundle.py`, `config/catalog.py`, `cli.py`, and `config/.env.shared`. |
+| [examples/example_apps](../examples/example_apps) | Runnable example CLIs for every AppRC capability mode. Each app has its own package with `config/app.py`, `config/sections/`, `config/bundle.py`, `config/catalog.py`, `cli.py`, and `config/.env.shared`. The CLI runtime example also shows a nested `config/sections/runtime/` package for larger config areas. |
 | [tests](../tests) | Test suite. |
 | [docs](.) | Long-form documentation. |
 | [assets](../assets) | Repository assets. |

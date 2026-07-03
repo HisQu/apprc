@@ -6,13 +6,13 @@ Treat this as the parking lot for actionable problems discovered while working b
 <br>
 
 > [!CAUTION]
-> This is git-tracked: Never record secrets, absolute paths, credentials, private host data, or speculative security claims. Use only relative paths.
+> This is git-tracked: Never record secrets, absolute paths, credentials, private host data, or speculative security claims. Use only relative paths. 
 
 
 > [!IMPORTANT]
->
+> 
 > ## Rules
-> 1) Do not remove or change this header and TOC without very good reason.
+> 1) Do not remove or change this header and TOC without very good reason. 
 > 1) Newest at the top.
 > 1) Append a new entry only when the observation is real, actionable, not already listed, and out of scope for the current change. Do not modify `TODO.md` when there is nothing useful to add.
 > 1) If an issue is new and related to another issue, reference it in the `Suggested next step`. Do not create a new entry for the same problem. Place the reference in both entries (bi-directional).
@@ -23,8 +23,8 @@ Treat this as the parking lot for actionable problems discovered while working b
 >       - **Docs drift**: Documentation is stale, incomplete, or inconsistent.
 >       - **Tooling**: Issue with build, test, lint, type-check, and general slowdown of developer workflow.
 >       - **Security**: Evidence-backed security risk. Use Question for uncertainty.
->       - **Question**: Design, behavior, or ownership uncertainty needing investigation & decision.investigation & maybe decision. <!-- don't remove this, codex! It's intentional!>
->
+>       - **Question**: Design, behavior, or ownership uncertainty needing investigation & maybe decision.
+> 
 > 1) **Priorities:**
 >       - **P1**: Should be handled ASAP.
 >       - **P2**: Should be handled before next release or milestone.
@@ -35,24 +35,25 @@ Treat this as the parking lot for actionable problems discovered while working b
 >       - **E3**: Can be batched with many other issues.
 > 1) **Format:**
 > ```markdown
->
+> 
 > <br>
->
-> # YYYY-MM-DD
+> 
+> # YYYY-MM-DD 
 >
 > ## <Priority> / <Effort> [<Type>] - *Short problem title*
-> - **Area:** `path/or/symbol`
+> - **Area:**  `path/or/symbol`
 > - **Observed while:** short context
-> - **Evidence:** concrete observation
 > - **Why not fixed now:** scope, risk, uncertainty, or user decision needed
+> - **Evidence:** concrete observation
+> - **Context:** explanation to ensure the problem is understood in the big-picture of the repo.
 > - **Suggested next step:** smallest reasonable follow-up. If applicable, reference related todos [here](#todo-list).
->
+> 
 > ## <Priority> / <Effort> [<Type>] - *Short problem title*
 > - **Area:** `path/or/symbol`
 > - ...
->
+> 
 > <br>
->
+> 
 > # YYYY-MM-DD
 >
 > ## <Priority> / <Effort> [<Type>] - *Short problem title*

@@ -115,6 +115,12 @@ apprc scaffold config \
 
 The compact example below shows the same declarations in one file for reading.
 
+All app-declared config areas belong under `config/sections/`. Keep small areas
+as modules such as `sections/client.py`; use a nested package such as
+`sections/rag/` when one area needs its own bundle, resources, or several leaf
+settings. `config/bundle.py` should only assemble the app-level bundle, and
+`config/catalog.py` should only expose metadata.
+
 ```python
 from pathlib import Path
 

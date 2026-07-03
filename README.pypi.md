@@ -112,6 +112,12 @@ apprc scaffold config \
 The full declaration can live in one file while learning, but the package
 layout above is the recommended project structure.
 
+Keep every app-declared config area under `config/sections/`. Small areas can
+be one module, for example `sections/client.py`. When an area grows, turn it
+into a package such as `sections/rag/` and keep its local bundle/resources next
+to its leaf settings there. Leave `config/bundle.py` for the top-level app
+bundle and `config/catalog.py` for metadata.
+
 ```python
 from pathlib import Path
 

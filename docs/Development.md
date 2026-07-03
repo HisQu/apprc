@@ -175,6 +175,11 @@ The example config packages follow the standard AppRC app layout:
   .env.shared
 ```
 
+Simple sections stay as files under `sections/`. Larger sections become nested
+packages under `sections/<section>/`; `apprc_cli_runtime_example` uses
+`sections/runtime/` to exercise that layout. Do not create domain-specific
+sibling packages next to `sections/` for config declarations.
+
 New downstream apps can generate the same skeleton with:
 
 ```bash

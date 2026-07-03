@@ -10,7 +10,11 @@ import typer
 
 # == Internal ================================
 import apprc as rc
-from apprc_app_wide_config_example.config import AppWideConfig, KIT, OWNERS
+from apprc_app_wide_config_example.config import (
+    AppWideConfigExampleConfig,
+    CONFIG_SECTIONS,
+    KIT,
+)
 from apprc_example_apps._support import (
     build_standard_app,
     config_values,
@@ -31,7 +35,8 @@ def build_app(
     """
     return build_standard_app(
         kit=KIT,
-        config_cls=AppWideConfig,
+        bundle_cls=AppWideConfigExampleConfig,
+        section_getter=lambda config: config.app_wide,
         help_text="Exercise AppRC's app-wide config capability mode.",
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
@@ -55,7 +60,7 @@ def run_demo(root: Path) -> dict[str, object]:
             path=app_wide_env,
             reference="workers",
             raw_value="4",
-            owners=OWNERS,
+            owners=CONFIG_SECTIONS,
             layer_name=KIT.spec.app_wide_env_filename,
         )
         after = rc.cli.build_config_doctor_payload(KIT, storage=None)
@@ -65,13 +70,13 @@ def run_demo(root: Path) -> dict[str, object]:
             load_dotenv_layers=True,
             storage=None,
         )
-        config = AppWideConfig()
+        config = AppWideConfigExampleConfig()
         return {
             "mode": "app_wide_config",
             "doctor_before": before.status,
             "doctor_after": after.status,
             "app_wide_env": str(app_wide_env),
-            "config": config_values(config),
+            "config": config_values(config.app_wide),
         }
 
     return run_isolated(

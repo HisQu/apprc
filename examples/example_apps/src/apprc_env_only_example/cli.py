@@ -10,7 +10,7 @@ import typer
 
 # == Internal ================================
 import apprc as rc
-from apprc_env_only_example.config import EnvOnlyConfig, KIT
+from apprc_env_only_example.config import EnvOnlyExampleConfig, KIT
 from apprc_example_apps._support import (
     build_standard_app,
     config_values,
@@ -32,7 +32,8 @@ def build_app(
     """
     return build_standard_app(
         kit=KIT,
-        config_cls=EnvOnlyConfig,
+        bundle_cls=EnvOnlyExampleConfig,
+        section_getter=lambda config: config.env_only,
         help_text="Exercise AppRC's env-only capability mode.",
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
@@ -63,13 +64,13 @@ def run_demo(root: Path) -> dict[str, object]:
             load_dotenv_layers=True,
             storage=None,
         )
-        config = EnvOnlyConfig()
+        config = EnvOnlyExampleConfig()
         return {
             "mode": "env_only",
             "doctor_status": doctor.status,
             "shared_env": str(bootstrap.shared_env),
             "explicit_env_files": [str(path) for path in bootstrap.env_files],
-            "config": config_values(config),
+            "config": config_values(config.env_only),
         }
 
     return run_isolated(

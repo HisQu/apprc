@@ -23,7 +23,7 @@ Treat this as the parking lot for actionable problems discovered while working b
 >       - **Docs drift**: Documentation is stale, incomplete, or inconsistent.
 >       - **Tooling**: Issue with build, test, lint, type-check, and general slowdown of developer workflow.
 >       - **Security**: Evidence-backed security risk. Use Question for uncertainty.
->       - **Question**: Design, behavior, or ownership uncertainty needing investigation.
+>       - **Question**: Design, behavior, or ownership uncertainty needing investigation & decision.investigation & maybe decision. <!-- don't remove this, codex! It's intentional!>
 >
 > 1) **Priorities:**
 >       - **P1**: Should be handled ASAP.
@@ -73,9 +73,9 @@ Treat this as the parking lot for actionable problems discovered while working b
 1. [Todo list](#todo-list)
    1. [Table Of Contents](#table-of-contents)
 2. [2026-07-02](#2026-07-02)
-   1. [P2 / E2 [Question] - Decide whether selector-unaware config hooks should stay public](#p2--e2-question---decide-whether-selector-unaware-config-hooks-should-stay-public)
-   1. [P3 / E2 [Bug risk] - Storage registration rollback hides cleanup failures](#p3--e2-bug-risk---storage-registration-rollback-hides-cleanup-failures)
-   1. [P3 / E2 [Code smell] - TUI storage workflow mixins rely on runtime stubs](#p3--e2-code-smell---tui-storage-workflow-mixins-rely-on-runtime-stubs)
+   1. [P2 / E2 \[Question\] - *Decide whether selector-unaware config hooks should stay public*](#p2--e2-question---decide-whether-selector-unaware-config-hooks-should-stay-public)
+   2. [P3 / E2 \[Bug risk\] - *Storage registration rollback hides cleanup failures*](#p3--e2-bug-risk---storage-registration-rollback-hides-cleanup-failures)
+   3. [P3 / E2 \[Code smell\] - *TUI storage workflow mixins rely on runtime stubs*](#p3--e2-code-smell---tui-storage-workflow-mixins-rely-on-runtime-stubs)
 
 
 <br>

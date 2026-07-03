@@ -1,21 +1,11 @@
-"""AppRC declarations for the CLI runtime example app."""
-
-from __future__ import annotations
+"""CLI runtime example AppRC section."""
 
 # == Standard Library ========================
 from pathlib import Path
 
 # == Internal ================================
 import apprc as rc
-
-
-MyRC = rc.AppRC.storage_only(
-    app_name="apprc-example-cli-runtime",
-    display_name="AppRC CLI Runtime Example",
-    config_package="apprc_cli_runtime_example",
-    storage_env_key="APPRC_EXAMPLE_RUNTIME_ROOT",
-    command_name="apprc-cli-runtime",
-)
+from apprc_cli_runtime_example.config.app import MyRC
 
 
 @MyRC.config("runtime", prefix="APPRC_EXAMPLE_RUNTIME_", title="Runtime")
@@ -42,7 +32,3 @@ class CliRuntimeConfig(rc.Config):
         title="API token",
         explanation_short="Required secret redacted by runtime output.",
     )
-
-
-KIT = MyRC.kit
-OWNERS = KIT.spec.owners

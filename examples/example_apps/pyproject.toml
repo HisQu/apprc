@@ -23,13 +23,13 @@ apprc-examples-run-all = "apprc_example_apps.run_all:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = [
-    "apprc_app_wide_config_example",
-    "apprc_app_wide_storage_example",
-    "apprc_cli_runtime_example",
-    "apprc_env_only_example",
+    "apprc_app_wide_config_example*",
+    "apprc_app_wide_storage_example*",
+    "apprc_cli_runtime_example*",
+    "apprc_env_only_example*",
     "apprc_example_apps",
-    "apprc_explicit_env_precedence_example",
-    "apprc_storage_only_example",
+    "apprc_explicit_env_precedence_example*",
+    "apprc_storage_only_example*",
 ]
 
 [tool.setuptools.package-data]

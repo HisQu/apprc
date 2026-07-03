@@ -1,21 +1,11 @@
-"""AppRC declarations for the app-wide storage example app."""
-
-from __future__ import annotations
+"""App-wide storage example AppRC section."""
 
 # == Standard Library ========================
 from pathlib import Path
 
 # == Internal ================================
 import apprc as rc
-
-
-MyRC = rc.AppRC.app_wide_storage(
-    app_name="apprc-example-app-wide-storage",
-    display_name="AppRC App-Wide Storage Example",
-    config_package="apprc_app_wide_storage_example",
-    storage_env_key="APPRC_EXAMPLE_APP_WIDE_STORAGE_ROOT",
-    command_name="apprc-app-wide-storage",
-)
+from apprc_app_wide_storage_example.config.app import MyRC
 
 
 @MyRC.config(
@@ -46,7 +36,3 @@ class AppWideStorageConfig(rc.Config):
         title="Access token",
         explanation_short="Required storage-local secret.",
     )
-
-
-KIT = MyRC.kit
-OWNERS = KIT.spec.owners

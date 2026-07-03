@@ -22,6 +22,7 @@ from apprc.definition.env_config.fields import config_owner_for
 from apprc.definition.env_config.lookup import iter_config_fields
 
 ResultT = TypeVar("ResultT")
+BundleT = TypeVar("BundleT")
 
 
 def setup_example_logging(level: str | int = "INFO", **_: object) -> None:
@@ -38,7 +39,8 @@ def setup_example_logging(level: str | int = "INFO", **_: object) -> None:
 def build_standard_app(
     *,
     kit: AppConfigKit,
-    config_cls: type[EnvConfig],
+    bundle_cls: type[BundleT],
+    section_getter: Callable[[BundleT], EnvConfig],
     help_text: str,
     args_provider: rc.cli.CliArgvProvider | None = None,
     editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
@@ -46,8 +48,9 @@ def build_standard_app(
     """Build a normal Typer example app through ``mount_config_cli``.
 
     :param kit: AppRC contract mounted into the CLI.
-    :param config_cls: Runtime config class shown by the ``run`` command and
-        ``config show`` payload.
+    :param bundle_cls: Top-level ``@MyRC.bundle`` class to instantiate.
+    :param section_getter: Callable that returns the section printed in the
+        compact example output.
     :param help_text: Root command help text.
     :param args_provider: Optional command-token provider for tests.
     :param editor_app_cls: Optional editor replacement for tests.
@@ -65,7 +68,8 @@ def build_standard_app(
         args_provider=args_provider,
         runtime_payload=lambda state: runtime_payload(
             kit=kit,
-            config_cls=config_cls,
+            bundle_cls=bundle_cls,
+            section_getter=section_getter,
             state=state,
         ),
         editor_app_cls=editor_app_cls,
@@ -80,7 +84,8 @@ def build_standard_app(
             json.dumps(
                 runtime_payload(
                     kit=kit,
-                    config_cls=config_cls,
+                    bundle_cls=bundle_cls,
+                    section_getter=section_getter,
                     state=state,
                 ),
                 indent=2,
@@ -107,22 +112,27 @@ def require_default_state(ctx: typer.Context) -> rc.cli.DefaultConfigCliState:
 def runtime_payload(
     *,
     kit: AppConfigKit,
-    config_cls: type[EnvConfig],
+    bundle_cls: type[BundleT],
+    section_getter: Callable[[BundleT], EnvConfig],
     state: rc.cli.DefaultConfigCliState,
 ) -> dict[str, object]:
     """Return JSON-friendly runtime state for example output.
 
     :param kit: AppRC contract whose metadata should be displayed.
-    :param config_cls: Runtime config class to instantiate from
+    :param bundle_cls: Top-level ``@MyRC.bundle`` class to instantiate from
         ``os.environ``.
+    :param section_getter: Callable that extracts the section printed in the
+        compact example output.
     :param state: CLI state produced by AppRC bootstrap.
     :return: Payload with bootstrap paths and redacted config values.
     """
-    config = config_cls()
+    bundle = bundle_cls()
+    config = section_getter(bundle)
     return {
         "app_name": kit.spec.app_name,
         "command_name": kit.spec.config_command_name(),
         "display_name": kit.spec.display_name,
+        "bundle": type(bundle).__name__,
         "bootstrap": bootstrap_payload(state.env_bootstrap),
         "config": config_values(config),
     }

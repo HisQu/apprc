@@ -11,9 +11,9 @@ import typer
 # == Internal ================================
 import apprc as rc
 from apprc_app_wide_storage_example.config import (
-    AppWideStorageConfig,
+    AppWideStorageExampleConfig,
+    CONFIG_SECTIONS,
     KIT,
-    OWNERS,
 )
 from apprc_example_apps._support import (
     build_standard_app,
@@ -35,7 +35,8 @@ def build_app(
     """
     return build_standard_app(
         kit=KIT,
-        config_cls=AppWideStorageConfig,
+        bundle_cls=AppWideStorageExampleConfig,
+        section_getter=lambda config: config.app_wide_storage,
         help_text="Exercise AppRC's app-wide storage capability mode.",
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
@@ -58,7 +59,7 @@ def run_demo(root: Path) -> dict[str, object]:
             path=app_wide_env,
             reference="region",
             raw_value="eu",
-            owners=OWNERS,
+            owners=CONFIG_SECTIONS,
             layer_name=KIT.spec.app_wide_env_filename,
         )
         index_path = KIT.spec.ensure_index_file()
@@ -73,7 +74,7 @@ def run_demo(root: Path) -> dict[str, object]:
             storage_root=storage_root,
             reference="access_token",
             raw_value="named-storage-secret",
-            owners=OWNERS,
+            owners=CONFIG_SECTIONS,
             storage_env_filename=KIT.spec.storage_env_filename,
         )
         doctor = rc.cli.build_config_doctor_payload(KIT, storage="alpha")
@@ -83,14 +84,14 @@ def run_demo(root: Path) -> dict[str, object]:
             load_dotenv_layers=True,
             storage="alpha",
         )
-        config = AppWideStorageConfig()
+        config = AppWideStorageExampleConfig()
         return {
             "mode": "app_wide_storage",
             "doctor_status": doctor.status,
             "index_path": str(index_path),
             "selected_storage_name": bootstrap.storage_name,
             "selected_storage_root": str(bootstrap.storage_root),
-            "config": config_values(config),
+            "config": config_values(config.app_wide_storage),
         }
 
     return run_isolated(

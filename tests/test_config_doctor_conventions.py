@@ -5,6 +5,9 @@ from pathlib import Path
 import pytest
 
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.runtime.diagnostics._diagnosis import (
+    config_package_convention_warnings,
+)
 from apprc.runtime.diagnostics.payload import build_config_doctor_payload
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
 from tests.support_config import (
@@ -30,11 +33,22 @@ def test_config_doctor_reports_config_package_convention_warnings(
     assert payload.status == ConfigDoctorStatus.RUNNABLE.value
     assert payload.issues == ()
     assert any(
-        "prefer '<app>.config'" in warning for warning in payload.warnings
-    )
-    assert any(
         "ApprcExampleAppEnv lives" in warning for warning in payload.warnings
     )
+
+
+def test_config_package_convention_warns_when_package_is_not_config() -> None:
+    kit = AppConfigKit.storage_only(
+        app_name="apprc_example_app",
+        display_name="Example App",
+        config_package="apprc_storage_only_example",
+        envs=(),
+        storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
+    )
+
+    warnings = config_package_convention_warnings(kit)
+
+    assert any("prefer '<app>.config'" in warning for warning in warnings)
 
 
 @pytest.mark.allow_missing_apprc_env

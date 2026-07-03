@@ -15,7 +15,11 @@ from apprc_example_apps._support import (
     config_values,
     run_isolated,
 )
-from apprc_storage_only_example.config import KIT, OWNERS, StorageOnlyConfig
+from apprc_storage_only_example.config import (
+    CONFIG_SECTIONS,
+    KIT,
+    StorageOnlyExampleConfig,
+)
 
 
 def build_app(
@@ -31,7 +35,8 @@ def build_app(
     """
     return build_standard_app(
         kit=KIT,
-        config_cls=StorageOnlyConfig,
+        bundle_cls=StorageOnlyExampleConfig,
+        section_getter=lambda config: config.storage_only,
         help_text="Exercise AppRC's storage-only capability mode.",
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
@@ -56,7 +61,7 @@ def run_demo(root: Path) -> dict[str, object]:
             storage_root=storage_root,
             reference="api_token",
             raw_value="storage-secret",
-            owners=OWNERS,
+            owners=CONFIG_SECTIONS,
         )
         bootstrap = KIT.bootstrap(
             env_files=(),
@@ -64,12 +69,12 @@ def run_demo(root: Path) -> dict[str, object]:
             load_dotenv_layers=True,
             storage=str(storage_root),
         )
-        config = StorageOnlyConfig()
+        config = StorageOnlyExampleConfig()
         return {
             "mode": "storage_only",
             "selected_storage_root": str(bootstrap.storage_root),
             "storage_env": str(bootstrap.storage_env),
-            "config": config_values(config),
+            "config": config_values(config.storage_only),
         }
 
     return run_isolated(

@@ -14,7 +14,11 @@ import typer
 
 # == Internal ================================
 import apprc as rc
-from apprc_cli_runtime_example.config import CliRuntimeConfig, KIT, OWNERS
+from apprc_cli_runtime_example.config import (
+    CONFIG_SECTIONS,
+    CliRuntimeExampleConfig,
+    KIT,
+)
 from apprc_example_apps._support import (
     bootstrap_payload,
     config_values,
@@ -178,18 +182,19 @@ def _runtime_payload(state: RuntimeState) -> dict[str, object]:
     :param state: Runtime state created by the runtime callback.
     :return: Payload with app options, bootstrap paths, and redacted config.
     """
-    config = CliRuntimeConfig()
+    config = CliRuntimeExampleConfig()
     return {
         "app_name": KIT.spec.app_name,
         "command_name": KIT.spec.config_command_name(),
         "display_name": KIT.spec.display_name,
+        "bundle": type(config).__name__,
         "cli_options": {
             "workspace": str(state.workspace) if state.workspace else None,
             "model": state.model,
             "dry_run": state.dry_run,
         },
         "bootstrap": bootstrap_payload(state.env_bootstrap),
-        "config": config_values(config),
+        "config": config_values(config.runtime),
     }
 
 
@@ -221,7 +226,7 @@ def run_demo(root: Path) -> dict[str, object]:
             storage_root=storage_root,
             reference="api_token",
             raw_value="runtime-secret",
-            owners=OWNERS,
+            owners=CONFIG_SECTIONS,
         )
         bootstrap = KIT.bootstrap(
             env_files=(),

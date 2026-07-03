@@ -149,7 +149,7 @@ match what a downstream project should copy:
 
 | Package | Purpose |
 |---|---|
-| `apprc_env_only_example` | Minimal env-only app with `config.py`, `cli.py`, and packaged `.env.shared`. |
+| `apprc_env_only_example` | Minimal env-only app with `config/`, `cli.py`, and packaged `config/.env.shared`. |
 | `apprc_storage_only_example` | Storage-selected app with storage-local dotenv fields. |
 | `apprc_app_wide_config_example` | Storage-free app that uses the app-wide dotenv layer. |
 | `apprc_app_wide_storage_example` | App-wide defaults plus selected storage roots. |
@@ -157,9 +157,35 @@ match what a downstream project should copy:
 | `apprc_cli_runtime_example` | Typer callback integration through `CliRuntime`. |
 | `apprc_example_apps` | Shared scenario runner helpers; not a user app template. |
 
-Each app package owns its own `config.py` and points `config_package` at that
-same package. Do not reintroduce a shared config module for the examples; that
+Each app package owns its own `config/` package and points `config_package` at
+that package. Do not reintroduce a shared config module for the examples; that
 would teach the wrong integration shape.
+
+The example config packages follow the standard AppRC app layout:
+
+```text
+<example>/config/
+  __init__.py
+  app.py
+  sections/
+    __init__.py
+    app.py
+  bundle.py
+  catalog.py
+  .env.shared
+```
+
+New downstream apps can generate the same skeleton with:
+
+```bash
+apprc scaffold config \
+  --package myapp \
+  --mode storage-only \
+  --app-name myapp \
+  --display-name "My App" \
+  --storage-env-key MYAPP_STORAGE \
+  --target src
+```
 
 Install the example console scripts when the dev dependency group has not
 already installed them:

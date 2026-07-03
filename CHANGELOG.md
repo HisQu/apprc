@@ -72,6 +72,9 @@ All notable changes to `{my_project}` will be documented in this file.
     metadata used by advanced documentation, inventory, and diagnostics
     integrations.
 
+  - Added the first-party `apprc` CLI with `apprc scaffold config` for
+    generating the recommended `X.config` package layout.
+
 <br>
 
 ### 💔 Changed
@@ -80,6 +83,10 @@ All notable changes to `{my_project}` will be documented in this file.
     user `__post_init__()` hooks so applications can derive registered child
     configs from eagerly resolved siblings without leaving the bundle
     interface.
+
+  - Changed repository example apps to use app-local `config/` packages with
+    `app.py`, `sections/`, `bundle.py`, `catalog.py`, and packaged
+    `config/.env.shared` defaults.
 
 <br>
 
@@ -226,8 +233,9 @@ All notable changes to `{my_project}` will be documented in this file.
     `examples/example_apps`, covering `env_only`, `storage_only`,
     `app_wide_config`, `app_wide_storage`, named storage, explicit env-file
     selector precedence, and the `ConfigCliBridge` host-callback path. Each
-    example lives in its own import package with local `config.py`, `cli.py`,
-    and `.env.shared` files, matching the structure downstream apps should use.
+    example lives in its own import package with local config declarations,
+    `cli.py`, and `.env.shared` files, matching the structure downstream apps
+    should use.
 
   - Added `python -m apprc_dev.example_apps.bootstrap` to create ignored
     example sandboxes with commented `.env`, `.env.apprc-app`,

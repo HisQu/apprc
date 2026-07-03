@@ -85,6 +85,33 @@ For installation and first-setup recipes, see
 
 Use one root import and declare the app contract from that handle:
 
+Create this standard package layout by hand, or generate a starter with
+`apprc scaffold config`:
+
+```text
+myapp/config/
+  __init__.py
+  app.py
+  sections/
+    __init__.py
+    app.py
+  bundle.py
+  catalog.py
+```
+
+```bash
+apprc scaffold config \
+  --package myapp \
+  --mode storage-only \
+  --app-name myapp \
+  --display-name "My App" \
+  --storage-env-key MYAPP_STORAGE \
+  --target src
+```
+
+The full declaration can live in one file while learning, but the package
+layout above is the recommended project structure.
+
 ```python
 from pathlib import Path
 
@@ -101,7 +128,7 @@ MyRC = rc.AppRC.storage_only(
 
 
 @MyRC.config("app", prefix="MYAPP_", title="App")
-class MyAppConfig(rc.Config):
+class AppSettings(rc.Config):
     storage_root: Path = rc.field(
         "MYAPP_STORAGE",
         editable=False,
@@ -128,8 +155,8 @@ class PackageResources(rc.ConfigBase):
 
 
 @MyRC.bundle
-class MyAppRC:
-    app: MyAppConfig
+class MyAppConfig:
+    app: AppSettings
     resources: PackageResources
 ```
 
@@ -143,7 +170,7 @@ Mount AppRC on your Typer application before commands construct runtime config
 objects:
 
 ```python
-from myapp.config import MyAppRC, MyRC
+from myapp.config import MyAppConfig, MyRC
 
 app = typer.Typer()
 MyRC.mount_cli(app)
@@ -151,7 +178,7 @@ MyRC.mount_cli(app)
 
 @app.command()
 def run() -> None:
-    cfg = MyAppRC()
+    cfg = MyAppConfig()
     typer.echo(f"profile={cfg.app.profile}")
 ```
 
@@ -173,7 +200,7 @@ For non-Typer usage, call bootstrap explicitly and then construct config:
 
 ```python
 MyRC.bootstrap()
-cfg = MyAppRC()
+cfg = MyAppConfig()
 ```
 
 `rc.field("ENV_KEY")` is required when no default is provided.
@@ -231,11 +258,11 @@ AppRC has one contract and several workflows built from it.
 | AppRC facade | The app-level contract that selects supported persistence layers. |
 | Bootstrap | A startup step that merges dotenv layers into this Python process. |
 | Generated CLI | A reusable Typer `config` command group for inspection and edits. |
-| Editor | A Textual view over the same owners, fields, and dotenv layers. |
+| Editor | A Textual view over the same sections, fields, and dotenv layers. |
 
 **Note**
 
-For the deeper architecture behind owners, fields, capability layers,
+For the deeper architecture behind registered sections, fields, capability layers,
 provenance, and the zero-write policy, see
 [docs/Explanations.md#3-runtime-config-model](docs/Explanations.md#3-runtime-config-model).
 
@@ -392,9 +419,9 @@ workflow and docs rules.
 
 The repository also ships runnable example CLIs in
 [examples/example_apps](examples/example_apps). Each example is its own
-package, such as `apprc_storage_only_example`, with local `config.py`,
-`cli.py`, and `.env.shared` files so the source tree mirrors a real app
-integration.
+package, such as `apprc_storage_only_example`, with a `config/` package,
+`cli.py`, and packaged `config/.env.shared` defaults so the source tree mirrors
+a real app integration.
 
 <br>
 

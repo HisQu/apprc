@@ -1,21 +1,11 @@
-"""AppRC declarations for the explicit env precedence example app."""
-
-from __future__ import annotations
+"""Explicit env precedence example AppRC section."""
 
 # == Standard Library ========================
 from pathlib import Path
 
 # == Internal ================================
 import apprc as rc
-
-
-MyRC = rc.AppRC.storage_only(
-    app_name="apprc-example-explicit-env-precedence",
-    display_name="AppRC Explicit Env Precedence Example",
-    config_package="apprc_explicit_env_precedence_example",
-    storage_env_key="APPRC_EXAMPLE_PRECEDENCE_ROOT",
-    command_name="apprc-explicit-env-precedence",
-)
+from apprc_explicit_env_precedence_example.config.app import MyRC
 
 
 @MyRC.config(
@@ -39,6 +29,3 @@ class ExplicitEnvPrecedenceConfig(rc.Config):
         title="Label",
         explanation_short="Value overridden by shell and explicit env files.",
     )
-
-
-KIT = MyRC.kit

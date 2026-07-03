@@ -46,7 +46,7 @@ explanations, and maintainer workflow.
 
 - **[How-To User Guides](How-To-User-Guides.md):** recipes for integrating
   AppRC into an app, setting up storage, editing values, and diagnosing setup.
-- **[Explanations](Explanations.md):** the system model behind config owners,
+- **[Explanations](Explanations.md):** the system model behind config sections,
   capability layers, bootstrap, storage selection, provenance, CLI, and TUI.
 - **[References](References.md):** exact public imports, constructor modes,
   CLI commands, env vars, filenames, precedence rules, and status names.

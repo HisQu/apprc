@@ -22,7 +22,7 @@ def _kit() -> AppConfigKit:
     return AppConfigKit.storage_only(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="apprc_storage_only_example",
+        config_package="apprc_storage_only_example.config",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
         index_filename="apprc_example_app.apprc.toml",

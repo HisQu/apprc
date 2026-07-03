@@ -377,7 +377,9 @@ def test_console_scripts_point_to_example_clis() -> None:
         )
     )
 
-    assert "scripts" not in root_pyproject["project"]
+    assert root_pyproject["project"]["scripts"] == {
+        "apprc": "apprc.__main__:main",
+    }
     assert demo_pyproject["project"]["scripts"] == {
         "apprc-env-only": "apprc_env_only_example.cli:main",
         "apprc-storage-only": "apprc_storage_only_example.cli:main",
@@ -392,13 +394,13 @@ def test_console_scripts_point_to_example_clis() -> None:
     assert demo_pyproject["tool"]["setuptools"]["packages"]["find"][
         "include"
     ] == [
-        "apprc_app_wide_config_example",
-        "apprc_app_wide_storage_example",
-        "apprc_cli_runtime_example",
-        "apprc_env_only_example",
+        "apprc_app_wide_config_example*",
+        "apprc_app_wide_storage_example*",
+        "apprc_cli_runtime_example*",
+        "apprc_env_only_example*",
         "apprc_example_apps",
-        "apprc_explicit_env_precedence_example",
-        "apprc_storage_only_example",
+        "apprc_explicit_env_precedence_example*",
+        "apprc_storage_only_example*",
     ]
 
 

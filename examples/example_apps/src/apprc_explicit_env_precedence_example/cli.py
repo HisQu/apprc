@@ -17,7 +17,7 @@ from apprc_example_apps._support import (
     write_env,
 )
 from apprc_explicit_env_precedence_example.config import (
-    ExplicitEnvPrecedenceConfig,
+    ExplicitEnvPrecedenceExampleConfig,
     KIT,
 )
 
@@ -35,7 +35,8 @@ def build_app(
     """
     return build_standard_app(
         kit=KIT,
-        config_cls=ExplicitEnvPrecedenceConfig,
+        bundle_cls=ExplicitEnvPrecedenceExampleConfig,
+        section_getter=lambda config: config.precedence,
         help_text="Exercise explicit env-file storage selector precedence.",
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,

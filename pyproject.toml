@@ -65,6 +65,9 @@ Homepage = "https://hisqu.de"
 Repository = "https://github.com/HisQu/apprc"
 Issues = "https://github.com/HisQu/apprc/issues"
 
+[project.scripts]
+apprc = "apprc.__main__:main"
+
 
 # =====================================================================
 # === Local Dependency Groups

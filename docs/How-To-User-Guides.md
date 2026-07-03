@@ -87,8 +87,33 @@ python -m pip install -e "." --group dev
 ## Declare Typed Config Fields
 <!-- ======================================================== -->
 
-Create a config package in the app, usually `<app>/config/__init__.py`, and
-declare one AppRC facade plus one or more registered config classes.
+Create a config package in the app and declare one AppRC facade plus one or
+more registered config classes. The recommended layout is:
+
+```text
+myapp/config/
+  __init__.py
+  app.py
+  sections/
+    __init__.py
+    app.py
+  bundle.py
+  catalog.py
+```
+
+Generate that layout when starting a new integration:
+
+```bash
+apprc scaffold config \
+  --package myapp \
+  --mode storage-only \
+  --app-name myapp \
+  --display-name "My App" \
+  --storage-env-key MYAPP_STORAGE \
+  --target src
+```
+
+The compact example below shows the same declarations in one file for reading.
 
 ```python
 from pathlib import Path
@@ -105,7 +130,7 @@ MyRC = rc.AppRC.storage_only(
 
 
 @MyRC.config("app", prefix="MYAPP_", title="App")
-class MyAppConfig(rc.Config):
+class AppSettings(rc.Config):
     storage_root: Path = rc.field(
         "MYAPP_STORAGE",
         editable=False,
@@ -134,8 +159,8 @@ class PackageResources(rc.ConfigBase):
 
 
 @MyRC.bundle
-class MyAppRC:
-    app: MyAppConfig
+class MyAppConfig:
+    app: AppSettings
     resources: PackageResources
 ```
 
@@ -184,8 +209,8 @@ Choose the constructor by persistence needs:
 | App needs per-user config but no storage root | `rc.AppRC.app_wide_config(...)` |
 | App needs per-user config and storage roots | `rc.AppRC.app_wide_storage(...)` |
 
-Storage-capable constructors derive `<APP>_STORAGE` unless
-`storage_env_key="MYAPP_STORAGE"` is passed.
+Storage-capable constructors require an explicit `storage_env_key` when the app
+needs a storage selector such as `MYAPP_STORAGE`.
 
 <br>
 
@@ -202,7 +227,7 @@ generated `config` command group below the app.
 ```python
 import typer
 
-from myapp.config import MyAppRC, MyRC
+from myapp.config import MyAppConfig, MyRC
 
 app = typer.Typer()
 MyRC.mount_cli(app)
@@ -210,7 +235,7 @@ MyRC.mount_cli(app)
 
 @app.command()
 def run() -> None:
-    cfg = MyAppRC()
+    cfg = MyAppConfig()
     typer.echo(cfg.app.profile)
 ```
 

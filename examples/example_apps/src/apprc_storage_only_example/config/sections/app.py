@@ -1,21 +1,11 @@
-"""AppRC declarations for the storage-only example app."""
-
-from __future__ import annotations
+"""Storage-only example AppRC section."""
 
 # == Standard Library ========================
 from pathlib import Path
 
 # == Internal ================================
 import apprc as rc
-
-
-MyRC = rc.AppRC.storage_only(
-    app_name="apprc-example-storage-only",
-    display_name="AppRC Storage Only Example",
-    config_package="apprc_storage_only_example",
-    storage_env_key="APPRC_EXAMPLE_STORAGE_ROOT",
-    command_name="apprc-storage-only",
-)
+from apprc_storage_only_example.config.app import MyRC
 
 
 @MyRC.config(
@@ -71,7 +61,3 @@ class StorageOnlyConfig(rc.Config):
         title="API token",
         explanation_short="Required secret redacted by example output.",
     )
-
-
-KIT = MyRC.kit
-OWNERS = KIT.spec.owners

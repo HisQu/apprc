@@ -21,7 +21,7 @@ intentional namespaces such as `rc.cli`, `rc.files`, `rc.storage`,
 `import apprc as rc`.
 
 <p align="center">
-  <img src="docs/assets/apprc-abstract-user-journey.svg" alt="AppRC graphical abstract" width="100%">
+  <img src="https://raw.githubusercontent.com/HisQu/apprc/main/docs/assets/apprc-abstract-user-journey.svg" alt="AppRC graphical abstract" width="100%">
 </p>
 
 <p align="center">
@@ -33,8 +33,8 @@ intentional namespaces such as `rc.cli`, `rc.files`, `rc.storage`,
 **Note**
 
 For the full system model, see
-[docs/Explanations.md](docs/Explanations.md). For exact public names and
-command references, see [docs/References.md](docs/References.md).
+[docs/Explanations.md](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md). For exact public names and
+command references, see [docs/References.md](https://github.com/HisQu/apprc/blob/main/docs/References.md).
 
 <br>
 
@@ -83,7 +83,7 @@ AppRC supports Python 3.12 and newer.
 **Note**
 
 For installation and first-setup recipes, see
-[docs/How-To-User-Guides.md](docs/How-To-User-Guides.md).
+[docs/How-To-User-Guides.md](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md).
 
 <br>
 
@@ -233,7 +233,7 @@ apprc-examples-run-all
 They cover `env_only`, `storage_only`, `app_wide_config`,
 `app_wide_storage`, named storage, explicit env-file selector precedence, and
 the `CliRuntime` app-callback integration. With direnv, `.envrc` sources
-[.env.example_apps](.env.example_apps) and bootstraps
+[.env.example_apps](https://github.com/HisQu/apprc/blob/main/.env.example_apps) and bootstraps
 `examples/example_app_disk_files/` automatically. Without direnv, source
 `.env.example_apps` and run the bootstrap command above once. The generated
 directory contains `.apprc-example*/` sandboxes plus commented app-wide,
@@ -243,9 +243,9 @@ real app.
 **Note**
 
 For the step-by-step integration guide, see
-[docs/How-To-User-Guides.md#2-integrate-apprc](docs/How-To-User-Guides.md#2-integrate-apprc).
+[docs/How-To-User-Guides.md#2-integrate-apprc](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#2-integrate-apprc).
 For the exact import surface, see
-[docs/References.md#public-interfaces](docs/References.md#public-interfaces).
+[docs/References.md#public-interfaces](https://github.com/HisQu/apprc/blob/main/docs/References.md#public-interfaces).
 
 <br>
 
@@ -257,7 +257,7 @@ AppRC starts from one declared contract, then uses that contract to load
 runtime values, inspect configuration health, write explicit setup files, and
 generate user-facing configuration tools.
 
-| ![One AppRC contract feeding many workflows](docs/assets/apprc-abstract-contract-workflows.svg) |
+| ![One AppRC contract feeding many workflows](https://raw.githubusercontent.com/HisQu/apprc/main/docs/assets/apprc-abstract-contract-workflows.svg) |
 |:--:|
 | **Fig. 2 - One Contract, Many Workflows:** AppRC reuses the same contract metadata for runtime loading, provenance, diagnostics, generated CLI commands, and the editor. |
 
@@ -280,7 +280,7 @@ AppRC has one contract and several workflows built from it.
 
 For the deeper architecture behind registered sections, fields, capability layers,
 provenance, and the zero-write policy, see
-[docs/Explanations.md#3-runtime-config-model](docs/Explanations.md#3-runtime-config-model).
+[docs/Explanations.md#3-runtime-config-model](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#3-runtime-config-model).
 
 <br>
 
@@ -307,7 +307,7 @@ AppRC-managed persistence files are explicit:
 **Note**
 
 For constructor arguments and capability details, see
-[docs/References.md#capability-constructors](docs/References.md#capability-constructors).
+[docs/References.md#capability-constructors](https://github.com/HisQu/apprc/blob/main/docs/References.md#capability-constructors).
 
 <br>
 
@@ -338,10 +338,10 @@ Path selectors work without a named-storage index. Bare named selectors use
 **Note**
 
 For the rationale behind layer order and storage selector resolution, see
-[docs/Explanations.md#runtime-bootstrap](docs/Explanations.md#runtime-bootstrap)
-and [docs/Explanations.md#storage-selection](docs/Explanations.md#storage-selection).
+[docs/Explanations.md#runtime-bootstrap](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#runtime-bootstrap)
+and [docs/Explanations.md#storage-selection](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#storage-selection).
 For exact precedence tables, see
-[docs/References.md#runtime-precedence](docs/References.md#runtime-precedence).
+[docs/References.md#runtime-precedence](https://github.com/HisQu/apprc/blob/main/docs/References.md#runtime-precedence).
 
 <br>
 
@@ -381,7 +381,7 @@ apps do not expose named-storage commands.
 **Note**
 
 For the generated command table, see
-[docs/References.md#generated-cli-commands](docs/References.md#generated-cli-commands).
+[docs/References.md#generated-cli-commands](https://github.com/HisQu/apprc/blob/main/docs/References.md#generated-cli-commands).
 
 <br>
 
@@ -411,9 +411,9 @@ paths`, `config doctor`, and opening `config edit` are zero-write.
 **Note**
 
 For doctor troubleshooting, see
-[docs/How-To-User-Guides.md#troubleshoot-config-doctor](docs/How-To-User-Guides.md#troubleshoot-config-doctor).
+[docs/How-To-User-Guides.md#troubleshoot-config-doctor](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#troubleshoot-config-doctor).
 For exact status names, see
-[docs/References.md#doctor-statuses](docs/References.md#doctor-statuses).
+[docs/References.md#doctor-statuses](https://github.com/HisQu/apprc/blob/main/docs/References.md#doctor-statuses).
 
 <br>
 
@@ -426,18 +426,18 @@ the documentation directory.
 
 ## Detailed Manual
 
-The detailed manual starts at [docs/README.md](docs/README.md).
+The detailed manual starts at [docs/README.md](https://github.com/HisQu/apprc/blob/main/docs/README.md).
 
 **Note**
 
-Use [docs/How-To-User-Guides.md](docs/How-To-User-Guides.md) for integration
-recipes, [docs/Explanations.md](docs/Explanations.md) for the AppRC system
-model, [docs/References.md](docs/References.md) for exact commands, files,
-and APIs, and [docs/Development.md](docs/Development.md) for maintainer
+Use [docs/How-To-User-Guides.md](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md) for integration
+recipes, [docs/Explanations.md](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md) for the AppRC system
+model, [docs/References.md](https://github.com/HisQu/apprc/blob/main/docs/References.md) for exact commands, files,
+and APIs, and [docs/Development.md](https://github.com/HisQu/apprc/blob/main/docs/Development.md) for maintainer
 workflow and docs rules.
 
 The repository also ships runnable example CLIs in
-[examples/example_apps](examples/example_apps). Each example is its own
+[examples/example_apps](https://github.com/HisQu/apprc/blob/main/examples/example_apps). Each example is its own
 package, such as `storage_only`, with a `config/` package,
 `cli.py`, and packaged `config/.env.shared` defaults so the source tree mirrors
 a real app integration. Generated example disk files live outside that source
@@ -463,4 +463,4 @@ python src/apprc_dev/packaging/pypi_readme.py
 **Note**
 
 For maintainer workflow, documentation rules, and verification commands, see
-[docs/Development.md](docs/Development.md).
+[docs/Development.md](https://github.com/HisQu/apprc/blob/main/docs/Development.md).

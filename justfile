@@ -89,7 +89,7 @@ reset-venv:
 # Key rule: CI and teammates should *not* relock by accident.
 # We therefore install with `--locked` which errors if uv.lock is stale.
 # If it errors, you intentionally run `just lock` or `just upgrade`.
-# > --all-extras: Install all published extras from [project.optional-dependencies], such as rag.
+# > --all-extras: Install all published extras from [project.optional-dependencies], such as tui.
 # > --all-groups: Install all local groups from [dependency-groups], such as dev.
 # > --no-default-groups: Skip uv's default groups, including dev, for runtime-only installs.
 # > --frozen: Sync from uv.lock while ignoring pyproject.toml

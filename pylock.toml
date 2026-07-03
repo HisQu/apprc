@@ -486,7 +486,8 @@ wheels = [{ url = "https://files.pythonhosted.org/packages/cf/58/8acf1b3e91c5831
 
 [[packages]]
 name = "graphigs"
-directory = { path = "../graphigs", editable = true }
+version = "0.1.0"
+vcs = { type = "git", url = "https://github.com/markur4/graphigs.git", commit-id = "20705c5e9ccb0321f85584d79a68a260fa56dff6" }
 
 [[packages]]
 name = "graphviz"

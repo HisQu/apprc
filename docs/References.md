@@ -82,6 +82,11 @@ Advanced storage and dotenv helpers are intentionally not root exports. Use
 `apprc.storage`, `apprc.files`, and `apprc.provenance` when application code
 needs those lower-level surfaces.
 
+The implementation packages `apprc.definition`, `apprc.runtime`,
+`apprc.user_files`, and `apprc.user_files.storage_roots` are not supported
+public facades. Use the root API and the advanced namespaces above for
+application integrations.
+
 <br>
 
 <!-- ======================================================== -->

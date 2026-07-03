@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `{my_project}` will be documented in this file.
+All notable changes to `AppRC` will be documented in this file.
 
 > [!IMPORTANT]
 > ## Rules
@@ -63,6 +63,23 @@ All notable changes to `{my_project}` will be documented in this file.
     `rc.Config`, declare fields with `rc.field("FULL_ENV_KEY", ...)`, inherit
     `rc.ConfigBase` for Python-only config, mount Typer with
     `MyRC.mount_cli(app)`, and use namespace modules for advanced helpers.
+
+  - Breaking: Removed legacy lower-level aggregate facade exports from
+    `apprc.definition`, `apprc.runtime`, `apprc.user_files`, and
+    `apprc.user_files.storage_roots`.
+    Affected: Users importing supported-looking symbols such as
+    `AppConfigKit`, `ConfigOwner`, `EnvBootstrapResult`, `StorageRegistry`,
+    or `register_storage` from those aggregate packages.
+    Migration: Use `import apprc as rc` with `rc.AppRC`, `rc.Config`,
+    `rc.field`, `rc.schema`, `rc.provenance`, `rc.files`, and `rc.storage`.
+    Concrete implementation modules remain importable for AppRC internals but
+    are not the public integration surface.
+
+  - Breaking: Removed the app-specific `apprc.utils.huggingface` helper
+    module.
+    Affected: Users importing `apprc.utils.huggingface` directly.
+    Migration: Move Hugging Face synchronization helpers into the application
+    or a dedicated application dependency.
 
   - Breaking: Removed selector-unaware config CLI hooks.
     Affected: Users passing `active_storage_root=` or `initial_storage=` to
@@ -137,6 +154,13 @@ All notable changes to `{my_project}` will be documented in this file.
     nested package metadata, and lazy facade type surfaces live in `.pyi`
     stubs.
 
+  - Changed the source distribution to include `examples/example_apps/**`
+    alongside `tests/**` so downstream sdist test runs have the repository
+    example packages they import.
+
+  - Changed the generated PyPI README to rewrite repository-relative docs,
+    example, and asset links to GitHub URLs.
+
 <br>
 
 ### ⚠️ Deprecated
@@ -148,6 +172,13 @@ All notable changes to `{my_project}` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+  - Fixed the CI compile step so it covers current source roots with
+    `src`, `tests`, and `examples/example_apps/src`.
+
+  - Fixed stale release-facing prose by replacing the changelog template name,
+    removing the removed logging package owner row, and updating the justfile
+    optional-extra example to `tui`.
 
   - Fixed failed storage registration rollback so cleanup failures are logged,
     attached to the original exception as notes, and shown as warning

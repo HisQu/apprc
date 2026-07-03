@@ -62,7 +62,7 @@ tui = [
 # requirements in AppRC wheel metadata.
 [tool.uv.sources]
 "apprc-example-apps" = { path = "examples/example_apps", editable = true }
-"graphigs" = { path = "../graphigs", editable = true }
+# "graphigs" = { path = "../graphigs", editable = true }
 
 
 [project.urls]
@@ -110,7 +110,7 @@ dev = [
     # --- Code-Optimization -------------
     "pyinstrument>=5.1",  # < Low-overhead profiling reports
     # --- Plotting -----------------------
-    "graphigs"
+    "graphigs @ git+https://github.com/markur4/graphigs.git"
     # "matplotlib",
     # "seaborn",
     # "plotastic",
@@ -126,6 +126,7 @@ dev = [
 module-name = "apprc"
 module-root = "src"
 source-include = [
+    "examples/example_apps/**",
     "src/apprc_dev/packaging/**",
     "tests/**",
 ]

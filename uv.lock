@@ -88,7 +88,7 @@ provides-extras = ["tui"]
 demo = [{ name = "apprc-example-apps", editable = "examples/example_apps" }]
 dev = [
     { name = "apprc-example-apps", editable = "examples/example_apps" },
-    { name = "graphigs", editable = "../graphigs" },
+    { name = "graphigs", git = "https://github.com/markur4/graphigs.git" },
     { name = "ipywidgets" },
     { name = "jupyterlab" },
     { name = "pyinstrument", specifier = ">=5.1" },
@@ -632,28 +632,12 @@ wheels = [
 [[package]]
 name = "graphigs"
 version = "0.1.0"
-source = { editable = "../graphigs" }
+source = { git = "https://github.com/markur4/graphigs.git#20705c5e9ccb0321f85584d79a68a260fa56dff6" }
 dependencies = [
     { name = "graphviz" },
     { name = "matplotlib" },
     { name = "pillow" },
     { name = "typer" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "graphviz" },
-    { name = "matplotlib" },
-    { name = "pillow" },
-    { name = "typer" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyright", specifier = ">=1.1" },
-    { name = "pytest", specifier = ">=8.2" },
-    { name = "pytest-xdist" },
-    { name = "ruff", specifier = ">=0.4" },
 ]
 
 [[package]]

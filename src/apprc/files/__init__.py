@@ -1,53 +1,5 @@
 """AppRC file and dotenv helper namespace."""
 
-# ruff: noqa: F401
-
-from apprc.user_files import (
-    AppConfigHome,
-    ConfigHomeError,
-    ConfigSetupError,
-    ConfigSetupFlow,
-    ConfigSetupResult,
-    EnvFileUpdate,
-    app_config_file,
-    app_config_home,
-    clear_env_file_value,
-    clear_storage_env_value,
-    ensure_env_file,
-    ensure_storage_env_file,
-    ensure_text_file,
-    normalize_env_value,
-    read_env_file,
-    resolve_app_config_home,
-    resolve_package_root,
-    set_env_file_value,
-    set_storage_env_value,
-    storage_env_path,
-    write_env_file,
-    write_text_atomic,
-)
-
-__all__ = [
-    "AppConfigHome",
-    "ConfigHomeError",
-    "ConfigSetupError",
-    "ConfigSetupFlow",
-    "ConfigSetupResult",
-    "EnvFileUpdate",
-    "app_config_file",
-    "app_config_home",
-    "clear_env_file_value",
-    "clear_storage_env_value",
-    "ensure_env_file",
-    "ensure_storage_env_file",
-    "ensure_text_file",
-    "normalize_env_value",
-    "read_env_file",
-    "resolve_app_config_home",
-    "resolve_package_root",
-    "set_env_file_value",
-    "set_storage_env_value",
-    "storage_env_path",
-    "write_env_file",
-    "write_text_atomic",
-]
+from apprc.files._facade import __all__ as __all__
+from apprc.files._facade import __dir__ as __dir__
+from apprc.files._facade import __getattr__ as __getattr__

@@ -1,6 +1,7 @@
 """Public facade and namespace surface tests."""
 
 import ast
+import importlib
 import json
 import subprocess
 import sys
@@ -36,8 +37,10 @@ from apprc.public.app_rc import AppRC
 from apprc.public.config import Config, ConfigBase
 from apprc.public.field import field
 from apprc.runtime.provenance import ConfigProvenance, provenance_of
-from apprc.user_files import resolve_package_root, set_env_file_value
-from apprc.user_files.storage_roots import StorageRegistry, register_storage
+from apprc.user_files.app_home._package_resources import resolve_package_root
+from apprc.user_files.env_files.updates import set_env_file_value
+from apprc.user_files.storage_roots.model import StorageRegistry
+from apprc.user_files.storage_roots.registry import register_storage
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_FACADE_SNAPSHOT = ROOT / "tests" / "snapshots" / "apprc_root_facade.txt"
@@ -142,6 +145,12 @@ def test_lazy_facade_stubs_match_runtime_exports() -> None:
     assert _stub_import_names(
         ROOT / "src" / "apprc" / "interfaces" / "__init__.pyi"
     ) == set(apprc_interfaces.__all__)
+    assert _stub_import_names(
+        ROOT / "src" / "apprc" / "files" / "__init__.pyi"
+    ) == set(apprc_files.__all__)
+    assert _stub_import_names(
+        ROOT / "src" / "apprc" / "storage" / "__init__.pyi"
+    ) == set(apprc_storage.__all__)
 
 
 def test_lazy_facade_runtime_inits_do_not_duplicate_type_exports() -> None:
@@ -163,6 +172,45 @@ def test_storage_files_and_provenance_namespaces_export_helpers() -> None:
     assert apprc_files.set_env_file_value is set_env_file_value
     assert apprc_provenance.ConfigProvenance is ConfigProvenance
     assert apprc_provenance.provenance_of is provenance_of
+
+
+def test_legacy_aggregate_packages_are_not_public_facades() -> None:
+    """Lower-level aggregate packages stay importable but export no API."""
+    legacy_exports = {
+        "apprc.definition": {
+            "AppConfigKit",
+            "AppConfigSpec",
+            "ConfigField",
+            "ConfigOwner",
+            "EnvConfig",
+            "env_field",
+            "env_owner",
+        },
+        "apprc.runtime": {
+            "ConfigProvenance",
+            "EnvBootstrapResult",
+            "bootstrap_env",
+            "provenance_of",
+        },
+        "apprc.user_files": {
+            "EnvFileUpdate",
+            "StorageRegistry",
+            "resolve_package_root",
+            "set_env_file_value",
+        },
+        "apprc.user_files.storage_roots": {
+            "StorageRegistry",
+            "StorageSelection",
+            "register_storage",
+            "write_storage_registry",
+        },
+    }
+
+    for module_name, names in legacy_exports.items():
+        module = importlib.import_module(module_name)
+        assert not hasattr(module, "__all__")
+        for name in names:
+            assert not hasattr(module, name)
 
 
 def _stub_import_names(path: Path) -> set[str]:
@@ -207,3 +255,4 @@ def test_public_docs_do_not_reference_unreleased_runtime_names() -> None:
     )
     assert "apprc[logging]" not in current_docs
     assert "Optional Logging" not in current_docs
+    assert "src/apprc/logging" not in current_docs

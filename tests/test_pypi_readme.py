@@ -43,9 +43,40 @@ def test_convert_github_callouts_renders_plain_markdown() -> None:
     )
 
 
+def test_rewrite_repository_links_uses_github_urls() -> None:
+    module = load_pypi_readme_module()
+
+    source = (
+        "[Docs](docs/References.md#public-interfaces)\n"
+        "[Examples](examples/example_apps)\n"
+        "[Env](.env.example_apps)\n"
+        "![Figure](docs/assets/apprc-abstract-user-journey.svg)\n"
+        '<img src="docs/assets/apprc-abstract-contract-workflows.svg">\n'
+        "[Anchor](#local)\n"
+        "[External](https://example.com)\n"
+    )
+
+    assert module.rewrite_repository_links(source) == (
+        "[Docs](https://github.com/HisQu/apprc/blob/main/"
+        "docs/References.md#public-interfaces)\n"
+        "[Examples](https://github.com/HisQu/apprc/blob/main/"
+        "examples/example_apps)\n"
+        "[Env](https://github.com/HisQu/apprc/blob/main/"
+        ".env.example_apps)\n"
+        "![Figure](https://raw.githubusercontent.com/HisQu/apprc/main/"
+        "docs/assets/apprc-abstract-user-journey.svg)\n"
+        '<img src="https://raw.githubusercontent.com/HisQu/apprc/main/'
+        'docs/assets/apprc-abstract-contract-workflows.svg">\n'
+        "[Anchor](#local)\n"
+        "[External](https://example.com)\n"
+    )
+
+
 def test_pypi_readme_is_generated_from_github_readme() -> None:
     module = load_pypi_readme_module()
     github_readme = (ROOT / "README.md").read_text(encoding="utf-8")
     pypi_readme = (ROOT / "README.pypi.md").read_text(encoding="utf-8")
 
-    assert pypi_readme == module.convert_github_callouts(github_readme)
+    assert pypi_readme == module.build_pypi_markdown(github_readme)
+    assert "](docs/" not in pypi_readme
+    assert 'src="docs/assets/' not in pypi_readme

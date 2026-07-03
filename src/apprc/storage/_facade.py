@@ -1,8 +1,4 @@
-"""Lazy facade for storage-root file helpers.
-
-The aggregate storage-root package is intentionally lazy because storage path
-helpers are imported while app config specs are still initializing.
-"""
+"""Lazy facade for public AppRC storage-root helpers."""
 
 from __future__ import annotations
 
@@ -91,7 +87,7 @@ _SYMBOL_EXPORTS = {
 }
 
 __all__, __getattr__, __dir__ = build_lazy_facade(
-    public_module="apprc.user_files.storage_roots",
+    public_module="apprc.storage",
     all_exports=[
         *_ARCHIVE_EXPORTS,
         *_IO_EXPORTS,

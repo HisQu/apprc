@@ -12,6 +12,7 @@ import apprc.definition.env_config as contract_api
 import apprc.files as files_api
 import apprc.provenance as provenance_api
 import apprc.runtime as runtime_api
+import apprc.schema as schema_api
 import apprc.storage as storage_api
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
@@ -30,8 +31,8 @@ def test_root_facade_exports_public_config_api() -> None:
     assert hasattr(apprc, "field")
     assert not hasattr(apprc, "EnvConfig")
     assert not hasattr(apprc, "AppConfigSpec")
-    assert definition_api.AppConfigSpec is AppConfigSpec
-    assert runtime_api.EnvBootstrapResult is EnvBootstrapResult
+    assert AppConfigSpec.__name__ == "AppConfigSpec"
+    assert EnvBootstrapResult.__name__ == "EnvBootstrapResult"
     assert not hasattr(apprc, "BaseEnv")
     assert not hasattr(definition_api, "BaseEnv")
 
@@ -44,8 +45,8 @@ def test_old_provenance_names_are_not_public_api() -> None:
 
 
 def test_top_level_facade_exports_stable_config_interfaces() -> None:
-    assert definition_api.ConfigOwner is ConfigOwner
-    assert definition_api.ConfigField is ConfigField
+    assert schema_api.ConfigOwner is ConfigOwner
+    assert schema_api.ConfigField is ConfigField
     assert files_api.EnvFileUpdate is EnvFileUpdate
     assert storage_api.StorageRegistry is StorageRegistry
     assert callable(files_api.resolve_package_root)
@@ -55,18 +56,25 @@ def test_top_level_facade_exports_stable_config_interfaces() -> None:
 
 
 def test_definition_and_runtime_facades_stay_owned() -> None:
-    assert definition_api.ConfigOwner is ConfigOwner
-    assert definition_api.ConfigField is ConfigField
+    assert not hasattr(definition_api, "ConfigOwner")
+    assert not hasattr(definition_api, "ConfigField")
+    assert not hasattr(definition_api, "AppConfigKit")
     assert not hasattr(runtime_api, "StorageRegistry")
     assert not hasattr(runtime_api, "EnvFileUpdate")
+    assert not hasattr(runtime_api, "EnvBootstrapResult")
     assert not hasattr(contract_api, "AppConfigSpec")
 
 
-def test_lazy_aggregate_facades_are_import_cycle_boundaries() -> None:
-    """Keep intentional aggregate laziness from regressing into cycles."""
-    assert importlib.import_module("apprc.runtime").__all__
-    assert importlib.import_module("apprc.user_files").__all__
-    assert importlib.import_module("apprc.user_files.storage_roots").__all__
+def test_supported_helper_namespaces_are_lazy_boundaries() -> None:
+    """Supported helper namespaces own lazy public exports."""
+    assert importlib.import_module("apprc.files").__all__
+    assert importlib.import_module("apprc.storage").__all__
+    assert not hasattr(importlib.import_module("apprc.runtime"), "__all__")
+    assert not hasattr(importlib.import_module("apprc.user_files"), "__all__")
+    assert not hasattr(
+        importlib.import_module("apprc.user_files.storage_roots"),
+        "__all__",
+    )
 
 
 def test_storage_workflow_base_does_not_define_cross_workflow_stubs() -> None:

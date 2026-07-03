@@ -72,7 +72,6 @@ Put changes where the repo already has an owner:
 | Process-time dotenv bootstrap, provenance, and read-only diagnostics | [src/apprc/runtime](../src/apprc/runtime) |
 | AppRC-managed config-home files, dotenv editing, setup flows, and storage roots | [src/apprc/user_files](../src/apprc/user_files) |
 | Typer command integration, CLI presentation, and Textual TUI surfaces | [src/apprc/interfaces](../src/apprc/interfaces) |
-| Optional semantic logging | [src/apprc/logging](../src/apprc/logging) |
 | Broad AppRC utility helpers | [src/apprc/utils](../src/apprc/utils) |
 | Public facade exports | [src/apprc/__init__.py](../src/apprc/__init__.py) and package `__init__.py` files |
 | Example CLIs | [examples/example_apps](../examples/example_apps) |

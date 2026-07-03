@@ -462,6 +462,16 @@ def test_build_backend_packages_only_library_in_root_wheel() -> None:
     assert pyproject["tool"]["uv"]["build-backend"]["module-name"] == "apprc"
 
 
+def test_sdist_includes_tests_and_example_app_sources() -> None:
+    pyproject = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    source_include = pyproject["tool"]["uv"]["build-backend"]["source-include"]
+
+    assert "tests/**" in source_include
+    assert "examples/example_apps/**" in source_include
+
+
 def test_demo_package_is_dev_dependency_only() -> None:
     pyproject = tomllib.loads(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -512,6 +522,33 @@ def test_clean_recipe_removes_nested_egg_info_without_touching_envs() -> None:
     assert "./.direnv" in recipe
     assert "find ." in recipe
     assert "uv cache prune -y" not in recipe
+
+
+def test_ci_compile_command_uses_current_source_roots() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "examples/apprc_example_app/src" not in workflow
+    assert (
+        "python -m compileall -q src tests examples/example_apps/src"
+        in workflow
+    )
+
+
+def test_release_docs_do_not_contain_stale_template_names() -> None:
+    texts = "\n".join(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "CHANGELOG.md",
+            "docs/Development.md",
+            "justfile",
+        )
+    )
+
+    assert "{my_project}" not in texts
+    assert "src/apprc/logging" not in texts
+    assert "such as rag" not in texts
 
 
 def _dependency_names(requirements: list[object]) -> set[str]:

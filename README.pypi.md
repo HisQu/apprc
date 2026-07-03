@@ -218,17 +218,21 @@ Run the capability examples from a checkout with:
 
 ```bash
 python -m pip install -e examples/example_apps --no-build-isolation
-python -m apprc_dev.example_apps.bootstrap --clean
-set -a; source .apprc-example-storage-only/.env; set +a
+set -a; source .env.example_apps; set +a
+python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"
 apprc-storage-only config doctor
 apprc-examples-run-all
 ```
 
 They cover `env_only`, `storage_only`, `app_wide_config`,
 `app_wide_storage`, named storage, explicit env-file selector precedence, and
-the `CliRuntime` app-callback integration. Each `.apprc-example*/`
-directory contains a sourceable `.env` plus commented app-wide, storage-local,
-and TOML files showing where the same files would live for a real app.
+the `CliRuntime` app-callback integration. With direnv, `.envrc` sources
+[.env.example_apps](.env.example_apps) and bootstraps
+`examples/example_app_disk_files/` automatically. Without direnv, source
+`.env.example_apps` and run the bootstrap command above once. The generated
+directory contains `.apprc-example*/` sandboxes plus commented app-wide,
+storage-local, and TOML files showing where the same files would live for a
+real app.
 
 **Note**
 
@@ -425,9 +429,10 @@ workflow and docs rules.
 
 The repository also ships runnable example CLIs in
 [examples/example_apps](examples/example_apps). Each example is its own
-package, such as `apprc_storage_only_example`, with a `config/` package,
+package, such as `storage_only`, with a `config/` package,
 `cli.py`, and packaged `config/.env.shared` defaults so the source tree mirrors
-a real app integration.
+a real app integration. Generated example disk files live outside that source
+tree under `examples/example_app_disk_files/`.
 
 <br>
 

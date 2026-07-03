@@ -72,6 +72,23 @@ All notable changes to `{my_project}` will be documented in this file.
     `initial_storage_with_context=`. The hook may ignore
     `ConfigSelectorContext` when it only needs app state.
 
+  - Breaking: Moved generated repository example app disk files from root
+    `.apprc-example-*` directories to
+    `examples/example_app_disk_files/.apprc-example-*`.
+    Affected: Maintainers and local scripts sourcing files such as
+    `.apprc-example-storage-only/.env`.
+    Migration: Source `.env.example_apps` and run
+    `python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"`,
+    or use direnv so `.envrc` does both automatically.
+
+  - Breaking: Renamed repository-local example import packages to short names:
+    `env_only`, `storage_only`, `app_wide_config`, `app_wide_storage`,
+    `explicit_env_precedence`, `cli_runtime`, and `_example_apps_utils`.
+    Affected: Maintainers, tests, or local tools importing the old
+    `apprc_*_example` packages or `apprc_example_apps`.
+    Migration: Update imports to the short package names. Console scripts,
+    AppRC app names, and `APPRC_EXAMPLE_*` env vars are unchanged.
+
 <br>
 
 ### ➕ Added
@@ -82,6 +99,9 @@ All notable changes to `{my_project}` will be documented in this file.
 
   - Added the first-party `apprc` CLI with `apprc scaffold config` for
     generating the recommended `X.config` package layout.
+
+  - Added tracked `.env.example_apps` defaults plus `.envrc` auto-bootstrap so
+    repository example CLIs can run from one sourced root environment.
 
 <br>
 
@@ -96,6 +116,10 @@ All notable changes to `{my_project}` will be documented in this file.
     `app.py`, `sections/`, `bundle.py`, `catalog.py`, and packaged
     `config/.env.shared` defaults. Complex config areas now live as nested
     packages under `sections/`, as shown by the CLI runtime example.
+
+  - Changed the example app tree to separate runnable source packages under
+    `examples/example_apps` from ignored generated disk files under
+    `examples/example_app_disk_files`.
 
   - Changed config editor storage workflow ownership so archive import and
     archive/delete orchestration live on the coordinator instead of relying on

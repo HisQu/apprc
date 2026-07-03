@@ -186,7 +186,7 @@ def build_apprc_example_app_kit() -> AppConfigKit:
     return AppConfigKit.storage_only(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="apprc_storage_only_example.config",
+        config_package="storage_only.config",
         envs=(ApprcExampleAppEnv,),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
         index_filename="apprc_example_app.apprc.toml",
@@ -198,7 +198,7 @@ def build_storage_free_example_kit() -> AppConfigKit:
     return AppConfigKit.app_wide_config(
         app_name="storage_free_app",
         display_name="Storage-Free App",
-        config_package="apprc_env_only_example.config",
+        config_package="env_only.config",
         envs=(StorageFreeExampleEnv,),
         index_filename="storage_free_app.apprc.toml",
     )

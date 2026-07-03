@@ -149,13 +149,18 @@ match what a downstream project should copy:
 
 | Package | Purpose |
 |---|---|
-| `apprc_env_only_example` | Minimal env-only app with `config/`, `cli.py`, and packaged `config/.env.shared`. |
-| `apprc_storage_only_example` | Storage-selected app with storage-local dotenv fields. |
-| `apprc_app_wide_config_example` | Storage-free app that uses the app-wide dotenv layer. |
-| `apprc_app_wide_storage_example` | App-wide defaults plus selected storage roots. |
-| `apprc_explicit_env_precedence_example` | Storage selector precedence with explicit env files. |
-| `apprc_cli_runtime_example` | Typer callback integration through `CliRuntime`. |
-| `apprc_example_apps` | Shared scenario runner helpers; not a user app template. |
+| `env_only` | Minimal env-only app with `config/`, `cli.py`, and packaged `config/.env.shared`. |
+| `storage_only` | Storage-selected app with storage-local dotenv fields. |
+| `app_wide_config` | Storage-free app that uses the app-wide dotenv layer. |
+| `app_wide_storage` | App-wide defaults plus selected storage roots. |
+| `explicit_env_precedence` | Storage selector precedence with explicit env files. |
+| `cli_runtime` | Typer callback integration through `CliRuntime`. |
+| `_example_apps_utils` | Shared scenario runner helpers; not a user app template. |
+
+Generated files intentionally live outside this source tree under
+`examples/example_app_disk_files/`. That ignored directory contains local
+runtime state written by the bootstrap helper; do not import from it or copy it
+as an application template.
 
 Each app package owns its own `config/` package and points `config_package` at
 that package. Do not reintroduce a shared config module for the examples; that
@@ -176,7 +181,7 @@ The example config packages follow the standard AppRC app layout:
 ```
 
 Simple sections stay as files under `sections/`. Larger sections become nested
-packages under `sections/<section>/`; `apprc_cli_runtime_example` uses
+packages under `sections/<section>/`; `cli_runtime` uses
 `sections/runtime/` to exercise that layout. Do not create domain-specific
 sibling packages next to `sections/` for config declarations.
 
@@ -202,17 +207,22 @@ python -m pip install -e examples/example_apps --no-build-isolation
 Bootstrap all local example files before manual testing:
 
 ```bash
-python -m apprc_dev.example_apps.bootstrap --clean
+set -a; source .env.example_apps; set +a
+python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"
 ```
 
-This writes ignored `.apprc-example*/` directories. Each directory contains:
+When direnv is enabled, `.envrc` sources `.env.example_apps` and runs the
+bootstrap helper automatically after the project venv is active. Manual setup
+uses the same `.env.example_apps` file and `APPRC_EXAMPLE_APPS_ROOT`.
+
+This writes ignored files under `examples/example_app_disk_files/`:
 
 | File | Purpose |
 |---|---|
-| `.env` | Arbitrary user env file. AppRC does not choose this location; source it manually or pass it with `--env-file` when path relocation is not needed. |
-| `xdg-config-home/<app>/.env.apprc-app` | App-wide dotenv layer. |
-| `xdg-config-home/<app>/<app>.apprc.toml` | Named-storage index for storage-capable examples. |
-| `storages/alpha/.env.apprc-storage` | Storage-local dotenv layer. |
+| `.apprc-example-*/.env` | Per-app arbitrary user env file. AppRC does not choose this location; source it manually or pass it with `--env-file` when path relocation is not needed. |
+| `xdg-config-home/<app>/.env.apprc-app` | Shared generated app-wide dotenv layer. |
+| `xdg-config-home/<app>/<app>.apprc.toml` | Shared generated named-storage index for storage-capable examples. |
+| `.apprc-example-*/storages/alpha/.env.apprc-storage` | Storage-local dotenv layer. |
 
 Every generated `.env` and `.toml` file starts with comments explaining the
 AppRC layer and where that file would normally live in a real application.
@@ -220,7 +230,7 @@ AppRC layer and where that file would normally live in a real application.
 Source one example environment when testing its console script:
 
 ```bash
-set -a; source .apprc-example-storage-only/.env; set +a
+set -a; source .env.example_apps; set +a
 apprc-storage-only config paths
 apprc-storage-only config doctor
 apprc-storage-only config storage list
@@ -230,7 +240,7 @@ apprc-storage-only config show --json
 Use the runtime example to inspect the app-owned callback path:
 
 ```bash
-set -a; source .apprc-example-cli-runtime/.env; set +a
+set -a; source .env.example_apps; set +a
 apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo status
 apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo run
 apprc-cli-runtime config doctor

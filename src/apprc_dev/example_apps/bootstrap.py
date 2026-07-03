@@ -13,14 +13,16 @@ from typing import TYPE_CHECKING
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE_SRC = ROOT / "examples" / "example_apps" / "src"
+EXAMPLE_APP_DISK_FILES_ROOT = ROOT / "examples" / "example_app_disk_files"
+SHARED_XDG_CONFIG_HOME_NAME = "xdg-config-home"
 
 if TYPE_CHECKING:
-    from apprc_example_apps import ExampleAppSpec
+    from _example_apps_utils import ExampleAppSpec
 
 
 def bootstrap_example_apps(
     *,
-    repo_root: Path = ROOT,
+    output_root: Path = EXAMPLE_APP_DISK_FILES_ROOT,
     clean: bool = False,
 ) -> list[Path]:
     """Create deterministic local files for all example CLIs.
@@ -29,23 +31,51 @@ def bootstrap_example_apps(
     AppRC file ownership while keeping the developer's actual config home and
     storage roots untouched.
 
-    :param repo_root: Repository root where sandbox directories should live.
-    :param clean: Whether to remove existing example sandboxes first.
+    :param output_root: Directory where generated example disk files live.
+    :param clean: Whether to remove existing generated example files first.
     :return: Sourceable ``.env`` files written for each example.
     """
+    specs = _example_app_specs()
+    if clean:
+        _remove_generated_files(output_root=output_root, specs=specs)
+
     env_files: list[Path] = []
-    for spec in _example_app_specs():
-        root = repo_root / spec.root_name
-        if clean and root.exists():
-            shutil.rmtree(root)
-        env_files.append(_bootstrap_one(root=root, spec=spec))
+    xdg_config_home = output_root / SHARED_XDG_CONFIG_HOME_NAME
+    for spec in specs:
+        env_files.append(
+            _bootstrap_one(
+                output_root=output_root,
+                xdg_config_home=xdg_config_home,
+                spec=spec,
+            )
+        )
     return env_files
 
 
-def _bootstrap_one(*, root: Path, spec: ExampleAppSpec) -> Path:
+def _remove_generated_files(
+    *,
+    output_root: Path,
+    specs: tuple[ExampleAppSpec, ...],
+) -> None:
+    """Remove generated children without deleting the output root itself."""
+    xdg_config_home = output_root / SHARED_XDG_CONFIG_HOME_NAME
+    if xdg_config_home.exists():
+        shutil.rmtree(xdg_config_home)
+    for spec in specs:
+        root = output_root / spec.root_name
+        if root.exists():
+            shutil.rmtree(root)
+
+
+def _bootstrap_one(
+    *,
+    output_root: Path,
+    xdg_config_home: Path,
+    spec: ExampleAppSpec,
+) -> Path:
     """Create one example sandbox and return its sourceable env file."""
+    root = output_root / spec.root_name
     root.mkdir(parents=True, exist_ok=True)
-    xdg_config_home = root / "xdg-config-home"
     config_home = xdg_config_home / spec.kit.spec.app_name
     config_home.mkdir(parents=True, exist_ok=True)
 
@@ -97,7 +127,7 @@ def _example_app_specs() -> tuple[ExampleAppSpec, ...]:
     example_src_text = str(EXAMPLE_SRC)
     if example_src_text not in sys.path:
         sys.path.insert(0, example_src_text)
-    from apprc_example_apps import example_app_specs
+    from _example_apps_utils import example_app_specs
 
     return example_app_specs()
 
@@ -205,10 +235,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Remove existing example sandboxes before writing files.",
     )
     parser.add_argument(
+        "--output-root",
         "--repo-root",
+        dest="output_root",
         type=Path,
-        default=ROOT,
-        help="Repository root where .apprc-example* directories are written.",
+        default=EXAMPLE_APP_DISK_FILES_ROOT,
+        help="Directory where ignored example disk files are written.",
     )
     return parser.parse_args(argv)
 
@@ -221,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args = parse_args(argv)
     env_files = bootstrap_example_apps(
-        repo_root=args.repo_root,
+        output_root=args.output_root,
         clean=args.clean,
     )
     print("Bootstrapped AppRC example files:")

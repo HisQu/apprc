@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from apprc_example_apps import example_app_specs, example_kits
+from _example_apps_utils import example_app_specs, example_kits
 
 
 def test_example_app_registry_exposes_all_dev_kits() -> None:

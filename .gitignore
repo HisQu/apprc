@@ -19,6 +19,7 @@ db/
 .vscode/
 # .gitignore
 .apprc-example*/
+examples/example_app_disk_files/
 
 # === .env ======================================================
 .envrc.private

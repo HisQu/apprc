@@ -107,7 +107,8 @@ Core AppRC areas:
 | `src/apprc/runtime` | Process-time dotenv bootstrap, provenance, and read-only diagnostics. |
 | `src/apprc/user_files` | AppRC-managed config homes, dotenv editing, storage registries, archive helpers, and setup flows. |
 | `src/apprc/interfaces` | Typer integration, generated `config` commands, CLI rendering, and Textual TUI presentation. |
-| `examples/example_apps` | Runnable example CLIs for each AppRC capability mode, selector precedence, and `CliRuntime`, with one import package per example app. |
+| `examples/example_apps` | Runnable example CLI source for each AppRC capability mode, selector precedence, and `CliRuntime`, with one short import package per example app plus internal `_example_apps_utils` support. |
+| `examples/example_app_disk_files` | Ignored generated runtime files used by the example CLIs, including their shared `XDG_CONFIG_HOME`, storage roots, and sourceable per-app `.env` files. |
 | `tests` | Behavior checks for public contracts and generated workflows. |
 | `docs` | Long-form user, reference, explanation, and maintainer documentation. |
 

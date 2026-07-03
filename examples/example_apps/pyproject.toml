@@ -12,24 +12,24 @@ dependencies = [
 ]
 
 [project.scripts]
-apprc-env-only = "apprc_env_only_example.cli:main"
-apprc-storage-only = "apprc_storage_only_example.cli:main"
-apprc-app-wide-config = "apprc_app_wide_config_example.cli:main"
-apprc-app-wide-storage = "apprc_app_wide_storage_example.cli:main"
-apprc-explicit-env-precedence = "apprc_explicit_env_precedence_example.cli:main"
-apprc-cli-runtime = "apprc_cli_runtime_example.cli:main"
-apprc-examples-run-all = "apprc_example_apps.run_all:main"
+apprc-env-only = "env_only.cli:main"
+apprc-storage-only = "storage_only.cli:main"
+apprc-app-wide-config = "app_wide_config.cli:main"
+apprc-app-wide-storage = "app_wide_storage.cli:main"
+apprc-explicit-env-precedence = "explicit_env_precedence.cli:main"
+apprc-cli-runtime = "cli_runtime.cli:main"
+apprc-examples-run-all = "_example_apps_utils.run_all:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = [
-    "apprc_app_wide_config_example*",
-    "apprc_app_wide_storage_example*",
-    "apprc_cli_runtime_example*",
-    "apprc_env_only_example*",
-    "apprc_example_apps",
-    "apprc_explicit_env_precedence_example*",
-    "apprc_storage_only_example*",
+    "app_wide_config*",
+    "app_wide_storage*",
+    "cli_runtime*",
+    "env_only*",
+    "_example_apps_utils",
+    "explicit_env_precedence*",
+    "storage_only*",
 ]
 
 [tool.setuptools.package-data]

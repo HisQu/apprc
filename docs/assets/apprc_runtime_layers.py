@@ -36,9 +36,9 @@ def build_graph() -> Digraph:
         "Config Contract",
         0.40,
         1.35,
-        "EnvConfig classes",
-        "env_owner metadata",
-        "env_field metadata",
+        "rc.Config classes",
+        "@MyRC.config metadata",
+        "rc.field metadata",
         border_color=gg.BLUE,
     )
     figure.fixed_text_box(
@@ -69,7 +69,7 @@ def build_graph() -> Digraph:
         "Runtime",
         0.70,
         -0.65,
-        "typed EnvConfig",
+        "typed config",
         border_color=gg.PURPLE,
     )
     figure.fixed_text_box(

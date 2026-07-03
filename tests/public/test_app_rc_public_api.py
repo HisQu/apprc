@@ -1,5 +1,7 @@
 """Public AppRC facade behavior tests."""
 
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 
 import pytest
@@ -246,6 +248,61 @@ def test_bundle_rejects_unregistered_config_class() -> None:
         @MyRC.bundle
         class HAIUConfig:
             llm: LLMConfig
+
+
+def test_bundle_supports_post_init_derived_config_fields() -> None:
+    """Bundles validate registered init=False fields and call post-init."""
+    MyRC = _env_only_app()
+
+    @MyRC.config("storage", title="Storage")
+    @dataclass
+    class StorageConfig(rc.ConfigBase):
+        root: str = "storage"
+
+    @MyRC.config("rag", title="RAG")
+    @dataclass
+    class RagConfig(rc.ConfigBase):
+        storage: StorageConfig
+
+    @MyRC.bundle
+    class HAIUConfig:
+        storage: StorageConfig
+        rag: RagConfig = dataclass_field(init=False)
+
+        def __post_init__(self) -> None:
+            """Compose RAG from the already-resolved storage config."""
+            self.rag = RagConfig(storage=self.storage)
+
+    config = HAIUConfig()
+    assert isinstance(config.rag, RagConfig)
+    assert config.rag.storage is config.storage
+    assert (
+        repr(config) == "HAIUConfig(storage=<StorageConfig>, rag=<RagConfig>)"
+    )
+
+    injected_storage = StorageConfig(root="other")
+    injected = HAIUConfig(storage=injected_storage)  # pyright: ignore[reportCallIssue]
+    assert injected.storage is injected_storage
+    assert injected.rag.storage is injected_storage
+
+    with pytest.raises(TypeError, match="unexpected config argument"):
+        HAIUConfig(rag=RagConfig(storage=injected_storage))  # type: ignore[call-arg]
+
+
+def test_bundle_ignores_config_base_internal_fields() -> None:
+    """Bundles can inherit ``rc.ConfigBase`` without registering internals."""
+    MyRC = _env_only_app()
+
+    @MyRC.config("storage", title="Storage")
+    class StorageConfig(rc.ConfigBase):
+        root: str = "storage"
+
+    @MyRC.bundle
+    class HAIUConfig(rc.ConfigBase):
+        storage: StorageConfig
+
+    config = HAIUConfig()
+    assert isinstance(config.storage, StorageConfig)
 
 
 def test_mount_cli_accepts_only_typer() -> None:

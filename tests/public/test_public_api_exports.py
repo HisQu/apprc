@@ -13,6 +13,7 @@ def test_root_exports_clean_public_api() -> None:
         "cli",
         "files",
         "provenance",
+        "schema",
         "storage",
     ]
     assert hasattr(rc, "AppRC")
@@ -23,6 +24,17 @@ def test_root_exports_clean_public_api() -> None:
     assert hasattr(rc, "storage")
     assert hasattr(rc, "provenance")
     assert hasattr(rc, "files")
+    assert hasattr(rc, "schema")
+
+
+def test_schema_namespace_exports_metadata_helpers() -> None:
+    """Schema metadata is public through a namespace, not root clutter."""
+    assert hasattr(rc.schema, "ConfigField")
+    assert hasattr(rc.schema, "ConfigOwner")
+    assert hasattr(rc.schema, "CONFIG_MISSING")
+    assert hasattr(rc.schema, "ENV_FIELD_MISSING")
+    assert hasattr(rc.schema, "iter_config_fields")
+    assert hasattr(rc.schema, "owner_for")
 
 
 def test_root_does_not_export_legacy_symbols() -> None:

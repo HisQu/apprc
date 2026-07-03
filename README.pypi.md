@@ -15,6 +15,11 @@ The three strongest parts:
 - **Generated operator UX:** mount ready-made Typer `config` commands and open
   the same contract in the Textual editor.
 
+Advanced integrations can inspect the same declared contract through
+intentional namespaces such as `rc.cli`, `rc.files`, `rc.storage`,
+`rc.provenance`, and `rc.schema`; normal app code should still start with
+`import apprc as rc`.
+
 <p align="center">
   <img src="docs/assets/apprc-abstract-user-journey.svg" alt="AppRC graphical abstract" width="100%">
 </p>

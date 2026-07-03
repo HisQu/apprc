@@ -131,7 +131,7 @@
 <text xml:space="preserve" text-anchor="start" x="760.69" y="-64.7" font-family="sans-serif" font-weight="bold" font-size="10.00">runtime config</text>
 <polygon fill="#32bc00" stroke="none" points="736.4,-54.2 736.4,-56.2 842.65,-56.2 842.65,-54.2 736.4,-54.2"/>
 <text xml:space="preserve" text-anchor="start" x="743.4" y="-38.7" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="749.4" y="-38.7" font-family="sans-serif" font-size="10.00"> EnvConfig</text>
+<text xml:space="preserve" text-anchor="start" x="749.4" y="-38.7" font-family="sans-serif" font-size="10.00"> rc.Config</text>
 <text xml:space="preserve" text-anchor="start" x="743.4" y="-28.7" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
 <text xml:space="preserve" text-anchor="start" x="749.4" y="-28.7" font-family="sans-serif" font-size="10.00"> merged at startup</text>
 <path fill="none" stroke="#32bc00" stroke-width="2" d="M747.4,-19.2C747.4,-19.2 831.65,-19.2 831.65,-19.2 837.65,-19.2 843.65,-25.2 843.65,-31.2 843.65,-31.2 843.65,-79.2 843.65,-79.2 843.65,-85.2 837.65,-91.2 831.65,-91.2 831.65,-91.2 747.4,-91.2 747.4,-91.2 741.4,-91.2 735.4,-85.2 735.4,-79.2 735.4,-79.2 735.4,-31.2 735.4,-31.2 735.4,-25.2 741.4,-19.2 747.4,-19.2"/>

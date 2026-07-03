@@ -47,7 +47,7 @@ def build_graph() -> Digraph:
         developer,
         "config_contract",
         "Config contract",
-        ("EnvConfig", "@env_owner", "env_field"),
+        ("rc.Config", "@MyRC.config", "rc.field"),
         pos=gv.fixed_position(0.40, 0.0),
         border_color=gg.BLUE,
     )
@@ -55,7 +55,7 @@ def build_graph() -> Digraph:
         developer,
         "shipped_app",
         "Shipped config UX",
-        ("AppConfigKit", "bootstrap", "config CLI"),
+        ("rc.AppRC", "bootstrap", "config CLI"),
         pos=gv.fixed_position(2.35, 0.0),
         border_color=gg.BLUE,
     )
@@ -88,7 +88,7 @@ def build_graph() -> Digraph:
         operator,
         "runtime_app",
         "Run app",
-        ("typed EnvConfig", "zero-write reads"),
+        ("typed config", "zero-write reads"),
         pos=gv.fixed_position(9.30, 0.0),
         border_color=gg.GREEN,
     )

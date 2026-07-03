@@ -5,4 +5,5 @@ field
 cli
 files
 provenance
+schema
 storage

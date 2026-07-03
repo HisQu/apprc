@@ -32,16 +32,16 @@ def build_graph() -> Digraph:
         contract.classifier(
             "contract_schema",
             "Config classes",
-            "EnvConfig",
-            "env_owner",
-            "env_field",
+            "rc.Config",
+            "@MyRC.config",
+            "rc.field",
             stereotype="schema",
             kind="class",
             border_color=gg.BLUE,
         )
         contract.classifier(
             "kit",
-            "AppConfigKit",
+            "rc.AppRC",
             "capabilities",
             stereotype="app spec",
             kind="interface",
@@ -96,7 +96,7 @@ def build_graph() -> Digraph:
         runtime.classifier(
             "effective_config",
             "Runtime config",
-            "typed EnvConfig",
+            "typed config",
             "zero-write reads",
             stereotype="runtime",
             kind="interface",

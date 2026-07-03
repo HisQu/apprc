@@ -413,7 +413,7 @@ def _runtime_card(graph: Digraph, node_id: str, *, pos: str) -> None:
         ClassifierNode(
             title="runtime config",
             stereotype="output",
-            members=("EnvConfig", "merged at startup"),
+            members=("rc.Config", "merged at startup"),
             kind="interface",
             border_color=gg.GREEN,
             border_width=2,

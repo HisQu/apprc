@@ -80,7 +80,7 @@ def build_graph() -> Digraph:
             "effective_config",
             "Effective config",
             "merged values",
-            "typed EnvConfig",
+            "typed config",
             "doctor + editor",
             stereotype="runtime",
             kind="interface",

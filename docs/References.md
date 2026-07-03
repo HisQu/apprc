@@ -52,6 +52,7 @@ Top-level `apprc` imports for normal integrations:
 | `files` | AppRC-managed file and dotenv helper namespace. |
 | `storage` | Storage registry, selector, archive, and path helper namespace. |
 | `provenance` | Runtime provenance helper namespace. |
+| `schema` | Read-only config metadata namespace for advanced documentation, inventory, and diagnostics integrations. |
 
 `apprc.cli` names for advanced CLI integrations:
 

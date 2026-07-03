@@ -68,9 +68,18 @@ All notable changes to `{my_project}` will be documented in this file.
 
 ### ➕ Added
 
+  - Added the public `rc.schema` namespace for read-only AppRC contract
+    metadata used by advanced documentation, inventory, and diagnostics
+    integrations.
+
 <br>
 
 ### 💔 Changed
+
+  - Changed `@MyRC.bundle` to support dataclass `init=False` config fields and
+    user `__post_init__()` hooks so applications can derive registered child
+    configs from eagerly resolved siblings without leaving the bundle
+    interface.
 
 <br>
 

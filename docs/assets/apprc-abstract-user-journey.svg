@@ -14,7 +14,7 @@
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_operator</title>
-<path fill="#f4a261" fill-opacity="0.098039" stroke="#f4a261" stroke-width="1.8" d="M314.63,0C314.63,0 714.3,0 714.3,0 720.3,0 726.3,-6 726.3,-12 726.3,-12 726.3,-164.28 726.3,-164.28 726.3,-170.28 720.3,-176.28 714.3,-176.28 714.3,-176.28 314.63,-176.28 314.63,-176.28 308.63,-176.28 302.63,-170.28 302.63,-164.28 302.63,-164.28 302.63,-12 302.63,-12 302.63,-6 308.63,0 314.63,0"/>
+<path fill="#f4a261" fill-opacity="0.098039" stroke="#f4a261" stroke-width="1.8" d="M314.63,0C314.63,0 713.93,0 713.93,0 719.93,0 725.93,-6 725.93,-12 725.93,-12 725.93,-164.28 725.93,-164.28 725.93,-170.28 719.93,-176.28 713.93,-176.28 713.93,-176.28 314.63,-176.28 314.63,-176.28 308.63,-176.28 302.63,-170.28 302.63,-164.28 302.63,-164.28 302.63,-12 302.63,-12 302.63,-6 308.63,0 314.63,0"/>
 </g>
 <!-- config_contract&#45;&gt;shipped_app -->
 <g id="edge1" class="edge">
@@ -37,8 +37,8 @@
 <!-- edit_values&#45;&gt;runtime_app -->
 <g id="edge4" class="edge">
 <title>edit_values&#45;&gt;runtime_app</title>
-<path fill="none" stroke="#32bc00" stroke-width="2.3" d="M571.59,-135.78C591.28,-135.78 614.08,-135.78 634.08,-135.78"/>
-<polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.3" points="634.08,-138.23 641.08,-135.78 634.08,-133.33 634.08,-138.23"/>
+<path fill="none" stroke="#32bc00" stroke-width="2.3" d="M571.59,-135.78C591.53,-135.78 614.66,-135.78 634.84,-135.78"/>
+<polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.3" points="634.61,-138.23 641.61,-135.78 634.61,-133.33 634.61,-138.23"/>
 </g>
 <!-- runtime_app&#45;&gt;inspect_loop -->
 <g id="edge5" class="edge">
@@ -57,9 +57,9 @@
 <title>config_contract</title>
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M12,-95.28C12,-95.28 77.25,-95.28 77.25,-95.28 83.25,-95.28 89.25,-101.28 89.25,-107.28 89.25,-107.28 89.25,-164.28 89.25,-164.28 89.25,-170.28 83.25,-176.28 77.25,-176.28 77.25,-176.28 12,-176.28 12,-176.28 6,-176.28 0,-170.28 0,-164.28 0,-164.28 0,-107.28 0,-107.28 0,-101.28 6,-95.28 12,-95.28"/>
 <text xml:space="preserve" text-anchor="start" x="6" y="-161.78" font-family="sans-serif" font-weight="bold" font-size="10.00">Config contract</text>
-<text xml:space="preserve" text-anchor="start" x="21.38" y="-137.78" font-family="sans-serif" font-size="10.00">EnvConfig</text>
-<text xml:space="preserve" text-anchor="start" x="14.25" y="-119.53" font-family="sans-serif" font-size="10.00">@env_owner</text>
-<text xml:space="preserve" text-anchor="start" x="23.62" y="-101.28" font-family="sans-serif" font-size="10.00">env_field</text>
+<text xml:space="preserve" text-anchor="start" x="24.38" y="-137.78" font-family="sans-serif" font-size="10.00">rc.Config</text>
+<text xml:space="preserve" text-anchor="start" x="11.25" y="-119.53" font-family="sans-serif" font-size="10.00">@MyRC.config</text>
+<text xml:space="preserve" text-anchor="start" x="28.88" y="-101.28" font-family="sans-serif" font-size="10.00">rc.field</text>
 <path fill="none" stroke="#00a2ff" d="M12,-95.28C12,-95.28 77.25,-95.28 77.25,-95.28 83.25,-95.28 89.25,-101.28 89.25,-107.28 89.25,-107.28 89.25,-164.28 89.25,-164.28 89.25,-170.28 83.25,-176.28 77.25,-176.28 77.25,-176.28 12,-176.28 12,-176.28 6,-176.28 0,-170.28 0,-164.28 0,-164.28 0,-107.28 0,-107.28 0,-101.28 6,-95.28 12,-95.28"/>
 </g>
 <!-- shipped_app -->
@@ -67,7 +67,7 @@
 <title>shipped_app</title>
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M146.78,-95.28C146.78,-95.28 223.28,-95.28 223.28,-95.28 229.28,-95.28 235.28,-101.28 235.28,-107.28 235.28,-107.28 235.28,-164.28 235.28,-164.28 235.28,-170.28 229.28,-176.28 223.28,-176.28 223.28,-176.28 146.78,-176.28 146.78,-176.28 140.78,-176.28 134.78,-170.28 134.78,-164.28 134.78,-164.28 134.78,-107.28 134.78,-107.28 134.78,-101.28 140.78,-95.28 146.78,-95.28"/>
 <text xml:space="preserve" text-anchor="start" x="140.78" y="-161.78" font-family="sans-serif" font-weight="bold" font-size="10.00">Shipped config UX</text>
-<text xml:space="preserve" text-anchor="start" x="154.65" y="-137.78" font-family="sans-serif" font-size="10.00">AppConfigKit</text>
+<text xml:space="preserve" text-anchor="start" x="164.03" y="-137.78" font-family="sans-serif" font-size="10.00">rc.AppRC</text>
 <text xml:space="preserve" text-anchor="start" x="162.53" y="-119.53" font-family="sans-serif" font-size="10.00">bootstrap</text>
 <text xml:space="preserve" text-anchor="start" x="162.15" y="-101.28" font-family="sans-serif" font-size="10.00">config CLI</text>
 <path fill="none" stroke="#00a2ff" d="M146.78,-95.28C146.78,-95.28 223.28,-95.28 223.28,-95.28 229.28,-95.28 235.28,-101.28 235.28,-107.28 235.28,-107.28 235.28,-164.28 235.28,-164.28 235.28,-170.28 229.28,-176.28 223.28,-176.28 223.28,-176.28 146.78,-176.28 146.78,-176.28 140.78,-176.28 134.78,-170.28 134.78,-164.28 134.78,-164.28 134.78,-107.28 134.78,-107.28 134.78,-101.28 140.78,-95.28 146.78,-95.28"/>
@@ -95,11 +95,11 @@
 <!-- runtime_app -->
 <g id="node5" class="node">
 <title>runtime_app</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M656.55,-104.4C656.55,-104.4 714.3,-104.4 714.3,-104.4 720.3,-104.4 726.3,-110.4 726.3,-116.4 726.3,-116.4 726.3,-155.15 726.3,-155.15 726.3,-161.15 720.3,-167.15 714.3,-167.15 714.3,-167.15 656.55,-167.15 656.55,-167.15 650.55,-167.15 644.55,-161.15 644.55,-155.15 644.55,-155.15 644.55,-116.4 644.55,-116.4 644.55,-110.4 650.55,-104.4 656.55,-104.4"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M656.93,-104.4C656.93,-104.4 713.93,-104.4 713.93,-104.4 719.93,-104.4 725.93,-110.4 725.93,-116.4 725.93,-116.4 725.93,-155.15 725.93,-155.15 725.93,-161.15 719.93,-167.15 713.93,-167.15 713.93,-167.15 656.93,-167.15 656.93,-167.15 650.93,-167.15 644.93,-161.15 644.93,-155.15 644.93,-155.15 644.93,-116.4 644.93,-116.4 644.93,-110.4 650.93,-104.4 656.93,-104.4"/>
 <text xml:space="preserve" text-anchor="start" x="665.18" y="-152.65" font-family="sans-serif" font-weight="bold" font-size="10.00">Run app</text>
-<text xml:space="preserve" text-anchor="start" x="647.55" y="-128.65" font-family="sans-serif" font-size="10.00">typed EnvConfig</text>
+<text xml:space="preserve" text-anchor="start" x="656.55" y="-128.65" font-family="sans-serif" font-size="10.00">typed config</text>
 <text xml:space="preserve" text-anchor="start" x="647.93" y="-110.4" font-family="sans-serif" font-size="10.00">zero&#45;write reads</text>
-<path fill="none" stroke="#32bc00" d="M656.55,-104.4C656.55,-104.4 714.3,-104.4 714.3,-104.4 720.3,-104.4 726.3,-110.4 726.3,-116.4 726.3,-116.4 726.3,-155.15 726.3,-155.15 726.3,-161.15 720.3,-167.15 714.3,-167.15 714.3,-167.15 656.55,-167.15 656.55,-167.15 650.55,-167.15 644.55,-161.15 644.55,-155.15 644.55,-155.15 644.55,-116.4 644.55,-116.4 644.55,-110.4 650.55,-104.4 656.55,-104.4"/>
+<path fill="none" stroke="#32bc00" d="M656.93,-104.4C656.93,-104.4 713.93,-104.4 713.93,-104.4 719.93,-104.4 725.93,-110.4 725.93,-116.4 725.93,-116.4 725.93,-155.15 725.93,-155.15 725.93,-161.15 719.93,-167.15 713.93,-167.15 713.93,-167.15 656.93,-167.15 656.93,-167.15 650.93,-167.15 644.93,-161.15 644.93,-155.15 644.93,-155.15 644.93,-116.4 644.93,-116.4 644.93,-110.4 650.93,-104.4 656.93,-104.4"/>
 </g>
 <!-- inspect_loop -->
 <g id="node6" class="node">

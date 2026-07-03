@@ -58,6 +58,20 @@ class RegisteredConfig:
     env_fields: Mapping[str, PublicFieldSpec]
 
 
+@dataclass(frozen=True, slots=True)
+class _BundleFieldSpec:
+    """Normalized bundle field registration.
+
+    :param name: Attribute name on the bundle class.
+    :param config_type: Registered config type expected for the field.
+    :param init: Whether constructor injection and eager construction apply.
+    """
+
+    name: str
+    config_type: type[ConfigBase]
+    init: bool
+
+
 class AppRC:
     """Public facade for one application's AppRC integration.
 
@@ -269,16 +283,21 @@ class AppRC:
         :raises TypeError: If an annotated field refers to an unregistered
             config class.
         """
-        bundle_fields = self._bundle_fields(bundle_type)
         resolved_bundle = self._ensure_dataclass(
             bundle_type,
             init=False,
             repr=False,
         )
+        bundle_fields = self._bundle_fields(resolved_bundle)
+        post_init = getattr(resolved_bundle, "__post_init__", None)
         setattr(
             resolved_bundle,
             "__init__",
-            self._build_bundle_init(resolved_bundle, bundle_fields),
+            self._build_bundle_init(
+                resolved_bundle,
+                bundle_fields,
+                post_init,
+            ),
         )
         setattr(
             resolved_bundle,
@@ -510,12 +529,22 @@ class AppRC:
     def _bundle_fields(
         self,
         bundle_type: type[object],
-    ) -> dict[str, type[ConfigBase]]:
+    ) -> dict[str, _BundleFieldSpec]:
         """Return registered config fields declared by one bundle."""
         type_hints = get_type_hints(bundle_type, include_extras=True)
-        bundle_fields: dict[str, type[ConfigBase]] = {}
+        dataclass_fields = {
+            item.name: item for item in fields(cast(Any, bundle_type))
+        }
+        bundle_fields: dict[str, _BundleFieldSpec] = {}
         for field_name, annotation in type_hints.items():
             if get_origin(annotation) is ClassVar:
+                continue
+            dataclass_field = dataclass_fields.get(field_name)
+            if (
+                field_name.startswith("_")
+                or dataclass_field is not None
+                and dataclass_field.metadata.get("internal")
+            ):
                 continue
             if not isinstance(annotation, type):
                 _raise_unregistered_bundle_field(
@@ -531,19 +560,29 @@ class AppRC:
                     annotation,
                 )
             assert registered is not None
-            bundle_fields[field_name] = registered.config_type
+            bundle_fields[field_name] = _BundleFieldSpec(
+                name=field_name,
+                config_type=registered.config_type,
+                init=dataclass_fields[field_name].init,
+            )
         return bundle_fields
 
     def _build_bundle_init(
         self,
         bundle_type: type[object],
-        bundle_fields: Mapping[str, type[ConfigBase]],
+        bundle_fields: Mapping[str, _BundleFieldSpec],
+        post_init: Callable[[object], None] | None,
     ) -> Callable[..., None]:
         """Build the custom eager bundle constructor."""
 
         def __init__(self: object, **kwargs: object) -> None:
             """Construct every child config eagerly."""
-            unknown = set(kwargs) - set(bundle_fields)
+            init_fields = {
+                field_name
+                for field_name, spec in bundle_fields.items()
+                if spec.init
+            }
+            unknown = set(kwargs) - init_fields
             if unknown:
                 joined = ", ".join(sorted(unknown))
                 raise TypeError(
@@ -551,7 +590,10 @@ class AppRC:
                     f"argument(s): {joined}."
                 )
             LOG.debug("Constructing AppRC bundle %s.", bundle_type.__name__)
-            for field_name, expected_type in bundle_fields.items():
+            for field_name, spec in bundle_fields.items():
+                if not spec.init:
+                    continue
+                expected_type = spec.config_type
                 if field_name in kwargs:
                     value = kwargs[field_name]
                     if not isinstance(value, expected_type):
@@ -569,6 +611,8 @@ class AppRC:
                     )
                     value = expected_type()
                 object.__setattr__(self, field_name, value)
+            if post_init is not None:
+                post_init(self)
 
         self_app = self
         return __init__
@@ -576,15 +620,15 @@ class AppRC:
     def _build_bundle_repr(
         self,
         bundle_type: type[object],
-        bundle_fields: Mapping[str, type[ConfigBase]],
+        bundle_fields: Mapping[str, _BundleFieldSpec],
     ) -> Callable[[object], str]:
         """Build a secret-safe bundle repr."""
 
         def __repr__(self: object) -> str:
             """Return a minimal repr that never prints child values."""
             parts = [
-                f"{field_name}=<{expected_type.__name__}>"
-                for field_name, expected_type in bundle_fields.items()
+                f"{field_name}=<{spec.config_type.__name__}>"
+                for field_name, spec in bundle_fields.items()
             ]
             return f"{bundle_type.__name__}({', '.join(parts)})"
 

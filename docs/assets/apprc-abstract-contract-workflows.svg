@@ -10,8 +10,8 @@
 <title>apprc_abstract_contract_workflows</title>
 <g id="clust1" class="cluster">
 <title>cluster_declared_contract</title>
-<path fill="#00a2ff" fill-opacity="0.098039" stroke="#00a2ff" stroke-width="2" d="M84,-453.75C84,-453.75 281,-453.75 281,-453.75 287,-453.75 293,-459.75 293,-465.75 293,-465.75 293,-549 293,-549 293,-555 287,-561 281,-561 281,-561 84,-561 84,-561 78,-561 72,-555 72,-549 72,-549 72,-465.75 72,-465.75 72,-459.75 78,-453.75 84,-453.75"/>
-<text xml:space="preserve" text-anchor="middle" x="182.5" y="-547.5" font-family="sans-serif" font-size="10.00" fill="#00a2ff">Declared contract</text>
+<path fill="#00a2ff" fill-opacity="0.098039" stroke="#00a2ff" stroke-width="2" d="M100,-453.75C100,-453.75 281,-453.75 281,-453.75 287,-453.75 293,-459.75 293,-465.75 293,-465.75 293,-549 293,-549 293,-555 287,-561 281,-561 281,-561 100,-561 100,-561 94,-561 88,-555 88,-549 88,-549 88,-465.75 88,-465.75 88,-459.75 94,-453.75 100,-453.75"/>
+<text xml:space="preserve" text-anchor="middle" x="190.5" y="-547.5" font-family="sans-serif" font-size="10.00" fill="#00a2ff">Declared contract</text>
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_apprc_core</title>
@@ -49,11 +49,11 @@
 <!-- kit&#45;&gt;capability_metadata -->
 <g id="edge3" class="edge">
 <title>kit&#45;&gt;capability_metadata</title>
-<path fill="none" stroke="#00a2ff" stroke-width="2.5" d="M118.72,-463.92C116.9,-446.5 114.57,-424.22 112.41,-403.5"/>
-<polygon fill="#00a2ff" stroke="#00a2ff" stroke-width="2.5" points="115.04,-403.46 111.65,-396.28 109.82,-404.01 115.04,-403.46"/>
-<polygon fill="#00a2ff" stroke="none" points="116.37,-425 116.37,-443.75 148.62,-443.75 148.62,-425 116.37,-425"/>
-<text xml:space="preserve" text-anchor="start" x="119.37" y="-433.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">select</text>
-<polygon fill="none" stroke="#00a2ff" points="116.37,-425 116.37,-443.75 148.62,-443.75 148.62,-425 116.37,-425"/>
+<path fill="none" stroke="#00a2ff" stroke-width="2.5" d="M125.09,-463.92C122.35,-446.5 118.86,-424.22 115.61,-403.5"/>
+<polygon fill="#00a2ff" stroke="#00a2ff" stroke-width="2.5" points="118.23,-403.25 114.47,-396.25 113.04,-404.07 118.23,-403.25"/>
+<polygon fill="#00a2ff" stroke="none" points="121.55,-425 121.55,-443.75 153.8,-443.75 153.8,-425 121.55,-425"/>
+<text xml:space="preserve" text-anchor="start" x="124.55" y="-433.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">select</text>
+<polygon fill="none" stroke="#00a2ff" points="121.55,-425 121.55,-443.75 153.8,-443.75 153.8,-425 121.55,-425"/>
 </g>
 <!-- owner_metadata&#45;&gt;resolution -->
 <g id="edge4" class="edge">
@@ -138,26 +138,26 @@
 <text xml:space="preserve" text-anchor="start" x="212.75" y="-510.25" font-family="sans-serif" font-weight="bold" font-size="10.00">Config classes</text>
 <polygon fill="#00a2ff" stroke="none" points="189.75,-500.75 189.75,-501.75 290.25,-501.75 290.25,-500.75 189.75,-500.75"/>
 <text xml:space="preserve" text-anchor="start" x="196.75" y="-485.25" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="202.75" y="-485.25" font-family="sans-serif" font-size="10.00"> EnvConfig</text>
+<text xml:space="preserve" text-anchor="start" x="202.75" y="-485.25" font-family="sans-serif" font-size="10.00"> rc.Config</text>
 <text xml:space="preserve" text-anchor="start" x="196.75" y="-475.25" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="202.75" y="-475.25" font-family="sans-serif" font-size="10.00"> env_owner</text>
+<text xml:space="preserve" text-anchor="start" x="202.75" y="-475.25" font-family="sans-serif" font-size="10.00"> @MyRC.config</text>
 <text xml:space="preserve" text-anchor="start" x="196.75" y="-465.25" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="202.75" y="-465.25" font-family="sans-serif" font-size="10.00"> env_field</text>
+<text xml:space="preserve" text-anchor="start" x="202.75" y="-465.25" font-family="sans-serif" font-size="10.00"> rc.field</text>
 <path fill="none" stroke="#00a2ff" d="M200.75,-455.75C200.75,-455.75 279.25,-455.75 279.25,-455.75 285.25,-455.75 291.25,-461.75 291.25,-467.75 291.25,-467.75 291.25,-524.75 291.25,-524.75 291.25,-530.75 285.25,-536.75 279.25,-536.75 279.25,-536.75 200.75,-536.75 200.75,-536.75 194.75,-536.75 188.75,-530.75 188.75,-524.75 188.75,-524.75 188.75,-467.75 188.75,-467.75 188.75,-461.75 194.75,-455.75 200.75,-455.75"/>
 </g>
 <!-- kit -->
 <g id="node2" class="node">
 <title>kit</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M86.5,-463.62C86.5,-463.62 157.5,-463.62 157.5,-463.62 163.5,-463.62 169.5,-469.62 169.5,-475.62 169.5,-475.62 169.5,-516.88 169.5,-516.88 169.5,-522.88 163.5,-528.88 157.5,-528.88 157.5,-528.88 86.5,-528.88 86.5,-528.88 80.5,-528.88 74.5,-522.88 74.5,-516.88 74.5,-516.88 74.5,-475.62 74.5,-475.62 74.5,-469.62 80.5,-463.62 86.5,-463.62"/>
-<polygon fill="#b4a7e5" stroke="none" points="82.5,-500.88 82.5,-520.88 88.25,-520.88 88.25,-500.88 82.5,-500.88"/>
-<polygon fill="none" stroke="#181818" points="82.5,-500.88 82.5,-520.88 88.25,-520.88 88.25,-500.88 82.5,-500.88"/>
-<text xml:space="preserve" text-anchor="start" x="83.5" y="-506.75" font-family="sans-serif" font-size="10.00">I</text>
-<text xml:space="preserve" text-anchor="start" x="104.12" y="-512.38" font-family="sans-serif" font-style="italic" font-size="10.00">«app spec»</text>
-<text xml:space="preserve" text-anchor="start" x="96.25" y="-502.38" font-family="sans-serif" font-weight="bold" font-size="10.00">AppConfigKit</text>
-<polygon fill="#00a2ff" stroke="none" points="75.5,-492.88 75.5,-493.88 168.5,-493.88 168.5,-492.88 75.5,-492.88"/>
-<text xml:space="preserve" text-anchor="start" x="82.5" y="-477.38" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="88.5" y="-477.38" font-family="sans-serif" font-size="10.00"> capabilities</text>
-<path fill="none" stroke="#00a2ff" d="M86.5,-463.62C86.5,-463.62 157.5,-463.62 157.5,-463.62 163.5,-463.62 169.5,-469.62 169.5,-475.62 169.5,-475.62 169.5,-516.88 169.5,-516.88 169.5,-522.88 163.5,-528.88 157.5,-528.88 157.5,-528.88 86.5,-528.88 86.5,-528.88 80.5,-528.88 74.5,-522.88 74.5,-516.88 74.5,-516.88 74.5,-475.62 74.5,-475.62 74.5,-469.62 80.5,-463.62 86.5,-463.62"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M102.38,-463.62C102.38,-463.62 157.62,-463.62 157.62,-463.62 163.62,-463.62 169.62,-469.62 169.62,-475.62 169.62,-475.62 169.62,-516.88 169.62,-516.88 169.62,-522.88 163.62,-528.88 157.62,-528.88 157.62,-528.88 102.38,-528.88 102.38,-528.88 96.38,-528.88 90.38,-522.88 90.38,-516.88 90.38,-516.88 90.38,-475.62 90.38,-475.62 90.38,-469.62 96.38,-463.62 102.38,-463.62"/>
+<polygon fill="#b4a7e5" stroke="none" points="98.38,-500.88 98.38,-520.88 104.12,-520.88 104.12,-500.88 98.38,-500.88"/>
+<polygon fill="none" stroke="#181818" points="98.38,-500.88 98.38,-520.88 104.12,-520.88 104.12,-500.88 98.38,-500.88"/>
+<text xml:space="preserve" text-anchor="start" x="99.38" y="-506.75" font-family="sans-serif" font-size="10.00">I</text>
+<text xml:space="preserve" text-anchor="start" x="112.12" y="-512.38" font-family="sans-serif" font-style="italic" font-size="10.00">«app spec»</text>
+<text xml:space="preserve" text-anchor="start" x="114.38" y="-502.38" font-family="sans-serif" font-weight="bold" font-size="10.00">rc.AppRC</text>
+<polygon fill="#00a2ff" stroke="none" points="91.38,-492.88 91.38,-493.88 168.62,-493.88 168.62,-492.88 91.38,-492.88"/>
+<text xml:space="preserve" text-anchor="start" x="98.38" y="-477.38" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
+<text xml:space="preserve" text-anchor="start" x="104.38" y="-477.38" font-family="sans-serif" font-size="10.00"> capabilities</text>
+<path fill="none" stroke="#00a2ff" d="M102.38,-463.62C102.38,-463.62 157.62,-463.62 157.62,-463.62 163.62,-463.62 169.62,-469.62 169.62,-475.62 169.62,-475.62 169.62,-516.88 169.62,-516.88 169.62,-522.88 163.62,-528.88 157.62,-528.88 157.62,-528.88 102.38,-528.88 102.38,-528.88 96.38,-528.88 90.38,-522.88 90.38,-516.88 90.38,-516.88 90.38,-475.62 90.38,-475.62 90.38,-469.62 96.38,-463.62 102.38,-463.62"/>
 </g>
 <!-- owner_metadata -->
 <g id="node3" class="node">
@@ -210,7 +210,7 @@
 <text xml:space="preserve" text-anchor="start" x="31.62" y="-54.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Runtime config</text>
 <polygon fill="#32bc00" stroke="none" points="10.88,-45 10.88,-46 115.12,-46 115.12,-45 10.88,-45"/>
 <text xml:space="preserve" text-anchor="start" x="17.88" y="-29.5" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="23.88" y="-29.5" font-family="sans-serif" font-size="10.00"> typed EnvConfig</text>
+<text xml:space="preserve" text-anchor="start" x="23.88" y="-29.5" font-family="sans-serif" font-size="10.00"> typed config</text>
 <text xml:space="preserve" text-anchor="start" x="17.88" y="-19.5" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
 <text xml:space="preserve" text-anchor="start" x="23.88" y="-19.5" font-family="sans-serif" font-size="10.00"> zero&#45;write reads</text>
 <path fill="none" stroke="#32bc00" d="M21.88,-10C21.88,-10 104.12,-10 104.12,-10 110.12,-10 116.12,-16 116.12,-22 116.12,-22 116.12,-69 116.12,-69 116.12,-75 110.12,-81 104.12,-81 104.12,-81 21.88,-81 21.88,-81 15.88,-81 9.88,-75 9.88,-69 9.88,-69 9.88,-22 9.88,-22 9.88,-16 15.88,-10 21.88,-10"/>

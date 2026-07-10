@@ -70,7 +70,7 @@ class BaseConfig:
         :param kwargs: Keyword constructor arguments.
         :return: New config instance with initial provenance state.
         """
-        self = super().__new__(cls)
+        self = object.__new__(cls)
         object.__setattr__(
             self,
             "_apprc_provenance_origins",

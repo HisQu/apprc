@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import apprc.user_files.storage_roots.paths as storage_paths
 from apprc.user_files.app_home.index import ApprcTomlEnvError
 from apprc.user_files.app_home.index import (
     missing_apprc_toml_env_message,
@@ -268,6 +269,7 @@ def test_windows_drive_path_to_posix_falls_back_to_mnt_path(
 def test_normalize_storage_root_path_accepts_windows_drive_spellings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(storage_paths, "_IS_NATIVE_WINDOWS", False)
     monkeypatch.setattr("shutil.which", lambda command: None)
 
     assert normalize_storage_root_path(r"C:\Projects\demo-storage") == Path(
@@ -275,6 +277,16 @@ def test_normalize_storage_root_path_accepts_windows_drive_spellings(
     )
     assert normalize_storage_root_path("C:/Projects/demo-storage") == Path(
         "/mnt/c/Projects/demo-storage"
+    )
+
+
+def test_normalize_storage_root_path_preserves_native_windows_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(storage_paths, "_IS_NATIVE_WINDOWS", True)
+
+    assert normalize_storage_root_path(r"C:\Projects\demo-storage") == Path(
+        r"C:\Projects\demo-storage"
     )
 
 

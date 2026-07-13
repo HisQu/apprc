@@ -251,6 +251,7 @@ _release-artifact-check notes_output:
             python "$smoke_script"
     )
 
+    echo "🧪 PyPI publication dry run: no files will be uploaded."
     uv publish \
         --dry-run \
         --trusted-publishing never \
@@ -258,6 +259,7 @@ _release-artifact-check notes_output:
         --check-url https://pypi.org/simple/apprc/ \
         "$wheel" \
         "$sdist"
+    echo "✓ PyPI publication dry run passed; nothing was uploaded."
 
 # Rehearse the complete local release gate without publishing
 publish-check:
@@ -273,6 +275,11 @@ publish-check:
             "$check_root/python-${python_version}/.venv"
     done
     just _release-artifact-check "$check_root/release-notes.md"
+    if [[ "${APPRC_BUMP_IN_PROGRESS:-}" == 1 ]]; then
+        echo "➡ Next step: creating the version commit and annotated tag."
+    else
+        echo "➡ Next step: run just bump <patch|minor|major>."
+    fi
 
 # Prepare a checked version commit and annotated local release tag
 bump-version bump="patch":
@@ -312,7 +319,7 @@ bump-version bump="patch":
     restore_version_files=true
     uv version --bump "{{bump}}" --no-sync
     uv export -o pylock.toml --all-extras --all-groups --quiet
-    just publish-check
+    APPRC_BUMP_IN_PROGRESS=1 just publish-check
 
     git commit \
         --only pyproject.toml uv.lock pylock.toml \

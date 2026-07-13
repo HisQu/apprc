@@ -630,6 +630,10 @@ def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
     assert "--trusted-publishing never" in artifact_check
     assert "--token unused-local-dry-run-token" in artifact_check
     assert "--check-url https://pypi.org/simple/apprc/" in artifact_check
+    assert "no files will be uploaded" in artifact_check
+    assert "nothing was uploaded" in artifact_check
+    assert "run just bump <patch|minor|major>" in publish_check
+    assert "creating the version commit and annotated tag" in publish_check
 
 
 def test_release_recipe_surface_is_minimal() -> None:
@@ -655,6 +659,7 @@ def test_release_bump_checks_before_commit_and_tag() -> None:
     assert "release_notes.py" in recipe
     assert "restore_version_files=true" in recipe
     assert 'cp "$release_root/pyproject.toml" pyproject.toml' in recipe
+    assert "APPRC_BUMP_IN_PROGRESS=1 just publish-check" in recipe
     assert recipe.index("just publish-check") < recipe.index("git commit")
     assert recipe.index("git commit") < recipe.index('git tag -a "${tag}"')
     assert 'git tag -a "${tag}"' in recipe

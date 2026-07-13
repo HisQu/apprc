@@ -66,8 +66,10 @@ tui = [
 
 
 [project.urls]
-Homepage = "https://hisqu.de"
+Homepage = "https://github.com/HisQu/apprc"
 Repository = "https://github.com/HisQu/apprc"
+Documentation = "https://github.com/HisQu/apprc/tree/main/docs"
+Changelog = "https://github.com/HisQu/apprc/blob/main/CHANGELOG.md"
 Issues = "https://github.com/HisQu/apprc/issues"
 
 [project.scripts]

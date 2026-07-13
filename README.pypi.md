@@ -1,5 +1,12 @@
 # `apprc`: Application Runtime Config
 
+<p align="center">
+  <a href="https://github.com/HisQu/apprc/actions/workflows/ci.yml"><img src="https://github.com/HisQu/apprc/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://pypi.org/project/apprc/"><img src="https://img.shields.io/pypi/v/apprc" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/apprc/"><img src="https://img.shields.io/pypi/pyversions/apprc" alt="Supported Python versions"></a>
+  <a href="https://github.com/HisQu/apprc/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/apprc" alt="MIT license"></a>
+</p>
+
 AppRC is for Python applications that need configuration to be explicit,
 inspectable, and pleasant to operate. Instead of spreading environment
 variables, dotenv files, setup commands, and diagnostics across unrelated code,

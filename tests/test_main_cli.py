@@ -541,6 +541,78 @@ def test_ci_compile_command_uses_current_source_roots() -> None:
     )
 
 
+def test_ci_is_reusable_without_running_twice_for_release_tags() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "workflow_call:" in workflow
+    assert '      - "**"' in workflow
+    assert "tags:" not in workflow
+
+
+def test_release_workflow_checks_builds_approves_and_publishes() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    checks, remainder = workflow.split("  build:", maxsplit=1)
+    build, publish = remainder.split("  publish:", maxsplit=1)
+
+    assert '      - "v*"' in workflow
+    assert "uses: ./.github/workflows/ci.yml" in workflow
+    assert "needs: checks" in workflow
+    assert "needs: build" in workflow
+    assert "name: pypi" in workflow
+    assert "id-token: write" in workflow
+    assert "contents: write" in workflow
+    assert "--trusted-publishing always" in workflow
+    assert "--check-url https://pypi.org/simple/apprc/" in workflow
+    assert 'gh release create "$GITHUB_REF_NAME"' in workflow
+    assert "release_notes.py" in workflow
+    assert "git diff --exit-code -- README.pypi.md" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "contents: read" in checks
+    assert "contents: read" in build
+    assert "id-token:" not in checks
+    assert "id-token:" not in build
+    assert "actions/upload-artifact@v4" in build
+    assert "actions/download-artifact@v4" in publish
+    assert "dist/*.whl" in workflow
+    assert "dist/*.tar.gz" in workflow
+    assert "--notes-file release/release-notes.md" in publish
+
+
+def test_release_bump_has_changelog_guard_and_no_local_publish() -> None:
+    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+    recipe = _just_recipe("bump-version")
+
+    assert "release_notes.py" in recipe
+    assert 'git tag -a "${tag}"' in recipe
+    assert "git push" not in recipe
+    assert "PYPI_API_KEY" not in justfile
+    assert "publish-pypi" not in justfile
+
+
+def test_release_metadata_links_to_github_and_pypi_surfaces() -> None:
+    pyproject = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    urls = pyproject["project"]["urls"]
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert urls == {
+        "Homepage": "https://github.com/HisQu/apprc",
+        "Repository": "https://github.com/HisQu/apprc",
+        "Documentation": "https://github.com/HisQu/apprc/tree/main/docs",
+        "Changelog": "https://github.com/HisQu/apprc/blob/main/CHANGELOG.md",
+        "Issues": "https://github.com/HisQu/apprc/issues",
+    }
+    assert "actions/workflows/ci.yml/badge.svg" in readme
+    assert "img.shields.io/pypi/v/apprc" in readme
+    assert "img.shields.io/pypi/pyversions/apprc" in readme
+    assert "img.shields.io/pypi/l/apprc" in readme
+
+
 def test_release_docs_do_not_contain_stale_template_names() -> None:
     texts = "\n".join(
         (ROOT / path).read_text(encoding="utf-8")

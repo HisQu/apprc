@@ -4,7 +4,10 @@ run-name: ${{ github.actor }} - ${{ github.event_name }} - CI
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read

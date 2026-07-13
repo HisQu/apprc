@@ -59,9 +59,19 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+  - Added a tag-driven GitHub release pipeline that runs the complete CI
+    matrix, validates and preserves release artifacts, pauses for approval,
+    publishes to PyPI through Trusted Publishing, and creates a GitHub Release
+    from the curated changelog notes.
+
 <br>
 
 ### 💔 Changed
+
+  - Changed release maintenance so the changelog is finalized before a local
+    annotated tag is created, PyPI API-key publication is no longer a local
+    recipe, and repository metadata links directly to the package, docs,
+    changelog, and current project topics.
 
 <br>
 

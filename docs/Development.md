@@ -5,17 +5,18 @@
 ## Table Of Contents
 <!-- ======================================================== -->
 
-1. [Development](#1-development)
-2. [Maintainer Workflow](#2-maintainer-workflow)
+1. [1. Development](#1-development)
+2. [2. Maintainer Workflow](#2-maintainer-workflow)
    1. [Before Editing](#before-editing)
    2. [Repository Routing](#repository-routing)
    3. [Environment Setup](#environment-setup)
    4. [Example Apps](#example-apps)
-3. [Documentation Workflow](#3-documentation-workflow)
+   5. [Release Workflow](#release-workflow)
+3. [3. Documentation Workflow](#3-documentation-workflow)
    1. [Documentation Rules](#documentation-rules)
    2. [README And PyPI README](#readme-and-pypi-readme)
    3. [Documentation Assets](#documentation-assets)
-4. [Verification](#4-verification)
+4. [4. Verification](#4-verification)
    1. [Docs Verification](#docs-verification)
    2. [Python Verification](#python-verification)
    3. [Review Checklist](#review-checklist)
@@ -255,6 +256,77 @@ The test suite exercises every generated command for every example mode:
 `config paths`, `config show`, `config doctor`, `config setup`, `config set`,
 `config edit`, `config app init`, and all mounted `config storage` commands.
 Storage-free modes also assert that storage commands are unavailable.
+
+<br>
+
+<!-- ======================================================== -->
+
+<br>
+
+## Release Workflow
+<!-- ======================================================== -->
+
+AppRC publishes from an annotated `vMAJOR.MINOR.PATCH` tag. A tag push runs the
+complete CI matrix, builds and validates the wheel and source distribution,
+waits for approval in the GitHub `pypi` environment, publishes the preserved
+artifacts to PyPI through Trusted Publishing, and then creates the GitHub
+Release from the matching curated changelog section.
+
+> [!IMPORTANT]
+>
+> Configure the PyPI Trusted Publisher before the first automated release:
+> owner `HisQu`, repository `apprc`, workflow `release.yml`, and environment
+> `pypi`. The GitHub environment must require `markur4` as a reviewer. It does
+> not contain a PyPI token or any repository secret.
+
+Prepare a release on `main` only after the intended changes have passed CI:
+
+1. Move the final net changes from `[Unreleased]` into a new
+   `# MAJOR.MINOR.PATCH - YYYY-MM-DD` section in `CHANGELOG.md`.
+2. Update the changelog table of contents, remove empty subsections from the
+   released version, and restore every empty subsection under `[Unreleased]`.
+3. Commit the finalized changelog and run the repository verification commands.
+4. Run `just bump patch`, `just bump minor`, or `just bump major`. The recipe
+   refuses to change version files unless the prepared changelog is valid and
+   `[Unreleased]` is empty.
+5. Inspect the version commit and local tag, then push only those intended refs:
+
+   ```bash
+   git push origin main vMAJOR.MINOR.PATCH
+   ```
+
+The pushed release tag `v*` triggers the automated github release workflow:
+
+1. Reuse `.github/workflows/ci.yml` for Linux and Windows on every supported
+   Python version.
+2. Confirm the tag, `pyproject.toml` version, changelog heading, changelog TOC,
+   and empty `[Unreleased]` template agree.
+3. Run `just publish-check`, reject an uncommitted generated
+   `README.pypi.md`, and preserve the wheel, sdist, and release notes as one
+   workflow artifact.
+4. Wait for approval on the `pypi` environment.
+5. Publish the preserved distributions with `uv publish` through GitHub OIDC.
+6. Create the GitHub Release only after PyPI accepts the distributions, using
+   the same wheel and sdist plus the curated changelog notes.
+
+If CI, metadata validation, or packaging fails, fix the release commit and use
+a new version; do not move a tag that has reached the remote. If approval is
+rejected, no package or GitHub Release is published. If PyPI succeeds but the
+final GitHub command fails, rerun the failed workflow: `uv publish` recognizes
+the identical existing PyPI files and the Release step can continue.
+
+After publication, verify the clean package install explicitly:
+
+```bash
+just verify-pypi "apprc==MAJOR.MINOR.PATCH"
+gh release view vMAJOR.MINOR.PATCH --repo HisQu/apprc
+```
+
+> [!NOTE]
+>
+> PyPI projects do not populate GitHub's Packages panel. AppRC uses the GitHub
+> About website, README badges, project URLs, and Releases to link the two
+> publication surfaces.
 
 <br>
 

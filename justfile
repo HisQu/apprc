@@ -54,14 +54,6 @@ _check-clean-worktree action="publishing":
         exit 1; \
     }
 
-[private]
-_check-pypi-api-key:
-    @test -n "${PYPI_API_KEY-}" || { \
-        echo "PYPI_API_KEY is required. Usage: PYPI_API_KEY=\"pypi-...\" just publish-pypi" >&2; \
-        exit 1; \
-    }
-
-
 # ---------------------------------------------------------------
 # Clean / environment helpers
 # ---------------------------------------------------------------
@@ -175,17 +167,9 @@ publish-check:
     just build
     uv run --with twine --no-project -- twine check dist/*
 
-# Usage: PYPI_API_KEY="pypi-..." just publish-pypi
-# Rebuild, validate, and upload release artifacts to PyPI.
-publish-pypi *ARGS:
-    just _check-uv
-    just _check-pypi-api-key
-    just _check-clean-worktree
-    rm -rf dist/
-    just publish-check
-    uv publish --token "$PYPI_API_KEY" {{ARGS}}
-
-# Bump the project version, commit the version files, and create an annotated v-tag.
+# -- Prepare a local release tag
+# > Validate the prepared changelog, bump and commit the version files, and
+# > create an annotated v-tag. Push main and that tag explicitly after review.
 bump-version bump="patch":
     just _check-uv
     just _check-clean-worktree "bumping the version"
@@ -195,6 +179,11 @@ bump-version bump="patch":
         echo "Tag ${tag} already exists. Choose another bump." >&2; \
         exit 1; \
     fi; \
+    notes_file="$(mktemp)"; \
+    trap 'rm -f "$notes_file"' EXIT; \
+    python src/apprc_dev/packaging/release_notes.py \
+        "${next_version}" \
+        --output "$notes_file"; \
     uv version --bump "{{bump}}" --no-sync; \
     uv export -o pylock.toml --all-extras --all-groups --quiet; \
     git add pyproject.toml uv.lock pylock.toml; \

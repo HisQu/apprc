@@ -35,6 +35,11 @@ jobs:
           python-version: "3.12"
           enable-cache: auto
 
+      - name: Install just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: "1.56.0"
+
       - name: Build and validate release bundle
         run: just _release-artifact-check release/release-notes.md
 

@@ -553,6 +553,18 @@ def test_ci_is_reusable_without_running_twice_for_release_tags() -> None:
     assert "workflow_call:" in workflow
     assert '      - "**"' in workflow
     assert "tags:" not in workflow
+    assert "uses: extractions/setup-just@v4" in workflow
+    assert 'just-version: "1.56.0"' in workflow
+    assert (
+        workflow.count(
+            "matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'"
+        )
+        == 2
+    )
+    assert workflow.index("name: Install just") < workflow.index(
+        "name: Validate justfile"
+    )
+    assert "run: just --summary" in workflow
 
 
 def test_release_workflow_checks_builds_approves_and_publishes() -> None:
@@ -574,6 +586,11 @@ def test_release_workflow_checks_builds_approves_and_publishes() -> None:
     assert 'gh release create "$GITHUB_REF_NAME"' in workflow
     assert "just _release-artifact-check release/release-notes.md" in workflow
     assert "just publish-check" not in build
+    assert "uses: extractions/setup-just@v4" in build
+    assert 'just-version: "1.56.0"' in build
+    assert build.index("name: Install just") < build.index(
+        "just _release-artifact-check release/release-notes.md"
+    )
     assert "cancel-in-progress: false" in workflow
     assert "contents: read" in checks
     assert "contents: read" in build
@@ -639,19 +656,26 @@ def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
 
 
 def test_release_recipe_surface_is_minimal() -> None:
-    result = subprocess.run(
-        ["just", "--summary"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    recipes = set(result.stdout.split())
+    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
 
-    assert {"release", "publish-check", "verify-pypi"} <= recipes
-    assert {"bump", "bump-version", "build", "pypi-readme"}.isdisjoint(recipes)
-    assert not any(recipe.startswith("_release") for recipe in recipes)
-    assert not any(recipe.startswith("_ci-check") for recipe in recipes)
+    for recipe in ("release", "publish-check", "verify-pypi"):
+        assert _just_recipe(recipe)
+    for removed_recipe in ("bump", "bump-version", "build", "pypi-readme"):
+        assert (
+            re.search(
+                rf"(?m)^{re.escape(removed_recipe)}(?:[^\n]*):",
+                justfile,
+            )
+            is None
+        )
+    for private_recipe in ("_release-artifact-check", "_ci-check-python"):
+        assert re.search(
+            rf"(?m)^\[private\]\n{re.escape(private_recipe)}(?:[^\n]*):",
+            justfile,
+        )
+    assert (
+        re.search(r"(?m)^alias\s+(?:bump|bump-version)\s*:=", justfile) is None
+    )
 
 
 def test_release_checks_before_commit_and_tag() -> None:

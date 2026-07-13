@@ -632,8 +632,10 @@ def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
     assert "--check-url https://pypi.org/simple/apprc/" in artifact_check
     assert "no files will be uploaded" in artifact_check
     assert "nothing was uploaded" in artifact_check
-    assert "run just bump <patch|minor|major>" in publish_check
-    assert "creating the version commit and annotated tag" in publish_check
+    assert "run just release <patch|minor|major>" in publish_check
+    assert (
+        "Local release rehearsal passed; nothing was published" in publish_check
+    )
 
 
 def test_release_recipe_surface_is_minimal() -> None:
@@ -646,24 +648,28 @@ def test_release_recipe_surface_is_minimal() -> None:
     )
     recipes = set(result.stdout.split())
 
-    assert {"bump-version", "publish-check", "verify-pypi"} <= recipes
-    assert {"build", "pypi-readme"}.isdisjoint(recipes)
+    assert {"release", "publish-check", "verify-pypi"} <= recipes
+    assert {"bump", "bump-version", "build", "pypi-readme"}.isdisjoint(recipes)
     assert not any(recipe.startswith("_release") for recipe in recipes)
     assert not any(recipe.startswith("_ci-check") for recipe in recipes)
 
 
-def test_release_bump_checks_before_commit_and_tag() -> None:
+def test_release_checks_before_commit_and_tag() -> None:
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
-    recipe = _just_recipe("bump-version")
+    recipe = _just_recipe("release")
 
     assert "release_notes.py" in recipe
     assert "restore_version_files=true" in recipe
     assert 'cp "$release_root/pyproject.toml" pyproject.toml' in recipe
-    assert "APPRC_BUMP_IN_PROGRESS=1 just publish-check" in recipe
+    assert "APPRC_RELEASE_IN_PROGRESS=1 just publish-check" in recipe
     assert recipe.index("just publish-check") < recipe.index("git commit")
     assert recipe.index("git commit") < recipe.index('git tag -a "${tag}"')
     assert 'git tag -a "${tag}"' in recipe
-    assert "git push" not in recipe
+    assert re.search(r"(?m)^\s+git push\b", recipe) is None
+    assert "it does not publish anything" in recipe
+    assert "nothing has been published" in recipe
+    assert "git push origin main ${tag}" in recipe
+    assert "run CI, wait for pypi approval, publish to PyPI" in recipe
     assert "PYPI_API_KEY" not in justfile
     assert "publish-pypi" not in justfile
 

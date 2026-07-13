@@ -293,7 +293,8 @@ Prepare a release on `main` only after the intended changes have passed CI:
    ```
 
 4. Commit the finalized changelog and generated README, then run
-   `just bump patch`, `just bump minor`, or `just bump major`. The recipe:
+   `just release patch`, `just release minor`, or `just release major`. The
+   recipe:
    - refuses to start from a dirty worktree;
    - validates the prepared changelog before changing version files;
    - temporarily bumps `pyproject.toml`, `uv.lock`, and `pylock.toml`;
@@ -314,11 +315,11 @@ non-interactive `uv publish --dry-run`. The dry run uses a fixed non-secret
 placeholder token because `uv publish` requires an upload credential even when
 no files will be uploaded. `uv` may describe simulated uploads, but the recipe
 ends with explicit confirmation that nothing was published and prints the next
-release step.
+manual release command.
 
-If the rehearsal or version commit fails, `bump` restores all three version
+If the rehearsal or version commit fails, `release` restores all three version
 files and creates no commit or tag. Fix the reported problem, commit any source
-correction such as a regenerated `README.pypi.md`, and rerun `bump`. If the
+correction such as a regenerated `README.pypi.md`, and rerun `release`. If the
 version commit succeeds but annotated-tag creation alone fails, the recipe
 prints the exact `git tag -a ...` retry command and retains the clean version
 commit.

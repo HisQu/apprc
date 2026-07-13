@@ -64,6 +64,12 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
+  - Changed the maintainer release entrypoint from `just bump` to
+    `just release` so its name reflects the full workflow. Its output now
+    distinguishes local commit and tag preparation from publication, gives the
+    exact tag-push command, and explains that GitHub publishes only after CI
+    and protected-environment approval succeed.
+
 <br>
 
 ### ⚠️ Deprecated

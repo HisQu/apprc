@@ -275,25 +275,28 @@ publish-check:
             "$check_root/python-${python_version}/.venv"
     done
     just _release-artifact-check "$check_root/release-notes.md"
-    if [[ "${APPRC_BUMP_IN_PROGRESS:-}" == 1 ]]; then
-        echo "➡ Next step: creating the version commit and annotated tag."
+    if [[ "${APPRC_RELEASE_IN_PROGRESS:-}" == 1 ]]; then
+        echo "✓ Local release rehearsal passed; nothing was published."
     else
-        echo "➡ Next step: run just bump <patch|minor|major>."
+        echo "➡ Next step: run just release <patch|minor|major>."
     fi
 
 # Prepare a checked version commit and annotated local release tag
-bump-version bump="patch":
+release level="patch":
     #!/usr/bin/env bash
     set -euo pipefail
     just _check-uv
-    just _check-clean-worktree "bumping the version"
+    just _check-clean-worktree "preparing the release"
 
-    next_version="$(uv version --bump "{{bump}}" --dry-run --short)"
+    next_version="$(uv version --bump "{{level}}" --dry-run --short)"
     tag="v${next_version}"
     if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
-        echo "Tag ${tag} already exists. Choose another bump." >&2
+        echo "Tag ${tag} already exists. Choose another release level." >&2
         exit 1
     fi
+
+    echo "ℹ just release prepares ${tag} locally; it does not publish anything."
+    echo "  Publication starts only after you explicitly push main and ${tag}."
 
     release_root="$(mktemp -d)"
     notes_file="$release_root/release-notes.md"
@@ -317,9 +320,9 @@ bump-version bump="patch":
 
     cp pyproject.toml uv.lock pylock.toml "$release_root/"
     restore_version_files=true
-    uv version --bump "{{bump}}" --no-sync
+    uv version --bump "{{level}}" --no-sync
     uv export -o pylock.toml --all-extras --all-groups --quiet
-    APPRC_BUMP_IN_PROGRESS=1 just publish-check
+    APPRC_RELEASE_IN_PROGRESS=1 just publish-check
 
     git commit \
         --only pyproject.toml uv.lock pylock.toml \
@@ -330,7 +333,11 @@ bump-version bump="patch":
         echo "git tag -a ${tag} -m 'Release ${tag}'" >&2
         exit 1
     fi
-alias bump := bump-version
+
+    echo "✓ Prepared local release ${tag}; nothing has been published."
+    echo "➡ Review the version commit and annotated tag, then start the GitHub release pipeline with:"
+    echo "  git push origin main ${tag}"
+    echo "  GitHub will run CI, wait for pypi approval, publish to PyPI, and create the GitHub Release."
 
 # Verify the published PyPI package in a fresh plain-pip virtualenv.
 verify-pypi requirement="apprc":

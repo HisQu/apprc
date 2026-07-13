@@ -37,6 +37,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: auto
 
+      - name: Install just
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: extractions/setup-just@v4
+        with:
+          just-version: "1.56.0"
+
+      - name: Validate justfile
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: just --summary
+
       - name: Install project
         run: uv sync --locked --all-extras --all-groups
 

@@ -620,8 +620,8 @@ def _assert_json_success(result: Result) -> dict[str, object]:
 def _source_example_apps_env(*, project_root: Path) -> dict[str, str]:
     """Return env values produced by sourcing the root example env file."""
     command = (
-        f"PROJECT_ROOT={shlex.quote(str(project_root))}; "
-        f"source {shlex.quote(str(ROOT / '.env.example_apps'))}; "
+        f"PROJECT_ROOT={shlex.quote(project_root.as_posix())}; "
+        f"source {shlex.quote((ROOT / '.env.example_apps').as_posix())}; "
         "env -0"
     )
     result = subprocess.run(

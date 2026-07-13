@@ -172,41 +172,39 @@ def test_value_modal_rendering_formats_sources_and_metadata() -> None:
     assert possible_values_text(access_token).style == GENERIC_VALUE_STYLE
 
 
-def test_storage_titles_match_editor_text() -> None:
-    root = Path("/tmp/demo-storage")
+def test_storage_titles_match_editor_text(tmp_path: Path) -> None:
+    root = tmp_path / "demo-storage"
     storage_env_path = root / ".env.apprc_example_app"
+    archive = tmp_path / "beta.apprc.tar.xz"
+    source_root = tmp_path / "beta"
     live = StorageRecord(name="alpha", root=root)
     archived = ArchivedStorageRecord(
         name="beta",
-        archive=Path("/tmp/beta.apprc.tar.xz"),
-        source_root=Path("/tmp/beta"),
+        archive=archive,
+        source_root=source_root,
     )
 
     live_title = live_storage_title(live, storage_env_path)
     missing_title = missing_storage_title(live)
     archived_title = archived_storage_title(archived)
 
-    assert live_title.plain == (
-        "alpha: /tmp/demo-storage\n/tmp/demo-storage/.env.apprc_example_app"
-    )
+    assert live_title.plain == f"alpha: {root}\n{storage_env_path}"
     assert missing_title.plain == (
         "alpha: Missing storage root\n"
-        "Root: /tmp/demo-storage\n"
+        f"Root: {root}\n"
         "No storage env file is available."
     )
     assert archived_title.plain == (
-        "beta: Last Archived\n"
-        "Archive: /tmp/beta.apprc.tar.xz\n"
-        "Last source: /tmp/beta"
+        f"beta: Last Archived\nArchive: {archive}\nLast source: {source_root}"
     )
-    assert text_has_span(live_title, "/tmp/demo-storage", PATH_STYLE)
+    assert text_has_span(live_title, str(root), PATH_STYLE)
     assert text_has_span(
         live_title,
-        "/tmp/demo-storage/.env.apprc_example_app",
+        str(storage_env_path),
         PATH_STYLE,
     )
     assert text_has_span(missing_title, "Missing storage root", MISSING_STYLE)
-    assert text_has_span(missing_title, "/tmp/demo-storage", PATH_STYLE)
+    assert text_has_span(missing_title, str(root), PATH_STYLE)
     assert text_has_span(archived_title, "Last Archived", ARCHIVE_STYLE)
-    assert text_has_span(archived_title, "/tmp/beta.apprc.tar.xz", PATH_STYLE)
-    assert text_has_span(archived_title, "/tmp/beta", PATH_STYLE)
+    assert text_has_span(archived_title, str(archive), PATH_STYLE)
+    assert text_has_span(archived_title, str(source_root), PATH_STYLE)

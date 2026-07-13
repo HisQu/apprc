@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path, WindowsPath
 
@@ -105,10 +106,10 @@ def test_register_storage_writes_sorted_toml_and_storage_env(
     assert (first_root / ".env.demo").is_file()
     assert index_path.read_text(encoding="utf-8") == (
         "[storages.alpha]\n"
-        f'root = "{first_root.resolve()}"\n'
+        f"root = {json.dumps(str(first_root.resolve()))}\n"
         "\n"
         "[storages.zeta]\n"
-        f'root = "{second_root.resolve()}"\n'
+        f"root = {json.dumps(str(second_root.resolve()))}\n"
     )
 
 
@@ -136,7 +137,7 @@ def test_load_storage_registry_or_empty_rejects_unknown_top_level_keys(
         'default_storage = "alpha"\n'
         "\n"
         "[storages.alpha]\n"
-        f'root = "{tmp_path / "alpha"}"\n',
+        f"root = {json.dumps(str(tmp_path / 'alpha'))}\n",
         encoding="utf-8",
     )
 
@@ -325,7 +326,7 @@ def test_normalize_storage_root_path_rejects_damaged_windows_path() -> None:
     assert "`C:/Projects/demo-storage`" in message
     assert "`/mnt/c/Projects/demo-storage`" in message
     assert normalize_storage_root_path("./C:Projectsdemo-storage") == Path(
-        "C:Projectsdemo-storage"
+        "./C:Projectsdemo-storage"
     )
 
 
@@ -353,7 +354,7 @@ def test_load_storage_registry_or_empty_rejects_invalid_archived_storage_tables(
     index_path = tmp_path / "demo.apprc.toml"
     index_path.write_text(
         "[archived_storages.alpha]\n"
-        f'archive = "{tmp_path / "alpha.apprc.tar.xz"}"\n',
+        f"archive = {json.dumps(str(tmp_path / 'alpha.apprc.tar.xz'))}\n",
         encoding="utf-8",
     )
 

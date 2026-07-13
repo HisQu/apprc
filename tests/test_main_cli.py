@@ -609,6 +609,13 @@ def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
     ):
         assert command in ci_check
     assert "UV_PROJECT_ENVIRONMENT" in ci_check
+    assert "UV_LINK_MODE=copy" in ci_check
+    assert "unset VIRTUAL_ENV" in ci_check
+    assert "--quiet" in ci_check
+    assert "--no-progress" in ci_check
+    assert "preparing isolated release environment" in ci_check
+    assert "environment ready; running CI checks" in ci_check
+    assert "CI checks passed" in ci_check
     assert '$(dirname "$UV_PROJECT_ENVIRONMENT")' in ci_check
     assert "release_notes.py" in artifact_check
     assert "GITHUB_REF_NAME:-v${version}" in artifact_check
@@ -621,6 +628,7 @@ def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
     assert 'with "$sdist"' in artifact_check
     assert "--dry-run" in artifact_check
     assert "--trusted-publishing never" in artifact_check
+    assert "--token unused-local-dry-run-token" in artifact_check
     assert "--check-url https://pypi.org/simple/apprc/" in artifact_check
 
 

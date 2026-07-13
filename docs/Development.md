@@ -310,7 +310,9 @@ project `.venv` unchanged. It runs the complete Linux CI command sequence under
 Python 3.12, 3.13, and 3.14, validates the release metadata and generated
 README, builds a clean wheel and sdist, runs Twine, smoke-tests the wheel under
 all three Python versions and the sdist under Python 3.12, and finishes with a
-credential-free `uv publish --dry-run` against the production PyPI index.
+non-interactive `uv publish --dry-run` against the production PyPI index. The
+dry run uses a fixed non-secret placeholder token because `uv publish` requires
+an upload credential even when no files will be uploaded.
 
 If the rehearsal or version commit fails, `bump` restores all three version
 files and creates no commit or tag. Fix the reported problem, commit any source

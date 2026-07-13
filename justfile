@@ -158,12 +158,18 @@ _ci-check-python version environment:
     #!/usr/bin/env bash
     set -euo pipefail
     export UV_PROJECT_ENVIRONMENT="{{environment}}"
+    export UV_LINK_MODE=copy
+    unset VIRTUAL_ENV
+    echo "🐍 Python {{version}}: preparing isolated release environment..."
     uv sync \
         --python "{{version}}" \
         --locked \
         --all-extras \
-        --all-groups
-    uv lock --check
+        --all-groups \
+        --quiet \
+        --no-progress
+    uv lock --check --quiet
+    echo "✓ Python {{version}}: environment ready; running CI checks."
     uv run --python "{{version}}" --locked --no-sync ruff format . --check
     uv run --python "{{version}}" --locked --no-sync ruff check .
     uv run --python "{{version}}" --locked --no-sync \
@@ -171,6 +177,7 @@ _ci-check-python version environment:
     uv run --python "{{version}}" --locked --no-sync pytest
     uv run --python "{{version}}" --locked --no-sync \
         python -m compileall -q src tests examples/example_apps/src
+    echo "✓ Python {{version}}: CI checks passed."
 
 [private]
 _release-artifact-check notes_output:
@@ -247,6 +254,7 @@ _release-artifact-check notes_output:
     uv publish \
         --dry-run \
         --trusted-publishing never \
+        --token unused-local-dry-run-token \
         --check-url https://pypi.org/simple/apprc/ \
         "$wheel" \
         "$sdist"

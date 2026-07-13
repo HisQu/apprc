@@ -454,6 +454,36 @@ Remove a registry entry without deleting the storage directory:
 myapp config storage remove alpha
 ```
 
+The Textual editor can manage a loaded named-storage index directly:
+
+```bash
+myapp config edit
+```
+
+Its horizontally scrollable storage action row contains `New`, `Register`,
+`Rename`, `Location`, `Move`, `Archive`, and `Delete`. `Rename` and
+`Location` also work for a registered root that is currently missing. `Move`
+is available only when the selected registered root exists as a directory.
+Archived rows and direct path-selected storage have no live registry entry, so
+the registry-editing controls are unavailable for them.
+
+`Rename` changes the selector stored in the named-storage index. The new name
+must not collide with any live or archived selector. Update every external use
+of the old selector yourself, including `--storage`, the storage environment
+variable such as `MYAPP_STORAGE`, and dotenv values; AppRC does not rewrite
+those inputs.
+
+`Location` repoints the selected registry entry to an existing directory. It
+changes only the index: it never creates, moves, or deletes storage files. Use
+`Move` when the data itself must change locations. A move accepts only a new
+or empty destination, rejects unsafe paths such as the source or a nested
+directory, moves the complete storage directory, and then updates the index.
+The editor asks for confirmation before it applies a rename, repoint, or move.
+
+Archive rows retain the original directory that was compressed. Repointing or
+moving a live storage does not rewrite that historical source location; a
+rename carries a same-selector archive record to the new selector.
+
 Relocate the named-storage index only when needed:
 
 ```bash

@@ -7,6 +7,7 @@ from pathlib import Path, WindowsPath
 import pytest
 
 import apprc.user_files.storage_roots.paths as storage_paths
+import apprc.user_files.storage_roots.registry as storage_registry_module
 from apprc.user_files.app_home.index import ApprcTomlEnvError
 from apprc.user_files.app_home.index import (
     missing_apprc_toml_env_message,
@@ -25,7 +26,9 @@ from apprc.user_files.storage_roots.registry import (
     suggested_storage_name,
     suggested_storage_root,
     unregister_storage,
+    _update_storage,
 )
+from apprc.user_files.storage_roots.model import StorageRegistry
 from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
@@ -233,6 +236,152 @@ def test_unregister_storage_requires_existing_name(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Unknown storage 'beta'"):
         unregister_storage(name="beta", path=index_path)
+
+
+def test_internal_update_storage_renames_matching_archive_with_one_write(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    source_root = tmp_path / "alpha"
+    target_root = tmp_path / "beta"
+    archive_path = tmp_path / "alpha.apprc.tar.xz"
+    register_storage(name="alpha", root=source_root, path=index_path)
+    (source_root / "payload.txt").write_text("keep", encoding="utf-8")
+    record_archived_storage(
+        name="alpha",
+        archive=archive_path,
+        source_root=source_root,
+        path=index_path,
+    )
+    write_calls: list[StorageRegistry] = []
+    original_write = storage_registry_module.write_storage_registry
+
+    def record_write(registry: StorageRegistry) -> Path:
+        write_calls.append(registry)
+        return original_write(registry)
+
+    monkeypatch.setattr(
+        storage_registry_module,
+        "write_storage_registry",
+        record_write,
+    )
+
+    registry = _update_storage(
+        current_name="alpha",
+        name="beta",
+        root=target_root,
+        path=index_path,
+    )
+
+    assert write_calls == [registry]
+    assert set(registry.storages) == {"beta"}
+    assert registry.selected("beta").root == target_root.resolve()
+    assert set(registry.archived_storages) == {"beta"}
+    archived = registry.archived_storages["beta"]
+    assert archived.name == "beta"
+    assert archived.archive == archive_path
+    assert archived.source_root == source_root
+    assert (source_root / "payload.txt").read_text(encoding="utf-8") == "keep"
+    assert not target_root.exists()
+    assert not (target_root / ".env.apprc-storage").exists()
+
+    persisted = load_storage_registry_or_empty(index_path)
+    assert persisted.selected("beta").root == target_root.resolve()
+    assert persisted.archived_storages["beta"] == archived
+
+
+def test_internal_update_storage_repoints_only_the_registry_root(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    source_root = tmp_path / "alpha"
+    target_root = tmp_path / "moved-alpha"
+    archive_path = tmp_path / "alpha.apprc.tar.xz"
+    register_storage(name="alpha", root=source_root, path=index_path)
+    (source_root / "payload.txt").write_text("keep", encoding="utf-8")
+    record_archived_storage(
+        name="alpha",
+        archive=archive_path,
+        source_root=source_root,
+        path=index_path,
+    )
+
+    registry = _update_storage(
+        current_name="alpha",
+        name="alpha",
+        root=target_root,
+        path=index_path,
+    )
+
+    assert registry.selected("alpha").root == target_root.resolve()
+    archived = registry.archived_storages["alpha"]
+    assert archived.name == "alpha"
+    assert archived.source_root == source_root
+    assert (source_root / "payload.txt").read_text(encoding="utf-8") == "keep"
+    assert not target_root.exists()
+    assert not (target_root / ".env.apprc-storage").exists()
+
+
+@pytest.mark.parametrize("conflict_kind", ("live", "archived"))
+def test_internal_update_storage_rejects_other_live_or_archived_target_names(
+    conflict_kind: str,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    register_storage(name="alpha", root=tmp_path / "alpha", path=index_path)
+    if conflict_kind == "live":
+        register_storage(name="beta", root=tmp_path / "beta", path=index_path)
+    else:
+        record_archived_storage(
+            name="beta",
+            archive=tmp_path / "beta.apprc.tar.xz",
+            source_root=tmp_path / "beta",
+            path=index_path,
+        )
+    original_contents = index_path.read_text(encoding="utf-8")
+    target_root = tmp_path / "new-root"
+
+    with pytest.raises(ValueError, match="already used"):
+        _update_storage(
+            current_name="alpha",
+            name="beta",
+            root=target_root,
+            path=index_path,
+        )
+
+    assert index_path.read_text(encoding="utf-8") == original_contents
+    assert not target_root.exists()
+
+
+def test_internal_update_storage_requires_a_live_source_and_valid_target_values(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+
+    with pytest.raises(ValueError, match="Unknown storage 'alpha'"):
+        _update_storage(
+            current_name="alpha",
+            name="beta",
+            root=tmp_path / "beta",
+            path=index_path,
+        )
+
+    register_storage(name="alpha", root=tmp_path / "alpha", path=index_path)
+    with pytest.raises(ValueError, match="Storage names may contain"):
+        _update_storage(
+            current_name="alpha",
+            name="not valid",
+            root=tmp_path / "beta",
+            path=index_path,
+        )
+    with pytest.raises(StorageRootPathError, match="must not be empty"):
+        _update_storage(
+            current_name="alpha",
+            name="beta",
+            root=Path(" "),
+            path=index_path,
+        )
 
 
 def test_register_storage_normalizes_windows_root(

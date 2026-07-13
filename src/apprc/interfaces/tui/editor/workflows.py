@@ -23,6 +23,7 @@ from apprc.interfaces.tui._styles import (
     path_text,
 )
 from apprc.interfaces.tui.editor.storage_archive import StorageArchiveWorkflows
+from apprc.interfaces.tui.editor.storage_editing import StorageEditingWorkflows
 from apprc.interfaces.tui.editor.storage_registration import (
     StorageRegistrationWorkflows,
 )
@@ -33,6 +34,7 @@ from apprc.interfaces.tui.storage.selection import LiveStorageSelection
 
 class ConfigEditorStorageWorkflows(
     StorageArchiveWorkflows,
+    StorageEditingWorkflows,
     StorageRegistrationWorkflows,
     StorageRemovalWorkflows,
 ):

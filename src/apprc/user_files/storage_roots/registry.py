@@ -92,6 +92,62 @@ def register_storage(
     return updated
 
 
+def _update_storage(
+    *,
+    current_name: str,
+    name: str,
+    root: Path,
+    path: Path,
+) -> StorageRegistry:
+    """Rename or repoint one registered storage without touching its files.
+
+    The editor uses this operation when changing registry metadata. It keeps
+    the storage directory and dotenv file in place, and moves matching archive
+    metadata to the new selector when the name changes.
+
+    :param current_name: Existing live storage selector to replace.
+    :param name: New selector for the storage record.
+    :param root: New storage root recorded in the registry.
+    :param path: AppRC TOML location.
+    :return: Updated registry after one atomic write.
+    :raises ValueError: If the source is missing or the target name is used by
+        another live or archived storage.
+    """
+    validate_storage_name(current_name)
+    current = load_storage_registry_or_empty(path)
+    current.selected(current_name)
+    validate_storage_name(name)
+    resolved_root = normalize_storage_root_path(root).resolve()
+
+    if name != current_name:
+        if name in current.storages:
+            raise ValueError(
+                f"Storage name {name!r} is already used by a live storage."
+            )
+        if name in current.archived_storages:
+            raise ValueError(
+                f"Storage name {name!r} is already used by an archived storage."
+            )
+
+    storages = dict(current.storages)
+    storages.pop(current_name)
+    storages[name] = StorageRecord(name=name, root=resolved_root)
+
+    archived_storages = dict(current.archived_storages)
+    if name != current_name:
+        archived_record = archived_storages.pop(current_name, None)
+        if archived_record is not None:
+            archived_storages[name] = replace(archived_record, name=name)
+
+    updated = replace(
+        current,
+        storages=storages,
+        archived_storages=archived_storages,
+    )
+    write_storage_registry(updated)
+    return updated
+
+
 def _rollback_created_storage_artifacts(
     *,
     root: Path,

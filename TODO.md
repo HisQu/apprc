@@ -73,8 +73,21 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Todo list](#todo-list)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-07-03](#2026-07-03)
+2. [2026-07-14](#2026-07-14)
+3. [2026-07-03](#2026-07-03)
 
+
+<br>
+
+# 2026-07-14
+
+## P3 / E3 [Tooling] - *Stale bytecode recreates removed package namespaces*
+- **Area:** `src/apprc/runtime_config`, `src/apprc/logging`, `tests/test_architecture_public_api.py`
+- **Observed while:** Running the full test suite after the named-storage TUI pass.
+- **Why not fixed now:** The stale ignored directories predate this feature and cleaning or redesigning legacy-package checks is outside the storage-editor scope.
+- **Evidence:** Old `__pycache__` files leave both removed directories on the source path, so Python discovers `apprc.runtime_config` and `apprc.logging` as namespace packages and two removal assertions fail.
+- **Context:** A clean source tree has no legacy Python source files, but an in-place development checkout can retain ignored bytecode after the package-layout migration.
+- **Suggested next step:** Decide whether local cleanup should remove obsolete cache directories or architecture tests should explicitly distinguish namespace-only remnants from importable legacy APIs.
 
 <br>
 

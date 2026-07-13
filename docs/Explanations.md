@@ -241,6 +241,12 @@ Storage choices can be written two ways:
 A bare unknown name fails when the storage address book exists and already
 contains named storages. Use `./name` when a relative path is intended.
 
+Named selectors are external inputs. Renaming a registered selector in the
+Textual editor changes the address book, but it cannot find or rewrite uses in
+`--storage`, the storage environment variable, or dotenv files. Users must
+update those old selector values before a later run can resolve the renamed
+storage.
+
 The location map below separates AppRC-owned dotenv files from runtime-only
 inputs such as `--env-file` and shell variables.
 
@@ -372,6 +378,21 @@ saves to a writable app-wide or storage scope.
 
 Named-storage controls are available only when named storage is enabled and an
 index is loaded. Direct path-selected storage editing works without an index.
+
+When an index is loaded, the editor provides a compact, horizontally scrollable
+storage action row for the selected storage. `Rename` updates a live or
+missing registry record after confirming the external-selector migration;
+`Location` points that record at an existing directory and updates only the
+registry. It never creates, moves, or deletes storage files.
+
+`Move` is deliberately separate from `Location`: it is available only for a
+live directory-backed record and moves the complete storage directory to a new
+or empty destination before updating the registry. It rejects populated,
+identical, nested, and other unsafe targets. The editor confirms each rename,
+repoint, and move. Archived rows and direct path-selected storage have no live
+registry record to rename, repoint, or move. Archive records retain their
+historical `source_root` when a live storage is repointed or moved; renaming
+also renames a matching archive record.
 
 <br>
 

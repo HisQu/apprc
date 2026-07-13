@@ -64,6 +64,10 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+  - Added Textual editor controls to rename and repoint named storages or move
+    their complete directories. Repointing changes only the registry; moves
+    require a new or empty destination and relocate the stored data.
+
 <br>
 
 ### 💔 Changed

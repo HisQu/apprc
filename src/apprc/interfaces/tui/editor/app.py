@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 # == 3rd Party ===============================
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, HorizontalScroll, Vertical
 from textual.widgets import (
     Button,
     DataTable,
@@ -104,6 +104,10 @@ class ConfigEditorApp(App[None]):
         margin: 1 0;
     }
 
+    #storage-action-row Button {
+        min-width: 0;
+    }
+
     #field-table {
         height: 1fr;
     }
@@ -182,25 +186,40 @@ class ConfigEditorApp(App[None]):
             with Vertical(id="editor-pane"):
                 yield Static("", id="storage-title")
                 if self.named_storage_enabled:
-                    with Horizontal(id="storage-action-row"):
+                    with HorizontalScroll(id="storage-action-row"):
                         yield Button(
-                            "New storage",
+                            "New",
                             variant="primary",
                             id="storage-new",
                         )
                         yield Button(
-                            "Register active storage",
+                            "Register",
                             id="storage-register-active",
                             disabled=True,
                         )
                         yield Button(
-                            "Delete storage",
-                            id="storage-delete",
+                            "Rename",
+                            id="storage-rename",
                             disabled=True,
                         )
                         yield Button(
-                            "Archive storage",
+                            "Location",
+                            id="storage-location",
+                            disabled=True,
+                        )
+                        yield Button(
+                            "Move",
+                            id="storage-move",
+                            disabled=True,
+                        )
+                        yield Button(
+                            "Archive",
                             id="storage-archive",
+                            disabled=True,
+                        )
+                        yield Button(
+                            "Delete",
+                            id="storage-delete",
                             disabled=True,
                         )
                 yield DataTable(id="field-table")
@@ -276,6 +295,24 @@ class ConfigEditorApp(App[None]):
             return
         if event.button.id == "storage-register-active":
             await self.storage_workflows.register_active_storage_flow()
+            return
+        if event.button.id == "storage-rename":
+            self.run_worker(
+                self.storage_workflows.open_rename_storage_flow(),
+                exclusive=True,
+            )
+            return
+        if event.button.id == "storage-location":
+            self.run_worker(
+                self.storage_workflows.open_storage_location_flow(),
+                exclusive=True,
+            )
+            return
+        if event.button.id == "storage-move":
+            self.run_worker(
+                self.storage_workflows.open_move_storage_flow(),
+                exclusive=True,
+            )
             return
         if event.button.id == "storage-delete":
             self.run_worker(
@@ -456,6 +493,9 @@ class ConfigEditorApp(App[None]):
         self._set_storage_controls_enabled(
             fields=True,
             register_active=self.storage_registry is not None,
+            rename=False,
+            location=False,
+            move=False,
             delete=False,
             archive=False,
         )
@@ -490,6 +530,9 @@ class ConfigEditorApp(App[None]):
         self._set_storage_controls_enabled(
             fields=False,
             register_active=False,
+            rename=True,
+            location=True,
+            move=False,
             delete=True,
             archive=False,
         )
@@ -518,6 +561,9 @@ class ConfigEditorApp(App[None]):
         self._set_storage_controls_enabled(
             fields=True,
             register_active=False,
+            rename=False,
+            location=False,
+            move=False,
             delete=False,
             archive=False,
         )
@@ -585,6 +631,9 @@ class ConfigEditorApp(App[None]):
         self._set_storage_controls_enabled(
             fields=enabled,
             register_active=False,
+            rename=enabled,
+            location=enabled,
+            move=enabled,
             delete=enabled,
             archive=enabled,
         )
@@ -594,6 +643,9 @@ class ConfigEditorApp(App[None]):
         *,
         fields: bool,
         register_active: bool,
+        rename: bool,
+        location: bool,
+        move: bool,
         delete: bool,
         archive: bool,
     ) -> None:
@@ -601,6 +653,9 @@ class ConfigEditorApp(App[None]):
 
         :param fields: Whether config field rows may be edited.
         :param register_active: Whether the active path may be registered.
+        :param rename: Whether the selected named storage may be renamed.
+        :param location: Whether the selected named storage may be repointed.
+        :param move: Whether the selected storage directory may be moved.
         :param delete: Whether the current named storage may be removed.
         :param archive: Whether the current storage directory may be archived.
         """
@@ -613,6 +668,9 @@ class ConfigEditorApp(App[None]):
         self.query_one(
             "#storage-register-active", Button
         ).disabled = not register_active
+        self.query_one("#storage-rename", Button).disabled = not rename
+        self.query_one("#storage-location", Button).disabled = not location
+        self.query_one("#storage-move", Button).disabled = not move
         self.query_one("#storage-delete", Button).disabled = not delete
         self.query_one("#storage-archive", Button).disabled = not archive
 

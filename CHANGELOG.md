@@ -32,18 +32,19 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-4. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-5. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-6. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-7. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-8. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-9. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-10. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-11. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-12. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-13. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-14. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+4. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+5. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+6. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+7. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+8. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+9. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+10. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+11. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+12. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+13. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+14. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+15. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -67,12 +68,6 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
-  - Changed the maintainer release entrypoint from `just bump` to
-    `just release` so its name reflects the full workflow. Its output now
-    distinguishes local commit and tag preparation from publication, gives the
-    exact tag-push command, and explains that GitHub publishes only after CI
-    and protected-environment approval succeed.
-
 <br>
 
 ### ⚠️ Deprecated
@@ -85,15 +80,39 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.19.4 - 2026-07-13
+
+<br>
+
+### 💔 Changed
+
+  - Changed the maintainer release entrypoint from `just bump` to
+    `just release` so its name reflects the full workflow. Its output now
+    distinguishes local commit and tag preparation from publication, gives the
+    exact tag-push command, and explains that GitHub publishes only after CI
+    and protected-environment approval succeed.
+
+<br>
+
+### 🔨 Fixed
+
   - Fixed AppRC's automatic dataclass generation so registered config and
     bundle classes that define `__post_init__()` keep stable class identity.
     This preserves normal `super().__post_init__()` behavior on Python 3.12
     and 3.13 while keeping slotted dataclasses for classes without custom
     post-init hooks.
-
-<br>
-
-### 🔒 Security
 
 <br>
 

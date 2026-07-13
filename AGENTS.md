@@ -22,11 +22,12 @@
 - If a boundary is truly dynamic, model that boundary explicitly; do not probe strict domain objects defensively.
 - Update the TODO.md when you find a new issue that is real, actionable, and out of scope for the current change. Do not modify `TODO.md` when there is nothing useful to add.
 
-## User Decisions
-- Never answer questions on the user's behalf.
-- Do not treat recommended options, defaults, timeouts, or auto-resolution as user approval or user preference.
-- If a user decision is required, ask and wait for the user’s explicit answer.
-- If work can continue without the answer, clearly label any default as an assumption, not as the user's choice.
+## Blocking user-input policy
+
+- When invoking `request_user_input`, never set or pass `autoResolutionMs`.
+- Treat every question as blocking and wait indefinitely for my explicit response.
+- Never infer, choose, submit, or continue based on a presumed answer.
+- If my answer is required, do not continue until I explicitly provide it.
 
 ## Verification
 - Review the diff for duplicate helpers, naming drift, unnecessary abstractions, and regressions.

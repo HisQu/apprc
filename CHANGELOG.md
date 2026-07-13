@@ -75,6 +75,10 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
+- Fixed public and internal config decorators so classes with custom
+  `__post_init__` hooks keep stable class identity during dataclass
+  registration.
+
 <br>
 
 ### 🔒 Security

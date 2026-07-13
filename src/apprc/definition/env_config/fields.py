@@ -301,11 +301,12 @@ def env_owner(
             )
         # > Dataclass subclasses inherit is_dataclass(cls)=True before their
         # > own annotations are processed, so inspect the class dictionary.
+        has_post_init_hook = "__post_init__" in cls.__dict__
         env_cls = (
             cls
             if "__dataclass_fields__" in cls.__dict__
             else dataclass(
-                slots=slots,
+                slots=slots and not has_post_init_hook,
                 kw_only=kw_only,
             )(cls)
         )

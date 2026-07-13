@@ -53,6 +53,26 @@ def test_registers_env_backed_config_with_full_env_keys() -> None:
     assert MyRC.spec.envs == (LLMConfig,)
 
 
+def test_registered_env_config_preserves_zero_argument_super_in_post_init() -> (
+    None
+):
+    """Registered configs with ``super()`` keep a stable class identity."""
+    MyRC = _env_only_app()
+
+    @MyRC.config("storage", prefix="DEMO_STORAGE_", title="Storage")
+    class StorageConfig(rc.Config):
+        root: Path = rc.field("DEMO_STORAGE_ROOT", default=Path("."))
+        resolved_root: Path = dataclass_field(init=False)
+
+        def __post_init__(self) -> None:
+            super().__post_init__()
+            object.__setattr__(self, "resolved_root", self.root.resolve())
+
+    config = StorageConfig()
+
+    assert config.resolved_root == Path(".").resolve()
+
+
 def test_registers_python_only_config_base() -> None:
     """Python-only config classes use normal dataclass defaults."""
     MyRC = _env_only_app()

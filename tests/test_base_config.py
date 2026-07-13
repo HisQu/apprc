@@ -118,6 +118,36 @@ class _ChoiceEnv(EnvConfig):
     mode: str = env_field("MODE", default="AUTO", choices=("AUTO", "MANUAL"))
 
 
+@env_owner(
+    key="post_init_child",
+    title="Post Init Child",
+    env_prefix="POST_INIT_CHILD_",
+    rc_path=("post_init_child",),
+    log_lifecycle=False,
+)
+class _PostInitChildEnv(EnvConfig):
+    value: str = env_field("VALUE", default="initial")
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        object.__setattr__(self, "value", self.value.upper())
+
+
+@env_owner(
+    key="post_init_without_super",
+    title="Post Init Without Super",
+    env_prefix="POST_INIT_WITHOUT_SUPER_",
+    rc_path=("post_init_without_super",),
+    log_lifecycle=False,
+)
+class _PostInitWithoutSuperEnv(EnvConfig):
+    value: str = env_field("VALUE", default="initial")
+
+    def __post_init__(self) -> None:
+        EnvConfig.__post_init__(self)
+        object.__setattr__(self, "value", self.value.upper())
+
+
 @dataclass(slots=True)
 class _OwnerlessEnv(EnvConfig):
     value: str = "fallback"
@@ -237,6 +267,20 @@ def test_base_config_new_continues_through_cooperative_mro() -> None:
 
     assert config.name == "demo"
     assert _CooperativeAllocationMixin.allocation_calls == 1
+
+
+def test_env_owner_preserves_zero_argument_super_in_post_init() -> None:
+    config = _PostInitChildEnv()
+
+    assert config.value == "INITIAL"
+
+
+def test_env_owner_preserves_class_identity_for_any_post_init_hook() -> None:
+    config = _PostInitWithoutSuperEnv()
+
+    assert config.value == "INITIAL"
+    config.dynamic_attribute = "class identity preserved"
+    assert config.dynamic_attribute == "class identity preserved"
 
 
 def test_base_config_copy_preserves_resolved_state_without_constructor() -> (

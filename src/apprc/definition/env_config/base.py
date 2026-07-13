@@ -70,7 +70,9 @@ class BaseConfig:
         :param kwargs: Keyword constructor arguments.
         :return: New config instance with initial provenance state.
         """
-        self = object.__new__(cls)
+        # ! Keep two-argument super(): slotted dataclass inheritance on
+        # ! Python 3.12/3.13 breaks zero-argument super().
+        self = super(BaseConfig, cls).__new__(cls)
         object.__setattr__(
             self,
             "_apprc_provenance_origins",

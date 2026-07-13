@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
+import sys
+from pathlib import Path, WindowsPath
 
 import pytest
 
@@ -288,6 +289,25 @@ def test_normalize_storage_root_path_preserves_native_windows_paths(
     assert normalize_storage_root_path(r"C:\Projects\demo-storage") == Path(
         r"C:\Projects\demo-storage"
     )
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="requires native Windows pathlib semantics",
+)
+@pytest.mark.parametrize(
+    "raw_path",
+    [r"C:\Projects\demo-storage", "C:/Projects/demo-storage"],
+)
+def test_normalize_storage_root_path_uses_native_windows_path_semantics(
+    raw_path: str,
+) -> None:
+    normalized = normalize_storage_root_path(raw_path)
+
+    assert isinstance(normalized, WindowsPath)
+    assert normalized == Path("C:/Projects/demo-storage")
+    assert normalized.drive == "C:"
+    assert normalized.is_absolute()
 
 
 def test_normalize_storage_root_path_rejects_blank_text() -> None:

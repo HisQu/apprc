@@ -74,6 +74,12 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
+  - Fixed `rc.ConfigBase` and `rc.Config` construction and inherited hooks on
+    Python 3.12 and 3.13 when using slotted dataclass subclasses.
+
+  - Fixed storage-root normalization so native Windows processes preserve
+    rooted drive paths while POSIX and WSL retain Windows-drive conversion.
+
 <br>
 
 ### 🔒 Security

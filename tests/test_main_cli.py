@@ -6,6 +6,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -394,6 +395,10 @@ def test_example_bootstrap_default_output_root() -> None:
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="requires a POSIX Bash shell",
+)
 def test_example_root_env_makes_precedence_app_runnable(
     tmp_path: Path,
 ) -> None:

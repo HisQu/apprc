@@ -29,17 +29,18 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-4. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-5. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-6. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-7. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-8. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-9. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-10. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-11. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-12. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-13. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+4. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+5. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+6. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+7. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+8. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+9. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+10. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+11. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+12. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+13. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+14. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -59,21 +60,9 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
-  - Added a tag-driven GitHub release pipeline that runs the complete CI
-    matrix, validates and preserves release artifacts, pauses for approval,
-    publishes to PyPI through Trusted Publishing, and creates a GitHub Release
-    from the curated changelog notes.
-
 <br>
 
 ### 💔 Changed
-
-  - Changed release maintenance so `just bump` runs one complete local gate
-    across Python 3.12 through 3.14 before committing or tagging, restores
-    version files after failed checks, validates and smoke-tests the exact
-    release artifacts, and dry-runs credential-free publication. Repository
-    metadata now links directly to the package, docs, changelog, and current
-    project topics.
 
 <br>
 
@@ -90,6 +79,38 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.19.3 - 2026-07-13
+
+<br>
+
+### ➕ Added
+
+  - Added a tag-driven GitHub release pipeline that runs the complete CI
+    matrix, validates and preserves release artifacts, pauses for approval,
+    publishes to PyPI through Trusted Publishing, and creates a GitHub Release
+    from the curated changelog notes.
+
+<br>
+
+### 💔 Changed
+
+  - Changed release maintenance so `just bump` runs one complete local gate
+    across Python 3.12 through 3.14 before committing or tagging, restores
+    version files after failed checks, validates and smoke-tests the exact
+    release artifacts, keeps temporary environment setup concise, and dry-runs
+    publication without prompting for credentials before confirming that
+    nothing was uploaded and printing the next release step. Repository
+    metadata now links directly to the package, docs, changelog, and current
+    project topics.
 
 <br>
 

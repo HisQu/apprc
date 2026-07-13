@@ -506,15 +506,19 @@ def test_textual_is_tui_extra_not_core_runtime_dependency() -> None:
 def test_verify_pypi_recipe_checks_current_base_install_surface() -> None:
     """The package smoke helper must track the clean public root facade."""
     recipe = _just_recipe("verify-pypi")
+    helper = (ROOT / "src/apprc_dev/packaging/install_smoke.py").read_text(
+        encoding="utf-8"
+    )
 
-    assert "AppConfigKit" not in recipe
-    assert "apprc.AppRC" in recipe
-    assert "apprc.Config" in recipe
-    assert "apprc.ConfigBase" in recipe
-    assert "apprc.field" in recipe
-    assert "Provides-Extra" in recipe
-    assert 'find_spec("textual") is None' in recipe
-    assert 'startswith("textual")' in recipe
+    assert "install_smoke.py" in recipe
+    assert "AppConfigKit" not in helper
+    assert "apprc.AppRC" in helper
+    assert "apprc.Config" in helper
+    assert "apprc.ConfigBase" in helper
+    assert "apprc.field" in helper
+    assert "Provides-Extra" in helper
+    assert 'find_spec("textual") is not None' in helper
+    assert 'startswith("textual")' in helper
 
 
 def test_clean_recipe_removes_nested_egg_info_without_touching_envs() -> None:
@@ -568,8 +572,8 @@ def test_release_workflow_checks_builds_approves_and_publishes() -> None:
     assert "--trusted-publishing always" in workflow
     assert "--check-url https://pypi.org/simple/apprc/" in workflow
     assert 'gh release create "$GITHUB_REF_NAME"' in workflow
-    assert "release_notes.py" in workflow
-    assert "git diff --exit-code -- README.pypi.md" in workflow
+    assert "just _release-artifact-check release/release-notes.md" in workflow
+    assert "just publish-check" not in build
     assert "cancel-in-progress: false" in workflow
     assert "contents: read" in checks
     assert "contents: read" in build
@@ -582,11 +586,69 @@ def test_release_workflow_checks_builds_approves_and_publishes() -> None:
     assert "--notes-file release/release-notes.md" in publish
 
 
-def test_release_bump_has_changelog_guard_and_no_local_publish() -> None:
+def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
+    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+    publish_check = _just_recipe("publish-check")
+    ci_check = _just_recipe("_ci-check-python")
+    artifact_check = _just_recipe("_release-artifact-check")
+
+    assert "pypi-readme:" not in justfile
+    assert "build:" not in justfile
+    assert "for python_version in 3.12 3.13 3.14" in publish_check
+    assert "mktemp -d" in publish_check
+    assert "_ci-check-python" in publish_check
+    assert "_release-artifact-check" in publish_check
+    for command in (
+        "uv sync",
+        "uv lock --check",
+        "ruff format . --check",
+        "ruff check .",
+        "pyright",
+        "pytest",
+        "python -m compileall",
+    ):
+        assert command in ci_check
+    assert "UV_PROJECT_ENVIRONMENT" in ci_check
+    assert '$(dirname "$UV_PROJECT_ENVIRONMENT")' in ci_check
+    assert "release_notes.py" in artifact_check
+    assert "GITHUB_REF_NAME:-v${version}" in artifact_check
+    assert "pypi_readme.py" in artifact_check
+    assert "rm -rf dist" in artifact_check
+    assert "uv build --python 3.12 --no-sources" in artifact_check
+    assert "twine check" in artifact_check
+    assert "for python_version in 3.12 3.13 3.14" in artifact_check
+    assert "--python 3.12" in artifact_check
+    assert 'with "$sdist"' in artifact_check
+    assert "--dry-run" in artifact_check
+    assert "--trusted-publishing never" in artifact_check
+    assert "--check-url https://pypi.org/simple/apprc/" in artifact_check
+
+
+def test_release_recipe_surface_is_minimal() -> None:
+    result = subprocess.run(
+        ["just", "--summary"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    recipes = set(result.stdout.split())
+
+    assert {"bump-version", "publish-check", "verify-pypi"} <= recipes
+    assert {"build", "pypi-readme"}.isdisjoint(recipes)
+    assert not any(recipe.startswith("_release") for recipe in recipes)
+    assert not any(recipe.startswith("_ci-check") for recipe in recipes)
+
+
+def test_release_bump_checks_before_commit_and_tag() -> None:
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
     recipe = _just_recipe("bump-version")
 
     assert "release_notes.py" in recipe
+    assert "restore_version_files=true" in recipe
+    assert 'cp "$release_root/pyproject.toml" pyproject.toml' in recipe
+    assert recipe.index("just publish-check") < recipe.index("git commit")
+    assert recipe.index("git commit") < recipe.index('git tag -a "${tag}"')
     assert 'git tag -a "${tag}"' in recipe
     assert "git push" not in recipe
     assert "PYPI_API_KEY" not in justfile

@@ -153,42 +153,168 @@ py-switch version="3.13":
 # Testing
 # ---------------------------------------------------------------
 
-# Generate the PyPI-safe README from the GitHub README
-pypi-readme:
-    python src/apprc_dev/packaging/pypi_readme.py
+[private]
+_ci-check-python version environment:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export UV_PROJECT_ENVIRONMENT="{{environment}}"
+    uv sync \
+        --python "{{version}}" \
+        --locked \
+        --all-extras \
+        --all-groups
+    uv lock --check
+    uv run --python "{{version}}" --locked --no-sync ruff format . --check
+    uv run --python "{{version}}" --locked --no-sync ruff check .
+    uv run --python "{{version}}" --locked --no-sync \
+        pyright --venvpath "$(dirname "$UV_PROJECT_ENVIRONMENT")"
+    uv run --python "{{version}}" --locked --no-sync pytest
+    uv run --python "{{version}}" --locked --no-sync \
+        python -m compileall -q src tests examples/example_apps/src
 
-# Build release artifacts with the configured pyproject backend
-build:
-    just pypi-readme
-    uv build --no-sources
+[private]
+_release-artifact-check notes_output:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version="$(uv version --short)"
+    tag="${GITHUB_REF_NAME:-v${version}}"
+    notes_output="{{notes_output}}"
+    artifact_root="$(mktemp -d)"
+    readme_candidate="$artifact_root/README.pypi.md"
+    smoke_root="$artifact_root/smoke"
+    smoke_script="$(realpath src/apprc_dev/packaging/install_smoke.py)"
+    mkdir -p "$smoke_root"
+    trap 'rm -rf "$artifact_root"' EXIT
 
-# Validate package metadata and README rendering before publishing
+    mkdir -p "$(dirname "$notes_output")"
+    python src/apprc_dev/packaging/release_notes.py \
+        "$version" \
+        --tag "$tag" \
+        --project-version "$version" \
+        --output "$notes_output"
+
+    python src/apprc_dev/packaging/pypi_readme.py \
+        --destination "$readme_candidate"
+    if ! cmp -s README.pypi.md "$readme_candidate"; then
+        diff -u README.pypi.md "$readme_candidate" || true
+        echo "README.pypi.md is stale. Regenerate and commit it with:" >&2
+        echo "python src/apprc_dev/packaging/pypi_readme.py" >&2
+        exit 1
+    fi
+
+    rm -rf dist
+    uv build --python 3.12 --no-sources
+
+    shopt -s nullglob
+    wheels=(dist/*.whl)
+    sdists=(dist/*.tar.gz)
+    if [[ "${#wheels[@]}" -ne 1 || "${#sdists[@]}" -ne 1 ]]; then
+        echo "Expected exactly one wheel and one sdist in dist/." >&2
+        exit 1
+    fi
+
+    expected_wheel="apprc-${version}-py3-none-any.whl"
+    expected_sdist="apprc-${version}.tar.gz"
+    if [[ "$(basename "${wheels[0]}")" != "$expected_wheel" ]]; then
+        echo "Expected wheel ${expected_wheel}, found ${wheels[0]}." >&2
+        exit 1
+    fi
+    if [[ "$(basename "${sdists[0]}")" != "$expected_sdist" ]]; then
+        echo "Expected sdist ${expected_sdist}, found ${sdists[0]}." >&2
+        exit 1
+    fi
+
+    wheel="$(realpath "${wheels[0]}")"
+    sdist="$(realpath "${sdists[0]}")"
+    uv run --with twine --no-project -- twine check "$wheel" "$sdist"
+
+    (
+        cd "$smoke_root"
+        for python_version in 3.12 3.13 3.14; do
+            uv run \
+                --isolated \
+                --python "$python_version" \
+                --with "$wheel" \
+                python "$smoke_script"
+        done
+        uv run \
+            --isolated \
+            --python 3.12 \
+            --with "$sdist" \
+            python "$smoke_script"
+    )
+
+    uv publish \
+        --dry-run \
+        --trusted-publishing never \
+        --check-url https://pypi.org/simple/apprc/ \
+        "$wheel" \
+        "$sdist"
+
+# Rehearse the complete local release gate without publishing
 publish-check:
-    just build
-    uv run --with twine --no-project -- twine check dist/*
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _check-uv
+    check_root="$(mktemp -d)"
+    trap 'rm -rf "$check_root"' EXIT
 
-# -- Prepare a local release tag
-# > Validate the prepared changelog, bump and commit the version files, and
-# > create an annotated v-tag. Push main and that tag explicitly after review.
+    for python_version in 3.12 3.13 3.14; do
+        just _ci-check-python \
+            "$python_version" \
+            "$check_root/python-${python_version}/.venv"
+    done
+    just _release-artifact-check "$check_root/release-notes.md"
+
+# Prepare a checked version commit and annotated local release tag
 bump-version bump="patch":
+    #!/usr/bin/env bash
+    set -euo pipefail
     just _check-uv
     just _check-clean-worktree "bumping the version"
-    @next_version="$(uv version --bump "{{bump}}" --dry-run --short)"; \
-    tag="v${next_version}"; \
-    if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then \
-        echo "Tag ${tag} already exists. Choose another bump." >&2; \
-        exit 1; \
-    fi; \
-    notes_file="$(mktemp)"; \
-    trap 'rm -f "$notes_file"' EXIT; \
+
+    next_version="$(uv version --bump "{{bump}}" --dry-run --short)"
+    tag="v${next_version}"
+    if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
+        echo "Tag ${tag} already exists. Choose another bump." >&2
+        exit 1
+    fi
+
+    release_root="$(mktemp -d)"
+    notes_file="$release_root/release-notes.md"
+    restore_version_files=false
+    cleanup() {
+        exit_code=$?
+        trap - EXIT
+        if [[ "$restore_version_files" == true ]]; then
+            cp "$release_root/pyproject.toml" pyproject.toml
+            cp "$release_root/uv.lock" uv.lock
+            cp "$release_root/pylock.toml" pylock.toml
+        fi
+        rm -rf "$release_root"
+        exit "$exit_code"
+    }
+    trap cleanup EXIT
+
     python src/apprc_dev/packaging/release_notes.py \
         "${next_version}" \
-        --output "$notes_file"; \
-    uv version --bump "{{bump}}" --no-sync; \
-    uv export -o pylock.toml --all-extras --all-groups --quiet; \
-    git add pyproject.toml uv.lock pylock.toml; \
-    git commit -m "Bump version to ${next_version}"; \
-    git tag -a "${tag}" -m "Release ${tag}"
+        --output "$notes_file"
+
+    cp pyproject.toml uv.lock pylock.toml "$release_root/"
+    restore_version_files=true
+    uv version --bump "{{bump}}" --no-sync
+    uv export -o pylock.toml --all-extras --all-groups --quiet
+    just publish-check
+
+    git commit \
+        --only pyproject.toml uv.lock pylock.toml \
+        -m "Bump version to ${next_version}"
+    restore_version_files=false
+    if ! git tag -a "${tag}" -m "Release ${tag}"; then
+        echo "Version commit succeeded, but tag creation failed. Retry with:" >&2
+        echo "git tag -a ${tag} -m 'Release ${tag}'" >&2
+        exit 1
+    fi
 alias bump := bump-version
 
 # Verify the published PyPI package in a fresh plain-pip virtualenv.
@@ -200,41 +326,7 @@ verify-pypi requirement="apprc":
     python -m venv "$check_env"
     "$check_env/bin/python" -m pip install --upgrade pip
     "$check_env/bin/python" -m pip install --no-cache-dir "{{requirement}}"
-    "$check_env/bin/python" - <<'PY'
-    import importlib.metadata as metadata
-    import importlib.util
-    import sys
-
-    import apprc
-
-    assert apprc.AppRC.__name__ == "AppRC"
-    assert apprc.Config.__name__ == "Config"
-    assert isinstance(apprc.ConfigBase, type)
-    assert callable(apprc.field)
-    assert {"AppRC", "Config", "ConfigBase", "field"}.issubset(apprc.__all__)
-
-    requirements = metadata.requires("apprc") or []
-    core_requirements = [
-        requirement
-        for requirement in requirements
-        if "extra ==" not in requirement
-    ]
-    assert not any(
-        requirement.lower().split(";", maxsplit=1)[0].strip().startswith("textual")
-        for requirement in core_requirements
-    )
-    assert "tui" in (metadata.metadata("apprc").get_all("Provides-Extra") or [])
-    assert any(
-        requirement.lower().startswith("textual") and "tui" in requirement
-        for requirement in requirements
-    )
-    assert importlib.util.find_spec("textual") is None
-    assert not any(
-        module_name == "textual" or module_name.startswith("textual.")
-        for module_name in sys.modules
-    )
-    print("apprc base install smoke passed")
-    PY
+    "$check_env/bin/python" src/apprc_dev/packaging/install_smoke.py
 
 # Run GitHub Actions triggered by push locally using act
 gitactions:

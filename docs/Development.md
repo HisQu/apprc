@@ -285,25 +285,55 @@ Prepare a release on `main` only after the intended changes have passed CI:
    `# MAJOR.MINOR.PATCH - YYYY-MM-DD` section in `CHANGELOG.md`.
 2. Update the changelog table of contents, remove empty subsections from the
    released version, and restore every empty subsection under `[Unreleased]`.
-3. Commit the finalized changelog and run the repository verification commands.
-4. Run `just bump patch`, `just bump minor`, or `just bump major`. The recipe
-   refuses to change version files unless the prepared changelog is valid and
-   `[Unreleased]` is empty.
+3. If `README.md` changed, regenerate the tracked PyPI variant and include it
+   in the release-preparation commit:
+
+   ```bash
+   python src/apprc_dev/packaging/pypi_readme.py
+   ```
+
+4. Commit the finalized changelog and generated README, then run
+   `just bump patch`, `just bump minor`, or `just bump major`. The recipe:
+   - refuses to start from a dirty worktree;
+   - validates the prepared changelog before changing version files;
+   - temporarily bumps `pyproject.toml`, `uv.lock`, and `pylock.toml`;
+   - runs the complete `just publish-check` rehearsal;
+   - creates the version commit and annotated tag only after every check passes.
 5. Inspect the version commit and local tag, then push only those intended refs:
 
    ```bash
    git push origin main vMAJOR.MINOR.PATCH
    ```
 
-The pushed release tag `v*` triggers the automated github release workflow:
+`publish-check` uses temporary locked environments and leaves the active
+project `.venv` unchanged. It runs the complete Linux CI command sequence under
+Python 3.12, 3.13, and 3.14, validates the release metadata and generated
+README, builds a clean wheel and sdist, runs Twine, smoke-tests the wheel under
+all three Python versions and the sdist under Python 3.12, and finishes with a
+credential-free `uv publish --dry-run` against the production PyPI index.
+
+If the rehearsal or version commit fails, `bump` restores all three version
+files and creates no commit or tag. Fix the reported problem, commit any source
+correction such as a regenerated `README.pypi.md`, and rerun `bump`. If the
+version commit succeeds but annotated-tag creation alone fails, the recipe
+prints the exact `git tag -a ...` retry command and retains the clean version
+commit.
+
+> [!NOTE]
+>
+> The local rehearsal cannot reproduce Windows, GitHub environment approval,
+> OIDC token issuance, the real PyPI upload, or GitHub Release creation. The
+> pushed tag remains subject to those GitHub-hosted gates.
+
+The pushed release tag `v*` triggers the automated GitHub release workflow:
 
 1. Reuse `.github/workflows/ci.yml` for Linux and Windows on every supported
    Python version.
-2. Confirm the tag, `pyproject.toml` version, changelog heading, changelog TOC,
-   and empty `[Unreleased]` template agree.
-3. Run `just publish-check`, reject an uncommitted generated
-   `README.pypi.md`, and preserve the wheel, sdist, and release notes as one
-   workflow artifact.
+2. Reuse the artifact stage from `publish-check` to confirm the tag, project
+   version, changelog heading, changelog TOC, empty `[Unreleased]` template,
+   generated README, wheel, sdist, install smoke checks, and publication dry
+   run without repeating the Linux source-check matrix.
+3. Preserve the wheel, sdist, and release notes as one workflow artifact.
 4. Wait for approval on the `pypi` environment.
 5. Publish the preserved distributions with `uv publish` through GitHub OIDC.
 6. Create the GitHub Release only after PyPI accepts the distributions, using

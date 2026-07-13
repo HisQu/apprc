@@ -68,10 +68,12 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
-  - Changed release maintenance so the changelog is finalized before a local
-    annotated tag is created, PyPI API-key publication is no longer a local
-    recipe, and repository metadata links directly to the package, docs,
-    changelog, and current project topics.
+  - Changed release maintenance so `just bump` runs one complete local gate
+    across Python 3.12 through 3.14 before committing or tagging, restores
+    version files after failed checks, validates and smoke-tests the exact
+    release artifacts, and dry-runs credential-free publication. Repository
+    metadata now links directly to the package, docs, changelog, and current
+    project topics.
 
 <br>
 

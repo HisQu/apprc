@@ -16,6 +16,29 @@ from typing import TypeVar, cast, overload
 DictKeyT = TypeVar("DictKeyT", bound=Hashable)
 DefaultT = TypeVar("DefaultT")
 
+
+def dataclass_slots_preserving_class_identity(
+    cls: type[object],
+    *,
+    requested_slots: bool = True,
+) -> bool:
+    """Return a dataclass slots setting that keeps hook owners stable.
+
+    ``dataclass(slots=True)`` creates a replacement class. On Python 3.12 and
+    3.13 that breaks zero-argument ``super()`` in methods defined on the
+    original class, including app-owned ``__post_init__`` hooks. Classes with a
+    direct post-init hook therefore keep their identity.
+
+    :param cls: Class that may be converted to a dataclass.
+    :param requested_slots: Slots setting requested by the caller.
+    :return: ``False`` for classes that define ``__post_init__`` directly,
+        otherwise ``requested_slots``.
+    """
+    if "__post_init__" in cls.__dict__:
+        return False
+    return requested_slots
+
+
 # =====================================================================
 # === Dictionary / JSON conveniences
 # =====================================================================

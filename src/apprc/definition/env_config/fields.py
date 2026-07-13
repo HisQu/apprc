@@ -12,6 +12,7 @@ from functools import wraps
 from typing import Any, TypeVar, cast, get_type_hints
 
 # == Internal ================================
+import apprc.utils as ut
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.definition.env_config._validation import (
     validate_config_owner,
@@ -305,7 +306,10 @@ def env_owner(
             cls
             if "__dataclass_fields__" in cls.__dict__
             else dataclass(
-                slots=slots,
+                slots=ut.dataclass_slots_preserving_class_identity(
+                    cls,
+                    requested_slots=slots,
+                ),
                 kw_only=kw_only,
             )(cls)
         )

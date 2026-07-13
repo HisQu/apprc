@@ -20,6 +20,7 @@ from typing import (
 import typer
 
 # == Internal ================================
+import apprc.utils as ut
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.env_config._validation import validate_config_owner
@@ -645,7 +646,7 @@ class AppRC:
         if "__dataclass_fields__" in cls.__dict__:
             return cls
         return dataclasses.dataclass(
-            slots=True,
+            slots=ut.dataclass_slots_preserving_class_identity(cls),
             init=init,
             repr=repr,
         )(cls)

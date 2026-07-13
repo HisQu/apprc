@@ -189,6 +189,34 @@ def test_requiredness_inference() -> None:
     assert LLMConfig.config_owner.field("factory").required is False
 
 
+def test_config_preserves_post_init_hook_class_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Registered config hooks can call super and derive runtime fields."""
+    MyRC = _env_only_app()
+    monkeypatch.setenv("HAIU_STORAGE", str(tmp_path))
+
+    class StoragePaths(rc.Config):
+        storage_root: Path = rc.field("HAIU_STORAGE")
+        d_retrieved: Path = dataclass_field(init=False)
+
+        def __post_init__(self) -> None:
+            """Derive paths after AppRC resolves env-backed values."""
+            super().__post_init__()
+            self.d_retrieved = self.storage_root / "retrieved"
+
+    RegisteredStoragePaths = MyRC.config("storage", prefix="HAIU_")(
+        StoragePaths
+    )
+
+    config = RegisteredStoragePaths()
+
+    assert RegisteredStoragePaths is StoragePaths
+    assert config.storage_root == tmp_path
+    assert config.d_retrieved == tmp_path / "retrieved"
+
+
 def test_rejects_optional_missing_field_without_fallback() -> None:
     """Missing optional env values must have a safe fallback representation."""
     with pytest.raises(ValueError, match="required=False"):
@@ -287,6 +315,45 @@ def test_bundle_supports_post_init_derived_config_fields() -> None:
 
     with pytest.raises(TypeError, match="unexpected config argument"):
         HAIUConfig(rag=RagConfig(storage=injected_storage))  # type: ignore[call-arg]
+
+
+def test_bundle_preserves_post_init_hook_class_identity() -> None:
+    """Bundle hooks can call super and derive registered children."""
+    MyRC = _env_only_app()
+    base_calls: list[str] = []
+
+    @MyRC.config("storage", title="Storage")
+    @dataclass
+    class StorageConfig(rc.ConfigBase):
+        root: str = "storage"
+
+    @MyRC.config("rag", title="RAG")
+    @dataclass
+    class RagConfig(rc.ConfigBase):
+        storage: StorageConfig
+
+    class BundlePostInitBase:
+        def __post_init__(self) -> None:
+            """Record cooperative post-init dispatch."""
+            base_calls.append(type(self).__name__)
+
+    class HAIUConfig(BundlePostInitBase):
+        storage: StorageConfig
+        rag: RagConfig = dataclass_field(init=False)
+
+        def __post_init__(self) -> None:
+            """Compose RAG from the already-resolved storage config."""
+            super().__post_init__()
+            self.rag = RagConfig(storage=self.storage)
+
+    RegisteredHAIUConfig = MyRC.bundle(HAIUConfig)
+
+    config = RegisteredHAIUConfig()
+
+    assert RegisteredHAIUConfig is HAIUConfig
+    assert base_calls == ["HAIUConfig"]
+    assert isinstance(config.rag, RagConfig)
+    assert config.rag.storage is config.storage
 
 
 def test_bundle_ignores_config_base_internal_fields() -> None:

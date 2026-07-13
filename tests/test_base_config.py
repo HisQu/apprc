@@ -514,6 +514,37 @@ def test_env_owner_derives_config_owner_from_env_config_class() -> None:
     assert owner.field("token").secret is True
 
 
+def test_env_owner_preserves_post_init_hook_class_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """EnvConfig hooks can call super and derive runtime fields."""
+    monkeypatch.setenv("HOOK_STORAGE", str(tmp_path))
+
+    class HookEnv(EnvConfig):
+        storage_root: Path = env_field("STORAGE")
+        cache_dir: Path = field(init=False)
+
+        def __post_init__(self) -> None:
+            """Derive paths after EnvConfig binds environment values."""
+            super().__post_init__()
+            self.cache_dir = self.storage_root / "cache"
+
+    DecoratedHookEnv = env_owner(
+        key="hook",
+        title="Hook",
+        env_prefix="HOOK_",
+        rc_path=("hook",),
+        log_lifecycle=False,
+    )(HookEnv)
+
+    config = DecoratedHookEnv()
+
+    assert DecoratedHookEnv is HookEnv
+    assert config.storage_root == tmp_path
+    assert config.cache_dir == tmp_path / "cache"
+
+
 def test_config_owner_reuses_generated_settings_class() -> None:
     owner = config_owner_for(_DemoEnv)
 

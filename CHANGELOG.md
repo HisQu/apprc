@@ -4,17 +4,20 @@ All notable changes to `AppRC` will be documented in this file.
 
 > [!IMPORTANT]
 > ## Rules
-> - When bumping version, move the sub-sections from `[Unreleased]` to
->   the new version -section. Remove empty sub-sections under released
->   versions. Provide a new `[Unreleased]` section at the top of the
->   changelog with all sections empty (don't remove those).
-> - Do not remove emojis and use `<br>` and `---`.
-> - Changelog entries must describe the final net difference from the previous
->   released version. Do not list intermediate pre-release names, helper shapes,
->   fixes, or refactors that were overwritten before release.
-> - Use `🔨 Fixed` only for defects in previously released behavior. For new
->   features, describe the final shipped behavior under `➕ Added`, even if the
->   implementation went through pre-release fixes.
+> 1) Do not remove or change this header and TOC without very good reason. 
+> 1) When bumping version, move the sub-sections from `[Unreleased]` to
+>    the new version -section. Remove empty sub-sections under released
+>    versions. Provide a new `[Unreleased]` section at the top of the
+>    changelog with all sections empty (don't remove those).
+> 1) Do not remove emojis and use `<br>` and `---`.
+> 1) Changelog entries must describe the final net difference from the
+>    previous released version. Do not list intermediate pre-release
+>    names, helper shapes, fixes, or refactors that were overwritten
+>    before release.
+> 1) Use `🔨 Fixed` only for defects in previously released behavior.
+>    For new features, describe the final shipped behavior under `➕
+>    Added`, even if the implementation went through pre-release fixes.
+
 
 
 
@@ -81,6 +84,12 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+  - Fixed AppRC's automatic dataclass generation so registered config and
+    bundle classes that define `__post_init__()` keep stable class identity.
+    This preserves normal `super().__post_init__()` behavior on Python 3.12
+    and 3.13 while keeping slotted dataclasses for classes without custom
+    post-init hooks.
 
 <br>
 

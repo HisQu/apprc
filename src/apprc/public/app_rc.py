@@ -644,8 +644,9 @@ class AppRC:
         """Return ``cls`` as a dataclass without reprocessing subclasses."""
         if "__dataclass_fields__" in cls.__dict__:
             return cls
+        has_post_init_hook = "__post_init__" in cls.__dict__
         return dataclasses.dataclass(
-            slots=True,
+            slots=not has_post_init_hook,
             init=init,
             repr=repr,
         )(cls)

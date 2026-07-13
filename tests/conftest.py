@@ -8,6 +8,24 @@ from pathlib import Path
 
 import pytest
 
+import apprc.user_files.app_home.locations as app_home_locations
+
+
+def _isolated_user_config_path(
+    *,
+    appname: str,
+    appauthor: bool,
+    roaming: bool,
+) -> Path:
+    """Return a per-test config path consistently on every host platform.
+
+    :param appname: Application directory name requested by AppRC.
+    :param appauthor: Unused platformdirs author-directory policy.
+    :param roaming: Unused platformdirs roaming-directory policy.
+    :return: Application path below the test's isolated config root.
+    """
+    return Path(os.environ["XDG_CONFIG_HOME"]) / appname
+
 
 def _required_apprc_prefixes(item: pytest.Item) -> list[str]:
     """Collect required bootstrap prefixes requested by test markers."""
@@ -71,6 +89,11 @@ def _set_default_apprc_example_app_bootstrap(
 ) -> None:
     """Provide the common Example App bootstrap env for marked tests."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setattr(
+        app_home_locations,
+        "user_config_path",
+        _isolated_user_config_path,
+    )
     if request.node.get_closest_marker("allow_missing_apprc_env") is not None:
         return
     if "APPRC_EXAMPLE_APP" not in _required_apprc_prefixes(request.node):

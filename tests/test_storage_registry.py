@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
+import json
+import sys
+from pathlib import Path, WindowsPath
 
 import pytest
 
+import apprc.user_files.storage_roots.paths as storage_paths
 from apprc.user_files.app_home.index import ApprcTomlEnvError
 from apprc.user_files.app_home.index import (
     missing_apprc_toml_env_message,
@@ -103,10 +106,10 @@ def test_register_storage_writes_sorted_toml_and_storage_env(
     assert (first_root / ".env.demo").is_file()
     assert index_path.read_text(encoding="utf-8") == (
         "[storages.alpha]\n"
-        f'root = "{first_root.resolve()}"\n'
+        f"root = {json.dumps(str(first_root.resolve()))}\n"
         "\n"
         "[storages.zeta]\n"
-        f'root = "{second_root.resolve()}"\n'
+        f"root = {json.dumps(str(second_root.resolve()))}\n"
     )
 
 
@@ -134,7 +137,7 @@ def test_load_storage_registry_or_empty_rejects_unknown_top_level_keys(
         'default_storage = "alpha"\n'
         "\n"
         "[storages.alpha]\n"
-        f'root = "{tmp_path / "alpha"}"\n',
+        f"root = {json.dumps(str(tmp_path / 'alpha'))}\n",
         encoding="utf-8",
     )
 
@@ -268,6 +271,7 @@ def test_windows_drive_path_to_posix_falls_back_to_mnt_path(
 def test_normalize_storage_root_path_accepts_windows_drive_spellings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(storage_paths, "_IS_NATIVE_WINDOWS", False)
     monkeypatch.setattr("shutil.which", lambda command: None)
 
     assert normalize_storage_root_path(r"C:\Projects\demo-storage") == Path(
@@ -276,6 +280,35 @@ def test_normalize_storage_root_path_accepts_windows_drive_spellings(
     assert normalize_storage_root_path("C:/Projects/demo-storage") == Path(
         "/mnt/c/Projects/demo-storage"
     )
+
+
+def test_normalize_storage_root_path_preserves_native_windows_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(storage_paths, "_IS_NATIVE_WINDOWS", True)
+
+    assert normalize_storage_root_path(r"C:\Projects\demo-storage") == Path(
+        r"C:\Projects\demo-storage"
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="requires native Windows pathlib semantics",
+)
+@pytest.mark.parametrize(
+    "raw_path",
+    [r"C:\Projects\demo-storage", "C:/Projects/demo-storage"],
+)
+def test_normalize_storage_root_path_uses_native_windows_path_semantics(
+    raw_path: str,
+) -> None:
+    normalized = normalize_storage_root_path(raw_path)
+
+    assert isinstance(normalized, WindowsPath)
+    assert normalized == Path("C:/Projects/demo-storage")
+    assert normalized.drive == "C:"
+    assert normalized.is_absolute()
 
 
 def test_normalize_storage_root_path_rejects_blank_text() -> None:
@@ -293,7 +326,7 @@ def test_normalize_storage_root_path_rejects_damaged_windows_path() -> None:
     assert "`C:/Projects/demo-storage`" in message
     assert "`/mnt/c/Projects/demo-storage`" in message
     assert normalize_storage_root_path("./C:Projectsdemo-storage") == Path(
-        "C:Projectsdemo-storage"
+        "./C:Projectsdemo-storage"
     )
 
 
@@ -321,7 +354,7 @@ def test_load_storage_registry_or_empty_rejects_invalid_archived_storage_tables(
     index_path = tmp_path / "demo.apprc.toml"
     index_path.write_text(
         "[archived_storages.alpha]\n"
-        f'archive = "{tmp_path / "alpha.apprc.tar.xz"}"\n',
+        f"archive = {json.dumps(str(tmp_path / 'alpha.apprc.tar.xz'))}\n",
         encoding="utf-8",
     )
 

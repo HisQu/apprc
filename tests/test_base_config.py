@@ -3,7 +3,7 @@ from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
@@ -19,7 +19,10 @@ from apprc.definition.env_config.fields import (
     env_field,
     env_owner,
 )
-from apprc.runtime.provenance import ConfigProvenance
+from apprc.runtime.provenance import (
+    ConfigProvenance,
+    PythonProvenanceOrigin,
+)
 
 
 @dataclass(slots=True)
@@ -57,6 +60,52 @@ class _ExtendedRuntimeConfig(_DefaultRuntimeConfig):
 @dataclass(slots=True)
 class _RuntimeConfigWithNestedConfig(BaseConfig):
     nested: _DefaultRuntimeConfig = field(default_factory=_DefaultRuntimeConfig)
+
+
+class _CooperativeAllocationMixin:
+    """Record instance allocation reached through the cooperative MRO."""
+
+    __slots__ = ()
+    allocation_calls: ClassVar[int] = 0
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        """Count one allocation before delegating to the next MRO class."""
+        _CooperativeAllocationMixin.allocation_calls += 1
+        return super().__new__(cls)
+
+
+@dataclass(slots=True)
+class _CooperativeRuntimeConfig(BaseConfig, _CooperativeAllocationMixin):
+    name: str = "demo"
+
+
+class _CooperativeAssignmentMixin(BaseConfig):
+    """Record assignment-hook dispatch through an intermediate base."""
+
+    __slots__ = ()
+    assignment_calls: ClassVar[int] = 0
+
+    def _after_existing_assignment(
+        self,
+        key: str,
+        value: Any,
+        *,
+        origin: PythonProvenanceOrigin,
+    ) -> None:
+        """Count one assignment before delegating to the next MRO class."""
+        _CooperativeAssignmentMixin.assignment_calls += 1
+        super()._after_existing_assignment(key, value, origin=origin)
+
+
+@env_owner(
+    key="cooperative",
+    title="Cooperative",
+    env_prefix="COOPERATIVE_",
+    rc_path=("cooperative",),
+    log_lifecycle=False,
+)
+class _CooperativeEnv(EnvConfig, _CooperativeAssignmentMixin):
+    value: str = env_field("VALUE", default="initial")
 
 
 @env_owner(
@@ -179,6 +228,15 @@ def test_base_config_to_dict_redacts_private_dataclass_fields(
             "secret": "<redacted>",
         },
     }
+
+
+def test_base_config_new_continues_through_cooperative_mro() -> None:
+    _CooperativeAllocationMixin.allocation_calls = 0
+
+    config = _CooperativeRuntimeConfig()
+
+    assert config.name == "demo"
+    assert _CooperativeAllocationMixin.allocation_calls == 1
 
 
 def test_base_config_copy_preserves_resolved_state_without_constructor() -> (
@@ -609,6 +667,16 @@ def test_env_config_rejects_invalid_python_choice_assignment() -> None:
 
     assert cfg.mode == "AUTO"
     assert cfg.provenance_of("mode").origin == "python_envconfig_default"
+
+
+def test_env_config_assignment_continues_through_cooperative_mro() -> None:
+    _CooperativeAssignmentMixin.assignment_calls = 0
+    config = _CooperativeEnv()
+
+    config.value = "changed"
+
+    assert config.value == "changed"
+    assert _CooperativeAssignmentMixin.assignment_calls == 1
 
 
 def test_env_config_rejects_wrong_python_assignment_type() -> None:

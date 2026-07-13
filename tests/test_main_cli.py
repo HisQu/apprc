@@ -6,6 +6,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -394,6 +395,10 @@ def test_example_bootstrap_default_output_root() -> None:
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="requires a POSIX Bash shell",
+)
 def test_example_root_env_makes_precedence_app_runnable(
     tmp_path: Path,
 ) -> None:
@@ -620,8 +625,8 @@ def _assert_json_success(result: Result) -> dict[str, object]:
 def _source_example_apps_env(*, project_root: Path) -> dict[str, str]:
     """Return env values produced by sourcing the root example env file."""
     command = (
-        f"PROJECT_ROOT={shlex.quote(str(project_root))}; "
-        f"source {shlex.quote(str(ROOT / '.env.example_apps'))}; "
+        f"PROJECT_ROOT={shlex.quote(project_root.as_posix())}; "
+        f"source {shlex.quote((ROOT / '.env.example_apps').as_posix())}; "
         "env -0"
     )
     result = subprocess.run(

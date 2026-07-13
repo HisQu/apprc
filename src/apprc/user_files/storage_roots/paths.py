@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 # == Internal ================================
@@ -19,6 +20,7 @@ __all__ = [
 
 _WINDOWS_DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:[\\/]")
 _MALFORMED_WINDOWS_DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:(?![\\/])")
+_IS_NATIVE_WINDOWS = sys.platform == "win32"
 
 
 class StorageRootPathError(ValueError):
@@ -45,7 +47,7 @@ def normalize_storage_root_path(path: str | Path) -> Path:
         raise StorageRootPathError(
             _malformed_windows_drive_path_message(path_text)
         )
-    if _is_windows_drive_path(path_text):
+    if _is_windows_drive_path(path_text) and not _IS_NATIVE_WINDOWS:
         return windows_drive_path_to_posix(path_text).expanduser()
     return Path(path_text).expanduser()
 

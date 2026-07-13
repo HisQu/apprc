@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import json
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, ClassVar
@@ -24,6 +25,12 @@ from tests.support_config import (
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
 )
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain_output(output: str) -> str:
+    return _ANSI_ESCAPE.sub("", output)
 
 
 class CapturingConfigEditorApp(ConfigEditorApp):
@@ -321,7 +328,7 @@ def test_config_set_requires_scope_when_app_and_storage_are_active(
     )
 
     assert ambiguous.exit_code != 0
-    assert "--scope app or --scope storage" in ambiguous.output
+    assert "--scope app or --scope storage" in _plain_output(ambiguous.output)
     assert app_scoped.exit_code == 0, app_scoped.output
     assert 'APPRC_EXAMPLE_APP_PROFILE="app-profile"\n' in (
         kit.spec.app_wide_env_path().read_text(encoding="utf-8")
@@ -495,6 +502,6 @@ def test_config_edit_without_tui_extra_reports_install_hint(
     )
 
     assert result.exit_code != 0
-    normalized_output = " ".join(result.output.split())
+    normalized_output = " ".join(_plain_output(result.output).split())
     assert "The Textual config editor requires" in normalized_output
     assert 'python -m pip install "apprc[tui]"' in normalized_output

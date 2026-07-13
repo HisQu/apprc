@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.user_files.env_files import write_env_file
 from apprc.user_files.storage_roots.registry import register_storage
 from tests.support_config import ApprcExampleAppEnv
 
@@ -112,11 +113,13 @@ def test_bootstrap_reads_app_wide_selector_only_when_file_exists(
     storage_root.mkdir()
     kit = _kit()
     app_wide_env = kit.spec.app_wide_env_path()
-    app_wide_env.parent.mkdir(parents=True)
-    app_wide_env.write_text(
-        f'APPRC_EXAMPLE_APP_STORAGE="{storage_root}"\n'
-        'APPRC_EXAMPLE_APP_PROFILE="from-app"\n',
-        encoding="utf-8",
+    write_env_file(
+        app_wide_env,
+        {
+            "APPRC_EXAMPLE_APP_STORAGE": str(storage_root),
+            "APPRC_EXAMPLE_APP_PROFILE": "from-app",
+        },
+        owners=kit.spec.owners,
     )
 
     result = kit.bootstrap(

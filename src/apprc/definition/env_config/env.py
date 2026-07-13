@@ -73,7 +73,9 @@ class EnvConfig(BaseConfig):
         captures Python constructor arguments in ``__new__`` before env binding
         can decide which fields are protected for this object's lifetime.
         """
-        self = super().__new__(cls, *args, **kwargs)
+        # ! Keep two-argument super(): slotted dataclass inheritance on
+        # ! Python 3.12/3.13 breaks zero-argument super().
+        self = super(EnvConfig, cls).__new__(cls, *args, **kwargs)
         constructor_fields = python_constructor_field_names(
             cls,
             cls._config_owner(),
@@ -166,13 +168,15 @@ class EnvConfig(BaseConfig):
         :param field_name: Runtime dataclass field name.
         :return: Provenance metadata for the current field value.
         """
+        # ! Keep two-argument super(): slotted dataclass inheritance on
+        # ! Python 3.12/3.13 breaks zero-argument super().
         if self.config_owner is None:
-            return super()._build_config_provenance(field_name)
+            return super(EnvConfig, self)._build_config_provenance(field_name)
         owner = self._config_owner()
         try:
             spec = owner.field(field_name)
         except KeyError:
-            return super()._build_config_provenance(field_name)
+            return super(EnvConfig, self)._build_config_provenance(field_name)
         env_key = owner.env_key(field_name)
         state = self._field_origin(field_name)
         return ConfigProvenance(
@@ -254,7 +258,13 @@ class EnvConfig(BaseConfig):
         origin: PythonProvenanceOrigin,
     ) -> None:
         """Record owner-backed assignment provenance after storing it."""
-        super()._after_existing_assignment(key, value, origin=origin)
+        # ! Keep two-argument super(): slotted dataclass inheritance on
+        # ! Python 3.12/3.13 breaks zero-argument super().
+        super(EnvConfig, self)._after_existing_assignment(
+            key,
+            value,
+            origin=origin,
+        )
         if key not in self._owner_field_names():
             return
         self._set_field_origin(

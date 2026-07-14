@@ -32,19 +32,20 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-4. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-5. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-6. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-7. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-8. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-9. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-10. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-11. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-12. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-13. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-14. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-15. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+4. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+5. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+6. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+7. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+8. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+9. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+10. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+11. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+12. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+13. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+14. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+15. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+16. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -64,10 +65,6 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
-  - Added Textual editor controls to rename and repoint named storages or move
-    their complete directories. Repointing changes only the registry; moves
-    require a new or empty destination and relocate the stored data.
-
 <br>
 
 ### 💔 Changed
@@ -84,16 +81,30 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
-  - Fixed named-storage rename so it preserves stored relative and symbolic-link
-    root spellings instead of silently canonicalizing them.
-
-  - Fixed Textual storage moves so overlapping actions cannot interrupt a
-    transfer, unsafe symbolic-link or shared roots are rejected, and changed
-    cross-filesystem sources found before registry commit cancel the transfer.
-
 <br>
 
 ### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.19.5 - 2026-07-14
+
+<br>
+
+### ➕ Added
+
+  - Added Textual editor controls to rename named storages, repoint their
+    registered locations, and move complete live storage directories.
+    Repointing changes only the registry; moves accept only new or empty safe
+    destinations, never merge or replace files, and leave the registry
+    unchanged if a cross-filesystem source changes during copying. AppRC does
+    not rewrite external `--storage`, environment, or dotenv selectors.
 
 <br>
 

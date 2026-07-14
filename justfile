@@ -169,7 +169,7 @@ _ci-check-python version environment:
         --quiet \
         --no-progress
     uv lock --check --quiet
-    echo "✓ Python {{version}}: environment ready; running CI checks."
+    echo "☑️ Python {{version}}: environment ready; running CI checks."
     uv run --python "{{version}}" --locked --no-sync ruff format . --check
     uv run --python "{{version}}" --locked --no-sync ruff check .
     uv run --python "{{version}}" --locked --no-sync \
@@ -177,7 +177,7 @@ _ci-check-python version environment:
     uv run --python "{{version}}" --locked --no-sync pytest
     uv run --python "{{version}}" --locked --no-sync \
         python -m compileall -q src tests examples/example_apps/src
-    echo "✓ Python {{version}}: CI checks passed."
+    echo "☑️ Python {{version}}: CI checks passed."
 
 [private]
 _release-artifact-check notes_output:
@@ -259,7 +259,7 @@ _release-artifact-check notes_output:
         --check-url https://pypi.org/simple/apprc/ \
         "$wheel" \
         "$sdist"
-    echo "✓ PyPI publication dry run passed; nothing was uploaded."
+    echo "✅ PyPI publication dry run passed; nothing was uploaded."
 
 # Rehearse the complete local release gate without publishing
 publish-check:
@@ -276,9 +276,9 @@ publish-check:
     done
     just _release-artifact-check "$check_root/release-notes.md"
     if [[ "${APPRC_RELEASE_IN_PROGRESS:-}" == 1 ]]; then
-        echo "✓ Local release rehearsal passed; nothing was published."
+        echo "✅ Local release rehearsal passed; nothing was published."
     else
-        echo "➡ Next step: run just release <patch|minor|major>."
+        echo "👉 Next step: run just release <patch|minor|major>."
     fi
 
 # Prepare a checked version commit and annotated local release tag
@@ -295,7 +295,7 @@ release level="patch":
         exit 1
     fi
 
-    echo "ℹ just release prepares ${tag} locally; it does not publish anything."
+    echo "ℹ️ just release prepares ${tag} locally; it does not publish anything."
     echo "  Publication starts only after you explicitly push main and ${tag}."
 
     release_root="$(mktemp -d)"
@@ -334,8 +334,9 @@ release level="patch":
         exit 1
     fi
 
-    echo "✓ Prepared local release ${tag}; nothing has been published."
-    echo "➡ Review the version commit and annotated tag, then start the GitHub release pipeline with:"
+    echo "✅ Prepared local release ${tag}; nothing has been published."
+    echo
+    echo "👉 Next Step: Review the version commit and annotated tag, then start the GitHub release pipeline with:"
     echo "  git push origin main ${tag}"
     echo "  GitHub will run CI, wait for pypi approval, publish to PyPI, and create the GitHub Release."
 

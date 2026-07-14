@@ -68,6 +68,7 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
+- dev tooling: Updated pyright to 1.1.411
 
 <br>
 

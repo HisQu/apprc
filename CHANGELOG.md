@@ -84,6 +84,13 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
+  - Fixed named-storage rename so it preserves stored relative and symbolic-link
+    root spellings instead of silently canonicalizing them.
+
+  - Fixed Textual storage moves so overlapping actions cannot interrupt a
+    transfer, unsafe symbolic-link or shared roots are rejected, and changed
+    cross-filesystem sources found before registry commit cancel the transfer.
+
 <br>
 
 ### 🔒 Security

@@ -479,6 +479,16 @@ changes only the index: it never creates, moves, or deletes storage files. Use
 or empty destination, rejects unsafe paths such as the source or a nested
 directory, moves the complete storage directory, and then updates the index.
 The editor asks for confirmation before it applies a rename, repoint, or move.
+After a repoint or move, update any direct path use in `--storage`, the storage
+environment variable, or dotenv values yourself; the editor changes only the
+registry entry.
+
+Close programs that write to a storage before moving it. The editor refuses a
+move for a symbolic-link root or a root shared by another live selector, so
+repoint those entries first. For a cross-filesystem transfer, it keeps the
+original directory and cancels the move if its pre-promotion check finds that
+the source changed while being copied. If the source changes later, cleanup
+keeps the original directory and reports a warning.
 
 Archive rows retain the original directory that was compressed. Repointing or
 moving a live storage does not rewrite that historical source location; a

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import Any, cast
 
 import pytest
 from textual.containers import HorizontalScroll
-from textual.widgets import Button, DataTable
+from textual.widgets import Button, DataTable, ListView
 
 from apprc.definition.app_config.capabilities import (
     CapabilityState,
@@ -33,8 +34,9 @@ from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
     record_archived_storage,
     register_storage,
+    write_storage_registry,
 )
-from apprc.user_files.storage_roots.model import StorageRegistry
+from apprc.user_files.storage_roots.model import StorageRecord, StorageRegistry
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.interfaces.tui.editor.workflows import (
     ConfigEditorStorageWorkflows,
@@ -188,6 +190,102 @@ async def test_editor_compact_storage_controls_enable_live_storage(
             "storage-delete",
         ):
             assert editor.query_one(f"#{button_id}", Button).disabled is False
+
+
+@pytest.mark.asyncio
+async def test_editor_storage_action_row_reserves_scrollbar_height(
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    registry = register_storage(
+        name="alpha",
+        root=tmp_path / "alpha",
+        path=tmp_path / "demo.apprc.toml",
+    )
+    editor = ConfigEditorApp(kit=kit, storage_registry=registry)
+
+    async with editor.run_test(size=(40, 24)) as pilot:
+        await pilot.pause()
+        action_row = editor.query_one("#storage-action-row", HorizontalScroll)
+        new_button = editor.query_one("#storage-new", Button)
+
+        assert action_row.virtual_size.width > action_row.size.width
+        assert action_row.size.height > new_button.size.height
+
+
+@pytest.mark.asyncio
+async def test_editor_serializes_storage_actions_until_current_workflow_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    registry = register_storage(
+        name="alpha",
+        root=tmp_path / "alpha",
+        path=tmp_path / "demo.apprc.toml",
+    )
+    editor = ConfigEditorApp(kit=kit, storage_registry=registry)
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    rename_calls: list[None] = []
+    exit_calls: list[None] = []
+
+    async def wait_to_move_storage() -> None:
+        started.set()
+        await finish.wait()
+
+    async def record_rename_attempt() -> None:
+        rename_calls.append(None)
+
+    monkeypatch.setattr(
+        editor.storage_workflows,
+        "open_move_storage_flow",
+        wait_to_move_storage,
+    )
+    monkeypatch.setattr(
+        editor.storage_workflows,
+        "open_rename_storage_flow",
+        record_rename_attempt,
+    )
+    monkeypatch.setattr(editor, "exit", lambda: exit_calls.append(None))
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#storage-move")
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await pilot.pause()
+
+        assert editor._storage_action_in_progress is True
+        assert editor.query_one("#storage-list", ListView).disabled is True
+        assert editor.query_one("#field-table", DataTable).disabled is True
+        for button_id in (
+            "storage-new",
+            "storage-register-active",
+            "storage-rename",
+            "storage-location",
+            "storage-move",
+            "storage-archive",
+            "storage-delete",
+        ):
+            assert editor.query_one(f"#{button_id}", Button).disabled is True
+
+        await editor.action_quit()
+        assert exit_calls == []
+
+        await pilot.click("#storage-rename")
+        await pilot.pause()
+        assert rename_calls == []
+
+        finish.set()
+        await pilot.pause()
+        await pilot.pause()
+
+        assert editor._storage_action_in_progress is False
+        assert editor.query_one("#storage-list", ListView).disabled is False
+        assert editor.query_one("#storage-move", Button).disabled is False
+
+        await editor.action_quit()
+        assert exit_calls == [None]
 
 
 @pytest.mark.asyncio
@@ -399,6 +497,9 @@ async def test_editor_location_repoints_missing_storage_without_creating_files(
 
     assert isinstance(editor.screens[0], PathInputScreen)
     assert editor.screens[0].value == str(source_root.resolve())
+    assert isinstance(editor.screens[1], ConfirmScreen)
+    assert "--storage" in str(editor.screens[1].message)
+    assert "environment" in str(editor.screens[1].message)
     assert (
         editor.storage_registry.selected("alpha").root == target_root.resolve()
     )
@@ -456,6 +557,9 @@ async def test_editor_move_storage_moves_complete_directory_to_new_root(
 
     await workflow.open_move_storage_flow()
 
+    assert isinstance(editor.screens[1], ConfirmScreen)
+    assert "Close programs" in str(editor.screens[1].message)
+    assert "--storage" in str(editor.screens[1].message)
     assert not source_root.exists()
     assert (destination_root / "payload.txt").read_text(
         encoding="utf-8"
@@ -577,6 +681,117 @@ async def test_editor_move_storage_rejects_unsafe_destinations(
 
 
 @pytest.mark.asyncio
+async def test_editor_move_storage_rejects_another_live_selector_at_source(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    source_root = tmp_path / "alpha"
+    registry = register_storage(
+        name="alpha",
+        root=source_root,
+        path=index_path,
+    )
+    registry = register_storage(
+        name="beta",
+        root=source_root,
+        path=index_path,
+    )
+    (source_root / "payload.txt").write_text("keep", encoding="utf-8")
+    editor = StorageEditingFakeEditor(
+        registry=registry,
+        selection=LiveStorageSelection(registry.selected("alpha")),
+        responses=[],
+    )
+    workflow = StorageEditingWorkflows(cast(Any, editor))
+
+    await workflow.open_move_storage_flow()
+
+    assert editor.screens == []
+    assert (source_root / "payload.txt").read_text(encoding="utf-8") == "keep"
+    assert editor.storage_registry.selected("alpha").root == source_root
+    assert editor.storage_registry.selected("beta").root == source_root
+    assert "'beta'" in editor.notifications[0][0]
+
+
+@pytest.mark.asyncio
+async def test_editor_move_storage_rejects_symbolic_link_root(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    target_root = tmp_path / "alpha-target"
+    target_root.mkdir()
+    (target_root / "payload.txt").write_text("keep", encoding="utf-8")
+    symbolic_root = tmp_path / "alpha-link"
+    try:
+        symbolic_root.symlink_to(target_root, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symbolic links are unavailable in this test environment.")
+    registry = StorageRegistry(
+        path=index_path,
+        storages={"alpha": StorageRecord(name="alpha", root=symbolic_root)},
+    )
+    editor = StorageEditingFakeEditor(
+        registry=registry,
+        selection=LiveStorageSelection(registry.selected("alpha")),
+        responses=[],
+    )
+    workflow = StorageEditingWorkflows(cast(Any, editor))
+
+    await workflow.open_move_storage_flow()
+
+    assert editor.screens == []
+    assert symbolic_root.is_symlink()
+    assert (target_root / "payload.txt").read_text(encoding="utf-8") == "keep"
+    assert "symbolic links" in editor.notifications[0][0]
+
+
+@pytest.mark.asyncio
+async def test_editor_location_repoints_symbolic_link_root_before_move(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    target_root = tmp_path / "alpha-target"
+    target_root.mkdir()
+    (target_root / "payload.txt").write_text("keep", encoding="utf-8")
+    symbolic_root = tmp_path / "alpha-link"
+    try:
+        symbolic_root.symlink_to(target_root, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symbolic links are unavailable in this test environment.")
+    registry = StorageRegistry(
+        path=index_path,
+        storages={"alpha": StorageRecord(name="alpha", root=symbolic_root)},
+    )
+    write_storage_registry(registry)
+    destination_root = tmp_path / "moved-alpha"
+    editor = StorageEditingFakeEditor(
+        registry=registry,
+        selection=LiveStorageSelection(registry.selected("alpha")),
+        responses=[
+            PathInputResult(path=target_root),
+            "update",
+            PathInputResult(path=destination_root),
+            "move",
+        ],
+    )
+    workflow = StorageEditingWorkflows(cast(Any, editor))
+
+    await workflow.open_storage_location_flow()
+
+    assert editor.storage_registry.selected("alpha").root == target_root
+    editor.selection = LiveStorageSelection(
+        editor.storage_registry.selected("alpha")
+    )
+    await workflow.open_move_storage_flow()
+
+    assert not target_root.exists()
+    assert (destination_root / "payload.txt").read_text(
+        encoding="utf-8"
+    ) == "keep"
+    assert editor.storage_registry.selected("alpha").root == destination_root
+
+
+@pytest.mark.asyncio
 async def test_editor_move_storage_restores_source_after_registry_write_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -648,6 +863,172 @@ async def test_editor_move_storage_copies_across_filesystems_before_cleanup(
         encoding="utf-8"
     ) == "keep"
     assert editor.storage_registry.selected("alpha").root == destination_root
+
+
+@pytest.mark.asyncio
+async def test_editor_move_storage_cancels_changed_cross_filesystem_source(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    source_root = tmp_path / "alpha"
+    destination_root = tmp_path / "moved-alpha"
+    registry = register_storage(
+        name="alpha",
+        root=source_root,
+        path=index_path,
+    )
+    (source_root / "payload.txt").write_text("keep", encoding="utf-8")
+    destination_root.mkdir()
+    editor = StorageEditingFakeEditor(
+        registry=registry,
+        selection=LiveStorageSelection(registry.selected("alpha")),
+        responses=[PathInputResult(path=destination_root), "move"],
+    )
+    workflow = StorageEditingWorkflows(cast(Any, editor))
+    monkeypatch.setattr(
+        workflow,
+        "_move_requires_copy",
+        lambda **_: True,
+    )
+    original_copytree = shutil.copytree
+
+    def copy_tree_then_change_source(
+        source: Path,
+        destination: Path,
+        **kwargs: Any,
+    ) -> Path:
+        original_copytree(source, destination, **kwargs)
+        (source / "written-during-move.txt").write_text(
+            "keep this too",
+            encoding="utf-8",
+        )
+        return destination
+
+    monkeypatch.setattr(
+        "apprc.interfaces.tui.editor.storage_editing.shutil.copytree",
+        copy_tree_then_change_source,
+    )
+
+    await workflow.open_move_storage_flow()
+
+    assert destination_root.is_dir()
+    assert not any(destination_root.iterdir())
+    assert (source_root / "payload.txt").read_text(encoding="utf-8") == "keep"
+    assert (source_root / "written-during-move.txt").read_text(
+        encoding="utf-8"
+    ) == "keep this too"
+    assert editor.storage_registry.selected("alpha").root == source_root
+    assert not list(tmp_path.glob(".moved-alpha.apprc-moving-*"))
+    assert not list(tmp_path.glob(".moved-alpha.apprc-empty-*"))
+    assert editor.notifications[-1][1]["severity"] == "error"
+    assert "registry was not updated" in editor.notifications[-1][0]
+
+
+@pytest.mark.asyncio
+async def test_editor_move_storage_restores_empty_destination_when_source_check_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    source_root = tmp_path / "alpha"
+    destination_root = tmp_path / "empty-destination"
+    registry = register_storage(
+        name="alpha",
+        root=source_root,
+        path=index_path,
+    )
+    (source_root / "payload.txt").write_text("keep", encoding="utf-8")
+    destination_root.mkdir()
+    editor = StorageEditingFakeEditor(
+        registry=registry,
+        selection=LiveStorageSelection(registry.selected("alpha")),
+        responses=[PathInputResult(path=destination_root), "move"],
+    )
+    workflow = StorageEditingWorkflows(cast(Any, editor))
+    monkeypatch.setattr(
+        workflow,
+        "_move_requires_copy",
+        lambda **_: True,
+    )
+    original_snapshot = workflow._directory_snapshot
+    snapshot_calls = 0
+
+    def fail_source_check_snapshot(root: Path) -> tuple[object, ...]:
+        nonlocal snapshot_calls
+        snapshot_calls += 1
+        if snapshot_calls == 2:
+            raise OSError("source check blocked")
+        return original_snapshot(root)
+
+    monkeypatch.setattr(
+        workflow,
+        "_directory_snapshot",
+        fail_source_check_snapshot,
+    )
+
+    await workflow.open_move_storage_flow()
+
+    assert (source_root / "payload.txt").read_text(encoding="utf-8") == "keep"
+    assert destination_root.is_dir()
+    assert not any(destination_root.iterdir())
+    assert not list(tmp_path.glob(".empty-destination.apprc-empty-*"))
+    assert list(tmp_path.glob(".empty-destination.apprc-moving-*"))
+    assert editor.storage_registry.selected("alpha").root == source_root
+    assert editor.notifications[-1][1]["severity"] == "warning"
+    assert "registry was not updated" in editor.notifications[-1][0]
+
+
+@pytest.mark.asyncio
+async def test_editor_move_storage_restores_empty_destination_when_copy_promotion_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    source_root = tmp_path / "alpha"
+    destination_root = tmp_path / "empty-destination"
+    registry = register_storage(
+        name="alpha",
+        root=source_root,
+        path=index_path,
+    )
+    (source_root / "payload.txt").write_text("keep", encoding="utf-8")
+    destination_root.mkdir()
+    editor = StorageEditingFakeEditor(
+        registry=registry,
+        selection=LiveStorageSelection(registry.selected("alpha")),
+        responses=[PathInputResult(path=destination_root), "move"],
+    )
+    workflow = StorageEditingWorkflows(cast(Any, editor))
+    monkeypatch.setattr(
+        workflow,
+        "_move_requires_copy",
+        lambda **_: True,
+    )
+    original_replace = os.replace
+
+    def fail_copy_promotion(source: Path, destination: Path) -> None:
+        if (
+            source.name.startswith(".empty-destination.apprc-moving-")
+            and destination == destination_root
+        ):
+            raise OSError("promotion blocked")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(
+        "apprc.interfaces.tui.editor.storage_editing.os.replace",
+        fail_copy_promotion,
+    )
+
+    await workflow.open_move_storage_flow()
+
+    assert (source_root / "payload.txt").read_text(encoding="utf-8") == "keep"
+    assert destination_root.is_dir()
+    assert not any(destination_root.iterdir())
+    assert not list(tmp_path.glob(".empty-destination.apprc-moving-*"))
+    assert not list(tmp_path.glob(".empty-destination.apprc-empty-*"))
+    assert editor.storage_registry.selected("alpha").root == source_root
+    assert editor.notifications[-1][1]["severity"] == "error"
 
 
 @pytest.mark.asyncio

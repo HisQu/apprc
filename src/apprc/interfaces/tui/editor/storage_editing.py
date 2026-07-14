@@ -8,7 +8,7 @@ import errno
 import os
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,7 +17,7 @@ from rich.text import Text
 
 # == Internal ================================
 from apprc.user_files.storage_roots.paths import normalize_storage_root_path
-from apprc.user_files.storage_roots.model import StorageRecord
+from apprc.user_files.storage_roots.model import StorageRecord, StorageRegistry
 from apprc.user_files.storage_roots.registry import _update_storage
 from apprc.interfaces.tui._primitives import (
     ConfirmScreen,
@@ -37,6 +37,9 @@ from apprc.interfaces.tui.storage.selection import (
 )
 
 
+type _StorageDirectorySnapshot = tuple[tuple[str, int, int, int, int], ...]
+
+
 @dataclass(frozen=True, slots=True)
 class _StorageMoveState:
     """Track filesystem changes that await a registry update."""
@@ -45,6 +48,8 @@ class _StorageMoveState:
     destination_root: Path
     destination_backup: Path | None
     copied_across_filesystems: bool
+    source_snapshot: _StorageDirectorySnapshot | None = None
+    staged_copy: Path | None = None
 
 
 class StorageEditingWorkflows(StorageWorkflowBase):
@@ -105,10 +110,11 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         if action != "rename":
             return
         try:
-            self.editor.storage_registry = _update_storage(
+            self.editor.storage_registry = await asyncio.to_thread(
+                _update_storage,
                 current_name=record.name,
                 name=name,
-                root=record.root,
+                root=None,
                 path=registry.path,
             )
         except (OSError, TypeError, ValueError) as exc:
@@ -138,7 +144,7 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         if result is None:
             return
         root = self._existing_storage_directory(result.path)
-        if root is None or root == record.root.resolve():
+        if root is None or root == record.root:
             return
         action = await self.editor.push_screen_wait(
             ConfirmScreen(
@@ -155,6 +161,8 @@ class StorageEditingWorkflows(StorageWorkflowBase):
                     "",
                     "This changes only the named-storage registry entry.",
                     "It does not create, move, or delete files.",
+                    "External --storage arguments and environment values "
+                    "that use the current path are not changed.",
                 ),
                 actions=(("update", "Update location", "warning"),),
             )
@@ -162,7 +170,8 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         if action != "update":
             return
         try:
-            self.editor.storage_registry = _update_storage(
+            self.editor.storage_registry = await asyncio.to_thread(
+                _update_storage,
                 current_name=record.name,
                 name=record.name,
                 root=root,
@@ -181,6 +190,34 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         if registry is None or not isinstance(selection, LiveStorageSelection):
             return
         record = selection.record
+        try:
+            if record.root.is_symlink():
+                self.editor.notify(
+                    "Storage roots declared as symbolic links cannot be "
+                    "moved. Repoint the storage to its directory first.",
+                    severity="error",
+                    markup=False,
+                )
+                return
+            source_root = record.root.resolve()
+            shared_names = self._shared_live_storage_names(
+                registry=registry,
+                name=record.name,
+                source_root=source_root,
+            )
+        except (OSError, RuntimeError) as exc:
+            self.editor.notify(str(exc), severity="error", markup=False)
+            return
+        if shared_names:
+            names = ", ".join(repr(name) for name in shared_names)
+            self.editor.notify(
+                "Storage location is also registered by "
+                f"{names}. Repoint or remove the other storage before "
+                "moving this directory.",
+                severity="error",
+                markup=False,
+            )
+            return
         result = await self.editor.push_screen_wait(
             PathInputScreen(
                 title="Move storage",
@@ -194,7 +231,6 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         )
         if result is None:
             return
-        source_root = record.root.resolve()
         destination_root = self._move_destination(
             source_root=source_root,
             candidate=result.path,
@@ -216,6 +252,10 @@ class StorageEditingWorkflows(StorageWorkflowBase):
                     ),
                     "",
                     "The complete storage directory will be moved.",
+                    "Close programs that may write to the storage before "
+                    "continuing.",
+                    "External --storage arguments and environment values "
+                    "that use the source path are not changed.",
                     "Proceed?",
                 ),
                 actions=(("move", "Move", "warning"),),
@@ -232,8 +272,77 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         except (OSError, shutil.Error) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
+        if move_state.copied_across_filesystems:
+            try:
+                source_matches = await asyncio.to_thread(
+                    self._copied_storage_source_matches_snapshot,
+                    move_state=move_state,
+                )
+            except OSError as exc:
+                restore_error = await asyncio.to_thread(
+                    self._restore_destination_backup,
+                    destination_root=move_state.destination_root,
+                    destination_backup=move_state.destination_backup,
+                )
+                if restore_error is not None:
+                    self.editor.notify(
+                        "Could not verify the storage source after copying "
+                        "it, and restoring the original empty destination "
+                        f"also failed: {restore_error}",
+                        severity="warning",
+                        markup=False,
+                    )
+                self.editor.notify(
+                    "Could not verify the storage source after copying it. "
+                    "The registry was not updated, and the staged copy was "
+                    f"kept at {move_state.staged_copy}: {exc}",
+                    severity="warning",
+                    markup=False,
+                )
+                return
+            if not source_matches:
+                restore_error = await asyncio.to_thread(
+                    self._restore_moved_storage_directory,
+                    move_state=move_state,
+                )
+                if restore_error is not None:
+                    self.editor.notify(
+                        "Storage source changed while it was copied, and "
+                        "cleanup of the staged copy also failed: "
+                        f"{restore_error}",
+                        severity="warning",
+                        markup=False,
+                    )
+                self.editor.notify(
+                    "Storage source changed while it was copied. The move "
+                    "was canceled and the registry was not updated.",
+                    severity="error",
+                    markup=False,
+                )
+                return
+            try:
+                move_state = await asyncio.to_thread(
+                    self._promote_staged_storage_copy,
+                    move_state=move_state,
+                )
+            except OSError as exc:
+                restore_error = await asyncio.to_thread(
+                    self._restore_moved_storage_directory,
+                    move_state=move_state,
+                )
+                if restore_error is not None:
+                    self.editor.notify(
+                        "Could not promote the staged storage copy, and "
+                        "cleanup also failed: "
+                        f"{restore_error}",
+                        severity="warning",
+                        markup=False,
+                    )
+                self.editor.notify(str(exc), severity="error", markup=False)
+                return
         try:
-            self.editor.storage_registry = _update_storage(
+            self.editor.storage_registry = await asyncio.to_thread(
+                _update_storage,
                 current_name=record.name,
                 name=record.name,
                 root=destination_root,
@@ -277,6 +386,29 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         ):
             return selection.record
         return None
+
+    @staticmethod
+    def _shared_live_storage_names(
+        *,
+        registry: StorageRegistry,
+        name: str,
+        source_root: Path,
+    ) -> tuple[str, ...]:
+        """Return other live selectors that resolve to a storage directory.
+
+        :param registry: Named-storage records that may share the source.
+        :param name: Selector currently being moved.
+        :param source_root: Resolved directory that will be relocated.
+        :return: Sorted selectors that would be left at the old location.
+        """
+        return tuple(
+            sorted(
+                other_name
+                for other_name, other_record in registry.storages.items()
+                if other_name != name
+                and other_record.root.resolve() == source_root
+            )
+        )
 
     def _existing_storage_directory(self, candidate: Path) -> Path | None:
         """Return an existing directory for a registry-only location update.
@@ -388,8 +520,8 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         """Move one directory to a destination that passed safety checks.
 
         A same-filesystem move is an atomic rename. Cross-filesystem moves
-        first copy into a private staging directory, so the source remains
-        intact until the registry accepts the new location.
+        first copy into a private staging directory, so the source can be
+        checked before the staged copy is promoted and the registry changes.
 
         :param source_root: Existing source directory.
         :param destination_root: New or empty destination directory.
@@ -434,6 +566,8 @@ class StorageEditingWorkflows(StorageWorkflowBase):
             destination_root=destination_root,
             destination_backup=destination_backup,
             copied_across_filesystems=False,
+            source_snapshot=None,
+            staged_copy=None,
         )
 
     def _park_empty_destination(self, destination_root: Path) -> Path | None:
@@ -496,6 +630,59 @@ class StorageEditingWorkflows(StorageWorkflowBase):
             source_root.stat().st_dev != destination_root.parent.stat().st_dev
         )
 
+    @staticmethod
+    def _directory_snapshot(root: Path) -> _StorageDirectorySnapshot:
+        """Describe a storage tree before a cross-filesystem copy.
+
+        The snapshot is deliberately metadata-only: it detects added,
+        removed, or modified filesystem entries before promotion and source
+        cleanup without reading storage contents a second time.
+
+        :param root: Source directory preserved until registry update commits.
+        :return: Sorted paths and lstat metadata for the complete directory.
+        :raises OSError: If the tree cannot be inspected completely.
+        """
+        entries = [StorageEditingWorkflows._snapshot_entry(root, root)]
+
+        def raise_walk_error(error: OSError) -> None:
+            raise error
+
+        for parent, directory_names, file_names in os.walk(
+            root,
+            onerror=raise_walk_error,
+            followlinks=False,
+        ):
+            parent_path = Path(parent)
+            for child_name in (*directory_names, *file_names):
+                entries.append(
+                    StorageEditingWorkflows._snapshot_entry(
+                        root,
+                        parent_path / child_name,
+                    )
+                )
+        return tuple(sorted(entries))
+
+    @staticmethod
+    def _snapshot_entry(
+        root: Path,
+        entry: Path,
+    ) -> tuple[str, int, int, int, int]:
+        """Return metadata used to detect a changed storage-tree entry.
+
+        :param root: Snapshot base directory.
+        :param entry: File, directory, or symbolic link in that tree.
+        :return: Relative path and stable lstat metadata for the entry.
+        """
+        stat = entry.lstat()
+        relative_path = "." if entry == root else str(entry.relative_to(root))
+        return (
+            relative_path,
+            stat.st_mode,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        )
+
     def _copy_storage_directory(
         self,
         *,
@@ -509,8 +696,9 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         :param destination_root: Final storage location, currently absent.
         :param destination_backup: Parked original empty destination, if any.
         :return: State describing the staged copy.
-        :raises OSError: If staging or promoting the copied directory fails.
+        :raises OSError: If staging the copied directory fails.
         """
+        source_snapshot = self._directory_snapshot(source_root)
         staging_root = Path(
             tempfile.mkdtemp(
                 prefix=f".{destination_root.name}.apprc-moving-",
@@ -524,7 +712,6 @@ class StorageEditingWorkflows(StorageWorkflowBase):
                 dirs_exist_ok=True,
                 symlinks=True,
             )
-            os.replace(staging_root, destination_root)
         except (OSError, shutil.Error) as exc:
             cleanup_error = self._remove_directory(
                 staging_root,
@@ -541,22 +728,72 @@ class StorageEditingWorkflows(StorageWorkflowBase):
             destination_root=destination_root,
             destination_backup=destination_backup,
             copied_across_filesystems=True,
+            source_snapshot=source_snapshot,
+            staged_copy=staging_root,
         )
+
+    def _copied_storage_source_matches_snapshot(
+        self,
+        *,
+        move_state: _StorageMoveState,
+    ) -> bool:
+        """Check whether a staged cross-filesystem copy still has its source.
+
+        :param move_state: Staged cross-filesystem move awaiting promotion.
+        :return: Whether the source metadata still matches the pre-copy tree.
+        :raises OSError: If the source or staged copy cannot be verified.
+        """
+        if not move_state.copied_across_filesystems:
+            return True
+        if move_state.source_snapshot is None:
+            raise OSError("Storage move did not retain a source snapshot.")
+        staging_root = move_state.staged_copy
+        if staging_root is None or not staging_root.is_dir():
+            raise OSError("Staged storage copy is missing before promotion.")
+        return (
+            self._directory_snapshot(move_state.source_root)
+            == move_state.source_snapshot
+        )
+
+    def _promote_staged_storage_copy(
+        self,
+        *,
+        move_state: _StorageMoveState,
+    ) -> _StorageMoveState:
+        """Place a verified cross-filesystem copy at its final destination.
+
+        :param move_state: Staged cross-filesystem move with a verified source.
+        :return: State whose destination is ready for the registry write.
+        :raises OSError: If the staging directory or destination changed.
+        """
+        if not move_state.copied_across_filesystems:
+            return move_state
+        staging_root = move_state.staged_copy
+        if staging_root is None or not staging_root.is_dir():
+            raise OSError("Staged storage copy is missing before promotion.")
+        if self._path_exists(move_state.destination_root):
+            raise OSError(
+                "Storage destination was recreated before the copied storage "
+                f"could be promoted: {move_state.destination_root}"
+            )
+        os.replace(staging_root, move_state.destination_root)
+        return replace(move_state, staged_copy=None)
 
     def _restore_moved_storage_directory(
         self,
         *,
         move_state: _StorageMoveState,
     ) -> OSError | shutil.Error | None:
-        """Attempt to undo a moved directory after a registry write failure.
+        """Attempt to undo a prepared directory change after a failed move.
 
-        :param move_state: Filesystem change created before the registry write.
-        :return: Restore error, if the move or original empty destination
-            cannot be restored.
+        :param move_state: Filesystem change created before registry commit.
+        :return: Restore error, if the prepared copy or original empty
+            destination cannot be restored.
         """
         if move_state.copied_across_filesystems:
+            copied_root = move_state.staged_copy or move_state.destination_root
             remove_error = self._remove_directory(
-                move_state.destination_root,
+                copied_root,
                 action="remove copied storage during rollback",
             )
             if remove_error is not None:
@@ -596,12 +833,45 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         """
         errors: list[str] = []
         if move_state.copied_across_filesystems:
-            source_error = self._remove_directory(
-                move_state.source_root,
-                action="remove original storage after cross-filesystem move",
-            )
-            if source_error is not None:
-                errors.append(str(source_error))
+            if move_state.staged_copy is not None:
+                errors.append(
+                    "Storage registry was updated before the staged copy was "
+                    f"promoted, so the original directory was kept at "
+                    f"{move_state.source_root}"
+                )
+            elif move_state.source_snapshot is None:
+                errors.append(
+                    "Storage move did not retain a source snapshot, so the "
+                    f"original directory was kept: {move_state.source_root}"
+                )
+            elif self._path_exists(move_state.source_root):
+                try:
+                    source_snapshot = self._directory_snapshot(
+                        move_state.source_root
+                    )
+                except OSError as exc:
+                    errors.append(
+                        "Could not verify the original storage before "
+                        f"cleanup; it was kept at {move_state.source_root}: "
+                        f"{exc}"
+                    )
+                else:
+                    if source_snapshot != move_state.source_snapshot:
+                        errors.append(
+                            "Storage source changed during the "
+                            "cross-filesystem move, so it was kept at "
+                            f"{move_state.source_root}"
+                        )
+                    else:
+                        source_error = self._remove_directory(
+                            move_state.source_root,
+                            action=(
+                                "remove original storage after "
+                                "cross-filesystem move"
+                            ),
+                        )
+                        if source_error is not None:
+                            errors.append(str(source_error))
         if move_state.destination_backup is not None and self._path_exists(
             move_state.destination_backup
         ):

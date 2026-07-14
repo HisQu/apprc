@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import asyncio
 from pathlib import Path
 
 # == Internal ================================
@@ -149,7 +150,8 @@ class ConfigEditorStorageWorkflows(
         if record is None:
             return
         if not record.archive.is_file():
-            self.editor.storage_registry = remove_archived_storage(
+            self.editor.storage_registry = await asyncio.to_thread(
+                remove_archived_storage,
                 name=name,
                 path=registry.path,
             )
@@ -189,7 +191,8 @@ class ConfigEditorStorageWorkflows(
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        self.editor.storage_registry = record_archived_storage(
+        self.editor.storage_registry = await asyncio.to_thread(
+            record_archived_storage,
             name=record.name,
             archive=archive_path,
             source_root=record.root,

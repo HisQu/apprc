@@ -291,6 +291,60 @@ def test_internal_update_storage_renames_matching_archive_with_one_write(
     assert persisted.archived_storages["beta"] == archived
 
 
+def test_internal_update_storage_rename_preserves_relative_root_spelling(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    stored_root = Path("relative-alpha")
+    index_path.write_text(
+        f"[storages.alpha]\nroot = {json.dumps(str(stored_root))}\n",
+        encoding="utf-8",
+    )
+
+    registry = _update_storage(
+        current_name="alpha",
+        name="beta",
+        root=None,
+        path=index_path,
+    )
+
+    assert registry.selected("beta").root == stored_root
+    persisted = load_storage_registry_or_empty(index_path)
+    assert persisted.selected("beta").root == stored_root
+    assert f"root = {json.dumps(str(stored_root))}" in index_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_internal_update_storage_rename_preserves_symlink_root_spelling(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "demo.apprc.toml"
+    target_root = tmp_path / "alpha-target"
+    target_root.mkdir()
+    stored_root = tmp_path / "alpha-link"
+    try:
+        stored_root.symlink_to(target_root, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symbolic links are unavailable in this test environment.")
+    index_path.write_text(
+        f"[storages.alpha]\nroot = {json.dumps(str(stored_root))}\n",
+        encoding="utf-8",
+    )
+
+    registry = _update_storage(
+        current_name="alpha",
+        name="beta",
+        root=None,
+        path=index_path,
+    )
+
+    assert registry.selected("beta").root == stored_root
+    assert registry.selected("beta").root != target_root
+    persisted = load_storage_registry_or_empty(index_path)
+    assert persisted.selected("beta").root == stored_root
+
+
 def test_internal_update_storage_repoints_only_the_registry_root(
     tmp_path: Path,
 ) -> None:

@@ -394,6 +394,14 @@ registry record to rename, repoint, or move. Archive records retain their
 historical `source_root` when a live storage is repointed or moved; renaming
 also renames a matching archive record.
 
+Neither `Location` nor `Move` rewrites direct path selectors in `--storage`,
+the storage environment variable, or dotenv files. Users must update those
+values themselves. Before moving data, close programs that can write to the
+storage. The editor rejects symbolic-link roots and roots shared by another
+live selector; for a cross-filesystem copy, it keeps the original directory and
+cancels the move when its pre-promotion check finds that the source changed.
+Later detected source changes keep the original directory and report a warning.
+
 <br>
 
 <!-- ======================================================== -->

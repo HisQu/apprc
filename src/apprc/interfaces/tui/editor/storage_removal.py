@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import asyncio
 import shutil
 
 # == Internal ================================
@@ -96,7 +97,8 @@ class StorageRemovalWorkflows(StorageWorkflowBase):
             self.editor.notify(str(exc), severity="error", markup=False)
             return False
         try:
-            self.editor.storage_registry = unregister_storage(
+            self.editor.storage_registry = await asyncio.to_thread(
+                unregister_storage,
                 name=name,
                 path=registry.path,
             )
@@ -107,7 +109,7 @@ class StorageRemovalWorkflows(StorageWorkflowBase):
         await self.editor._refresh_storage_list(select_name=select_name)
         if delete_content and record.root.exists():
             try:
-                shutil.rmtree(record.root)
+                await asyncio.to_thread(shutil.rmtree, record.root)
             except OSError as exc:
                 self.editor.notify(
                     f"Removed storage {name!r}; directory deletion failed: {exc}",

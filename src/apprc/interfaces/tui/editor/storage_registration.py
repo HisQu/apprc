@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import asyncio
 from pathlib import Path
 
 # == 3rd Party ===============================
@@ -89,7 +90,8 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
             if action != "replace":
                 return
         try:
-            self.editor.storage_registry = register_storage(
+            self.editor.storage_registry = await asyncio.to_thread(
+                register_storage,
                 name=name,
                 root=guarded_root,
                 path=registry.path,

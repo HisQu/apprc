@@ -32,20 +32,21 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-4. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-5. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-6. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-7. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-8. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-9. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-10. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-11. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-12. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-13. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-14. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-15. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-16. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.19.6 - 2026-09-01](#0196---2026-09-01)
+4. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+5. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+6. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+7. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+8. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+9. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+10. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+11. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+12. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+13. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+14. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+15. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+16. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+17. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -61,13 +62,6 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking Change Summary
 
-  - Breaking: Runtime bootstrap now rejects selected storage roots that do not
-    exist or are not directories.
-    Affected: Python callers that create their storage directory after calling
-    `AppConfigKit.bootstrap()` or `AppRC.bootstrap()`.
-    Migration: Create the directory before bootstrap or run the owning
-    application's `config setup --yes --storage-root STORAGE_ROOT` command.
-
 <br>
 
 ### ➕ Added
@@ -75,7 +69,6 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
-- dev tooling: Updated pyright to 1.1.411
 
 <br>
 
@@ -89,13 +82,44 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
-  - Fixed storage-root failures so AppRC reports the owning application's
-    display name and `config setup` command before dependent runtime objects
-    are constructed.
-
 <br>
 
 ### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.19.6 - 2026-09-01
+
+<br>
+
+### 💥 Breaking Change Summary
+
+  - Breaking: Runtime bootstrap now rejects selected storage roots that do not
+    exist or are not directories.
+    Affected: Python callers that create their storage directory after calling
+    `AppConfigKit.bootstrap()` or `AppRC.bootstrap()`.
+    Migration: Create the directory before bootstrap or run the owning
+    application's `config setup --yes --storage-root STORAGE_ROOT` command.
+
+<br>
+
+### 💔 Changed
+
+  - Updated Pyright to 1.1.411.
+
+<br>
+
+### 🔨 Fixed
+
+  - Fixed storage-root failures so AppRC reports the owning application's
+    display name and `config setup` command before dependent runtime objects
+    are constructed.
 
 <br>
 

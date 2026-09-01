@@ -200,9 +200,13 @@ The app calls bootstrap once near process startup. Bootstrap:
 4. Reads app-wide values when the app-wide layer is allowed and the file
    exists.
 5. Selects storage when storage is required.
-6. Reads packaged, app-wide, storage, and explicit dotenv layers.
-7. Writes the merged values into this Python process only.
-8. Registers provenance for app-owned env keys.
+6. Confirms that the selected storage root exists and is a directory.
+7. Reads packaged, app-wide, storage, and explicit dotenv layers.
+8. Writes the merged values into this Python process only.
+9. Registers provenance for app-owned env keys.
+
+Bootstrap never creates the selected root. Applications must run their
+generated `config setup` command or create the directory before bootstrap.
 
 | ![AppRC runtime layer precedence](assets/apprc-abstract-layer-cake.svg) |
 |:--:|

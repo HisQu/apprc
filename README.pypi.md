@@ -419,7 +419,9 @@ myapp run
 **Important**
 
 Runtime reads and diagnostics do not create files. `bootstrap`, `config
-paths`, `config doctor`, and opening `config edit` are zero-write.
+paths`, `config doctor`, and opening `config edit` are zero-write. For
+storage-backed applications, bootstrap requires the selected root to exist
+and be a directory. Run `config setup` before runtime startup.
 
 **Note**
 

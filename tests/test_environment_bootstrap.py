@@ -8,6 +8,7 @@ import pytest
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.user_files.env_files import write_env_file
 from apprc.user_files.storage_roots.registry import register_storage
+from apprc.user_files.storage_roots.selector import StorageSelectorError
 from tests.support_config import ApprcExampleAppEnv
 
 
@@ -57,6 +58,62 @@ def test_bootstrap_storage_path_selector_does_not_create_files(
     assert os.environ["APPRC_EXAMPLE_APP_STORAGE"] == str(
         storage_root.resolve()
     )
+
+
+def test_bootstrap_rejects_missing_storage_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Report the owning app's setup command without creating the root.
+
+    :param monkeypatch: Isolated process environment fixture.
+    :param tmp_path: Temporary parent for the missing storage root.
+    """
+    missing_root = tmp_path / "missing-storage"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(missing_root))
+
+    with pytest.raises(StorageSelectorError) as error:
+        _kit().bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage=None,
+        )
+
+    message = str(error.value)
+    assert "Selected Example App storage root does not exist" in message
+    assert str(missing_root.resolve()) in message
+    assert (
+        "apprc_example_app config setup --yes --storage-root STORAGE_ROOT"
+        in message
+    )
+    assert not missing_root.exists()
+
+
+def test_bootstrap_rejects_storage_root_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Reject a selected file before reading storage-local configuration.
+
+    :param monkeypatch: Isolated process environment fixture.
+    :param tmp_path: Temporary parent for the invalid storage root.
+    """
+    storage_file = tmp_path / "storage-file"
+    storage_file.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_file))
+
+    with pytest.raises(StorageSelectorError) as error:
+        _kit().bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage=None,
+        )
+
+    message = str(error.value)
+    assert "Selected Example App storage root is not a directory" in message
+    assert "APPRC_EXAMPLE_APP_STORAGE" in message
 
 
 def test_bootstrap_path_selector_ignores_corrupt_optional_index(

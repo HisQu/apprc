@@ -256,6 +256,37 @@ def test_mount_config_cli_passes_storage_to_default_config_show(
     assert payload["storage_root"] == str(storage_root.resolve())
 
 
+def test_mount_config_cli_reports_app_setup_for_missing_storage(
+    tmp_path: Path,
+) -> None:
+    """Fail before the host command runs and name its config command.
+
+    :param tmp_path: Temporary parent for the missing selected root.
+    """
+    kit = build_apprc_example_app_kit()
+    missing_root = tmp_path / "missing-storage"
+    app = typer.Typer()
+    mount_config_cli(app, kit)
+
+    @app.command()
+    def run() -> None:
+        raise AssertionError("runtime command must not run")
+
+    result = CliRunner().invoke(
+        app,
+        ["--storage", str(missing_root), "run"],
+    )
+
+    output = " ".join(result.output.split())
+    assert result.exit_code == 2, result.output
+    assert "Selected Example App storage root" in output
+    assert "before runtime use" in output
+    assert "apprc_example_app config setup" in output
+    assert "--storage-root" in output
+    assert "STORAGE_ROOT" in output
+    assert "Traceback" not in result.output
+
+
 def test_config_cli_runtime_default_policy_renders_storage_required_help() -> (
     None
 ):

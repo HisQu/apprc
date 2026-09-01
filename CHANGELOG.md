@@ -61,6 +61,13 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking Change Summary
 
+  - Breaking: Runtime bootstrap now rejects selected storage roots that do not
+    exist or are not directories.
+    Affected: Python callers that create their storage directory after calling
+    `AppConfigKit.bootstrap()` or `AppRC.bootstrap()`.
+    Migration: Create the directory before bootstrap or run the owning
+    application's `config setup --yes --storage-root STORAGE_ROOT` command.
+
 <br>
 
 ### ➕ Added
@@ -81,6 +88,10 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+  - Fixed storage-root failures so AppRC reports the owning application's
+    display name and `config setup` command before dependent runtime objects
+    are constructed.
 
 <br>
 

@@ -167,6 +167,11 @@ def bootstrap_env(
             source=selector_source,
         )
         active_storage_root = selection.root
+        _validate_runtime_storage_root(
+            spec=spec,
+            storage_root=active_storage_root,
+            param_hint=selection.source,
+        )
         active_storage_env = spec.storage_env_path(active_storage_root)
         emit.info(
             "AppRC bootstrap resolved storage: name=%s root=%s "
@@ -279,3 +284,40 @@ def bootstrap_env(
         config_home=config_paths.root,
         app_wide_env=loaded_app_wide_env,
     )
+
+
+def _validate_runtime_storage_root(
+    *,
+    spec: AppConfigSpec,
+    storage_root: Path,
+    param_hint: str,
+) -> None:
+    """Reject a selected root that AppRC setup has not prepared.
+
+    Runtime bootstrap reads configuration but never creates directories. The
+    generated setup command owns that write so applications get one consistent
+    recovery path before they construct storage-backed runtime objects.
+
+    :param spec: Application contract used to build recovery instructions.
+    :param storage_root: Resolved path selected for this process.
+    :param param_hint: Selector source shown by CLI error rendering.
+    :return: None.
+    :raises StorageSelectorError: If the path is missing or is not a directory.
+    """
+    setup_command = (
+        f"{spec.config_command_name()} config setup --yes "
+        "--storage-root STORAGE_ROOT"
+    )
+    if not storage_root.exists():
+        raise StorageSelectorError(
+            f"Selected {spec.display_name} storage root does not exist: "
+            f"{storage_root}. Run `{setup_command}` before runtime use.",
+            param_hint=param_hint,
+        )
+    if not storage_root.is_dir():
+        raise StorageSelectorError(
+            f"Selected {spec.display_name} storage root is not a directory: "
+            f"{storage_root}. Select a directory with --storage PATH or "
+            f"{spec.require_storage_env_key()}, then run `{setup_command}`.",
+            param_hint=param_hint,
+        )

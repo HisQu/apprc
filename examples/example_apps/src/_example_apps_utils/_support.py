@@ -149,11 +149,11 @@ def bootstrap_payload(
     """
     if bootstrap is None:
         return {
-            "shared_env": None,
-            "app_wide_env": None,
+            "defaults_env": None,
+            "app_env": None,
             "storage_env": None,
             "env_files": [],
-            "index_path": None,
+            "apprc_toml": None,
             "storage_selector_source": None,
             "storage_selector_value": None,
             "storage_name": None,
@@ -161,11 +161,11 @@ def bootstrap_payload(
             "storage_count": 0,
         }
     return {
-        "shared_env": _path_text(bootstrap.shared_env),
-        "app_wide_env": _path_text(bootstrap.app_wide_env),
+        "defaults_env": _path_text(bootstrap.defaults_env),
+        "app_env": _path_text(bootstrap.app_env),
         "storage_env": _path_text(bootstrap.storage_env),
         "env_files": [str(path) for path in bootstrap.env_files],
-        "index_path": _path_text(bootstrap.index_path),
+        "apprc_toml": _path_text(bootstrap.apprc_toml),
         "storage_selector_source": bootstrap.storage_selector_source,
         "storage_selector_value": bootstrap.storage_selector_value,
         "storage_name": bootstrap.storage_name,

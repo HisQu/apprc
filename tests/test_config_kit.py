@@ -47,7 +47,7 @@ def test_kit_constructors_declare_expected_capabilities() -> None:
     assert storage_only.spec.storage_layer == StorageLayerState.REQUIRED
     assert storage_only.spec.app_wide_layer == CapabilityState.OPTIONAL
     assert storage_only.spec.named_storage_layer == CapabilityState.OPTIONAL
-    assert app_wide.spec.app_wide_layer == CapabilityState.DEFAULT
+    assert app_wide.spec.app_wide_layer == CapabilityState.OPTIONAL
     assert app_wide_storage.spec.storage_layer == StorageLayerState.REQUIRED
     assert app_wide_storage.spec.app_wide_layer == CapabilityState.DEFAULT
 
@@ -74,11 +74,11 @@ def test_doctor_env_not_set_for_missing_storage_selector(
 
     assert payload.status == ConfigDoctorStatus.ENV_NOT_SET.value
     assert payload.missing_env_keys == ("APPRC_EXAMPLE_APP_STORAGE",)
-    assert not kit.spec.app_wide_env_path().exists()
-    assert not kit.spec.index_path().exists()
+    assert not kit.spec.app_env_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
 
 
-def test_doctor_app_config_not_ready_for_default_app_wide_missing(
+def test_doctor_app_config_is_runnable_before_first_app_write(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -87,84 +87,80 @@ def test_doctor_app_config_not_ready_for_default_app_wide_missing(
 
     payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload.status == ConfigDoctorStatus.APP_CONFIG_NOT_READY.value
-    assert payload.app_wide_env_exists is False
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
+    assert payload.app_env_exists is False
 
 
-def test_doctor_named_storage_not_ready_for_bad_index(
+def test_doctor_named_storage_not_ready_for_bad_apprc_toml(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
     kit = build_apprc_example_app_kit()
-    index_path = kit.spec.index_path()
-    index_path.parent.mkdir(parents=True)
-    index_path.write_text("[invalid", encoding="utf-8")
+    apprc_toml = kit.spec.apprc_toml_path()
+    apprc_toml.parent.mkdir(parents=True)
+    apprc_toml.write_text("[invalid", encoding="utf-8")
 
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload.status == ConfigDoctorStatus.NAMED_STORAGE_NOT_READY.value
-    assert payload.index_parse_ok is False
-    assert payload.index_error is not None
+    assert payload.apprc_toml_parse_ok is False
+    assert payload.apprc_toml_error is not None
 
 
-def test_doctor_warns_about_bad_optional_index_without_selector(
+def test_doctor_warns_about_bad_optional_apprc_toml_without_selector(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
-    index_path = kit.spec.index_path()
-    index_path.parent.mkdir(parents=True)
-    index_path.write_text("[invalid", encoding="utf-8")
+    apprc_toml = kit.spec.apprc_toml_path()
+    apprc_toml.parent.mkdir(parents=True)
+    apprc_toml.write_text("[invalid", encoding="utf-8")
 
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload.status == ConfigDoctorStatus.ENV_NOT_SET.value
-    assert payload.index_parse_ok is False
+    assert payload.apprc_toml_parse_ok is False
     assert any(
-        "Named-storage index is invalid" in warning
-        for warning in payload.warnings
+        "AppRC TOML is invalid" in warning for warning in payload.warnings
     )
-    assert not any(
-        "Named-storage index is invalid" in issue for issue in payload.issues
-    )
+    assert not any("AppRC TOML is invalid" in issue for issue in payload.issues)
 
 
-def test_doctor_warns_about_bad_optional_index_for_path_selector(
+def test_doctor_warns_about_bad_optional_apprc_toml_for_path_selector(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
-    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
+    (storage_root / "apprc.storage.env").write_text("", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
-    index_path = kit.spec.index_path()
-    index_path.parent.mkdir(parents=True)
-    index_path.write_text("[invalid", encoding="utf-8")
+    apprc_toml = kit.spec.apprc_toml_path()
+    apprc_toml.parent.mkdir(parents=True)
+    apprc_toml.write_text("[invalid", encoding="utf-8")
 
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert payload.index_parse_ok is False
+    assert payload.apprc_toml_parse_ok is False
     assert any(
-        "Named-storage index is invalid" in warning
-        for warning in payload.warnings
+        "AppRC TOML is invalid" in warning for warning in payload.warnings
     )
 
 
-def test_doctor_ignores_bad_disabled_named_storage_index(
+def test_doctor_ignores_bad_apprc_toml_when_named_storage_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
-    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
+    (storage_root / "apprc.storage.env").write_text("", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = AppConfigKit(
         app_name="apprc_example_app",
@@ -176,15 +172,17 @@ def test_doctor_ignores_bad_disabled_named_storage_index(
         named_storage_layer=CapabilityState.DISABLED,
         index_filename="apprc_example_app.apprc.toml",
     )
-    index_path = kit.spec.index_path()
-    index_path.parent.mkdir(parents=True)
-    index_path.write_text("[invalid", encoding="utf-8")
+    apprc_toml = kit.spec.apprc_toml_path()
+    apprc_toml.parent.mkdir(parents=True)
+    apprc_toml.write_text("[invalid", encoding="utf-8")
 
     payload = build_config_doctor_payload(kit, storage=None)
 
     assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert payload.index_parse_ok is True
-    assert any("layer is disabled" in warning for warning in payload.warnings)
+    assert payload.apprc_toml_parse_ok is True
+    assert any(
+        "named storage is disabled" in warning for warning in payload.warnings
+    )
 
 
 def test_doctor_storage_not_ready_for_missing_storage_env(
@@ -210,7 +208,7 @@ def test_doctor_runnable_for_storage_with_storage_env(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
-    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
+    (storage_root / "apprc.storage.env").write_text("", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
 
@@ -226,7 +224,7 @@ def test_doctor_warns_about_legacy_files(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
-    (storage_root / ".env.apprc-storage").write_text("", encoding="utf-8")
+    (storage_root / "apprc.storage.env").write_text("", encoding="utf-8")
     (storage_root / ".env.local").write_text("OLD=1\n", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()

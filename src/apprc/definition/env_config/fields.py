@@ -35,7 +35,7 @@ class EnvFieldSpec:
     :param default: Runtime fallback when no Python value or env value wins.
     :param default_factory: Runtime fallback factory used to build one fresh
         value per config instance.
-    :param shared_default: Packaged shared dotenv value when intentionally
+    :param packaged_default: Packaged defaults dotenv value when intentionally
         different from the runtime fallback.
     :param title: Short display label for docs and terminal UIs.
     :param explanation_short: Compact table-facing description.
@@ -50,7 +50,7 @@ class EnvFieldSpec:
     env_var: str | None = None
     default: Any = CONFIG_MISSING
     default_factory: Callable[[], Any] | object = CONFIG_MISSING
-    shared_default: Any = CONFIG_MISSING
+    packaged_default: Any = CONFIG_MISSING
     title: str = ""
     explanation_short: str = ""
     explanation_long: str = ""
@@ -60,12 +60,18 @@ class EnvFieldSpec:
     choices: tuple[str, ...] = ()
     python_type: type[Any] | None = None
 
+    @property
+    def shared_default(self) -> Any:
+        """Return ``packaged_default`` through the deprecated 0.19 name."""
+        return self.packaged_default
+
 
 def env_field(
     env_var: str | None = None,
     *,
     default: Any = CONFIG_MISSING,
     default_factory: Callable[[], Any] | object = CONFIG_MISSING,
+    packaged_default: Any = CONFIG_MISSING,
     shared_default: Any = CONFIG_MISSING,
     title: str = "",
     explanation_short: str = "",
@@ -90,8 +96,9 @@ def env_field(
         value. Omit this for required env-backed settings.
     :param default_factory: Runtime fallback factory used to build one fresh
         value per config instance. Mutually exclusive with ``default``.
-    :param shared_default: Packaged shared dotenv value when intentionally
+    :param packaged_default: Packaged defaults value when intentionally
         different from ``default``.
+    :param shared_default: Deprecated alias for ``packaged_default``.
     :param title: Short display label for docs and terminal UIs.
     :param explanation_short: Compact table-facing description.
     :param explanation_long: Full editor-facing description.
@@ -108,11 +115,24 @@ def env_field(
         raise ValueError(
             "env_field cannot declare both default and default_factory."
         )
+    if (
+        packaged_default is not CONFIG_MISSING
+        and shared_default is not CONFIG_MISSING
+    ):
+        raise ValueError(
+            "env_field cannot declare both packaged_default and the "
+            "deprecated shared_default."
+        )
+    resolved_packaged_default = (
+        shared_default
+        if packaged_default is CONFIG_MISSING
+        else packaged_default
+    )
     spec = EnvFieldSpec(
         env_var=env_var,
         default=default,
         default_factory=default_factory,
-        shared_default=shared_default,
+        packaged_default=resolved_packaged_default,
         title=title,
         explanation_short=explanation_short,
         explanation_long=explanation_long,
@@ -190,7 +210,7 @@ def _derive_owner_fields(env_cls: type[Any]) -> tuple[ConfigField, ...]:
                 python_type=python_type,
                 default=spec.default,
                 default_factory=spec.default_factory,
-                shared_default=spec.shared_default,
+                packaged_default=spec.packaged_default,
                 title=spec.title,
                 explanation_short=spec.explanation_short,
                 explanation_long=spec.explanation_long,

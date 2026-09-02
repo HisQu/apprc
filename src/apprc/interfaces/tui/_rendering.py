@@ -84,7 +84,7 @@ def build_field_table_rows(
     owners: Iterable[ConfigOwner],
     app_values: Mapping[str, str],
     storage_values: Mapping[str, str],
-    shared_values: Mapping[str, str] | None,
+    defaults_values: Mapping[str, str] | None,
     include_app: bool,
     include_storage: bool,
     hidden_env_keys: set[str] | frozenset[str],
@@ -97,10 +97,10 @@ def build_field_table_rows(
     The Textual app owns widget lifecycle and persistence.
 
     :param owners: Declared config sections to show.
-    :param app_values: Parsed app-wide dotenv values.
+    :param app_values: Parsed per-user app dotenv values.
     :param storage_values: Parsed storage dotenv values.
-    :param shared_values: Parsed packaged shared dotenv values, when known.
-    :param include_app: Whether to show the app-wide source column as active.
+    :param defaults_values: Parsed packaged defaults, when known.
+    :param include_app: Whether to show the app config source as active.
     :param include_storage: Whether to show the storage source column as active.
     :param hidden_env_keys: Full env keys omitted from the editable key list.
     :param shell_env: Current shell/process environment mapping.
@@ -127,17 +127,17 @@ def build_field_table_rows(
                 storage_values.get(env_key) if include_storage else None
             )
             shell_value = shell_env.get(env_key)
-            shared_value = shared_source_value(
+            default_value = defaults_source_value(
                 spec=spec,
                 env_key=env_key,
-                shared_values=shared_values,
+                defaults_values=defaults_values,
             )
             env_is_set = env_key in shell_env
             effective_value = first_effective_value(
                 shell_value=shell_value,
                 storage_value=storage_value,
                 app_value=app_value,
-                shared_value=shared_value,
+                default_value=default_value,
             )
             rows.append(
                 FieldTableRow(
@@ -155,7 +155,7 @@ def build_field_table_rows(
                             app_value=app_value,
                             storage_value=storage_value,
                             env_is_set=env_is_set,
-                            shared_value=shared_value,
+                            default_value=default_value,
                         ),
                         Text(short_explanation(spec), style=LABEL_STYLE),
                     ),
@@ -171,7 +171,7 @@ def default_value_cell(
     app_value: str | None,
     storage_value: str | None,
     env_is_set: bool,
-    shared_value: str | None,
+    default_value: str | None,
 ) -> FieldTableCell:
     """Return the table value for packaged/default config.
 
@@ -183,14 +183,14 @@ def default_value_cell(
     :param app_value: App-wide value currently shown in the row.
     :param storage_value: Storage value currently shown in the row.
     :param env_is_set: Whether the process environment sets this env key.
-    :param shared_value: Packaged or declared default value.
+    :param default_value: Packaged or declared default value.
     :return: Empty text, required marker, or styled default value.
     """
-    if shared_value is None:
+    if default_value is None:
         if app_value is None and storage_value is None and not env_is_set:
             return Text("<required>", style=REQUIRED_STYLE)
         return ""
-    return Text(shared_value, style=value_style(spec))
+    return Text(default_value, style=value_style(spec))
 
 
 def source_value_cell(spec: ConfigField, value: str | None) -> FieldTableCell:
@@ -215,25 +215,25 @@ def first_effective_value(
     shell_value: str | None,
     storage_value: str | None,
     app_value: str | None,
-    shared_value: str | None,
+    default_value: str | None,
 ) -> str | None:
     """Return the effective editor-visible value by runtime precedence."""
-    for value in (shell_value, storage_value, app_value, shared_value):
+    for value in (shell_value, storage_value, app_value, default_value):
         if value is not None:
             return value
     return None
 
 
-def shared_source_value(
+def defaults_source_value(
     *,
     spec: ConfigField,
     env_key: str,
-    shared_values: Mapping[str, str] | None,
+    defaults_values: Mapping[str, str] | None,
 ) -> str | None:
-    """Return the packaged or declared shared value for one field."""
-    if shared_values is not None and env_key in shared_values:
-        return shared_values[env_key]
-    value = spec.shared_env_value()
+    """Return the packaged or declared default for one field."""
+    if defaults_values is not None and env_key in defaults_values:
+        return defaults_values[env_key]
+    value = spec.packaged_env_value()
     if value is CONFIG_MISSING:
         return None
     return str(value)

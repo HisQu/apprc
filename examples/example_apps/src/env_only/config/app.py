@@ -3,7 +3,7 @@
 import apprc as rc
 
 
-MyRC = rc.AppRC.env_only(
+MyRC = rc.AppRC(
     app_name="apprc-example-env-only",
     display_name="AppRC Env Only Example",
     config_package="env_only.config",

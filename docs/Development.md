@@ -132,14 +132,14 @@ is missing, check whether the project environment is active and then try the
 
 The example package is a dev-only editable install at
 [examples/example_apps](../examples/example_apps). It exposes one console
-script per AppRC mode:
+script per integration scenario:
 
 | Script | AppRC Surface |
 |---|---|
-| `apprc-env-only` | `rc.AppRC.env_only(...)` |
-| `apprc-storage-only` | `rc.AppRC.storage_only(...)` |
-| `apprc-app-wide-config` | `rc.AppRC.app_wide_config(...)` |
-| `apprc-app-wide-storage` | `rc.AppRC.app_wide_storage(...)` |
+| `apprc-env-only` | Direct `rc.AppRC(...)` without storage |
+| `apprc-storage-only` | Direct `rc.AppRC(...)` with `rc.Storage(...)` |
+| `apprc-app-wide-config` | A second config-only scenario kept for comparison |
+| `apprc-app-wide-storage` | A second storage scenario kept for comparison |
 | `apprc-explicit-env-precedence` | Explicit env-file selector precedence |
 | `apprc-cli-runtime` | `CliRuntime` with an app-owned callback |
 | `apprc-examples-run-all` | Compact non-interactive scenario runner |
@@ -149,10 +149,10 @@ match what a downstream project should copy:
 
 | Package | Purpose |
 |---|---|
-| `env_only` | Minimal env-only app with `config/`, `cli.py`, and packaged `config/.env.shared`. |
-| `storage_only` | Storage-selected app with storage-local dotenv fields. |
-| `app_wide_config` | Storage-free app that uses the app-wide dotenv layer. |
-| `app_wide_storage` | App-wide defaults plus selected storage roots. |
+| `env_only` | Minimal config-only app with packaged defaults. |
+| `storage_only` | Storage app with storage-local dotenv fields. |
+| `app_wide_config` | Config-only app showing per-user app overrides. |
+| `app_wide_storage` | Storage app showing app and storage-local overrides. |
 | `explicit_env_precedence` | Storage selector precedence with explicit env files. |
 | `cli_runtime` | Typer callback integration through `CliRuntime`. |
 | `_example_apps_utils` | Shared scenario runner helpers; not a user app template. |
@@ -181,7 +181,7 @@ The example config packages follow the standard AppRC app layout:
     app.py
   bundle.py
   catalog.py
-  .env.shared
+  apprc.defaults.env
 ```
 
 Simple sections stay as files under `sections/`. Larger sections become nested
@@ -196,10 +196,10 @@ New downstream apps can generate the same skeleton with:
 ```bash
 apprc scaffold config \
   --package myapp \
-  --mode storage-only \
+  --storage \
   --app-name myapp \
   --display-name "My App" \
-  --storage-env-key MYAPP_STORAGE \
+  --storage-selector-env-key MYAPP_STORAGE \
   --target src
 ```
 
@@ -226,9 +226,9 @@ This writes ignored files under `examples/example_app_disk_files/`:
 | File | Purpose |
 |---|---|
 | `.apprc-example-*/.env` | Per-app arbitrary user env file. AppRC does not choose this location; source it manually or pass it with `--env-file` when path relocation is not needed. |
-| `xdg-config-home/<app>/.env.apprc-app` | Shared generated app-wide dotenv layer. |
-| `xdg-config-home/<app>/<app>.apprc.toml` | Shared generated named-storage index for storage-capable examples. |
-| `.apprc-example-*/storages/alpha/.env.apprc-storage` | Storage-local dotenv layer. |
+| `xdg-config-home/<app>/apprc.app.env` | Generated per-user app config. |
+| `xdg-config-home/<app>/apprc.toml` | Generated named-storage registry for storage examples. |
+| `.apprc-example-*/storages/alpha/apprc.storage.env` | Storage-local dotenv layer. |
 
 Every generated `.env` and `.toml` file starts with comments explaining the
 AppRC layer and where that file would normally live in a real application.
@@ -252,10 +252,10 @@ apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo run
 apprc-cli-runtime config doctor
 ```
 
-The test suite exercises every generated command for every example mode:
+The test suite exercises every generated command for every example scenario:
 `config paths`, `config show`, `config doctor`, `config setup`, `config set`,
 `config edit`, `config app init`, and all mounted `config storage` commands.
-Storage-free modes also assert that storage commands are unavailable.
+Config-only scenarios also assert that storage commands are unavailable.
 
 <br>
 
@@ -393,7 +393,7 @@ When editing docs:
    user-visible workflows change.
 
 Avoid vague guidance such as "check settings." Name the setting:
-`MYAPP_STORAGE`, `.env.apprc-storage`, `index_filename`,
+`MYAPP_STORAGE`, `apprc.storage.env`, `apprc_toml_filename`,
 `config doctor --json`, or the exact path involved.
 
 <br>

@@ -13,7 +13,7 @@ class StorageRecord:
     """One named storage root from the multi-storage registry.
 
     :param name: Stable storage selector used by ``--storage``.
-    :param root: Root directory that owns user data and ``.env.apprc-storage``.
+    :param root: Root directory that owns user data and ``apprc.storage.env``.
     """
 
     name: str

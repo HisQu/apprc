@@ -27,7 +27,7 @@ from apprc.user_files.storage_roots.paths import StorageRootPathError
 
 def storage_env_path(
     storage_root: Path,
-    filename: str = ".env.apprc-storage",
+    filename: str = "apprc.storage.env",
 ) -> Path:
     """Return the dotenv override file owned by one storage root.
 
@@ -40,7 +40,7 @@ def storage_env_path(
 
 def ensure_storage_env_file(
     storage_root: Path,
-    filename: str = ".env.apprc-storage",
+    filename: str = "apprc.storage.env",
 ) -> Path:
     """Create the storage dotenv file when it is missing.
 

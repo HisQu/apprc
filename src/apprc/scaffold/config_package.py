@@ -5,24 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Literal
 
-ConfigScaffoldMode = Literal[
-    "env-only",
-    "storage-only",
-    "app-wide-config",
-    "app-wide-storage",
-]
-
-_MODE_TO_CONSTRUCTOR: Mapping[ConfigScaffoldMode, str] = {
-    "env-only": "env_only",
-    "storage-only": "storage_only",
-    "app-wide-config": "app_wide_config",
-    "app-wide-storage": "app_wide_storage",
-}
-_STORAGE_MODES: frozenset[ConfigScaffoldMode] = frozenset(
-    {"storage-only", "app-wide-storage"}
-)
 _PACKAGE_TOKEN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -31,21 +14,21 @@ class ConfigScaffoldRequest:
     """Input values for one generated config package.
 
     :param package: Import package that receives ``config/``.
-    :param mode: AppRC mode used by ``MyRC``.
+    :param storage: Whether the generated app declares storage.
     :param app_name: Stable AppRC application name.
     :param display_name: Human-readable application label.
     :param target: Source root containing the package.
-    :param storage_env_key: Full storage selector env key for storage modes.
+    :param storage_selector_env_key: Optional storage selector env key override.
     :param env_prefix: Prefix used by the generated env-backed section.
     :param force: Whether existing generated files may be replaced.
     """
 
     package: str
-    mode: ConfigScaffoldMode
     app_name: str
     target: Path
+    storage: bool = False
     display_name: str | None = None
-    storage_env_key: str | None = None
+    storage_selector_env_key: str | None = None
     env_prefix: str | None = None
     force: bool = False
 
@@ -108,21 +91,14 @@ def scaffold_config_package(
 
 def _validate_request(request: ConfigScaffoldRequest) -> None:
     """Reject inconsistent scaffold inputs before touching the filesystem."""
-    if request.mode not in _MODE_TO_CONSTRUCTOR:
-        raise ValueError(f"Unsupported AppRC scaffold mode: {request.mode!r}.")
     _validate_package(request.package)
     if not request.app_name:
         raise ValueError("--app-name must be non-empty.")
-    if request.mode in _STORAGE_MODES and not request.storage_env_key:
-        raise ValueError(f"--storage-env-key is required for {request.mode}.")
-    if request.mode not in _STORAGE_MODES and request.storage_env_key:
-        raise ValueError(
-            "--storage-env-key is only valid for storage-only and "
-            "app-wide-storage modes."
-        )
-    if request.storage_env_key and request.env_prefix:
+    if not request.storage and request.storage_selector_env_key:
+        raise ValueError("--storage-selector-env-key requires --storage.")
+    if request.storage_selector_env_key and request.env_prefix:
         _validate_env_key_prefix(
-            storage_env_key=request.storage_env_key,
+            storage_selector_env_key=request.storage_selector_env_key,
             env_prefix=request.env_prefix,
         )
 
@@ -142,13 +118,14 @@ def _validate_package(package: str) -> None:
 
 def _validate_env_key_prefix(
     *,
-    storage_env_key: str,
+    storage_selector_env_key: str,
     env_prefix: str,
 ) -> None:
     """Ensure generated storage fields satisfy AppRC prefix validation."""
-    if not storage_env_key.startswith(env_prefix):
+    if not storage_selector_env_key.startswith(env_prefix):
         raise ValueError(
-            f"--storage-env-key {storage_env_key!r} must start with "
+            f"--storage-selector-env-key {storage_selector_env_key!r} must "
+            "start with "
             f"--env-prefix {env_prefix!r}."
         )
 
@@ -168,8 +145,11 @@ def _ensure_package_dirs(target: Path, package_parts: tuple[str, ...]) -> None:
 
 def _default_env_prefix(request: ConfigScaffoldRequest) -> str:
     """Return an explicit generated prefix for the example section."""
-    if request.storage_env_key and "_" in request.storage_env_key:
-        return request.storage_env_key.rsplit("_", 1)[0] + "_"
+    if (
+        request.storage_selector_env_key
+        and "_" in request.storage_selector_env_key
+    ):
+        return request.storage_selector_env_key.rsplit("_", 1)[0] + "_"
     return _upper_env_token(request.app_name) + "_"
 
 
@@ -276,17 +256,21 @@ def _render_app_module(
     module_prefix: str,
 ) -> str:
     """Render ``config/app.py``."""
-    constructor = _MODE_TO_CONSTRUCTOR[request.mode]
     display_name = request.display_name or request.app_name
     storage_line = ""
-    if request.storage_env_key is not None:
-        storage_line = f"    storage_env_key={request.storage_env_key!r},\n"
+    if request.storage:
+        env_key = (
+            f"env_key={request.storage_selector_env_key!r}"
+            if request.storage_selector_env_key is not None
+            else ""
+        )
+        storage_line = f"    storage=rc.Storage({env_key}),\n"
     return f'''"""AppRC application contract."""
 
 import apprc as rc
 
 
-MyRC = rc.AppRC.{constructor}(
+MyRC = rc.AppRC(
     app_name={request.app_name!r},
     display_name={display_name!r},
     config_package={module_prefix!r},
@@ -337,17 +321,15 @@ def _render_section_module(
     env_prefix: str,
 ) -> str:
     """Render ``config/sections/app.py``."""
-    imports = (
-        "from pathlib import Path\n\n" if request.mode in _STORAGE_MODES else ""
-    )
+    imports = "from pathlib import Path\n\n" if request.storage else ""
     storage_field = ""
-    if request.storage_env_key is not None:
+    if request.storage_selector_env_key is not None:
         _validate_env_key_prefix(
-            storage_env_key=request.storage_env_key,
+            storage_selector_env_key=request.storage_selector_env_key,
             env_prefix=env_prefix,
         )
         storage_field = f"""    storage_root: Path = rc.field(
-        {request.storage_env_key!r},
+        {request.storage_selector_env_key!r},
         editable=False,
         required=True,
         title="Storage root",

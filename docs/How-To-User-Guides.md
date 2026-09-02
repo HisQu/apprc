@@ -1,139 +1,51 @@
-<!-- ======================================================== -->
+# AppRC How-To Guides
 
-<br>
+## Table of contents
 
-## Table Of Contents
-<!-- ======================================================== -->
-
-1. [How-To User Guides](#1-how-to-user-guides)
-   1. [Recipe Map](#recipe-map)
+1. [Choose a recipe](#1-choose-a-recipe)
 2. [Integrate AppRC](#2-integrate-apprc)
-   1. [Install AppRC](#install-apprc)
-   2. [Declare Typed Config Fields](#declare-typed-config-fields)
-   3. [Choose A Capability Constructor](#choose-a-capability-constructor)
-   4. [Bootstrap A Typer App](#bootstrap-a-typer-app)
-3. [Operate App Config](#3-operate-app-config)
-   1. [Run First Storage Setup](#run-first-storage-setup)
-   2. [Use App-Wide Config](#use-app-wide-config)
-   3. [Manage Named Storages](#manage-named-storages)
-   4. [Set And Edit Values](#set-and-edit-values)
-   5. [Troubleshoot Config Doctor](#troubleshoot-config-doctor)
-4. [Develop This Repository](#4-develop-this-repository)
-   1. [Sync Dependencies](#sync-dependencies)
-   2. [Run Verification](#run-verification)
+3. [Set up storage](#3-set-up-storage)
+4. [Edit config and storages](#4-edit-config-and-storages)
+5. [Migrate from 0.19](#5-migrate-from-019)
+6. [Troubleshoot `config doctor`](#troubleshoot-config-doctor)
 
-<br>
+## 1. Choose a recipe
 
-# 1. How-To User Guides
+AppRC always provides typed config and optional per-user app overrides. Add
+`rc.Storage()` only when the application needs a persistent data directory.
 
-<!-- ======================================================== -->
+| Application | Declaration | First-run requirement |
+| --- | --- | --- |
+| Config only | `rc.AppRC(...)` | None |
+| Config and persistent data | `rc.AppRC(..., storage=rc.Storage())` | Create or select one storage directory |
 
-<br>
+See [References](References.md) for exact arguments and
+[Explanations](Explanations.md) for the design.
 
-## Recipe Map
-<!-- ======================================================== -->
+## 2. Integrate AppRC
 
-Use this file when you want steps in order. Use
-[References](References.md) when you need exact names and
-[Explanations](Explanations.md) when you need the system model.
-
-| Task | Recipe |
-|---|---|
-| Add AppRC to a Typer application | [Integrate AppRC](#2-integrate-apprc) |
-| Initialize a storage-backed app | [Run First Storage Setup](#run-first-storage-setup) |
-| Add per-user settings | [Use App-Wide Config](#use-app-wide-config) |
-| Support named storage roots | [Manage Named Storages](#manage-named-storages) |
-| Change one value | [Set And Edit Values](#set-and-edit-values) |
-| Explain setup failures | [Troubleshoot Config Doctor](#troubleshoot-config-doctor) |
-
-> [!NOTE]
-> Related: use [Explanations: integration flow](Explanations.md#integration-flow)
-> for the reasoning behind the recipe order.
-
-<br>
-
-# 2. Integrate AppRC
-
-<!-- ======================================================== -->
-
-<br>
-
-## Install AppRC
-<!-- ======================================================== -->
-
-Install the runtime package:
+Install the runtime and optional editor:
 
 ```bash
 python -m pip install apprc
-```
-
-Install the optional Textual editor when you want generated `config edit`
-commands:
-
-```bash
 python -m pip install "apprc[tui]"
 ```
 
-For editable local development of AppRC itself:
-
-```bash
-python -m pip install -e "." --group dev
-```
-
-> [!NOTE]
-> Related: use [References: dependency surfaces](References.md#dependency-surfaces)
-> for the difference between runtime dependencies, extras, and maintainer
-> groups.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Declare Typed Config Fields
-<!-- ======================================================== -->
-
-Create a config package in the app and declare one AppRC facade plus one or
-more registered config classes. The recommended layout is:
-
-```text
-myapp/config/
-  __init__.py
-  __init__.pyi
-  _facade.py
-  app.py
-  sections/
-    __init__.py
-    __init__.pyi
-    _facade.py
-    app.py
-  bundle.py
-  catalog.py
-```
-
-Generate that layout when starting a new integration:
+Generate the recommended package layout:
 
 ```bash
 apprc scaffold config \
   --package myapp \
-  --mode storage-only \
   --app-name myapp \
   --display-name "My App" \
-  --storage-env-key MYAPP_STORAGE \
+  --storage \
   --target src
 ```
 
-The compact example below shows the same declarations in one file for reading.
+Omit `--storage` for a config-only application. AppRC derives the selector
+name `MYAPP_STORAGE`; pass `--storage-selector-env-key` only to override it.
 
-All app-declared config areas belong under `config/sections/`. Keep small areas
-as modules such as `sections/client.py`; use a nested package such as
-`sections/rag/` when one area needs its own bundle, resources, or several leaf
-settings. `config/bundle.py` should only assemble the app-level bundle, and
-`config/catalog.py` should only expose metadata. Keep package `__init__.py`
-files lightweight; import section classes in `bundle.py` from leaf modules
-such as `config.sections.client`, not from the `config.sections` package
-facade.
+The essential declaration is small:
 
 ```python
 from pathlib import Path
@@ -141,11 +53,11 @@ from pathlib import Path
 import apprc as rc
 
 
-MyRC = rc.AppRC.storage_only(
+MyRC = rc.AppRC(
     app_name="myapp",
     display_name="My App",
     config_package="myapp.config",
-    storage_env_key="MYAPP_STORAGE",
+    storage=rc.Storage(),
 )
 
 
@@ -155,99 +67,29 @@ class AppSettings(rc.Config):
         "MYAPP_STORAGE",
         editable=False,
         required=True,
-        title="Storage root",
-        description="Active storage root.",
     )
-    profile: str = rc.field(
-        "MYAPP_PROFILE",
-        default="default",
-        title="Profile",
-        description="Named runtime profile.",
-    )
-    access_token: str = rc.field(
-        "MYAPP_ACCESS_TOKEN",
-        required=True,
-        secret=True,
-        title="Access token",
-        description="Secret service token.",
-    )
-
-
-@MyRC.config("resources", title="Resources")
-class PackageResources(rc.ConfigBase):
-    package: str = "myapp.resources"
+    profile: str = rc.field("MYAPP_PROFILE", default="default")
+    token: str = rc.field("MYAPP_TOKEN", required=True, secret=True)
 
 
 @MyRC.bundle
 class MyAppConfig:
     app: AppSettings
-    resources: PackageResources
 ```
 
-Put packaged defaults in the same config package:
+Put non-secret defaults in `myapp/config/apprc.defaults.env`:
 
 ```dotenv
 MYAPP_PROFILE="default"
 ```
 
-Save that file as `.env.shared`. Do not put secrets in packaged defaults.
-
-> [!IMPORTANT]
-> Register config classes with `@MyRC.config(...)` before constructing them.
-> The registration metadata drives validation, generated CLI output, editor
-> rows, and provenance.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Choose A Capability Constructor
-<!-- ======================================================== -->
-
-Create one `rc.AppRC` facade for the app:
-
-```python
-import apprc as rc
-
-
-MyRC = rc.AppRC.storage_only(
-    app_name="myapp",
-    display_name="My App",
-    config_package="myapp.config",
-    storage_env_key="MYAPP_STORAGE",
-)
-```
-
-Choose the constructor by persistence needs:
-
-| Use Case | Constructor |
-|---|---|
-| Shell env and explicit env files are enough | `rc.AppRC.env_only(...)` |
-| App needs one active storage root | `rc.AppRC.storage_only(...)` |
-| App needs per-user config but no storage root | `rc.AppRC.app_wide_config(...)` |
-| App needs per-user config and storage roots | `rc.AppRC.app_wide_storage(...)` |
-
-Storage-capable constructors require an explicit `storage_env_key` when the app
-needs a storage selector such as `MYAPP_STORAGE`.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Bootstrap A Typer App
-<!-- ======================================================== -->
-
-Call AppRC bootstrap before commands construct `rc.Config` objects. Mount the
-generated `config` command group below the app.
+Mount the generated commands before runtime config objects are constructed:
 
 ```python
 import typer
 
 from myapp.config import MyAppConfig, MyRC
+
 
 app = typer.Typer()
 MyRC.mount_cli(app)
@@ -259,379 +101,125 @@ def run() -> None:
     typer.echo(cfg.app.profile)
 ```
 
-`MyRC.mount_cli(...)` registers the standard AppRC CLI runtime options:
-`--env-file`, `--env-file-overrides-os-environ`, `--skip-dotenv-layers`,
-`--storage`, and `--log-level`. It also lets setup and inspection commands run
-before required runtime settings exist.
+For non-Typer entrypoints, call `MyRC.bootstrap()` before constructing the
+bundle.
 
-Apps that own their Typer callback and extra options can use
-`rc.cli.CliRuntime`. The runtime keeps AppRC's deterministic config CLI behavior
-in AppRC, while the app still builds its own runtime state.
+## 3. Set up storage
 
-```python
-from dataclasses import dataclass
-from pathlib import Path
-from collections.abc import Sequence
-from typing import Annotated
+Storage apps have three setup routes.
 
-import typer
+To keep shell path completion, provide custom paths as an option:
 
-import apprc as rc
-
-from myapp.config import MyRC
-
-
-@dataclass(frozen=True, slots=True)
-class MyCliOptions:
-    env_files: Sequence[Path] | None = None
-    env_file_overrides_os_environ: bool = False
-    load_dotenv_layers: bool = True
-    storage: str | None = None
-    log_level: str | None = None
-    workdir: Path | None = None
-
-
-@dataclass(slots=True)
-class MyCliState(rc.cli.DefaultConfigCliState):
-    workdir: Path | None
-
-
-def build_state(
-    context: rc.cli.CliRuntimeContext,
-    options: MyCliOptions,
-) -> MyCliState:
-    return MyCliState(
-        env_bootstrap=context.env_bootstrap,
-        storage=options.storage,
-        workdir=options.workdir,
-    )
-
-
-app = typer.Typer()
-runtime = rc.cli.CliRuntime(
-    MyRC.kit,
-    state_type=MyCliState,
-    state_factory=build_state,
-    runtime_policy=rc.cli.CliRuntimePolicy(
-        runtime_independent_commands={
-            "tool": rc.cli.RuntimeIndependentCommand(skip_empty=True),
-            "llm": rc.cli.RuntimeIndependentCommand(
-                skip_empty=True,
-                action_prefixes={("benchmark",)},
-            ),
-            "rag": rc.cli.RuntimeIndependentCommand(
-                skip_empty=True,
-                action_prefixes={("cache",), ("benchmark",)},
-            ),
-        },
-        extra_cli_value_options={"--workdir"},
-    ),
-)
-runtime.mount_config_group(app)
-
-
-@app.callback()
-def cli(
-    ctx: typer.Context,
-    env_files: rc.cli.EnvFilesOption = None,
-    env_file_overrides_os_environ: rc.cli.EnvFileOverridesOption = False,
-    skip_dotenv_layers: rc.cli.SkipDotenvLayersOption = False,
-    storage: rc.cli.StorageOption = None,
-    log_level: rc.cli.LogLevelOption = None,
-    workdir: Annotated[Path | None, typer.Option("--workdir")] = None,
-) -> None:
-    options = MyCliOptions(
-        env_files=env_files,
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-        load_dotenv_layers=not skip_dotenv_layers,
-        storage=storage,
-        log_level=log_level,
-        workdir=workdir,
-    )
-    session = runtime.prepare(ctx, options)
-    if session.runtime_setup_skipped:
-        return
+```bash
+myapp config setup --storage-root /absolute/path/to/storage
 ```
 
-`extra_cli_flag_options` and `extra_cli_value_options` are additions to
-AppRC's standard CLI runtime options, so custom callbacks only list app-specific
-option names. `RuntimeIndependentCommand(skip_help=True)` is the default, which lets
-declared command-group help such as `tool --help` render before runtime storage
-or required settings exist. Use `exact_actions` for complete action paths and
-`action_prefixes` for subtrees whose child commands have their own options. On
-skipped runs, `session.state` is `None`; AppRC still stores its bootstrap context
-for generated config commands. Runtimeful generated config commands require the
-app callback to leave the declared `state_type` on `ctx.obj`; runtime-independent
-generated config commands use AppRC's stored context instead.
-Runtime-independent app commands can read the original app option object with
-`rc.cli.cli_options_from(ctx, MyCliOptions)` even when runtime setup was skipped.
-Nested in-process CLIs can call `runtime.run_forwarded(child_app, args=..., prog_name=...)`
-so the child runtime policy inspects the forwarded child arguments.
+To accept the platform data directory without a prompt:
 
-> [!NOTE]
-> Related: use [References: generated CLI commands](References.md#generated-cli-commands)
-> for every generated command.
+```bash
+myapp config setup --yes
+```
 
-<br>
+On an interactive terminal, the first runtime command can offer the same
+suggested directory when `prompt_on_first_run=True`, which is the default.
 
-# 3. Operate App Config
+Setup creates the directory and `apprc.storage.env`, then saves its absolute
+path under `MYAPP_STORAGE` in `apprc.app.env`. No shell export is required.
+It keeps the existing next-step output and points users to `config doctor`.
 
-<!-- ======================================================== -->
+Use a different suggested path or disable the first-run prompt in the
+declaration:
 
-<br>
+```python
+MyRC = rc.AppRC(
+    app_name="myapp",
+    config_package="myapp.config",
+    storage=rc.Storage(
+        suggested_root=Path.home() / "Projects" / "myapp-data",
+        prompt_on_first_run=False,
+    ),
+)
+```
 
-## Run First Storage Setup
-<!-- ======================================================== -->
+## 4. Edit config and storages
 
-For `storage_only(...)` and `app_wide_storage(...)` apps, create a first
-storage root explicitly. Use the CLI when scripting setup:
+The app scope is always available. Its file is created only when a command or
+editor save needs it.
+
+```bash
+myapp config set MYAPP_PROFILE development --scope app
+myapp config app init
+myapp config edit
+```
+
+For a storage app, `config edit` always shows `Setup`, `New`, `Register`,
+`Rename`, `Location`, `Move`, `Archive`, and `Delete` as applicable to the
+current selection. An empty `apprc.toml` is not a prerequisite: `New` and
+`Register` can create the first named storage.
+
+The equivalent basic CLI operations are:
+
+```bash
+myapp config storage add project-a /data/project-a
+myapp config storage list
+myapp config storage remove project-a
+```
+
+Opening the editor, running `paths`, and running `doctor` do not create files.
+
+## 5. Migrate from 0.19
+
+First update the application declaration from a capability constructor to
+`rc.AppRC(...)` with optional `rc.Storage()`.
+
+Then inspect all app, TOML, active-storage, and registered-storage moves:
+
+```bash
+myapp config migrate --dry-run
+myapp config migrate --yes
+```
+
+The migration uses these names:
+
+| 0.19 | 0.20 |
+| --- | --- |
+| `.env.shared` | `apprc.defaults.env` |
+| `.env.apprc-app` | `apprc.app.env` |
+| `.env.apprc-storage` | `apprc.storage.env` |
+| `<app>.apprc.toml` | `apprc.toml` |
+
+Rename the packaged defaults file in the application source manually; the
+runtime command does not modify installed package files.
+
+AppRC 0.20 reads a legacy file when the current file is absent. If both exist,
+the current file wins and AppRC warns instead of merging. `config migrate`
+preflights every target and stops before writing when it finds a conflict. It
+moves files and is safe to rerun after a partial filesystem failure.
+
+Custom filename overrides and an explicit `<APP>_APPRC_TOML` location are not
+automatic migration targets.
+
+> [!WARNING]
+> The four 0.19 capability constructors are deprecated in 0.20 and will be
+> removed in 0.21.
+
+## Troubleshoot `config doctor`
+
+Start with read-only state:
 
 ```bash
 myapp config paths
-myapp config setup --yes --storage-root /absolute/path/to/storage
-export MYAPP_STORAGE="/absolute/path/to/storage"
 myapp config doctor
-```
-
-Expected results:
-
-- `config paths` reports `writes: none`.
-- `config setup` creates `<storage-root>/.env.apprc-storage`.
-- `app_wide_storage(...)` also creates `.env.apprc-app`.
-- `config doctor` reports `runnable` once required files and selectors exist.
-
-For interactive setup, open the editor and select `Setup`:
-
-```bash
-myapp config edit
-```
-
-Choose the storage directory and confirm the write. The editor initializes the
-same files as `config setup`, selects the new path for the current editor
-session, and shows the exact shell export needed after exit. When named storage
-is allowed, it also offers to register the path under a name.
-
-> [!IMPORTANT]
-> `MYAPP_STORAGE` selects storage. It can be a path selector or, when a
-> named-storage index exists, a registered storage name.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Use App-Wide Config
-<!-- ======================================================== -->
-
-Enable app-wide config explicitly for optional app-wide layers:
-
-```bash
-myapp config app init
-myapp config set profile work --scope app
-myapp config doctor
-```
-
-Use app-wide config for values that apply across storage roots or for apps
-that do not use storage. Use storage config for values that should travel with
-one storage root.
-
-When app-wide and storage scopes are both writable, pass `--scope app` or
-`--scope storage` so AppRC does not guess.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Manage Named Storages
-<!-- ======================================================== -->
-
-Named storage is optional for storage-capable apps. Add names when users need
-short selectors instead of full paths:
-
-```bash
-myapp config storage add alpha /absolute/path/to/alpha
-myapp config storage add beta /absolute/path/to/beta
-myapp config storage list
-export MYAPP_STORAGE="alpha"
-myapp config doctor
-```
-
-Remove a registry entry without deleting the storage directory:
-
-```bash
-myapp config storage remove alpha
-```
-
-The Textual editor can create and manage the named-storage index directly:
-
-```bash
-myapp config edit
-```
-
-Its horizontally scrollable action row contains `Setup`, `New`, `Register`,
-`Rename`, `Location`, `Move`, `Archive`, and `Delete`. `New` creates the first
-index when none exists. `Register` gives an active path selector a name.
-Opening the editor remains zero-write; the index is written only after one of
-those actions succeeds.
-
-`Rename` and `Location` also work for a registered root that is currently
-missing. `Move` is available only when the selected registered root exists as
-a directory. Archived rows and direct path-selected storage have no live
-registry entry, so selection-dependent registry controls are unavailable for
-them. Apps that explicitly disable named storage show `Setup` and path editing
-without named-storage actions.
-
-`Rename` changes the selector stored in the named-storage index. The new name
-must not collide with any live or archived selector. Update every external use
-of the old selector yourself, including `--storage`, the storage environment
-variable such as `MYAPP_STORAGE`, and dotenv values; AppRC does not rewrite
-those inputs.
-
-`Location` repoints the selected registry entry to an existing directory. It
-changes only the index: it never creates, moves, or deletes storage files. Use
-`Move` when the data itself must change locations. A move accepts only a new
-or empty destination, rejects unsafe paths such as the source or a nested
-directory, moves the complete storage directory, and then updates the index.
-The editor asks for confirmation before it applies a rename, repoint, or move.
-After a repoint or move, update any direct path use in `--storage`, the storage
-environment variable, or dotenv values yourself; the editor changes only the
-registry entry.
-
-Close programs that write to a storage before moving it. The editor refuses a
-move for a symbolic-link root or a root shared by another live selector, so
-repoint those entries first. For a cross-filesystem transfer, it keeps the
-original directory and cancels the move if its pre-promotion check finds that
-the source changed while being copied. If the source changes later, cleanup
-keeps the original directory and reports a warning.
-
-Archive rows retain the original directory that was compressed. Repointing or
-moving a live storage does not rewrite that historical source location; a
-rename carries a same-selector archive record to the new selector.
-
-Relocate the named-storage index only when needed:
-
-```bash
-export MYAPP_APPRC_TOML="/absolute/path/to/myapp.apprc.toml"
-```
-
-`MYAPP_APPRC_TOML` changes where AppRC reads and writes the index. It is not
-the active storage selector.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Set And Edit Values
-<!-- ======================================================== -->
-
-Set values by env key, dotted config path, or unique field name:
-
-```bash
-myapp config set MYAPP_PROFILE work --scope storage
-myapp config set app.profile work --scope app
-myapp config set profile work --scope storage
-```
-
-Open the Textual editor:
-
-```bash
-myapp config edit
-```
-
-The editor shows `Effective`, `Shell`, `App-wide`, `Storage`, `Default`, and
-`Explanation` columns. It opens without creating files. Saving creates only
-the chosen app-wide or storage dotenv file.
-
-`Setup` is present for every capability mode. It initializes the declared
-app-wide or storage files, or explains that an env-only app requires no AppRC
-file writes.
-
-Secret fields are redacted in displays. Read-only fields, such as storage
-selector fields marked `editable=False`, cannot be written through AppRC
-dotenv editors.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Troubleshoot Config Doctor
-<!-- ======================================================== -->
-
-Start with machine-readable output when a setup is unclear:
-
-```bash
 myapp config doctor --json
 ```
 
-Common statuses:
+| Status | Meaning | Next action |
+| --- | --- | --- |
+| `runnable` | Required config and selected storage are usable. | Run the application. |
+| `env_not_set` | A storage app has no selector. | Run `config setup`. |
+| `storage_not_ready` | The selected root or its config file is missing or invalid. | Correct the path or rerun setup. |
+| `app_config_not_ready` | A required legacy app file is missing or unreadable. | Run setup or fix permissions. |
+| `named_storage_not_ready` | `apprc.toml` cannot be read. | Fix the file or select a direct path. |
 
-| Status | Meaning | First Fix |
-|---|---|---|
-| `env_not_set` | A required selector such as `MYAPP_STORAGE` is missing. | Export the selector or pass `--storage`. |
-| `storage_not_ready` | The selected root or storage dotenv is missing. | Run `config setup --storage-root ...`. |
-| `app_config_not_ready` | A default app-wide layer is expected but missing. | Run `config app init`. |
-| `named_storage_not_ready` | The named-storage index is missing, unreadable, or invalid for the selector. | Fix the index or add storage again. |
-| `runnable` | Runtime config can load. | No fix needed. |
-
-Use `config paths --json` when you want the same path and capability report
-without treating non-runnable state as a command failure.
-
-<br>
-
-# 4. Develop This Repository
-
-<!-- ======================================================== -->
-
-<br>
-
-## Sync Dependencies
-<!-- ======================================================== -->
-
-Use the locked maintainer environment:
-
-```bash
-just sync
-```
-
-Plain `pip` also works:
-
-```bash
-python -m pip install -e "." --group dev
-```
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Run Verification
-<!-- ======================================================== -->
-
-For docs-only changes:
-
-```bash
-python src/apprc_dev/packaging/pypi_readme.py
-.venv/bin/pytest tests/test_pypi_readme.py
-git diff --check
-```
-
-For code changes:
-
-```bash
-.venv/bin/ruff format .
-.venv/bin/ruff check .
-.venv/bin/pyright
-.venv/bin/pytest
-```
-
-> [!NOTE]
-> Related: use [Development: verification](Development.md#4-verification) for
-> the maintainer checklist.
+The JSON payload uses the 0.20 vocabulary, including `storage_enabled`,
+`app_env`, `storage_selector_env_key`, and `apprc_toml`.

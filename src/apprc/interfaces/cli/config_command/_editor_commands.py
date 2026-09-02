@@ -28,13 +28,13 @@ class EditorConfigCommands(ConfigCommandBase):
                     self.load_storage_registry_or_empty(
                         selector_context=selector_context,
                     )
-                    if self.kit.spec.named_storage_allowed()
+                    if self.kit.spec.named_storage_enabled()
                     else None
                 )
             except typer.BadParameter as exc:
                 if (
                     active_storage_root is None
-                    and self.kit.spec.named_storage_default()
+                    and self.kit.spec.apprc_toml_required()
                 ):
                     raise
                 optional_registry = None

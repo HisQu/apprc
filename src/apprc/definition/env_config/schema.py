@@ -24,7 +24,7 @@ class ConfigField:
     :param default: Runtime fallback value when no source provides a value.
     :param default_factory: Runtime fallback factory when no source provides a
         value. The factory is called for each config instance.
-    :param shared_default: Packaged ``.env.shared`` value when intentionally
+    :param packaged_default: Packaged defaults value when intentionally
         different from ``default``.
     :param title: Short display label for docs and terminal UIs.
     :param explanation_short: Compact table-facing description.
@@ -40,7 +40,7 @@ class ConfigField:
     python_type: type[Any]
     default: Any = CONFIG_MISSING
     default_factory: Callable[[], Any] | object = CONFIG_MISSING
-    shared_default: Any = CONFIG_MISSING
+    packaged_default: Any = CONFIG_MISSING
     title: str = ""
     explanation_short: str = ""
     explanation_long: str = ""
@@ -63,13 +63,22 @@ class ConfigField:
             return default_factory()
         return self.default
 
-    def shared_env_value(self) -> Any:
-        """Return the expected packaged shared-env value."""
-        if self.shared_default is not CONFIG_MISSING:
-            return self.shared_default
+    def packaged_env_value(self) -> Any:
+        """Return the expected packaged defaults value."""
+        if self.packaged_default is not CONFIG_MISSING:
+            return self.packaged_default
         if self.default_factory is not CONFIG_MISSING:
             return CONFIG_MISSING
         return self.default
+
+    @property
+    def shared_default(self) -> Any:
+        """Return ``packaged_default`` through the deprecated 0.19 name."""
+        return self.packaged_default
+
+    def shared_env_value(self) -> Any:
+        """Return the packaged value through the deprecated 0.19 name."""
+        return self.packaged_env_value()
 
 
 @dataclass(frozen=True, slots=True)

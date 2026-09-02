@@ -42,7 +42,7 @@ def build_graph() -> Digraph:
         contract.classifier(
             "kit",
             "rc.AppRC",
-            "capabilities",
+            "optional rc.Storage",
             stereotype="app spec",
             kind="interface",
             border_color=gg.BLUE,
@@ -71,11 +71,11 @@ def build_graph() -> Digraph:
             border_color=gg.NEUTRAL_STROKE,
         )
         core.text(
-            "capability_metadata",
-            "Capability metadata",
-            "app-wide",
-            "storage",
-            "named index",
+            "storage_declaration",
+            "Storage declaration",
+            "selector key",
+            "suggested root",
+            "first-run prompt",
             border_color=gg.NEUTRAL_STROKE,
         )
 
@@ -133,13 +133,13 @@ def build_graph() -> Digraph:
 
     figure.edge("contract_schema", "owner_metadata", "derive", color=gg.BLUE)
     figure.edge("contract_schema", "field_metadata", "derive", color=gg.BLUE)
-    figure.edge("kit", "capability_metadata", "select", color=gg.BLUE)
+    figure.edge("kit", "storage_declaration", "declare", color=gg.BLUE)
     figure.edge("owner_metadata", "resolution", "resolve", color=gg.GREEN)
-    figure.edge("capability_metadata", "resolution", "layers", color=gg.GREEN)
+    figure.edge("storage_declaration", "resolution", "storage", color=gg.GREEN)
     figure.edge("field_metadata", "effective_config", "bind", color=gg.GREEN)
     figure.edge("resolution", "effective_config", "merge", color=gg.GREEN)
     figure.edge(
-        "capability_metadata", "config_cli", "generate", color=gg.ORANGE
+        "storage_declaration", "config_cli", "generate", color=gg.ORANGE
     )
     figure.edge("owner_metadata", "diagnostics", "inspect", color=gg.PURPLE)
     figure.edge("field_metadata", "textual_editor", "edit", color=gg.PURPLE)

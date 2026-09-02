@@ -42,7 +42,7 @@ def set_storage_env_value(
     reference: str,
     raw_value: str,
     owners: Iterable[ConfigOwner],
-    storage_env_filename: str = ".env.apprc-storage",
+    storage_env_filename: str = "apprc.storage.env",
 ) -> EnvFileUpdate:
     """Set one value in a storage dotenv file.
 
@@ -106,7 +106,7 @@ def clear_storage_env_value(
     storage_root: Path,
     reference: str,
     owners: Iterable[ConfigOwner],
-    storage_env_filename: str = ".env.apprc-storage",
+    storage_env_filename: str = "apprc.storage.env",
 ) -> EnvFileUpdate | None:
     """Remove one override value from a storage dotenv file.
 

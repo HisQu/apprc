@@ -26,7 +26,7 @@ class PublicFieldSpec:
     :param env_key: Full environment variable name shown to users.
     :param default: Runtime fallback when no Python or env value exists.
     :param default_factory: Runtime fallback factory for fresh instance values.
-    :param shared_default: Packaged shared dotenv value when it differs from the
+    :param packaged_default: Packaged defaults dotenv value when it differs from the
         runtime fallback.
     :param required: Explicit requiredness override, or ``None`` for inferred
         dataclass-style requiredness.
@@ -45,7 +45,7 @@ class PublicFieldSpec:
     env_key: str
     default: Any = CONFIG_MISSING
     default_factory: Callable[[], Any] | object = CONFIG_MISSING
-    shared_default: Any = CONFIG_MISSING
+    packaged_default: Any = CONFIG_MISSING
     required: bool | None = None
     title: str | None = None
     description: str | None = None
@@ -56,6 +56,11 @@ class PublicFieldSpec:
     choices: tuple[str, ...] = ()
     python_type: type[Any] | None = None
     metadata: dict[str, object] = dataclass_field(default_factory=dict)
+
+    @property
+    def shared_default(self) -> Any:
+        """Return ``packaged_default`` through the deprecated 0.19 name."""
+        return self.packaged_default
 
     def inferred_required(self) -> bool:
         """Return requiredness after applying dataclass-style defaults."""
@@ -75,6 +80,7 @@ def field(
     required: bool | None = None,
     title: str | None = None,
     description: str | None = None,
+    packaged_default: object = CONFIG_MISSING,
     editable: bool = True,
     secret: bool = False,
     choices: tuple[str, ...] | list[str] | None = None,
@@ -94,12 +100,15 @@ def field(
         without defaults are required and fields with defaults are optional.
     :param title: Short display label for docs and terminal UIs.
     :param description: Human-readable field explanation.
+    :param packaged_default: Value documented in ``apprc.defaults.env`` when
+        it intentionally differs from the Python fallback.
     :param editable: Whether config editors should allow direct editing.
     :param secret: Whether display surfaces should redact the value. This does
         not encrypt values, change storage, or imply requiredness.
     :param choices: Optional accepted string values.
     :param metadata: Advanced metadata passed through to AppRC's internal field
-        adapter, such as ``shared_default`` or ``explanation_short``.
+        adapter, such as the deprecated ``shared_default`` or
+        ``explanation_short``.
     :return: Dataclass field consumed by ``@MyRC.config(...)``.
     :raises TypeError: If ``env`` is not a non-empty string.
     :raises ValueError: If defaults or unsupported optional missing semantics
@@ -122,7 +131,20 @@ def field(
             "represented safely."
         )
 
-    shared_default = metadata.pop("shared_default", CONFIG_MISSING)
+    legacy_shared_default = metadata.pop("shared_default", CONFIG_MISSING)
+    if (
+        packaged_default is not CONFIG_MISSING
+        and legacy_shared_default is not CONFIG_MISSING
+    ):
+        raise ValueError(
+            "rc.field(...) cannot declare both packaged_default and the "
+            "deprecated shared_default."
+        )
+    resolved_packaged_default = (
+        legacy_shared_default
+        if packaged_default is CONFIG_MISSING
+        else packaged_default
+    )
     python_type = metadata.pop("python_type", None)
     explanation_short = str(
         metadata.pop("explanation_short", description or "")
@@ -134,7 +156,7 @@ def field(
         env_key=env,
         default=default,
         default_factory=default_factory,
-        shared_default=shared_default,
+        packaged_default=resolved_packaged_default,
         required=required,
         title=title,
         description=description,

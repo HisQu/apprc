@@ -1,4 +1,4 @@
-"""User-facing setup copy for AppRC capability layers."""
+"""User-facing setup copy for AppRC declarations."""
 
 from __future__ import annotations
 
@@ -15,19 +15,15 @@ def setup_overview_text(kit: AppConfigKit) -> str:
     :param kit: Application config facade.
     :return: Human-facing setup overview.
     """
-    if not kit.spec.storage_required() and not kit.spec.app_wide_default():
-        return f"{kit.spec.display_name} uses env-only setup. writes: none"
-    if kit.spec.storage_required() and kit.spec.app_wide_default():
+    if kit.spec.uses_storage():
         return (
-            f"{kit.spec.display_name} setup initializes app-wide config and "
-            "one selected storage root."
+            f"{kit.spec.display_name} setup initializes one storage directory "
+            "and saves it in per-user app config."
         )
-    if kit.spec.storage_required():
-        return (
-            f"{kit.spec.display_name} setup initializes one selected storage "
-            "root."
-        )
-    return f"{kit.spec.display_name} setup initializes app-wide config."
+    return (
+        f"{kit.spec.display_name} needs no setup. Per-user app config is "
+        "created when a value is first saved. writes: none"
+    )
 
 
 def setup_finish_text(
@@ -35,22 +31,22 @@ def setup_finish_text(
     *,
     storage_root: Path | None = None,
     storage_env: Path | None = None,
-    app_wide_env: Path | None = None,
+    app_env: Path | None = None,
     config_group_name: str = "config",
 ) -> str:
-    """Return setup completion copy for initialized capability files.
+    """Return setup completion copy for initialized managed files.
 
     :param kit: Application config facade.
     :param storage_root: Storage root selected by setup, if any.
     :param storage_env: Storage dotenv file initialized by setup, if any.
-    :param app_wide_env: App-wide dotenv file initialized by setup, if any.
+    :param app_env: Per-user app dotenv file initialized by setup, if any.
     :param config_group_name: Config command group name used in generated
         guidance.
     :return: Human-facing setup completion text.
     """
     lines = [f"{kit.spec.display_name} AppRC setup complete.", ""]
-    if app_wide_env is not None:
-        lines.append(f"app_wide_env: {app_wide_env}")
+    if app_env is not None:
+        lines.append(f"app_env: {app_env}")
     if storage_root is not None:
         lines.append(f"storage_root: {storage_root}")
     if storage_env is not None:
@@ -82,9 +78,13 @@ def shell_export_commands(
     :param storage_root: Storage root selected by setup, if any.
     :return: Shell command lines.
     """
-    if storage_root is None or kit.spec.storage_env_key is None:
+    if (
+        storage_root is None
+        or kit.spec.storage_selector_env_key is None
+        or not kit.spec.uses_legacy_constructor()
+    ):
         return []
-    return [f'export {kit.spec.storage_env_key}="{storage_root}"']
+    return [f'export {kit.spec.storage_selector_env_key}="{storage_root}"']
 
 
 def dotenv_assignment_commands(
@@ -97,9 +97,9 @@ def dotenv_assignment_commands(
     :param storage_root: Storage root selected by setup, if any.
     :return: Dotenv assignment lines.
     """
-    if storage_root is None or kit.spec.storage_env_key is None:
+    if storage_root is None or kit.spec.storage_selector_env_key is None:
         return []
-    return [f'{kit.spec.storage_env_key}="{storage_root}"']
+    return [f'{kit.spec.storage_selector_env_key}="{storage_root}"']
 
 
 def verification_commands(

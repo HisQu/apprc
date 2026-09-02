@@ -8,6 +8,9 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
+# == 3rd Party ===================================================
+from platformdirs import user_data_path
+
 _STORAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -23,6 +26,8 @@ def app_data_dir(
     :return: ``$XDG_DATA_HOME/<app_name>`` or ``~/.local/share/<app_name>``.
     """
     env = os.environ if proc_env is None else proc_env
+    if proc_env is None:
+        return user_data_path(app_name, appauthor=False)
     xdg_data_home = env.get("XDG_DATA_HOME")
     if xdg_data_home:
         return Path(xdg_data_home).expanduser() / app_name
@@ -34,7 +39,7 @@ def suggested_storage_root(
     proc_env: Mapping[str, str] | None = None,
 ) -> Path:
     """Return the conventional active storage root for a fresh setup."""
-    return app_data_dir(app_name, proc_env) / suggested_storage_name(app_name)
+    return app_data_dir(app_name, proc_env)
 
 
 def suggested_storage_name(app_name: str) -> str:

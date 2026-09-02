@@ -61,19 +61,88 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-### 💥 Breaking Change Summary
+### 💥 Breaking changes
+
+  - Breaking: `AppRC(...)` now declares an application directly and accepts
+    optional `storage=rc.Storage(...)` instead of a `mode` argument.
+    Affected: Users that instantiate `AppRC` directly or depend on the four
+    capability levels as the primary public model.
+    Migration: Remove `mode`, instantiate `rc.AppRC(...)` directly, and add
+    `storage=rc.Storage(...)` only when the application owns persistent data.
+    The `env_only`, `storage_only`, `app_wide_config`, and `app_wide_storage`
+    class methods remain as deprecated 0.20 compatibility shims.
+
+  - Breaking: Current declarations use `apprc.defaults.env`, `apprc.app.env`,
+    `apprc.storage.env`, and `apprc.toml` as managed filenames.
+    Affected: App authors shipping `.env.shared`, users with AppRC-managed
+    dotenv files or `<app>.apprc.toml`, and integrations that assume the old
+    default paths.
+    Migration: Rename packaged `.env.shared` to `apprc.defaults.env`, then run
+    `<app> config migrate` to move user-managed files. AppRC 0.20 continues to
+    use an old file when the new file is absent; when both exist, the new file
+    wins and AppRC reports the conflict instead of merging them.
+
+  - Breaking: Machine-readable config output now uses the direct vocabulary,
+    including `storage_enabled`, `app_config_enabled`, `app_env`,
+    `storage_selector_env_key`, and `apprc_toml`; provenance uses
+    `shell_dotenv_defaults` and `shell_dotenv_app`.
+    Affected: Scripts that parse `config paths --json`, `config doctor --json`,
+    `config storage list --json`, or serialized provenance values.
+    Migration: Replace the former `capabilities`, `app_wide_*`, `storage_env_key`,
+    and `index_*` keys and the `shell_dotenv_shared` and
+    `shell_dotenv_app_wide` origin values with their direct-name equivalents.
+
+  - Breaking: `apprc scaffold config` now selects only whether storage is
+    present; `--mode` and `--storage-env-key` were removed.
+    Affected: Scripts and documentation that invoke the config scaffold.
+    Migration: Use `--storage` when persistent data is needed and
+    `--storage-selector-env-key NAME` only to override the derived selector.
 
 <br>
 
 ### ➕ Added
 
+  - Added `rc.Storage(...)` for declaring storage selection, its managed
+    dotenv filename, named-storage support, and first-run prompting without
+    introducing another AppRC constructor.
+
+  - Added `config migrate` with dry-run planning, whole-operation conflict
+    preflight, and migration of the app dotenv, AppRC TOML, active storage, and
+    registered storage dotenv files.
+
+  - Added a first-run terminal prompt for storage-backed applications. It can
+    create the platform-aware suggested data directory or decline without
+    changing files. Custom paths remain available through the shell-completed
+    `config setup --storage-root PATH` option.
+
+  - Added storage creation, rename, location change, and directory move
+    controls to the config editor for every storage-backed declaration. The
+    existing `Setup` action remains visible for an explicit recovery path.
+
 <br>
 
 ### 💔 Changed
 
+  - Changed user-facing status, diagnostics, editor labels, examples, and
+    documentation to explain the two independent facts directly: whether the
+    app uses storage and whether a named storage is selected.
+
+  - Changed the suggested storage root to the operating system's user data
+    directory while keeping the proposed path visible and editable during
+    first-run setup.
+
 <br>
 
 ### ⚠️ Deprecated
+
+  - Deprecated `AppRC.env_only(...)`, `AppRC.storage_only(...)`,
+    `AppRC.app_wide_config(...)`, and `AppRC.app_wide_storage(...)`. They keep
+    their 0.19 file and setup behavior in 0.20 and are scheduled for removal in
+    0.21.
+
+  - Deprecated Python read aliases that use `shared`, `app_wide`, `index`, or
+    `storage_env_key` terminology. Use `defaults`, `app`, `apprc_toml`, and
+    `storage_selector_env_key` names instead.
 
 <br>
 

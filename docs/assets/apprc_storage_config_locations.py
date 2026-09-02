@@ -31,7 +31,7 @@ LOCATION_MAP_SVG_BOUNDS = SvgDisplayBounds(
 
 
 def build_graph() -> Digraph:
-    """Build the dotenv location and capability-shape figure.
+    """Build the dotenv and AppRC TOML location figure.
 
     :return: Configured Graphviz diagram.
     """
@@ -87,8 +87,8 @@ def build_graph() -> Digraph:
         "read_stack",
         "read at startup",
         (
-            "defaults: .env.shared",
-            "app-wide: .env.apprc-app",
+            "defaults: apprc.defaults.env",
+            "app: apprc.app.env",
             "storage: chosen folder",
             "explicit: --env-file",
             "process: os.environ",
@@ -113,9 +113,9 @@ def build_graph() -> Digraph:
     )
     _dotenv_card(
         installed,
-        "shared_env",
-        ".env.shared",
-        ("packaged defaults", "used by: all kits"),
+        "defaults_env",
+        "apprc.defaults.env",
+        ("packaged defaults", "used by: all apps"),
         pos=gv.fixed_position(1.25, 0.65),
         color=gg.BLUE,
     )
@@ -138,16 +138,16 @@ def build_graph() -> Digraph:
     )
     _dotenv_card(
         user_config,
-        "app_wide_env",
-        ".env.apprc-app",
-        ("app-wide settings", "app-wide kits", "optional: storage_only"),
+        "app_env",
+        "apprc.app.env",
+        ("per-user settings", "created on first write"),
         pos=gv.fixed_position(8.95, 0.65),
         color=gg.ORANGE,
     )
     _toml_card(
         user_config,
         "address_book",
-        "<app>.apprc.toml",
+        "apprc.toml",
         ("storage address book", "example name -> folder"),
         pos=gv.fixed_position(8.95, -0.95),
     )
@@ -246,7 +246,7 @@ def build_graph() -> Digraph:
     _arrow(
         figure.graph,
         "package",
-        "shared_env",
+        "defaults_env",
         "ships",
         gg.BLUE,
         1.28,
@@ -358,8 +358,8 @@ def _storage_env_card(
     _dotenv_card(
         graph,
         node_id,
-        ".env.apprc-storage",
-        ("storage-local settings", location, "storage kits"),
+        "apprc.storage.env",
+        ("storage-local settings", location, "storage apps"),
         pos=pos,
         color=gg.GREEN,
     )

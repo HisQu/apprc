@@ -2,15 +2,15 @@
 
 AppRC imports are side-effect free: importing a config dataclass does not read
 ``.env`` files or modify the process environment. Application entrypoints call
-``bootstrap_env`` once, before runtime config objects are created, to merge the
-packaged shared defaults, app-wide dotenv values, optional storage
+``bootstrap_env`` once, before runtime config objects are created, to merge
+packaged defaults, per-user app dotenv values, optional storage
 dotenv values, explicit ``--env-file`` values, and the values already present
 in ``os.environ``.
 
 The helper mutates only the current Python process because runtime config
 binding and some application dependencies intentionally read from
 ``os.environ``. It resolves AppRC-managed paths but never creates files,
-storage roots, or parent shell changes. Named-storage index path lookup is
+storage roots, or parent shell changes. AppRC TOML path lookup is
 delegated to
 :mod:`apprc.definition.app_config.spec`, active storage selection is delegated
 to :mod:`apprc.user_files.storage_roots.selector`, and storage dotenv editing is
@@ -30,7 +30,7 @@ from apprc.runtime._dotenv_layers import (
     merged_env_values,
     read_dotenv_file,
     read_explicit_env_files,
-    read_shared_env_values,
+    read_defaults_env_values,
 )
 from apprc.runtime._process_env import (
     app_env_keys,
@@ -74,26 +74,27 @@ def bootstrap_env(
     Imports stay side-effect free; entrypoints call this helper before building
     runtime config objects that read OS environment variables from the current
     Python process via ``os.environ``. The parent shell is not mutated. Dotenv
-    layers are packaged ``.env.shared``, app-wide ``.env.apprc-app``, optional
-    active storage ``.env.apprc-storage``, and explicit ``env_files``. Later
+    layers are packaged ``apprc.defaults.env``, per-user
+    ``apprc.app.env``, optional active-storage ``apprc.storage.env``, and
+    explicit ``env_files``. Later
     explicit files override earlier explicit files. The merged explicit values
-    always override packaged, app-wide, and storage dotenv layers. When
+    always override defaults, app, and storage dotenv layers. When
     dotenv layers are skipped, explicit files are still parsed so they can
-    guide storage-root selection for storage-required apps, but their values
+    guide storage-root selection for storage apps, but their values
     are not merged into ``os.environ``.
 
     :param spec: Application-specific bootstrap contract.
     :param env_files: Optional invocation-local dotenv files that outrank
-        packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
-        storage ``.env.apprc-storage``.
+        packaged ``apprc.defaults.env``, app ``apprc.app.env``, and active
+        storage ``apprc.storage.env``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
-    :param load_dotenv_layers: Whether packaged ``.env.shared``, app-wide
-        ``.env.apprc-app``, storage ``.env.apprc-storage``, and explicit dotenv
-        values should be merged into this process. Storage selection still runs
-        for storage-required apps when this is ``False``.
-    :param storage: Optional ``--storage`` selector for storage-required apps.
+    :param load_dotenv_layers: Whether packaged ``apprc.defaults.env``, app
+        ``apprc.app.env``, storage ``apprc.storage.env``, and explicit dotenv
+        values should be merged into this process. Storage selection still
+        runs for storage apps when this is ``False``.
+    :param storage: Optional ``--storage`` selector for storage apps.
         When AppRC TOML has registered storages, exact registered names resolve
         through it. Otherwise every non-empty selector is interpreted as a path.
     :param logger: Optional application logger for bootstrap status messages.
@@ -110,17 +111,15 @@ def bootstrap_env(
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     config_paths = spec.config_paths(proc_env=selector_env)
-    shared_env_path, shared_values = read_shared_env_values(spec)
-    app_wide_env_path = (
-        config_paths.app_wide_env if spec.app_wide_allowed() else None
-    )
-    app_wide_values: dict[str, str] = {}
+    defaults_env_path, defaults_values = read_defaults_env_values(spec)
+    app_env_path = config_paths.app_env if spec.app_env_enabled() else None
+    app_values: dict[str, str] = {}
     try:
-        if app_wide_env_path is not None and app_wide_env_path.is_file():
-            app_wide_values = read_dotenv_file(app_wide_env_path)
+        if app_env_path is not None and app_env_path.is_file():
+            app_values = read_dotenv_file(app_env_path)
     except OSError as exc:
         raise ConfigHomeError(
-            f"AppRC-managed file could not be read: {app_wide_env_path}: {exc}"
+            f"AppRC-managed file could not be read: {app_env_path}: {exc}"
         ) from exc
     owned_env_keys = app_env_keys(spec)
     emit.info(
@@ -135,16 +134,16 @@ def bootstrap_env(
     selection = None
     active_storage_root: Path | None = None
     active_storage_env: Path | None = None
-    storage_env_key = spec.storage_env_key
-    if spec.storage_required():
-        storage_env_key = spec.require_storage_env_key()
+    storage_env_key = spec.storage_selector_env_key
+    if spec.uses_storage():
+        storage_env_key = spec.require_storage_selector_env_key()
         storage_selector = select_storage_selector(
             storage=storage,
             storage_env_key=storage_env_key,
             original_env=original_env,
             explicit_values=explicit_values,
-            app_wide_values=app_wide_values,
-            shared_values=shared_values,
+            app_values=app_values,
+            defaults_values=defaults_values,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
         )
         if storage_selector is None:
@@ -182,23 +181,21 @@ def bootstrap_env(
             len(registry.storages) if registry is not None else 0,
         )
     else:
-        emit.info(
-            "AppRC bootstrap using storage-free app-wide path: %s",
-            app_wide_env_path,
-        )
+        emit.info("AppRC bootstrap using app config path: %s", app_env_path)
 
     env_origins = original_env_value_origins(
         app_env_keys=owned_env_keys,
         original_env=original_env,
     )
     loaded_storage_env: Path | None = None
-    loaded_app_wide_env: Path | None = None
+    loaded_app_env: Path | None = None
     if load_dotenv_layers:
         loaded_storage_env = active_storage_env
-        loaded_app_wide_env = app_wide_env_path
-        if shared_env_path is None:
+        loaded_app_env = app_env_path
+        if defaults_env_path is None:
             raise FileNotFoundError(
-                f"Did not find packaged .env.shared for {spec.config_package}."
+                "Did not find packaged defaults file "
+                f"{spec.defaults_env_filename} for {spec.config_package}."
             )
         try:
             storage_values = read_dotenv_file(active_storage_env)
@@ -209,8 +206,8 @@ def bootstrap_env(
                 param_hint="--storage",
             ) from exc
         merged = merged_env_values(
-            shared_values=shared_values,
-            app_wide_values=app_wide_values,
+            defaults_values=defaults_values,
+            app_values=app_values,
             storage_values=storage_values,
             explicit_values=explicit_values,
             original_env=original_env,
@@ -218,10 +215,10 @@ def bootstrap_env(
         )
         env_origins = merged_env_value_origins(
             app_env_keys=owned_env_keys,
-            shared_env_path=shared_env_path,
-            shared_values=shared_values,
-            app_wide_env_path=app_wide_env_path,
-            app_wide_values=app_wide_values,
+            defaults_env_path=defaults_env_path,
+            defaults_values=defaults_values,
+            app_env_path=app_env_path,
+            app_values=app_values,
             storage_env_path=active_storage_env,
             storage_values=storage_values,
             explicit_layers=explicit_layers,
@@ -234,10 +231,10 @@ def bootstrap_env(
             storage_root=active_storage_root,
         )
         emit.info(
-            "AppRC bootstrap loaded dotenv layers: shared_env=%s "
-            "app_wide_env=%s storage_env=%s explicit_env_files=%s",
-            shared_env_path,
-            app_wide_env_path,
+            "AppRC bootstrap loaded dotenv layers: defaults_env=%s "
+            "app_env=%s storage_env=%s explicit_env_files=%s",
+            defaults_env_path,
+            app_env_path,
             active_storage_env,
             loaded_env_files,
         )
@@ -268,10 +265,10 @@ def bootstrap_env(
     register_env_value_origins(env_origins, clear_keys=owned_env_keys)
 
     return EnvBootstrapResult(
-        shared_env=shared_env_path if load_dotenv_layers else None,
+        defaults_env=defaults_env_path if load_dotenv_layers else None,
         storage_env=loaded_storage_env,
         env_files=loaded_env_files,
-        index_path=config_paths.index,
+        apprc_toml=config_paths.apprc_toml,
         storage_selector_source=(
             selection.source if selection is not None else None
         ),
@@ -282,7 +279,7 @@ def bootstrap_env(
         storage_root=active_storage_root,
         storage_count=len(registry.storages) if registry is not None else 0,
         config_home=config_paths.root,
-        app_wide_env=loaded_app_wide_env,
+        app_env=loaded_app_env,
     )
 
 
@@ -318,6 +315,6 @@ def _validate_runtime_storage_root(
         raise StorageSelectorError(
             f"Selected {spec.display_name} storage root is not a directory: "
             f"{storage_root}. Select a directory with --storage PATH or "
-            f"{spec.require_storage_env_key()}, then run `{setup_command}`.",
+            f"{spec.require_storage_selector_env_key()}, then run `{setup_command}`.",
             param_hint=param_hint,
         )

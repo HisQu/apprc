@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.app_config.storage import Storage
 from apprc.user_files.app_home.locations import (
     ConfigHomeError,
     app_config_file,
@@ -27,32 +28,34 @@ def test_app_config_file_rejects_windows_path_like_filename() -> None:
 
 
 @pytest.mark.parametrize(
-    "field_name",
+    ("field_name", "error_name"),
     [
-        "index_filename",
-        "shared_env_filename",
-        "app_wide_env_filename",
-        "storage_env_filename",
+        ("apprc_toml_filename", "apprc_toml_filename"),
+        ("defaults_env_filename", "defaults_env_filename"),
+        ("app_env_filename", "app_env_filename"),
+        ("storage_env_filename", "storage.env_filename"),
     ],
 )
-def test_app_config_spec_rejects_path_like_filenames(field_name: str) -> None:
-    filenames = {
-        "index_filename": "demo.apprc.toml",
-        "shared_env_filename": ".env.shared",
-        "app_wide_env_filename": ".env.apprc-app",
-        "storage_env_filename": ".env.apprc-storage",
+def test_app_config_spec_rejects_path_like_filenames(
+    field_name: str,
+    error_name: str,
+) -> None:
+    kwargs: dict[str, object] = {
+        "apprc_toml_filename": "apprc.toml",
+        "defaults_env_filename": "apprc.defaults.env",
+        "app_env_filename": "apprc.app.env",
     }
-    filenames[field_name] = "../escape"
+    if field_name == "storage_env_filename":
+        kwargs["storage"] = Storage(env_filename="../escape")
+    else:
+        kwargs[field_name] = "../escape"
 
-    with pytest.raises(ConfigHomeError, match=field_name):
+    with pytest.raises(ConfigHomeError, match=error_name):
         AppConfigSpec(
             app_name="demo",
             display_name="Demo",
             config_package="apprc",
-            index_filename=filenames["index_filename"],
-            shared_env_filename=filenames["shared_env_filename"],
-            app_wide_env_filename=filenames["app_wide_env_filename"],
-            storage_env_filename=filenames["storage_env_filename"],
+            **kwargs,  # type: ignore[arg-type]
         )
 
 
@@ -82,7 +85,7 @@ def test_ensure_app_wide_env_rejects_app_wide_env_directory(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     config_home = tmp_path / "config" / "demo"
-    (config_home / ".env.apprc-app").mkdir(parents=True)
+    (config_home / "apprc.app.env").mkdir(parents=True)
     spec = AppConfigSpec(
         app_name="demo",
         display_name="Demo",
@@ -100,12 +103,11 @@ def test_ensure_index_file_rejects_index_directory(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     config_home = tmp_path / "config" / "demo"
-    (config_home / "demo.apprc.toml").mkdir(parents=True)
+    (config_home / "apprc.toml").mkdir(parents=True)
     spec = AppConfigSpec(
         app_name="demo",
         display_name="Demo",
         config_package="apprc",
-        index_filename="demo.apprc.toml",
     )
 
     with pytest.raises(ConfigHomeError, match="not a file"):

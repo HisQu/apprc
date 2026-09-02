@@ -129,27 +129,27 @@ class ConfigCommandBase:
         """
         return config_home_bad_parameter(exc)
 
-    def index_bad_parameter(
+    def apprc_toml_bad_parameter(
         self,
         exc: ValueError,
     ) -> typer.BadParameter:
-        """Return Typer's error type for named-storage index failures."""
+        """Return Typer's error type for AppRC TOML failures."""
         return typer.BadParameter(
-            str(exc), param_hint=self.kit.spec.index_env_key
+            str(exc), param_hint=self.kit.spec.apprc_toml_env_key
         )
 
-    def require_storage_capability(self) -> None:
+    def require_storage_support(self) -> None:
         """Raise a CLI error when a storage command is unavailable."""
-        if not self.kit.spec.storage_required():
+        if not self.kit.spec.uses_storage():
             raise typer.BadParameter(
                 f"{self.kit.spec.display_name} does not use AppRC storage.",
                 param_hint="storage",
             )
 
-    def require_named_storage_capability(self) -> None:
+    def require_named_storage_support(self) -> None:
         """Raise a CLI error when named storage is unavailable."""
-        self.require_storage_capability()
-        if not self.kit.spec.named_storage_allowed():
+        self.require_storage_support()
+        if not self.kit.spec.named_storage_enabled():
             raise typer.BadParameter(
                 f"{self.kit.spec.display_name} does not enable named storage.",
                 param_hint="storage",
@@ -160,7 +160,7 @@ class ConfigCommandBase:
         *,
         selector_context: ConfigSelectorContext | None = None,
     ) -> StorageRegistry | None:
-        """Return the named-storage index only when it exists."""
+        """Return the AppRC TOML storage registry when it exists."""
         context = selector_context or _empty_selector_context()
         try:
             return load_optional_runtime_storage_registry(
@@ -170,7 +170,7 @@ class ConfigCommandBase:
         except ConfigHomeError as exc:
             raise self.config_home_bad_parameter(exc) from exc
         except ValueError as exc:
-            raise self.index_bad_parameter(exc) from exc
+            raise self.apprc_toml_bad_parameter(exc) from exc
 
     def load_storage_registry_or_empty(
         self,
@@ -178,16 +178,16 @@ class ConfigCommandBase:
         selector_context: ConfigSelectorContext | None = None,
     ) -> StorageRegistry:
         """Return a parsed or empty named-storage registry without writing."""
-        self.require_named_storage_capability()
+        self.require_named_storage_support()
         context = selector_context or _empty_selector_context()
         try:
             return load_create_or_empty_storage_registry(
-                self.kit.spec.index_path(proc_env=context.proc_env)
+                self.kit.spec.apprc_toml_path(proc_env=context.proc_env)
             )
         except ConfigHomeError as exc:
             raise self.config_home_bad_parameter(exc) from exc
         except ValueError as exc:
-            raise self.index_bad_parameter(exc) from exc
+            raise self.apprc_toml_bad_parameter(exc) from exc
 
     def active_storage_root_for_cli(
         self,
@@ -289,7 +289,7 @@ class ConfigCommandBase:
         selector_context: ConfigSelectorContext | None = None,
     ) -> Path | None:
         """Return the storage root selected for zero-write editor reads."""
-        if not self.kit.spec.storage_required():
+        if not self.kit.spec.uses_storage():
             return None
         context = selector_context or _empty_selector_context()
         try:

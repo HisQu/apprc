@@ -19,17 +19,17 @@ class BootstrapLogger(Protocol):
 class EnvBootstrapResult:
     """Files and storage selected during CLI env bootstrap.
 
-    :param shared_env: Packaged shared dotenv path loaded into the process, or
+    :param defaults_env: Packaged defaults dotenv path loaded into the process, or
         ``None`` when dotenv layers were skipped.
     :param storage_env: Active storage dotenv candidate considered during
         loading, or ``None`` when dotenv layers were skipped or no storage root
         is known. The path may not exist because missing storage files are
         optional.
     :param config_home: AppRC-managed per-user config directory.
-    :param app_wide_env: App-wide dotenv override file considered during
+    :param app_env: Per-user app dotenv override file considered during
         loading, or ``None`` when dotenv layers were skipped.
     :param env_files: Explicit dotenv files passed through the CLI or Python API.
-    :param index_path: Named-storage index path.
+    :param apprc_toml: AppRC TOML path.
     :param storage_selector_source: Source that selected the active storage,
         such as ``--storage`` or the app-specific storage env key.
     :param storage_selector_value: Selector value before it was resolved to a
@@ -40,14 +40,29 @@ class EnvBootstrapResult:
     :param storage_count: Number of loaded named storages.
     """
 
-    shared_env: Path | None
+    defaults_env: Path | None
     storage_env: Path | None
     env_files: tuple[Path, ...]
-    index_path: Path | None
+    apprc_toml: Path | None
     storage_selector_source: str | None
     storage_selector_value: str | None
     storage_name: str | None
     storage_root: Path | None
     storage_count: int
     config_home: Path | None = None
-    app_wide_env: Path | None = None
+    app_env: Path | None = None
+
+    @property
+    def shared_env(self) -> Path | None:
+        """Return ``defaults_env`` through the deprecated 0.19 name."""
+        return self.defaults_env
+
+    @property
+    def index_path(self) -> Path | None:
+        """Return ``apprc_toml`` through the deprecated 0.19 name."""
+        return self.apprc_toml
+
+    @property
+    def app_wide_env(self) -> Path | None:
+        """Return ``app_env`` through the deprecated 0.19 name."""
+        return self.app_env

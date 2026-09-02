@@ -37,7 +37,7 @@ def build_app(
         kit=KIT,
         bundle_cls=StorageOnlyExampleConfig,
         section_getter=lambda config: config.storage_only,
-        help_text="Exercise AppRC's storage-only capability mode.",
+        help_text="Exercise AppRC with one selected storage path.",
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
     )

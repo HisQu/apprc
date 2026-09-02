@@ -80,6 +80,7 @@ DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS = frozenset(
         "app",
         "doctor",
         "edit",
+        "migrate",
         "paths",
         "set",
         "setup",
@@ -201,7 +202,7 @@ def active_storage_root_from_state(
         process env values during selector resolution.
     :return: Resolved storage root, or ``None`` when no selector is active.
     """
-    if not kit.spec.storage_required():
+    if not kit.spec.uses_storage():
         return None
     storage_state = cast(StorageConfigCliState, state)
     if (
@@ -215,7 +216,7 @@ def active_storage_root_from_state(
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     if storage_state.storage is not None:
-        storage_env_key = kit.spec.require_storage_env_key()
+        storage_env_key = kit.spec.require_storage_selector_env_key()
         selected_registry = load_runtime_storage_registry_for_selector(
             kit.spec,
             raw_selector=storage_state.storage,
@@ -254,9 +255,9 @@ def active_storage_root_from_env(
     :return: Resolved storage root, or ``None`` when no env selector is set.
     :raises StorageSelectorError: If the env selector cannot be resolved.
     """
-    if not kit.spec.storage_required():
+    if not kit.spec.uses_storage():
         return None
-    storage_env_key = kit.spec.require_storage_env_key()
+    storage_env_key = kit.spec.require_storage_selector_env_key()
     explicit_selector_values = explicit_values or {}
     selector_env = selection_env(
         original_env=os.environ,
@@ -269,8 +270,8 @@ def active_storage_root_from_env(
         storage_env_key=storage_env_key,
         original_env=os.environ,
         explicit_values=explicit_selector_values,
-        app_wide_values=fallback_values.app_wide_values,
-        shared_values=fallback_values.shared_values,
+        app_values=fallback_values.app_values,
+        defaults_values=fallback_values.defaults_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     if storage_selector is None:
@@ -313,20 +314,20 @@ def initial_storage_from_state(
     """
     if state.env_bootstrap is not None:
         return state.env_bootstrap.storage_name
-    if not kit.spec.storage_required():
+    if not kit.spec.uses_storage():
         return None
     storage_state = cast(StorageConfigCliState, state)
     if storage_state.storage is not None:
         return storage_state.storage
-    storage_env_key = kit.spec.require_storage_env_key()
+    storage_env_key = kit.spec.require_storage_selector_env_key()
     fallback_values = read_storage_selector_fallback_values(kit.spec)
     storage_selector = select_storage_selector(
         storage=None,
         storage_env_key=storage_env_key,
         original_env=os.environ,
         explicit_values=explicit_values or {},
-        app_wide_values=fallback_values.app_wide_values,
-        shared_values=fallback_values.shared_values,
+        app_values=fallback_values.app_values,
+        defaults_values=fallback_values.defaults_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     if storage_selector is None:

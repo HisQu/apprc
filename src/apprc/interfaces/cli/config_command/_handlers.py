@@ -9,8 +9,8 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
-from apprc.interfaces.cli.config_command._app_wide_commands import (
-    AppWideConfigCommands,
+from apprc.interfaces.cli.config_command._app_commands import (
+    AppConfigCommands,
 )
 from apprc.interfaces.cli.config_command._editor_commands import (
     EditorConfigCommands,
@@ -28,7 +28,7 @@ from apprc.interfaces.cli._typer_utils import exit_missing_action
 class ConfigCommandHandlers(
     RuntimeConfigCommands,
     StorageConfigCommands,
-    AppWideConfigCommands,
+    AppConfigCommands,
     EditorConfigCommands,
 ):
     """Command implementations for the generated ``config`` Typer group."""
@@ -45,7 +45,7 @@ class ConfigCommandHandlers(
         assume_yes: bool,
         storage_root: str | Path | None,
     ) -> None:
-        """Configure files for the declared AppRC capability layers."""
+        """Configure the files required by this AppRC declaration."""
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,

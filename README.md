@@ -52,7 +52,7 @@ intentional namespaces such as `rc.cli`, `rc.files`, `rc.storage`,
 3. [Quickstart](#quickstart)
 4. [How AppRC Works](#how-apprc-works)
    1. [Mental Model](#mental-model)
-   2. [Capability Layers](#capability-layers)
+   2. [Config And Storage](#config-and-storage)
    3. [Runtime Precedence](#runtime-precedence)
 5. [Generated Workflows](#generated-workflows)
    1. [Config CLI](#config-cli)
@@ -117,10 +117,10 @@ myapp/config/
 ```bash
 apprc scaffold config \
   --package myapp \
-  --mode storage-only \
+  --storage \
   --app-name myapp \
   --display-name "My App" \
-  --storage-env-key MYAPP_STORAGE \
+  --storage-selector-env-key MYAPP_STORAGE \
   --target src
 ```
 
@@ -142,11 +142,11 @@ import typer
 import apprc as rc
 
 
-MyRC = rc.AppRC.storage_only(
+MyRC = rc.AppRC(
     app_name="myapp",
     display_name="My App",
     config_package="myapp.config",
-    storage_env_key="MYAPP_STORAGE",
+    storage=rc.Storage(env_key="MYAPP_STORAGE"),
 )
 
 
@@ -183,7 +183,7 @@ class MyAppConfig:
     resources: PackageResources
 ```
 
-Add packaged defaults in `myapp/config/.env.shared`:
+Add packaged defaults in `myapp/config/apprc.defaults.env`:
 
 ```dotenv
 MYAPP_PROFILE="default"
@@ -231,7 +231,7 @@ cfg = MyAppConfig()
 `secret=True` redacts display output; it does not encrypt values, store them
 elsewhere, or imply that the field is required.
 
-Run the capability examples from a checkout with:
+Run the integration examples from a checkout with:
 
 ```bash
 python -m pip install -e examples/example_apps --no-build-isolation
@@ -241,13 +241,13 @@ apprc-storage-only config doctor
 apprc-examples-run-all
 ```
 
-They cover `env_only`, `storage_only`, `app_wide_config`,
-`app_wide_storage`, named storage, explicit env-file selector precedence, and
-the `CliRuntime` app-callback integration. With direnv, `.envrc` sources
+They cover apps with and without storage, named storage, explicit env-file
+selector precedence, and the `CliRuntime` app-callback integration. With
+direnv, `.envrc` sources
 [.env.example_apps](.env.example_apps) and bootstraps
 `examples/example_app_disk_files/` automatically. Without direnv, source
 `.env.example_apps` and run the bootstrap command above once. The generated
-directory contains `.apprc-example*/` sandboxes plus commented app-wide,
+directory contains `.apprc-example*/` sandboxes plus commented app-config,
 storage-local, and TOML files showing where the same files would live for a
 real app.
 
@@ -287,35 +287,47 @@ AppRC has one contract and several workflows built from it.
 | Editor | A Textual view over the same sections, fields, and dotenv layers. |
 
 > [!NOTE]
-> For the deeper architecture behind registered sections, fields, capability layers,
+> For the deeper architecture behind registered sections, fields, config layers,
 > provenance, and the zero-write policy, see
 > [docs/Explanations.md#3-runtime-config-model](docs/Explanations.md#3-runtime-config-model).
 
 <br>
 
-## Capability Layers
+## Config And Storage
 
-Choose one capability constructor:
+There are two declarations, not four capability levels:
 
-| Constructor | Storage root | App-wide dotenv | Named storage index |
-| --- | --- | --- | --- |
-| `rc.AppRC.env_only(...)` | disabled | optional | disabled |
-| `rc.AppRC.storage_only(...)` | required | optional | optional |
-| `rc.AppRC.app_wide_config(...)` | disabled | default | disabled |
-| `rc.AppRC.app_wide_storage(...)` | required | default | optional |
+```python
+# Config only. Per-user app config is available and created on first write.
+MyRC = rc.AppRC(
+    app_name="myapp",
+    config_package="myapp.config",
+)
+
+# The same config model plus storage.
+MyRC = rc.AppRC(
+    app_name="myapp",
+    config_package="myapp.config",
+    storage=rc.Storage(),
+)
+```
+
+`rc.Storage()` derives `MYAPP_STORAGE` and suggests the platform data directory.
+Pass `env_key=...`, `suggested_root=...`, or `prompt_on_first_run=False` only
+when the defaults do not fit the application.
 
 AppRC-managed persistence files are explicit:
 
 | Layer | Default location | Created by |
 | --- | --- | --- |
-| Packaged shared defaults | package `.env.shared` | the application package |
-| App-wide config | platform config home `.env.apprc-app` | `config app init`, app-wide setup, or app-scope save |
-| Storage config | `<storage-root>/.env.apprc-storage` | storage setup, `config storage add`, or storage-scope save |
-| Named-storage index | `<config-home>/<app>.apprc.toml` | editor `New`/`Register` or `config storage add/remove` |
+| Packaged defaults | package `apprc.defaults.env` | the application package |
+| App config | platform config home `apprc.app.env` | first app-scope save, setup, or `config app init` |
+| Storage config | `<storage-root>/apprc.storage.env` | storage setup, `config storage add`, or storage-scope save |
+| AppRC TOML | `<config-home>/apprc.toml` | editor `New`/`Register` or `config storage add/remove` |
 
 > [!NOTE]
-> For constructor arguments and capability details, see
-> [docs/References.md#capability-constructors](docs/References.md#capability-constructors).
+> For declaration arguments, see
+> [docs/References.md#application-declaration](docs/References.md#application-declaration).
 
 <br>
 
@@ -323,9 +335,9 @@ AppRC-managed persistence files are explicit:
 
 When dotenv layers are loaded, AppRC merges values in this order:
 
-1. packaged `.env.shared`
-2. app-wide `.env.apprc-app`, when allowed and present
-3. selected storage `.env.apprc-storage`, when storage is selected and present
+1. packaged `apprc.defaults.env`
+2. app `apprc.app.env`, when present
+3. selected storage `apprc.storage.env`, when storage is selected and present
 4. explicit `--env-file` values
 5. existing `os.environ`
 
@@ -337,11 +349,11 @@ Storage selector resolution uses:
 1. CLI `--storage`
 2. shell env, for example `MYAPP_STORAGE`
 3. explicit env files, respecting `--env-file-overrides-os-environ`
-4. app-wide `.env.apprc-app`, when active
-5. packaged `.env.shared`
+4. app `apprc.app.env`, when present
+5. packaged `apprc.defaults.env`
 
-Path selectors work without a named-storage index. Bare named selectors use
-`<app>.apprc.toml` when the index exists.
+Path selectors work without an AppRC TOML registry. Bare named selectors use
+`apprc.toml` when that registry exists.
 
 > [!NOTE]
 > For the rationale behind layer order and storage selector resolution, see
@@ -370,6 +382,7 @@ myapp config paths
 myapp config doctor
 myapp config show
 myapp config setup
+myapp config migrate --dry-run
 myapp config set KEY VALUE --scope app
 myapp config set KEY VALUE --scope storage
 myapp config edit
@@ -379,17 +392,16 @@ myapp config storage list
 myapp config storage remove NAME
 ```
 
-The command group follows the selected capabilities. For example, storage-free
-apps do not expose named-storage commands.
+Storage commands appear when the declaration includes `rc.Storage()`. The app
+config commands are always available.
 
 `config edit` requires the optional TUI extra:
 `python -m pip install "apprc[tui]"`.
 
-The editor always shows `Setup`. It runs the same capability-aware setup as
-`config setup` and reports any shell selector that must be set afterward.
-Storage-capable apps that allow named storage also show `New`, `Register`,
+The editor always shows `Setup`. It runs the same declaration-aware setup as
+`config setup`. Storage apps also show `New`, `Register`,
 `Rename`, `Location`, `Move`, `Archive`, and `Delete`. `New` and `Register`
-can create the first named-storage index; opening the editor itself still
+can create the first AppRC TOML registry; opening the editor itself still
 writes nothing.
 
 > [!NOTE]
@@ -400,22 +412,41 @@ writes nothing.
 
 ## Setup And Diagnostics
 
-Use `config paths` before setup to see candidate paths and declared
-capabilities without writing anything. Use `config setup` or the editor's
+Use `config paths` before setup to see candidate paths and the declaration
+without writing anything. Use `config setup` or the editor's
 `Setup` action for explicit first storage setup, then use `config doctor` when
 a machine is not runnable.
 
 ```shell
 myapp config paths
 myapp config setup --yes --storage-root /absolute/path/to/storage
-export MYAPP_STORAGE="/absolute/path/to/storage"
 myapp config doctor
 myapp config set access_token secret-value --scope storage
 myapp run
 ```
 
+Setup stores the absolute selector in `apprc.app.env`; no shell export is
+required. On an interactive terminal, the first runtime command can offer to
+create the suggested platform data directory. Use `--storage-root PATH` for a
+custom path so the shell can complete it.
+
 `config doctor` reports a status such as `env_not_set`, `storage_not_ready`,
 `app_config_not_ready`, `named_storage_not_ready`, or `runnable`.
+
+AppRC 0.20 reads the 0.19 filenames when their replacements do not exist. If
+both names exist, the current filename wins and AppRC warns instead of merging
+values. After changing the application declaration, inspect and apply the
+migration:
+
+```shell
+myapp config migrate --dry-run
+myapp config migrate --yes
+```
+
+The migration moves files; it does not copy them. Custom filename overrides
+and an explicit `MYAPP_APPRC_TOML` path are left alone. The deprecated
+`env_only(...)`, `storage_only(...)`, `app_wide_config(...)`, and
+`app_wide_storage(...)` constructors remain for 0.20 and are removed in 0.21.
 
 > [!IMPORTANT]
 > Runtime reads and diagnostics do not create files. `bootstrap`, `config
@@ -452,8 +483,8 @@ The detailed manual starts at [docs/README.md](docs/README.md).
 
 The repository also ships runnable example CLIs in
 [examples/example_apps](examples/example_apps). Each example is its own
-package, such as `storage_only`, with a `config/` package,
-`cli.py`, and packaged `config/.env.shared` defaults so the source tree mirrors
+package, with a `config/` package,
+`cli.py`, and packaged `config/apprc.defaults.env` defaults so the source tree mirrors
 a real app integration. Generated example disk files live outside that source
 tree under `examples/example_app_disk_files/`.
 

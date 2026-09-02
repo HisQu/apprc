@@ -26,11 +26,11 @@
 <!-- base_layers&#45;&gt;selected_layers -->
 <g id="edge1" class="edge">
 <title>base_layers&#45;&gt;selected_layers</title>
-<path fill="none" stroke="#32bc00" stroke-width="2.5" d="M142.34,-325.18C142.58,-316.47 142.82,-307.27 143.07,-298.11"/>
-<polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.5" points="145.68,-298.35 143.26,-290.79 140.44,-298.21 145.68,-298.35"/>
-<polygon fill="#32bc00" stroke="none" points="143,-296.25 143,-315 179,-315 179,-296.25 143,-296.25"/>
-<text xml:space="preserve" text-anchor="start" x="146" y="-304.45" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">higher</text>
-<polygon fill="none" stroke="#32bc00" points="143,-296.25 143,-315 179,-315 179,-296.25 143,-296.25"/>
+<path fill="none" stroke="#32bc00" stroke-width="2.5" d="M141.68,-325.18C141.97,-316.47 142.28,-307.27 142.58,-298.11"/>
+<polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.5" points="145.2,-298.37 142.83,-290.79 139.95,-298.19 145.2,-298.37"/>
+<polygon fill="#32bc00" stroke="none" points="142.5,-296.25 142.5,-315 178.5,-315 178.5,-296.25 142.5,-296.25"/>
+<text xml:space="preserve" text-anchor="start" x="145.5" y="-304.45" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">higher</text>
+<polygon fill="none" stroke="#32bc00" points="142.5,-296.25 142.5,-315 178.5,-315 178.5,-296.25 142.5,-296.25"/>
 </g>
 <!-- selected_layers&#45;&gt;effective_config -->
 <g id="edge2" class="edge">
@@ -71,19 +71,19 @@
 <!-- base_layers -->
 <g id="node1" class="node">
 <title>base_layers</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M106.38,-325C106.38,-325 175.62,-325 175.62,-325 181.62,-325 187.62,-331 187.62,-337 187.62,-337 187.62,-416 187.62,-416 187.62,-422 181.62,-428 175.62,-428 175.62,-428 106.38,-428 106.38,-428 100.38,-428 94.38,-422 94.38,-416 94.38,-416 94.38,-337 94.38,-337 94.38,-331 100.38,-325 106.38,-325"/>
-<text xml:space="preserve" text-anchor="start" x="105.38" y="-408.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Base layers</text>
-<text xml:space="preserve" text-anchor="start" x="99.38" y="-377.5" font-family="sans-serif" font-size="10.00">.env.shared</text>
-<text xml:space="preserve" text-anchor="start" x="99.38" y="-355.25" font-family="sans-serif" font-size="10.00">.env.apprc&#45;app</text>
-<text xml:space="preserve" text-anchor="start" x="99.38" y="-333" font-family="sans-serif" font-size="10.00">lower precedence</text>
-<path fill="none" stroke="#32bc00" d="M106.38,-325C106.38,-325 175.62,-325 175.62,-325 181.62,-325 187.62,-331 187.62,-337 187.62,-337 187.62,-416 187.62,-416 187.62,-422 181.62,-428 175.62,-428 175.62,-428 106.38,-428 106.38,-428 100.38,-428 94.38,-422 94.38,-416 94.38,-416 94.38,-337 94.38,-337 94.38,-331 100.38,-325 106.38,-325"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M103.88,-325C103.88,-325 176.12,-325 176.12,-325 182.12,-325 188.12,-331 188.12,-337 188.12,-337 188.12,-416 188.12,-416 188.12,-422 182.12,-428 176.12,-428 176.12,-428 103.88,-428 103.88,-428 97.88,-428 91.88,-422 91.88,-416 91.88,-416 91.88,-337 91.88,-337 91.88,-331 97.88,-325 103.88,-325"/>
+<text xml:space="preserve" text-anchor="start" x="102.88" y="-408.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Base layers</text>
+<text xml:space="preserve" text-anchor="start" x="96.88" y="-377.5" font-family="sans-serif" font-size="10.00">apprc.defaults.env</text>
+<text xml:space="preserve" text-anchor="start" x="96.88" y="-355.25" font-family="sans-serif" font-size="10.00">apprc.app.env</text>
+<text xml:space="preserve" text-anchor="start" x="96.88" y="-333" font-family="sans-serif" font-size="10.00">lower precedence</text>
+<path fill="none" stroke="#32bc00" d="M103.88,-325C103.88,-325 176.12,-325 176.12,-325 182.12,-325 188.12,-331 188.12,-337 188.12,-337 188.12,-416 188.12,-416 188.12,-422 182.12,-428 176.12,-428 176.12,-428 103.88,-428 103.88,-428 97.88,-428 91.88,-422 91.88,-416 91.88,-416 91.88,-337 91.88,-337 91.88,-331 97.88,-325 103.88,-325"/>
 </g>
 <!-- selected_layers -->
 <g id="node2" class="node">
 <title>selected_layers</title>
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M108.12,-162C108.12,-162 181.88,-162 181.88,-162 187.88,-162 193.88,-168 193.88,-174 193.88,-174 193.88,-275.25 193.88,-275.25 193.88,-281.25 187.88,-287.25 181.88,-287.25 181.88,-287.25 108.12,-287.25 108.12,-287.25 102.12,-287.25 96.12,-281.25 96.12,-275.25 96.12,-275.25 96.12,-174 96.12,-174 96.12,-168 102.12,-162 108.12,-162"/>
 <text xml:space="preserve" text-anchor="start" x="107.12" y="-267.75" font-family="sans-serif" font-weight="bold" font-size="10.00">Selected layers</text>
-<text xml:space="preserve" text-anchor="start" x="101.12" y="-236.75" font-family="sans-serif" font-size="10.00">.env.apprc&#45;storage</text>
+<text xml:space="preserve" text-anchor="start" x="101.12" y="-236.75" font-family="sans-serif" font-size="10.00">apprc.storage.env</text>
 <text xml:space="preserve" text-anchor="start" x="101.12" y="-214.5" font-family="sans-serif" font-size="10.00">&#45;&#45;env&#45;file</text>
 <text xml:space="preserve" text-anchor="start" x="101.12" y="-192.25" font-family="sans-serif" font-size="10.00">os.environ</text>
 <text xml:space="preserve" text-anchor="start" x="101.12" y="-170" font-family="sans-serif" font-size="10.00">higher precedence</text>
@@ -96,7 +96,7 @@
 <text xml:space="preserve" text-anchor="start" x="212.12" y="-571.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Selector sources</text>
 <text xml:space="preserve" text-anchor="start" x="206.12" y="-540.5" font-family="sans-serif" font-size="10.00">&#45;&#45;storage</text>
 <text xml:space="preserve" text-anchor="start" x="206.12" y="-518.25" font-family="sans-serif" font-size="10.00">MYAPP_STORAGE</text>
-<text xml:space="preserve" text-anchor="start" x="206.12" y="-496" font-family="sans-serif" font-size="10.00">named index</text>
+<text xml:space="preserve" text-anchor="start" x="206.12" y="-496" font-family="sans-serif" font-size="10.00">apprc.toml</text>
 <path fill="none" stroke="#f4a261" d="M213.12,-488C213.12,-488 292.88,-488 292.88,-488 298.88,-488 304.88,-494 304.88,-500 304.88,-500 304.88,-579 304.88,-579 304.88,-585 298.88,-591 292.88,-591 292.88,-591 213.12,-591 213.12,-591 207.12,-591 201.12,-585 201.12,-579 201.12,-579 201.12,-500 201.12,-500 201.12,-494 207.12,-488 213.12,-488"/>
 </g>
 <!-- selected_storage -->

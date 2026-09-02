@@ -72,7 +72,7 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
         storage_values={
             "APPRC_EXAMPLE_APP_RETRY_COUNT": "9",
         },
-        shared_values=None,
+        defaults_values=None,
         include_app=True,
         include_storage=True,
         hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_STORAGE"}),
@@ -149,7 +149,7 @@ def test_value_modal_rendering_formats_sources_and_metadata() -> None:
         raw_value="super-secret",
     )
     empty_storage = EditableConfigValueSource(key="storage", raw_value="")
-    shared = EditableConfigValueSource(key="shared", raw_value=None)
+    shared = EditableConfigValueSource(key="defaults", raw_value=None)
 
     assert source_label(effective) == "Effective"
     assert source_label_text(effective).style == EFFECTIVE_SOURCE_STYLE

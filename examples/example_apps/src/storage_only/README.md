@@ -1,7 +1,7 @@
 # Storage Only Example
 
-`storage_only` demonstrates `rc.AppRC.storage_only(...)`: one active storage
-root with storage-local dotenv values and optional named-storage registry.
+`storage_only` demonstrates `rc.AppRC(..., storage=rc.Storage(...))`: one
+active storage root with storage-local values and optional names.
 
 ## Requirements
 
@@ -29,11 +29,9 @@ apprc-storage-only config storage list
 apprc-storage-only config show --json
 ```
 
-## Upgrade Options
-
-Use `app_wide_storage` when the app also needs app-wide editable defaults.
-Use `cli_runtime` when a custom app callback must prepare additional runtime
-state before commands run.
+The `app_wide_storage` scenario uses the same declaration shape and focuses on
+app-level overrides. Use `cli_runtime` when a custom callback must prepare
+additional runtime state.
 
 ## Docs
 

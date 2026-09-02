@@ -29,14 +29,12 @@ def default_runtime_payload(
     return {
         "app_name": kit.spec.app_name,
         "display_name": kit.spec.display_name,
-        "capabilities": {
-            "storage": kit.spec.storage_layer.value,
-            "app_wide": kit.spec.app_wide_layer.value,
-            "named_storage": kit.spec.named_storage_layer.value,
-        },
+        "storage_enabled": kit.spec.uses_storage(),
+        "app_config_enabled": kit.spec.app_env_enabled(),
+        "named_storage_enabled": kit.spec.named_storage_enabled(),
         "config_home": str(kit.spec.config_home()),
-        "app_wide_env": str(kit.spec.app_wide_env_path()),
-        "index_path": str(kit.spec.index_path()),
+        "app_env": str(kit.spec.app_env_path()),
+        "apprc_toml": str(kit.spec.apprc_toml_path()),
         "storage_root": str(storage_root) if storage_root else None,
         "storage_env": storage_env,
     }

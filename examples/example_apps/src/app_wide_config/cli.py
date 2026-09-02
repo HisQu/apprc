@@ -37,7 +37,7 @@ def build_app(
         kit=KIT,
         bundle_cls=AppWideConfigExampleConfig,
         section_getter=lambda config: config.app_wide,
-        help_text="Exercise AppRC's app-wide config capability mode.",
+        help_text="Exercise per-user AppRC config without storage.",
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
     )
@@ -55,13 +55,13 @@ def run_demo(root: Path) -> dict[str, object]:
 
     def scenario() -> dict[str, object]:
         before = rc.cli.build_config_doctor_payload(KIT, storage=None)
-        app_wide_env = KIT.spec.ensure_app_wide_env()
+        app_env = KIT.spec.ensure_app_env()
         rc.files.set_env_file_value(
-            path=app_wide_env,
+            path=app_env,
             reference="workers",
             raw_value="4",
             owners=CONFIG_SECTIONS,
-            layer_name=KIT.spec.app_wide_env_filename,
+            layer_name=KIT.spec.app_env_filename,
         )
         after = rc.cli.build_config_doctor_payload(KIT, storage=None)
         KIT.bootstrap(
@@ -75,7 +75,7 @@ def run_demo(root: Path) -> dict[str, object]:
             "mode": "app_wide_config",
             "doctor_before": before.status,
             "doctor_after": after.status,
-            "app_wide_env": str(app_wide_env),
+            "app_env": str(app_env),
             "config": config_values(config.app_wide),
         }
 

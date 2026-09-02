@@ -35,7 +35,7 @@ def config_setup_message(
     config_group_name: str = "config",
 ) -> str:
     """Return setup text shown when runtime storage is missing."""
-    if not kit.spec.storage_required():
+    if not kit.spec.uses_storage():
         return (
             f"{kit.spec.display_name} can run from packaged defaults, explicit "
             "env files, and shell environment variables.\n\n"
@@ -43,11 +43,11 @@ def config_setup_message(
             f"  {config_command_text(kit, 'paths', config_group_name=config_group_name)}\n"
             f"  {config_command_text(kit, 'doctor', config_group_name=config_group_name)}"
         )
-    storage_key = kit.spec.require_storage_env_key()
+    storage_key = kit.spec.require_storage_selector_env_key()
     return (
         f"No active {kit.spec.display_name} storage is selected.\n\n"
         f"Set {storage_key} to a storage path or pass --storage PATH. The "
-        "named-storage index is optional and only needed for named selectors.\n"
+        "AppRC TOML registry is optional and only needed for named selectors.\n"
         "For guided setup:\n"
         f"  {config_command_text(kit, 'setup --yes --storage-root /absolute/path/to/storage-root', config_group_name=config_group_name)}\n\n"
         "Then inspect the setup:\n"
@@ -99,7 +99,7 @@ def _doctor_next_steps(
         ]
     if status == ConfigDoctorStatus.NAMED_STORAGE_NOT_READY:
         return [
-            "Fix the named-storage index or create a new entry:",
+            "Fix AppRC TOML or create a new storage entry:",
             config_command_text(
                 kit,
                 "storage add NAME /absolute/path/to/storage-root",
@@ -137,7 +137,8 @@ def _missing_env_issue(
     """
     keys = ", ".join(missing_env_keys)
     return (
-        f"Env not set. {kit.spec.display_name} requires {keys}. Export the "
-        "storage path or add it to an explicit dotenv file, then run "
-        f"{config_command_text(kit, 'doctor', config_group_name=config_group_name)}."
+        f"No storage is selected for {kit.spec.display_name}; selector key: "
+        f"{keys}. Run "
+        f"{config_command_text(kit, 'setup', config_group_name=config_group_name)} "
+        "to create and save one, or pass --storage PATH."
     )

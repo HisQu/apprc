@@ -34,6 +34,10 @@ class StorageSelectorError(ValueError):
         self.param_hint = param_hint
 
 
+class MissingStorageSelectorError(StorageSelectorError):
+    """No CLI, process, app, or packaged storage selector was found."""
+
+
 @dataclass(frozen=True, slots=True)
 class StorageSelection:
     """Resolved active storage selector.
@@ -84,8 +88,8 @@ def resolve_active_storage_selection(
     storage_env_key: str,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str] | None = None,
-    app_wide_values: Mapping[str, str] | None = None,
-    shared_values: Mapping[str, str] | None = None,
+    app_values: Mapping[str, str] | None = None,
+    defaults_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool = False,
 ) -> StorageSelection | None:
     """Return the active storage selected by CLI, env, or explicit dotenv.
@@ -101,9 +105,9 @@ def resolve_active_storage_selection(
     :param storage_env_key: Env key that stores the active storage selector.
     :param original_env: Process environment captured before dotenv loading.
     :param explicit_values: Values read from ``--env-file``.
-    :param app_wide_values: App-wide dotenv values used as a persistent
+    :param app_values: Per-user app dotenv values used as a persistent
         storage selector fallback.
-    :param shared_values: Packaged shared dotenv values used only as the
+    :param defaults_values: Packaged defaults used only as the
         lowest-precedence storage selector fallback.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         already exported process values.
@@ -114,8 +118,8 @@ def resolve_active_storage_selection(
         storage=storage,
         original_env=original_env,
         explicit_values=explicit_values or {},
-        app_wide_values=app_wide_values or {},
-        shared_values=shared_values or {},
+        app_values=app_values or {},
+        defaults_values=defaults_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         storage_env_key=storage_env_key,
     )
@@ -207,13 +211,13 @@ def resolve_storage_selector_value(
 
 def missing_storage_selector_error(
     storage_env_key: str,
-) -> StorageSelectorError:
+) -> MissingStorageSelectorError:
     """Return the runtime error for a missing active storage selector.
 
     :param storage_env_key: Env key that should hold the active storage selector.
     :return: Error carrying CLI parameter context.
     """
-    return StorageSelectorError(
+    return MissingStorageSelectorError(
         f"{storage_env_key} is required and must select a storage path. "
         "When the optional registry is enabled, it may also select a "
         "registered storage name. Pass --storage PATH or export "
@@ -227,8 +231,8 @@ def select_storage_selector(
     storage: str | None,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
-    app_wide_values: Mapping[str, str] | None = None,
-    shared_values: Mapping[str, str] | None = None,
+    app_values: Mapping[str, str] | None = None,
+    defaults_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool,
     storage_env_key: str,
 ) -> tuple[str, str] | None:
@@ -241,9 +245,9 @@ def select_storage_selector(
     :param storage: Optional host-level CLI ``--storage`` value.
     :param original_env: Process environment captured before dotenv loading.
     :param explicit_values: Values read from ``--env-file``.
-    :param app_wide_values: App-wide dotenv values used as a persistent
+    :param app_values: Per-user app dotenv values used as a persistent
         selector fallback.
-    :param shared_values: Packaged shared dotenv values used only as the
+    :param defaults_values: Packaged defaults used only as the
         lowest-precedence storage selector fallback.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         already exported process values.
@@ -262,12 +266,12 @@ def select_storage_selector(
         )
     if raw_value:
         return storage_env_key, raw_value
-    app_wide_raw_value = (app_wide_values or {}).get(storage_env_key)
-    if app_wide_raw_value:
-        return "app-wide .env.apprc-app", app_wide_raw_value
-    shared_raw_value = (shared_values or {}).get(storage_env_key)
-    if shared_raw_value:
-        return "packaged .env.shared", shared_raw_value
+    app_config_raw_value = (app_values or {}).get(storage_env_key)
+    if app_config_raw_value:
+        return "app config", app_config_raw_value
+    defaults_raw_value = (defaults_values or {}).get(storage_env_key)
+    if defaults_raw_value:
+        return "packaged defaults", defaults_raw_value
     return None
 
 

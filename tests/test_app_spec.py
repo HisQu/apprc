@@ -9,6 +9,7 @@ from apprc.definition.app_config.spec import (
     CapabilityState,
     StorageLayerState,
 )
+from apprc.definition.app_config.storage import Storage
 from apprc.definition.env_config.env import EnvConfig
 from apprc.definition.env_config.fields import env_field, env_owner
 
@@ -59,20 +60,13 @@ class _DuplicateEnvB(EnvConfig):
 
 def _spec(
     *,
-    storage_layer: StorageLayerState = StorageLayerState.DISABLED,
-    app_wide_layer: CapabilityState = CapabilityState.OPTIONAL,
-    named_storage_layer: CapabilityState = CapabilityState.DISABLED,
-    storage_env_key: str | None = None,
+    storage: Storage | None = None,
 ) -> AppConfigSpec:
     return AppConfigSpec(
         app_name="demo",
         display_name="Demo",
         config_package="apprc",
-        index_filename="demo.apprc.toml",
-        storage_layer=storage_layer,
-        app_wide_layer=app_wide_layer,
-        named_storage_layer=named_storage_layer,
-        storage_env_key=storage_env_key,
+        storage=storage,
     )
 
 
@@ -89,36 +83,45 @@ def test_app_config_spec_derives_index_env_key() -> None:
     assert _spec().index_env_key == "DEMO_APPRC_TOML"
 
 
-def test_app_config_spec_defaults_to_env_only_capabilities() -> None:
+def test_app_config_spec_defaults_to_config_without_storage() -> None:
     spec = _spec()
 
     assert spec.storage_layer == StorageLayerState.DISABLED
     assert spec.app_wide_layer == CapabilityState.OPTIONAL
     assert spec.named_storage_layer == CapabilityState.DISABLED
     assert spec.storage_env_key is None
-    assert spec.app_wide_env_filename == ".env.apprc-app"
-    assert spec.storage_env_filename == ".env.apprc-storage"
+    assert spec.app_env_filename == "apprc.app.env"
+    assert spec.apprc_toml_filename == "apprc.toml"
+    assert spec.storage is None
 
 
 def test_app_config_spec_storage_required_derives_storage_env_key() -> None:
-    spec = _spec(
-        storage_layer=StorageLayerState.REQUIRED,
-        named_storage_layer=CapabilityState.OPTIONAL,
-    )
+    spec = _spec(storage=Storage())
 
     assert spec.storage_required() is True
     assert spec.storage_env_key == "DEMO_STORAGE"
-    assert spec.named_storage_allowed() is True
+    assert spec.named_storage_enabled() is True
+    assert spec.storage_env_filename == "apprc.storage.env"
 
 
 def test_app_config_spec_rejects_storage_key_without_storage() -> None:
-    with pytest.raises(ValueError, match="storage-capable"):
-        _spec(storage_env_key="DEMO_STORAGE")
+    with pytest.raises(ValueError, match="require storage"):
+        AppConfigSpec(
+            app_name="demo",
+            display_name="Demo",
+            config_package="apprc",
+            storage_env_key="DEMO_STORAGE",
+        )
 
 
 def test_app_config_spec_rejects_named_storage_without_storage() -> None:
     with pytest.raises(ValueError, match="named_storage_layer"):
-        _spec(named_storage_layer=CapabilityState.OPTIONAL)
+        AppConfigSpec(
+            app_name="demo",
+            display_name="Demo",
+            config_package="apprc",
+            named_storage_layer=CapabilityState.OPTIONAL,
+        )
 
 
 def test_app_config_spec_index_path_uses_env_override(

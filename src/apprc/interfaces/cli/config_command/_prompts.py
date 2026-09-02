@@ -14,7 +14,7 @@ import typer
 
 # == Internal ================================
 from apprc.definition.app_config.kit import AppConfigKit
-from apprc.user_files.storage_roots._loading import index_path_for_create
+from apprc.user_files.storage_roots._loading import apprc_toml_path_for_create
 from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
@@ -46,14 +46,14 @@ def confirm_existing_storage_root(
     storage_root: Path,
     *,
     storage_name: str,
-    index_path: Path | None = None,
+    apprc_toml_path: Path | None = None,
 ) -> None:
     """Ask whether a non-empty existing storage root may be reused.
 
     :param kit: Application config facade.
     :param storage_root: Existing non-empty storage directory.
     :param storage_name: Registry selector that will point at the directory.
-    :param index_path: Named-storage index path selected for this write.
+    :param apprc_toml_path: AppRC TOML path selected for this write.
     :raises typer.Exit: If the user refuses or input cannot be read.
     """
     console = Console(soft_wrap=True)
@@ -65,8 +65,8 @@ def confirm_existing_storage_root(
         str(storage_root / kit.spec.storage_env_filename),
     )
     managed_files.add_row(
-        "named-storage index",
-        str(index_path or index_path_for_create(kit.spec)),
+        "AppRC TOML",
+        str(apprc_toml_path or apprc_toml_path_for_create(kit.spec)),
     )
 
     panel_lines: list[RenderableType] = [
@@ -146,7 +146,7 @@ def guard_storage_root_init(
     *,
     storage_name: str,
     assume_yes: bool,
-    index_path: Path | None = None,
+    apprc_toml_path: Path | None = None,
 ) -> Path:
     """Return a safe storage root path before registration writes.
 
@@ -154,6 +154,7 @@ def guard_storage_root_init(
     :param storage_root: User-provided storage root path.
     :param storage_name: Registry selector that will point at the directory.
     :param assume_yes: Whether to skip the non-empty directory confirmation.
+    :param apprc_toml_path: AppRC TOML path selected for this write.
     :return: Normalized storage root path.
     :raises typer.BadParameter: If the path cannot represent a directory.
     :raises typer.Exit: If the user declines reuse of a non-empty directory.
@@ -179,6 +180,6 @@ def guard_storage_root_init(
             kit,
             root,
             storage_name=storage_name,
-            index_path=index_path,
+            apprc_toml_path=apprc_toml_path,
         )
     return root

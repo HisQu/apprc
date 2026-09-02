@@ -39,7 +39,7 @@ def test_env_only_setup_prints_guidance_without_writes(
     assert not kit.spec.index_path().exists()
 
 
-def test_storage_only_setup_creates_storage_env_only(
+def test_storage_setup_creates_storage_env_and_app_selector(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -54,10 +54,10 @@ def test_storage_only_setup_creates_storage_env_only(
     )
 
     assert result.exit_code == 0, result.output
-    assert (storage_root / ".env.apprc-storage").is_file()
-    assert not kit.spec.app_wide_env_path().exists()
+    assert (storage_root / "apprc.storage.env").is_file()
+    assert kit.spec.app_env_path().is_file()
     assert not kit.spec.index_path().exists()
-    assert "export APPRC_EXAMPLE_APP_STORAGE" in result.output
+    assert "selector_saved:" in result.output
 
 
 def test_storage_only_setup_rejects_blank_storage_root(
@@ -76,10 +76,10 @@ def test_storage_only_setup_rejects_blank_storage_root(
 
     assert result.exit_code != 0, result.output
     assert "must not be empty" in result.output
-    assert not (tmp_path / ".env.apprc-storage").exists()
+    assert not (tmp_path / "apprc.storage.env").exists()
 
 
-def test_app_wide_config_setup_creates_app_wide_env(
+def test_config_only_setup_reports_no_required_writes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -90,7 +90,8 @@ def test_app_wide_config_setup_creates_app_wide_env(
     result = CliRunner().invoke(app, ["setup"])
 
     assert result.exit_code == 0, result.output
-    assert kit.spec.app_wide_env_path().is_file()
+    assert "writes: none" in result.output
+    assert not kit.spec.app_env_path().exists()
     assert not kit.spec.index_path().exists()
 
 

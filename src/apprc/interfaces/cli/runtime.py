@@ -38,6 +38,11 @@ from apprc.interfaces.cli._typer_utils import (
 )
 from apprc.runtime.result import BootstrapLogger
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.interfaces.cli.setup_command import run_config_setup
+from apprc.user_files.storage_roots._naming import suggested_storage_root
+from apprc.user_files.storage_roots.selector import (
+    MissingStorageSelectorError,
+)
 
 if TYPE_CHECKING:
     from apprc.interfaces.cli.config_command import ConfigSelectorContext
@@ -376,14 +381,22 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :param options: CLI option object carrying AppRC-compatible fields.
         :return: Prepared session metadata and optional app state.
         """
-        apprc_context = prepare_cli_runtime_context(
-            ctx,
-            self.kit,
-            options,
-            skip_runtime_setup=self._request_skips_runtime(ctx),
-            setup_logging=self.setup_logging,
-            logger=self.logger,
-        )
+        skip_runtime_setup = self._request_skips_runtime(ctx)
+        try:
+            apprc_context = prepare_cli_runtime_context(
+                ctx,
+                self.kit,
+                options,
+                skip_runtime_setup=skip_runtime_setup,
+                setup_logging=self.setup_logging,
+                logger=self.logger,
+            )
+        except MissingStorageSelectorError as exc:
+            apprc_context = self._first_run_storage_setup(
+                ctx,
+                options,
+                error=exc,
+            )
         if apprc_context.runtime_setup_skipped:
             return CliRuntimeSession(apprc_context=apprc_context)
 
@@ -395,6 +408,59 @@ class CliRuntime(Generic[OptionsT, StateT]):
             )
         ctx.obj = state
         return CliRuntimeSession(apprc_context=apprc_context, state=state)
+
+    def _first_run_storage_setup(
+        self,
+        ctx: typer.Context,
+        options: OptionsT,
+        *,
+        error: MissingStorageSelectorError,
+    ) -> CliRuntimeContext[OptionsT]:
+        """Offer the short first-run setup and retry runtime preparation.
+
+        :param ctx: Active Typer context.
+        :param options: Parsed host CLI options.
+        :param error: Missing selector failure that triggered the prompt.
+        :return: Prepared context after accepted setup.
+        :raises typer.BadParameter: If prompting is disabled or unavailable.
+        :raises typer.Exit: If the user declines setup.
+        """
+        storage = self.kit.spec.storage
+        if (
+            storage is None
+            or not storage.prompt_on_first_run
+            or not sys.stdin.isatty()
+            or not sys.stdout.isatty()
+        ):
+            raise typer.BadParameter(
+                str(error),
+                param_hint=error.param_hint,
+            ) from error
+        suggested = storage.suggested_root or suggested_storage_root(
+            self.kit.spec.app_name
+        )
+        if not typer.confirm(f"Create storage directory at {suggested}?"):
+            typer.echo("No files were changed.", err=True)
+            typer.echo(
+                "Choose another path with "
+                f"`{self.kit.spec.config_command_name()} "
+                f"{self.config_group_name} setup --storage-root PATH`.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        run_config_setup(
+            self.kit,
+            assume_yes=True,
+            storage_root=suggested,
+            config_group_name=self.config_group_name,
+        )
+        return prepare_cli_runtime_context(
+            ctx,
+            self.kit,
+            options,
+            setup_logging=self.setup_logging,
+            logger=self.logger,
+        )
 
     def _build_state(
         self,

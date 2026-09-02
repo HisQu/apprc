@@ -1,383 +1,182 @@
-<!-- ======================================================== -->
+# AppRC Reference
 
-<br>
+## Table of contents
 
-## Table Of Contents
-<!-- ======================================================== -->
+1. [Public interfaces](#public-interfaces)
+2. [Application declaration](#application-declaration)
+3. [Configuration files](#configuration-files)
+4. [Environment variables](#environment-variables)
+5. [Runtime precedence](#runtime-precedence)
+6. [Generated CLI commands](#generated-cli-commands)
+7. [Doctor statuses](#doctor-statuses)
+8. [Dependency surfaces](#dependency-surfaces)
+9. [Documentation assets](#documentation-assets)
 
-1. [References](#1-references)
-2. [Runtime Config Reference](#2-runtime-config-reference)
-   1. [Public Interfaces](#public-interfaces)
-   2. [Capability Constructors](#capability-constructors)
-   3. [Configuration Files](#configuration-files)
-   4. [Environment Variables](#environment-variables)
-   5. [Runtime Precedence](#runtime-precedence)
-   6. [Storage Selector Precedence](#storage-selector-precedence)
-   7. [Generated CLI Commands](#generated-cli-commands)
-   8. [Doctor Statuses](#doctor-statuses)
-   9. [Dotenv Helper APIs](#dotenv-helper-apis)
-3. [Repository Reference](#3-repository-reference)
-   1. [Project Paths](#project-paths)
-   2. [Dependency Surfaces](#dependency-surfaces)
-   3. [Documentation Assets](#documentation-assets)
+Use [How-To User Guides](How-To-User-Guides.md) for procedures and
+[Explanations](Explanations.md) for design rationale.
 
-<br>
+## Public interfaces
 
-# 1. References
+Normal integrations use `import apprc as rc`.
 
-Use this file when you need an exact import, command, filename, environment
-variable, or status. Use [How-To User Guides](How-To-User-Guides.md) for
-procedure and [Explanations](Explanations.md) for concepts.
+| Name | Purpose |
+| --- | --- |
+| `rc.AppRC` | Declares one application, registers config, bootstraps runtime state, and mounts generated commands. |
+| `rc.Storage` | Enables storage and declares its selector key, suggested root, first-run prompt policy, and dotenv filename. |
+| `rc.Config` | Base for env-backed typed config. |
+| `rc.ConfigBase` | Base for Python-only config. |
+| `rc.field` | Declares one env-backed field with a full env key. |
+| `rc.cli` | Advanced Typer runtime and mount helpers. |
+| `rc.files` | Dotenv and managed-file helpers. |
+| `rc.storage` | Storage registry, selector, path, and archive helpers. |
+| `rc.provenance` | Runtime value-origin helpers. |
+| `rc.schema` | Read-only config metadata. |
 
-<br>
+`rc.field(...)` accepts `default`, `default_factory`, `required`, `title`,
+`description`, `editable`, `secret`, `choices`, and `packaged_default`.
+`packaged_default` describes an intentional difference between the Python
+fallback and `apprc.defaults.env`. The old `shared_default` spelling remains a
+0.20 compatibility alias.
 
-# 2. Runtime Config Reference
+## Application declaration
 
-<!-- ======================================================== -->
+```python
+MyRC = rc.AppRC(
+    app_name="myapp",
+    config_package="myapp.config",
+    display_name="My App",
+    command_name="myapp",
+    storage=rc.Storage(),
+)
+```
 
-<br>
+`AppRC` arguments:
 
-## Public Interfaces
-<!-- ======================================================== -->
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `app_name` | required | Stable name used for platform directories and derived env keys. |
+| `config_package` | required | Import package containing `apprc.defaults.env`. |
+| `display_name` | `app_name` | Label shown to users. |
+| `command_name` | `app_name` | Executable shown in generated instructions. |
+| `storage` | `None` | `rc.Storage(...)` when the application persists data. |
+| `defaults_env_filename` | `apprc.defaults.env` | Packaged defaults basename. |
+| `app_env_filename` | `apprc.app.env` | Per-user app dotenv basename. |
+| `apprc_toml_filename` | `apprc.toml` | Storage registry and future AppRC metadata basename. |
 
-Top-level `apprc` imports for normal integrations:
+`Storage` arguments:
 
-| Import | Purpose |
-|---|---|
-| `AppRC` | Public facade that selects a capability mode, registers configs, mounts CLI runtime, and bootstraps non-Typer use. |
-| `Config` | Env-backed config base. Use `rc.field("FULL_ENV_KEY", ...)` on subclasses. |
-| `ConfigBase` | Python-only config base. Use normal Python/dataclass defaults; do not use `rc.field(...)`. |
-| `field` | Public env-backed field helper. The first argument is always the full env key. |
-| `cli` | Advanced CLI namespace, including `CliRuntime` and low-level mount helpers. |
-| `files` | AppRC-managed file and dotenv helper namespace. |
-| `storage` | Storage registry, selector, archive, and path helper namespace. |
-| `provenance` | Runtime provenance helper namespace. |
-| `schema` | Read-only config metadata namespace for advanced documentation, inventory, and diagnostics integrations. |
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `env_key` | derived `<APP>_STORAGE` | Storage selector env key. |
+| `suggested_root` | platform user data path | First setup suggestion. |
+| `prompt_on_first_run` | `True` | Offer setup before an interactive runtime command. |
+| `env_filename` | `apprc.storage.env` | Dotenv basename inside each storage. |
 
-`apprc.cli` names for advanced CLI integrations:
+Filename arguments accept one basename, not a path. Use
+`<APP>_APPRC_TOML` to relocate the TOML file.
 
-| Import | Purpose |
-|---|---|
-| `mount_config_cli` | Mount standard AppRC CLI runtime options, default help-safe skip policy, and the generated `config` group on a Typer app. |
-| `CliRuntimeOptions` | Parsed standard AppRC CLI runtime option values. |
-| `CliRuntimeContext` | Per-CLI-run AppRC bootstrap metadata stored on Typer context metadata. |
-| `MountCliRuntimeStateFactory` | Callable type for `mount_config_cli(...)` state factories created after runtime setup. |
-| `CliArgvProvider` | Callable type for explicit command tokens used by mount skip-policy tests and forwarding CLIs. |
-| `CliRuntime` | Composable Typer runtime for apps that own their Typer callback and app-specific options. |
-| `CliRuntimeSession` | Result returned by `CliRuntime.prepare(...)`, including AppRC context and optional app state. |
-| `CliRuntimeStateFactory` | Callable type for runtime state factories that receive AppRC context plus the app option object. |
-| `RuntimeIndependentCommand` | Declaration for CLI command actions that can run without app runtime state. |
-| `CliRuntimePolicy` | Skip policy for generated config commands plus app-declared runtime-independent CLI commands. |
-| `DefaultConfigCliState` | Minimal config state for apps that do not need custom CLI state. |
-| `prepare_cli_runtime_context` | Store AppRC bootstrap metadata from a custom Typer callback. |
-| `cli_runtime_context_from` | Read AppRC bootstrap metadata from a Typer command. |
-| `cli_options_from` | Read the original app CLI option object from AppRC runtime metadata. |
-| `cli_runtime_options_to_args` | Convert parsed AppRC options back into CLI tokens for lazy forwarding. |
-| `ConfigRuntimePolicy` | Config-command runtime skip policy with customizable runtime-independent actions. |
-| `bootstrap_cli_env` | Typer-friendly wrapper around the lower-level AppRC bootstrap engine. |
-| `config_request_skips_runtime` | Detect generated config commands that can run before runtime setup. |
-| `ConfigSelectorContext` | Context passed to selector-aware config CLI hooks. Hooks that only need app state can ignore this argument. |
+The 0.19 constructors `env_only`, `storage_only`, `app_wide_config`, and
+`app_wide_storage` emit `DeprecationWarning` in 0.20 and retain their old
+filenames and setup behavior. They are removed in 0.21.
 
-Advanced storage and dotenv helpers are intentionally not root exports. Use
-`apprc.storage`, `apprc.files`, and `apprc.provenance` when application code
-needs those lower-level surfaces.
+## Configuration files
 
-The implementation packages `apprc.definition`, `apprc.runtime`,
-`apprc.user_files`, and `apprc.user_files.storage_roots` are not supported
-public facades. Use the root API and the advanced namespaces above for
-application integrations.
+| File | Location | Role |
+| --- | --- | --- |
+| `apprc.defaults.env` | `config_package` | Non-secret defaults shipped by the app. |
+| `apprc.app.env` | `platformdirs.user_config_path(app_name, appauthor=False)` | Per-user overrides and persisted storage selector. |
+| `apprc.storage.env` | Selected storage root | Storage-specific overrides. |
+| `apprc.toml` | Platform config home | Named storage registry and future AppRC metadata. |
 
-<br>
+Current filenames win when current and legacy files both exist. AppRC does not
+merge competing files. When only a legacy file exists, reads and writes stay
+on that file until `config migrate` moves it.
 
-<!-- ======================================================== -->
+| Legacy | Current |
+| --- | --- |
+| `.env.shared` | `apprc.defaults.env` |
+| `.env.apprc-app` and `.env.global` | `apprc.app.env` |
+| `.env.apprc-storage` and `.env.local` | `apprc.storage.env` |
+| `<app>.apprc.toml` | `apprc.toml` |
 
-<br>
+The packaged defaults fallback is read-only. Rename that source file in the
+application repository.
 
-## Capability Constructors
-<!-- ======================================================== -->
+## Environment variables
 
-| Constructor | Storage layer | App-wide layer | Named-storage index | Setup behavior |
-|---|---|---|---|---|
-| `rc.AppRC.env_only(...)` | disabled | optional | disabled | Prints env guidance; writes nothing. |
-| `rc.AppRC.storage_only(...)` | required | optional | optional | Creates selected storage root and `.env.apprc-storage`. |
-| `rc.AppRC.app_wide_config(...)` | disabled | default | disabled | Creates `.env.apprc-app`. |
-| `rc.AppRC.app_wide_storage(...)` | required | default | optional | Creates `.env.apprc-app` and selected storage `.env.apprc-storage`. |
-
-Constructor arguments:
-
-| Argument | Meaning |
-|---|---|
-| `app_name` | Lowercase app name used for config home and derived env vars. |
-| `display_name` | Human-readable app name for CLI output. |
-| `config_package` | Package containing `.env.shared`. |
-| `storage_env_key` | Optional explicit active-storage selector env key. Storage-capable constructors only. |
-| `command_name` | Optional executable/app command name shown in generated CLI copy. |
-| `index_filename` | Optional named-storage index basename. |
-| `shared_env_filename` | Packaged shared dotenv filename. Default: `.env.shared`. |
-| `app_wide_env_filename` | App-wide dotenv filename. Default: `.env.apprc-app`. |
-| `storage_env_filename` | Storage dotenv filename. Default: `.env.apprc-storage`. |
-
-Filename arguments accept basenames only, not paths.
-
-Register env-backed classes with `@MyRC.config("key", prefix="MYAPP_")`.
-Every `rc.field(...)` env key in that class must start with the prefix, and
-the field still writes the full key explicitly. Register Python-only
-`rc.ConfigBase` classes without `prefix`.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Configuration Files
-<!-- ======================================================== -->
-
-| File | Default Location | Owner |
-|---|---|---|
-| `.env.shared` | Host app config package | Packaged defaults. |
-| `.env.apprc-app` | Platform config home for the app | Per-user app-wide overrides. |
-| `.env.apprc-storage` | Selected storage root | Storage-local overrides. |
-| `<app>.apprc.toml` | Platform config home for the app | Optional named-storage index. |
-
-Platform config home is resolved by `platformdirs.user_config_path` with
-`appauthor=False`.
-
-Legacy files `.env.global` and old storage-local dotenv names are ignored by
-current AppRC. `config doctor` warns when legacy files are present.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Environment Variables
-<!-- ======================================================== -->
-
-Derived variables use the normalized `app_name` unless overridden.
+For `app_name="myapp"`:
 
 | Variable | Purpose |
-|---|---|
-| `<APP>_STORAGE` | Active storage selector for storage-capable apps. |
-| `<APP>_APPRC_TOML` | Optional relocation for the named-storage index. |
-| Owner-prefixed field keys | Concrete runtime settings, for example `MYAPP_PROFILE`. |
+| --- | --- |
+| `MYAPP_STORAGE` | Direct storage path or name registered in `apprc.toml`. |
+| `MYAPP_APPRC_TOML` | Optional explicit TOML path. |
+| App-declared keys | Typed runtime settings such as `MYAPP_PROFILE`. |
 
-Example for `app_name="myapp"`:
+## Runtime precedence
 
-| Variable | Meaning |
-|---|---|
-| `MYAPP_STORAGE` | Active storage path or registered storage name. |
-| `MYAPP_APPRC_TOML` | Optional path to `myapp.apprc.toml`. |
-| `MYAPP_PROFILE` | A field declared by an owner with `env_prefix="MYAPP_"`. |
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Runtime Precedence
-<!-- ======================================================== -->
-
-When dotenv layers are loaded, later rows win:
+Later rows win unless noted:
 
 | Order | Source |
-|---|---|
-| 1 | Packaged `.env.shared`. |
-| 2 | App-wide `.env.apprc-app`, when allowed and present. |
-| 3 | Selected storage `.env.apprc-storage`, when storage is selected and present. |
-| 4 | Explicit `--env-file` values. Later explicit files override earlier explicit files. |
-| 5 | Existing `os.environ`. |
+| --- | --- |
+| 1 | Packaged `apprc.defaults.env` |
+| 2 | Per-user `apprc.app.env` |
+| 3 | Selected storage `apprc.storage.env` |
+| 4 | Explicit `--env-file` values, in argument order |
+| 5 | Existing `os.environ` |
 
-With `--env-file-overrides-os-environ`, explicit env files move after
-`os.environ` and win over shell exports.
+`--env-file-overrides-os-environ` swaps the last two precedence positions.
 
-<br>
+Storage selection checks `--storage`, shell or explicit env according to that
+same override policy, `apprc.app.env`, then packaged defaults. A direct path
+does not require `apprc.toml`. A bare registered name resolves through it.
 
-<!-- ======================================================== -->
+Provenance emitted for dotenv values uses
+`shell_dotenv_defaults`, `shell_dotenv_app`, `shell_dotenv_storage`, and
+`shell_dotenv_explicit`.
 
-<br>
+## Generated CLI commands
 
-## Storage Selector Precedence
-<!-- ======================================================== -->
+| Command | Writes | Purpose |
+| --- | --- | --- |
+| `config paths [--json]` | No | Show declarations and selected paths. |
+| `config doctor [--json]` | No | Diagnose readiness and give next steps. |
+| `config show [--json]` | No | Show resolved runtime config. |
+| `config setup [--storage-root PATH] [-y]` | Yes | Initialize the declared storage or explain that none is needed. |
+| `config migrate [--dry-run] [-y]` | With neither `--dry-run` nor cancellation | Move legacy managed files after full preflight. |
+| `config set KEY VALUE --scope app\|storage` | Yes | Validate and save one override. |
+| `config edit` | Opening: no | Open the Textual editor; confirmed actions may write. |
+| `config app init` | Yes | Create an empty `apprc.app.env`. |
+| `config storage add NAME PATH` | Yes | Create or update one named storage. |
+| `config storage list [--json]` | No | List registered storage roots. |
+| `config storage remove NAME` | Yes | Remove one registry entry, not its directory. |
 
-Storage selector sources:
+The TUI always shows `Setup`. Storage declarations also expose creation,
+registration, rename, repoint, move, archive, and delete actions. Action
+availability follows the current storage selection; the first storage does not
+require a pre-existing TOML file.
 
-| Order | Source |
-|---|---|
-| 1 | Host-level `--storage`. |
-| 2 | Shell env, for example `MYAPP_STORAGE`. |
-| 3 | Explicit env files, respecting `--env-file-overrides-os-environ`. |
-| 4 | App-wide `.env.apprc-app`, when active. |
-| 5 | Packaged `.env.shared`. |
+Machine-readable diagnostics use the current vocabulary only:
+`storage_enabled`, `app_config_enabled`, `named_storage_enabled`, `app_env`,
+`storage_selector_env_key`, and `apprc_toml`.
 
-Selector forms:
-
-| Form | Behavior |
-|---|---|
-| Absolute path | Use as storage root. |
-| Relative path with separator, `.` or `..` | Use as storage root. |
-| Registered name | Resolve through the named-storage index. |
-| Bare unknown name with no index | Treat as a path selector. |
-| Bare unknown name with an index containing storages | Error; use `./name` for a relative path. |
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Generated CLI Commands
-<!-- ======================================================== -->
-
-Commands are shown with `myapp` as the app command.
-
-| Command | Purpose | Writes |
-|---|---|---|
-| `myapp config paths` | Show paths, capabilities, selectors, and index state. | no |
-| `myapp config doctor` | Check readiness and suggest fixes. | no |
-| `myapp config show` | Show resolved runtime payload. | no |
-| `myapp config setup` | Initialize files for the selected capability constructor. | yes |
-| `myapp config set KEY VALUE` | Write one app-wide or storage dotenv value. | yes |
-| `myapp config edit` | Open the optional Textual editor. Opening is zero-write; confirmed setup, storage, and save actions write. | confirmed actions only |
-| `myapp config app init` | Create the app-wide dotenv file. | yes |
-| `myapp config storage add NAME PATH` | Register a named storage and ensure its storage dotenv. | yes |
-| `myapp config storage list` | List registered storages. | no |
-| `myapp config storage remove NAME` | Remove a storage entry from the index. | yes |
-
-`config edit` requires `python -m pip install "apprc[tui]"`.
-
-`--json` is available on `paths`, `doctor`, `show`, and `storage list`.
-Runtimeful generated commands use the app-owned `state_type` stored on
-`ctx.obj`; runtime-independent generated commands use AppRC context metadata. AppRC
-raises a clear error when that runtime state is missing after bootstrap, or when
-the requested generated config group name already belongs to the Typer app.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Doctor Statuses
-<!-- ======================================================== -->
+## Doctor statuses
 
 | Status | Meaning |
-|---|---|
-| `env_not_set` | Required selector env, usually storage, is missing. |
-| `storage_not_ready` | Selected storage root or storage dotenv is missing or unusable. |
-| `app_config_not_ready` | A default app-wide layer is expected but missing or unreadable. |
-| `named_storage_not_ready` | A required named-storage index is missing, unreadable, invalid, or incompatible with the selector. |
-| `runnable` | Runtime config can load. |
+| --- | --- |
+| `runnable` | The selected runtime inputs are usable. |
+| `env_not_set` | Storage is enabled but no selector resolved. |
+| `storage_not_ready` | The selected root or storage dotenv is not ready. |
+| `app_config_not_ready` | A required legacy app config file is not ready. |
+| `named_storage_not_ready` | AppRC TOML could not be read or parsed. |
 
-The JSON payload also includes `issues`, `warnings`, `missing_env_keys`, and
-`next_steps`.
+## Dependency surfaces
 
-<br>
+The base package includes `platformdirs`, `python-dotenv`, `typed-settings`,
+`rich`, and `typer`. Install `apprc[tui]` for Textual. Development tools are in
+the `dev` dependency group; the package still works without `uv`.
 
-<!-- ======================================================== -->
+## Documentation assets
 
-<br>
-
-## Dotenv Helper APIs
-<!-- ======================================================== -->
-
-Top-level facade helpers:
-
-| Helper | Purpose |
-|---|---|
-| `EnvFileUpdate` | Result of one dotenv edit. |
-| `read_env_file(path)` | Parse an optional dotenv file. Missing files return `{}`. |
-| `write_env_file(path, values, owners=...)` | Write deterministic dotenv values. |
-| `ensure_env_file(path)` | Create an explicit dotenv file if missing. |
-| `set_env_file_value(...)` | Validate and write one value to an explicit dotenv path. |
-| `clear_env_file_value(...)` | Remove one value from an explicit dotenv path. |
-| `storage_env_path(root)` | Return `<root>/.env.apprc-storage`. |
-| `ensure_storage_env_file(root)` | Create the storage dotenv file in an existing root. |
-| `set_storage_env_value(...)` | Validate and write one storage value. |
-| `clear_storage_env_value(...)` | Remove one storage value. |
-
-References accepted by `set_*` and `clear_*` helpers:
-
-- full env key, such as `MYAPP_PROFILE`
-- dotted config path, such as `app.profile`
-- unique field name, such as `profile`
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-# 3. Repository Reference
-
-<!-- ======================================================== -->
-
-<br>
-
-## Project Paths
-<!-- ======================================================== -->
-
-| Path | Role |
-|---|---|
-| [README.md](../README.md) | Short adopter entry point and GitHub package documentation. |
-| [README.pypi.md](../README.pypi.md) | Generated PyPI-safe README. |
-| [AGENTS.md](../AGENTS.md) | Local coding and documentation guidance for agents. |
-| [pyproject.toml](../pyproject.toml) | Package metadata, dependencies, and tool configuration. |
-| [justfile](../justfile) | Development and release commands. |
-| [src/apprc](../src/apprc) | Runtime package source. |
-| [src/apprc_dev](../src/apprc_dev) | Repository-local development helpers. |
-| [examples/example_apps](../examples/example_apps) | Runnable example CLI source for every AppRC capability mode. Each app has its own package with `config/__init__.pyi`, `config/_facade.py`, `config/app.py`, `config/sections/`, `config/bundle.py`, `config/catalog.py`, `cli.py`, and `config/.env.shared`. The CLI runtime example also shows a nested `config/sections/runtime/` package for larger config areas. |
-| `examples/example_app_disk_files/` | Ignored runtime files generated by `.envrc` or `python -m apprc_dev.example_apps.bootstrap`, including the shared example `xdg-config-home` and per-app `.apprc-example-*` sandboxes. |
-| [tests](../tests) | Test suite. |
-| [docs](.) | Long-form documentation. |
-| [assets](../assets) | Repository assets. |
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Dependency Surfaces
-<!-- ======================================================== -->
-
-| Surface | File Section | Audience |
-|---|---|---|
-| Runtime dependencies | `[project].dependencies` | Users installing `apprc`. |
-| Optional extras | `[project.optional-dependencies]` | Users opting into runtime feature stacks. |
-| Dependency groups | `[dependency-groups]` | Maintainers running tests, linting, typing, docs, or profiling. |
-| `uv` sources | `[tool.uv.sources]` | Local editable development sources. |
-| Lock files | `uv.lock`, `pylock.toml` | Reproducible local and exported environments. |
-
-Published optional extras:
-
-| Extra | Install Command | Enables |
-|---|---|---|
-| `tui` | `python -m pip install "apprc[tui]"` | Textual editor classes and generated `config edit`. |
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Documentation Assets
-<!-- ======================================================== -->
-
-Docs assets live in [docs/assets](assets).
-
-| Asset | Generator | Purpose |
-|---|---|---|
-| `docs-reading-map.svg` | [docs_reading_map.py](assets/docs_reading_map.py) | Shows how the root README routes readers into the docs scaffold. |
-| `apprc-runtime-layers.svg` | [apprc_runtime_layers.py](assets/apprc_runtime_layers.py) | Shows the AppRC contract flowing into runtime and generated interfaces. |
-| `apprc-abstract-user-journey.svg` | [apprc_abstract_user_journey.py](assets/apprc_abstract_user_journey.py) | README graphical abstract for developer and operator journeys. |
-| `apprc-abstract-contract-workflows.svg` | [apprc_abstract_contract_workflows.py](assets/apprc_abstract_contract_workflows.py) | Shows one AppRC contract feeding runtime and generated workflows. |
-| `apprc-abstract-layer-cake.svg` | [apprc_abstract_layer_cake.py](assets/apprc_abstract_layer_cake.py) | Shows dotenv and environment precedence during bootstrap. |
-| `apprc-storage-config-locations.svg` | [apprc_storage_config_locations.py](assets/apprc_storage_config_locations.py) | Shows AppRC dotenv locations and which kit shapes use them. |
-
-Keep assets simple and readable in GitHub light and dark themes. Update the
-caption in the owning Markdown file when an asset changes meaning.
-Use [render_all.py](assets/render_all.py) to regenerate all Graphigs-backed
-docs figures.
+Diagram sources and their generated SVG files live together in
+[`docs/assets`](assets). Edit the Python source and run it to regenerate the
+matching SVG. Do not hand-edit generated SVG output.

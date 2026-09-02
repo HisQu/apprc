@@ -47,8 +47,8 @@ explanations, and maintainer workflow.
 - **[How-To User Guides](How-To-User-Guides.md):** recipes for integrating
   AppRC into an app, setting up storage, editing values, and diagnosing setup.
 - **[Explanations](Explanations.md):** the system model behind config sections,
-  capability layers, bootstrap, storage selection, provenance, CLI, and TUI.
-- **[References](References.md):** exact public imports, constructor modes,
+  optional storage, bootstrap, selection, provenance, CLI, and TUI.
+- **[References](References.md):** exact public imports, declarations,
   CLI commands, env vars, filenames, precedence rules, and status names.
 - **[Development](Development.md):** maintainer workflow, documentation
   generation, local verification, and repo-specific documentation rules.
@@ -88,8 +88,7 @@ Use these terms consistently in every docs file:
 | config contract | The `rc.Config` and `rc.ConfigBase` classes registered on one `rc.AppRC` facade. | [Config Contract Model](Explanations.md#config-contract-model) |
 | registered config | A related group of settings declared with `@MyRC.config(...)`. | [Public Interfaces](References.md#public-interfaces) |
 | config field | One typed setting declared with `rc.field("FULL_ENV_KEY", ...)`. | [Public Interfaces](References.md#public-interfaces) |
-| capability layer | A persistence feature selected by the `rc.AppRC` constructor. | [Capability Constructors](References.md#capability-constructors) |
-| app-wide dotenv | The per-user `.env.apprc-app` file below the platform config home. | [Configuration Files](References.md#configuration-files) |
-| storage dotenv | The `.env.apprc-storage` file inside one selected storage root. | [Configuration Files](References.md#configuration-files) |
-| named-storage index | The optional `<app>.apprc.toml` registry for named storage roots. | [Storage Selection](Explanations.md#storage-selection) |
+| app config | The per-user `apprc.app.env` file below the platform config home. | [Configuration Files](References.md#configuration-files) |
+| storage dotenv | The `apprc.storage.env` file inside one selected storage root. | [Configuration Files](References.md#configuration-files) |
+| AppRC TOML | The optional `apprc.toml` registry for named storage roots and future AppRC metadata. | [Storage Selection](Explanations.md#storage-selection) |
 | zero-write read | A command or runtime operation that inspects config without creating files. | [Zero-Write Policy](Explanations.md#zero-write-policy) |

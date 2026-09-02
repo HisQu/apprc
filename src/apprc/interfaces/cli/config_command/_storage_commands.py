@@ -17,7 +17,7 @@ from apprc.interfaces.cli.config_command._output import (
 from apprc.interfaces.cli.config_command._prompts import guard_storage_root_init
 from apprc.interfaces.cli._typer_utils import dump_json
 from apprc.user_files.app_home.locations import ConfigHomeError
-from apprc.user_files.storage_roots._loading import index_path_for_create
+from apprc.user_files.storage_roots._loading import apprc_toml_path_for_create
 from apprc.user_files.storage_roots.paths import StorageRootPathError
 from apprc.user_files.storage_roots.registry import (
     register_storage,
@@ -29,7 +29,7 @@ class StorageConfigCommands(ConfigCommandBase):
     """Named-storage config command implementations."""
 
     def storage_list(self, ctx: typer.Context, *, json_output: bool) -> None:
-        """List named storage roots from the optional index."""
+        """List named storage roots from optional AppRC TOML."""
         selector_context = self.cli_selector_context(ctx)
         registry = self.load_storage_registry_or_empty(
             selector_context=selector_context,
@@ -56,9 +56,9 @@ class StorageConfigCommands(ConfigCommandBase):
         assume_yes: bool,
     ) -> None:
         """Create or update one named storage entry."""
-        self.require_named_storage_capability()
+        self.require_named_storage_support()
         selector_context = self.cli_selector_context(ctx)
-        index_path = index_path_for_create(
+        apprc_toml_path = apprc_toml_path_for_create(
             self.kit.spec,
             proc_env=selector_context.proc_env,
         )
@@ -67,13 +67,13 @@ class StorageConfigCommands(ConfigCommandBase):
             path,
             storage_name=name,
             assume_yes=assume_yes,
-            index_path=index_path,
+            apprc_toml_path=apprc_toml_path,
         )
         try:
             registry = register_storage(
                 name=name,
                 root=normalized_root,
-                path=index_path,
+                path=apprc_toml_path,
                 storage_env_filename=self.kit.spec.storage_env_filename,
             )
         except StorageRootPathError as exc:
@@ -92,16 +92,16 @@ class StorageConfigCommands(ConfigCommandBase):
         typer.echo(
             f"storage_env: {self.kit.spec.storage_env_path(record.root)}"
         )
-        typer.echo(f"index_path: {registry.path}")
+        typer.echo(f"apprc_toml: {registry.path}")
 
     def storage_remove(self, ctx: typer.Context, *, name: str) -> None:
         """Remove one named storage entry from the index."""
-        self.require_named_storage_capability()
+        self.require_named_storage_support()
         selector_context = self.cli_selector_context(ctx)
         try:
             registry = unregister_storage(
                 name=name,
-                path=index_path_for_create(
+                path=apprc_toml_path_for_create(
                     self.kit.spec,
                     proc_env=selector_context.proc_env,
                 ),
@@ -111,4 +111,4 @@ class StorageConfigCommands(ConfigCommandBase):
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="NAME") from exc
         typer.echo(f"removed_storage: {name}")
-        typer.echo(f"index_path: {registry.path}")
+        typer.echo(f"apprc_toml: {registry.path}")

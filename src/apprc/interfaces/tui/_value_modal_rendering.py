@@ -35,15 +35,15 @@ EDIT_TARGET_INPUT_CLASS = "edit-target-input"
 SOURCE_LABELS: dict[EditableConfigValueSourceKey, str] = {
     "effective": "Effective",
     "shell": "Shell",
-    "app": "App-wide",
+    "app": "App config",
     "storage": "Storage",
-    "shared": "Shared default",
+    "defaults": "Defaults",
 }
 SOURCE_ORIGIN_LABELS: dict[ConfigResolvedSourceKey, str] = {
     "shell": SOURCE_LABELS["shell"],
     "app": SOURCE_LABELS["app"],
     "storage": SOURCE_LABELS["storage"],
-    "shared": SOURCE_LABELS["shared"],
+    "defaults": SOURCE_LABELS["defaults"],
 }
 
 
@@ -54,7 +54,7 @@ def config_value_source_key(value: str) -> EditableConfigValueSourceKey | None:
     :return: Known source key, or ``None`` for unknown text.
     """
     match value:
-        case "effective" | "shell" | "app" | "storage" | "shared":
+        case "effective" | "shell" | "app" | "storage" | "defaults":
             return value
         case _:
             return None
@@ -173,7 +173,7 @@ def source_copy_is_disabled(
 
 def _missing_source_label(source: EditableConfigValueSource) -> str:
     """Return the absent-value label for one source row."""
-    if source.key in {"effective", "shared"}:
+    if source.key in {"effective", "defaults"}:
         return "missing"
     return "unset"
 
@@ -181,7 +181,7 @@ def _missing_source_label(source: EditableConfigValueSource) -> str:
 def scope_label(scope: ConfigWriteScope) -> str:
     """Return the button label fragment for one writable scope."""
     if scope == "app":
-        return "App-wide"
+        return "App config"
     return "Storage"
 
 

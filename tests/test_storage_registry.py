@@ -44,10 +44,7 @@ def test_app_data_dir_uses_xdg_data_home(
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
 
     assert app_data_dir("demo") == tmp_path / "data" / "demo"
-    assert (
-        suggested_storage_root("demo")
-        == tmp_path / "data" / "demo" / "demo_stor-1"
-    )
+    assert suggested_storage_root("demo") == tmp_path / "data" / "demo"
 
 
 def test_suggested_storage_name_uses_valid_host_specific_selector() -> None:
@@ -284,7 +281,7 @@ def test_internal_update_storage_renames_matching_archive_with_one_write(
     assert archived.source_root == source_root
     assert (source_root / "payload.txt").read_text(encoding="utf-8") == "keep"
     assert not target_root.exists()
-    assert not (target_root / ".env.apprc-storage").exists()
+    assert not (target_root / "apprc.storage.env").exists()
 
     persisted = load_storage_registry_or_empty(index_path)
     assert persisted.selected("beta").root == target_root.resolve()
@@ -374,7 +371,7 @@ def test_internal_update_storage_repoints_only_the_registry_root(
     assert archived.source_root == source_root
     assert (source_root / "payload.txt").read_text(encoding="utf-8") == "keep"
     assert not target_root.exists()
-    assert not (target_root / ".env.apprc-storage").exists()
+    assert not (target_root / "apprc.storage.env").exists()
 
 
 @pytest.mark.parametrize("conflict_kind", ("live", "archived"))
@@ -598,7 +595,7 @@ def test_register_storage_validates_existing_registry_before_creating_files(
         )
 
     assert not storage_root.exists()
-    assert not (storage_root / ".env.apprc-storage").exists()
+    assert not (storage_root / "apprc.storage.env").exists()
 
 
 def test_register_storage_rolls_back_new_empty_artifacts_on_write_failure(
@@ -624,7 +621,7 @@ def test_register_storage_rolls_back_new_empty_artifacts_on_write_failure(
         )
 
     assert not storage_root.exists()
-    assert not (storage_root / ".env.apprc-storage").exists()
+    assert not (storage_root / "apprc.storage.env").exists()
 
 
 def test_register_storage_warns_when_storage_env_rollback_cleanup_fails(
@@ -643,7 +640,7 @@ def test_register_storage_warns_when_storage_env_rollback_cleanup_fails(
         self: Path,
         missing_ok: bool = False,
     ) -> None:
-        if self.name == ".env.apprc-storage":
+        if self.name == "apprc.storage.env":
             raise OSError("unlink blocked")
         original_unlink(self, missing_ok=missing_ok)
 
@@ -668,7 +665,7 @@ def test_register_storage_warns_when_storage_env_rollback_cleanup_fails(
     assert any("remove empty storage env file" in note for note in notes)
     assert any("unlink blocked" in message for message in caplog.messages)
     assert storage_root.exists()
-    assert (storage_root / ".env.apprc-storage").exists()
+    assert (storage_root / "apprc.storage.env").exists()
 
 
 def test_register_storage_warns_when_root_rollback_cleanup_fails(
@@ -709,7 +706,7 @@ def test_register_storage_warns_when_root_rollback_cleanup_fails(
     assert any("remove created storage root" in note for note in notes)
     assert any("rmdir blocked" in message for message in caplog.messages)
     assert storage_root.exists()
-    assert not (storage_root / ".env.apprc-storage").exists()
+    assert not (storage_root / "apprc.storage.env").exists()
 
 
 def test_register_storage_keeps_existing_non_empty_root_on_write_failure(
@@ -737,4 +734,4 @@ def test_register_storage_keeps_existing_non_empty_root_on_write_failure(
         )
 
     assert (storage_root / "payload.txt").read_text(encoding="utf-8") == "keep"
-    assert not (storage_root / ".env.apprc-storage").exists()
+    assert not (storage_root / "apprc.storage.env").exists()

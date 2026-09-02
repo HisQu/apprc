@@ -3,10 +3,10 @@
 import apprc as rc
 
 
-MyRC = rc.AppRC.storage_only(
+MyRC = rc.AppRC(
     app_name="apprc-example-explicit-env-precedence",
     display_name="AppRC Explicit Env Precedence Example",
     config_package="explicit_env_precedence.config",
-    storage_env_key="APPRC_EXAMPLE_PRECEDENCE_ROOT",
+    storage=rc.Storage(env_key="APPRC_EXAMPLE_PRECEDENCE_ROOT"),
     command_name="apprc-explicit-env-precedence",
 )

@@ -2,7 +2,7 @@
 
 Applications declare config fields once through :mod:`apprc.definition.env_config.schema`.
 This module turns those declarations into a terminal UI that inspects shell,
-app-wide, storage, and packaged-default layers without writing files on open.
+app config, storage, and packaged-default layers without writing files on open.
 
 Rendering rules for table cells live in :mod:`apprc.interfaces.tui._rendering` so
 the widget code here stays focused on Textual events, modal handling, and file
@@ -14,7 +14,6 @@ from __future__ import annotations
 # == Standard Library ========================
 import os
 from collections.abc import Awaitable, Callable
-from importlib.resources import as_file, files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,6 +33,7 @@ from textual.widgets import (
 
 # == Internal ================================
 from apprc.user_files.env_files.files import read_env_file
+from apprc.runtime._dotenv_layers import read_defaults_env_values
 from apprc.user_files.env_files.updates import (
     clear_env_file_value,
     clear_storage_env_value,
@@ -132,7 +132,7 @@ class ConfigEditorApp(App[None]):
         """Keep storage table and field metadata while editing dotenv state.
 
         :param kit: Application config facade.
-        :param storage_registry: Optional named-storage index shown by the
+        :param storage_registry: Optional AppRC TOML registry shown by the
             editor.
         :param storage_registry_error: Read failure that prevents named-storage
             writes while direct-path editing remains available.
@@ -149,16 +149,16 @@ class ConfigEditorApp(App[None]):
         self.owners = kit.spec.owners
         self.initial_storage = initial_storage
         self.config_group_name = config_group_name
-        self.storage_enabled = kit.spec.storage_required()
-        self.named_storage_enabled = kit.spec.named_storage_allowed()
+        self.storage_enabled = kit.spec.uses_storage()
+        self.named_storage_enabled = kit.spec.named_storage_enabled()
         self.init_command = (
             f"{kit.spec.config_command_name()} "
             f"{config_group_name} storage add NAME PATH"
         )
-        self.index_label = kit.spec.index_filename
+        self.apprc_toml_label = kit.spec.apprc_toml_filename
         self.hidden_env_keys = (
-            frozenset({kit.spec.storage_env_key})
-            if kit.spec.storage_env_key is not None
+            frozenset({kit.spec.storage_selector_env_key})
+            if kit.spec.storage_selector_env_key is not None
             else frozenset()
         )
         if active_storage_root is not None and self.storage_enabled:
@@ -167,13 +167,13 @@ class ConfigEditorApp(App[None]):
             )
         else:
             self.active_storage_root = None
-        self.app_wide_active = self._app_wide_layer_is_active()
+        self.app_config_active = self._app_config_is_active()
         self.app_values = (
-            read_env_file(kit.spec.app_wide_env_path())
-            if self.app_wide_active
+            read_env_file(kit.spec.app_env_path())
+            if self.app_config_active
             else {}
         )
-        self.shared_values = _read_packaged_shared_values(kit)
+        self.defaults_values = _read_packaged_defaults_values(kit)
         self.storage_entries = (
             ordered_storage_entries(storage_registry)
             if storage_registry is not None
@@ -295,7 +295,7 @@ class ConfigEditorApp(App[None]):
             return
         if not selected.spec.editable:
             self.notify(
-                f"This setting is managed by {self.index_label}.",
+                f"This setting is managed by {self.apprc_toml_label}.",
                 severity="warning",
             )
             return
@@ -310,8 +310,8 @@ class ConfigEditorApp(App[None]):
                     app_values=self.app_values,
                     storage_values=self.storage_values,
                     shell_env=os.environ,
-                    shared_values=self.shared_values,
-                    include_app=self.app_wide_active,
+                    defaults_values=self.defaults_values,
+                    include_app=self.app_config_active,
                     include_storage=self._storage_scope_is_active(),
                 ),
                 writable_scopes=self._writable_scopes(),
@@ -439,7 +439,7 @@ class ConfigEditorApp(App[None]):
                 )
                 return None
             self.notify(
-                "Storage management requires a named-storage index.",
+                "Storage management requires an AppRC TOML registry.",
                 severity="error",
             )
             return None
@@ -452,15 +452,15 @@ class ConfigEditorApp(App[None]):
         *,
         scope: ConfigWriteScope,
     ) -> None:
-        """Validate and persist one app-wide or storage env value."""
+        """Validate and persist one app or storage env value."""
         try:
             if scope == "app":
                 update = set_env_file_value(
-                    path=self.kit.spec.app_wide_env_path(),
+                    path=self.kit.spec.app_env_path(),
                     reference=env_key,
                     raw_value=raw_value,
                     owners=self.owners,
-                    layer_name=self.kit.spec.app_wide_env_filename,
+                    layer_name=self.kit.spec.app_env_filename,
                 )
             else:
                 update = set_storage_env_value(
@@ -489,14 +489,14 @@ class ConfigEditorApp(App[None]):
         *,
         scope: ConfigWriteScope,
     ) -> None:
-        """Remove one key from an app-wide or storage env file."""
+        """Remove one key from an app or storage env file."""
         try:
             if scope == "app":
                 update = clear_env_file_value(
-                    path=self.kit.spec.app_wide_env_path(),
+                    path=self.kit.spec.app_env_path(),
                     reference=env_key,
                     owners=self.owners,
-                    layer_name=self.kit.spec.app_wide_env_filename,
+                    layer_name=self.kit.spec.app_env_filename,
                 )
             else:
                 update = clear_storage_env_value(
@@ -530,13 +530,13 @@ class ConfigEditorApp(App[None]):
             ordered_storage_entries(registry) if registry is not None else []
         )
         if not self.storage_enabled:
-            self._select_app_wide()
+            self._select_app_config()
             return
         if not self.named_storage_enabled:
             if self.active_storage_root is not None:
                 self._select_active_storage()
                 return
-            self._select_app_wide()
+            self._select_app_config()
             return
         storage_list = self.query_one("#storage-list", ListView)
         await storage_list.clear()
@@ -544,7 +544,7 @@ class ConfigEditorApp(App[None]):
             if self.active_storage_root is not None:
                 self._select_active_storage()
                 return
-            self._select_app_wide()
+            self._select_app_config()
             return
         for entry in self.storage_entries:
             if registry is None:
@@ -647,8 +647,8 @@ class ConfigEditorApp(App[None]):
         self._clear_field_table()
         self._set_live_controls_enabled(False)
 
-    def _select_app_wide(self) -> None:
-        """Show app-wide/shell/default sources when no storage is selected."""
+    def _select_app_config(self) -> None:
+        """Show app, shell, and default sources without selected storage."""
         self._clear_selection()
         self.query_one("#storage-title", Static).update(
             self._no_storage_message()
@@ -675,8 +675,8 @@ class ConfigEditorApp(App[None]):
             owners=self.owners,
             app_values=self.app_values,
             storage_values=self.storage_values,
-            shared_values=self.shared_values,
-            include_app=self.app_wide_active,
+            defaults_values=self.defaults_values,
+            include_app=self.app_config_active,
             include_storage=self._storage_scope_is_active(),
             hidden_env_keys=self.hidden_env_keys,
             shell_env=os.environ,
@@ -813,18 +813,20 @@ class ConfigEditorApp(App[None]):
     ) -> None:
         """Refresh cached source values after a scoped save."""
         if scope == "app":
-            self.app_wide_active = True
+            self.app_config_active = True
             self.app_values = read_env_file(path)
             return
         self.storage_values = read_env_file(path)
 
-    def _app_wide_layer_is_active(self) -> bool:
-        """Return whether app-wide sources should be visible."""
-        if not self.kit.spec.app_wide_allowed():
+    def _app_config_is_active(self) -> bool:
+        """Return whether app config sources should be visible."""
+        if not self.kit.spec.app_env_enabled():
             return False
+        if not self.kit.spec.uses_legacy_constructor():
+            return True
         return (
-            self.kit.spec.app_wide_default()
-            or self.kit.spec.app_wide_env_path().is_file()
+            self.kit.spec.setup_creates_app_env()
+            or self.kit.spec.app_env_path().is_file()
         )
 
     def _storage_scope_is_active(self) -> bool:
@@ -837,7 +839,7 @@ class ConfigEditorApp(App[None]):
     def _writable_scopes(self) -> tuple[ConfigWriteScope, ...]:
         """Return write scopes currently available for the selected field."""
         scopes: list[ConfigWriteScope] = []
-        if self.app_wide_active:
+        if self.app_config_active:
             scopes.append("app")
         if self._storage_scope_is_active():
             scopes.append("storage")
@@ -866,15 +868,15 @@ class ConfigEditorApp(App[None]):
         return suggested_storage_name(self.kit.spec.app_name)
 
     def _no_storage_message(self) -> str:
-        """Return empty-list guidance for current multi-storage capability."""
+        """Return guidance when no storage row or path is selected."""
         if not self.storage_enabled:
-            return self._app_wide_message()
-        if self.app_wide_active and self.active_storage_root is None:
+            return self._app_config_message()
+        if self.app_config_active and self.active_storage_root is None:
             return (
-                f"{self._app_wide_message()}\n\n"
+                f"{self._app_config_message()}\n\n"
                 "No active storage path is selected."
             )
-        storage_env_key = self.kit.spec.require_storage_env_key()
+        storage_env_key = self.kit.spec.require_storage_selector_env_key()
         if self.storage_registry is not None:
             return (
                 "No storages registered. Use New storage to add one, or set "
@@ -884,15 +886,15 @@ class ConfigEditorApp(App[None]):
         return (
             "No active storage path is selected. Set "
             f"{storage_env_key} to edit a storage env file. Create a "
-            "named-storage index to enable storage management actions."
+            "AppRC TOML registry to enable storage management actions."
         )
 
-    def _app_wide_message(self) -> str:
-        """Return source guidance for the app-wide layer."""
-        if self.app_wide_active:
+    def _app_config_message(self) -> str:
+        """Return source guidance for per-user app config."""
+        if self.app_config_active:
             return (
-                "Editing app-wide settings from the AppRC config home:\n"
-                f"{self.kit.spec.app_wide_env_path()}"
+                "Editing app settings from the AppRC config home:\n"
+                f"{self.kit.spec.app_env_path()}"
             )
         return (
             "No AppRC writable layer is active. Existing shell environment "
@@ -900,14 +902,11 @@ class ConfigEditorApp(App[None]):
         )
 
 
-def _read_packaged_shared_values(kit: AppConfigKit) -> dict[str, str]:
-    """Return packaged shared dotenv values for a kit-backed editor.
+def _read_packaged_defaults_values(kit: AppConfigKit) -> dict[str, str]:
+    """Return packaged defaults dotenv values for a kit-backed editor.
 
-    :param kit: Application facade that owns the shared dotenv resource.
-    :return: Parsed shared values.
+    :param kit: Application facade that owns the defaults dotenv resource.
+    :return: Parsed defaults values.
     """
-    resource = files(kit.spec.config_package).joinpath(
-        kit.spec.shared_env_filename
-    )
-    with as_file(resource) as path:
-        return read_env_file(path)
+    _, values = read_defaults_env_values(kit.spec)
+    return values

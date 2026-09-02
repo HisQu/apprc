@@ -31,7 +31,7 @@ def test_storage_list_payload_reports_storage_env_status(
         active_storage_root=alpha_root,
     )
 
-    assert payload["index_path"] == str(index_path)
+    assert payload["apprc_toml"] == str(index_path)
     assert payload["storages"] == [
         {
             "active": True,

@@ -7,6 +7,7 @@ def test_root_exports_clean_public_api() -> None:
     """Root exports only the clean public facade and namespaces."""
     assert rc.__all__ == [
         "AppRC",
+        "Storage",
         "Config",
         "ConfigBase",
         "field",
@@ -17,6 +18,7 @@ def test_root_exports_clean_public_api() -> None:
         "storage",
     ]
     assert hasattr(rc, "AppRC")
+    assert hasattr(rc, "Storage")
     assert hasattr(rc, "Config")
     assert hasattr(rc, "ConfigBase")
     assert hasattr(rc, "field")

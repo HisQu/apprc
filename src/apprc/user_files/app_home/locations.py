@@ -20,13 +20,23 @@ class AppConfigHome:
     """Resolved AppRC-managed paths for one application.
 
     :param root: Platform-native per-user config directory.
-    :param app_wide_env: App-wide dotenv override file.
-    :param index: Named-storage index file.
+    :param app_env: Per-user app dotenv override file.
+    :param apprc_toml: Storage registry and AppRC metadata file.
     """
 
     root: Path
-    app_wide_env: Path
-    index: Path
+    app_env: Path
+    apprc_toml: Path
+
+    @property
+    def app_wide_env(self) -> Path:
+        """Return ``app_env`` through the deprecated 0.19 name."""
+        return self.app_env
+
+    @property
+    def index(self) -> Path:
+        """Return ``apprc_toml`` through the deprecated 0.19 name."""
+        return self.apprc_toml
 
 
 def app_config_home(app_name: str) -> Path:
@@ -58,31 +68,21 @@ def app_config_file(app_name: str, filename: str) -> Path:
 def resolve_app_config_home(
     *,
     app_name: str,
-    app_wide_env_filename: str,
-    index_filename: str,
-    index_path: Path | None = None,
+    app_env_path: Path,
+    apprc_toml_path: Path,
 ) -> AppConfigHome:
     """Return AppRC-managed config paths without creating files.
 
     :param app_name: Application name from the AppRC integration spec.
-    :param app_wide_env_filename: Dotenv filename for app-wide overrides.
-    :param index_filename: Default named-storage index basename.
-    :param index_path: Optional override named-storage index path.
+    :param app_env_path: Selected per-user app dotenv path.
+    :param apprc_toml_path: Selected AppRC TOML path.
     :return: Resolved config-home paths.
     """
     root = app_config_home(app_name)
-    app_wide_name = require_config_filename(
-        app_wide_env_filename,
-        field_name="app_wide_env_filename",
-    )
-    index_name = require_config_filename(
-        index_filename,
-        field_name="index_filename",
-    )
     return AppConfigHome(
         root=root,
-        app_wide_env=root / app_wide_name,
-        index=index_path if index_path is not None else root / index_name,
+        app_env=app_env_path,
+        apprc_toml=apprc_toml_path,
     )
 
 

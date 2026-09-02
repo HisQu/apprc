@@ -33,7 +33,7 @@ class StorageListRowPayload(TypedDict):
 class StorageListPayload(TypedDict):
     """Machine-readable data emitted by ``config storage list --json``."""
 
-    index_path: str
+    apprc_toml: str
     storages: list[StorageListRowPayload]
 
 
@@ -71,7 +71,7 @@ def storage_list_payload(
             }
         )
     return {
-        "index_path": str(registry.path),
+        "apprc_toml": str(registry.path),
         "storages": storages,
     }
 
@@ -82,7 +82,7 @@ def print_storage_list(payload: StorageListPayload) -> None:
     :param payload: Storage payload from :func:`storage_list_payload`.
     """
     console = Console(soft_wrap=True)
-    console.print(_storage_detail_text("index_path", payload["index_path"]))
+    console.print(_storage_detail_text("apprc_toml", payload["apprc_toml"]))
     storages = payload["storages"]
     if not storages:
         typer.echo("storages: <none>")

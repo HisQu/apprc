@@ -1,7 +1,7 @@
 # AppRC Example Apps
 
 This directory is a dev-only editable package with runnable CLIs for each
-AppRC capability mode.
+AppRC integration scenario.
 
 ## Setup
 
@@ -23,20 +23,20 @@ not source templates.
 
 | Package | CLI | Purpose |
 |---|---|---|
-| [`env_only`](src/env_only/README.md) | `apprc-env-only` | Env files and shell env only. |
-| [`storage_only`](src/storage_only/README.md) | `apprc-storage-only` | Required active storage root. |
-| [`app_wide_config`](src/app_wide_config/README.md) | `apprc-app-wide-config` | App-wide config without storage. |
-| [`app_wide_storage`](src/app_wide_storage/README.md) | `apprc-app-wide-storage` | App-wide defaults plus storage-local values. |
+| [`env_only`](src/env_only/README.md) | `apprc-env-only` | Config-only declaration with package and shell values. |
+| [`storage_only`](src/storage_only/README.md) | `apprc-storage-only` | Declaration with one selected storage root. |
+| [`app_wide_config`](src/app_wide_config/README.md) | `apprc-app-wide-config` | Config-only declaration with per-user values. |
+| [`app_wide_storage`](src/app_wide_storage/README.md) | `apprc-app-wide-storage` | Storage declaration with app and storage values. |
 | [`explicit_env_precedence`](src/explicit_env_precedence/README.md) | `apprc-explicit-env-precedence` | Shell versus explicit env-file selector precedence. |
 | [`cli_runtime`](src/cli_runtime/README.md) | `apprc-cli-runtime` | App-owned Typer callback integrated with `CliRuntime`. |
 | [`_example_apps_utils`](src/_example_apps_utils/README.md) | `apprc-examples-run-all` | Internal registry and runner support. |
 
 Each runnable app owns a `config/` package with `__init__.pyi`,
 `_facade.py`, `app.py`, `sections/`, `bundle.py`, `catalog.py`, and
-`config/.env.shared`.
+`config/apprc.defaults.env`.
 
 ## Docs
 
 - [Development example app guide](../../docs/Development.md#example-apps)
-- [Repository path reference](../../docs/References.md#project-paths)
-- [System model](../../docs/Explanations.md#package-architecture)
+- [Configuration file reference](../../docs/References.md#configuration-files)
+- [System model](../../docs/Explanations.md#system-model)

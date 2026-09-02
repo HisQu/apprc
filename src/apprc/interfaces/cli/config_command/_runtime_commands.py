@@ -30,6 +30,11 @@ from apprc.user_files.env_files.updates import (
     set_storage_env_value,
 )
 from apprc.user_files.storage_roots.paths import StorageRootPathError
+from apprc.user_files.migration import (
+    ConfigMigrationError,
+    apply_config_migration,
+    build_config_migration_plan,
+)
 
 
 type ConfigSetScope = Literal["app", "storage"]
@@ -65,7 +70,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             if current_state is not None
             else None
         )
-        if self.kit.spec.storage_required() and storage_root is None:
+        if self.kit.spec.uses_storage() and storage_root is None:
             typer.echo(self.missing_setup, err=True)
             raise typer.Exit(code=1)
         try:
@@ -109,6 +114,70 @@ class RuntimeConfigCommands(ConfigCommandBase):
         if payload.status != ConfigDoctorStatus.RUNNABLE.value:
             raise typer.Exit(code=1)
 
+    def migrate(
+        self,
+        ctx: typer.Context,
+        *,
+        dry_run: bool,
+        assume_yes: bool,
+    ) -> None:
+        """Move legacy AppRC-managed files to current filenames."""
+        selector_context = self.cli_selector_context(ctx)
+        storage_roots: list[Path] = []
+        if self.kit.spec.uses_storage():
+            registry = self.load_storage_registry_or_empty(
+                selector_context=selector_context,
+            )
+            storage_roots.extend(
+                record.root for record in registry.storages.values()
+            )
+            active_root = self.best_effort_active_storage_root_from_env(
+                storage_registry=registry,
+                selector_context=selector_context,
+            )
+            if active_root is not None:
+                storage_roots.append(active_root)
+        try:
+            plan = build_config_migration_plan(
+                self.kit.spec,
+                storage_roots=tuple(storage_roots),
+            )
+        except ConfigMigrationError as exc:
+            raise typer.BadParameter(str(exc), param_hint="migrate") from exc
+        if plan.conflicts:
+            typer.echo("Migration stopped: conflicting files exist.", err=True)
+            for conflict in plan.conflicts:
+                typer.echo(
+                    f"conflict: {conflict.label}: {conflict.preferred} and "
+                    f"{conflict.conflicting}",
+                    err=True,
+                )
+            raise typer.Exit(code=1)
+        if not plan.moves:
+            typer.echo("AppRC files already use the current filenames.")
+            return
+        for move in plan.moves:
+            typer.echo(
+                f"{'would_move' if dry_run else 'move'}: "
+                f"{move.source} -> {move.destination}"
+            )
+        if dry_run:
+            return
+        if not assume_yes and not typer.confirm("Move these files?"):
+            typer.echo("No files were changed.")
+            raise typer.Exit(code=1)
+        try:
+            result = apply_config_migration(plan)
+        except ConfigMigrationError as exc:
+            typer.echo(str(exc), err=True)
+            for move in exc.completed:
+                typer.echo(
+                    f"moved_before_failure: {move.destination}",
+                    err=True,
+                )
+            raise typer.Exit(code=1) from exc
+        typer.echo(f"migrated_files: {len(result.moved)}")
+
     def set(
         self,
         ctx: typer.Context,
@@ -128,7 +197,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         if resolved_scope == "app":
             update = self._set_app_value(key=key, value=value)
             typer.echo(f"updated: {update.env_key}")
-            typer.echo(f"app_wide_env: {update.path}")
+            typer.echo(f"app_env: {update.path}")
             return
         if current_state is None:
             raise typer.BadParameter(
@@ -192,7 +261,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 param_hint="--scope",
             )
         raise typer.BadParameter(
-            "Both app-wide and storage layers are writable. Pass "
+            "Both app config and storage config are writable. Pass "
             "--scope app or --scope storage.",
             param_hint="--scope",
         )
@@ -223,11 +292,13 @@ class RuntimeConfigCommands(ConfigCommandBase):
     ) -> bool:
         """Return whether one write scope can be updated now."""
         if scope == "app":
-            app_path = self.kit.spec.app_wide_env_path()
-            return self.kit.spec.app_wide_allowed() and (
-                self.kit.spec.app_wide_default() or app_path.is_file()
+            if not self.kit.spec.uses_legacy_constructor():
+                return True
+            app_path = self.kit.spec.app_env_path()
+            return self.kit.spec.app_env_enabled() and (
+                self.kit.spec.setup_creates_app_env() or app_path.is_file()
             )
-        if not self.kit.spec.storage_required() or state is None:
+        if not self.kit.spec.uses_storage() or state is None:
             return False
         storage_root = self.active_storage_root_for_cli(
             state,
@@ -236,14 +307,14 @@ class RuntimeConfigCommands(ConfigCommandBase):
         return storage_root is not None and storage_root.is_dir()
 
     def _set_app_value(self, *, key: str, value: str):
-        """Write one value to the app-wide dotenv file."""
+        """Write one value to the per-user app dotenv file."""
         try:
             return set_env_file_value(
-                path=self.kit.spec.app_wide_env_path(),
+                path=self.kit.spec.app_env_path(),
                 reference=key,
                 raw_value=value,
                 owners=self.kit.spec.owners,
-                layer_name=self.kit.spec.app_wide_env_filename,
+                layer_name=self.kit.spec.app_env_filename,
             )
         except (ConfigHomeError, OSError) as exc:
             raise self.config_home_bad_parameter(exc) from exc
@@ -285,11 +356,11 @@ def _inactive_scope_message(
     """
     if scope == "app":
         return (
-            "The app-wide layer is not active. Run "
+            "App config is not active. Run "
             f"`{kit.spec.config_command_name()} {config_group_name} app init` "
             "first."
         )
     return (
         "The storage layer is not active. Select a storage root with --storage "
-        f"or export {kit.spec.storage_env_key}."
+        f"or export {kit.spec.storage_selector_env_key}."
     )

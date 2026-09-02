@@ -94,11 +94,11 @@ def build_config_typer_app_from_options(
         no_args_is_help=False,
         pretty_exceptions_show_locals=False,
     )
-    app_group = typer.Typer(help="Manage the app-wide dotenv layer.")
-    storage_group = typer.Typer(help="Manage the named-storage index.")
-    if kit.spec.app_wide_allowed():
+    app_group = typer.Typer(help="Manage per-user app config.")
+    storage_group = typer.Typer(help="Manage named storages.")
+    if kit.spec.app_env_enabled():
         app.add_typer(app_group, name="app")
-    if kit.spec.named_storage_allowed():
+    if kit.spec.named_storage_enabled():
         app.add_typer(storage_group, name="storage")
 
     handlers = ConfigCommandHandlers(
@@ -165,17 +165,43 @@ def build_config_typer_app_from_options(
             ),
         ] = False,
         storage_root: Annotated[
-            str | None,
+            Path | None,
             typer.Option(
                 "--storage-root",
-                help="Active storage root for non-interactive setup.",
+                help="Storage directory. Shell path completion is enabled.",
             ),
         ] = None,
     ) -> None:
-        """Configure files for the declared AppRC capability layers."""
+        """Configure the files required by this AppRC declaration."""
         handlers.setup(
             assume_yes=assume_yes,
             storage_root=storage_root,
+        )
+
+    @app.command("migrate")
+    def config_migrate_cmd(
+        ctx: typer.Context,
+        dry_run: Annotated[
+            bool,
+            typer.Option(
+                "--dry-run",
+                help="Show legacy file moves without changing files.",
+            ),
+        ] = False,
+        assume_yes: Annotated[
+            bool,
+            typer.Option(
+                "--yes",
+                "-y",
+                help="Apply all conflict-free moves without prompting.",
+            ),
+        ] = False,
+    ) -> None:
+        """Move legacy AppRC files to their current filenames."""
+        handlers.migrate(
+            ctx,
+            dry_run=dry_run,
+            assume_yes=assume_yes,
         )
 
     @app.command("set")
@@ -214,7 +240,7 @@ def build_config_typer_app_from_options(
 
     @app_group.command("init")
     def config_app_init_cmd() -> None:
-        """Create the app-wide dotenv file."""
+        """Create the per-user app dotenv file."""
         handlers.app_init()
 
     @storage_group.command("add")

@@ -52,7 +52,7 @@ def register_storage(
     name: str,
     root: Path,
     path: Path,
-    storage_env_filename: str = ".env.apprc-storage",
+    storage_env_filename: str = "apprc.storage.env",
 ) -> StorageRegistry:
     """Add or update one storage entry and write the registry.
 

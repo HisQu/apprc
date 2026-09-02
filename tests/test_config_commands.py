@@ -110,13 +110,11 @@ def test_config_paths_reports_zero_writes(
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["writes"] == "none"
-    assert payload["capabilities"] == {
-        "app_wide": "optional",
-        "named_storage": "optional",
-        "storage": "required",
-    }
-    assert not Path(payload["app_wide_env"]).exists()
-    assert not Path(payload["index_path"]).exists()
+    assert payload["storage_enabled"] is True
+    assert payload["app_config_enabled"] is True
+    assert payload["named_storage_enabled"] is True
+    assert not Path(payload["app_env"]).exists()
+    assert not Path(payload["apprc_toml"]).exists()
 
 
 def test_config_app_init_creates_app_wide_env(
@@ -131,7 +129,7 @@ def test_config_app_init_creates_app_wide_env(
 
     assert result.exit_code == 0, result.output
     assert kit.spec.app_wide_env_path().is_file()
-    assert "app_wide_env:" in result.output
+    assert "app_env:" in result.output
 
 
 def test_config_storage_add_list_and_remove(
@@ -156,13 +154,13 @@ def test_config_storage_add_list_and_remove(
 
     assert add.exit_code == 0, add.output
     assert index_path.is_file()
-    assert (storage_root / ".env.apprc-storage").is_file()
+    assert (storage_root / "apprc.storage.env").is_file()
     assert json.loads(listed.output)["storages"][0]["name"] == "alpha"
     assert removed.exit_code == 0, removed.output
     assert json.loads(listed_after.output)["storages"] == []
 
 
-def test_config_set_infers_storage_scope(tmp_path: Path) -> None:
+def test_config_set_requires_scope_for_storage_apps(tmp_path: Path) -> None:
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
@@ -175,11 +173,9 @@ def test_config_set_infers_storage_scope(tmp_path: Path) -> None:
         obj=state,
     )
 
-    assert result.exit_code == 0, result.output
-    assert 'APPRC_EXAMPLE_APP_PROFILE="storage-profile"\n' in (
-        storage_root / ".env.apprc-storage"
-    ).read_text(encoding="utf-8")
-    assert "storage_env:" in result.output
+    assert result.exit_code != 0
+    assert "--scope app or --scope storage" in _plain_output(result.output)
+    assert not (storage_root / "apprc.storage.env").exists()
 
 
 def test_context_aware_active_storage_hook_receives_selector_context(
@@ -238,7 +234,7 @@ def test_context_aware_active_storage_hook_receives_selector_context(
         storage_root
     )
     assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret"\n' in (
-        storage_root / ".env.apprc-storage"
+        storage_root / "apprc.storage.env"
     ).read_text(encoding="utf-8")
 
 
@@ -335,7 +331,7 @@ def test_config_set_requires_scope_when_app_and_storage_are_active(
     )
 
 
-def test_config_setup_storage_only_writes_only_storage_env(
+def test_config_setup_storage_writes_env_and_persistent_selector(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -350,8 +346,12 @@ def test_config_setup_storage_only_writes_only_storage_env(
     )
 
     assert result.exit_code == 0, result.output
-    assert (storage_root / ".env.apprc-storage").is_file()
-    assert not kit.spec.app_wide_env_path().exists()
+    assert (storage_root / "apprc.storage.env").is_file()
+    assert kit.spec.app_env_path().is_file()
+    assert (
+        f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"\n'
+        in kit.spec.app_env_path().read_text(encoding="utf-8")
+    )
     assert not kit.spec.index_path().exists()
 
 
@@ -415,7 +415,7 @@ def test_config_edit_uses_root_storage_path_with_corrupt_optional_index(
         storage_root.resolve()
     )
     assert CapturingConfigEditorApp.storage_registry_seen is None
-    assert not (storage_root / ".env.apprc-storage").exists()
+    assert not (storage_root / "apprc.storage.env").exists()
     assert index_path.read_text(encoding="utf-8") == "[invalid"
 
 

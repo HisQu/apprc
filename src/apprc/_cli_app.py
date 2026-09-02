@@ -9,7 +9,6 @@ import typer
 
 # == Internal ================================
 from apprc.scaffold import (
-    ConfigScaffoldMode,
     ConfigScaffoldRequest,
     scaffold_config_package,
 )
@@ -35,20 +34,17 @@ def scaffold_config_cmd(
             help="Import package that receives config/, for example myapp.",
         ),
     ],
-    mode: Annotated[
-        ConfigScaffoldMode,
-        typer.Option(
-            "--mode",
-            help=(
-                "AppRC mode: env-only, storage-only, app-wide-config, "
-                "or app-wide-storage."
-            ),
-        ),
-    ],
     app_name: Annotated[
         str,
         typer.Option("--app-name", help="Stable AppRC application name."),
     ],
+    storage: Annotated[
+        bool,
+        typer.Option(
+            "--storage",
+            help="Generate an app declaration with AppRC storage.",
+        ),
+    ] = False,
     display_name: Annotated[
         str | None,
         typer.Option(
@@ -56,11 +52,11 @@ def scaffold_config_cmd(
             help="Human-readable application name.",
         ),
     ] = None,
-    storage_env_key: Annotated[
+    storage_selector_env_key: Annotated[
         str | None,
         typer.Option(
-            "--storage-env-key",
-            help="Full storage selector env key for storage modes.",
+            "--storage-selector-env-key",
+            help="Optional storage selector env key override.",
         ),
     ] = None,
     env_prefix: Annotated[
@@ -90,11 +86,11 @@ def scaffold_config_cmd(
         result = scaffold_config_package(
             ConfigScaffoldRequest(
                 package=package,
-                mode=mode,
                 app_name=app_name,
                 display_name=display_name,
                 target=target,
-                storage_env_key=storage_env_key,
+                storage=storage,
+                storage_selector_env_key=storage_selector_env_key,
                 env_prefix=env_prefix,
                 force=force,
             )

@@ -27,7 +27,7 @@ class ExampleAppSpec:
     :param kit: AppRC contract for the example CLI.
     :param explicit_values: Values written to the arbitrary sourceable
         ``.env`` file.
-    :param app_wide_values: Values written to the app-wide dotenv file.
+    :param app_values: Values written to the per-user app dotenv file.
     :param storage_values: Values written to the selected storage dotenv file.
     :param storage_name: Named-storage selector registered in the TOML index.
     """
@@ -36,7 +36,7 @@ class ExampleAppSpec:
     root_name: str
     kit: AppConfigKit
     explicit_values: Mapping[str, str]
-    app_wide_values: Mapping[str, str]
+    app_values: Mapping[str, str]
     storage_values: Mapping[str, str] | None = None
     storage_name: str = "alpha"
 
@@ -55,7 +55,7 @@ EXAMPLE_APPS = (
             "APPRC_EXAMPLE_ENV_ONLY_PROFILE": "explicit-env-profile",
             "APPRC_EXAMPLE_ENV_ONLY_DEBUG": "true",
         },
-        app_wide_values={
+        app_values={
             "APPRC_EXAMPLE_ENV_ONLY_PROFILE": "app-wide-profile",
         },
     ),
@@ -67,7 +67,7 @@ EXAMPLE_APPS = (
             "APPRC_EXAMPLE_STORAGE_ENABLED": "false",
             "APPRC_EXAMPLE_STORAGE_RETRY_COUNT": "7",
         },
-        app_wide_values={
+        app_values={
             "APPRC_EXAMPLE_STORAGE_PROFILE": "app-wide-profile",
         },
         storage_values={
@@ -83,7 +83,7 @@ EXAMPLE_APPS = (
         explicit_values={
             "APPRC_EXAMPLE_APP_WIDE_WORKERS": "8",
         },
-        app_wide_values={
+        app_values={
             "APPRC_EXAMPLE_APP_WIDE_REGION": "app-wide-region",
             "APPRC_EXAMPLE_APP_WIDE_WORKERS": "4",
         },
@@ -95,7 +95,7 @@ EXAMPLE_APPS = (
         explicit_values={
             "APPRC_EXAMPLE_APP_WIDE_STORAGE_REGION": "explicit-region",
         },
-        app_wide_values={
+        app_values={
             "APPRC_EXAMPLE_APP_WIDE_STORAGE_REGION": "app-wide-region",
         },
         storage_values={
@@ -111,7 +111,7 @@ EXAMPLE_APPS = (
         explicit_values={
             "APPRC_EXAMPLE_PRECEDENCE_LABEL": "explicit-env-label",
         },
-        app_wide_values={
+        app_values={
             "APPRC_EXAMPLE_PRECEDENCE_LABEL": "app-wide-label",
         },
         storage_values={
@@ -125,7 +125,7 @@ EXAMPLE_APPS = (
         explicit_values={
             "APPRC_EXAMPLE_RUNTIME_PROFILE": "explicit-runtime-profile",
         },
-        app_wide_values={
+        app_values={
             "APPRC_EXAMPLE_RUNTIME_PROFILE": "app-wide-runtime-profile",
         },
         storage_values={

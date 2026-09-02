@@ -23,9 +23,9 @@ class SelectedField:
 
 
 type EditableConfigValueSourceKey = Literal[
-    "effective", "shell", "app", "storage", "shared"
+    "effective", "shell", "app", "storage", "defaults"
 ]
-type ConfigResolvedSourceKey = Literal["shell", "app", "storage", "shared"]
+type ConfigResolvedSourceKey = Literal["shell", "app", "storage", "defaults"]
 type ConfigWriteScope = Literal["app", "storage"]
 
 
@@ -85,7 +85,7 @@ def config_value_sources(
     app_values: Mapping[str, str],
     storage_values: Mapping[str, str],
     shell_env: Mapping[str, str],
-    shared_values: Mapping[str, str] | None,
+    defaults_values: Mapping[str, str] | None,
     include_app: bool,
     include_storage: bool,
 ) -> tuple[EditableConfigValueSource, ...]:
@@ -93,33 +93,33 @@ def config_value_sources(
 
     The effective source mirrors AppRC runtime precedence for layers the
     editor can inspect without running full CLI bootstrap: shell, storage,
-    app-wide config, then packaged or declared shared default.
+    app config, then packaged or declared defaults.
 
     :param spec: Field declaration that owns defaults and type metadata.
     :param env_key: Full env key for the selected row.
-    :param app_values: Parsed app-wide dotenv values.
+    :param app_values: Parsed per-user app dotenv values.
     :param storage_values: Parsed storage dotenv values.
     :param shell_env: Current process environment.
-    :param shared_values: Parsed packaged shared dotenv values, when known.
-    :param include_app: Whether the app-wide layer is active in the editor.
+    :param defaults_values: Parsed packaged defaults, when known.
+    :param include_app: Whether app config is active in the editor.
     :param include_storage: Whether a storage layer is selected in the editor.
-    :return: Effective, shell, active persistence layers, and shared source rows.
+    :return: Effective, shell, persistence layers, and defaults source rows.
     """
     shell_value = shell_env[env_key] if env_key in shell_env else None
     app_value = app_values[env_key] if env_key in app_values else None
     storage_value = (
         storage_values[env_key] if env_key in storage_values else None
     )
-    shared_value = _shared_source_value(
+    default_value = _defaults_source_value(
         spec=spec,
         env_key=env_key,
-        shared_values=shared_values,
+        defaults_values=defaults_values,
     )
     effective_value, origin_key = _first_available_source(
         ("shell", shell_value),
         ("storage", storage_value if include_storage else None),
         ("app", app_value if include_app else None),
-        ("shared", shared_value),
+        ("defaults", default_value),
     )
     sources: list[EditableConfigValueSource] = [
         EditableConfigValueSource(
@@ -139,23 +139,23 @@ def config_value_sources(
         )
     sources.append(
         EditableConfigValueSource(
-            key="shared",
-            raw_value=shared_value,
+            key="defaults",
+            raw_value=default_value,
         )
     )
     return tuple(sources)
 
 
-def _shared_source_value(
+def _defaults_source_value(
     *,
     spec: ConfigField,
     env_key: str,
-    shared_values: Mapping[str, str] | None,
+    defaults_values: Mapping[str, str] | None,
 ) -> str | None:
-    """Return a packaged or declared shared-default value."""
-    if shared_values is not None and env_key in shared_values:
-        return shared_values[env_key]
-    value = spec.shared_env_value()
+    """Return a packaged or declared default value."""
+    if defaults_values is not None and env_key in defaults_values:
+        return defaults_values[env_key]
+    value = spec.packaged_env_value()
     if value is CONFIG_MISSING:
         return None
     try:

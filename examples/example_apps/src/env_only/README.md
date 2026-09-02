@@ -1,7 +1,7 @@
 # Env Only Example
 
-`env_only` demonstrates `rc.AppRC.env_only(...)`: package defaults, explicit
-env files, and shell env, with no storage root.
+`env_only` demonstrates direct `rc.AppRC(...)`: package defaults, per-user app
+config, explicit env files, and shell env, with no storage root.
 
 ## Requirements
 
@@ -17,7 +17,7 @@ python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_RO
 apprc-env-only config doctor
 ```
 
-The app uses `config/.env.shared` from the package and the generated app-wide
+The app uses `config/apprc.defaults.env` from the package and the generated app
 file under `examples/example_app_disk_files/xdg-config-home/`.
 
 ## Commands
@@ -28,11 +28,9 @@ apprc-env-only config paths
 apprc-env-only config show --json
 ```
 
-## Upgrade Options
-
-Use `app_wide_config` when users should edit app-wide defaults through AppRC.
-Use `storage_only` when each project or workspace needs its own selected
-storage root.
+The `app_wide_config` scenario now uses the same declaration shape and focuses
+on per-user app overrides. Use `storage_only` when each project or workspace
+needs its own selected storage root.
 
 ## Docs
 

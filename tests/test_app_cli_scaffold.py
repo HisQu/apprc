@@ -18,10 +18,10 @@ def test_scaffold_config_package_generates_importable_standard_layout(
     result = scaffold_config_package(
         ConfigScaffoldRequest(
             package="demo_app",
-            mode="storage-only",
             app_name="demo-app",
+            storage=True,
             display_name="Demo App",
-            storage_env_key="DEMO_APP_STORAGE",
+            storage_selector_env_key="DEMO_APP_STORAGE",
             target=source_root,
         )
     )
@@ -61,7 +61,6 @@ def test_scaffold_config_package_keeps_leaf_imports_lightweight(
     scaffold_config_package(
         ConfigScaffoldRequest(
             package="leaf_demo",
-            mode="env-only",
             app_name="leaf-demo",
             target=source_root,
         )
@@ -100,9 +99,9 @@ def test_scaffold_config_package_refuses_unrelated_storage_prefix(
         scaffold_config_package(
             ConfigScaffoldRequest(
                 package="demo_app",
-                mode="storage-only",
                 app_name="demo-app",
-                storage_env_key="OTHER_STORAGE",
+                storage=True,
+                storage_selector_env_key="OTHER_STORAGE",
                 env_prefix="DEMO_APP_",
                 target=tmp_path / "src",
             )
@@ -118,7 +117,6 @@ def test_scaffold_config_package_escapes_generated_python_literals(
     scaffold_config_package(
         ConfigScaffoldRequest(
             package="quoted_demo",
-            mode="env-only",
             app_name="quoted-demo",
             display_name="Demo's App",
             target=source_root,
@@ -137,7 +135,6 @@ def test_scaffold_config_package_refuses_overwrite_without_force(
     """Scaffold reruns should be explicit about replacing files."""
     request = ConfigScaffoldRequest(
         package="demo_app",
-        mode="env-only",
         app_name="demo-app",
         target=tmp_path / "src",
     )
@@ -150,7 +147,6 @@ def test_scaffold_config_package_refuses_overwrite_without_force(
     forced = scaffold_config_package(
         ConfigScaffoldRequest(
             package="demo_app",
-            mode="env-only",
             app_name="demo-app",
             target=tmp_path / "src",
             force=True,
@@ -172,8 +168,6 @@ def test_app_cli_scaffold_config_command_writes_standard_layout(
             "config",
             "--package",
             "cli_demo",
-            "--mode",
-            "env-only",
             "--app-name",
             "cli-demo",
             "--display-name",

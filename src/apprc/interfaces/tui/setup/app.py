@@ -1,4 +1,4 @@
-"""Textual setup guidance for AppRC capability layers."""
+"""Textual setup guidance for AppRC-managed files."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class ConfigSetupApp(App[None]):
-    """Small setup guidance screen for capability-layer setup."""
+    """Small setup guidance screen for AppRC-managed files."""
 
     BINDINGS = [("q", "quit", "Quit")]
 

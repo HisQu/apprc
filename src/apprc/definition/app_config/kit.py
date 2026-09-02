@@ -12,6 +12,7 @@ that should not pull in CLI/TUI dependencies.
 from __future__ import annotations
 
 # == Standard Library ========================
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, overload
@@ -21,7 +22,13 @@ from apprc.definition.app_config.capabilities import (
     CapabilityState,
     StorageLayerState,
 )
-from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.app_config.spec import (
+    DEFAULT_APP_ENV_FILENAME,
+    DEFAULT_APPRC_TOML_FILENAME,
+    DEFAULT_DEFAULTS_ENV_FILENAME,
+    AppConfigSpec,
+)
+from apprc.definition.app_config.storage import Storage
 from apprc.runtime.bootstrap import (
     BootstrapLogger,
     EnvBootstrapResult,
@@ -56,18 +63,23 @@ class AppConfigKit:
         spec: None = None,
         *,
         app_name: str,
-        display_name: str,
+        display_name: str | None,
         config_package: str,
         envs: tuple[type[EnvConfig], ...] = (),
-        storage_env_key: str | None = None,
-        storage_layer: StorageLayerState | str = StorageLayerState.DISABLED,
-        app_wide_layer: CapabilityState | str = CapabilityState.OPTIONAL,
-        named_storage_layer: CapabilityState | str = CapabilityState.DISABLED,
+        storage: Storage | None = None,
         command_name: str | None = None,
+        defaults_env_filename: str = DEFAULT_DEFAULTS_ENV_FILENAME,
+        app_env_filename: str = DEFAULT_APP_ENV_FILENAME,
+        apprc_toml_filename: str = DEFAULT_APPRC_TOML_FILENAME,
+        storage_env_key: str | None = None,
+        storage_layer: StorageLayerState | str | None = None,
+        app_wide_layer: CapabilityState | str | None = None,
+        named_storage_layer: CapabilityState | str | None = None,
         index_filename: str | None = None,
-        shared_env_filename: str = ".env.shared",
-        app_wide_env_filename: str = ".env.apprc-app",
-        storage_env_filename: str = ".env.apprc-storage",
+        shared_env_filename: str | None = None,
+        app_wide_env_filename: str | None = None,
+        storage_env_filename: str | None = None,
+        _legacy_constructor: str | None = None,
     ) -> None: ...
 
     def __init__(
@@ -78,15 +90,20 @@ class AppConfigKit:
         display_name: str | None = None,
         config_package: str | None = None,
         envs: tuple[type[EnvConfig], ...] = (),
-        storage_env_key: str | None = None,
-        storage_layer: StorageLayerState | str = StorageLayerState.DISABLED,
-        app_wide_layer: CapabilityState | str = CapabilityState.OPTIONAL,
-        named_storage_layer: CapabilityState | str = CapabilityState.DISABLED,
+        storage: Storage | None = None,
         command_name: str | None = None,
+        defaults_env_filename: str = DEFAULT_DEFAULTS_ENV_FILENAME,
+        app_env_filename: str = DEFAULT_APP_ENV_FILENAME,
+        apprc_toml_filename: str = DEFAULT_APPRC_TOML_FILENAME,
+        storage_env_key: str | None = None,
+        storage_layer: StorageLayerState | str | None = None,
+        app_wide_layer: CapabilityState | str | None = None,
+        named_storage_layer: CapabilityState | str | None = None,
         index_filename: str | None = None,
-        shared_env_filename: str = ".env.shared",
-        app_wide_env_filename: str = ".env.apprc-app",
-        storage_env_filename: str = ".env.apprc-storage",
+        shared_env_filename: str | None = None,
+        app_wide_env_filename: str | None = None,
+        storage_env_filename: str | None = None,
+        _legacy_constructor: str | None = None,
     ) -> None:
         """Store the application spec or build one from keyword arguments."""
         if spec is not None:
@@ -99,22 +116,23 @@ class AppConfigKit:
             )
         self.spec = AppConfigSpec(
             app_name=app_name,
-            display_name=display_name,
+            display_name=display_name or app_name,
             config_package=config_package,
             envs=envs,
+            storage=storage,
+            command_name=command_name,
+            defaults_env_filename=defaults_env_filename,
+            app_env_filename=app_env_filename,
+            apprc_toml_filename=apprc_toml_filename,
             storage_env_key=storage_env_key,
             storage_layer=storage_layer,
             app_wide_layer=app_wide_layer,
             named_storage_layer=named_storage_layer,
-            command_name=command_name,
-            index_filename=(
-                index_filename
-                if index_filename is not None
-                else AppConfigSpec.derive_index_filename(app_name)
-            ),
+            index_filename=index_filename,
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,
             storage_env_filename=storage_env_filename,
+            _legacy_constructor=_legacy_constructor,
         )
 
     @classmethod
@@ -144,6 +162,7 @@ class AppConfigKit:
         :param storage_env_filename: Storage dotenv override filename.
         :return: Kit with storage and named-storage disabled.
         """
+        cls._warn_legacy_constructor("env_only")
         return cls(
             app_name=app_name,
             display_name=display_name,
@@ -153,10 +172,14 @@ class AppConfigKit:
             app_wide_layer=CapabilityState.OPTIONAL,
             named_storage_layer=CapabilityState.DISABLED,
             command_name=command_name,
-            index_filename=index_filename,
+            index_filename=(
+                index_filename
+                or AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+            ),
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,
             storage_env_filename=storage_env_filename,
+            _legacy_constructor="env_only",
         )
 
     @classmethod
@@ -188,6 +211,7 @@ class AppConfigKit:
         :param storage_env_filename: Storage dotenv override filename.
         :return: Kit with storage required and app-wide/index upgrades enabled.
         """
+        cls._warn_legacy_constructor("storage_only")
         return cls(
             app_name=app_name,
             display_name=display_name,
@@ -198,10 +222,14 @@ class AppConfigKit:
             app_wide_layer=CapabilityState.OPTIONAL,
             named_storage_layer=CapabilityState.OPTIONAL,
             command_name=command_name,
-            index_filename=index_filename,
+            index_filename=(
+                index_filename
+                or AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+            ),
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,
             storage_env_filename=storage_env_filename,
+            _legacy_constructor="storage_only",
         )
 
     @classmethod
@@ -231,6 +259,7 @@ class AppConfigKit:
         :param storage_env_filename: Storage dotenv override filename.
         :return: Kit with app-wide config enabled by default.
         """
+        cls._warn_legacy_constructor("app_wide_config")
         return cls(
             app_name=app_name,
             display_name=display_name,
@@ -240,10 +269,14 @@ class AppConfigKit:
             app_wide_layer=CapabilityState.DEFAULT,
             named_storage_layer=CapabilityState.DISABLED,
             command_name=command_name,
-            index_filename=index_filename,
+            index_filename=(
+                index_filename
+                or AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+            ),
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,
             storage_env_filename=storage_env_filename,
+            _legacy_constructor="app_wide_config",
         )
 
     @classmethod
@@ -275,6 +308,7 @@ class AppConfigKit:
         :param storage_env_filename: Storage dotenv override filename.
         :return: Kit with app-wide config and storage enabled.
         """
+        cls._warn_legacy_constructor("app_wide_storage")
         return cls(
             app_name=app_name,
             display_name=display_name,
@@ -285,10 +319,28 @@ class AppConfigKit:
             app_wide_layer=CapabilityState.DEFAULT,
             named_storage_layer=CapabilityState.OPTIONAL,
             command_name=command_name,
-            index_filename=index_filename,
+            index_filename=(
+                index_filename
+                or AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+            ),
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,
             storage_env_filename=storage_env_filename,
+            _legacy_constructor="app_wide_storage",
+        )
+
+    @staticmethod
+    def _warn_legacy_constructor(name: str) -> None:
+        """Warn that a 0.19 capability constructor will be removed.
+
+        :param name: Deprecated constructor name used by the caller.
+        """
+        warnings.warn(
+            f"AppConfigKit.{name}(...) is deprecated in AppRC 0.20 and "
+            "will be removed in 0.21. Instantiate AppConfigKit(...) directly "
+            "and pass storage=Storage(...) when the app needs storage.",
+            DeprecationWarning,
+            stacklevel=2,
         )
 
     def bootstrap(
@@ -303,20 +355,19 @@ class AppConfigKit:
         """Populate ``os.environ`` for this application.
 
         :param env_files: Optional CLI-run-local dotenv files that outrank
-            packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
-            storage ``.env.apprc-storage``.
+            packaged ``apprc.defaults.env``, app ``apprc.app.env``, and
+            active storage ``apprc.storage.env``.
         :param env_file_overrides_os_environ: Whether explicit dotenv values beat
             existing values in ``os.environ`` inside this process. The parent
             shell is never mutated.
-        :param load_dotenv_layers: Whether packaged ``.env.shared``,
-            app-wide ``.env.apprc-app``, active storage
-            ``.env.apprc-storage``,
+        :param load_dotenv_layers: Whether packaged ``apprc.defaults.env``,
+            app ``apprc.app.env``, active storage ``apprc.storage.env``,
             and explicit ``env_files`` values should be merged into this
-            process. Storage selection still runs for storage-required apps
+            process. Storage selection still runs for storage apps
             when this is ``False``, and explicit values may still provide the
             selector used for selection.
-        :param storage: Optional ``--storage`` selector for storage-required
-            apps. With AppRC TOML it may be a registered storage name or path.
+        :param storage: Optional ``--storage`` selector for storage apps. With
+            AppRC TOML it may be a registered storage name or path.
             Without registered storages it is interpreted as a path.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.

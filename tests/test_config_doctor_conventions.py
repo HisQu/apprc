@@ -73,6 +73,6 @@ def test_config_doctor_reports_unreadable_config_package_as_issue(
 
     assert payload.status == ConfigDoctorStatus.STORAGE_NOT_READY.value
     assert any(
-        "Packaged shared env could not be read" in issue
+        "Packaged defaults env could not be read" in issue
         for issue in payload.issues
     )

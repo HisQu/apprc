@@ -354,7 +354,7 @@ def test_example_cli_env_file_options_control_index_paths(
         )
     )
 
-    assert result["index_path"] == str(explicit_index.resolve())
+    assert result["apprc_toml"] == str(explicit_index.resolve())
 
 
 def test_example_bootstrap_writes_teaching_comments(tmp_path: Path) -> None:

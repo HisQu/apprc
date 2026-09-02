@@ -39,9 +39,9 @@ def app_env_keys(spec: AppConfigSpec) -> set[str]:
     :param spec: Application-specific bootstrap contract.
     :return: Full env keys that AppRC should track for this app.
     """
-    keys = {spec.index_env_key}
-    if spec.storage_env_key is not None:
-        keys.add(spec.storage_env_key)
+    keys = {spec.apprc_toml_env_key}
+    if spec.storage_selector_env_key is not None:
+        keys.add(spec.storage_selector_env_key)
     for owner in spec.owners:
         keys.update(
             owner.env_key(owner_field.name) for owner_field in owner.fields
@@ -74,10 +74,10 @@ def original_env_value_origins(
 def merged_env_value_origins(
     *,
     app_env_keys: set[str],
-    shared_env_path: Path,
-    shared_values: Mapping[str, str],
-    app_wide_env_path: Path | None,
-    app_wide_values: Mapping[str, str],
+    defaults_env_path: Path,
+    defaults_values: Mapping[str, str],
+    app_env_path: Path | None,
+    app_values: Mapping[str, str],
     storage_env_path: Path | None,
     storage_values: Mapping[str, str],
     explicit_layers: tuple[ExplicitEnvLayer, ...],
@@ -87,10 +87,10 @@ def merged_env_value_origins(
     """Return winning env-value origins using runtime bootstrap precedence.
 
     :param app_env_keys: App-owned env keys eligible for provenance tracking.
-    :param shared_env_path: Packaged shared dotenv path.
-    :param shared_values: Parsed packaged shared dotenv values.
-    :param app_wide_env_path: App-wide dotenv path.
-    :param app_wide_values: Parsed app-wide dotenv values.
+    :param defaults_env_path: Packaged defaults dotenv path.
+    :param defaults_values: Parsed packaged defaults dotenv values.
+    :param app_env_path: Per-user app dotenv path.
+    :param app_values: Parsed per-user app dotenv values.
     :param storage_env_path: Active storage dotenv path.
     :param storage_values: Parsed storage dotenv values.
     :param explicit_layers: Parsed explicit env files in command/API order.
@@ -117,12 +117,14 @@ def merged_env_value_origins(
                 path=path,
             )
 
-    apply_values(shared_values, "shell_dotenv_shared", path=shared_env_path)
-    if app_wide_env_path is not None:
+    apply_values(
+        defaults_values, "shell_dotenv_defaults", path=defaults_env_path
+    )
+    if app_env_path is not None:
         apply_values(
-            app_wide_values,
-            "shell_dotenv_app_wide",
-            path=app_wide_env_path,
+            app_values,
+            "shell_dotenv_app",
+            path=app_env_path,
         )
     if storage_env_path is not None:
         apply_values(

@@ -29,6 +29,7 @@ from apprc.user_files.storage_roots.selector import (
 )
 
 if TYPE_CHECKING:
+    from apprc.definition.app_config.spec import AppConfigSpec
     from apprc.definition.app_config.kit import AppConfigKit
 
 
@@ -46,45 +47,46 @@ class StorageDiagnosis:
 
 
 @dataclass(frozen=True, slots=True)
-class AppWideDiagnosis:
-    """App-wide dotenv state discovered for one doctor run."""
+class AppConfigDiagnosis:
+    """Per-user app dotenv state discovered for one doctor run."""
 
     active: bool
     issues: list[str]
 
 
-def diagnose_app_wide(
+def diagnose_app_config(
     kit: "AppConfigKit",
     *,
     paths: AppConfigHome,
-) -> AppWideDiagnosis:
-    """Return app-wide dotenv readiness without creating files.
+) -> AppConfigDiagnosis:
+    """Return per-user app dotenv readiness without creating files.
 
     :param kit: Application config facade.
-    :param paths: Resolved app-wide and index paths.
-    :return: App-wide diagnosis.
+    :param paths: Resolved app and AppRC TOML paths.
+    :return: Per-user app config diagnosis.
     """
-    if not kit.spec.app_wide_allowed():
-        return AppWideDiagnosis(active=False, issues=[])
-    exists = paths.app_wide_env.is_file()
-    active = kit.spec.app_wide_default() or exists
-    if kit.spec.app_wide_default() and not exists:
-        return AppWideDiagnosis(
+    if not kit.spec.app_env_enabled():
+        return AppConfigDiagnosis(active=False, issues=[])
+    exists = paths.app_env.is_file()
+    active = not kit.spec.uses_legacy_constructor() or (
+        kit.spec.setup_creates_app_env() or exists
+    )
+    if kit.spec.setup_creates_app_env() and not exists:
+        return AppConfigDiagnosis(
             active=active,
-            issues=[f"App-wide env file does not exist: {paths.app_wide_env}"],
+            issues=[f"App env file does not exist: {paths.app_env}"],
         )
     if exists:
         try:
-            read_dotenv_file(paths.app_wide_env)
+            read_dotenv_file(paths.app_env)
         except OSError as exc:
-            return AppWideDiagnosis(
+            return AppConfigDiagnosis(
                 active=active,
                 issues=[
-                    "App-wide env file could not be read: "
-                    f"{paths.app_wide_env}: {exc}"
+                    f"App env file could not be read: {paths.app_env}: {exc}"
                 ],
             )
-    return AppWideDiagnosis(active=active, issues=[])
+    return AppConfigDiagnosis(active=active, issues=[])
 
 
 def diagnose_storage(
@@ -109,7 +111,7 @@ def diagnose_storage(
         guidance.
     :return: Storage diagnosis with missing-env and storage-env issues.
     """
-    if not kit.spec.storage_required():
+    if not kit.spec.uses_storage():
         registry = inspect_storage_registry(kit.spec, proc_env=selector_env)
         return StorageDiagnosis(
             selection=None,
@@ -120,11 +122,11 @@ def diagnose_storage(
             issues=[],
             registry=registry,
         )
-    storage_env_key = kit.spec.require_storage_env_key()
+    storage_env_key = kit.spec.require_storage_selector_env_key()
     issues: list[str] = []
     fallback_values = read_storage_selector_fallback_values(
         kit.spec,
-        collect_app_wide_issues=True,
+        collect_app_issues=True,
     )
     issues.extend(fallback_values.issues)
     missing_env_keys: list[str] = []
@@ -136,8 +138,8 @@ def diagnose_storage(
         storage_env_key=storage_env_key,
         original_env=os.environ,
         explicit_values=explicit_values,
-        app_wide_values=fallback_values.app_wide_values,
-        shared_values=fallback_values.shared_values,
+        app_values=fallback_values.app_values,
+        defaults_values=fallback_values.defaults_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     if storage_selector is None:
@@ -202,20 +204,20 @@ def diagnose_storage(
 
 def doctor_status(
     *,
-    app_wide: AppWideDiagnosis,
+    app_config: AppConfigDiagnosis,
     registry: StorageRegistryInspection,
     storage: StorageDiagnosis,
 ) -> ConfigDoctorStatus:
-    """Return readiness status with missing storage env as decisive.
+    """Return readiness status with a missing storage selector as decisive.
 
-    :param app_wide: App-wide dotenv diagnosis.
-    :param registry: Optional named-storage index diagnosis.
+    :param app_config: Per-user app dotenv diagnosis.
+    :param registry: Optional AppRC TOML diagnosis.
     :param storage: Active storage diagnosis.
     :return: Public doctor status.
     """
     if storage.missing_env_keys:
         return ConfigDoctorStatus.ENV_NOT_SET
-    if app_wide.issues:
+    if app_config.issues:
         return ConfigDoctorStatus.APP_CONFIG_NOT_READY
     if registry.issues:
         return ConfigDoctorStatus.NAMED_STORAGE_NOT_READY
@@ -250,28 +252,51 @@ def config_package_convention_warnings(kit: "AppConfigKit") -> list[str]:
 
 
 def legacy_file_warnings(
+    spec: "AppConfigSpec",
     *,
-    app_wide_path: Path,
-    storage_env: Path | None,
+    storage_root: Path | None,
 ) -> list[str]:
     """Return migration warnings for old dotenv filenames.
 
-    :param app_wide_path: Current app-wide dotenv path.
-    :param storage_env: Current selected storage dotenv path, if any.
+    :param spec: Current application declaration.
+    :param storage_root: Selected storage root, if any.
     :return: Human-readable legacy-file warnings.
     """
     warnings: list[str] = []
-    old_app_env = app_wide_path.with_name(".env.global")
-    if old_app_env.is_file():
+    app_resolution = spec.app_env_resolution()
+    if app_resolution.uses_legacy_path:
         warnings.append(
-            f"Legacy app-wide dotenv file ignored: {old_app_env}. Move values "
-            f"to {app_wide_path}."
+            f"Legacy app dotenv filename is active: {app_resolution.selected}. "
+            "Run `config migrate` to use the current filename."
         )
-    if storage_env is not None:
-        old_storage_env = storage_env.with_name(".env.local")
-        if old_storage_env.is_file():
+    older_app_env = app_resolution.selected.with_name(".env.global")
+    if older_app_env.is_file() and older_app_env != app_resolution.selected:
+        warnings.append(
+            f"Legacy app dotenv file exists: {older_app_env}. Move its "
+            f"values into {app_resolution.selected}."
+        )
+    toml_resolution = spec.apprc_toml_resolution()
+    if toml_resolution.uses_legacy_path:
+        warnings.append(
+            "Legacy AppRC TOML filename is active: "
+            f"{toml_resolution.selected}. Run `config migrate` to use the "
+            "current filename."
+        )
+    if storage_root is not None:
+        storage_resolution = spec.storage_env_resolution(storage_root)
+        if storage_resolution.uses_legacy_path:
             warnings.append(
-                "Legacy storage dotenv file ignored: "
-                f"{old_storage_env}. Move values to {storage_env}."
+                "Legacy storage dotenv filename is active: "
+                f"{storage_resolution.selected}. Run `config migrate` to use "
+                "the current filename."
+            )
+        older_storage_env = storage_resolution.selected.with_name(".env.local")
+        if (
+            older_storage_env.is_file()
+            and older_storage_env != storage_resolution.selected
+        ):
+            warnings.append(
+                f"Legacy storage dotenv file exists: {older_storage_env}. "
+                f"Move its values into {storage_resolution.selected}."
             )
     return warnings

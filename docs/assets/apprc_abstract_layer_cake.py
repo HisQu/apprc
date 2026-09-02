@@ -32,15 +32,15 @@ def build_graph() -> Digraph:
         layers.text(
             "base_layers",
             "Base layers",
-            ".env.shared",
-            ".env.apprc-app",
+            "apprc.defaults.env",
+            "apprc.app.env",
             "lower precedence",
             border_color=gg.GREEN,
         )
         layers.text(
             "selected_layers",
             "Selected layers",
-            ".env.apprc-storage",
+            "apprc.storage.env",
             "--env-file",
             "os.environ",
             "higher precedence",
@@ -58,7 +58,7 @@ def build_graph() -> Digraph:
             "Selector sources",
             "--storage",
             "MYAPP_STORAGE",
-            "named index",
+            "apprc.toml",
             border_color=gg.ORANGE,
         )
         selector.text(

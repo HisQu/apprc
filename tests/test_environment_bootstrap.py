@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.storage import Storage
 from apprc.user_files.env_files import write_env_file
 from apprc.user_files.storage_roots.registry import register_storage
 from apprc.user_files.storage_roots.selector import StorageSelectorError
@@ -21,13 +22,12 @@ def _clear_example_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _kit() -> AppConfigKit:
-    return AppConfigKit.storage_only(
+    return AppConfigKit(
         app_name="apprc_example_app",
         display_name="Example App",
         config_package="storage_only.config",
         envs=(ApprcExampleAppEnv,),
-        storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
-        index_filename="apprc_example_app.apprc.toml",
+        storage=Storage(env_key="APPRC_EXAMPLE_APP_STORAGE"),
     )
 
 
@@ -49,7 +49,7 @@ def test_bootstrap_storage_path_selector_does_not_create_files(
     )
 
     assert result.storage_root == storage_root.resolve()
-    assert result.storage_env == storage_root.resolve() / ".env.apprc-storage"
+    assert result.storage_env == storage_root.resolve() / "apprc.storage.env"
     assert result.index_path == kit.spec.default_index_path()
     assert result.index_path is not None
     assert result.storage_env is not None
@@ -187,7 +187,7 @@ def test_bootstrap_reads_app_wide_selector_only_when_file_exists(
     )
 
     assert result.storage_root == storage_root.resolve()
-    assert result.storage_selector_source == "app-wide .env.apprc-app"
+    assert result.storage_selector_source == "app config"
     assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "from-app"
     assert not kit.spec.default_index_path().exists()
 

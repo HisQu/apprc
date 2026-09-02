@@ -37,7 +37,7 @@ def build_app(
         kit=KIT,
         bundle_cls=AppWideStorageExampleConfig,
         section_getter=lambda config: config.app_wide_storage,
-        help_text="Exercise AppRC's app-wide storage capability mode.",
+        help_text="Exercise per-user and storage-local AppRC config.",
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
     )
@@ -54,20 +54,20 @@ def run_demo(root: Path) -> dict[str, object]:
     """
 
     def scenario() -> dict[str, object]:
-        app_wide_env = KIT.spec.ensure_app_wide_env()
+        app_env = KIT.spec.ensure_app_env()
         rc.files.set_env_file_value(
-            path=app_wide_env,
+            path=app_env,
             reference="region",
             raw_value="eu",
             owners=CONFIG_SECTIONS,
-            layer_name=KIT.spec.app_wide_env_filename,
+            layer_name=KIT.spec.app_env_filename,
         )
-        index_path = KIT.spec.ensure_index_file()
+        apprc_toml = KIT.spec.ensure_apprc_toml()
         storage_root = root / "named-storage"
         rc.storage.register_storage(
             name="alpha",
             root=storage_root,
-            path=index_path,
+            path=apprc_toml,
             storage_env_filename=KIT.spec.storage_env_filename,
         )
         rc.files.set_storage_env_value(
@@ -88,7 +88,7 @@ def run_demo(root: Path) -> dict[str, object]:
         return {
             "mode": "app_wide_storage",
             "doctor_status": doctor.status,
-            "index_path": str(index_path),
+            "apprc_toml": str(apprc_toml),
             "selected_storage_name": bootstrap.storage_name,
             "selected_storage_root": str(bootstrap.storage_root),
             "config": config_values(config.app_wide_storage),

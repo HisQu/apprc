@@ -21,6 +21,7 @@ from apprc.user_files.app_home.locations import ConfigHomeError
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.user_files.app_home.index import ApprcTomlEnvError
 from apprc.user_files.storage_roots.selector import StorageSelectorError
+from apprc.user_files.storage_roots.selector import MissingStorageSelectorError
 
 
 def parse_log_level(log_level: str) -> str | int:
@@ -47,18 +48,18 @@ def bootstrap_cli_env(
 
     :param kit: Application config facade.
     :param env_files: Optional CLI-run-local dotenv files that outrank
-        packaged ``.env.shared``, app-wide ``.env.apprc-app``, and active
-        storage ``.env.apprc-storage``.
+        packaged ``apprc.defaults.env``, app ``apprc.app.env``, and active
+        storage ``apprc.storage.env``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
-    :param load_dotenv_layers: Whether packaged ``.env.shared``, app-wide
-        ``.env.apprc-app``, active storage ``.env.apprc-storage``, and
+    :param load_dotenv_layers: Whether packaged ``apprc.defaults.env``, app
+        ``apprc.app.env``, active storage ``apprc.storage.env``, and
         explicit ``env_files`` values should be merged into this process. Registry
-        selection still runs for storage-required apps when this is ``False``,
+        selection still runs for storage apps when this is ``False``,
         and explicit values may still provide the storage selector used for
         selection.
-    :param storage: Optional ``--storage`` selector for storage-required apps.
+    :param storage: Optional ``--storage`` selector for storage apps.
         With a registry it may be a registered storage name or path. Without a
         registry it is always interpreted as a path.
     :param log_level: Optional CLI log-level token.
@@ -85,8 +86,10 @@ def bootstrap_cli_env(
     except ApprcTomlEnvError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=kit.spec.index_env_key,
+            param_hint=kit.spec.apprc_toml_env_key,
         ) from exc
+    except MissingStorageSelectorError:
+        raise
     except StorageSelectorError as exc:
         raise typer.BadParameter(
             str(exc),

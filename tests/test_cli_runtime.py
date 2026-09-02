@@ -669,7 +669,8 @@ def test_config_cli_runtime_runtime_independent_paths_uses_context_only(
     assert factory_calls == []
     payload = json.loads(result.output)
     assert payload["writes"] == "none"
-    assert payload["capabilities"]["app_wide"] == "default"
+    assert payload["app_config_enabled"] is True
+    assert payload["storage_enabled"] is False
 
 
 def test_config_cli_runtime_rejects_direct_config_policy_group_drift() -> None:
@@ -750,7 +751,7 @@ def test_config_cli_runtime_runtime_independent_set_skips_state_factory(
     assert result.exit_code == 0, result.output
     assert factory_calls == []
     assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-value"\n' in (
-        storage_root / ".env.apprc-storage"
+        storage_root / "apprc.storage.env"
     ).read_text(encoding="utf-8")
 
 
@@ -868,12 +869,11 @@ def _ctx(command_name: str | None) -> typer.Context:
 
 
 def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
-    return AppConfigKit.app_wide_config(
+    return AppConfigKit(
         app_name="storage_free_app",
         display_name="Storage-Free App",
         config_package="storage_only.config",
         envs=(StorageFreeExampleEnv,),
-        index_filename="storage_free_app.apprc.toml",
     )
 
 

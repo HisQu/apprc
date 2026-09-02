@@ -33,4 +33,4 @@ include = [
 ]
 
 [tool.setuptools.package-data]
-"*" = [".env.shared"]
+"*" = ["apprc.defaults.env"]

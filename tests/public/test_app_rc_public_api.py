@@ -11,26 +11,47 @@ import apprc as rc
 
 
 def _env_only_app() -> rc.AppRC:
-    """Return a small env-only public AppRC facade for tests."""
-    return rc.AppRC.env_only(
+    """Return a small config-only public AppRC facade for tests."""
+    return rc.AppRC(
         app_name="public-demo",
         display_name="Public Demo",
         config_package="apprc",
     )
 
 
-def test_mode_constructors_are_keyword_only() -> None:
-    """Mode constructors reject positional ``app_name`` arguments."""
-    MyRC = rc.AppRC.storage_only(
+def test_direct_declaration_accepts_optional_storage() -> None:
+    """One constructor expresses config-only and storage applications."""
+    MyRC = rc.AppRC(
         app_name="haiu",
         display_name="HAIU",
         config_package="haiu.config",
-        storage_env_key="HAIU_STORAGE",
+        storage=rc.Storage(env_key="HAIU_STORAGE"),
     )
 
     assert MyRC.spec.app_name == "haiu"
     assert MyRC.spec.display_name == "HAIU"
-    assert MyRC.spec.storage_env_key == "HAIU_STORAGE"
+    assert MyRC.spec.storage_selector_env_key == "HAIU_STORAGE"
+    assert MyRC.spec.defaults_env_filename == "apprc.defaults.env"
+    assert MyRC.spec.app_env_filename == "apprc.app.env"
+    assert MyRC.spec.storage_env_filename == "apprc.storage.env"
+    assert MyRC.spec.apprc_toml_filename == "apprc.toml"
+
+
+def test_legacy_mode_constructors_warn_and_remain_keyword_only() -> None:
+    """The 0.19 constructors retain their call contract through 0.20."""
+    with pytest.warns(DeprecationWarning, match="removed in 0.21"):
+        MyRC = rc.AppRC.storage_only(
+            app_name="haiu",
+            display_name="HAIU",
+            config_package="haiu.config",
+            storage_env_key="HAIU_STORAGE",
+        )
+
+    assert MyRC.spec.storage_selector_env_key == "HAIU_STORAGE"
+    assert MyRC.spec.defaults_env_filename == ".env.shared"
+    assert MyRC.spec.app_env_filename == ".env.apprc-app"
+    assert MyRC.spec.storage_env_filename == ".env.apprc-storage"
+    assert MyRC.spec.apprc_toml_filename == "haiu.apprc.toml"
 
     with pytest.raises(TypeError):
         rc.AppRC.storage_only("haiu", config_package="haiu.config")  # type: ignore[misc]

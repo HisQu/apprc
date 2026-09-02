@@ -31,13 +31,15 @@ from tests.support_config import (
 def test_setup_overview_text_describes_storage_route() -> None:
     text = setup_overview_text(build_apprc_example_app_kit())
 
-    assert "selected storage root" in text
+    assert "storage directory" in text
+    assert "per-user app config" in text
 
 
-def test_setup_overview_text_describes_app_wide_route() -> None:
+def test_setup_overview_text_describes_lazy_app_config() -> None:
     text = setup_overview_text(build_storage_free_example_kit())
 
-    assert "app-wide config" in text
+    assert "needs no setup" in text
+    assert "created when a value is first saved" in text
 
 
 def test_config_setup_app_stores_kit() -> None:
@@ -82,7 +84,7 @@ async def test_editor_setup_initializes_path_without_requiring_registration(
         await pilot.pause()
         await editor.setup_workflow.open_setup_flow()
 
-        assert (storage_root / ".env.apprc-storage").is_file()
+        assert (storage_root / "apprc.storage.env").is_file()
         assert not index_path.exists()
         assert editor.active_storage_root == storage_root.resolve()
         assert isinstance(editor.selection, ActivePathStorageSelection)
@@ -90,9 +92,8 @@ async def test_editor_setup_initializes_path_without_requiring_registration(
     summary = screens[-1]
     assert isinstance(summary, ConfirmScreen)
     assert isinstance(summary.message, Text)
-    assert f'export APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"' in (
-        summary.message.plain
-    )
+    assert f"app_env: {kit.spec.app_env_path()}" in summary.message.plain
+    assert "export APPRC_EXAMPLE_APP_STORAGE" not in summary.message.plain
 
 
 @pytest.mark.asyncio
@@ -137,11 +138,11 @@ async def test_editor_setup_can_register_initialized_storage(
 
 
 @pytest.mark.asyncio
-async def test_editor_setup_initializes_app_wide_config(
+async def test_editor_setup_explains_lazy_app_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Run app-wide setup from an editor without storage controls.
+    """Explain lazy app config from an editor without storage controls.
 
     :param monkeypatch: Fixture used to isolate files and close the summary.
     :param tmp_path: Temporary root for the config home.
@@ -159,7 +160,7 @@ async def test_editor_setup_initializes_app_wide_config(
         await pilot.pause()
         await editor.setup_workflow.open_setup_flow()
 
-    assert kit.spec.app_wide_env_path().is_file()
+    assert not kit.spec.app_env_path().exists()
 
 
 @pytest.mark.asyncio

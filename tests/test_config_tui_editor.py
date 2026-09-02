@@ -48,7 +48,7 @@ from tests.support_config import (
 )
 
 
-def test_editor_uses_new_storage_env_and_index_labels() -> None:
+def test_editor_uses_new_storage_env_and_apprc_toml_labels() -> None:
     kit = build_apprc_example_app_kit()
     editor = ConfigEditorApp(
         kit=kit,
@@ -56,8 +56,8 @@ def test_editor_uses_new_storage_env_and_index_labels() -> None:
         active_storage_root=Path("/tmp/storage"),
     )
 
-    assert editor.kit.spec.storage_env_filename == ".env.apprc-storage"
-    assert editor.index_label == "apprc_example_app.apprc.toml"
+    assert editor.kit.spec.storage_env_filename == "apprc.storage.env"
+    assert editor.apprc_toml_label == "apprc.toml"
     assert editor.init_command.endswith("config storage add NAME PATH")
 
 
@@ -504,7 +504,7 @@ async def test_editor_location_repoints_missing_storage_without_creating_files(
     assert (
         editor.storage_registry.selected("alpha").root == target_root.resolve()
     )
-    assert not (target_root / ".env.apprc-storage").exists()
+    assert not (target_root / "apprc.storage.env").exists()
     assert editor.refreshed_names == ["alpha"]
 
 
@@ -565,7 +565,7 @@ async def test_editor_move_storage_moves_complete_directory_to_new_root(
     assert (destination_root / "payload.txt").read_text(
         encoding="utf-8"
     ) == "keep"
-    assert (destination_root / ".env.apprc-storage").is_file()
+    assert (destination_root / "apprc.storage.env").is_file()
     assert editor.storage_registry.selected("alpha").root == destination_root
     assert editor.refreshed_names == ["alpha"]
 
@@ -1243,7 +1243,7 @@ async def test_editor_new_storage_creates_first_registry_entry(
         await editor.storage_workflows.open_new_storage_flow()
 
     assert index_path.is_file()
-    assert (storage_root / ".env.apprc-storage").is_file()
+    assert (storage_root / "apprc.storage.env").is_file()
     assert editor.storage_registry is not None
     assert editor.storage_registry.selected("alpha").root == (
         storage_root.resolve()
@@ -1421,7 +1421,7 @@ async def test_editor_storage_registration_shows_rollback_cleanup_warning(
         self: Path,
         missing_ok: bool = False,
     ) -> None:
-        if self.name == ".env.apprc-storage":
+        if self.name == "apprc.storage.env":
             raise OSError("unlink blocked")
         original_unlink(self, missing_ok=missing_ok)
 
@@ -1465,7 +1465,7 @@ async def test_editor_open_does_not_create_storage_env_file(
         await pilot.pause()
         table = editor.query_one("#field-table", DataTable)
 
-        assert not (storage_root / ".env.apprc-storage").exists()
+        assert not (storage_root / "apprc.storage.env").exists()
         assert table.row_count > 0
 
 
@@ -1588,7 +1588,7 @@ async def test_editor_hides_named_storage_controls_when_disabled(
         ):
             assert list(editor.query(f"#{button_id}")) == []
         assert editor.query_one("#field-table", DataTable).row_count > 0
-        assert not (storage_root / ".env.apprc-storage").exists()
+        assert not (storage_root / "apprc.storage.env").exists()
 
 
 @pytest.mark.asyncio
@@ -1637,7 +1637,7 @@ async def test_editor_saving_to_storage_creates_only_storage_env_file(
 
     async with editor.run_test() as pilot:
         await pilot.pause()
-        storage_env = storage_root / ".env.apprc-storage"
+        storage_env = storage_root / "apprc.storage.env"
         app_wide_env = kit.spec.app_wide_env_path()
 
         assert not storage_env.exists()

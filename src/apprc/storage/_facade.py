@@ -21,6 +21,7 @@ _IO_EXPORTS = [
 ]
 _LOADING_EXPORTS = [
     "StorageRegistryInspection",
+    "apprc_toml_path_for_create",
     "index_path_for_create",
     "inspect_storage_registry",
     "load_create_or_empty_storage_registry",

@@ -15,8 +15,8 @@
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_apprc_core</title>
-<path fill="#444444" fill-opacity="0.098039" stroke="#666666" stroke-width="2" d="M54,-287.75C54,-287.75 399,-287.75 399,-287.75 405,-287.75 411,-293.75 411,-299.75 411,-299.75 411,-405 411,-405 411,-411 405,-417 399,-417 399,-417 54,-417 54,-417 48,-417 42,-411 42,-405 42,-405 42,-299.75 42,-299.75 42,-293.75 48,-287.75 54,-287.75"/>
-<text xml:space="preserve" text-anchor="middle" x="226.5" y="-403.5" font-family="sans-serif" font-size="10.00" fill="#666666">AppRC metadata model</text>
+<path fill="#444444" fill-opacity="0.098039" stroke="#666666" stroke-width="2" d="M58,-287.75C58,-287.75 399,-287.75 399,-287.75 405,-287.75 411,-293.75 411,-299.75 411,-299.75 411,-405 411,-405 411,-411 405,-417 399,-417 399,-417 58,-417 58,-417 52,-417 46,-411 46,-405 46,-405 46,-299.75 46,-299.75 46,-293.75 52,-287.75 58,-287.75"/>
+<text xml:space="preserve" text-anchor="middle" x="228.5" y="-403.5" font-family="sans-serif" font-size="10.00" fill="#666666">AppRC metadata model</text>
 </g>
 <g id="clust3" class="cluster">
 <title>cluster_runtime_model</title>
@@ -46,14 +46,14 @@
 <text xml:space="preserve" text-anchor="start" x="299.23" y="-433.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">derive</text>
 <polygon fill="none" stroke="#00a2ff" points="296.23,-425 296.23,-443.75 330.73,-443.75 330.73,-425 296.23,-425"/>
 </g>
-<!-- kit&#45;&gt;capability_metadata -->
+<!-- kit&#45;&gt;storage_declaration -->
 <g id="edge3" class="edge">
-<title>kit&#45;&gt;capability_metadata</title>
-<path fill="none" stroke="#00a2ff" stroke-width="2.5" d="M125.09,-463.92C122.35,-446.5 118.86,-424.22 115.61,-403.5"/>
-<polygon fill="#00a2ff" stroke="#00a2ff" stroke-width="2.5" points="118.23,-403.25 114.47,-396.25 113.04,-404.07 118.23,-403.25"/>
-<polygon fill="#00a2ff" stroke="none" points="121.55,-425 121.55,-443.75 153.8,-443.75 153.8,-425 121.55,-425"/>
-<text xml:space="preserve" text-anchor="start" x="124.55" y="-433.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">select</text>
-<polygon fill="none" stroke="#00a2ff" points="121.55,-425 121.55,-443.75 153.8,-443.75 153.8,-425 121.55,-425"/>
+<title>kit&#45;&gt;storage_declaration</title>
+<path fill="none" stroke="#00a2ff" stroke-width="2.5" d="M125.06,-460.91C122.64,-444.04 119.64,-423.19 116.84,-403.7"/>
+<polygon fill="#00a2ff" stroke="#00a2ff" stroke-width="2.5" points="119.46,-403.53 115.8,-396.48 114.27,-404.28 119.46,-403.53"/>
+<polygon fill="#00a2ff" stroke="none" points="122.26,-425 122.26,-443.75 161.26,-443.75 161.26,-425 122.26,-425"/>
+<text xml:space="preserve" text-anchor="start" x="125.26" y="-433.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">declare</text>
+<polygon fill="none" stroke="#00a2ff" points="122.26,-425 122.26,-443.75 161.26,-443.75 161.26,-425 122.26,-425"/>
 </g>
 <!-- owner_metadata&#45;&gt;resolution -->
 <g id="edge4" class="edge">
@@ -91,23 +91,23 @@
 <text xml:space="preserve" text-anchor="start" x="352.92" y="-267.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">edit</text>
 <polygon fill="none" stroke="#8b5cf6" points="349.92,-259 349.92,-277.75 373.92,-277.75 373.92,-259 349.92,-259"/>
 </g>
-<!-- capability_metadata&#45;&gt;resolution -->
+<!-- storage_declaration&#45;&gt;resolution -->
 <g id="edge5" class="edge">
-<title>capability_metadata&#45;&gt;resolution</title>
-<path fill="none" stroke="#32bc00" stroke-width="2.5" d="M59.55,-289.81C57.38,-285.9 55.49,-281.86 54,-277.75 49.47,-265.22 48.3,-251.26 48.91,-237.81"/>
-<polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.5" points="51.51,-238.13 49.5,-230.45 46.28,-237.71 51.51,-238.13"/>
-<polygon fill="#32bc00" stroke="none" points="54,-259 54,-277.75 87,-277.75 87,-259 54,-259"/>
-<text xml:space="preserve" text-anchor="start" x="57" y="-267.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">layers</text>
-<polygon fill="none" stroke="#32bc00" points="54,-259 54,-277.75 87,-277.75 87,-259 54,-259"/>
+<title>storage_declaration&#45;&gt;resolution</title>
+<path fill="none" stroke="#32bc00" stroke-width="2.5" d="M52.88,-290.01C50.4,-286.07 48.23,-281.98 46.5,-277.75 41.33,-265.12 40.64,-250.97 42.21,-237.34"/>
+<polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.5" points="44.74,-238.11 43.32,-230.3 39.56,-237.3 44.74,-238.11"/>
+<polygon fill="#32bc00" stroke="none" points="46.5,-259 46.5,-277.75 87,-277.75 87,-259 46.5,-259"/>
+<text xml:space="preserve" text-anchor="start" x="49.5" y="-267.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">storage</text>
+<polygon fill="none" stroke="#32bc00" points="46.5,-259 46.5,-277.75 87,-277.75 87,-259 46.5,-259"/>
 </g>
-<!-- capability_metadata&#45;&gt;config_cli -->
+<!-- storage_declaration&#45;&gt;config_cli -->
 <g id="edge8" class="edge">
-<title>capability_metadata&#45;&gt;config_cli</title>
-<path fill="none" stroke="#f4a261" stroke-width="2.5" d="M144.12,-289.78C146.3,-285.82 148.3,-281.78 150,-277.75 156.8,-261.63 161.18,-243.04 163.99,-226.21"/>
-<polygon fill="#f4a261" stroke="#f4a261" stroke-width="2.5" points="166.53,-227.01 165.06,-219.2 161.34,-226.22 166.53,-227.01"/>
-<polygon fill="#f4a261" stroke="none" points="156.55,-259 156.55,-277.75 203.05,-277.75 203.05,-259 156.55,-259"/>
-<text xml:space="preserve" text-anchor="start" x="159.55" y="-267.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">generate</text>
-<polygon fill="none" stroke="#f4a261" points="156.55,-259 156.55,-277.75 203.05,-277.75 203.05,-259 156.55,-259"/>
+<title>storage_declaration&#45;&gt;config_cli</title>
+<path fill="none" stroke="#f4a261" stroke-width="2.5" d="M144.18,-290.05C146.34,-285.99 148.32,-281.86 150,-277.75 156.63,-261.55 160.96,-242.95 163.79,-226.13"/>
+<polygon fill="#f4a261" stroke="#f4a261" stroke-width="2.5" points="166.32,-226.93 164.87,-219.12 161.13,-226.13 166.32,-226.93"/>
+<polygon fill="#f4a261" stroke="none" points="156.41,-259 156.41,-277.75 202.91,-277.75 202.91,-259 156.41,-259"/>
+<text xml:space="preserve" text-anchor="start" x="159.41" y="-267.2" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">generate</text>
+<polygon fill="none" stroke="#f4a261" points="156.41,-259 156.41,-277.75 202.91,-277.75 202.91,-259 156.41,-259"/>
 </g>
 <!-- resolution&#45;&gt;effective_config -->
 <g id="edge7" class="edge">
@@ -148,16 +148,17 @@
 <!-- kit -->
 <g id="node2" class="node">
 <title>kit</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M102.38,-463.62C102.38,-463.62 157.62,-463.62 157.62,-463.62 163.62,-463.62 169.62,-469.62 169.62,-475.62 169.62,-475.62 169.62,-516.88 169.62,-516.88 169.62,-522.88 163.62,-528.88 157.62,-528.88 157.62,-528.88 102.38,-528.88 102.38,-528.88 96.38,-528.88 90.38,-522.88 90.38,-516.88 90.38,-516.88 90.38,-475.62 90.38,-475.62 90.38,-469.62 96.38,-463.62 102.38,-463.62"/>
-<polygon fill="#b4a7e5" stroke="none" points="98.38,-500.88 98.38,-520.88 104.12,-520.88 104.12,-500.88 98.38,-500.88"/>
-<polygon fill="none" stroke="#181818" points="98.38,-500.88 98.38,-520.88 104.12,-520.88 104.12,-500.88 98.38,-500.88"/>
-<text xml:space="preserve" text-anchor="start" x="99.38" y="-506.75" font-family="sans-serif" font-size="10.00">I</text>
-<text xml:space="preserve" text-anchor="start" x="112.12" y="-512.38" font-family="sans-serif" font-style="italic" font-size="10.00">«app spec»</text>
-<text xml:space="preserve" text-anchor="start" x="114.38" y="-502.38" font-family="sans-serif" font-weight="bold" font-size="10.00">rc.AppRC</text>
-<polygon fill="#00a2ff" stroke="none" points="91.38,-492.88 91.38,-493.88 168.62,-493.88 168.62,-492.88 91.38,-492.88"/>
-<text xml:space="preserve" text-anchor="start" x="98.38" y="-477.38" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="104.38" y="-477.38" font-family="sans-serif" font-size="10.00"> capabilities</text>
-<path fill="none" stroke="#00a2ff" d="M102.38,-463.62C102.38,-463.62 157.62,-463.62 157.62,-463.62 163.62,-463.62 169.62,-469.62 169.62,-475.62 169.62,-475.62 169.62,-516.88 169.62,-516.88 169.62,-522.88 163.62,-528.88 157.62,-528.88 157.62,-528.88 102.38,-528.88 102.38,-528.88 96.38,-528.88 90.38,-522.88 90.38,-516.88 90.38,-516.88 90.38,-475.62 90.38,-475.62 90.38,-469.62 96.38,-463.62 102.38,-463.62"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M102.38,-460.75C102.38,-460.75 157.62,-460.75 157.62,-460.75 163.62,-460.75 169.62,-466.75 169.62,-472.75 169.62,-472.75 169.62,-519.75 169.62,-519.75 169.62,-525.75 163.62,-531.75 157.62,-531.75 157.62,-531.75 102.38,-531.75 102.38,-531.75 96.38,-531.75 90.38,-525.75 90.38,-519.75 90.38,-519.75 90.38,-472.75 90.38,-472.75 90.38,-466.75 96.38,-460.75 102.38,-460.75"/>
+<polygon fill="#b4a7e5" stroke="none" points="98.38,-503.75 98.38,-523.75 104.12,-523.75 104.12,-503.75 98.38,-503.75"/>
+<polygon fill="none" stroke="#181818" points="98.38,-503.75 98.38,-523.75 104.12,-523.75 104.12,-503.75 98.38,-503.75"/>
+<text xml:space="preserve" text-anchor="start" x="99.38" y="-509.62" font-family="sans-serif" font-size="10.00">I</text>
+<text xml:space="preserve" text-anchor="start" x="112.12" y="-515.25" font-family="sans-serif" font-style="italic" font-size="10.00">«app spec»</text>
+<text xml:space="preserve" text-anchor="start" x="114.38" y="-505.25" font-family="sans-serif" font-weight="bold" font-size="10.00">rc.AppRC</text>
+<polygon fill="#00a2ff" stroke="none" points="91.38,-495.75 91.38,-496.75 168.62,-496.75 168.62,-495.75 91.38,-495.75"/>
+<text xml:space="preserve" text-anchor="start" x="98.38" y="-480.25" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
+<text xml:space="preserve" text-anchor="start" x="104.38" y="-480.25" font-family="sans-serif" font-size="10.00"> optional</text>
+<text xml:space="preserve" text-anchor="start" x="98.38" y="-470.25" font-family="sans-serif" font-size="10.00">rc.Storage</text>
+<path fill="none" stroke="#00a2ff" d="M102.38,-460.75C102.38,-460.75 157.62,-460.75 157.62,-460.75 163.62,-460.75 169.62,-466.75 169.62,-472.75 169.62,-472.75 169.62,-519.75 169.62,-519.75 169.62,-525.75 163.62,-531.75 157.62,-531.75 157.62,-531.75 102.38,-531.75 102.38,-531.75 96.38,-531.75 90.38,-525.75 90.38,-519.75 90.38,-519.75 90.38,-472.75 90.38,-472.75 90.38,-466.75 96.38,-460.75 102.38,-460.75"/>
 </g>
 <!-- owner_metadata -->
 <g id="node3" class="node">
@@ -179,15 +180,15 @@
 <text xml:space="preserve" text-anchor="start" x="317.88" y="-297.75" font-family="sans-serif" font-size="10.00">edit policy</text>
 <path fill="none" stroke="#666666" d="M324.88,-289.75C324.88,-289.75 397.12,-289.75 397.12,-289.75 403.12,-289.75 409.12,-295.75 409.12,-301.75 409.12,-301.75 409.12,-380.75 409.12,-380.75 409.12,-386.75 403.12,-392.75 397.12,-392.75 397.12,-392.75 324.88,-392.75 324.88,-392.75 318.88,-392.75 312.88,-386.75 312.88,-380.75 312.88,-380.75 312.88,-301.75 312.88,-301.75 312.88,-295.75 318.88,-289.75 324.88,-289.75"/>
 </g>
-<!-- capability_metadata -->
+<!-- storage_declaration -->
 <g id="node5" class="node">
-<title>capability_metadata</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M56.38,-289.75C56.38,-289.75 155.62,-289.75 155.62,-289.75 161.62,-289.75 167.62,-295.75 167.62,-301.75 167.62,-301.75 167.62,-380.75 167.62,-380.75 167.62,-386.75 161.62,-392.75 155.62,-392.75 155.62,-392.75 56.38,-392.75 56.38,-392.75 50.38,-392.75 44.38,-386.75 44.38,-380.75 44.38,-380.75 44.38,-301.75 44.38,-301.75 44.38,-295.75 50.38,-289.75 56.38,-289.75"/>
-<text xml:space="preserve" text-anchor="start" x="55.38" y="-373.25" font-family="sans-serif" font-weight="bold" font-size="10.00">Capability metadata</text>
-<text xml:space="preserve" text-anchor="start" x="49.38" y="-342.25" font-family="sans-serif" font-size="10.00">app&#45;wide</text>
-<text xml:space="preserve" text-anchor="start" x="49.38" y="-320" font-family="sans-serif" font-size="10.00">storage</text>
-<text xml:space="preserve" text-anchor="start" x="49.38" y="-297.75" font-family="sans-serif" font-size="10.00">named index</text>
-<path fill="none" stroke="#666666" d="M56.38,-289.75C56.38,-289.75 155.62,-289.75 155.62,-289.75 161.62,-289.75 167.62,-295.75 167.62,-301.75 167.62,-301.75 167.62,-380.75 167.62,-380.75 167.62,-386.75 161.62,-392.75 155.62,-392.75 155.62,-392.75 56.38,-392.75 56.38,-392.75 50.38,-392.75 44.38,-386.75 44.38,-380.75 44.38,-380.75 44.38,-301.75 44.38,-301.75 44.38,-295.75 50.38,-289.75 56.38,-289.75"/>
+<title>storage_declaration</title>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M60.25,-289.75C60.25,-289.75 155.75,-289.75 155.75,-289.75 161.75,-289.75 167.75,-295.75 167.75,-301.75 167.75,-301.75 167.75,-380.75 167.75,-380.75 167.75,-386.75 161.75,-392.75 155.75,-392.75 155.75,-392.75 60.25,-392.75 60.25,-392.75 54.25,-392.75 48.25,-386.75 48.25,-380.75 48.25,-380.75 48.25,-301.75 48.25,-301.75 48.25,-295.75 54.25,-289.75 60.25,-289.75"/>
+<text xml:space="preserve" text-anchor="start" x="59.25" y="-373.25" font-family="sans-serif" font-weight="bold" font-size="10.00">Storage declaration</text>
+<text xml:space="preserve" text-anchor="start" x="53.25" y="-342.25" font-family="sans-serif" font-size="10.00">selector key</text>
+<text xml:space="preserve" text-anchor="start" x="53.25" y="-320" font-family="sans-serif" font-size="10.00">suggested root</text>
+<text xml:space="preserve" text-anchor="start" x="53.25" y="-297.75" font-family="sans-serif" font-size="10.00">first&#45;run prompt</text>
+<path fill="none" stroke="#666666" d="M60.25,-289.75C60.25,-289.75 155.75,-289.75 155.75,-289.75 161.75,-289.75 167.75,-295.75 167.75,-301.75 167.75,-301.75 167.75,-380.75 167.75,-380.75 167.75,-386.75 161.75,-392.75 155.75,-392.75 155.75,-392.75 60.25,-392.75 60.25,-392.75 54.25,-392.75 48.25,-386.75 48.25,-380.75 48.25,-380.75 48.25,-301.75 48.25,-301.75 48.25,-295.75 54.25,-289.75 60.25,-289.75"/>
 </g>
 <!-- resolution -->
 <g id="node6" class="node">

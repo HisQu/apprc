@@ -1,437 +1,175 @@
-<!-- ======================================================== -->
+# AppRC Explanations
 
-<br>
+## Table of contents
 
-## Table Of Contents
-<!-- ======================================================== -->
+1. [System model](#system-model)
+2. [Integration flow](#integration-flow)
+3. [Runtime config model](#3-runtime-config-model)
+4. [Runtime bootstrap](#runtime-bootstrap)
+5. [Storage selection](#storage-selection)
+6. [Zero-write policy](#zero-write-policy)
+7. [Generated interfaces](#generated-interfaces)
+8. [Migration model](#migration-model)
 
-1. [Explanations](#1-explanations)
-2. [System Architecture](#2-system-architecture)
-   1. [System Model](#system-model)
-   2. [Integration Flow](#integration-flow)
-   3. [Package Layout](#package-layout)
-3. [Runtime Config Model](#3-runtime-config-model)
-   1. [Config Contract Model](#config-contract-model)
-   2. [Capability Layers](#capability-layers)
-   3. [Runtime Bootstrap](#runtime-bootstrap)
-   4. [Storage Selection](#storage-selection)
-   5. [Zero-Write Policy](#zero-write-policy)
-   6. [Provenance](#provenance)
-4. [Generated Interfaces](#4-generated-interfaces)
-   1. [Generated CLI](#generated-cli)
-   2. [Textual Editor](#textual-editor)
-5. [Failure Model](#5-failure-model)
-
-<br>
-
-# 1. Explanations
-
-Use this file when you need to understand why AppRC is shaped the way it is.
-Use [How-To User Guides](How-To-User-Guides.md) for ordered recipes and
+Use [How-To User Guides](How-To-User-Guides.md) for procedures and
 [References](References.md) for exact names.
 
-<br>
+## System model
 
-# 2. System Architecture
-
-<!-- ======================================================== -->
-
-<br>
-
-## System Model
-<!-- ======================================================== -->
-
-AppRC exists to keep application configuration from splitting into unrelated
-systems. A app declares its config contract once. AppRC then uses that
-same contract for runtime binding, dotenv loading, validation, CLI setup,
-diagnostics, editor rendering, and provenance.
-
-The central objects are:
-
-1. `rc.Config` classes hold env-backed typed runtime values.
-2. `rc.ConfigBase` classes hold Python-only config objects.
-3. `@MyRC.config(...)` registers each config class with title, env prefix, and
-   runtime config path metadata.
-4. `rc.field("FULL_ENV_KEY", ...)` gives each env-backed field metadata: env
-   name, type, default, editability, secrecy, choices, and explanations.
-5. `rc.AppRC` stores the application-level contract and selected persistence
-   capabilities.
-6. Bootstrap resolves layers and writes merged values into the current Python
-   process environment.
+An application declares typed settings once. AppRC reuses that declaration for
+runtime binding, dotenv precedence, validation, diagnostics, generated Typer
+commands, the Textual editor, and provenance.
 
 | ![AppRC runtime layers](assets/apprc-runtime-layers.svg) |
 |:--:|
-| **Fig. 1 - Runtime Layers:** One config contract feeds runtime setup, diagnostics, generated CLI commands, and the Textual editor. |
+| **Fig. 1 — Runtime layers:** One declaration feeds runtime setup and every user-facing config workflow. |
 
-> [!NOTE]
-> Related: use [declare typed config fields](How-To-User-Guides.md#declare-typed-config-fields)
-> for the first integration step.
+The main objects have narrow jobs:
 
-<br>
+- `rc.AppRC` owns application identity and optional storage.
+- `rc.Storage` says that the app needs a persistent directory.
+- `rc.Config` holds env-backed typed settings.
+- `rc.ConfigBase` holds Python-only settings.
+- `@MyRC.config(...)` registers a config section.
+- `rc.field(...)` records the full env key and editing metadata.
+- `@MyRC.bundle` builds one eager top-level config object.
 
-<!-- ======================================================== -->
+There is no mode matrix in the primary API. Per-user app config is always
+available and lazy. Storage is either absent or declared.
 
-<br>
+## Integration flow
 
-## Integration Flow
-<!-- ======================================================== -->
+The normal order is:
 
-The normal application flow is:
+1. Create `rc.AppRC(...)`, with `storage=rc.Storage()` when needed.
+2. Register `rc.Config` and `rc.ConfigBase` classes.
+3. Ship non-secret defaults in `apprc.defaults.env`.
+4. Mount AppRC on the CLI or call `bootstrap()` manually.
+5. Construct runtime config after bootstrap.
 
-1. Create one `rc.AppRC` facade.
-2. Declare one or more `rc.Config` or `rc.ConfigBase` classes with
-   `@MyRC.config(...)`.
-3. Add packaged defaults in `.env.shared`.
-4. Bootstrap env layers at the CLI entrypoint.
-5. Construct runtime config objects after bootstrap.
-6. Mount the generated `config` CLI.
+Importing AppRC or a config class does not read files and does not modify
+`os.environ`. Bootstrap is the explicit boundary where dotenv values enter the
+current Python process.
 
-This order matters because `rc.Config` reads from `os.environ` during object
-construction. AppRC bootstrap is the step that merges packaged, app-wide,
-storage, explicit env-file, and shell values into that process environment.
+## 3. Runtime config model
 
-<br>
+Every registered env-backed section has an env prefix and ordered fields.
+Every field has a Python type, full env key, required/default behavior,
+editability, secrecy, choices, and explanatory text. The CLI and TUI use the
+same metadata as runtime binding, so there is no second UI schema to keep in
+sync.
 
-<!-- ======================================================== -->
+`rc.field("KEY")` is required when it has no default. `secret=True` controls
+display redaction only; it is not encryption and does not change persistence.
+`packaged_default` documents a deliberate difference between a Python fallback
+and the value shipped in `apprc.defaults.env`.
 
-<br>
+Per-user app config is deliberately lazy. A config-only application needs no
+installation step. The first app-scope save creates `apprc.app.env`.
 
-## Package Layout
-<!-- ======================================================== -->
+Storage is separate because it represents application data ownership, not a
+stronger kind of config. `rc.Storage()` adds selection, setup, local overrides,
+and named-storage management without changing the config declaration model.
 
-Core AppRC areas:
+## Runtime bootstrap
 
-| Area | Responsibility |
-|---|---|
-| `src/apprc/definition` | Developer-declared app specs, capability choices, env-backed config classes, owner metadata, and schema lookup. |
-| `src/apprc/runtime` | Process-time dotenv bootstrap, provenance, and read-only diagnostics. |
-| `src/apprc/user_files` | AppRC-managed config homes, dotenv editing, storage registries, archive helpers, and setup flows. |
-| `src/apprc/interfaces` | Typer integration, generated `config` commands, CLI rendering, and Textual TUI presentation. |
-| `examples/example_apps` | Runnable example CLI source for each AppRC capability mode, selector precedence, and `CliRuntime`, with one short import package per example app plus internal `_example_apps_utils` support. |
-| `examples/example_app_disk_files` | Ignored generated runtime files used by the example CLIs, including their shared `XDG_CONFIG_HOME`, storage roots, and sourceable per-app `.env` files. |
-| `tests` | Behavior checks for public contracts and generated workflows. |
-| `docs` | Long-form user, reference, explanation, and maintainer documentation. |
+Bootstrap performs these operations:
 
-The root `apprc` facade re-exports normal integration APIs so applications can
-use one import statement. More specialized modules remain importable for AppRC
-internals, tests, and advanced debugging.
+1. Capture the original process environment.
+2. Read explicit `--env-file` values.
+3. Resolve current or legacy managed filenames.
+4. Read packaged defaults and per-user app config.
+5. Select and validate storage when declared.
+6. Read the selected storage dotenv.
+7. Merge values using documented precedence.
+8. Write the merged values into this Python process.
+9. Record provenance for app-owned keys.
 
-<br>
-
-# 3. Runtime Config Model
-
-<!-- ======================================================== -->
-
-<br>
-
-## Config Contract Model
-<!-- ======================================================== -->
-
-An AppRC contract has two levels.
-
-`ConfigOwner` describes a group of related fields. It owns:
-
-- a stable owner key such as `app`
-- a human title such as `App`
-- an env prefix such as `MYAPP_`
-- a runtime config path such as `("app",)`
-- ordered `ConfigField` metadata
-
-`ConfigField` describes one setting. It owns:
-
-- the Python attribute name
-- the owner-local env variable name
-- the Python type used for conversion
-- default or required behavior
-- secret redaction
-- editability
-- allowed choices
-- short and long explanations
-
-The app writes normal dataclass-looking Python. AppRC derives the
-normalized owner and field inventory from that code. The generated CLI and TUI
-therefore do not need a separate schema file.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Capability Layers
-<!-- ======================================================== -->
-
-`rc.AppRC` constructors select which persistence capabilities exist:
-
-| Constructor | Intended Shape |
-|---|---|
-| `env_only(...)` | Package defaults, explicit env files, and shell env only. |
-| `storage_only(...)` | One required storage root, optional app-wide config, optional named-storage index. |
-| `app_wide_config(...)` | A default app-wide dotenv without storage. |
-| `app_wide_storage(...)` | A default app-wide dotenv plus one required storage root. |
-
-The important distinction is "allowed" versus "active":
-
-- A disabled layer never participates.
-- An optional app-wide layer becomes active when `.env.apprc-app` exists.
-- A default app-wide layer is expected and `config doctor` reports when it is
-  missing.
-- Optional named storage is used when the index file exists or when a named
-  selector needs it.
-- Storage is either disabled or required.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Runtime Bootstrap
-<!-- ======================================================== -->
-
-AppRC imports are side-effect free. Importing a config class does not read
-dotenv files and does not mutate `os.environ`.
-
-The app calls bootstrap once near process startup. Bootstrap:
-
-1. Captures the original process environment.
-2. Reads explicit `--env-file` values.
-3. Resolves app config-home paths.
-4. Reads app-wide values when the app-wide layer is allowed and the file
-   exists.
-5. Selects storage when storage is required.
-6. Confirms that the selected storage root exists and is a directory.
-7. Reads packaged, app-wide, storage, and explicit dotenv layers.
-8. Writes the merged values into this Python process only.
-9. Registers provenance for app-owned env keys.
-
-Bootstrap never creates the selected root. Applications must run their
-generated `config setup` command or create the directory before bootstrap.
-
-| ![AppRC runtime layer precedence](assets/apprc-abstract-layer-cake.svg) |
+| ![AppRC precedence](assets/apprc-abstract-layer-cake.svg) |
 |:--:|
-| **Fig. 2 - Runtime Layer Precedence:** AppRC merges lower-precedence defaults, app-wide config, storage config, explicit env files, and shell env into one typed runtime view. |
+| **Fig. 2 — Precedence:** Broad defaults sit below user, storage, invocation, and process-specific values. |
 
-The parent shell is never changed.
+The parent shell is never modified. With normal precedence, existing
+`os.environ` wins over explicit files. `--env-file-overrides-os-environ` makes
+explicit files win instead.
 
-<br>
+## Storage selection
 
-<!-- ======================================================== -->
+A storage selector answers one question: which directory owns persistent data
+and `apprc.storage.env` for this run?
 
-<br>
+The selector can be:
 
-## Storage Selection
-<!-- ======================================================== -->
+- a direct path from `--storage`, the derived env key, or an explicit env file;
+- a name stored in `apprc.toml`;
+- the path persisted by first setup in `apprc.app.env`.
 
-Choosing storage answers one question: which directory owns the active
-storage-local config and data for this run? The reference docs and public hook
-names call this choice a `storage selector`.
+Direct paths do not require TOML. This keeps the single-storage case simple.
+Named storage is an optional address book for applications that need several
+roots. It becomes useful without becoming a separate capability level.
 
-AppRC checks possible storage choices in this order:
+The default first storage suggestion comes from
+`platformdirs.user_data_path(app_name, appauthor=False)`. This follows platform
+conventions while remaining configurable through `Storage.suggested_root` and
+`config setup --storage-root PATH`.
 
-1. CLI `--storage`
-2. storage env key, for example `MYAPP_STORAGE`
-3. explicit env files, respecting `--env-file-overrides-os-environ`
-4. app-wide `.env.apprc-app`, when active
-5. packaged `.env.shared`
+`--storage-root` is a path-typed option so shells can complete a custom path.
+The short automatic prompt only asks whether to accept the suggestion. It does
+not implement a weaker in-prompt path editor.
 
-Storage choices can be written two ways:
-
-| Value | Meaning |
-|---|---|
-| Path-like value | Use that path as the storage folder. This works without a saved address book. |
-| Bare name | Resolve through `<app>.apprc.toml` when the storage address book exists. |
-
-A bare unknown name fails when the storage address book exists and already
-contains named storages. Use `./name` when a relative path is intended.
-
-Named selectors are external inputs. Renaming a registered selector in the
-Textual editor changes the address book, but it cannot find or rewrite uses in
-`--storage`, the storage environment variable, or dotenv files. Users must
-update those old selector values before a later run can resolve the renamed
-storage.
-
-The location map below separates AppRC-owned dotenv files from runtime-only
-inputs such as `--env-file` and shell variables.
-
-| ![AppRC storage and config locations](assets/apprc-storage-config-locations.svg) |
+| ![Storage and config locations](assets/apprc-storage-config-locations.svg) |
 |:--:|
-| **Fig. 3 - AppRC Dotenv Locations:** AppRC-owned config files stand out from device locations, startup inputs stay separate, and the runtime-read box summarizes what AppRC reads when the app starts. |
+| **Fig. 3 — File locations:** Packaged defaults, user config, AppRC TOML, and storage-local config have distinct owners. |
 
-<br>
+## Zero-write policy
 
-<!-- ======================================================== -->
+Read operations stay read-only:
 
-<br>
-
-## Zero-Write Policy
-<!-- ======================================================== -->
-
-AppRC separates inspection from creation. Runtime reads and diagnostics should
-be safe on a machine that has never run setup.
-
-Zero-write operations include:
-
-- runtime setup
+- `bootstrap()`
 - `config paths`
 - `config doctor`
 - opening `config edit`
-- storage selector resolution
+- listing storages
 
-Explicit write operations include:
+Writes occur only after an explicit command or confirmed editor action. The
+automatic first-run prompt is part of a runtime command, but it asks before
+creating anything. Declining prints the exact setup command and changes no
+files.
 
-- `config setup`
-- `config app init`
-- `config set`
-- saving from `config edit`
-- `config storage add`
-- `config storage remove`
+This separation matters because help, diagnostics, tests, and routine startup
+must not silently create configuration residue.
 
-This policy makes first-run diagnostics useful: AppRC can tell a user which
-files would be used without silently creating empty files that look like a real
-configuration.
+## Generated interfaces
 
-<br>
+The generated CLI and Textual editor are two views of the same contract.
+`config setup` remains visible even when setup is unnecessary because it gives
+users a stable discovery point and explains the declaration.
 
-<!-- ======================================================== -->
+For a storage declaration, the editor can create the first storage from an
+empty registry. It can also register the active path, rename a selector,
+repoint its location, move its directory, archive it, restore it, and remove
+it. These actions are based on storage state, not on old constructor names.
 
-<br>
+Diagnostics show the declaration directly: whether storage, app config, and
+named storage are enabled, which files are selected, and what is needed next.
+This is more useful than exposing internal optional/default capability levels.
 
-## Provenance
-<!-- ======================================================== -->
+## Migration model
 
-Runtime config objects can report why a value is effective. Provenance tracks
-whether a value came from Python code, a shell-side source, or a runtime
-mutation.
+AppRC 0.20 changes names without making existing installations unreadable.
+Each managed file has a preferred path and ordered legacy candidates.
 
-Examples of exact origins include:
+- If only the preferred file exists, AppRC uses it.
+- If only a legacy file exists, AppRC continues reading and writing it.
+- If both exist, the preferred file wins and AppRC warns.
+- AppRC never merges competing files automatically.
 
-- `python_constructor_argument`
-- `python_envconfig_default`
-- `python_runtime_assignment`
-- `python_scoped_override`
-- `shell_dotenv_shared`
-- `shell_dotenv_app_wide`
-- `shell_dotenv_storage`
-- `shell_dotenv_explicit`
-- `shell_export_variable`
+`config migrate` preflights the app dotenv, AppRC TOML, the active storage, and
+every registered storage before moving anything. A conflict stops the whole
+operation. Safe moves use same-directory renames. If the filesystem fails
+after some moves, the command reports what completed and can be run again.
 
-Secret fields keep their real value for runtime use but show a redacted
-display value in provenance and UI surfaces.
-
-<br>
-
-# 4. Generated Interfaces
-
-<!-- ======================================================== -->
-
-<br>
-
-## Generated CLI
-<!-- ======================================================== -->
-
-`MyRC.mount_cli(...)` is the shortest Typer integration path: it registers
-standard AppRC CLI runtime options, runs bootstrap only for commands that need
-runtime state, and mounts the generated `config` group. It keeps AppRC bootstrap
-context separate from app-owned `ctx.obj` state, so runtime-independent config commands
-can run without constructing incomplete application state.
-
-`rc.cli.mount_config_cli(...)` and the lower-level generated command group are
-available for advanced integrations. The group is generated from the app spec,
-so unavailable capabilities are not exposed. `rc.cli.CliRuntime` is the middle
-layer for apps that own their Typer
-callback and extra options: the runtime prepares AppRC context, applies skip
-policy, mounts the generated group, and validates app-owned state. Apps that
-only need custom state after bootstrap can keep the mount helper and pass
-`state_type=...` plus `state_factory=...`. Apps that need a non-default generated
-group name can pass `config_group_name=...`. Apps that need app-owned hooks to
-run for generated writes can pass `runtime_policy=...` or use the runtime
-directly.
-When `CliRuntime.prepare(...)` skips runtime setup, the returned
-session has `runtime_setup_skipped=True` and `state=None`; existing
-app-owned `ctx.obj` values are left alone. When bootstrap runs, runtimeful
-generated config commands expect the app callback to leave the declared
-`state_type` on `ctx.obj`; AppRC reports a clear error if that state is missing.
-Generated config group mounting also fails early when the app already owns
-the requested command or group name.
-
-The CLI has three jobs:
-
-1. Inspect current state: `paths`, `doctor`, `show`.
-2. Initialize explicit files: `setup`, `app init`, `storage add`.
-3. Edit values: `set`, `edit`, `storage remove`.
-
-Some config commands intentionally skip full runtime setup. That lets users
-run setup and diagnostics before required runtime settings exist.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Textual Editor
-<!-- ======================================================== -->
-
-The Textual editor is another view over the same config contract. It renders
-owner sections and fields, shows source columns, validates values through the
-same type metadata, and writes only the selected dotenv scope.
-
-The editor does not create files on open. It creates files only when the user
-saves to a writable app-wide or storage scope.
-
-Named-storage controls are available only when named storage is enabled and an
-index is loaded. Direct path-selected storage editing works without an index.
-
-When an index is loaded, the editor provides a compact, horizontally scrollable
-storage action row for the selected storage. `Rename` updates a live or
-missing registry record after confirming the external-selector migration;
-`Location` points that record at an existing directory and updates only the
-registry. It never creates, moves, or deletes storage files.
-
-`Move` is deliberately separate from `Location`: it is available only for a
-live directory-backed record and moves the complete storage directory to a new
-or empty destination before updating the registry. It rejects populated,
-identical, nested, and other unsafe targets. The editor confirms each rename,
-repoint, and move. Archived rows and direct path-selected storage have no live
-registry record to rename, repoint, or move. Archive records retain their
-historical `source_root` when a live storage is repointed or moved; renaming
-also renames a matching archive record.
-
-Neither `Location` nor `Move` rewrites direct path selectors in `--storage`,
-the storage environment variable, or dotenv files. Users must update those
-values themselves. Before moving data, close programs that can write to the
-storage. The editor rejects symbolic-link roots and roots shared by another
-live selector; for a cross-filesystem copy, it keeps the original directory and
-cancels the move when its pre-promotion check finds that the source changed.
-Later detected source changes keep the original directory and report a warning.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-# 5. Failure Model
-
-When an AppRC-backed app is not runnable, check in this order:
-
-1. Run `myapp config paths --json` to see paths and capabilities without
-   treating missing setup as a failure.
-2. Run `myapp config doctor --json` to see the readiness status.
-3. Confirm required selectors such as `MYAPP_STORAGE`.
-4. Confirm selected storage roots exist.
-5. Confirm expected dotenv files exist.
-6. Confirm named selectors match the named-storage index.
-7. Confirm explicit env-file override policy when shell exports and
-   `--env-file` disagree.
-
-`config doctor` statuses are intentionally coarse. The payload's `issues`,
-`warnings`, and `next_steps` fields carry the specific repair path.
-
-> [!NOTE]
-> Related links:
-> - Use [Troubleshoot Config Doctor](How-To-User-Guides.md#troubleshoot-config-doctor)
->   for repair recipes.
-> - Use [Doctor Statuses](References.md#doctor-statuses) for the exact status
->   vocabulary.
+Packaged defaults are source code owned by the host application, so users do
+not migrate them from an installed CLI. App authors rename `.env.shared` to
+`apprc.defaults.env` in their repository. The runtime fallback protects the
+transition.

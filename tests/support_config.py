@@ -14,6 +14,7 @@ from pytest import MonkeyPatch
 from typer.testing import Result
 
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.storage import Storage
 from apprc.definition.env_config.env import EnvConfig
 from apprc.definition.env_config.fields import (
     config_owner_for,
@@ -183,24 +184,22 @@ class StorageFreeExampleConfigStateWithoutStorage:
 
 def build_apprc_example_app_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that behaves like a real application."""
-    return AppConfigKit.storage_only(
+    return AppConfigKit(
         app_name="apprc_example_app",
         display_name="Example App",
         config_package="storage_only.config",
         envs=(ApprcExampleAppEnv,),
-        storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
-        index_filename="apprc_example_app.apprc.toml",
+        storage=Storage(env_key="APPRC_EXAMPLE_APP_STORAGE"),
     )
 
 
 def build_storage_free_example_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that does not use storage."""
-    return AppConfigKit.app_wide_config(
+    return AppConfigKit(
         app_name="storage_free_app",
         display_name="Storage-Free App",
         config_package="env_only.config",
         envs=(StorageFreeExampleEnv,),
-        index_filename="storage_free_app.apprc.toml",
     )
 
 
@@ -235,10 +234,7 @@ def set_apprc_example_app_bootstrap(
     index_path = (
         apprc_toml
         if apprc_toml is not None
-        else tmp_path
-        / "config"
-        / "apprc_example_app"
-        / "apprc_example_app.apprc.toml"
+        else tmp_path / "config" / "apprc_example_app" / "apprc.toml"
     )
     active_storage_root = (
         storage_root
@@ -265,10 +261,10 @@ def apprc_example_app_state(
     """Return generic CLI state with one active storage root."""
     return ApprcExampleAppConfigState(
         env_bootstrap=EnvBootstrapResult(
-            shared_env=None,
+            defaults_env=None,
             storage_env=storage_root / kit.spec.storage_env_filename,
             env_files=(),
-            index_path=kit.spec.required_index_path(),
+            apprc_toml=kit.spec.apprc_toml_path(),
             storage_selector_source="--storage",
             storage_selector_value="alpha",
             storage_name="alpha",

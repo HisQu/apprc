@@ -40,13 +40,12 @@ from tests.support_config import (
 
 
 def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
-    """Return a storage-free kit whose package includes ``.env.shared``."""
-    return AppConfigKit.app_wide_config(
+    """Return a storage-free kit whose package includes defaults."""
+    return AppConfigKit(
         app_name="storage_free_app",
         display_name="Storage-Free App",
         config_package="env_only.config",
         envs=(StorageFreeExampleEnv,),
-        index_filename="storage_free_app.apprc.toml",
     )
 
 
@@ -468,7 +467,7 @@ def test_mount_config_cli_runtime_independent_set_uses_context_not_app_hooks(
     assert factory_calls == []
     assert hook_calls == []
     assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-value"\n' in (
-        storage_root / ".env.apprc-storage"
+        storage_root / "apprc.storage.env"
     ).read_text(encoding="utf-8")
 
 
@@ -626,15 +625,15 @@ def test_mount_config_cli_custom_config_group_name_appears_in_guidance(
         "--scope",
         "app",
     ]
-    inactive_scope = CliRunner().invoke(
+    app_scope = CliRunner().invoke(
         app,
         current_args,
     )
 
     assert setup.exit_code == 0, setup.output
     assert f"{kit.spec.app_name} settings doctor" in setup.output
-    assert inactive_scope.exit_code != 0
-    assert "settings app init" in " ".join(inactive_scope.output.split())
+    assert app_scope.exit_code == 0, app_scope.output
+    assert kit.spec.app_env_path().is_file()
 
 
 def test_config_doctor_payload_custom_config_group_name_next_steps(
@@ -734,7 +733,7 @@ def test_generated_config_set_uses_context_without_ctx_obj(
 
     assert result.exit_code == 0, result.output
     assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-value"\n' in (
-        storage_root / ".env.apprc-storage"
+        storage_root / "apprc.storage.env"
     ).read_text(encoding="utf-8")
 
 

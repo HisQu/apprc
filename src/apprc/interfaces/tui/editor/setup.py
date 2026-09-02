@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 
 class ConfigEditorSetupWorkflow:
-    """Initialize the capability layers declared by one editor.
+    """Initialize the managed files declared by one editor.
 
     :param editor: Config editor that owns the setup controls and current
         selection.
@@ -50,15 +50,20 @@ class ConfigEditorSetupWorkflow:
         if self.editor.storage_enabled:
             await self._open_storage_setup_flow()
             return
-        if self.editor.kit.spec.app_wide_default():
-            await self._run_app_wide_setup()
+        if self.editor.kit.spec.setup_creates_app_env():
+            await self._run_app_setup()
             return
         await self._show_env_only_guidance()
 
     async def _open_storage_setup_flow(self) -> None:
         """Choose and initialize a storage root, then offer registration."""
-        default_root = (
-            self.editor.active_storage_root
+        declared_root = (
+            self.editor.kit.spec.storage.suggested_root
+            if self.editor.kit.spec.storage is not None
+            else None
+        )
+        default_root = self.editor.active_storage_root or (
+            declared_root
             or suggested_storage_root(self.editor.kit.spec.app_name)
         )
         path_result = await self.editor.push_screen_wait(
@@ -94,15 +99,15 @@ class ConfigEditorSetupWorkflow:
 
         self.editor.active_storage_root = result.active_storage_root
         self.editor.app_values = (
-            read_env_file(result.app_wide_env)
-            if result.app_wide_env is not None
+            read_env_file(result.app_env)
+            if result.app_env is not None
             else self.editor.app_values
         )
         await self.editor._refresh_storage_list()
         await self._show_storage_setup_result(
             storage_root=result.active_storage_root,
             storage_env=result.storage_env,
-            app_wide_env=result.app_wide_env,
+            app_env=result.app_env,
         )
 
     async def _confirm_storage_root(self, path: Path) -> Path | None:
@@ -153,13 +158,13 @@ class ConfigEditorSetupWorkflow:
         *,
         storage_root: Path,
         storage_env: Path | None,
-        app_wide_env: Path | None,
+        app_env: Path | None,
     ) -> None:
         """Show initialized files and optionally register the selected path.
 
         :param storage_root: Directory initialized by setup.
         :param storage_env: Storage dotenv file created by setup.
-        :param app_wide_env: App-wide dotenv file created by setup.
+        :param app_env: App-wide dotenv file created by setup.
         """
         can_register = (
             self.editor.named_storage_enabled
@@ -181,7 +186,7 @@ class ConfigEditorSetupWorkflow:
                         self.editor.kit,
                         storage_root=storage_root,
                         storage_env=storage_env,
-                        app_wide_env=app_wide_env,
+                        app_env=app_env,
                         config_group_name=self.editor.config_group_name,
                     )
                 ),
@@ -197,17 +202,17 @@ class ConfigEditorSetupWorkflow:
             directory_already_approved=True,
         )
 
-    async def _run_app_wide_setup(self) -> None:
-        """Initialize app-wide config and refresh the editor values."""
+    async def _run_app_setup(self) -> None:
+        """Initialize per-user app config and refresh editor values."""
         try:
             result = await asyncio.to_thread(
-                ConfigSetupFlow(self.editor.kit).run_app_wide_setup
+                ConfigSetupFlow(self.editor.kit).run_app_setup
             )
         except (ConfigSetupError, OSError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        if result.app_wide_env is not None:
-            self.editor.app_values = read_env_file(result.app_wide_env)
+        if result.app_env is not None:
+            self.editor.app_values = read_env_file(result.app_env)
         await self.editor._refresh_storage_list()
         await self.editor.push_screen_wait(
             ConfirmScreen(
@@ -215,7 +220,7 @@ class ConfigEditorSetupWorkflow:
                 message=Text(
                     setup_finish_text(
                         self.editor.kit,
-                        app_wide_env=result.app_wide_env,
+                        app_env=result.app_env,
                         config_group_name=self.editor.config_group_name,
                     )
                 ),

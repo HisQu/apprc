@@ -48,16 +48,23 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
         storage_root: Path,
         *,
         default_name: str,
+        directory_already_approved: bool = False,
     ) -> None:
         """Prompt for confirmation and register one live storage root.
 
         :param storage_root: Directory selected by the user.
         :param default_name: Suggested storage selector.
+        :param directory_already_approved: Whether a preceding setup flow
+            already confirmed that this directory is safe to reuse.
         """
         registry = self.editor._require_storage_registry()
         if registry is None:
             return
-        guarded_root = await self.guard_storage_directory(storage_root)
+        guarded_root = (
+            normalize_storage_root_path(storage_root).resolve()
+            if directory_already_approved
+            else await self.guard_storage_directory(storage_root)
+        )
         if guarded_root is None:
             return
         name_result = await self.editor.push_screen_wait(

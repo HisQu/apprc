@@ -22,20 +22,27 @@ class EditorConfigCommands(ConfigCommandBase):
                 current_state,
                 selector_context=selector_context,
             )
+            storage_registry_error: str | None = None
             try:
-                optional_registry = self.load_optional_storage_registry(
-                    selector_context=selector_context,
+                optional_registry = (
+                    self.load_storage_registry_or_empty(
+                        selector_context=selector_context,
+                    )
+                    if self.kit.spec.named_storage_allowed()
+                    else None
                 )
-            except typer.BadParameter:
+            except typer.BadParameter as exc:
                 if (
                     active_storage_root is None
                     and self.kit.spec.named_storage_default()
                 ):
                     raise
                 optional_registry = None
+                storage_registry_error = str(exc)
             self.launch_config_editor(
                 current_state=current_state,
                 storage_registry=optional_registry,
+                storage_registry_error=storage_registry_error,
                 active_storage_root=active_storage_root,
                 selector_context=selector_context,
             )

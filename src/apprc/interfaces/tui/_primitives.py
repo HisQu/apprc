@@ -306,6 +306,7 @@ class ConfirmScreen(ModalScreen[str | None]):
         title: str,
         message: VisualType,
         actions: tuple[tuple[str, str, ButtonVariant], ...],
+        cancel_label: str | None = "Cancel",
     ) -> None:
         """Store confirmation text and ``(id, label, variant)`` actions.
 
@@ -313,11 +314,14 @@ class ConfirmScreen(ModalScreen[str | None]):
         :param message: Question, warning, or Rich renderable shown above
             action buttons.
         :param actions: Button IDs, labels, and Textual variants.
+        :param cancel_label: Label for the cancel button, or ``None`` to omit
+            that button.
         """
         super().__init__()
         self.dialog_title = title
         self.message = message
         self.actions = actions
+        self.cancel_label = cancel_label
 
     def compose(self) -> ComposeResult:
         """Compose the confirmation dialog.
@@ -333,7 +337,8 @@ class ConfirmScreen(ModalScreen[str | None]):
             with Horizontal(id="confirm-button-row"):
                 for action_id, label, variant in self.actions:
                     yield Button(label, variant=variant, id=action_id)
-                yield Button("Cancel", id="confirm-cancel")
+                if self.cancel_label is not None:
+                    yield Button(self.cancel_label, id="confirm-cancel")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Dismiss with the selected action id.

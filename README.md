@@ -311,7 +311,7 @@ AppRC-managed persistence files are explicit:
 | Packaged shared defaults | package `.env.shared` | the application package |
 | App-wide config | platform config home `.env.apprc-app` | `config app init`, app-wide setup, or app-scope save |
 | Storage config | `<storage-root>/.env.apprc-storage` | storage setup, `config storage add`, or storage-scope save |
-| Named-storage index | `<config-home>/<app>.apprc.toml` | `config storage add/remove` |
+| Named-storage index | `<config-home>/<app>.apprc.toml` | editor `New`/`Register` or `config storage add/remove` |
 
 > [!NOTE]
 > For constructor arguments and capability details, see
@@ -385,6 +385,13 @@ apps do not expose named-storage commands.
 `config edit` requires the optional TUI extra:
 `python -m pip install "apprc[tui]"`.
 
+The editor always shows `Setup`. It runs the same capability-aware setup as
+`config setup` and reports any shell selector that must be set afterward.
+Storage-capable apps that allow named storage also show `New`, `Register`,
+`Rename`, `Location`, `Move`, `Archive`, and `Delete`. `New` and `Register`
+can create the first named-storage index; opening the editor itself still
+writes nothing.
+
 > [!NOTE]
 > For the generated command table, see
 > [docs/References.md#generated-cli-commands](docs/References.md#generated-cli-commands).
@@ -394,8 +401,9 @@ apps do not expose named-storage commands.
 ## Setup And Diagnostics
 
 Use `config paths` before setup to see candidate paths and declared
-capabilities without writing anything. Use `config setup` for explicit first
-storage setup, then use `config doctor` when a machine is not runnable.
+capabilities without writing anything. Use `config setup` or the editor's
+`Setup` action for explicit first storage setup, then use `config doctor` when
+a machine is not runnable.
 
 ```shell
 myapp config paths
@@ -411,7 +419,8 @@ myapp run
 
 > [!IMPORTANT]
 > Runtime reads and diagnostics do not create files. `bootstrap`, `config
-> paths`, `config doctor`, and opening `config edit` are zero-write. For
+> paths`, `config doctor`, and opening `config edit` are zero-write. Editor
+> actions such as `Setup`, `New`, and `Register` write only after confirmation. For
 > storage-backed applications, bootstrap requires the selected root to exist
 > and be a directory. Run `config setup` before runtime startup.
 

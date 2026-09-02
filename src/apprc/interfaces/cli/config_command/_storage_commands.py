@@ -31,7 +31,7 @@ class StorageConfigCommands(ConfigCommandBase):
     def storage_list(self, ctx: typer.Context, *, json_output: bool) -> None:
         """List named storage roots from the optional index."""
         selector_context = self.cli_selector_context(ctx)
-        registry = self.load_list_storage_registry(
+        registry = self.load_storage_registry_or_empty(
             selector_context=selector_context,
         )
         payload = storage_list_payload(

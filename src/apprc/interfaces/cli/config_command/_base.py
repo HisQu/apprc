@@ -172,7 +172,7 @@ class ConfigCommandBase:
         except ValueError as exc:
             raise self.index_bad_parameter(exc) from exc
 
-    def load_list_storage_registry(
+    def load_storage_registry_or_empty(
         self,
         *,
         selector_context: ConfigSelectorContext | None = None,
@@ -328,6 +328,7 @@ class ConfigCommandBase:
         *,
         current_state: ResolvedConfigState | None,
         storage_registry: StorageRegistry | None,
+        storage_registry_error: str | None,
         active_storage_root: Path | None,
         selector_context: ConfigSelectorContext | None = None,
     ) -> None:
@@ -335,6 +336,7 @@ class ConfigCommandBase:
         self.editor_launcher.launch(
             current_state=current_state,
             storage_registry=storage_registry,
+            storage_registry_error=storage_registry_error,
             active_storage_root=active_storage_root,
             selector_context=selector_context,
         )

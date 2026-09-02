@@ -55,6 +55,10 @@ def setup_finish_text(
         lines.append(f"storage_root: {storage_root}")
     if storage_env is not None:
         lines.append(f"storage_env: {storage_env}")
+    export_commands = shell_export_commands(kit, storage_root)
+    if export_commands:
+        lines.extend(("", "Add this to your shell or dotenv file:"))
+        lines.extend(f"  {command}" for command in export_commands)
     lines.extend(
         (
             "",

@@ -384,7 +384,7 @@ so the child runtime policy inspects the forwarded child arguments.
 <!-- ======================================================== -->
 
 For `storage_only(...)` and `app_wide_storage(...)` apps, create a first
-storage root explicitly:
+storage root explicitly. Use the CLI when scripting setup:
 
 ```bash
 myapp config paths
@@ -399,6 +399,17 @@ Expected results:
 - `config setup` creates `<storage-root>/.env.apprc-storage`.
 - `app_wide_storage(...)` also creates `.env.apprc-app`.
 - `config doctor` reports `runnable` once required files and selectors exist.
+
+For interactive setup, open the editor and select `Setup`:
+
+```bash
+myapp config edit
+```
+
+Choose the storage directory and confirm the write. The editor initializes the
+same files as `config setup`, selects the new path for the current editor
+session, and shows the exact shell export needed after exit. When named storage
+is allowed, it also offers to register the path under a name.
 
 > [!IMPORTANT]
 > `MYAPP_STORAGE` selects storage. It can be a path selector or, when a
@@ -454,18 +465,24 @@ Remove a registry entry without deleting the storage directory:
 myapp config storage remove alpha
 ```
 
-The Textual editor can manage a loaded named-storage index directly:
+The Textual editor can create and manage the named-storage index directly:
 
 ```bash
 myapp config edit
 ```
 
-Its horizontally scrollable storage action row contains `New`, `Register`,
-`Rename`, `Location`, `Move`, `Archive`, and `Delete`. `Rename` and
-`Location` also work for a registered root that is currently missing. `Move`
-is available only when the selected registered root exists as a directory.
-Archived rows and direct path-selected storage have no live registry entry, so
-the registry-editing controls are unavailable for them.
+Its horizontally scrollable action row contains `Setup`, `New`, `Register`,
+`Rename`, `Location`, `Move`, `Archive`, and `Delete`. `New` creates the first
+index when none exists. `Register` gives an active path selector a name.
+Opening the editor remains zero-write; the index is written only after one of
+those actions succeeds.
+
+`Rename` and `Location` also work for a registered root that is currently
+missing. `Move` is available only when the selected registered root exists as
+a directory. Archived rows and direct path-selected storage have no live
+registry entry, so selection-dependent registry controls are unavailable for
+them. Apps that explicitly disable named storage show `Setup` and path editing
+without named-storage actions.
 
 `Rename` changes the selector stored in the named-storage index. The new name
 must not collide with any live or archived selector. Update every external use
@@ -529,6 +546,10 @@ myapp config edit
 The editor shows `Effective`, `Shell`, `App-wide`, `Storage`, `Default`, and
 `Explanation` columns. It opens without creating files. Saving creates only
 the chosen app-wide or storage dotenv file.
+
+`Setup` is present for every capability mode. It initializes the declared
+app-wide or storage files, or explains that an env-only app requires no AppRC
+file writes.
 
 Secret fields are redacted in displays. Read-only fields, such as storage
 selector fields marked `editable=False`, cannot be written through AppRC

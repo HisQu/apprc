@@ -160,7 +160,7 @@ async def test_editor_compact_storage_controls_enable_live_storage(
         await pilot.pause()
 
         assert isinstance(
-            editor.query_one("#storage-action-row"), HorizontalScroll
+            editor.query_one("#config-action-row"), HorizontalScroll
         )
         assert [
             str(editor.query_one(f"#{button_id}", Button).label)
@@ -193,7 +193,7 @@ async def test_editor_compact_storage_controls_enable_live_storage(
 
 
 @pytest.mark.asyncio
-async def test_editor_storage_action_row_reserves_scrollbar_height(
+async def test_editor_config_action_row_reserves_scrollbar_height(
     tmp_path: Path,
 ) -> None:
     kit = build_apprc_example_app_kit()
@@ -206,7 +206,7 @@ async def test_editor_storage_action_row_reserves_scrollbar_height(
 
     async with editor.run_test(size=(40, 24)) as pilot:
         await pilot.pause()
-        action_row = editor.query_one("#storage-action-row", HorizontalScroll)
+        action_row = editor.query_one("#config-action-row", HorizontalScroll)
         new_button = editor.query_one("#storage-new", Button)
 
         assert action_row.virtual_size.width > action_row.size.width
@@ -214,7 +214,7 @@ async def test_editor_storage_action_row_reserves_scrollbar_height(
 
 
 @pytest.mark.asyncio
-async def test_editor_serializes_storage_actions_until_current_workflow_finishes(
+async def test_editor_serializes_config_actions_until_current_workflow_finishes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -255,7 +255,8 @@ async def test_editor_serializes_storage_actions_until_current_workflow_finishes
         await asyncio.wait_for(started.wait(), timeout=1)
         await pilot.pause()
 
-        assert editor._storage_action_in_progress is True
+        assert editor._config_action_in_progress is True
+        assert editor.query_one("#config-setup", Button).disabled is True
         assert editor.query_one("#storage-list", ListView).disabled is True
         assert editor.query_one("#field-table", DataTable).disabled is True
         for button_id in (
@@ -280,7 +281,7 @@ async def test_editor_serializes_storage_actions_until_current_workflow_finishes
         await pilot.pause()
         await pilot.pause()
 
-        assert editor._storage_action_in_progress is False
+        assert editor._config_action_in_progress is False
         assert editor.query_one("#storage-list", ListView).disabled is False
         assert editor.query_one("#storage-move", Button).disabled is False
 
@@ -1210,6 +1211,46 @@ async def test_editor_new_storage_archive_path_opens_import_flow(
 
 
 @pytest.mark.asyncio
+async def test_editor_new_storage_creates_first_registry_entry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Persist the first named storage from an empty in-memory registry.
+
+    :param monkeypatch: Fixture used to script modal answers.
+    :param tmp_path: Temporary root for the index and storage directory.
+    """
+    kit = build_apprc_example_app_kit()
+    index_path = tmp_path / "config" / "demo.apprc.toml"
+    storage_root = tmp_path / "alpha"
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=load_storage_registry_or_empty(index_path),
+    )
+    responses: list[object | None] = [
+        PathInputResult(path=storage_root),
+        "create",
+        StorageNameResult(name="alpha"),
+    ]
+
+    async def push_screen_wait(_: object) -> object | None:
+        return responses.pop(0)
+
+    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        await editor.storage_workflows.open_new_storage_flow()
+
+    assert index_path.is_file()
+    assert (storage_root / ".env.apprc-storage").is_file()
+    assert editor.storage_registry is not None
+    assert editor.storage_registry.selected("alpha").root == (
+        storage_root.resolve()
+    )
+
+
+@pytest.mark.asyncio
 async def test_editor_restore_replacement_mode_requires_confirmation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1429,29 +1470,64 @@ async def test_editor_open_does_not_create_storage_env_file(
 
 
 @pytest.mark.asyncio
-async def test_editor_disables_named_storage_controls_without_index(
+async def test_editor_enables_first_storage_actions_with_empty_registry(
     tmp_path: Path,
 ) -> None:
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
+    index_path = tmp_path / "config" / "demo.apprc.toml"
     editor = ConfigEditorApp(
         kit=kit,
-        storage_registry=None,
+        storage_registry=load_storage_registry_or_empty(index_path),
         active_storage_root=storage_root,
     )
 
     async with editor.run_test() as pilot:
         await pilot.pause()
 
+        assert editor.query_one("#config-setup", Button).disabled is False
+        assert editor.query_one("#storage-new", Button).disabled is False
+        assert (
+            editor.query_one("#storage-register-active", Button).disabled
+            is False
+        )
         for button_id in (
-            "storage-new",
-            "storage-register-active",
             "storage-rename",
             "storage-location",
             "storage-move",
         ):
             assert editor.query_one(f"#{button_id}", Button).disabled is True
+        assert not index_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_editor_blocks_named_storage_writes_after_index_error(
+    tmp_path: Path,
+) -> None:
+    """Keep setup available without replacing an invalid existing index.
+
+    :param tmp_path: Temporary root for the active storage path.
+    """
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=None,
+        storage_registry_error="Named-storage index is invalid.",
+        active_storage_root=storage_root,
+    )
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+
+        assert editor.query_one("#config-setup", Button).disabled is False
+        assert editor.query_one("#storage-new", Button).disabled is True
+        assert (
+            editor.query_one("#storage-register-active", Button).disabled
+            is True
+        )
 
 
 @pytest.mark.asyncio
@@ -1465,6 +1541,7 @@ async def test_editor_hides_storage_management_for_storage_free_app() -> None:
     async with editor.run_test() as pilot:
         await pilot.pause()
 
+        assert editor.query_one("#config-setup", Button).disabled is False
         assert list(editor.query("#storage-list")) == []
         for button_id in (
             "storage-new",
@@ -1501,6 +1578,7 @@ async def test_editor_hides_named_storage_controls_when_disabled(
     async with editor.run_test() as pilot:
         await pilot.pause()
 
+        assert editor.query_one("#config-setup", Button).disabled is False
         assert list(editor.query("#storage-list")) == []
         for button_id in (
             "storage-new",

@@ -240,7 +240,7 @@ Commands are shown with `myapp` as the app command.
 | `myapp config show` | Show resolved runtime payload. | no |
 | `myapp config setup` | Initialize files for the selected capability constructor. | yes |
 | `myapp config set KEY VALUE` | Write one app-wide or storage dotenv value. | yes |
-| `myapp config edit` | Open the optional Textual editor. Opening is zero-write; saving writes. | save only |
+| `myapp config edit` | Open the optional Textual editor. Opening is zero-write; confirmed setup, storage, and save actions write. | confirmed actions only |
 | `myapp config app init` | Create the app-wide dotenv file. | yes |
 | `myapp config storage add NAME PATH` | Register a named storage and ensure its storage dotenv. | yes |
 | `myapp config storage list` | List registered storages. | no |

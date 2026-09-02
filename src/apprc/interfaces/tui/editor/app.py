@@ -81,6 +81,7 @@ from apprc.interfaces.tui.storage.selection import (
 from apprc.interfaces.tui.editor.workflows import (
     ConfigEditorStorageWorkflows,
 )
+from apprc.interfaces.tui.editor.setup import ConfigEditorSetupWorkflow
 
 if TYPE_CHECKING:
     from apprc.definition.app_config.kit import AppConfigKit
@@ -100,12 +101,12 @@ class ConfigEditorApp(App[None]):
         padding: 0 1;
     }
 
-    #storage-action-row {
+    #config-action-row {
         height: 4;
         margin: 1 0;
     }
 
-    #storage-action-row Button {
+    #config-action-row Button {
         min-width: 0;
     }
 
@@ -123,6 +124,7 @@ class ConfigEditorApp(App[None]):
         *,
         kit: AppConfigKit,
         storage_registry: StorageRegistry | None,
+        storage_registry_error: str | None = None,
         initial_storage: str | None = None,
         active_storage_root: Path | None = None,
         config_group_name: str = "config",
@@ -132,6 +134,8 @@ class ConfigEditorApp(App[None]):
         :param kit: Application config facade.
         :param storage_registry: Optional named-storage index shown by the
             editor.
+        :param storage_registry_error: Read failure that prevents named-storage
+            writes while direct-path editing remains available.
         :param initial_storage: Optional storage entry selected on startup.
         :param active_storage_root: Optional path-backed storage selected by
             the current CLI invocation.
@@ -141,8 +145,10 @@ class ConfigEditorApp(App[None]):
         super().__init__()
         self.kit = kit
         self.storage_registry = storage_registry
+        self.storage_registry_error = storage_registry_error
         self.owners = kit.spec.owners
         self.initial_storage = initial_storage
+        self.config_group_name = config_group_name
         self.storage_enabled = kit.spec.storage_required()
         self.named_storage_enabled = kit.spec.named_storage_allowed()
         self.init_command = (
@@ -176,8 +182,9 @@ class ConfigEditorApp(App[None]):
         self.selection: EditorStorageSelection = NoStorageSelection()
         self.storage_values: dict[str, str] = {}
         self.row_env_keys: list[str | None] = []
-        self._storage_action_in_progress = False
+        self._config_action_in_progress = False
         self.storage_workflows = ConfigEditorStorageWorkflows(self)
+        self.setup_workflow = ConfigEditorSetupWorkflow(self)
 
     def compose(self) -> ComposeResult:
         """Compose the storage list and field editor."""
@@ -187,11 +194,15 @@ class ConfigEditorApp(App[None]):
                 yield ListView(id="storage-list")
             with Vertical(id="editor-pane"):
                 yield Static("", id="storage-title")
-                if self.named_storage_enabled:
-                    with HorizontalScroll(id="storage-action-row"):
+                with HorizontalScroll(id="config-action-row"):
+                    yield Button(
+                        "Setup",
+                        variant="primary",
+                        id="config-setup",
+                    )
+                    if self.named_storage_enabled:
                         yield Button(
                             "New",
-                            variant="primary",
                             id="storage-new",
                         )
                         yield Button(
@@ -230,12 +241,18 @@ class ConfigEditorApp(App[None]):
     async def on_mount(self) -> None:
         """Populate selectable sources and select the active one."""
         await self._refresh_storage_list(select_name=self.initial_storage)
+        if self.storage_registry_error is not None:
+            self.notify(
+                self.storage_registry_error,
+                severity="error",
+                markup=False,
+            )
 
     async def action_quit(self) -> None:
-        """Keep an in-flight storage transaction from being canceled on exit."""
-        if self._storage_action_in_progress:
+        """Keep an in-flight config action from being canceled on exit."""
+        if self._config_action_in_progress:
             self.notify(
-                "Finish the current storage action before quitting.",
+                "Finish the current config action before quitting.",
                 severity="warning",
             )
             return
@@ -243,7 +260,7 @@ class ConfigEditorApp(App[None]):
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Switch the edited dotenv file when a storage is selected."""
-        if self._storage_action_in_progress:
+        if self._config_action_in_progress:
             return
         index = event.list_view.index
         if index is None or index >= len(self.storage_entries):
@@ -256,7 +273,7 @@ class ConfigEditorApp(App[None]):
             self._select_missing_storage(entry.name)
             return
         self._select_archived_storage(entry.name)
-        self._start_storage_action(
+        self._start_config_action(
             lambda: self.storage_workflows.restore_or_prune_archived_storage(
                 entry.name
             )
@@ -265,13 +282,13 @@ class ConfigEditorApp(App[None]):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Open a modal editor when a config field row is selected."""
         del event
-        if self._storage_action_in_progress:
+        if self._config_action_in_progress:
             return
         self._open_selected_field_editor()
 
     def _open_selected_field_editor(self) -> None:
         """Open the modal editor for the current table row."""
-        if self._storage_action_in_progress:
+        if self._config_action_in_progress:
             return
         selected = self._selected_field()
         if selected is None:
@@ -303,83 +320,87 @@ class ConfigEditorApp(App[None]):
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle storage action button clicks."""
+        """Handle config action button clicks."""
+        if event.button.id == "config-setup":
+            self._start_config_action(self.setup_workflow.open_setup_flow)
+            return
         if event.button.id == "storage-new":
-            self._start_storage_action(
+            self._start_config_action(
                 self.storage_workflows.open_new_storage_flow
             )
             return
         if event.button.id == "storage-register-active":
-            self._start_storage_action(
+            self._start_config_action(
                 self.storage_workflows.register_active_storage_flow
             )
             return
         if event.button.id == "storage-rename":
-            self._start_storage_action(
+            self._start_config_action(
                 self.storage_workflows.open_rename_storage_flow
             )
             return
         if event.button.id == "storage-location":
-            self._start_storage_action(
+            self._start_config_action(
                 self.storage_workflows.open_storage_location_flow
             )
             return
         if event.button.id == "storage-move":
-            self._start_storage_action(
+            self._start_config_action(
                 self.storage_workflows.open_move_storage_flow
             )
             return
         if event.button.id == "storage-delete":
-            self._start_storage_action(
+            self._start_config_action(
                 self.storage_workflows.open_delete_storage_flow
             )
             return
         if event.button.id == "storage-archive":
-            self._start_storage_action(
+            self._start_config_action(
                 self.storage_workflows.open_archive_storage_flow
             )
 
-    def _start_storage_action(
+    def _start_config_action(
         self,
         workflow: Callable[[], Awaitable[None]],
     ) -> None:
-        """Run one storage workflow while preventing conflicting edits.
+        """Run one config workflow while preventing conflicting edits.
 
-        :param workflow: Async storage operation to run after the action lock
+        :param workflow: Async config operation to run after the action lock
             is active.
         """
-        if self._storage_action_in_progress:
+        if self._config_action_in_progress:
             self.notify(
-                "Finish the current storage action before starting another.",
+                "Finish the current config action before starting another.",
                 severity="warning",
             )
             return
-        self._storage_action_in_progress = True
-        self._disable_storage_action_controls()
+        self._config_action_in_progress = True
+        self._disable_config_action_controls()
         self.run_worker(
-            self._run_storage_action(workflow),
-            group="storage-actions",
+            self._run_config_action(workflow),
+            group="config-actions",
         )
 
-    async def _run_storage_action(
+    async def _run_config_action(
         self,
         workflow: Callable[[], Awaitable[None]],
     ) -> None:
         """Complete a locked workflow and restore controls from selection.
 
-        :param workflow: Async storage operation that owns the active lock.
+        :param workflow: Async config operation that owns the active lock.
         """
         try:
             await workflow()
         finally:
-            self._storage_action_in_progress = False
+            self._config_action_in_progress = False
             await self._refresh_storage_list(
                 select_name=self._selected_storage_name()
             )
 
-    def _disable_storage_action_controls(self) -> None:
-        """Block controls that could conflict with a storage transaction."""
+    def _disable_config_action_controls(self) -> None:
+        """Block controls that could conflict with a config action."""
         self.query_one("#field-table", DataTable).disabled = True
+        self.query_one("#config-setup", Button).disabled = True
         if not self.named_storage_enabled:
             return
         self.query_one("#storage-list", ListView).disabled = True
@@ -410,6 +431,13 @@ class ConfigEditorApp(App[None]):
     def _require_storage_registry(self) -> StorageRegistry | None:
         """Return the storage table required for multi-storage editor actions."""
         if self.storage_registry is None:
+            if self.storage_registry_error is not None:
+                self.notify(
+                    self.storage_registry_error,
+                    severity="error",
+                    markup=False,
+                )
+                return None
             self.notify(
                 "Storage management requires a named-storage index.",
                 severity="error",
@@ -693,8 +721,11 @@ class ConfigEditorApp(App[None]):
     def _set_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable editor controls."""
         self.query_one("#field-table", DataTable).disabled = (
-            self._storage_action_in_progress or not enabled
+            self._config_action_in_progress or not enabled
         )
+        self.query_one(
+            "#config-setup", Button
+        ).disabled = self._config_action_in_progress
 
     def _set_live_controls_enabled(self, enabled: bool) -> None:
         """Enable storage-specific controls only for live storages."""
@@ -734,27 +765,27 @@ class ConfigEditorApp(App[None]):
             return
         self.query_one(
             "#storage-list", ListView
-        ).disabled = self._storage_action_in_progress
+        ).disabled = self._config_action_in_progress
         self.query_one("#storage-new", Button).disabled = (
-            self._storage_action_in_progress or self.storage_registry is None
+            self._config_action_in_progress or self.storage_registry is None
         )
         self.query_one("#storage-register-active", Button).disabled = (
-            self._storage_action_in_progress or not register_active
+            self._config_action_in_progress or not register_active
         )
         self.query_one("#storage-rename", Button).disabled = (
-            self._storage_action_in_progress or not rename
+            self._config_action_in_progress or not rename
         )
         self.query_one("#storage-location", Button).disabled = (
-            self._storage_action_in_progress or not location
+            self._config_action_in_progress or not location
         )
         self.query_one("#storage-move", Button).disabled = (
-            self._storage_action_in_progress or not move
+            self._config_action_in_progress or not move
         )
         self.query_one("#storage-delete", Button).disabled = (
-            self._storage_action_in_progress or not delete
+            self._config_action_in_progress or not delete
         )
         self.query_one("#storage-archive", Button).disabled = (
-            self._storage_action_in_progress or not archive
+            self._config_action_in_progress or not archive
         )
 
     def _clear_selection(self) -> None:

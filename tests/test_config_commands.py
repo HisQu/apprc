@@ -416,6 +416,36 @@ def test_config_edit_uses_root_storage_path_with_corrupt_optional_index(
     )
     assert CapturingConfigEditorApp.storage_registry_seen is None
     assert not (storage_root / ".env.apprc-storage").exists()
+    assert index_path.read_text(encoding="utf-8") == "[invalid"
+
+
+def test_config_edit_loads_missing_named_storage_index_as_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Let the editor create the first named storage without writing on open.
+
+    :param monkeypatch: Fixture used to isolate the config home.
+    :param tmp_path: Temporary root for config and storage paths.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    state = ApprcExampleAppConfigState(env_bootstrap=None, storage=None)
+    CapturingConfigEditorApp.reset()
+    app = kit.typer_app(
+        state_type=ApprcExampleAppConfigState,
+        editor_app_cls=CapturingConfigEditorApp,
+    )
+
+    result = CliRunner().invoke(app, ["edit"], obj=state)
+
+    assert result.exit_code == 0, result.output
+    registry = CapturingConfigEditorApp.storage_registry_seen
+    assert registry is not None
+    assert registry.path == kit.spec.index_path()
+    assert registry.storages == {}
+    assert not registry.path.exists()
 
 
 def test_config_edit_ignores_corrupt_optional_index_without_selector(
@@ -442,6 +472,7 @@ def test_config_edit_ignores_corrupt_optional_index_without_selector(
     assert CapturingConfigEditorApp.active_storage_root_seen is None
     assert CapturingConfigEditorApp.storage_registry_seen is None
     assert not kit.spec.app_wide_env_path().exists()
+    assert index_path.read_text(encoding="utf-8") == "[invalid"
 
 
 def test_storage_free_config_edit_accepts_state_without_storage(

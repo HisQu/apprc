@@ -56,10 +56,18 @@ class ConfigEditorLauncher:
         *,
         current_state: ResolvedConfigState | None,
         storage_registry: StorageRegistry | None,
+        storage_registry_error: str | None = None,
         active_storage_root: Path | None,
         selector_context: ConfigSelectorContext | None = None,
     ) -> None:
-        """Create and run the Textual config editor."""
+        """Create and run the Textual config editor.
+
+        :param current_state: Runtime config state available to the editor.
+        :param storage_registry: Named-storage records to display, if enabled.
+        :param storage_registry_error: Read failure that blocks registry writes.
+        :param active_storage_root: Directly selected storage path, if any.
+        :param selector_context: Host CLI selector inputs.
+        """
         selected_storage = (
             self.initial_storage(
                 current_state,
@@ -87,6 +95,7 @@ class ConfigEditorLauncher:
             editor_app = ConfigEditorApp(
                 kit=self.kit,
                 storage_registry=storage_registry,
+                storage_registry_error=storage_registry_error,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
                 config_group_name=self.config_group_name,

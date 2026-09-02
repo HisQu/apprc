@@ -35,8 +35,8 @@ def test_env_only_setup_prints_guidance_without_writes(
 
     assert result.exit_code == 0, result.output
     assert "writes: none" in result.output
-    assert not kit.spec.app_wide_env_path().exists()
-    assert not kit.spec.index_path().exists()
+    assert not kit.spec.app_env_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
 
 
 def test_storage_setup_creates_storage_env_and_app_selector(
@@ -56,7 +56,7 @@ def test_storage_setup_creates_storage_env_and_app_selector(
     assert result.exit_code == 0, result.output
     assert (storage_root / "apprc.storage.env").is_file()
     assert kit.spec.app_env_path().is_file()
-    assert not kit.spec.index_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
     assert "selector_saved:" in result.output
 
 
@@ -92,7 +92,7 @@ def test_config_only_setup_reports_no_required_writes(
     assert result.exit_code == 0, result.output
     assert "writes: none" in result.output
     assert not kit.spec.app_env_path().exists()
-    assert not kit.spec.index_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
 
 
 def test_app_wide_storage_setup_creates_app_and_storage_env(
@@ -116,9 +116,9 @@ def test_app_wide_storage_setup_creates_app_and_storage_env(
     )
 
     assert result.exit_code == 0, result.output
-    assert kit.spec.app_wide_env_path().is_file()
+    assert kit.spec.app_env_path().is_file()
     assert (storage_root / ".env.apprc-storage").is_file()
-    assert not kit.spec.index_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
 
 
 def test_app_wide_storage_setup_reports_config_home_errors(
@@ -136,12 +136,38 @@ def test_app_wide_storage_setup_reports_config_home_errors(
     block_config_home_with_file(kit)
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
 
+    storage_root = tmp_path / "storage"
     result = CliRunner().invoke(
         app,
-        ["setup", "--yes", "--storage-root", str(tmp_path / "storage")],
+        ["setup", "--yes", "--storage-root", str(storage_root)],
     )
 
     assert_config_home_cli_error(result)
+    assert not storage_root.exists()
+
+
+def test_failed_setup_preserves_preexisting_storage_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Rollback never removes a storage directory or dotenv it did not make."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    storage_env = storage_root / "apprc.storage.env"
+    storage_env.write_text("KEEP=1\n", encoding="utf-8")
+    block_config_home_with_file(kit)
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    result = CliRunner().invoke(
+        app,
+        ["setup", "--yes", "--storage-root", str(storage_root)],
+    )
+
+    assert_config_home_cli_error(result)
+    assert storage_root.is_dir()
+    assert storage_env.read_text(encoding="utf-8") == "KEEP=1\n"
 
 
 def test_storage_only_can_upgrade_to_app_wide_and_named_storage(
@@ -161,5 +187,5 @@ def test_storage_only_can_upgrade_to_app_wide_and_named_storage(
 
     assert app_init.exit_code == 0, app_init.output
     assert storage_add.exit_code == 0, storage_add.output
-    assert kit.spec.app_wide_env_path().is_file()
-    assert kit.spec.index_path().is_file()
+    assert kit.spec.app_env_path().is_file()
+    assert kit.spec.apprc_toml_path().is_file()

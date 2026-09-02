@@ -78,7 +78,7 @@ class ExampleCliDefinition:
     @property
     def uses_storage(self) -> bool:
         """Return whether this example mounts storage commands."""
-        return self.kit.spec.storage_required()
+        return self.kit.spec.uses_storage()
 
 
 EXAMPLE_CLIS = (
@@ -337,7 +337,7 @@ def test_example_cli_env_file_options_control_index_paths(
     explicit_index = tmp_path / "explicit" / "storage.apprc.toml"
     env_file = tmp_path / ".env"
     env_file.write_text(
-        f"{definition.kit.spec.index_env_key}={explicit_index}\n",
+        f"{definition.kit.spec.apprc_toml_env_key}={explicit_index}\n",
         encoding="utf-8",
     )
 

@@ -166,8 +166,9 @@ Each managed file has a preferred path and ordered legacy candidates.
 
 `config migrate` preflights the app dotenv, AppRC TOML, the active storage, and
 every registered storage before moving anything. A conflict stops the whole
-operation. Safe moves use same-directory renames. If the filesystem fails
-after some moves, the command reports what completed and can be run again.
+operation. Each move reserves the current filename without replacement before
+removing the legacy name. If the filesystem fails after some moves, the
+command reports what completed and can be run again.
 
 Packaged defaults are source code owned by the host application, so users do
 not migrate them from an installed CLI. App authors rename `.env.shared` to

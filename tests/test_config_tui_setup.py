@@ -61,7 +61,7 @@ async def test_editor_setup_initializes_path_without_requiring_registration(
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_apprc_example_app_kit()
-    index_path = kit.spec.index_path()
+    index_path = kit.spec.apprc_toml_path()
     storage_root = tmp_path / "storage"
     editor = ConfigEditorApp(
         kit=kit,
@@ -108,7 +108,7 @@ async def test_editor_setup_can_register_initialized_storage(
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_apprc_example_app_kit()
-    index_path = kit.spec.index_path()
+    index_path = kit.spec.apprc_toml_path()
     storage_root = tmp_path / "storage"
     editor = ConfigEditorApp(
         kit=kit,
@@ -197,5 +197,5 @@ async def test_editor_setup_explains_env_only_mode_without_writes(
     assert isinstance(summary, ConfirmScreen)
     assert isinstance(summary.message, Text)
     assert "writes: none" in summary.message.plain
-    assert not kit.spec.app_wide_env_path().exists()
-    assert not kit.spec.index_path().exists()
+    assert not kit.spec.app_env_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()

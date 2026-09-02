@@ -31,6 +31,8 @@ from apprc.user_files.env_files.updates import (
 )
 from apprc.user_files.storage_roots.paths import StorageRootPathError
 from apprc.user_files.migration import (
+    ConfigMigrationPlan,
+    ConfigMigrationResult,
     ConfigMigrationError,
     apply_config_migration,
     build_config_migration_plan,
@@ -122,28 +124,64 @@ class RuntimeConfigCommands(ConfigCommandBase):
         assume_yes: bool,
     ) -> None:
         """Move legacy AppRC-managed files to current filenames."""
+        plan = self._migration_plan(ctx)
+        self._reject_migration_conflicts(plan)
+        if not plan.moves:
+            typer.echo("AppRC files already use the current filenames.")
+            return
+        self._print_migration_moves(plan, dry_run=dry_run)
+        if dry_run:
+            return
+        if not assume_yes and not typer.confirm("Move these files?"):
+            typer.echo("No files were changed.")
+            raise typer.Exit(code=1)
+        result = self._apply_migration_plan(plan)
+        typer.echo(f"migrated_files: {len(result.moved)}")
+
+    def _migration_plan(self, ctx: typer.Context) -> ConfigMigrationPlan:
+        """Build a migration plan from every CLI-visible storage root.
+
+        :param ctx: Active Typer context.
+        :return: Conflict and move inventory.
+        """
         selector_context = self.cli_selector_context(ctx)
-        storage_roots: list[Path] = []
-        if self.kit.spec.uses_storage():
-            registry = self.load_storage_registry_or_empty(
-                selector_context=selector_context,
-            )
-            storage_roots.extend(
-                record.root for record in registry.storages.values()
-            )
-            active_root = self.best_effort_active_storage_root_from_env(
-                storage_registry=registry,
-                selector_context=selector_context,
-            )
-            if active_root is not None:
-                storage_roots.append(active_root)
         try:
-            plan = build_config_migration_plan(
+            return build_config_migration_plan(
                 self.kit.spec,
-                storage_roots=tuple(storage_roots),
+                storage_roots=self._migration_storage_roots(selector_context),
             )
         except ConfigMigrationError as exc:
             raise typer.BadParameter(str(exc), param_hint="migrate") from exc
+
+    def _migration_storage_roots(
+        self,
+        selector_context: ConfigSelectorContext,
+    ) -> tuple[Path, ...]:
+        """Return registered and active roots visible to migration.
+
+        :param selector_context: Explicit CLI selector inputs.
+        :return: Storage roots whose managed files should be considered.
+        """
+        if not self.kit.spec.uses_storage():
+            return ()
+        registry = self.load_storage_registry_or_empty(
+            selector_context=selector_context,
+        )
+        roots = [record.root for record in registry.storages.values()]
+        active_root = self.best_effort_active_storage_root_from_env(
+            storage_registry=registry,
+            selector_context=selector_context,
+        )
+        if active_root is not None:
+            roots.append(active_root)
+        return tuple(roots)
+
+    @staticmethod
+    def _reject_migration_conflicts(plan: ConfigMigrationPlan) -> None:
+        """Print every migration conflict and stop before writes.
+
+        :param plan: Migration inventory to validate.
+        """
         if plan.conflicts:
             typer.echo("Migration stopped: conflicting files exist.", err=True)
             for conflict in plan.conflicts:
@@ -153,21 +191,35 @@ class RuntimeConfigCommands(ConfigCommandBase):
                     err=True,
                 )
             raise typer.Exit(code=1)
-        if not plan.moves:
-            typer.echo("AppRC files already use the current filenames.")
-            return
+
+    @staticmethod
+    def _print_migration_moves(
+        plan: ConfigMigrationPlan,
+        *,
+        dry_run: bool,
+    ) -> None:
+        """Print planned or imminent filename moves.
+
+        :param plan: Conflict-free migration inventory.
+        :param dry_run: Whether the command stops after presentation.
+        """
         for move in plan.moves:
             typer.echo(
                 f"{'would_move' if dry_run else 'move'}: "
                 f"{move.source} -> {move.destination}"
             )
-        if dry_run:
-            return
-        if not assume_yes and not typer.confirm("Move these files?"):
-            typer.echo("No files were changed.")
-            raise typer.Exit(code=1)
+
+    @staticmethod
+    def _apply_migration_plan(
+        plan: ConfigMigrationPlan,
+    ) -> ConfigMigrationResult:
+        """Apply a migration plan and render any partial failure.
+
+        :param plan: Confirmed migration inventory.
+        :return: Completed move result.
+        """
         try:
-            result = apply_config_migration(plan)
+            return apply_config_migration(plan)
         except ConfigMigrationError as exc:
             typer.echo(str(exc), err=True)
             for move in exc.completed:
@@ -176,7 +228,6 @@ class RuntimeConfigCommands(ConfigCommandBase):
                     err=True,
                 )
             raise typer.Exit(code=1) from exc
-        typer.echo(f"migrated_files: {len(result.moved)}")
 
     def set(
         self,
@@ -329,7 +380,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 reference=key,
                 raw_value=value,
                 owners=self.kit.spec.owners,
-                storage_env_filename=self.kit.spec.storage_env_filename,
+                storage_env_filename=self.kit.spec.require_storage().env_filename,
             )
         except (ConfigHomeError, OSError, StorageRootPathError) as exc:
             raise typer.BadParameter(

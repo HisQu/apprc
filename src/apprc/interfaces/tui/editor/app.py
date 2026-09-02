@@ -468,7 +468,7 @@ class ConfigEditorApp(App[None]):
                     reference=env_key,
                     raw_value=raw_value,
                     owners=self.owners,
-                    storage_env_filename=self.kit.spec.storage_env_filename,
+                    storage_env_filename=self.kit.spec.require_storage().env_filename,
                 )
         except (
             ConfigHomeError,
@@ -503,7 +503,7 @@ class ConfigEditorApp(App[None]):
                     storage_root=self._current_storage_root(),
                     reference=env_key,
                     owners=self.owners,
-                    storage_env_filename=self.kit.spec.storage_env_filename,
+                    storage_env_filename=self.kit.spec.require_storage().env_filename,
                 )
         except (
             ConfigHomeError,
@@ -715,7 +715,7 @@ class ConfigEditorApp(App[None]):
         """Return the editable dotenv path below one current root."""
         return (
             Path(root).expanduser().resolve()
-            / self.kit.spec.storage_env_filename
+            / self.kit.spec.require_storage().env_filename
         )
 
     def _set_controls_enabled(self, enabled: bool) -> None:

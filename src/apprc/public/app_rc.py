@@ -11,6 +11,7 @@ from typing import (
     Any,
     ClassVar,
     NoReturn,
+    TypeGuard,
     TypeVar,
     cast,
     get_origin,
@@ -83,6 +84,30 @@ class _BundleFieldSpec:
     init: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _AppRCDeclaration:
+    """Typed values shared by every rebuild of one public facade.
+
+    :param app_name: Stable application name.
+    :param display_name: Human-readable application name.
+    :param config_package: Package containing managed defaults.
+    :param command_name: Executable name used in guidance.
+    :param storage: Optional persistent-storage declaration.
+    :param defaults_env_filename: Packaged defaults basename.
+    :param app_env_filename: Per-user app dotenv basename.
+    :param apprc_toml_filename: AppRC TOML basename.
+    """
+
+    app_name: str
+    display_name: str
+    config_package: str
+    command_name: str | None
+    storage: Storage | None
+    defaults_env_filename: str
+    app_env_filename: str
+    apprc_toml_filename: str
+
+
 class AppRC:
     """Public facade for one application's AppRC integration.
 
@@ -118,17 +143,24 @@ class AppRC:
         :param app_env_filename: Per-user app dotenv filename.
         :param apprc_toml_filename: AppRC TOML filename in the config home.
         """
-        self._kit_kwargs = self._build_kit_kwargs(
+        self._declaration = _AppRCDeclaration(
             app_name=app_name,
-            display_name=display_name,
+            display_name=display_name or app_name,
             config_package=config_package,
             command_name=command_name,
             storage=storage,
             defaults_env_filename=defaults_env_filename,
             app_env_filename=app_env_filename,
             apprc_toml_filename=apprc_toml_filename,
-            legacy_mode=_legacy_mode,
-            legacy_kit_kwargs=_legacy_kit_kwargs or {},
+        )
+        self._legacy_kit_kwargs = (
+            self._build_legacy_kit_kwargs(
+                declaration=self._declaration,
+                legacy_mode=_legacy_mode,
+                legacy_kit_kwargs=_legacy_kit_kwargs or {},
+            )
+            if _legacy_mode is not None
+            else None
         )
         self._registered_by_key: dict[str, RegisteredConfig] = {}
         self._registered_by_type: dict[type[ConfigBase], RegisteredConfig] = {}
@@ -397,41 +429,31 @@ class AppRC:
             logger=logger,
         )
 
-    def _build_kit_kwargs(
-        self,
+    @staticmethod
+    def _build_legacy_kit_kwargs(
         *,
-        app_name: str,
-        display_name: str | None,
-        config_package: str,
-        command_name: str | None,
-        storage: Storage | None,
-        defaults_env_filename: str,
-        app_env_filename: str,
-        apprc_toml_filename: str,
-        legacy_mode: str | None,
+        declaration: _AppRCDeclaration,
+        legacy_mode: str,
         legacy_kit_kwargs: Mapping[str, object],
     ) -> dict[str, object]:
-        """Return normalized lower-level kit constructor arguments."""
+        """Return arguments used only by deprecated mode constructors.
+
+        :param declaration: Typed public declaration values.
+        :param legacy_mode: Deprecated constructor name.
+        :param legacy_kit_kwargs: Extra 0.19 constructor arguments.
+        :return: Normalized lower-level compatibility arguments.
+        """
         if "envs" in legacy_kit_kwargs:
             raise TypeError(
                 "AppRC mode constructors do not accept envs=.... Register "
                 "config classes with @MyRC.config(...)."
             )
         common: dict[str, object] = {
-            "app_name": app_name,
-            "display_name": display_name or app_name,
-            "config_package": config_package,
-            "command_name": command_name,
+            "app_name": declaration.app_name,
+            "display_name": declaration.display_name,
+            "config_package": declaration.config_package,
+            "command_name": declaration.command_name,
         }
-        if legacy_mode is None:
-            return {
-                **common,
-                "storage": storage,
-                "defaults_env_filename": defaults_env_filename,
-                "app_env_filename": app_env_filename,
-                "apprc_toml_filename": apprc_toml_filename,
-            }
-
         resolved = {**common, **legacy_kit_kwargs}
         resolved.setdefault(
             "shared_env_filename",
@@ -447,7 +469,9 @@ class AppRC:
         )
         resolved.setdefault(
             "index_filename",
-            AppConfigSpec.derive_legacy_apprc_toml_filename(app_name),
+            AppConfigSpec.derive_legacy_apprc_toml_filename(
+                declaration.app_name
+            ),
         )
         resolved["_legacy_constructor"] = legacy_mode
         if legacy_mode in {"env_only", "app_wide_config"}:
@@ -456,8 +480,14 @@ class AppRC:
         else:
             resolved["storage_layer"] = "required"
             resolved["named_storage_layer"] = "optional"
-            if storage is not None and storage.env_key is not None:
-                resolved.setdefault("storage_env_key", storage.env_key)
+            if (
+                declaration.storage is not None
+                and declaration.storage.env_key is not None
+            ):
+                resolved.setdefault(
+                    "storage_env_key",
+                    declaration.storage.env_key,
+                )
         resolved["app_wide_layer"] = (
             "default"
             if legacy_mode in {"app_wide_config", "app_wide_storage"}
@@ -467,16 +497,27 @@ class AppRC:
 
     def _build_kit(self) -> AppConfigKit:
         """Build a lower-level kit from the current registrations."""
+        envs = tuple(
+            item.config_type
+            for item in self._registered_by_key.values()
+            if _is_env_config(item.config_type)
+        )
+        if self._legacy_kit_kwargs is not None:
+            return AppConfigKit(
+                **cast(Any, self._legacy_kit_kwargs),
+                envs=envs,
+            )
+        declaration = self._declaration
         return AppConfigKit(
-            **cast(Any, self._kit_kwargs),
-            envs=cast(
-                Any,
-                tuple(
-                    item.config_type
-                    for item in self._registered_by_key.values()
-                    if _is_env_config(item.config_type)
-                ),
-            ),
+            app_name=declaration.app_name,
+            display_name=declaration.display_name,
+            config_package=declaration.config_package,
+            envs=envs,
+            storage=declaration.storage,
+            command_name=declaration.command_name,
+            defaults_env_filename=declaration.defaults_env_filename,
+            app_env_filename=declaration.app_env_filename,
+            apprc_toml_filename=declaration.apprc_toml_filename,
         )
 
     def _register_config(
@@ -755,7 +796,9 @@ def _validate_config_class(config_type: type[object]) -> None:
         )
 
 
-def _is_env_config(config_type: type[object]) -> bool:
+def _is_env_config(
+    config_type: type[object],
+) -> TypeGuard[type[Config]]:
     """Return whether ``config_type`` reads env-backed AppRC fields."""
     return issubclass(config_type, Config)
 

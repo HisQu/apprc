@@ -68,14 +68,14 @@ def run_demo(root: Path) -> dict[str, object]:
             name="alpha",
             root=storage_root,
             path=apprc_toml,
-            storage_env_filename=KIT.spec.storage_env_filename,
+            storage_env_filename=KIT.spec.require_storage().env_filename,
         )
         rc.files.set_storage_env_value(
             storage_root=storage_root,
             reference="access_token",
             raw_value="named-storage-secret",
             owners=CONFIG_SECTIONS,
-            storage_env_filename=KIT.spec.storage_env_filename,
+            storage_env_filename=KIT.spec.require_storage().env_filename,
         )
         doctor = rc.cli.build_config_doctor_payload(KIT, storage="alpha")
         bootstrap = KIT.bootstrap(

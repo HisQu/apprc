@@ -262,7 +262,7 @@ def apprc_example_app_state(
     return ApprcExampleAppConfigState(
         env_bootstrap=EnvBootstrapResult(
             defaults_env=None,
-            storage_env=storage_root / kit.spec.storage_env_filename,
+            storage_env=storage_root / kit.spec.require_storage().env_filename,
             env_files=(),
             apprc_toml=kit.spec.apprc_toml_path(),
             storage_selector_source="--storage",
@@ -291,8 +291,8 @@ def register_storage_for_kit(
     return register_storage(
         name=name,
         root=root,
-        path=kit.spec.required_index_path(),
-        storage_env_filename=kit.spec.storage_env_filename,
+        path=kit.spec.apprc_toml_path(),
+        storage_env_filename=kit.spec.require_storage().env_filename,
     )
 
 
@@ -315,5 +315,5 @@ def record_archived_storage_for_kit(
         name=name,
         archive=archive,
         source_root=source_root,
-        path=kit.spec.required_index_path(),
+        path=kit.spec.apprc_toml_path(),
     )

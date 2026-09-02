@@ -14,6 +14,7 @@ from apprc.user_files.env_files.files import (
     read_env_file,
     write_env_file,
 )
+from apprc.user_files.managed_files import path_entry_exists
 from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
@@ -60,6 +61,26 @@ class ConfigSetupResult:
         return self.app_env
 
 
+@dataclass(frozen=True, slots=True)
+class _StorageSetupJournal:
+    """Record which setup targets existed before a storage write.
+
+    :param root: Normalized storage directory.
+    :param storage_env: Selected storage dotenv path.
+    :param app_env: Selected app dotenv path when setup writes it.
+    :param root_existed: Whether the storage directory already existed.
+    :param storage_env_existed: Whether the storage dotenv already existed.
+    :param app_env_existed: Whether the app dotenv already existed.
+    """
+
+    root: Path
+    storage_env: Path
+    app_env: Path | None
+    root_existed: bool
+    storage_env_existed: bool
+    app_env_existed: bool
+
+
 class ConfigSetupFlow:
     """Reusable non-interactive setup operations for one AppRC kit."""
 
@@ -74,19 +95,14 @@ class ConfigSetupFlow:
         :return: Existing storage root directory.
         :raises ConfigSetupError: If the root path is invalid.
         """
+        root = self._validate_storage_root(storage_root)
         try:
-            root = normalize_storage_root_path(storage_root)
-        except StorageRootPathError as exc:
+            root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
             raise ConfigSetupError(
-                str(exc),
+                f"Storage root could not be created: {root}: {exc}",
                 param_hint="--storage-root",
             ) from exc
-        if root.exists() and not root.is_dir():
-            raise ConfigSetupError(
-                f"Storage root exists but is not a directory: {root}",
-                param_hint="--storage-root",
-            )
-        root.mkdir(parents=True, exist_ok=True)
         return root.resolve()
 
     def ensure_storage_env(self, storage_root: Path) -> Path:
@@ -134,20 +150,107 @@ class ConfigSetupFlow:
         :param storage_root: Storage root selected by setup.
         :return: Files initialized by setup.
         """
-        root = self.prepare_storage_root(storage_root)
-        storage_env = self.ensure_storage_env(root)
-        app_env = (
-            self.ensure_app_env()
-            if self.kit.spec.setup_creates_app_env()
-            else None
-        )
-        if not self.kit.spec.uses_legacy_constructor():
-            app_env = self._write_storage_selector(root)
+        journal = self._storage_setup_journal(storage_root)
+        try:
+            root = self.prepare_storage_root(journal.root)
+            storage_env = self.ensure_storage_env(root)
+            app_env = (
+                self.ensure_app_env()
+                if self.kit.spec.setup_creates_app_env()
+                else None
+            )
+            if not self.kit.spec.uses_legacy_constructor():
+                app_env = self._write_storage_selector(root)
+        except ConfigSetupError as exc:
+            self._roll_back_storage_setup(journal, failure=exc)
+            raise
         return ConfigSetupResult(
             active_storage_root=root,
             storage_env=storage_env,
             app_env=app_env,
         )
+
+    def _validate_storage_root(self, storage_root: Path) -> Path:
+        """Return a normalized directory candidate without creating it.
+
+        :param storage_root: User-provided storage directory.
+        :return: Normalized directory candidate.
+        :raises ConfigSetupError: If the path is invalid or occupied by a file.
+        """
+        try:
+            root = normalize_storage_root_path(storage_root)
+        except StorageRootPathError as exc:
+            raise ConfigSetupError(
+                str(exc),
+                param_hint="--storage-root",
+            ) from exc
+        if root.exists() and not root.is_dir():
+            raise ConfigSetupError(
+                f"Storage root exists but is not a directory: {root}",
+                param_hint="--storage-root",
+            )
+        return root
+
+    def _storage_setup_journal(
+        self,
+        storage_root: Path,
+    ) -> _StorageSetupJournal:
+        """Capture setup targets before the first filesystem write.
+
+        :param storage_root: User-provided storage directory.
+        :return: Pre-write state used for narrow failure cleanup.
+        """
+        root = self._validate_storage_root(storage_root)
+        storage_env = self.kit.spec.storage_env_path(root)
+        writes_app_env = (
+            self.kit.spec.setup_creates_app_env()
+            or not self.kit.spec.uses_legacy_constructor()
+        )
+        app_env = self.kit.spec.app_env_path() if writes_app_env else None
+        return _StorageSetupJournal(
+            root=root,
+            storage_env=storage_env,
+            app_env=app_env,
+            root_existed=root.exists(),
+            storage_env_existed=path_entry_exists(storage_env),
+            app_env_existed=(
+                path_entry_exists(app_env) if app_env is not None else False
+            ),
+        )
+
+    @staticmethod
+    def _roll_back_storage_setup(
+        journal: _StorageSetupJournal,
+        *,
+        failure: ConfigSetupError,
+    ) -> None:
+        """Remove only artifacts created by a failed setup attempt.
+
+        :param journal: State captured before setup wrote anything.
+        :param failure: Original setup error that receives cleanup notes.
+        """
+        candidates = (
+            (journal.app_env, journal.app_env_existed),
+            (journal.storage_env, journal.storage_env_existed),
+        )
+        for path, existed in candidates:
+            if path is None or existed or not path_entry_exists(path):
+                continue
+            try:
+                path.unlink()
+            except OSError as exc:
+                failure.add_note(
+                    f"AppRC could not remove setup artifact {path}: {exc}"
+                )
+        if journal.root_existed or not journal.root.exists():
+            return
+        try:
+            journal.root.rmdir()
+        except OSError as exc:
+            failure.add_note(
+                f"AppRC could not remove new storage directory "
+                f"{journal.root}: {exc}"
+            )
 
     def _write_storage_selector(self, storage_root: Path) -> Path:
         """Persist the first storage path in the per-user app dotenv.

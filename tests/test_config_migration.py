@@ -106,6 +106,51 @@ def test_migration_preflights_conflicts_without_writes(
     assert legacy.read_text(encoding="utf-8") == "VALUE=legacy\n"
 
 
+def test_migration_does_not_replace_destination_created_after_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A destination created after planning remains untouched."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = _kit()
+    preferred = kit.spec.preferred_app_env_path()
+    legacy = preferred.with_name(".env.apprc-app")
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("VALUE=legacy\n", encoding="utf-8")
+    plan = build_config_migration_plan(kit.spec)
+    preferred.write_text("VALUE=current\n", encoding="utf-8")
+
+    with pytest.raises(ConfigMigrationError, match="Could not move") as raised:
+        apply_config_migration(plan)
+
+    assert raised.value.completed == ()
+    assert preferred.read_text(encoding="utf-8") == "VALUE=current\n"
+    assert legacy.read_text(encoding="utf-8") == "VALUE=legacy\n"
+
+
+def test_managed_directory_blocks_legacy_fallback_and_migration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A directory at the current path is surfaced instead of bypassed."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = _kit()
+    preferred = kit.spec.preferred_app_env_path()
+    legacy = preferred.with_name(".env.apprc-app")
+    preferred.mkdir(parents=True)
+    legacy.write_text("VALUE=legacy\n", encoding="utf-8")
+
+    with pytest.warns(RuntimeWarning, match="current and legacy"):
+        resolution = kit.spec.app_env_resolution()
+    with pytest.warns(RuntimeWarning, match="current and legacy"):
+        plan = build_config_migration_plan(kit.spec)
+
+    assert resolution.selected == preferred
+    assert resolution.conflicts == (legacy,)
+    assert plan.moves == ()
+    assert len(plan.conflicts) == 1
+
+
 def test_legacy_only_file_remains_the_read_write_target_before_migration(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

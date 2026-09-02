@@ -45,7 +45,7 @@ def test_scaffold_config_package_generates_importable_standard_layout(
     monkeypatch.setenv("DEMO_APP_STORAGE", str(tmp_path / "storage"))
     config_module = importlib.import_module("demo_app.config")
 
-    assert config_module.MyRC.kit.spec.storage_required() is True
+    assert config_module.MyRC.kit.spec.uses_storage() is True
     assert config_module.CONFIG_SPEC.owners[0].key == "app"
     assert "app" in config_module.SECTION_BY_KEY
     generated_bundle = config_module.DemoAppConfig()

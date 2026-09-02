@@ -173,8 +173,9 @@ class AppConfigKit:
             named_storage_layer=CapabilityState.DISABLED,
             command_name=command_name,
             index_filename=(
-                index_filename
-                or AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+                AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+                if index_filename is None
+                else index_filename
             ),
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,
@@ -223,8 +224,9 @@ class AppConfigKit:
             named_storage_layer=CapabilityState.OPTIONAL,
             command_name=command_name,
             index_filename=(
-                index_filename
-                or AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+                AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+                if index_filename is None
+                else index_filename
             ),
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,
@@ -270,8 +272,9 @@ class AppConfigKit:
             named_storage_layer=CapabilityState.DISABLED,
             command_name=command_name,
             index_filename=(
-                index_filename
-                or AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+                AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+                if index_filename is None
+                else index_filename
             ),
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,
@@ -320,8 +323,9 @@ class AppConfigKit:
             named_storage_layer=CapabilityState.OPTIONAL,
             command_name=command_name,
             index_filename=(
-                index_filename
-                or AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+                AppConfigSpec.derive_legacy_apprc_toml_filename(app_name)
+                if index_filename is None
+                else index_filename
             ),
             shared_env_filename=shared_env_filename,
             app_wide_env_filename=app_wide_env_filename,

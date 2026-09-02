@@ -15,6 +15,7 @@ from apprc.definition.app_config.capabilities import (
 from apprc.runtime.diagnostics.payload import build_config_doctor_payload
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.storage import Storage
 from apprc.user_files.storage_roots.registry import register_storage
 from tests.support_config import (
     ApprcExampleAppConfigState,
@@ -25,31 +26,70 @@ from tests.support_config import (
 )
 
 
-def test_kit_constructors_declare_expected_capabilities() -> None:
-    env_only = AppConfigKit.env_only(
-        app_name="env_app",
-        display_name="Env App",
-        config_package="apprc",
-        envs=(StorageFreeExampleEnv,),
-    )
-    storage_only = build_apprc_example_app_kit()
-    app_wide = build_storage_free_example_kit()
-    app_wide_storage = AppConfigKit.app_wide_storage(
-        app_name="wide_storage",
-        display_name="Wide Storage",
-        config_package="apprc",
-        envs=(ApprcExampleAppEnv,),
-    )
+def test_direct_kit_declarations_expose_storage_facts() -> None:
+    config_only = build_storage_free_example_kit()
+    with_storage = build_apprc_example_app_kit()
 
+    assert config_only.spec.uses_storage() is False
+    assert config_only.spec.app_env_enabled() is True
+    assert config_only.spec.named_storage_enabled() is False
+    assert with_storage.spec.uses_storage() is True
+    assert with_storage.spec.app_env_enabled() is True
+    assert with_storage.spec.named_storage_enabled() is True
+
+
+def test_legacy_kit_constructors_retain_capability_policies() -> None:
+    """The four 0.19 declarations remain compatible during 0.20."""
+    with pytest.warns(DeprecationWarning, match="removed in 0.21") as warnings:
+        env_only = AppConfigKit.env_only(
+            app_name="env_app",
+            display_name="Env App",
+            config_package="apprc",
+            envs=(StorageFreeExampleEnv,),
+        )
+        storage_only = AppConfigKit.storage_only(
+            app_name="storage_app",
+            display_name="Storage App",
+            config_package="apprc",
+            envs=(ApprcExampleAppEnv,),
+        )
+        app_wide = AppConfigKit.app_wide_config(
+            app_name="wide_app",
+            display_name="Wide App",
+            config_package="apprc",
+            envs=(StorageFreeExampleEnv,),
+        )
+        app_wide_storage = AppConfigKit.app_wide_storage(
+            app_name="wide_storage",
+            display_name="Wide Storage",
+            config_package="apprc",
+            envs=(ApprcExampleAppEnv,),
+        )
+
+    assert len(warnings) == 4
     assert env_only.spec.storage_layer == StorageLayerState.DISABLED
     assert env_only.spec.app_wide_layer == CapabilityState.OPTIONAL
     assert env_only.spec.named_storage_layer == CapabilityState.DISABLED
     assert storage_only.spec.storage_layer == StorageLayerState.REQUIRED
     assert storage_only.spec.app_wide_layer == CapabilityState.OPTIONAL
     assert storage_only.spec.named_storage_layer == CapabilityState.OPTIONAL
-    assert app_wide.spec.app_wide_layer == CapabilityState.OPTIONAL
+    assert app_wide.spec.app_wide_layer == CapabilityState.DEFAULT
+    assert app_wide.spec.named_storage_layer == CapabilityState.DISABLED
     assert app_wide_storage.spec.storage_layer == StorageLayerState.REQUIRED
     assert app_wide_storage.spec.app_wide_layer == CapabilityState.DEFAULT
+    assert app_wide_storage.spec.named_storage_layer == CapabilityState.OPTIONAL
+
+
+def test_direct_kit_storage_values_are_preserved() -> None:
+    storage = Storage(env_key="DEMO_STORAGE")
+    kit = AppConfigKit(
+        app_name="demo",
+        display_name="Demo",
+        config_package="apprc",
+        storage=storage,
+    )
+
+    assert kit.spec.require_storage() == storage
 
 
 def test_kit_rejects_removed_storage_mode_keyword() -> None:
@@ -60,6 +100,18 @@ def test_kit_rejects_removed_storage_mode_keyword() -> None:
             config_package="apprc",
             storage_mode="required",  # pyright: ignore[reportCallIssue]
         )
+
+
+def test_legacy_kit_constructor_rejects_empty_index_filename() -> None:
+    """Deprecated constructors do not replace invalid explicit filenames."""
+    with pytest.warns(DeprecationWarning, match="removed in 0.21"):
+        with pytest.raises(ValueError, match="must not be empty"):
+            AppConfigKit.env_only(
+                app_name="demo",
+                display_name="Demo",
+                config_package="apprc",
+                index_filename="",
+            )
 
 
 def test_doctor_env_not_set_for_missing_storage_selector(
@@ -228,7 +280,7 @@ def test_doctor_warns_about_legacy_files(
     (storage_root / ".env.local").write_text("OLD=1\n", encoding="utf-8")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = build_apprc_example_app_kit()
-    legacy_app = kit.spec.app_wide_env_path().with_name(".env.global")
+    legacy_app = kit.spec.app_env_path().with_name(".env.global")
     legacy_app.parent.mkdir(parents=True)
     legacy_app.write_text("OLD=1\n", encoding="utf-8")
 
@@ -250,7 +302,7 @@ def test_doctor_named_storage_selector_uses_index(
         name="alpha",
         root=storage_root,
         path=index_path,
-        storage_env_filename=kit.spec.storage_env_filename,
+        storage_env_filename=kit.spec.require_storage().env_filename,
     )
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(index_path))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
@@ -275,7 +327,7 @@ def test_doctor_payload_honors_explicit_selector_values(
         name="alpha",
         root=storage_root,
         path=index_path,
-        storage_env_filename=kit.spec.storage_env_filename,
+        storage_env_filename=kit.spec.require_storage().env_filename,
     )
 
     payload = build_config_doctor_payload(
@@ -288,7 +340,7 @@ def test_doctor_payload_honors_explicit_selector_values(
     )
 
     assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert payload.index_path == str(index_path)
+    assert payload.apprc_toml == str(index_path)
     assert payload.selected_storage == "alpha"
     assert payload.selected_storage_root == str(storage_root.resolve())
 
@@ -307,7 +359,7 @@ def test_selector_helpers_honor_explicit_storage_values(
         name="alpha",
         root=storage_root,
         path=index_path,
-        storage_env_filename=kit.spec.storage_env_filename,
+        storage_env_filename=kit.spec.require_storage().env_filename,
     )
     explicit_values = {
         "APPRC_EXAMPLE_APP_APPRC_TOML": str(index_path),

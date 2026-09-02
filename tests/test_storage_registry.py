@@ -63,7 +63,7 @@ def test_missing_existing_storage_registry_uses_custom_config_group_name(
     with pytest.raises(ApprcTomlEnvError) as exc_info:
         load_existing_storage_registry(
             kit.spec,
-            proc_env={kit.spec.index_env_key: str(missing_index)},
+            proc_env={kit.spec.apprc_toml_env_key: str(missing_index)},
             config_group_name="settings",
         )
 

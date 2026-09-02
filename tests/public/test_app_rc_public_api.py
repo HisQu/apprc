@@ -33,7 +33,7 @@ def test_direct_declaration_accepts_optional_storage() -> None:
     assert MyRC.spec.storage_selector_env_key == "HAIU_STORAGE"
     assert MyRC.spec.defaults_env_filename == "apprc.defaults.env"
     assert MyRC.spec.app_env_filename == "apprc.app.env"
-    assert MyRC.spec.storage_env_filename == "apprc.storage.env"
+    assert MyRC.spec.require_storage().env_filename == "apprc.storage.env"
     assert MyRC.spec.apprc_toml_filename == "apprc.toml"
 
 

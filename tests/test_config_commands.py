@@ -128,7 +128,7 @@ def test_config_app_init_creates_app_wide_env(
     result = CliRunner().invoke(app, ["app", "init"])
 
     assert result.exit_code == 0, result.output
-    assert kit.spec.app_wide_env_path().is_file()
+    assert kit.spec.app_env_path().is_file()
     assert "app_env:" in result.output
 
 
@@ -305,7 +305,7 @@ def test_config_set_requires_scope_when_app_and_storage_are_active(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_apprc_example_app_kit()
-    kit.spec.ensure_app_wide_env()
+    kit.spec.ensure_app_env()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
     state = apprc_example_app_state(kit, storage_root)
@@ -327,7 +327,7 @@ def test_config_set_requires_scope_when_app_and_storage_are_active(
     assert "--scope app or --scope storage" in _plain_output(ambiguous.output)
     assert app_scoped.exit_code == 0, app_scoped.output
     assert 'APPRC_EXAMPLE_APP_PROFILE="app-profile"\n' in (
-        kit.spec.app_wide_env_path().read_text(encoding="utf-8")
+        kit.spec.app_env_path().read_text(encoding="utf-8")
     )
 
 
@@ -352,7 +352,7 @@ def test_config_setup_storage_writes_env_and_persistent_selector(
         f'APPRC_EXAMPLE_APP_STORAGE="{storage_root.resolve()}"\n'
         in kit.spec.app_env_path().read_text(encoding="utf-8")
     )
-    assert not kit.spec.index_path().exists()
+    assert not kit.spec.apprc_toml_path().exists()
 
 
 def test_disabled_capability_command_groups_are_absent() -> None:
@@ -392,7 +392,7 @@ def test_config_edit_uses_root_storage_path_with_corrupt_optional_index(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_apprc_example_app_kit()
-    index_path = kit.spec.index_path()
+    index_path = kit.spec.apprc_toml_path()
     index_path.parent.mkdir(parents=True)
     index_path.write_text("[invalid", encoding="utf-8")
     storage_root = tmp_path / "storage"
@@ -443,7 +443,7 @@ def test_config_edit_loads_missing_named_storage_index_as_empty(
     assert result.exit_code == 0, result.output
     registry = CapturingConfigEditorApp.storage_registry_seen
     assert registry is not None
-    assert registry.path == kit.spec.index_path()
+    assert registry.path == kit.spec.apprc_toml_path()
     assert registry.storages == {}
     assert not registry.path.exists()
 
@@ -455,7 +455,7 @@ def test_config_edit_ignores_corrupt_optional_index_without_selector(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
-    index_path = kit.spec.index_path()
+    index_path = kit.spec.apprc_toml_path()
     index_path.parent.mkdir(parents=True)
     index_path.write_text("[invalid", encoding="utf-8")
     state = ApprcExampleAppConfigState(env_bootstrap=None, storage=None)
@@ -471,7 +471,7 @@ def test_config_edit_ignores_corrupt_optional_index_without_selector(
     assert CapturingConfigEditorApp.run_count == 1
     assert CapturingConfigEditorApp.active_storage_root_seen is None
     assert CapturingConfigEditorApp.storage_registry_seen is None
-    assert not kit.spec.app_wide_env_path().exists()
+    assert not kit.spec.app_env_path().exists()
     assert index_path.read_text(encoding="utf-8") == "[invalid"
 
 

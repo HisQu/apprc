@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ============================================
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -133,7 +134,7 @@ def apply_config_migration(
     completed: list[FileMigration] = []
     for move in plan.moves:
         try:
-            move.source.replace(move.destination)
+            _move_without_replacing(move)
         except OSError as exc:
             raise ConfigMigrationError(
                 f"Could not move {move.source} to {move.destination}: {exc}",
@@ -141,6 +142,39 @@ def apply_config_migration(
             ) from exc
         completed.append(move)
     return ConfigMigrationResult(moved=tuple(completed))
+
+
+def _move_without_replacing(move: FileMigration) -> None:
+    """Move one managed file without replacing a late-created destination.
+
+    A same-directory hard link reserves the destination atomically. Removing
+    the source completes the rename-equivalent operation. If source removal
+    fails, AppRC removes the new link so the original path remains authoritative.
+
+    :param move: Preflighted source and destination pair.
+    :raises OSError: If the source changed, the destination exists, or the
+        filesystem operation fails.
+    """
+    if not move.source.is_file() and not move.source.is_symlink():
+        raise FileNotFoundError(
+            f"migration source is no longer a file: {move.source}"
+        )
+    os.link(
+        move.source,
+        move.destination,
+        follow_symlinks=False,
+    )
+    try:
+        move.source.unlink()
+    except OSError as exc:
+        try:
+            move.destination.unlink()
+        except OSError as rollback_exc:
+            exc.add_note(
+                "AppRC also could not remove the newly linked destination: "
+                f"{rollback_exc}"
+            )
+        raise
 
 
 def _migration_for_resolution(

@@ -36,7 +36,7 @@ class StorageConfigCommands(ConfigCommandBase):
         )
         payload = storage_list_payload(
             registry,
-            storage_env_filename=self.kit.spec.storage_env_filename,
+            storage_env_filename=self.kit.spec.require_storage().env_filename,
             active_storage_root=self.best_effort_active_storage_root_from_env(
                 storage_registry=registry,
                 selector_context=selector_context,
@@ -74,7 +74,7 @@ class StorageConfigCommands(ConfigCommandBase):
                 name=name,
                 root=normalized_root,
                 path=apprc_toml_path,
-                storage_env_filename=self.kit.spec.storage_env_filename,
+                storage_env_filename=self.kit.spec.require_storage().env_filename,
             )
         except StorageRootPathError as exc:
             raise typer.BadParameter(

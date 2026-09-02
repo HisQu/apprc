@@ -59,7 +59,7 @@ def test_app_config_spec_rejects_path_like_filenames(
         )
 
 
-def test_ensure_app_wide_env_rejects_config_home_file(
+def test_ensure_app_env_rejects_config_home_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -72,14 +72,14 @@ def test_ensure_app_wide_env_rejects_config_home_file(
         app_name="demo",
         display_name="Demo",
         config_package="apprc",
-        index_filename="demo.apprc.toml",
+        apprc_toml_filename="demo.apprc.toml",
     )
 
     with pytest.raises(ConfigHomeError, match="parent exists"):
-        spec.ensure_app_wide_env()
+        spec.ensure_app_env()
 
 
-def test_ensure_app_wide_env_rejects_app_wide_env_directory(
+def test_ensure_app_env_rejects_app_env_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -90,14 +90,14 @@ def test_ensure_app_wide_env_rejects_app_wide_env_directory(
         app_name="demo",
         display_name="Demo",
         config_package="apprc",
-        index_filename="demo.apprc.toml",
+        apprc_toml_filename="demo.apprc.toml",
     )
 
     with pytest.raises(ConfigHomeError, match="not a file"):
-        spec.ensure_app_wide_env()
+        spec.ensure_app_env()
 
 
-def test_ensure_index_file_rejects_index_directory(
+def test_ensure_apprc_toml_rejects_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -111,7 +111,7 @@ def test_ensure_index_file_rejects_index_directory(
     )
 
     with pytest.raises(ConfigHomeError, match="not a file"):
-        spec.ensure_index_file()
+        spec.ensure_apprc_toml()
 
 
 def test_write_text_atomic_rejects_directory_target(tmp_path: Path) -> None:

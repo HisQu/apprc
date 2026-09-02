@@ -107,13 +107,15 @@ All notable changes to `AppRC` will be documented in this file.
     introducing another AppRC constructor.
 
   - Added `config migrate` with dry-run planning, whole-operation conflict
-    preflight, and migration of the app dotenv, AppRC TOML, active storage, and
-    registered storage dotenv files.
+    preflight, no-replace execution checks, and migration of the app dotenv,
+    AppRC TOML, active storage, and registered storage dotenv files. Blocking
+    path types and destinations created after planning stop without data loss.
 
   - Added a first-run terminal prompt for storage-backed applications. It can
     create the platform-aware suggested data directory or decline without
     changing files. Custom paths remain available through the shell-completed
-    `config setup --storage-root PATH` option.
+    `config setup --storage-root PATH` option. Failed setup removes only the
+    artifacts created by that attempt and preserves pre-existing storage data.
 
   - Added storage creation, rename, location change, and directory move
     controls to the config editor for every storage-backed declaration. The
@@ -130,6 +132,10 @@ All notable changes to `AppRC` will be documented in this file.
   - Changed the suggested storage root to the operating system's user data
     directory while keeping the proposed path visible and editable during
     first-run setup.
+
+  - Changed the internal compatibility boundary so current declarations stay
+    statically typed, legacy filename aliases retain basename validation, and
+    deprecated capability vocabulary is isolated to compatibility code.
 
 <br>
 

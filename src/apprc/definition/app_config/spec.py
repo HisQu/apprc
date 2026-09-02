@@ -115,15 +115,24 @@ class AppConfigSpec:
         validate_config_owner_inventory(resolved_owners)
 
         resolved_defaults_filename = require_config_filename(
-            shared_env_filename or defaults_env_filename,
+            _prefer_legacy_alias(
+                current=defaults_env_filename,
+                legacy=shared_env_filename,
+            ),
             field_name="defaults_env_filename",
         )
         resolved_app_filename = require_config_filename(
-            app_wide_env_filename or app_env_filename,
+            _prefer_legacy_alias(
+                current=app_env_filename,
+                legacy=app_wide_env_filename,
+            ),
             field_name="app_env_filename",
         )
         resolved_toml_filename = require_config_filename(
-            index_filename or apprc_toml_filename,
+            _prefer_legacy_alias(
+                current=apprc_toml_filename,
+                legacy=index_filename,
+            ),
             field_name="apprc_toml_filename",
         )
 
@@ -138,8 +147,9 @@ class AppConfigSpec:
                 resolved_storage = Storage(
                     env_key=storage_env_key,
                     prompt_on_first_run=False,
-                    env_filename=(
-                        storage_env_filename or DEFAULT_STORAGE_ENV_FILENAME
+                    env_filename=_prefer_legacy_alias(
+                        current=DEFAULT_STORAGE_ENV_FILENAME,
+                        legacy=storage_env_filename,
                     ),
                 )
             elif storage_env_key is not None:
@@ -429,6 +439,16 @@ class AppConfigSpec:
             raise ValueError(f"{self.display_name} does not use AppRC storage.")
         return self.storage_selector_env_key
 
+    def require_storage(self) -> Storage:
+        """Return the declared storage contract or raise when absent.
+
+        :return: Storage declaration owned by this application.
+        :raises ValueError: If the application does not use storage.
+        """
+        if self.storage is None:
+            raise ValueError(f"{self.display_name} does not use AppRC storage.")
+        return self.storage
+
     # -- 0.19 compatibility -------------------------------------
 
     @property
@@ -553,3 +573,13 @@ class AppConfigSpec:
     def require_storage_env_key(self) -> str:
         """Return the deprecated storage selector key."""
         return self.require_storage_selector_env_key()
+
+
+def _prefer_legacy_alias(*, current: str, legacy: str | None) -> str:
+    """Use an explicitly supplied compatibility spelling, including empty.
+
+    :param current: Value from the current argument name.
+    :param legacy: Value from its compatibility alias, or ``None`` when absent.
+    :return: Compatibility value when supplied, otherwise the current value.
+    """
+    return current if legacy is None else legacy

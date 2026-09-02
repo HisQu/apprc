@@ -50,10 +50,10 @@ def test_bootstrap_storage_path_selector_does_not_create_files(
 
     assert result.storage_root == storage_root.resolve()
     assert result.storage_env == storage_root.resolve() / "apprc.storage.env"
-    assert result.index_path == kit.spec.default_index_path()
-    assert result.index_path is not None
+    assert result.apprc_toml == kit.spec.preferred_apprc_toml_path()
+    assert result.apprc_toml is not None
     assert result.storage_env is not None
-    assert not result.index_path.exists()
+    assert not result.apprc_toml.exists()
     assert not result.storage_env.exists()
     assert os.environ["APPRC_EXAMPLE_APP_STORAGE"] == str(
         storage_root.resolve()
@@ -125,7 +125,7 @@ def test_bootstrap_path_selector_ignores_corrupt_optional_index(
     storage_root.mkdir()
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = _kit()
-    index_path = kit.spec.index_path()
+    index_path = kit.spec.apprc_toml_path()
     index_path.parent.mkdir(parents=True)
     index_path.write_text("[invalid", encoding="utf-8")
 
@@ -137,7 +137,7 @@ def test_bootstrap_path_selector_ignores_corrupt_optional_index(
     )
 
     assert result.storage_root == storage_root.resolve()
-    assert result.index_path == index_path
+    assert result.apprc_toml == index_path
     assert result.storage_name is None
 
 
@@ -148,7 +148,7 @@ def test_bootstrap_bare_selector_fails_with_corrupt_existing_index(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
     kit = _kit()
-    index_path = kit.spec.index_path()
+    index_path = kit.spec.apprc_toml_path()
     index_path.parent.mkdir(parents=True)
     index_path.write_text("[invalid", encoding="utf-8")
 
@@ -169,7 +169,7 @@ def test_bootstrap_reads_app_wide_selector_only_when_file_exists(
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
     kit = _kit()
-    app_wide_env = kit.spec.app_wide_env_path()
+    app_wide_env = kit.spec.app_env_path()
     write_env_file(
         app_wide_env,
         {
@@ -189,7 +189,7 @@ def test_bootstrap_reads_app_wide_selector_only_when_file_exists(
     assert result.storage_root == storage_root.resolve()
     assert result.storage_selector_source == "app config"
     assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "from-app"
-    assert not kit.spec.default_index_path().exists()
+    assert not kit.spec.preferred_apprc_toml_path().exists()
 
 
 def test_bootstrap_storage_env_overrides_app_wide_values(
@@ -201,7 +201,7 @@ def test_bootstrap_storage_env_overrides_app_wide_values(
     storage_root.mkdir()
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
     kit = _kit()
-    app_wide_env = kit.spec.app_wide_env_path()
+    app_wide_env = kit.spec.app_env_path()
     app_wide_env.parent.mkdir(parents=True)
     app_wide_env.write_text(
         'APPRC_EXAMPLE_APP_PROFILE="from-app"\n',
@@ -234,7 +234,7 @@ def test_bootstrap_named_selector_uses_index_when_present(
         name="alpha",
         root=alpha_root,
         path=index_path,
-        storage_env_filename=kit.spec.storage_env_filename,
+        storage_env_filename=kit.spec.require_storage().env_filename,
     )
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(index_path))
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
@@ -249,7 +249,7 @@ def test_bootstrap_named_selector_uses_index_when_present(
     assert result.storage_name == "alpha"
     assert result.storage_root == alpha_root.resolve()
     assert result.storage_count == 1
-    assert result.index_path == index_path
+    assert result.apprc_toml == index_path
 
 
 def test_bootstrap_preserves_explicit_env_override_policy(

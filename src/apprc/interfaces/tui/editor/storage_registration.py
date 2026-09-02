@@ -102,7 +102,7 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
                 name=name,
                 root=guarded_root,
                 path=registry.path,
-                storage_env_filename=self.editor.kit.spec.storage_env_filename,
+                storage_env_filename=self.editor.kit.spec.require_storage().env_filename,
             )
         except (TypeError, ValueError, OSError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -155,7 +155,9 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
         if not any(resolved_root.iterdir()):
             return resolved_root
 
-        storage_env_filename = self.editor.kit.spec.storage_env_filename
+        storage_env_filename = (
+            self.editor.kit.spec.require_storage().env_filename
+        )
         env_path = resolved_root / storage_env_filename
         if env_path.is_file():
             keys = list(read_env_file(env_path))[:10]

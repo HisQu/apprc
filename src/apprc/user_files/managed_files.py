@@ -48,7 +48,7 @@ def resolve_managed_file(
     existing_legacy = tuple(
         candidate for candidate in legacy_candidates if candidate.is_file()
     )
-    if preferred.is_file():
+    if path_entry_exists(preferred):
         if existing_legacy:
             joined = ", ".join(str(path) for path in existing_legacy)
             warnings.warn(
@@ -81,3 +81,12 @@ def resolve_managed_file(
         legacy_candidates=legacy_candidates,
         conflicts=conflicts,
     )
+
+
+def path_entry_exists(path: Path) -> bool:
+    """Return whether a path is occupied, including by a dangling symlink.
+
+    :param path: Filesystem entry to inspect.
+    :return: Whether the path is occupied.
+    """
+    return path.exists() or path.is_symlink()

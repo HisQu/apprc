@@ -643,7 +643,9 @@ def test_config_doctor_payload_custom_config_group_name_next_steps(
     APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
 
     kit = APPRC_EXAMPLE_APP_KIT
-    monkeypatch.delenv(kit.spec.require_storage_env_key(), raising=False)
+    monkeypatch.delenv(
+        kit.spec.require_storage_selector_env_key(), raising=False
+    )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
 
     payload = build_config_doctor_payload(

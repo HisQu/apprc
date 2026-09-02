@@ -96,10 +96,10 @@ def _bootstrap_one(
         storage_root = root / "storages" / spec.storage_name
         storage_root.mkdir(parents=True, exist_ok=True)
         _write_env_layer(
-            path=storage_root / spec.kit.spec.storage_env_filename,
+            path=storage_root / spec.kit.spec.require_storage().env_filename,
             layer="storage-local dotenv overrides",
             real_location=(
-                f"<selected storage root>/{spec.kit.spec.storage_env_filename}"
+                f"<selected storage root>/{spec.kit.spec.require_storage().env_filename}"
             ),
             values=spec.storage_values or {},
         )

@@ -111,7 +111,7 @@ def _doctor_next_steps(
         ]
     return [
         "Ensure the selected storage root exists and contains "
-        f"{kit.spec.storage_env_filename}.",
+        f"{kit.spec.require_storage().env_filename}.",
         config_command_text(
             kit,
             "setup --yes --storage-root /absolute/path/to/storage-root",

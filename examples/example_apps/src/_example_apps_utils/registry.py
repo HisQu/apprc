@@ -43,7 +43,7 @@ class ExampleAppSpec:
     @property
     def uses_storage(self) -> bool:
         """Return whether this example has a selected storage root."""
-        return self.kit.spec.storage_required()
+        return self.kit.spec.uses_storage()
 
 
 EXAMPLE_APPS = (

@@ -25,7 +25,7 @@ def _kit() -> AppConfigKit:
     return AppConfigKit(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="storage_only.config",
+        config_package="config_with_storage.config",
         envs=(ApprcExampleAppEnv,),
         storage=Storage(env_key="APPRC_EXAMPLE_APP_STORAGE"),
     )

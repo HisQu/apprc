@@ -23,10 +23,8 @@ not source templates.
 
 | Package | CLI | Purpose |
 |---|---|---|
-| [`env_only`](src/env_only/README.md) | `apprc-env-only` | Config-only declaration with package and shell values. |
-| [`storage_only`](src/storage_only/README.md) | `apprc-storage-only` | Declaration with one selected storage root. |
-| [`app_wide_config`](src/app_wide_config/README.md) | `apprc-app-wide-config` | Config-only declaration with per-user values. |
-| [`app_wide_storage`](src/app_wide_storage/README.md) | `apprc-app-wide-storage` | Storage declaration with app and storage values. |
+| [`config_only`](src/config_only/README.md) | `apprc-config-only` | Configuration without a storage root. |
+| [`config_with_storage`](src/config_with_storage/README.md) | `apprc-config-with-storage` | Configuration with one selected storage root. |
 | [`explicit_env_precedence`](src/explicit_env_precedence/README.md) | `apprc-explicit-env-precedence` | Shell versus explicit env-file selector precedence. |
 | [`cli_runtime`](src/cli_runtime/README.md) | `apprc-cli-runtime` | App-owned Typer callback integrated with `CliRuntime`. |
 | [`_example_apps_utils`](src/_example_apps_utils/README.md) | `apprc-examples-run-all` | Internal registry and runner support. |

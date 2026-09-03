@@ -1,6 +1,6 @@
 # Explicit Env Precedence Example
 
-`explicit_env_precedence` demonstrates a storage-only app where explicit
+`explicit_env_precedence` demonstrates a config-with-storage app where explicit
 env-file values can override or defer to shell env values.
 
 ## Requirements
@@ -30,8 +30,8 @@ apprc-explicit-env-precedence --env-file examples/example_app_disk_files/.apprc-
 
 ## Upgrade Options
 
-Use `storage_only` for a smaller storage-selected app. Use `cli_runtime` when
-selector handling must run inside a larger app-owned Typer callback.
+Use `config_with_storage` for a smaller storage-selected app. Use `cli_runtime`
+when selector handling must run inside a larger app-owned Typer callback.
 
 ## Docs
 

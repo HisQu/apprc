@@ -242,7 +242,7 @@ def run_demo(root: Path) -> dict[str, object]:
             dry_run=True,
         )
         return {
-            "mode": "cli_runtime",
+            "scenario": "cli_runtime",
             "selected_storage_root": str(bootstrap.storage_root),
             "payload": _runtime_payload(state),
         }

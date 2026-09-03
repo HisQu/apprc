@@ -36,7 +36,7 @@ def _runtime() -> CliRuntime[CliRuntimeOptions, DefaultConfigCliState]:
     kit = AppConfigKit(
         app_name="first_run_demo",
         display_name="First Run Demo",
-        config_package="storage_only.config",
+        config_package="config_with_storage.config",
         storage=Storage(env_key="FIRST_RUN_DEMO_STORAGE"),
     )
     return CliRuntime(

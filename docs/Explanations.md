@@ -22,7 +22,7 @@ commands, the Textual editor, and provenance.
 
 | ![AppRC runtime layers](assets/apprc-runtime-layers.svg) |
 |:--:|
-| **Fig. 1 — Runtime layers:** One declaration feeds runtime setup and every user-facing config workflow. |
+| **Fig. 1 — Runtime binding:** Bootstrap optionally adds managed file values to the process environment; `Config()` binds that environment and Python values into a mutable object. |
 
 The main objects have narrow jobs:
 
@@ -44,12 +44,14 @@ The normal order is:
 1. Create `rc.AppRC(...)`, with `storage=rc.Storage()` when needed.
 2. Register `rc.Config` and `rc.ConfigBase` classes.
 3. Ship non-secret defaults in `apprc.defaults.env`.
-4. Mount AppRC on the CLI or call `bootstrap()` manually.
-5. Construct runtime config after bootstrap.
+4. Decide which boundary owns dotenv bootstrap.
+5. Construct config from Python values and the current process environment.
 
 Importing AppRC or a config class does not read files and does not modify
 `os.environ`. Bootstrap is the explicit boundary where dotenv values enter the
-current Python process.
+current Python process. Constructing `Config()` then reads that process
+environment. Direct construction remains valid when managed dotenv files are
+not part of the caller's policy.
 
 ## 3. Runtime config model
 
@@ -59,10 +61,13 @@ editability, secrecy, choices, and explanatory text. The CLI and TUI use the
 same metadata as runtime binding, so there is no second UI schema to keep in
 sync.
 
-`rc.field("KEY")` is required when it has no default. `secret=True` controls
-display redaction only; it is not encryption and does not change persistence.
-`packaged_default` documents a deliberate difference between a Python fallback
-and the value shipped in `apprc.defaults.env`.
+`rc.field("KEY")` is required when it has no default. `required=True` cannot be
+combined with a Python `default` or `default_factory`, because that fallback
+would make the field optional in practice. A required field may use
+`packaged_default` to describe the corresponding value shipped in
+`apprc.defaults.env`, which bootstrap loads, or it may receive a constructor
+value. `secret=True` controls display redaction only; it is not encryption and
+does not change persistence.
 
 Per-user app config is deliberately lazy. A config-only application needs no
 installation step. The first app-scope save creates `apprc.app.env`.
@@ -92,6 +97,33 @@ Bootstrap performs these operations:
 The parent shell is never modified. With normal precedence, existing
 `os.environ` wins over explicit files. `--env-file-overrides-os-environ` makes
 explicit files win instead.
+
+### Bootstrap ownership
+
+AppRC does not impose separate application and library modes. It exposes four
+deliberate integration choices:
+
+- `Config()` binds Python constructor values, Python defaults, and the current
+  `os.environ` without loading files.
+- An application entrypoint calls `bootstrap(...)` when it owns env-file,
+  precedence, or storage-selection policy.
+- Lower-level libraries accept an already constructed config object when the
+  caller owns runtime policy.
+- A high-level convenience boundary calls `ensure_bootstrapped()` when the
+  default policy is sufficient, then constructs config normally.
+
+`ensure_bootstrapped()` is parameterless on purpose. It creates a successful
+bootstrap result only when one does not exist and does not reload layers during
+nested calls. `bootstrap_result` exposes the current result, or `None` before
+any successful bootstrap. Explicit `bootstrap(...)` calls remain
+repeatable: AppRC warns, reloads the process environment, and stores the newest
+successful result. Existing config objects remain mutable and keep their
+current values; objects constructed afterward read the updated environment. A
+failed repeat does not discard the preceding successful result.
+
+Register all env-backed config classes before bootstrap. Late registration is
+allowed, but AppRC warns because the stored bootstrap provenance did not know
+about those fields.
 
 ## Storage selection
 

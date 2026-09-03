@@ -35,8 +35,9 @@ class EnvFieldSpec:
     :param default: Runtime fallback when no Python value or env value wins.
     :param default_factory: Runtime fallback factory used to build one fresh
         value per config instance.
-    :param packaged_default: Packaged defaults dotenv value when intentionally
-        different from the runtime fallback.
+    :param packaged_default: Value documented in ``apprc.defaults.env`` when a
+        required field has a shipped value or the shipped value intentionally
+        differs from the Python fallback.
     :param title: Short display label for docs and terminal UIs.
     :param explanation_short: Compact table-facing description.
     :param explanation_long: Full editor-facing description.
@@ -96,15 +97,18 @@ def env_field(
         value. Omit this for required env-backed settings.
     :param default_factory: Runtime fallback factory used to build one fresh
         value per config instance. Mutually exclusive with ``default``.
-    :param packaged_default: Packaged defaults value when intentionally
-        different from ``default``.
+    :param packaged_default: Value documented in ``apprc.defaults.env`` when a
+        required field has a shipped value or the shipped value intentionally
+        differs from ``default``.
     :param shared_default: Deprecated alias for ``packaged_default``.
     :param title: Short display label for docs and terminal UIs.
     :param explanation_short: Compact table-facing description.
     :param explanation_long: Full editor-facing description.
     :param secret: Whether display surfaces should redact the value.
     :param editable: Whether config editors should allow direct editing.
-    :param required: Whether Python or env must provide a value.
+    :param required: Whether a constructor argument or env must provide a
+        value. A required field cannot have a Python ``default`` or
+        ``default_factory``.
     :param choices: Optional accepted string values.
     :param repr: Whether dataclass ``repr`` should include this value. Defaults
         to hiding secret fields and showing non-secret fields.
@@ -114,6 +118,14 @@ def env_field(
     if default is not CONFIG_MISSING and default_factory is not CONFIG_MISSING:
         raise ValueError(
             "env_field cannot declare both default and default_factory."
+        )
+    if required and (
+        default is not CONFIG_MISSING or default_factory is not CONFIG_MISSING
+    ):
+        raise ValueError(
+            "env_field(..., required=True) cannot declare a Python default "
+            "or default_factory. Use packaged_default to describe a value "
+            "shipped in apprc.defaults.env."
         )
     if (
         packaged_default is not CONFIG_MISSING

@@ -25,84 +25,73 @@ def build_graph() -> Digraph:
 
     figure.fixed_text_box(
         "title",
-        "AppRC Runtime Layers",
-        1.75,
-        2.75,
+        "AppRC Runtime Binding",
+        2.10,
+        3.25,
         border_color=gg.NEUTRAL_STROKE,
         fill_color=gg.NODE_SURFACE_FILL,
     )
     figure.fixed_text_box(
-        "contract",
-        "Config Contract",
-        0.40,
-        1.35,
-        "rc.Config classes",
-        "@MyRC.config metadata",
-        "rc.field metadata",
-        border_color=gg.BLUE,
-    )
-    figure.fixed_text_box(
-        "layers",
-        "Dotenv Layers",
-        3.05,
-        1.35,
+        "files",
+        "Managed Files",
+        0.25,
+        1.65,
         "package apprc.defaults.env",
         "app apprc.app.env",
         "storage apprc.storage.env",
         "explicit --env-file",
-        "existing os.environ",
         border_color=gg.GREEN,
     )
     figure.fixed_text_box(
         "bootstrap",
         "Bootstrap",
-        5.95,
-        1.35,
+        3.10,
+        1.65,
         "select storage",
         "merge values",
         "record provenance",
         border_color=gg.ORANGE,
     )
-
+    figure.fixed_text_box(
+        "environment",
+        "Process Environment",
+        5.55,
+        1.65,
+        "os.environ",
+        border_color=gg.GREEN,
+    )
+    figure.fixed_text_box(
+        "contract",
+        "Config Contract",
+        0.25,
+        -0.60,
+        "field types",
+        "Python fallbacks",
+        border_color=gg.BLUE,
+    )
+    figure.fixed_text_box(
+        "construction",
+        "Config()",
+        3.10,
+        -0.60,
+        "bind current values",
+        border_color=gg.GREEN,
+    )
     figure.fixed_text_box(
         "runtime",
-        "Runtime",
-        0.70,
-        -0.65,
-        "typed config",
-        border_color=gg.PURPLE,
-    )
-    figure.fixed_text_box(
-        "diagnostics",
-        "Diagnostics",
-        2.55,
-        -0.65,
-        "paths, doctor",
-        border_color=gg.PURPLE,
-    )
-    figure.fixed_text_box(
-        "cli",
-        "Config CLI",
-        4.40,
-        -0.65,
-        "setup, set, storage",
-        border_color=gg.PURPLE,
-    )
-    figure.fixed_text_box(
-        "tui",
-        "Textual TUI",
-        6.25,
-        -0.65,
-        "inspect and edit",
+        "Runtime Config",
+        5.55,
+        -0.60,
+        "typed and mutable",
+        "value provenance",
         border_color=gg.PURPLE,
     )
 
-    figure.fixed_arrow("contract", "layers")
-    figure.fixed_arrow("layers", "bootstrap")
-    figure.fixed_arrow("bootstrap", "runtime")
-    figure.fixed_arrow("bootstrap", "diagnostics")
-    figure.fixed_arrow("bootstrap", "cli")
-    figure.fixed_arrow("bootstrap", "tui")
+    figure.fixed_arrow("files", "bootstrap")
+    figure.fixed_arrow("bootstrap", "environment")
+    figure.fixed_arrow("environment", "construction")
+    figure.fixed_arrow("contract", "construction")
+    figure.fixed_arrow("construction", "runtime")
     return figure.graph
 
 

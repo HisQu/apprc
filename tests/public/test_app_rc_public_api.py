@@ -1,21 +1,44 @@
 """Public AppRC facade behavior tests."""
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
+from time import sleep
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 import apprc as rc
+from apprc.runtime.result import EnvBootstrapResult
 
 
-def _env_only_app() -> rc.AppRC:
+def _config_only_app() -> rc.AppRC:
     """Return a small config-only public AppRC facade for tests."""
     return rc.AppRC(
         app_name="public-demo",
         display_name="Public Demo",
         config_package="apprc",
+    )
+
+
+def _bootstrap_result(*, storage_count: int = 0) -> EnvBootstrapResult:
+    """Return small bootstrap metadata for state-management tests.
+
+    :param storage_count: Distinguishing value for repeated bootstrap results.
+    :return: Bootstrap result without filesystem paths.
+    """
+    return EnvBootstrapResult(
+        defaults_env=None,
+        storage_env=None,
+        env_files=(),
+        apprc_toml=None,
+        storage_selector_source=None,
+        storage_selector_value=None,
+        storage_name=None,
+        storage_root=None,
+        storage_count=storage_count,
     )
 
 
@@ -62,7 +85,7 @@ def test_legacy_mode_constructors_warn_and_remain_keyword_only() -> None:
 
 def test_registers_env_backed_config_with_full_env_keys() -> None:
     """Full public env keys are adapted to owner-local suffixes."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     @MyRC.config("llm", prefix="HAIU_LLM_", title="LLM")
     class LLMConfig(rc.Config):
@@ -76,7 +99,7 @@ def test_registers_env_backed_config_with_full_env_keys() -> None:
 
 def test_registers_python_only_config_base() -> None:
     """Python-only config classes use normal dataclass defaults."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     @MyRC.config("resources", title="Resources")
     class PackageResources(rc.ConfigBase):
@@ -91,7 +114,7 @@ def test_registers_python_only_config_base() -> None:
 
 def test_rejects_missing_key_decorator_forms() -> None:
     """The registration decorator always requires an explicit key."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     class LLMConfig(rc.Config):
         provider: str = rc.field("HAIU_LLM_PROVIDER", default="openai")
@@ -105,7 +128,7 @@ def test_rejects_missing_key_decorator_forms() -> None:
 
 def test_rejects_missing_prefix_for_env_config() -> None:
     """Env-backed config classes require a non-empty prefix."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     with pytest.raises(ValueError, match='requires prefix="..."'):
 
@@ -116,7 +139,7 @@ def test_rejects_missing_prefix_for_env_config() -> None:
 
 def test_rejects_prefix_for_config_base() -> None:
     """Python-only config classes cannot receive an env prefix."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     with pytest.raises(ValueError, match="Python-only config"):
 
@@ -127,7 +150,7 @@ def test_rejects_prefix_for_config_base() -> None:
 
 def test_rejects_plain_decorator_only_class() -> None:
     """Registered classes must inherit the public config bases."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     with pytest.raises(TypeError, match="must inherit from rc.Config"):
 
@@ -138,7 +161,7 @@ def test_rejects_plain_decorator_only_class() -> None:
 
 def test_rejects_public_fields_on_config_base() -> None:
     """``rc.field`` belongs only to env-backed ``rc.Config`` classes."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     with pytest.raises(TypeError, match="uses rc.field"):
 
@@ -149,7 +172,7 @@ def test_rejects_public_fields_on_config_base() -> None:
 
 def test_rejects_env_key_without_required_prefix() -> None:
     """Every public env key must start with the registered prefix."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     with pytest.raises(ValueError, match="requires prefix HAIU_LLM_"):
 
@@ -160,7 +183,7 @@ def test_rejects_env_key_without_required_prefix() -> None:
 
 def test_rejects_duplicate_config_keys() -> None:
     """Different classes cannot reuse one config key."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     @MyRC.config("llm", prefix="HAIU_LLM_")
     class LLMConfig(rc.Config):
@@ -178,7 +201,7 @@ def test_rejects_duplicate_config_keys() -> None:
 
 def test_rejects_duplicate_env_keys() -> None:
     """One AppRC instance cannot have two fields using the same env key."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     @MyRC.config("llm", prefix="HAIU_LLM_")
     class LLMConfig(rc.Config):
@@ -193,7 +216,7 @@ def test_rejects_duplicate_env_keys() -> None:
 
 def test_requiredness_inference() -> None:
     """Fields without defaults are required and fields with defaults are not."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     @MyRC.config("llm", prefix="HAIU_LLM_")
     class LLMConfig(rc.Config):
@@ -215,7 +238,7 @@ def test_config_preserves_post_init_hook_class_identity(
     tmp_path: Path,
 ) -> None:
     """Registered config hooks can call super and derive runtime fields."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
     monkeypatch.setenv("HAIU_STORAGE", str(tmp_path))
 
     class StoragePaths(rc.Config):
@@ -244,11 +267,42 @@ def test_rejects_optional_missing_field_without_fallback() -> None:
         rc.field("HAIU_LLM_OPTIONAL", required=False)
 
 
+def test_rejects_required_field_with_python_fallback() -> None:
+    """Required fields cannot silently fall back to Python values."""
+    with pytest.raises(ValueError, match="required=True"):
+        rc.field("HAIU_LLM_REQUIRED", required=True, default="fallback")
+    with pytest.raises(ValueError, match="required=True"):
+        rc.field(
+            "HAIU_LLM_REQUIRED",
+            required=True,
+            default_factory=lambda: "fallback",
+        )
+
+
+def test_required_field_allows_packaged_default_and_constructor_value() -> None:
+    """Packaged and explicit runtime values remain valid for required fields."""
+    MyRC = _config_only_app()
+
+    @MyRC.config("llm", prefix="HAIU_LLM_")
+    class LLMConfig(rc.Config):
+        provider: str = rc.field(
+            "HAIU_LLM_PROVIDER",
+            required=True,
+            packaged_default="openai",
+        )
+
+    config = LLMConfig(provider="mock")  # pyright: ignore[reportCallIssue]
+
+    assert config.provider == "mock"
+    assert LLMConfig.config_owner is not None
+    assert LLMConfig.config_owner.field("provider").required is True
+
+
 def test_bundle_eager_construction_and_injection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bundles eagerly construct registered children and allow object injection."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
     monkeypatch.setenv("HAIU_LLM_API_KEY", "secret-value")
 
     @MyRC.config("llm", prefix="HAIU_LLM_", title="LLM")
@@ -287,7 +341,7 @@ def test_bundle_eager_construction_and_injection(
 
 def test_bundle_rejects_unregistered_config_class() -> None:
     """Bundle entries must be registered with the same AppRC instance."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     class LLMConfig(rc.Config):
         provider: str = rc.field("HAIU_LLM_PROVIDER", default="openai")
@@ -301,7 +355,7 @@ def test_bundle_rejects_unregistered_config_class() -> None:
 
 def test_bundle_supports_post_init_derived_config_fields() -> None:
     """Bundles validate registered init=False fields and call post-init."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     @MyRC.config("storage", title="Storage")
     @dataclass
@@ -340,7 +394,7 @@ def test_bundle_supports_post_init_derived_config_fields() -> None:
 
 def test_bundle_preserves_post_init_hook_class_identity() -> None:
     """Bundle hooks can call super and derive registered children."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
     base_calls: list[str] = []
 
     @MyRC.config("storage", title="Storage")
@@ -379,7 +433,7 @@ def test_bundle_preserves_post_init_hook_class_identity() -> None:
 
 def test_bundle_ignores_config_base_internal_fields() -> None:
     """Bundles can inherit ``rc.ConfigBase`` without registering internals."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
 
     @MyRC.config("storage", title="Storage")
     class StorageConfig(rc.ConfigBase):
@@ -395,7 +449,7 @@ def test_bundle_ignores_config_base_internal_fields() -> None:
 
 def test_mount_cli_accepts_only_typer() -> None:
     """The public mount method is Typer-specific."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
     app = typer.Typer()
 
     mounted = MyRC.mount_cli(app)
@@ -409,7 +463,7 @@ def test_manual_bootstrap_allows_later_config_construction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Manual bootstrap prepares env state for direct config construction."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
     monkeypatch.setenv("PUBLIC_BOOTSTRAP_VALUE", "from-env")
 
     @MyRC.config("demo", prefix="PUBLIC_BOOTSTRAP_")
@@ -420,12 +474,146 @@ def test_manual_bootstrap_allows_later_config_construction(
     config = DemoConfig()
 
     assert config.value == "from-env"
-    assert result is not None
+    assert MyRC.bootstrap_result is result
+
+
+def test_ensure_bootstrapped_runs_once_and_reuses_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On-demand setup never reloads an already bootstrapped declaration."""
+    MyRC = _config_only_app()
+    expected = _bootstrap_result()
+    calls = 0
+
+    def fake_bootstrap_env(**_: object) -> EnvBootstrapResult:
+        """Record one low-level bootstrap call."""
+        nonlocal calls
+        calls += 1
+        return expected
+
+    monkeypatch.setattr(
+        "apprc.definition.app_config.kit.bootstrap_env",
+        fake_bootstrap_env,
+    )
+
+    first = MyRC.ensure_bootstrapped()
+    second = MyRC.ensure_bootstrapped()
+
+    assert first is expected
+    assert second is expected
+    assert MyRC.bootstrap_result is expected
+    assert calls == 1
+
+
+def test_ensure_bootstrapped_serializes_concurrent_first_use(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concurrent convenience callers share one initial bootstrap."""
+    MyRC = _config_only_app()
+    expected = _bootstrap_result()
+    calls = 0
+
+    def fake_bootstrap_env(**_: object) -> EnvBootstrapResult:
+        """Leave enough time for competing callers to reach the state lock."""
+        nonlocal calls
+        calls += 1
+        sleep(0.01)
+        return expected
+
+    monkeypatch.setattr(
+        "apprc.definition.app_config.kit.bootstrap_env",
+        fake_bootstrap_env,
+    )
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = tuple(
+            executor.map(lambda _: MyRC.ensure_bootstrapped(), range(8))
+        )
+
+    assert all(result is expected for result in results)
+    assert calls == 1
+
+
+def test_explicit_rebootstrap_warns_and_keeps_latest_success(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Explicit reloads stay allowed and failed reloads retain good metadata."""
+    MyRC = _config_only_app()
+    first = _bootstrap_result(storage_count=1)
+    second = _bootstrap_result(storage_count=2)
+    results = iter((first, second))
+
+    def fake_bootstrap_env(**_: object) -> EnvBootstrapResult:
+        """Return two successes and then fail the next explicit reload."""
+        try:
+            return next(results)
+        except StopIteration as exc:
+            raise RuntimeError("reload failed") from exc
+
+    monkeypatch.setattr(
+        "apprc.definition.app_config.kit.bootstrap_env",
+        fake_bootstrap_env,
+    )
+
+    assert MyRC.bootstrap(load_dotenv_layers=False) is first
+    assert MyRC.bootstrap(load_dotenv_layers=False) is second
+    with pytest.raises(RuntimeError, match="reload failed"):
+        MyRC.bootstrap(load_dotenv_layers=False)
+
+    assert MyRC.bootstrap_result is second
+    assert caplog.text.count("AppRC bootstrap is running again") == 2
+
+
+def test_late_config_registration_warns_and_preserves_bootstrap_state(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Late schema additions remain possible but report incomplete provenance."""
+    MyRC = _config_only_app()
+    expected = _bootstrap_result()
+    monkeypatch.setattr(
+        "apprc.definition.app_config.kit.bootstrap_env",
+        lambda **_: expected,
+    )
+    MyRC.bootstrap(load_dotenv_layers=False)
+
+    @MyRC.config("late", prefix="LATE_")
+    class LateConfig(rc.Config):
+        value: str = rc.field("LATE_VALUE", default="fallback")
+
+    assert LateConfig().value == "fallback"
+    assert MyRC.bootstrap_result is expected
+    assert "Registering config LateConfig after AppRC bootstrap" in caplog.text
+
+
+def test_mounted_cli_bootstrap_updates_public_app_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Typer bootstrap and direct Python calls share one result."""
+    MyRC = _config_only_app()
+    expected = _bootstrap_result()
+    monkeypatch.setattr(
+        "apprc.definition.app_config.kit.bootstrap_env",
+        lambda **_: expected,
+    )
+    app = typer.Typer()
+    MyRC.mount_cli(app)
+
+    @app.command()
+    def run() -> None:
+        """Exercise the mounted runtime callback."""
+
+    result = CliRunner().invoke(app, ["run"])
+
+    assert result.exit_code == 0
+    assert MyRC.bootstrap_result is expected
 
 
 def test_public_config_runtime_assignment_updates_provenance() -> None:
     """Public ``rc.Config`` subclasses stay slotted like the internal engine."""
-    MyRC = _env_only_app()
+    MyRC = _config_only_app()
+    assert MyRC.bootstrap_result is None
 
     @MyRC.config("llm", prefix="HAIU_LLM_")
     class LLMConfig(rc.Config):

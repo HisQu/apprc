@@ -101,8 +101,35 @@ def run() -> None:
     typer.echo(cfg.app.profile)
 ```
 
-For non-Typer entrypoints, call `MyRC.bootstrap()` before constructing the
-bundle.
+For a non-Typer application entrypoint, call `MyRC.bootstrap()` before
+constructing the bundle when AppRC should load managed dotenv files:
+
+```python
+MyRC.bootstrap()
+config = MyAppConfig()
+run_application(config)
+```
+
+Pass that config object through the runtime instead of asking lower-level
+workspace or service constructors to bootstrap again. Direct construction is
+also valid when a test or caller intentionally uses only Python values and the
+current process environment:
+
+```python
+config = MyAppConfig()
+```
+
+A high-level convenience client may use the parameterless one-time helper when
+the default bootstrap policy is always correct:
+
+```python
+MyRC.ensure_bootstrapped()
+config = MyAppConfig()
+```
+
+Do not use `ensure_bootstrapped()` when the caller needs custom env files,
+precedence, or storage selection. Call `bootstrap(...)` with those choices at
+the application entrypoint instead.
 
 ## 3. Set up storage
 

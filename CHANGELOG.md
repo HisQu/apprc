@@ -98,6 +98,16 @@ All notable changes to `AppRC` will be documented in this file.
     Migration: Use `--storage` when persistent data is needed and
     `--storage-selector-env-key NAME` only to override the derived selector.
 
+  - Breaking: `rc.field(..., required=True)` and internal
+    `env_field(..., required=True)` now reject a Python `default` or
+    `default_factory`.
+    Affected: Config declarations that mark a field as required while also
+    giving every instance a Python fallback.
+    Migration: Remove `required=True` when the fallback is intentional, remove
+    the fallback when the value must be supplied, or ship the value in
+    `apprc.defaults.env` and describe it with `packaged_default` when bootstrap
+    should load it.
+
 <br>
 
 ### ➕ Added
@@ -121,6 +131,10 @@ All notable changes to `AppRC` will be documented in this file.
     controls to the config editor for every storage-backed declaration. The
     existing `Setup` action remains visible for an explicit recovery path.
 
+  - Added parameterless `AppRC.ensure_bootstrapped()` for high-level
+    convenience boundaries that use the default bootstrap policy, plus
+    `AppRC.bootstrap_result` for inspecting the latest successful bootstrap.
+
 <br>
 
 ### 💔 Changed
@@ -136,6 +150,17 @@ All notable changes to `AppRC` will be documented in this file.
   - Changed the internal compatibility boundary so current declarations stay
     statically typed, legacy filename aliases retain basename validation, and
     deprecated capability vocabulary is isolated to compatibility code.
+
+  - Changed explicit repeated `AppRC.bootstrap(...)` calls to warn, reload the
+    process environment, and retain the newest successful result. A failed
+    reload preserves the preceding successful result, and config registration
+    after bootstrap remains allowed with an incomplete-provenance warning.
+
+  - Changed runtime documentation to distinguish config construction,
+    entrypoint-owned bootstrap, caller-provided config, and explicit
+    bootstrap-on-demand without introducing application/library modes or a
+    config resolver. Consolidated the dev examples into `config_only`,
+    `config_with_storage`, `explicit_env_precedence`, and `cli_runtime`.
 
 <br>
 

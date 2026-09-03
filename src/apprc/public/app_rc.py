@@ -42,6 +42,7 @@ from apprc.public.field import (
     PUBLIC_FIELD_METADATA_KEY,
     PublicFieldSpec,
 )
+from apprc.runtime._bootstrap_state import BootstrapState
 from apprc.runtime.result import BootstrapLogger, EnvBootstrapResult
 
 ConfigClassT = TypeVar("ConfigClassT", bound=type[ConfigBase])
@@ -165,6 +166,7 @@ class AppRC:
         self._registered_by_key: dict[str, RegisteredConfig] = {}
         self._registered_by_type: dict[type[ConfigBase], RegisteredConfig] = {}
         self._env_key_index: dict[str, tuple[str, str]] = {}
+        self._bootstrap_state = BootstrapState()
         self._kit = self._build_kit()
 
     @classmethod
@@ -429,6 +431,27 @@ class AppRC:
             logger=logger,
         )
 
+    @property
+    def bootstrap_result(self) -> EnvBootstrapResult | None:
+        """Return the latest successful process bootstrap, when available.
+
+        :return: Bootstrap summary shared by Python and mounted CLI paths, or
+            ``None`` before the first successful bootstrap.
+        """
+        return self._bootstrap_state.result
+
+    def ensure_bootstrapped(self) -> EnvBootstrapResult:
+        """Load default AppRC layers only when bootstrap has not run.
+
+        High-level convenience functions may call this method before direct
+        config construction. Application entrypoints that need custom env
+        files, precedence, or an explicit storage selector should call
+        :meth:`bootstrap` themselves.
+
+        :return: Existing or newly created bootstrap summary.
+        """
+        return self._kit._ensure_bootstrapped()
+
     @staticmethod
     def _build_legacy_kit_kwargs(
         *,
@@ -506,6 +529,7 @@ class AppRC:
             return AppConfigKit(
                 **cast(Any, self._legacy_kit_kwargs),
                 envs=envs,
+                _bootstrap_state=self._bootstrap_state,
             )
         declaration = self._declaration
         return AppConfigKit(
@@ -518,6 +542,7 @@ class AppRC:
             defaults_env_filename=declaration.defaults_env_filename,
             app_env_filename=declaration.app_env_filename,
             apprc_toml_filename=declaration.apprc_toml_filename,
+            _bootstrap_state=self._bootstrap_state,
         )
 
     def _register_config(
@@ -571,6 +596,15 @@ class AppRC:
             prefix=prefix,
             env_fields=public_fields,
         )
+        if self.bootstrap_result is not None and _is_env_config(resolved_type):
+            LOG.warning(
+                "Registering config %s after AppRC bootstrap for %s. Values "
+                "still bind from the current process environment, but "
+                "bootstrap provenance for this late registration is "
+                "incomplete. Import the root config bundle before bootstrap.",
+                resolved_type.__name__,
+                self._declaration.app_name,
+            )
         self._registered_by_key[key] = registered
         self._registered_by_type[resolved_type] = registered
         for field_name, spec in public_fields.items():

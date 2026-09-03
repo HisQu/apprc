@@ -18,14 +18,10 @@ import typer
 from packaging.requirements import Requirement
 from typer.testing import CliRunner, Result
 
-from app_wide_config import cli as app_wide_config
-from app_wide_config.config import KIT as APP_WIDE_CONFIG_KIT
-from app_wide_storage import cli as app_wide_storage
-from app_wide_storage.config import KIT as APP_WIDE_STORAGE_KIT
 from cli_runtime import cli as cli_runtime
 from cli_runtime.config import KIT as RUNTIME_KIT
-from env_only import cli as env_only
-from env_only.config import KIT as ENV_ONLY_KIT
+from config_only import cli as config_only
+from config_only.config import KIT as CONFIG_ONLY_KIT
 from explicit_env_precedence import (
     cli as explicit_env_precedence,
 )
@@ -35,8 +31,8 @@ from explicit_env_precedence.config import (
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.runtime.diagnostics.messages import config_command_text
-from storage_only import cli as storage_only
-from storage_only.config import KIT as STORAGE_ONLY_KIT
+from config_with_storage import cli as config_with_storage
+from config_with_storage.config import KIT as CONFIG_WITH_STORAGE_KIT
 from apprc_dev.example_apps.bootstrap import (
     EXAMPLE_APP_DISK_FILES_ROOT,
     bootstrap_example_apps,
@@ -65,7 +61,7 @@ class HeadlessConfigEditorApp(ConfigEditorApp):
 class ExampleCliDefinition:
     """One example CLI and the command data needed to exercise it."""
 
-    mode: str
+    scenario: str
     command_name: str
     kit: AppConfigKit
     build_app: Callable[..., typer.Typer]
@@ -83,43 +79,25 @@ class ExampleCliDefinition:
 
 EXAMPLE_CLIS = (
     ExampleCliDefinition(
-        mode="env_only",
-        command_name="apprc-env-only",
-        kit=ENV_ONLY_KIT,
-        build_app=env_only.build_app,
+        scenario="config_only",
+        command_name="apprc-config-only",
+        kit=CONFIG_ONLY_KIT,
+        build_app=config_only.build_app,
         app_key="profile",
-        app_value="env-only-app-profile",
+        app_value="config-only-app-profile",
     ),
     ExampleCliDefinition(
-        mode="storage_only",
-        command_name="apprc-storage-only",
-        kit=STORAGE_ONLY_KIT,
-        build_app=storage_only.build_app,
+        scenario="config_with_storage",
+        command_name="apprc-config-with-storage",
+        kit=CONFIG_WITH_STORAGE_KIT,
+        build_app=config_with_storage.build_app,
         app_key="profile",
-        app_value="storage-only-app-profile",
+        app_value="config-with-storage-app-profile",
         storage_key="api_token",
-        storage_value="storage-only-secret",
+        storage_value="config-with-storage-secret",
     ),
     ExampleCliDefinition(
-        mode="app_wide_config",
-        command_name="apprc-app-wide-config",
-        kit=APP_WIDE_CONFIG_KIT,
-        build_app=app_wide_config.build_app,
-        app_key="region",
-        app_value="app-wide-region",
-    ),
-    ExampleCliDefinition(
-        mode="app_wide_storage",
-        command_name="apprc-app-wide-storage",
-        kit=APP_WIDE_STORAGE_KIT,
-        build_app=app_wide_storage.build_app,
-        app_key="region",
-        app_value="app-wide-storage-region",
-        storage_key="access_token",
-        storage_value="app-wide-storage-secret",
-    ),
-    ExampleCliDefinition(
-        mode="explicit_env_precedence",
+        scenario="explicit_env_precedence",
         command_name="apprc-explicit-env-precedence",
         kit=EXPLICIT_ENV_PRECEDENCE_KIT,
         build_app=explicit_env_precedence.build_app,
@@ -129,7 +107,7 @@ EXAMPLE_CLIS = (
         storage_value="precedence-storage-label",
     ),
     ExampleCliDefinition(
-        mode="cli_runtime",
+        scenario="cli_runtime",
         command_name="apprc-cli-runtime",
         kit=RUNTIME_KIT,
         build_app=cli_runtime.build_app,
@@ -183,14 +161,18 @@ class ExampleCliHarness:
         )
 
 
-@pytest.mark.parametrize("definition", EXAMPLE_CLIS, ids=lambda item: item.mode)
+@pytest.mark.parametrize(
+    "definition",
+    EXAMPLE_CLIS,
+    ids=lambda item: item.scenario,
+)
 def test_example_cli_runs_every_supported_config_command(
     definition: ExampleCliDefinition,
     tmp_path: Path,
 ) -> None:
     harness = ExampleCliHarness(definition)
-    storage_root = tmp_path / definition.mode / "active-storage"
-    named_storage = tmp_path / definition.mode / "named-storage"
+    storage_root = tmp_path / definition.scenario / "active-storage"
+    named_storage = tmp_path / definition.scenario / "named-storage"
 
     _assert_success(harness.invoke(["--help"]))
     _assert_success(harness.invoke(["config", "--help"]))
@@ -300,7 +282,7 @@ def test_example_cli_runs_every_supported_config_command(
         run_args.extend(
             [
                 "--workspace",
-                str(tmp_path / definition.mode / "workspace"),
+                str(tmp_path / definition.scenario / "workspace"),
                 "--model",
                 "test-model",
                 "--dry-run",
@@ -406,7 +388,11 @@ def test_example_root_env_makes_precedence_app_runnable(
     output_root = Path(env["APPRC_EXAMPLE_APPS_ROOT"])
     bootstrap_example_apps(output_root=output_root, clean=True)
 
-    definition = EXAMPLE_CLIS[4]
+    definition = next(
+        item
+        for item in EXAMPLE_CLIS
+        if item.scenario == "explicit_env_precedence"
+    )
     harness = ExampleCliHarness(definition)
     payload = _assert_json_success(harness.invoke(["run"], env=env))
     bootstrap = payload["bootstrap"]
@@ -438,10 +424,8 @@ def test_console_scripts_point_to_example_clis() -> None:
         "apprc": "apprc.__main__:main",
     }
     assert demo_pyproject["project"]["scripts"] == {
-        "apprc-env-only": "env_only.cli:main",
-        "apprc-storage-only": "storage_only.cli:main",
-        "apprc-app-wide-config": "app_wide_config.cli:main",
-        "apprc-app-wide-storage": "app_wide_storage.cli:main",
+        "apprc-config-only": "config_only.cli:main",
+        "apprc-config-with-storage": "config_with_storage.cli:main",
         "apprc-explicit-env-precedence": ("explicit_env_precedence.cli:main"),
         "apprc-cli-runtime": "cli_runtime.cli:main",
         "apprc-examples-run-all": "_example_apps_utils.run_all:main",
@@ -449,13 +433,11 @@ def test_console_scripts_point_to_example_clis() -> None:
     assert demo_pyproject["tool"]["setuptools"]["packages"]["find"][
         "include"
     ] == [
-        "app_wide_config*",
-        "app_wide_storage*",
         "cli_runtime*",
-        "env_only*",
+        "config_only*",
         "_example_apps_utils",
         "explicit_env_precedence*",
-        "storage_only*",
+        "config_with_storage*",
     ]
 
 
@@ -780,8 +762,8 @@ def test_command_name_falls_back_or_uses_declared_command() -> None:
         "apprc_example_app config show"
     )
     assert (
-        config_command_text(STORAGE_ONLY_KIT, "show")
-        == "apprc-storage-only config show"
+        config_command_text(CONFIG_WITH_STORAGE_KIT, "show")
+        == "apprc-config-with-storage config show"
     )
 
 

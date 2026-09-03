@@ -733,6 +733,20 @@ def test_env_owner_rejects_wrong_python_default_type() -> None:
             retries: int = env_field("RETRIES", default="3")
 
 
+def test_env_owner_rejects_required_python_default() -> None:
+    """Internal declarations enforce the public required-field contract."""
+    with pytest.raises(ValueError, match="required=True"):
+
+        @env_owner(
+            key="demo.required_default",
+            title="Required Default",
+            env_prefix="REQUIRED_DEFAULT_",
+            rc_path=("demo", "required_default"),
+        )
+        class _RequiredDefaultEnv(EnvConfig):
+            value: str = env_field("VALUE", default="fallback", required=True)
+
+
 def test_env_config_python_positional_argument_overrides_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

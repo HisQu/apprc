@@ -78,7 +78,7 @@ def run_demo(root: Path) -> dict[str, object]:
             storage=None,
         )
         return {
-            "mode": "explicit_env_precedence",
+            "scenario": "explicit_env_precedence",
             "shell_wins": str(shell_wins.storage_root),
             "explicit_wins": str(explicit_wins.storage_root),
         }

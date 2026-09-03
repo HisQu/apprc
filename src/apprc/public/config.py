@@ -8,9 +8,10 @@ from apprc.definition.env_config.env import EnvConfig
 class Config(EnvConfig):
     """Env-backed AppRC config base.
 
-    Subclasses read values from the current process environment after AppRC
-    bootstrap has prepared the runtime layers. Every env-backed attribute must
-    be declared with :func:`apprc.field` and every subclass must be registered
+    Subclasses read values from the current process environment when they are
+    constructed. Call AppRC bootstrap first when managed dotenv files should
+    contribute to that environment. Every env-backed attribute must be
+    declared with :func:`apprc.field` and every subclass must be registered
     with ``@MyRC.config("key", prefix="FULL_PREFIX_", ...)`` before it is
     constructed.
     """

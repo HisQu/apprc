@@ -187,7 +187,7 @@ def build_apprc_example_app_kit() -> AppConfigKit:
     return AppConfigKit(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="storage_only.config",
+        config_package="config_with_storage.config",
         envs=(ApprcExampleAppEnv,),
         storage=Storage(env_key="APPRC_EXAMPLE_APP_STORAGE"),
     )
@@ -198,7 +198,7 @@ def build_storage_free_example_kit() -> AppConfigKit:
     return AppConfigKit(
         app_name="storage_free_app",
         display_name="Storage-Free App",
-        config_package="env_only.config",
+        config_package="config_only.config",
         envs=(StorageFreeExampleEnv,),
     )
 

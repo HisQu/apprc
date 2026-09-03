@@ -74,20 +74,14 @@ Treat this as the parking lot for actionable problems discovered while working b
 1. [Todo list](#todo-list)
    1. [Table Of Contents](#table-of-contents)
 2. [2026-07-14](#2026-07-14)
+   1. [P3 / E3 \[Tooling\] - *Stale bytecode recreates removed package namespaces*](#p3--e3-tooling---stale-bytecode-recreates-removed-package-namespaces)
 3. [2026-07-03](#2026-07-03)
+   1. [P3 / E1 \[Code smell\] - *Config import facades look awkward*](#p3--e1-code-smell---config-import-facades-look-awkward)
 
 
 <br>
 
 # 2026-07-14
-
-## P2 / E1 [Question] - *Define strict and convenience runtime configuration modes*
-- **Area:** `src/apprc/public/app_rc.py`, `src/apprc/public/config.py`, `src/apprc/runtime/bootstrap.py`
-- **Observed while:** Tracing how haiu, OPA, and datamodel-workflow construct runtime configuration during ontology-workspace operations.
-- **Why not fixed now:** This needs an AppRC API and compatibility design pass; the current task is to capture the cross-repository issue, not change AppRC behavior opportunistically.
-- **Evidence:** AppRC documents that applications should call `bootstrap()` before constructing runtime config, but direct config construction remains valid and falls back to Python field defaults when bootstrap was omitted. Downstream code therefore cannot distinguish an intentionally standalone config from a runtime config that skipped bootstrap.
-- **Context:** AppRC should support two deliberate modes: an explicit application mode that bootstraps once and passes resolved config objects through runtime, and a future library-like convenience mode that may ensure bootstrap at a high-level client boundary. Preserve the current low-level constructor behavior for tests and standalone use. Do not put hidden bootstrap in `ConfigBase`, raw config constructors, or downstream workspace constructors, and do not require a process-wide config singleton; resolved config objects must remain passable dependencies.
-- **Suggested next step:** Design an additive runtime-resolution API or validation marker that applications and libraries can require after bootstrap. It should reject required fields whose origin is a Python fallback, expose bootstrap/resolution state clearly, and define idempotent behavior for repeated bootstrap calls plus an error for conflicting calls. If an auto-bootstrap convenience API is added, make its scope and policy explicit, ensure it bootstraps at most once per process, and keep it separate from low-level config construction. Add tests showing that existing direct construction remains compatible, strict runtime construction fails before bootstrap, explicit bootstrap succeeds, and convenience clients do not re-bootstrap during nested runtime operations.
 
 ## P3 / E3 [Tooling] - *Stale bytecode recreates removed package namespaces*
 - **Area:** `src/apprc/runtime_config`, `src/apprc/logging`, `tests/test_architecture_public_api.py`

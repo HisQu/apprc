@@ -226,8 +226,24 @@ MyRC.bootstrap()
 cfg = MyAppConfig()
 ```
 
+`Config()` reads the current process environment at construction time.
+Bootstrap is needed when AppRC should first merge its managed dotenv files;
+it is not a requirement for tests or callers that deliberately use only
+constructor values, Python defaults, and the current `os.environ`.
+
+High-level convenience boundaries that want AppRC defaults without taking
+bootstrap options can call `MyRC.ensure_bootstrapped()`. It performs the
+default bootstrap once per `AppRC` declaration and reuses the successful
+result. Keep explicit policy at the application entrypoint: call
+`MyRC.bootstrap(...)` there when storage selection, env files, or precedence
+options vary. Libraries should normally accept a constructed config object
+from their caller.
+
 `rc.field("ENV_KEY")` is required when no default is provided.
 `rc.field("ENV_KEY", default="x")` and `default_factory=...` are optional.
+An explicit `required=True` cannot be combined with either Python fallback;
+put the value in `apprc.defaults.env` and describe it with
+`packaged_default=...`, or pass the value to the config constructor.
 `secret=True` redacts display output; it does not encrypt values, store them
 elsewhere, or imply that the field is required.
 
@@ -237,7 +253,7 @@ Run the integration examples from a checkout with:
 python -m pip install -e examples/example_apps --no-build-isolation
 set -a; source .env.example_apps; set +a
 python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"
-apprc-storage-only config doctor
+apprc-config-with-storage config doctor
 apprc-examples-run-all
 ```
 
@@ -282,7 +298,8 @@ AppRC has one contract and several workflows built from it.
 | Config field | One typed setting declared with `rc.field("FULL_ENV_KEY", ...)`. |
 | Registered config | A related group of fields declared by `@MyRC.config(...)`. |
 | AppRC facade | The app-level contract that selects supported persistence layers. |
-| Bootstrap | A startup step that merges dotenv layers into this Python process. |
+| Bootstrap | An optional startup step that merges managed dotenv layers into this Python process. |
+| Config construction | A read of Python values and the current `os.environ` into a mutable config object. |
 | Generated CLI | A reusable Typer `config` command group for inspection and edits. |
 | Editor | A Textual view over the same sections, fields, and dotenv layers. |
 

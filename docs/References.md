@@ -34,9 +34,11 @@ Normal integrations use `import apprc as rc`.
 
 `rc.field(...)` accepts `default`, `default_factory`, `required`, `title`,
 `description`, `editable`, `secret`, `choices`, and `packaged_default`.
-`packaged_default` describes an intentional difference between the Python
-fallback and `apprc.defaults.env`. The old `shared_default` spelling remains a
-0.20 compatibility alias.
+`packaged_default` describes a required value shipped in
+`apprc.defaults.env`, or an intentional difference between that file and the
+Python fallback. The old `shared_default` spelling remains a 0.20 compatibility
+alias. `required=True` cannot be combined with `default` or
+`default_factory`; it may be combined with `packaged_default`.
 
 ## Application declaration
 
@@ -71,6 +73,19 @@ MyRC = rc.AppRC(
 | `suggested_root` | platform user data path | First setup suggestion. |
 | `prompt_on_first_run` | `True` | Offer setup before an interactive runtime command. |
 | `env_filename` | `apprc.storage.env` | Dotenv basename inside each storage. |
+
+Runtime methods and state:
+
+| Name | Meaning |
+| --- | --- |
+| `bootstrap(...)` | Merge managed dotenv layers into `os.environ` using explicit entrypoint policy. Repeated calls warn and reload. |
+| `ensure_bootstrapped()` | Run one default bootstrap if no successful result exists, then reuse that result. |
+| `bootstrap_result` | Latest successful bootstrap result, or `None` before success. A failed reload leaves the earlier result intact. |
+
+Config construction is separate from these methods. `Config()` reads Python
+values and the current `os.environ` and returns a mutable object; it does not
+load AppRC files. Registering an env-backed config after bootstrap remains
+allowed but warns that bootstrap provenance is incomplete.
 
 Filename arguments accept one basename, not a path. Use
 `<APP>_APPRC_TOML` to relocate the TOML file.

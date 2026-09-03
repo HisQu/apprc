@@ -92,6 +92,12 @@ def validate_config_field(spec: ConfigField) -> None:
         raise ValueError(
             f"{spec.name} cannot declare both default and default_factory."
         )
+    if spec.required and spec.has_default():
+        raise ValueError(
+            f"{spec.name} is required and cannot declare a Python default or "
+            "default_factory. Use packaged_default to describe a value "
+            "shipped in apprc.defaults.env."
+        )
     if spec.default is not CONFIG_MISSING:
         validate_python_field_value(spec, spec.default)
     if spec.choices:

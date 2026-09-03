@@ -24,8 +24,9 @@ class ConfigField:
     :param default: Runtime fallback value when no source provides a value.
     :param default_factory: Runtime fallback factory when no source provides a
         value. The factory is called for each config instance.
-    :param packaged_default: Packaged defaults value when intentionally
-        different from ``default``.
+    :param packaged_default: Value documented in ``apprc.defaults.env`` when a
+        required field has a shipped value or the shipped value intentionally
+        differs from ``default``.
     :param title: Short display label for docs and terminal UIs.
     :param explanation_short: Compact table-facing description.
     :param explanation_long: Full editor-facing description.

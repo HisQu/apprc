@@ -8,21 +8,19 @@ from dataclasses import dataclass
 
 # == Internal ================================
 from apprc.definition.app_config.kit import AppConfigKit
-from app_wide_config.config import KIT as APP_WIDE_CONFIG_KIT
-from app_wide_storage.config import KIT as APP_WIDE_STORAGE_KIT
 from cli_runtime.config import KIT as CLI_RUNTIME_KIT
-from env_only.config import KIT as ENV_ONLY_KIT
+from config_only.config import KIT as CONFIG_ONLY_KIT
 from explicit_env_precedence.config import (
     KIT as EXPLICIT_ENV_PRECEDENCE_KIT,
 )
-from storage_only.config import KIT as STORAGE_ONLY_KIT
+from config_with_storage.config import KIT as CONFIG_WITH_STORAGE_KIT
 
 
 @dataclass(frozen=True, slots=True)
 class ExampleAppSpec:
     """Files and values needed to bootstrap one example app.
 
-    :param name: Human-readable mode name used in summaries.
+    :param name: Human-readable scenario name used in summaries.
     :param root_name: Repository-local sandbox directory name.
     :param kit: AppRC contract for the example CLI.
     :param explicit_values: Values written to the arbitrary sourceable
@@ -48,21 +46,21 @@ class ExampleAppSpec:
 
 EXAMPLE_APPS = (
     ExampleAppSpec(
-        name="env_only",
-        root_name=".apprc-example-env-only",
-        kit=ENV_ONLY_KIT,
+        name="config_only",
+        root_name=".apprc-example-config-only",
+        kit=CONFIG_ONLY_KIT,
         explicit_values={
-            "APPRC_EXAMPLE_ENV_ONLY_PROFILE": "explicit-env-profile",
-            "APPRC_EXAMPLE_ENV_ONLY_DEBUG": "true",
+            "APPRC_EXAMPLE_CONFIG_PROFILE": "explicit-env-profile",
+            "APPRC_EXAMPLE_CONFIG_DEBUG": "true",
         },
         app_values={
-            "APPRC_EXAMPLE_ENV_ONLY_PROFILE": "app-wide-profile",
+            "APPRC_EXAMPLE_CONFIG_PROFILE": "app-wide-profile",
         },
     ),
     ExampleAppSpec(
-        name="storage_only",
-        root_name=".apprc-example-storage-only",
-        kit=STORAGE_ONLY_KIT,
+        name="config_with_storage",
+        root_name=".apprc-example-config-with-storage",
+        kit=CONFIG_WITH_STORAGE_KIT,
         explicit_values={
             "APPRC_EXAMPLE_STORAGE_ENABLED": "false",
             "APPRC_EXAMPLE_STORAGE_RETRY_COUNT": "7",
@@ -74,34 +72,6 @@ EXAMPLE_APPS = (
             "APPRC_EXAMPLE_STORAGE_PROFILE": "storage-profile",
             "APPRC_EXAMPLE_STORAGE_MODE": "MANUAL",
             "APPRC_EXAMPLE_STORAGE_API_TOKEN": "storage-secret-token",
-        },
-    ),
-    ExampleAppSpec(
-        name="app_wide_config",
-        root_name=".apprc-example-app-wide-config",
-        kit=APP_WIDE_CONFIG_KIT,
-        explicit_values={
-            "APPRC_EXAMPLE_APP_WIDE_WORKERS": "8",
-        },
-        app_values={
-            "APPRC_EXAMPLE_APP_WIDE_REGION": "app-wide-region",
-            "APPRC_EXAMPLE_APP_WIDE_WORKERS": "4",
-        },
-    ),
-    ExampleAppSpec(
-        name="app_wide_storage",
-        root_name=".apprc-example-app-wide-storage",
-        kit=APP_WIDE_STORAGE_KIT,
-        explicit_values={
-            "APPRC_EXAMPLE_APP_WIDE_STORAGE_REGION": "explicit-region",
-        },
-        app_values={
-            "APPRC_EXAMPLE_APP_WIDE_STORAGE_REGION": "app-wide-region",
-        },
-        storage_values={
-            "APPRC_EXAMPLE_APP_WIDE_STORAGE_ACCESS_TOKEN": (
-                "app-wide-storage-secret"
-            ),
         },
     ),
     ExampleAppSpec(

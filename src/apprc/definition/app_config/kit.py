@@ -12,6 +12,7 @@ that should not pull in CLI/TUI dependencies.
 from __future__ import annotations
 
 # == Standard Library ========================
+import logging
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -29,14 +30,16 @@ from apprc.definition.app_config.spec import (
     AppConfigSpec,
 )
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.env_config.env import EnvConfig
+from apprc.runtime._bootstrap_state import BootstrapState
 from apprc.runtime.bootstrap import (
     BootstrapLogger,
     EnvBootstrapResult,
     bootstrap_env,
 )
-from apprc.definition.env_config.env import EnvConfig
 
 StateT = TypeVar("StateT")
+LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import typer
@@ -55,7 +58,12 @@ class AppConfigKit:
     """
 
     @overload
-    def __init__(self, spec: AppConfigSpec) -> None: ...
+    def __init__(
+        self,
+        spec: AppConfigSpec,
+        *,
+        _bootstrap_state: BootstrapState | None = None,
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -80,6 +88,7 @@ class AppConfigKit:
         app_wide_env_filename: str | None = None,
         storage_env_filename: str | None = None,
         _legacy_constructor: str | None = None,
+        _bootstrap_state: BootstrapState | None = None,
     ) -> None: ...
 
     def __init__(
@@ -104,8 +113,10 @@ class AppConfigKit:
         app_wide_env_filename: str | None = None,
         storage_env_filename: str | None = None,
         _legacy_constructor: str | None = None,
+        _bootstrap_state: BootstrapState | None = None,
     ) -> None:
         """Store the application spec or build one from keyword arguments."""
+        self._bootstrap_state = _bootstrap_state or BootstrapState()
         if spec is not None:
             self.spec = spec
             return
@@ -376,14 +387,42 @@ class AppConfigKit:
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
         """
-        return bootstrap_env(
-            spec=self.spec,
-            env_files=env_files,
-            env_file_overrides_os_environ=env_file_overrides_os_environ,
-            load_dotenv_layers=load_dotenv_layers,
-            storage=storage,
-            logger=logger,
-        )
+        with self._bootstrap_state.lock:
+            if self._bootstrap_state.result is not None:
+                LOG.warning(
+                    "AppRC bootstrap is running again for %s. Existing "
+                    "config objects keep their current values; config objects "
+                    "constructed afterward read the new process environment.",
+                    self.spec.app_name,
+                )
+            result = bootstrap_env(
+                spec=self.spec,
+                env_files=env_files,
+                env_file_overrides_os_environ=env_file_overrides_os_environ,
+                load_dotenv_layers=load_dotenv_layers,
+                storage=storage,
+                logger=logger,
+            )
+            self._bootstrap_state.result = result
+            return result
+
+    def _ensure_bootstrapped(self) -> EnvBootstrapResult:
+        """Return existing bootstrap state or load the default layers.
+
+        This private kit hook keeps the public convenience API on ``AppRC``
+        while sharing state with CLI callbacks that bootstrap through the kit.
+
+        :return: Latest successful bootstrap result.
+        """
+        with self._bootstrap_state.lock:
+            if self._bootstrap_state.result is not None:
+                return self._bootstrap_state.result
+            return self.bootstrap(
+                env_files=(),
+                env_file_overrides_os_environ=False,
+                load_dotenv_layers=True,
+                storage=None,
+            )
 
     def typer_app(
         self,

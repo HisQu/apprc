@@ -1,0 +1,12 @@
+"""AppRC application contract for the config-with-storage example."""
+
+import apprc as rc
+
+
+MyRC = rc.AppRC(
+    app_name="apprc-example-config-with-storage",
+    display_name="AppRC Config With Storage Example",
+    config_package="config_with_storage.config",
+    storage=rc.Storage(env_key="APPRC_EXAMPLE_STORAGE_ROOT"),
+    command_name="apprc-config-with-storage",
+)

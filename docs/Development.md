@@ -136,10 +136,8 @@ script per integration scenario:
 
 | Script | AppRC Surface |
 |---|---|
-| `apprc-env-only` | Direct `rc.AppRC(...)` without storage |
-| `apprc-storage-only` | Direct `rc.AppRC(...)` with `rc.Storage(...)` |
-| `apprc-app-wide-config` | A second config-only scenario kept for comparison |
-| `apprc-app-wide-storage` | A second storage scenario kept for comparison |
+| `apprc-config-only` | Direct `rc.AppRC(...)` without storage |
+| `apprc-config-with-storage` | Direct `rc.AppRC(...)` with `rc.Storage(...)` |
 | `apprc-explicit-env-precedence` | Explicit env-file selector precedence |
 | `apprc-cli-runtime` | `CliRuntime` with an app-owned callback |
 | `apprc-examples-run-all` | Compact non-interactive scenario runner |
@@ -149,10 +147,8 @@ match what a downstream project should copy:
 
 | Package | Purpose |
 |---|---|
-| `env_only` | Minimal config-only app with packaged defaults. |
-| `storage_only` | Storage app with storage-local dotenv fields. |
-| `app_wide_config` | Config-only app showing per-user app overrides. |
-| `app_wide_storage` | Storage app showing app and storage-local overrides. |
+| `config_only` | Config-only app with packaged and per-user values. |
+| `config_with_storage` | Storage app with app and storage-local values. |
 | `explicit_env_precedence` | Storage selector precedence with explicit env files. |
 | `cli_runtime` | Typer callback integration through `CliRuntime`. |
 | `_example_apps_utils` | Shared scenario runner helpers; not a user app template. |
@@ -237,10 +233,10 @@ Source one example environment when testing its console script:
 
 ```bash
 set -a; source .env.example_apps; set +a
-apprc-storage-only config paths
-apprc-storage-only config doctor
-apprc-storage-only config storage list
-apprc-storage-only config show --json
+apprc-config-with-storage config paths
+apprc-config-with-storage config doctor
+apprc-config-with-storage config storage list
+apprc-config-with-storage config show --json
 ```
 
 Use the runtime example to inspect the app-owned callback path:

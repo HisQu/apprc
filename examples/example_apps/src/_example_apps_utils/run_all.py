@@ -8,18 +8,14 @@ import tempfile
 from pathlib import Path
 
 # == Internal ================================
-from app_wide_config import cli as app_wide_config
-from app_wide_storage import cli as app_wide_storage
 from cli_runtime import cli as cli_runtime
-from env_only import cli as env_only
+from config_only import cli as config_only
 from explicit_env_precedence import cli as explicit_env_precedence
-from storage_only import cli as storage_only
+from config_with_storage import cli as config_with_storage
 
 EXAMPLES = (
-    env_only.run_demo,
-    storage_only.run_demo,
-    app_wide_config.run_demo,
-    app_wide_storage.run_demo,
+    config_only.run_demo,
+    config_with_storage.run_demo,
     explicit_env_precedence.run_demo,
     cli_runtime.run_demo,
 )

@@ -20,7 +20,7 @@ def _kit() -> AppConfigKit:
     return AppConfigKit(
         app_name="migration_demo",
         display_name="Migration Demo",
-        config_package="storage_only.config",
+        config_package="config_with_storage.config",
         storage=Storage(env_key="MIGRATION_DEMO_STORAGE"),
     )
 

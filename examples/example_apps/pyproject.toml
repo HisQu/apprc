@@ -5,17 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "apprc-example-apps"
 version = "0.0.0"
-description = "Repository-local example CLIs for exercising every AppRC mode."
+description = "Repository-local example CLIs for AppRC integration workflows."
 requires-python = ">=3.12"
 dependencies = [
     "apprc",
 ]
 
 [project.scripts]
-apprc-env-only = "env_only.cli:main"
-apprc-storage-only = "storage_only.cli:main"
-apprc-app-wide-config = "app_wide_config.cli:main"
-apprc-app-wide-storage = "app_wide_storage.cli:main"
+apprc-config-only = "config_only.cli:main"
+apprc-config-with-storage = "config_with_storage.cli:main"
 apprc-explicit-env-precedence = "explicit_env_precedence.cli:main"
 apprc-cli-runtime = "cli_runtime.cli:main"
 apprc-examples-run-all = "_example_apps_utils.run_all:main"
@@ -23,13 +21,11 @@ apprc-examples-run-all = "_example_apps_utils.run_all:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = [
-    "app_wide_config*",
-    "app_wide_storage*",
     "cli_runtime*",
-    "env_only*",
+    "config_only*",
     "_example_apps_utils",
     "explicit_env_precedence*",
-    "storage_only*",
+    "config_with_storage*",
 ]
 
 [tool.setuptools.package-data]

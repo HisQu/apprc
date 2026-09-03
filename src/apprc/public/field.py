@@ -26,8 +26,9 @@ class PublicFieldSpec:
     :param env_key: Full environment variable name shown to users.
     :param default: Runtime fallback when no Python or env value exists.
     :param default_factory: Runtime fallback factory for fresh instance values.
-    :param packaged_default: Packaged defaults dotenv value when it differs from the
-        runtime fallback.
+    :param packaged_default: Value documented in ``apprc.defaults.env`` when a
+        required field has a shipped value or the shipped value differs from
+        the Python fallback.
     :param required: Explicit requiredness override, or ``None`` for inferred
         dataclass-style requiredness.
     :param title: Short display label for docs and terminal UIs.
@@ -98,10 +99,12 @@ def field(
     :param default_factory: Runtime fallback factory for fresh instance values.
     :param required: Explicit requiredness override. When omitted, fields
         without defaults are required and fields with defaults are optional.
+        ``True`` cannot be combined with ``default`` or ``default_factory``.
     :param title: Short display label for docs and terminal UIs.
     :param description: Human-readable field explanation.
-    :param packaged_default: Value documented in ``apprc.defaults.env`` when
-        it intentionally differs from the Python fallback.
+    :param packaged_default: Value documented in ``apprc.defaults.env`` when a
+        required field has a shipped value or the shipped value intentionally
+        differs from the Python fallback.
     :param editable: Whether config editors should allow direct editing.
     :param secret: Whether display surfaces should redact the value. This does
         not encrypt values, change storage, or imply requiredness.
@@ -111,14 +114,22 @@ def field(
         ``explanation_short``.
     :return: Dataclass field consumed by ``@MyRC.config(...)``.
     :raises TypeError: If ``env`` is not a non-empty string.
-    :raises ValueError: If defaults or unsupported optional missing semantics
-        are requested.
+    :raises ValueError: If conflicting defaults, required Python fallbacks, or
+        unsupported optional missing semantics are requested.
     """
     if not isinstance(env, str) or not env:
         raise TypeError("rc.field(...) requires a non-empty full env key.")
     if default is not CONFIG_MISSING and default_factory is not CONFIG_MISSING:
         raise ValueError(
             "rc.field(...) cannot declare both default and default_factory."
+        )
+    if required is True and (
+        default is not CONFIG_MISSING or default_factory is not CONFIG_MISSING
+    ):
+        raise ValueError(
+            "rc.field(..., required=True) cannot declare a Python default "
+            "or default_factory. Use packaged_default to describe a value "
+            "shipped in apprc.defaults.env."
         )
     if (
         required is False

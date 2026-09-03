@@ -41,7 +41,7 @@ def test_config_package_convention_warns_when_package_is_not_config() -> None:
     kit = AppConfigKit.storage_only(
         app_name="apprc_example_app",
         display_name="Example App",
-        config_package="storage_only",
+        config_package="config_with_storage",
         envs=(),
         storage_env_key="APPRC_EXAMPLE_APP_STORAGE",
     )

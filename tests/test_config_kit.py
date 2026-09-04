@@ -59,6 +59,7 @@ def test_doctor_reports_selected_registered_storage(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
     kit.spec.ensure_user_dotenv()
     storage_root = tmp_path / "alpha"
@@ -82,6 +83,7 @@ def test_doctor_reports_malformed_registry(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
     kit.spec.ensure_user_dotenv()
     registry = kit.spec.preferred_apprc_toml_path()

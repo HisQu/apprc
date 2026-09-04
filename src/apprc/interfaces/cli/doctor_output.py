@@ -71,6 +71,10 @@ def print_config_doctor(
             _optional_text(payload.selected_storage_selector),
         ),
         (
+            "selected_storage_selector_kind",
+            _optional_text(payload.selected_storage_selector_kind),
+        ),
+        (
             "selected_storage_root",
             _path_or_none_text(payload.selected_storage_root),
         ),
@@ -162,6 +166,10 @@ def print_config_paths(
         (
             "selected_storage_selector",
             _optional_text(payload.selected_storage_selector),
+        ),
+        (
+            "selected_storage_selector_kind",
+            _optional_text(payload.selected_storage_selector_kind),
         ),
         (
             "selected_storage_root",

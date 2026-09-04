@@ -19,7 +19,7 @@ needs persistent user data.
 | Application | Declaration | Normal files below `~/.local/share/<app-id>/` | Structural environment variables |
 | --- | --- | --- | --- |
 | No storage | `rc.AppRC(...)` | `apprc.user.env` | `<APP>_APPRC_DIR` only when relocating the AppRC directory |
-| One storage | `rc.AppRC(..., storage=rc.Storage())` | `apprc.user.env`, `apprc.toml`, `storage/apprc.storage.env` | `<APP>_APPRC_DIR` for relocation; `<APP>_STORAGE=NAME` only to override `selected_storage` |
+| One storage | `rc.AppRC(..., storage=rc.Storage())` | `apprc.user.env`, `apprc.toml`, `storage/apprc.storage.env` | `<APP>_APPRC_DIR` for relocation; `<APP>_STORAGE=NAME_OR_PATH` only to override `selected_storage` |
 | Several storages | Same storage declaration | Same fixed files; extra storage roots are listed in `apprc.toml` | Same variables; storage names are registry data, not Python declarations |
 
 Application setting variables such as `MYAPP_PROFILE` are separate from these
@@ -130,8 +130,9 @@ myapp config doctor
 ```
 
 Interactive setup shows the proposed root
-`~/.local/share/myapp/storage/` before creating it. To choose another root with
-shell completion or to run non-interactively:
+`~/.local/share/myapp/storage/` before creating it. Choose the default, enter a
+custom directory with path completion, or cancel. To provide the root directly
+or run non-interactively:
 
 ```bash
 myapp config setup --storage-root /absolute/path/to/storage
@@ -142,7 +143,13 @@ Storage setup creates the user dotenv, registers the initial root under the
 name `default`, selects it in `apprc.toml`, and creates
 `apprc.storage.env` inside the root. It does not write `MYAPP_STORAGE` to a
 dotenv file. A normal run uses `selected_storage`; export
-`MYAPP_STORAGE=NAME` only for a run-level selection override.
+`MYAPP_STORAGE=NAME_OR_PATH` only for a run-level selection override.
+
+The path form must point to an existing directory containing a readable
+`apprc.storage.env`. AppRC logs whether it matched a registered name. If it is
+unregistered, an interactive CLI offers to register it; declining uses it for
+that process only. Non-interactive commands use it once without changing
+`apprc.toml`.
 
 ## Manage storages
 
@@ -175,6 +182,10 @@ myapp config storage remove primary
 
 Relative roots resolve relative to `apprc.toml`, not the current directory.
 `config edit` exposes the same supported operations.
+
+New `add` and `repoint` operations reject a root already owned by another
+name. Older duplicate aliases remain readable; `config doctor` warns, and a
+direct path matching several aliases runs without choosing an arbitrary name.
 
 ## Edit dotenv values
 
@@ -252,11 +263,14 @@ myapp config doctor --json
 | Status | Meaning | Next action |
 | --- | --- | --- |
 | `runnable` | Required dotenv files and selected storage are usable. | Run the application. |
-| `env_not_set` | A storage app has no selected registry name. | Run setup or `storage select`. |
+| `env_not_set` | A storage app has no selected name or path. | Run setup, `storage select`, or pass a path. |
 | `storage_not_ready` | The selected root or storage dotenv is missing. | Correct the root or rerun setup. |
 | `user_dotenv_not_ready` | `apprc.user.env` is missing or unreadable. | Run setup or fix permissions. |
 | `storage_registry_not_ready` | `apprc.toml` is missing, unreadable, or invalid. | Run setup or fix the registry. |
 
 For a storage-free declaration, doctor reports stale `apprc.toml` as a warning
 only. The JSON payload uses file-specific keys such as `apprc_dir`,
-`user_dotenv`, `apprc_toml`, and `storage_dotenv`.
+`user_dotenv`, `apprc_toml`, and `storage_dotenv`. `config edit` still opens
+when selection or storage setup is invalid. It shows the failure beside an
+enabled Setup action and does not enable storage field editing until the
+selected root contains `apprc.storage.env`.

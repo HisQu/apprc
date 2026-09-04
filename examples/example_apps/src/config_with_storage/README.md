@@ -7,7 +7,7 @@ with one active registered storage and storage-local values.
 
 - Install the example package from the repository checkout.
 - Source `.env.example_apps` or use direnv.
-- `APPRC_EXAMPLE_STORAGE_ROOT` must contain a registered name. The root env
+- `APPRC_EXAMPLE_STORAGE_ROOT` may contain a registered name or path. The root env
   file selects the generated `alpha` storage.
 
 ## Setup

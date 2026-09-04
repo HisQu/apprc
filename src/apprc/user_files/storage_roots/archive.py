@@ -111,6 +111,7 @@ def extract_archive(
     destination_root: Path,
     progress: ProgressCallback | None = None,
     replace_existing: bool = False,
+    after_install: Callable[[Path], None] | None = None,
 ) -> Path:
     """Restore a storage archive into a destination directory.
 
@@ -118,6 +119,8 @@ def extract_archive(
     :param destination_root: Directory that should receive archive contents.
     :param progress: Optional callback for progress bar updates.
     :param replace_existing: Whether a non-empty destination may be replaced.
+    :param after_install: Optional commit callback run while filesystem rollback
+        remains possible.
     :return: Destination directory.
     :raises ValueError: If the archive path, destination, or member names are
         unsafe.
@@ -159,6 +162,7 @@ def extract_archive(
                 staged_destination=staged_destination,
                 destination=destination,
                 replace_existing=replace_existing,
+                after_install=after_install,
             )
         finally:
             if staged_destination.exists():
@@ -264,10 +268,24 @@ def _install_staged_extract(
     staged_destination: Path,
     destination: Path,
     replace_existing: bool,
+    after_install: Callable[[Path], None] | None,
 ) -> None:
-    """Move a completed staged restore into its final destination."""
+    """Move a staged restore and keep rollback available through commit.
+
+    :param staged_destination: Fully extracted temporary directory.
+    :param destination: Final storage root.
+    :param replace_existing: Whether existing contents may be replaced.
+    :param after_install: Optional registry commit callback.
+    :return: None.
+    """
     if not destination.exists():
         os.replace(staged_destination, destination)
+        try:
+            if after_install is not None:
+                after_install(destination)
+        except Exception:
+            shutil.rmtree(destination, ignore_errors=True)
+            raise
         return
     if any(destination.iterdir()) and not replace_existing:
         raise ValueError(
@@ -276,16 +294,22 @@ def _install_staged_extract(
         )
     backup = _backup_path(destination)
     replaced_original = False
+    committed = False
     try:
         os.replace(destination, backup)
         replaced_original = True
         os.replace(staged_destination, destination)
+        if after_install is not None:
+            after_install(destination)
+        committed = True
     except Exception:
-        if replaced_original and not destination.exists() and backup.exists():
+        if replaced_original and backup.exists():
+            if destination.exists():
+                shutil.rmtree(destination, ignore_errors=True)
             os.replace(backup, destination)
         raise
     finally:
-        if backup.exists():
+        if committed and backup.exists():
             shutil.rmtree(backup, ignore_errors=True)
 
 

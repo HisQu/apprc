@@ -7,7 +7,7 @@ env-file values can override or defer to shell env values.
 
 - Install the example package from the repository checkout.
 - Source `.env.example_apps` or use direnv.
-- `APPRC_EXAMPLE_PRECEDENCE_ROOT` must contain a registered name. The root env
+- `APPRC_EXAMPLE_PRECEDENCE_ROOT` may contain a registered name or path. The root env
   file selects the generated `alpha` storage.
 
 ## Setup

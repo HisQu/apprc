@@ -102,6 +102,12 @@ class ConfigEditorApp(App[None]):
         padding: 0 1;
     }
 
+    #setup-status {
+        border: solid $warning;
+        color: $warning;
+        padding: 0 1;
+    }
+
     #config-action-row {
         height: 4;
         margin: 1 0;
@@ -126,6 +132,7 @@ class ConfigEditorApp(App[None]):
         kit: AppConfigKit,
         storage_registry: StorageRegistry | None,
         storage_registry_error: str | None = None,
+        storage_startup_error: str | None = None,
         initial_storage: str | None = None,
         active_storage_root: Path | None = None,
         config_group_name: str = "config",
@@ -137,6 +144,7 @@ class ConfigEditorApp(App[None]):
             editor.
         :param storage_registry_error: Read failure that prevents named-storage
             writes while direct-path editing remains available.
+        :param storage_startup_error: Persistent startup/readiness explanation.
         :param initial_storage: Optional storage entry selected on startup.
         :param active_storage_root: Optional path-backed storage selected by
             the current CLI invocation.
@@ -147,6 +155,7 @@ class ConfigEditorApp(App[None]):
         self.kit = kit
         self.storage_registry = storage_registry
         self.storage_registry_error = storage_registry_error
+        self.storage_startup_error = storage_startup_error
         self.owners = kit.spec.owners
         self.initial_storage = initial_storage
         self.config_group_name = config_group_name
@@ -189,6 +198,13 @@ class ConfigEditorApp(App[None]):
     def compose(self) -> ComposeResult:
         """Compose the storage list and field editor."""
         yield Header()
+        if self.storage_startup_error is not None:
+            yield Static(
+                "AppRC setup is incomplete:\n"
+                f"{self.storage_startup_error}\n"
+                "Use Setup to repair the managed files.",
+                id="setup-status",
+            )
         with Horizontal():
             if self.storage_enabled:
                 yield ListView(id="storage-list")
@@ -575,6 +591,23 @@ class ConfigEditorApp(App[None]):
             return
         self.selection = ActivePathStorageSelection(root=root)
         path = self._env_file_path_for_root(root)
+        if not path.is_file():
+            self.storage_values = {}
+            self.query_one("#scope-title", Static).update(
+                f"Storage path: {root}\nMissing AppRC marker: {path}. "
+                "Use Setup before editing storage values."
+            )
+            self._clear_field_table()
+            self._set_storage_controls_enabled(
+                fields=False,
+                register_active=False,
+                rename=False,
+                location=False,
+                move=False,
+                delete=False,
+                archive=False,
+            )
+            return
         self.storage_values = read_env_file(path)
         self.query_one("#scope-title", Static).update(
             active_storage_title(root, path)
@@ -598,12 +631,39 @@ class ConfigEditorApp(App[None]):
         record = registry.selected(name)
         self.selection = LiveStorageSelection(record=record)
         path = self._env_file_path_for_root(record.root)
+        if not path.is_file():
+            self.storage_values = {}
+            self.query_one("#scope-title", Static).update(
+                f"Storage {name!r}: {record.root}\n"
+                f"Missing AppRC marker: {path}. Use Setup before editing "
+                "storage values."
+            )
+            self._clear_field_table()
+            self._set_storage_controls_enabled(
+                fields=False,
+                register_active=False,
+                rename=True,
+                location=True,
+                move=True,
+                delete=True,
+                archive=False,
+            )
+            return
         self.storage_values = read_env_file(path)
         self.query_one("#scope-title", Static).update(
             live_storage_title(record, path)
         )
         self._populate_field_table()
         self._set_live_controls_enabled(True)
+
+    async def clear_setup_status(self) -> None:
+        """Remove the persistent setup banner after successful repair.
+
+        :return: None.
+        """
+        self.storage_startup_error = None
+        for status in self.query("#setup-status"):
+            await status.remove()
 
     def _select_missing_storage(self, name: str) -> None:
         """Show a registered storage whose root no longer exists."""
@@ -866,12 +926,14 @@ class ConfigEditorApp(App[None]):
         if self.storage_registry is not None:
             return (
                 "No storages are registered. Use New to add one, or set "
-                f"{storage_selector_env_key} to a registered name.\n"
+                f"{storage_selector_env_key} to a registered name or "
+                "initialized path.\n"
                 f"CLI: {self.init_command}"
             )
         return (
             "No storage is selected. Set "
-            f"{storage_selector_env_key} to a registered name."
+            f"{storage_selector_env_key} to a registered name or initialized "
+            "path."
         )
 
     def _user_dotenv_message(self) -> str:

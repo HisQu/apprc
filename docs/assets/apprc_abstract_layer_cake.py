@@ -64,8 +64,8 @@ def build_graph() -> Digraph:
         selector.text(
             "selected_storage",
             "Selected storage",
-            "registered name",
-            "root from registry",
+            "name or path",
+            "resolved root",
             "runtime owner",
             border_color=gg.ORANGE,
         )

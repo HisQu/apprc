@@ -39,9 +39,18 @@ from apprc.interfaces.cli._typer_utils import (
 from apprc.runtime.result import BootstrapLogger
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.interfaces.cli.setup_command import run_config_setup
+from apprc.interfaces.cli._interactive_setup import (
+    prompt_storage_registration_name,
+    prompt_storage_setup_root,
+)
+from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupFlow
+from apprc.user_files.storage_roots._loading import (
+    load_optional_runtime_storage_registry,
+)
 from apprc.user_files.storage_roots._naming import suggested_storage_root
 from apprc.user_files.storage_roots.selector import (
     MissingStorageSelectorError,
+    StorageNotInitializedError,
 )
 
 if TYPE_CHECKING:
@@ -397,6 +406,17 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 options,
                 error=exc,
             )
+        except StorageNotInitializedError as exc:
+            apprc_context = self._initialize_selected_storage(
+                ctx,
+                options,
+                error=exc,
+            )
+        apprc_context = self._offer_direct_path_registration(
+            ctx,
+            options,
+            apprc_context=apprc_context,
+        )
         if apprc_context.runtime_setup_skipped:
             return CliRuntimeSession(apprc_context=apprc_context)
 
@@ -432,7 +452,8 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 param_hint=error.param_hint,
             ) from error
         suggested = suggested_storage_root(self.kit.spec.app_id)
-        if not typer.confirm(f"Create storage directory at {suggested}?"):
+        selected_root = prompt_storage_setup_root(suggested=suggested)
+        if selected_root is None:
             typer.echo("No files were changed.", err=True)
             typer.echo(
                 "Choose another path with "
@@ -444,7 +465,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
         run_config_setup(
             self.kit,
             assume_yes=True,
-            storage_root=suggested,
+            storage_root=selected_root,
             config_group_name=self.config_group_name,
         )
         return prepare_cli_runtime_context(
@@ -454,6 +475,128 @@ class CliRuntime(Generic[OptionsT, StateT]):
             setup_logging=self.setup_logging,
             logger=self.logger,
         )
+
+    def _initialize_selected_storage(
+        self,
+        ctx: typer.Context,
+        options: OptionsT,
+        *,
+        error: StorageNotInitializedError,
+    ) -> CliRuntimeContext[OptionsT]:
+        """Offer to initialize the exact storage selected for this run.
+
+        :param ctx: Active Typer context.
+        :param options: Parsed host CLI options.
+        :param error: Readiness error carrying the selected path.
+        :return: Prepared context after accepted setup.
+        :raises typer.BadParameter: If prompting is unavailable.
+        :raises typer.Exit: If the user declines.
+        """
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise typer.BadParameter(
+                str(error),
+                param_hint=error.param_hint,
+            ) from error
+        typer.echo(str(error), err=True)
+        if not typer.confirm(
+            f"Initialize AppRC storage at {error.storage_root}?"
+        ):
+            typer.echo("No files were changed.", err=True)
+            raise typer.Exit(code=1)
+        storage_name = error.storage_name or self._suggest_registration_name(
+            error.storage_root
+        )
+        try:
+            ConfigSetupFlow(self.kit).run_storage_setup(
+                error.storage_root,
+                storage_name=storage_name,
+            )
+        except ConfigSetupError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=exc.param_hint or error.param_hint,
+            ) from exc
+        return prepare_cli_runtime_context(
+            ctx,
+            self.kit,
+            options,
+            setup_logging=self.setup_logging,
+            logger=self.logger,
+        )
+
+    def _offer_direct_path_registration(
+        self,
+        ctx: typer.Context,
+        options: OptionsT,
+        *,
+        apprc_context: CliRuntimeContext[OptionsT],
+    ) -> CliRuntimeContext[OptionsT]:
+        """Offer to persist an unregistered interactive path selection.
+
+        Non-interactive callers keep using the initialized directory for this
+        process without filesystem writes.
+
+        :param ctx: Active Typer context.
+        :param options: Parsed host CLI options.
+        :param apprc_context: Successful direct-path bootstrap context.
+        :return: Original context or a refreshed named-storage context.
+        """
+        result = apprc_context.env_bootstrap
+        if (
+            result is None
+            or result.storage_selector_kind != "path"
+            or result.storage_name is not None
+            or result.storage_root is None
+            or not sys.stdin.isatty()
+            or not sys.stdout.isatty()
+        ):
+            return apprc_context
+        typer.echo(
+            f"Storage path {result.storage_root} is initialized but not "
+            "registered in apprc.toml."
+        )
+        if not typer.confirm("Register this path for future use?"):
+            typer.echo("Using the unregistered path for this process only.")
+            return apprc_context
+        suggestion = self._suggest_registration_name(result.storage_root)
+        name = prompt_storage_registration_name(suggested=suggestion)
+        if name is None:
+            typer.echo("Registration canceled; using the path once.", err=True)
+            return apprc_context
+        try:
+            ConfigSetupFlow(self.kit).run_storage_setup(
+                result.storage_root,
+                storage_name=name,
+            )
+        except ConfigSetupError as exc:
+            typer.echo(
+                f"Could not register storage: {exc}",
+                err=True,
+            )
+            typer.echo("Using the unregistered path for this process only.")
+            return apprc_context
+        typer.echo(f"Registered storage {name!r} at {result.storage_root}.")
+        return prepare_cli_runtime_context(
+            ctx,
+            self.kit,
+            options,
+            setup_logging=self.setup_logging,
+            logger=self.logger,
+        )
+
+    def _suggest_registration_name(self, storage_root: Path) -> str:
+        """Return ``default`` for the first row, otherwise the basename.
+
+        :param storage_root: Directly selected storage path.
+        :return: Suggested registry name.
+        """
+        try:
+            registry = load_optional_runtime_storage_registry(self.kit.spec)
+        except (OSError, ValueError):
+            return "default"
+        if registry is None or not registry.storages:
+            return "default"
+        return storage_root.name.strip() or "storage"
 
     def _build_state(
         self,

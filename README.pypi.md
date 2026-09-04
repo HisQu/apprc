@@ -336,7 +336,8 @@ MyRC = rc.AppRC(
 `rc.Storage()` derives `MYAPP_STORAGE` when `selector_env_key` is omitted. The
 first setup suggests `~/.local/share/myapp/storage/` on every operating system.
 The user sees that path before AppRC creates it and can pass another path with
-`config setup --storage-root PATH`.
+`config setup --storage-root PATH`. Interactive setup offers the default path,
+a custom path with directory completion, or cancellation.
 
 AppRC-managed persistence files are explicit:
 
@@ -397,7 +398,7 @@ When dotenv layers are loaded, AppRC merges values in this order:
 With `--env-file-overrides-os-environ`, explicit env files move after
 `os.environ` and win over shell exports.
 
-Storage selector resolution uses names only:
+Storage selector resolution accepts registered names and filesystem paths:
 
 1. CLI `--storage`
 2. process environment or explicit env files, in the order selected by
@@ -405,9 +406,12 @@ Storage selector resolution uses names only:
 3. `selected_storage` in `apprc.toml`
 
 `apprc.user.env`, `apprc.storage.env`, and packaged defaults never select a
-storage. Path-valued runtime selectors are rejected. Paths belong only in the
-registry, and relative roots resolve from the directory containing
-`apprc.toml`, never from the current working directory.
+storage. A direct path must be an existing directory with a readable
+`apprc.storage.env`. Relative selectors such as `./data` resolve from the
+directory containing `apprc.toml`, never from the current working directory.
+When a path matches one registered root, AppRC reports its name. An initialized
+unregistered path is usable for one run; an interactive CLI offers to register
+it, while a non-interactive caller performs no registry writes.
 
 **Note**
 

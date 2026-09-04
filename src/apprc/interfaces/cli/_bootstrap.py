@@ -59,7 +59,7 @@ def bootstrap_cli_env(
         selection still runs for storage apps when this is ``False``,
         and explicit values may still provide the storage selector used for
         selection.
-    :param storage: Optional registered name from ``--storage``.
+    :param storage: Optional registered name or path from ``--storage``.
     :param log_level: Optional CLI log-level token.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status messages.

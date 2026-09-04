@@ -46,7 +46,8 @@ def config_setup_message(
     storage_key = kit.spec.require_storage_selector_env_key()
     return (
         f"No active {kit.spec.display_name} storage is selected.\n\n"
-        f"Set {storage_key} to a registered name, pass --storage NAME, or "
+        f"Set {storage_key} to a registered name or path, pass "
+        "--storage NAME_OR_PATH, or "
         "select a default in apprc.toml.\n"
         "For guided setup:\n"
         f"  {config_command_text(kit, 'setup --yes --storage-root /absolute/path/to/storage-root', config_group_name=config_group_name)}\n\n"

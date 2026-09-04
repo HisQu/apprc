@@ -104,8 +104,8 @@
 <title>selected_storage</title>
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M212.75,-325C212.75,-325 293.25,-325 293.25,-325 299.25,-325 305.25,-331 305.25,-337 305.25,-337 305.25,-416 305.25,-416 305.25,-422 299.25,-428 293.25,-428 293.25,-428 212.75,-428 212.75,-428 206.75,-428 200.75,-422 200.75,-416 200.75,-416 200.75,-337 200.75,-337 200.75,-331 206.75,-325 212.75,-325"/>
 <text xml:space="preserve" text-anchor="start" x="211.75" y="-408.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Selected storage</text>
-<text xml:space="preserve" text-anchor="start" x="205.75" y="-377.5" font-family="sans-serif" font-size="10.00">registered name</text>
-<text xml:space="preserve" text-anchor="start" x="205.75" y="-355.25" font-family="sans-serif" font-size="10.00">root from registry</text>
+<text xml:space="preserve" text-anchor="start" x="205.75" y="-377.5" font-family="sans-serif" font-size="10.00">name or path</text>
+<text xml:space="preserve" text-anchor="start" x="205.75" y="-355.25" font-family="sans-serif" font-size="10.00">resolved root</text>
 <text xml:space="preserve" text-anchor="start" x="205.75" y="-333" font-family="sans-serif" font-size="10.00">runtime owner</text>
 <path fill="none" stroke="#f4a261" d="M212.75,-325C212.75,-325 293.25,-325 293.25,-325 299.25,-325 305.25,-331 305.25,-337 305.25,-337 305.25,-416 305.25,-416 305.25,-422 299.25,-428 293.25,-428 293.25,-428 212.75,-428 212.75,-428 206.75,-428 200.75,-422 200.75,-416 200.75,-416 200.75,-337 200.75,-337 200.75,-331 206.75,-325 212.75,-325"/>
 </g>

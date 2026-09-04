@@ -15,9 +15,16 @@ from apprc.user_files.storage_roots.archive import (
 from apprc.user_files.storage_roots.paths import normalize_storage_root_path
 from apprc.user_files.storage_roots.registry import (
     record_archived_storage,
+    register_restored_storage,
     remove_archived_storage,
 )
-from apprc.interfaces.tui._primitives import ConfirmScreen, PathInputScreen
+from apprc.user_files.storage_roots._naming import validate_storage_name
+from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
+from apprc.interfaces.tui._primitives import (
+    ConfirmScreen,
+    PathInputScreen,
+    StorageNameScreen,
+)
 from apprc.interfaces.tui._styles import (
     lines_text,
     path_markup,
@@ -86,6 +93,33 @@ class ConfigEditorStorageWorkflows(
             )
             return
         restored_name = default_name or storage_root_name_from_archive(archive)
+        name_result = await self.editor.push_screen_wait(
+            StorageNameScreen(
+                default_name=self.editor._suggest_storage_name(
+                    Path(restored_name)
+                ),
+                message="Choose the restored storage name.",
+            )
+        )
+        if name_result is None:
+            return
+        name = name_result.name
+        registry = self.editor._require_storage_registry()
+        if registry is None:
+            return
+        try:
+            validate_storage_name(name)
+            if name in registry.storages:
+                raise ValueError(
+                    f"Storage name {name!r} is already registered."
+                )
+            if name in registry.archived_storages and name != default_name:
+                raise ValueError(
+                    f"Storage name {name!r} belongs to another archive."
+                )
+        except ValueError as exc:
+            self.editor.notify(str(exc), severity="error", markup=False)
+            return
         destination = default_destination or archive.parent / restored_name
         result = await self.editor.push_screen_wait(
             PathInputScreen(
@@ -124,19 +158,38 @@ class ConfigEditorStorageWorkflows(
             if action != "confirm":
                 return
             replace_existing = True
+
+        def register_installed_storage(installed_root: Path) -> None:
+            """Commit registry state while extraction can still roll back.
+
+            :param installed_root: Newly installed archive destination.
+            :return: None.
+            """
+            register_restored_storage(
+                name=name,
+                root=installed_root,
+                path=registry.path,
+                archived_name=default_name,
+                storage_dotenv_filename=(
+                    self.editor.kit.spec.storage_dotenv_filename
+                ),
+            )
+
         try:
             await self.run_extract_progress(
                 archive_path=archive,
                 destination_root=normalized_destination,
                 replace_existing=replace_existing,
+                after_install=register_installed_storage,
             )
-        except ValueError as exc:
+        except (OSError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        await self.register_storage_directory_flow(
-            normalized_destination,
-            default_name=self.editor._suggest_storage_name(Path(restored_name)),
+        self.editor.storage_registry = load_storage_registry_or_empty(
+            registry.path
         )
+        await self.editor._refresh_storage_list(select_name=name)
+        self.editor.notify(f"Restored storage {name!r}")
 
     async def restore_or_prune_archived_storage(self, name: str) -> None:
         """Restore an archived row or delete it when its file is gone.

@@ -22,11 +22,18 @@ from apprc.user_files.storage_roots.paths import (
     normalize_storage_root_path,
 )
 from apprc.user_files.storage_roots.registry import suggested_storage_root
+from apprc.user_files.storage_roots._loading import (
+    load_optional_runtime_storage_registry,
+)
 from apprc.interfaces.tui._primitives import (
     ConfirmScreen,
     PathInputScreen,
 )
 from apprc.interfaces.tui._styles import lines_text, path_text
+from apprc.interfaces.tui.storage.selection import (
+    LiveStorageSelection,
+    MissingStorageSelection,
+)
 
 if TYPE_CHECKING:
     from apprc.interfaces.tui.editor.app import ConfigEditorApp
@@ -72,9 +79,11 @@ class ConfigEditorSetupWorkflow:
         if storage_root is None:
             return
         try:
+            storage_name = self._storage_name_for_setup(storage_root)
             result = await asyncio.to_thread(
                 ConfigSetupFlow(self.editor.kit).run_storage_setup,
                 storage_root,
+                storage_name=storage_name,
             )
         except (ConfigSetupError, OSError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -87,6 +96,11 @@ class ConfigEditorSetupWorkflow:
             return
 
         self.editor.active_storage_root = result.active_storage_root
+        self.editor.storage_registry = load_optional_runtime_storage_registry(
+            self.editor.kit.spec
+        )
+        self.editor.storage_registry_error = None
+        await self.editor.clear_setup_status()
         self.editor.user_dotenv_values = (
             read_env_file(result.user_dotenv)
             if result.user_dotenv is not None
@@ -98,6 +112,30 @@ class ConfigEditorSetupWorkflow:
             storage_dotenv=result.storage_dotenv,
             user_dotenv=result.user_dotenv,
         )
+
+    def _storage_name_for_setup(self, storage_root: Path) -> str:
+        """Choose the registry name that setup should initialize.
+
+        :param storage_root: Approved setup directory.
+        :return: Existing associated name or a stable new suggestion.
+        """
+        selection = self.editor.selection
+        if isinstance(
+            selection, LiveStorageSelection | MissingStorageSelection
+        ):
+            return selection.record.name
+        registry = self.editor.storage_registry
+        if registry is None or not registry.storages:
+            return "default"
+        resolved_root = storage_root.expanduser().resolve()
+        matches = [
+            name
+            for name, record in registry.storages.items()
+            if record.root.expanduser().resolve() == resolved_root
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        return self.editor._suggest_storage_name(resolved_root)
 
     async def _confirm_storage_root(self, path: Path) -> Path | None:
         """Validate a setup path and confirm filesystem changes.
@@ -183,6 +221,7 @@ class ConfigEditorSetupWorkflow:
             return
         if result.user_dotenv is not None:
             self.editor.user_dotenv_values = read_env_file(result.user_dotenv)
+        await self.editor.clear_setup_status()
         await self.editor._refresh_storage_list()
         await self.editor.push_screen_wait(
             ConfirmScreen(

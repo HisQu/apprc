@@ -61,7 +61,7 @@ StorageOption: TypeAlias = Annotated[
     str | None,
     typer.Option(
         "--storage",
-        help=("Registered storage name for this CLI run."),
+        help=("Registered storage name or filesystem path for this CLI run."),
     ),
 ]
 LogLevelOption: TypeAlias = Annotated[

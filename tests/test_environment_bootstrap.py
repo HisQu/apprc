@@ -44,18 +44,126 @@ def _register(kit: AppConfigKit, *, name: str, root: Path) -> None:
     )
 
 
-def test_bootstrap_rejects_path_valued_runtime_selector(tmp_path: Path) -> None:
+def test_bootstrap_associates_registered_path_selector(tmp_path: Path) -> None:
     kit = _kit(tmp_path)
     root = tmp_path / "storage"
     _register(kit, name="default", root=root)
 
-    with pytest.raises(StorageSelectorError, match="registered storage name"):
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=str(root),
+    )
+
+    assert result.storage_selector_kind == "path"
+    assert result.storage_name == "default"
+    assert result.storage_root == root.resolve()
+
+
+def test_bootstrap_uses_initialized_unregistered_path_without_registry(
+    tmp_path: Path,
+) -> None:
+    kit = _kit(tmp_path)
+    root = tmp_path / "unregistered"
+    root.mkdir()
+    kit.spec.storage_dotenv_path(root).write_text("", encoding="utf-8")
+
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=str(root),
+    )
+
+    assert result.storage_selector_kind == "path"
+    assert result.storage_name is None
+    assert result.storage_root == root.resolve()
+    assert result.storage_count == 0
+    assert not kit.spec.preferred_apprc_toml_path().exists()
+
+
+def test_bootstrap_resolves_relative_path_from_apprc_toml(
+    tmp_path: Path,
+) -> None:
+    kit = _kit(tmp_path)
+    root = tmp_path / "storage"
+    root.mkdir()
+    kit.spec.storage_dotenv_path(root).write_text("", encoding="utf-8")
+
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage="../storage",
+    )
+
+    assert result.storage_root == root.resolve()
+
+
+def test_bootstrap_rejects_path_without_storage_dotenv(tmp_path: Path) -> None:
+    kit = _kit(tmp_path)
+    root = tmp_path / "uninitialized"
+    root.mkdir()
+
+    with pytest.raises(
+        StorageSelectorError, match="missing.*apprc.storage.env"
+    ):
         kit.bootstrap(
             env_files=(),
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
             storage=str(root),
         )
+
+
+def test_bootstrap_uses_direct_path_when_registry_is_invalid(
+    tmp_path: Path,
+) -> None:
+    kit = _kit(tmp_path)
+    root = tmp_path / "storage"
+    root.mkdir()
+    kit.spec.storage_dotenv_path(root).write_text("", encoding="utf-8")
+    registry = kit.spec.preferred_apprc_toml_path()
+    registry.parent.mkdir(parents=True)
+    registry.write_text("invalid = true\n", encoding="utf-8")
+
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=str(root),
+    )
+
+    assert result.storage_root == root.resolve()
+    assert result.storage_name is None
+
+
+def test_bootstrap_does_not_choose_between_duplicate_root_aliases(
+    tmp_path: Path,
+) -> None:
+    kit = _kit(tmp_path)
+    root = tmp_path / "storage"
+    root.mkdir()
+    kit.spec.storage_dotenv_path(root).write_text("", encoding="utf-8")
+    registry = kit.spec.preferred_apprc_toml_path()
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        'selected_storage = "alpha"\n\n'
+        f"[storages.alpha]\nroot = {json.dumps(str(root))}\n\n"
+        f"[storages.beta]\nroot = {json.dumps(str(root))}\n",
+        encoding="utf-8",
+    )
+
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=str(root),
+    )
+
+    assert result.storage_name is None
+    assert result.storage_selector_kind == "path"
 
 
 def test_bootstrap_uses_first_registered_storage_as_toml_default(
@@ -129,6 +237,67 @@ def test_bootstrap_preserves_explicit_env_override_policy(
     assert result.storage_name == expected
 
 
+def test_repeated_bootstrap_removes_unchanged_prior_writes(
+    tmp_path: Path,
+) -> None:
+    kit = _kit(tmp_path)
+    alpha = tmp_path / "alpha"
+    beta = tmp_path / "beta"
+    _register(kit, name="alpha", root=alpha)
+    _register(kit, name="beta", root=beta)
+    kit.spec.storage_dotenv_path(alpha).write_text(
+        "APPRC_EXAMPLE_APP_PROFILE=alpha\n",
+        encoding="utf-8",
+    )
+    kit.spec.storage_dotenv_path(beta).write_text(
+        "APPRC_EXAMPLE_APP_PROFILE=beta\n",
+        encoding="utf-8",
+    )
+
+    kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage="alpha",
+    )
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage="beta",
+    )
+
+    assert result.storage_name == "beta"
+    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "beta"
+
+
+def test_repeated_bootstrap_preserves_caller_environment_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    kit = _kit(tmp_path)
+    _register(kit, name="alpha", root=tmp_path / "alpha")
+    _register(kit, name="beta", root=tmp_path / "beta")
+
+    kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage="alpha",
+    )
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "beta")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_PROFILE", "caller")
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.storage_name == "beta"
+    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "caller"
+
+
 def test_user_dotenv_does_not_select_storage(tmp_path: Path) -> None:
     kit = _kit(tmp_path)
     _register(kit, name="alpha", root=tmp_path / "alpha")
@@ -186,13 +355,17 @@ def test_bootstrap_rejects_missing_registered_root(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(StorageSelectorError, match="does not exist"):
+    with pytest.raises(
+        StorageSelectorError, match="does not exist"
+    ) as exc_info:
         kit.bootstrap(
             env_files=(),
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
             storage=None,
         )
+
+    assert str(tmp_path / "missing") in str(exc_info.value)
 
 
 def test_bootstrap_rejects_registered_root_file(tmp_path: Path) -> None:

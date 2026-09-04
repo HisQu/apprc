@@ -51,9 +51,13 @@ from apprc.user_files.storage_roots._loading import (
     load_optional_runtime_storage_registry,
 )
 from apprc.user_files.storage_roots.selector import (
+    StorageSelection,
+    StorageNotInitializedError,
     StorageSelectorError,
     missing_storage_selector_error,
     resolve_active_storage_selection,
+    select_storage_selector,
+    storage_selector_is_path_like,
 )
 
 LOG = logging.getLogger(__name__)
@@ -93,7 +97,8 @@ def bootstrap_env(
         ``apprc.user.env``, storage ``apprc.storage.env``, and explicit dotenv
         values should be merged into this process. Storage selection still
         runs for storage apps when this is ``False``.
-    :param storage: Optional registered storage name from ``--storage``.
+    :param storage: Optional registered storage name or filesystem path from
+        ``--storage``.
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
     """
@@ -139,14 +144,35 @@ def bootstrap_env(
     storage_selector_env_key = spec.storage_selector_env_key
     if spec.uses_storage():
         storage_selector_env_key = spec.require_storage_selector_env_key()
-        registry = load_optional_runtime_storage_registry(
-            spec,
-            proc_env=selector_env,
-        )
-        if registry is None:
-            raise missing_storage_selector_error(storage_selector_env_key)
+        try:
+            registry = load_optional_runtime_storage_registry(
+                spec,
+                proc_env=selector_env,
+            )
+        except (AppRCDirectoryError, ValueError) as exc:
+            explicit_selector = select_storage_selector(
+                storage=storage,
+                original_env=original_env,
+                explicit_values=explicit_values,
+                env_file_overrides_os_environ=(env_file_overrides_os_environ),
+                storage_selector_env_key=storage_selector_env_key,
+                selected_storage=None,
+            )
+            if explicit_selector is None or not storage_selector_is_path_like(
+                explicit_selector[1]
+            ):
+                raise
+            registry = None
+            emit.info(
+                "AppRC could not read %s while resolving an explicit "
+                "storage path; using the path without registry association: "
+                "%s",
+                paths.apprc_toml,
+                exc,
+            )
         selection = resolve_active_storage_selection(
             registry=registry,
+            apprc_toml_path=paths.apprc_toml,
             storage=storage,
             storage_selector_env_key=storage_selector_env_key,
             original_env=original_env,
@@ -164,16 +190,18 @@ def bootstrap_env(
         _validate_runtime_storage_root(
             spec=spec,
             storage_root=active_storage_root,
+            storage_name=selection.storage_name,
             param_hint=selection.source,
         )
         active_storage_dotenv = spec.storage_dotenv_path(active_storage_root)
+        _log_storage_association(emit, selection=selection)
         emit.info(
             "AppRC bootstrap resolved storage: name=%s root=%s "
             "registry_path=%s registry_storage_count=%s",
             selection.storage_name,
             active_storage_root,
-            registry.path,
-            len(registry.storages),
+            registry.path if registry is not None else None,
+            len(registry.storages) if registry is not None else 0,
         )
     else:
         emit.info("AppRC bootstrap using user dotenv: %s", user_dotenv_path)
@@ -275,6 +303,9 @@ def bootstrap_env(
         storage_count=len(registry.storages) if registry is not None else 0,
         apprc_dir=paths.root,
         user_dotenv=loaded_user_dotenv,
+        storage_selector_kind=(
+            selection.selector_kind if selection is not None else None
+        ),
     )
 
 
@@ -282,6 +313,7 @@ def _validate_runtime_storage_root(
     *,
     spec: AppConfigSpec,
     storage_root: Path,
+    storage_name: str | None,
     param_hint: str,
 ) -> None:
     """Reject a selected root that AppRC setup has not prepared.
@@ -292,24 +324,89 @@ def _validate_runtime_storage_root(
 
     :param spec: Application contract used to build recovery instructions.
     :param storage_root: Resolved path selected for this process.
+    :param storage_name: Associated registry name, when known.
     :param param_hint: Selector source shown by CLI error rendering.
     :return: None.
-    :raises StorageSelectorError: If the path is missing or is not a directory.
+    :raises StorageSelectorError: If the path or AppRC marker is unusable.
     """
     setup_command = (
         f"{spec.config_command_name()} config setup --yes "
-        "--storage-root STORAGE_ROOT"
+        f"--storage-root {storage_root}"
     )
     if not storage_root.exists():
-        raise StorageSelectorError(
+        raise StorageNotInitializedError(
             f"Selected {spec.display_name} storage root does not exist: "
             f"{storage_root}. Run `{setup_command}` before runtime use.",
+            storage_root=storage_root,
+            storage_name=storage_name,
             param_hint=param_hint,
         )
     if not storage_root.is_dir():
-        raise StorageSelectorError(
+        raise StorageNotInitializedError(
             f"Selected {spec.display_name} storage root is not a directory: "
             f"{storage_root}. Repoint or move its registered storage, then run "
             f"`{setup_command}`.",
+            storage_root=storage_root,
+            storage_name=storage_name,
             param_hint=param_hint,
         )
+    storage_dotenv = spec.storage_dotenv_path(storage_root)
+    if not storage_dotenv.is_file():
+        raise StorageNotInitializedError(
+            f"Selected {spec.display_name} storage directory is not "
+            f"initialized by AppRC: missing {storage_dotenv}. Run "
+            f"`{setup_command}` before runtime use.",
+            storage_root=storage_root,
+            storage_name=storage_name,
+            param_hint=param_hint,
+        )
+    try:
+        with storage_dotenv.open("r", encoding="utf-8"):
+            pass
+    except OSError as exc:
+        raise StorageNotInitializedError(
+            f"Selected {spec.display_name} storage dotenv is not readable: "
+            f"{storage_dotenv}: {exc}",
+            storage_root=storage_root,
+            storage_name=storage_name,
+            param_hint=param_hint,
+        ) from exc
+
+
+def _log_storage_association(
+    emit: BootstrapLogger,
+    *,
+    selection: StorageSelection,
+) -> None:
+    """Explain how the structural selector maps to a storage root.
+
+    :param emit: Application logger.
+    :param selection: Resolved active storage.
+    :return: None.
+    """
+    if selection.selector_kind == "name":
+        emit.info(
+            "AppRC storage name %r is associated with path %s.",
+            selection.storage_name,
+            selection.root,
+        )
+        return
+    if selection.storage_name is not None:
+        emit.info(
+            "AppRC storage path %s is associated with registered name %r.",
+            selection.root,
+            selection.storage_name,
+        )
+        return
+    if selection.matching_storage_names:
+        emit.info(
+            "AppRC storage path %s matches multiple registered names %s; "
+            "using it without a name association.",
+            selection.root,
+            ", ".join(selection.matching_storage_names),
+        )
+        return
+    emit.info(
+        "AppRC is using unregistered storage path %s for this process only.",
+        selection.root,
+    )

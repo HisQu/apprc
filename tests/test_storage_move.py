@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -36,8 +37,14 @@ def test_move_resolves_relative_destination_from_apprc_toml(
 def test_move_rejects_root_shared_by_another_storage(tmp_path: Path) -> None:
     registry_path = tmp_path / "apprc.toml"
     source = tmp_path / "source"
-    register_storage(name="alpha", root=source, path=registry_path)
-    register_storage(name="beta", root=source, path=registry_path)
+    source.mkdir()
+    (source / "apprc.storage.env").write_text("", encoding="utf-8")
+    registry_path.write_text(
+        'selected_storage = "alpha"\n\n'
+        f"[storages.alpha]\nroot = {json.dumps(str(source))}\n\n"
+        f"[storages.beta]\nroot = {json.dumps(str(source))}\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(StorageMoveError, match="also registered"):
         move_storage(

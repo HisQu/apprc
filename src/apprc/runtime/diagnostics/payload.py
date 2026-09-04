@@ -51,6 +51,7 @@ class ConfigDoctorPayload:
     selected_storage: str | None
     selected_storage_source: str | None
     selected_storage_selector: str | None
+    selected_storage_selector_kind: str | None
     selected_storage_root: str | None
     selected_storage_root_exists: bool | None
     selected_storage_dotenv: str | None
@@ -156,6 +157,9 @@ def build_config_doctor_payload(
         selected_storage=selection.storage_name if selection else None,
         selected_storage_source=selection.source if selection else None,
         selected_storage_selector=selection.raw_value if selection else None,
+        selected_storage_selector_kind=(
+            selection.selector_kind if selection else None
+        ),
         selected_storage_root=str(selected_root) if selected_root else None,
         selected_storage_root_exists=storage_diagnosis.storage_root_exists,
         selected_storage_dotenv=(

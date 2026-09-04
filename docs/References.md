@@ -68,7 +68,7 @@ MyRC = rc.AppRC(
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
-| `selector_env_key` | derived `<APP>_STORAGE` | Environment key that may select a registered storage name. |
+| `selector_env_key` | derived `<APP>_STORAGE` | Environment key that may select a registered storage name or filesystem path. |
 
 Managed filenames are fixed. There is no filename or path-abstraction API.
 
@@ -105,13 +105,19 @@ For `app_id="myapp"`:
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `MYAPP_APPRC_DIR` | No | Relocate the complete AppRC directory. |
-| `MYAPP_STORAGE` | No when `selected_storage` exists | Override the selected storage with a registered name. Paths are rejected. |
+| `MYAPP_STORAGE` | No when `selected_storage` exists | Override the selected storage with a registered name or initialized filesystem path. |
 | App-declared keys | Defined by each field | Typed runtime settings such as `MYAPP_PROFILE`. |
 
 `MYAPP_STORAGE` is structural input during selection. After bootstrap resolves
 the name, an app config field using that same key receives the concrete root.
 Do not put storage selectors in `apprc.user.env`, `apprc.storage.env`, or
 packaged defaults.
+
+AppRC resolves `MYAPP_APPRC_DIR` first because it determines the base for
+`apprc.toml` and relative storage paths. The variable is optional unless the
+user relocates that directory. `MYAPP_STORAGE` exists only for applications
+that declare `storage=rc.Storage()`; it is optional when `selected_storage` is
+present and otherwise must provide a registered name or initialized path.
 
 ## Runtime precedence
 
@@ -129,8 +135,8 @@ Later rows win unless noted:
 
 Storage selection has a separate, narrower order:
 
-1. `--storage NAME`
-2. process or explicit-dotenv `<APP>_STORAGE=NAME`, using the same conditional
+1. `--storage NAME_OR_PATH`
+2. process or explicit-dotenv `<APP>_STORAGE=NAME_OR_PATH`, using the same conditional
    precedence option
 3. `selected_storage` in `apprc.toml`
 
@@ -150,6 +156,11 @@ Provenance emitted for dotenv values uses `shell_dotenv_defaults`,
 
 Individual storage names are user-maintained data. Python code declares only
 whether storage is supported.
+
+`add` and `repoint` reject duplicate resolved roots. Existing registries with
+aliases remain readable and produce a doctor warning. A direct path resolves
+relative to `apprc.toml`, requires a readable `apprc.storage.env`, and is
+associated with a name only when exactly one registry entry matches.
 
 ## Generated CLI commands
 
@@ -181,20 +192,22 @@ any `config storage ...` commands and does not accept `--scope storage`.
 | Status | Meaning |
 | --- | --- |
 | `runnable` | The selected runtime inputs are usable. |
-| `env_not_set` | A storage app has no selected name. |
+| `env_not_set` | A storage app has no selected name or path. |
 | `storage_not_ready` | The selected root or storage dotenv is not ready. |
 | `user_dotenv_not_ready` | The fixed user dotenv is missing or unreadable. |
 | `storage_registry_not_ready` | The storage registry is missing, unreadable, or invalid. |
 
 Machine-readable diagnostics use file-specific keys including
 `storage_enabled`, `apprc_dir`, `user_dotenv`, `apprc_toml`,
-`selected_storage`, `selected_storage_root`, and `selected_storage_dotenv`.
+`selected_storage`, `selected_storage_selector_kind`,
+`selected_storage_root`, and `selected_storage_dotenv`.
 
 ## Dependency surfaces
 
-The base package includes `python-dotenv`, `typed-settings`, `rich`, and
-`typer`. It does not depend on `platformdirs`. Install `apprc[tui]` for
-Textual. Development tools are in the `dev` dependency group; the package
+The base package includes `python-dotenv`, `prompt-toolkit`, `typed-settings`,
+`rich`, and `typer`. `prompt-toolkit` provides cross-platform path completion
+during setup. AppRC does not depend on `platformdirs`. Install `apprc[tui]`
+for Textual. Development tools are in the `dev` dependency group; the package
 works without `uv`.
 
 ## Documentation assets

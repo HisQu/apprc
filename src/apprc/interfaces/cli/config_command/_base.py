@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -38,7 +39,12 @@ from apprc.user_files.storage_roots._loading import (
     load_optional_runtime_storage_registry,
 )
 from apprc.user_files.storage_roots.registry import StorageRegistry
-from apprc.user_files.storage_roots.selector import StorageSelectorError
+from apprc.user_files.storage_roots.selector import (
+    StorageSelectorError,
+    resolve_storage_selector_value,
+    select_storage_selector,
+    storage_selector_is_path_like,
+)
 
 
 class ConfigCommandBase:
@@ -267,15 +273,35 @@ class ConfigCommandBase:
                     context.env_file_overrides_os_environ
                 ),
             )
-            if storage_root is None or not storage_root.is_dir():
-                return None
             return storage_root
         except AppRCDirectoryError as exc:
             raise self.apprc_dir_bad_parameter(exc) from exc
-        except StorageSelectorError:
-            return None
-        except ValueError:
-            return None
+        except (StorageSelectorError, ValueError):
+            selector_key = self.kit.spec.require_storage_selector_env_key()
+            selected = select_storage_selector(
+                storage=None,
+                original_env=os.environ,
+                explicit_values=context.explicit_values,
+                env_file_overrides_os_environ=(
+                    context.env_file_overrides_os_environ
+                ),
+                storage_selector_env_key=selector_key,
+                selected_storage=None,
+            )
+            if selected is None or not storage_selector_is_path_like(
+                selected[1]
+            ):
+                return None
+            selection = resolve_storage_selector_value(
+                registry=None,
+                apprc_toml_path=self.kit.spec.preferred_apprc_toml_path(
+                    context.proc_env
+                ),
+                raw_value=selected[1],
+                storage_selector_env_key=selector_key,
+                source=selected[0],
+            )
+            return selection.root
 
     def active_storage_root_for_editor(
         self,
@@ -325,6 +351,7 @@ class ConfigCommandBase:
         storage_registry: StorageRegistry | None,
         storage_registry_error: str | None,
         active_storage_root: Path | None,
+        storage_startup_error: str | None = None,
         selector_context: ConfigSelectorContext | None = None,
     ) -> None:
         """Create and run the Textual config editor."""
@@ -333,6 +360,7 @@ class ConfigCommandBase:
             storage_registry=storage_registry,
             storage_registry_error=storage_registry_error,
             active_storage_root=active_storage_root,
+            storage_startup_error=storage_startup_error,
             selector_context=selector_context,
         )
 

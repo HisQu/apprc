@@ -5,7 +5,7 @@ from __future__ import annotations
 # == Standard Library ===========================================
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -114,24 +114,35 @@ def diagnose_storage(
             registry=registry_inspection,
         )
 
-    issues = list(registry_inspection.issues)
+    issues: list[str] = []
     missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
     registry = registry_inspection.registry
     selector_key = kit.spec.require_storage_selector_env_key()
-    if registry is not None:
-        try:
-            selection = resolve_active_storage_selection(
-                registry=registry,
-                storage=storage,
-                storage_selector_env_key=selector_key,
-                original_env=os.environ,
-                explicit_values=explicit_values,
-                env_file_overrides_os_environ=(env_file_overrides_os_environ),
-            )
-        except StorageSelectorError as exc:
-            issues.append(str(exc))
-    if registry is not None and selection is None:
+    try:
+        selection = resolve_active_storage_selection(
+            registry=registry,
+            apprc_toml_path=registry_inspection.path,
+            storage=storage,
+            storage_selector_env_key=selector_key,
+            original_env=os.environ,
+            explicit_values=explicit_values,
+            env_file_overrides_os_environ=(env_file_overrides_os_environ),
+        )
+    except StorageSelectorError as exc:
+        issues.append(str(exc))
+    if selection is not None and selection.selector_kind == "path":
+        registry_inspection = replace(
+            registry_inspection,
+            issues=[],
+            warnings=[
+                *registry_inspection.warnings,
+                *registry_inspection.issues,
+            ],
+        )
+    else:
+        issues = [*registry_inspection.issues, *issues]
+    if selection is None:
         missing_env_keys.append(selector_key)
         issues.append(
             _missing_env_issue(

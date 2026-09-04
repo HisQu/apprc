@@ -10,7 +10,7 @@
 <title>apprc_storage_config_locations</title>
 <g id="clust1" class="cluster">
 <title>cluster_startup</title>
-<path fill="#8b5cf6" fill-opacity="0.098039" stroke="#8b5cf6" stroke-width="1.8" d="M274.55,-273.9C274.55,-273.9 673.4,-273.9 673.4,-273.9 679.4,-273.9 685.4,-279.9 685.4,-285.9 685.4,-285.9 685.4,-342.9 685.4,-342.9 685.4,-348.9 679.4,-354.9 673.4,-354.9 673.4,-354.9 274.55,-354.9 274.55,-354.9 268.55,-354.9 262.55,-348.9 262.55,-342.9 262.55,-342.9 262.55,-285.9 262.55,-285.9 262.55,-279.9 268.55,-273.9 274.55,-273.9"/>
+<path fill="#8b5cf6" fill-opacity="0.098039" stroke="#8b5cf6" stroke-width="1.8" d="M274.55,-273.9C274.55,-273.9 673.03,-273.9 673.03,-273.9 679.03,-273.9 685.03,-279.9 685.03,-285.9 685.03,-285.9 685.03,-342.9 685.03,-342.9 685.03,-348.9 679.03,-354.9 673.03,-354.9 673.03,-354.9 274.55,-354.9 274.55,-354.9 268.55,-354.9 262.55,-348.9 262.55,-342.9 262.55,-342.9 262.55,-285.9 262.55,-285.9 262.55,-279.9 268.55,-273.9 274.55,-273.9"/>
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_runtime_read</title>
@@ -31,12 +31,12 @@
 <!-- storage_choice&#45;&gt;storage_choice_address_book_route_0 -->
 <g id="edge2" class="edge">
 <title>storage_choice:s&#45;&gt;storage_choice_address_book_route_0</title>
-<path fill="none" stroke="#8b5cf6" stroke-width="2.3" d="M618.28,-273.91C618.28,-273.91 649.92,-233.56 653.87,-228.52"/>
+<path fill="none" stroke="#8b5cf6" stroke-width="2.3" d="M618.28,-274.14C618.28,-274.14 649.92,-233.59 653.87,-228.52"/>
 </g>
 <!-- storage_choice&#45;&gt;storage_choice_project_b_env_route_0 -->
 <g id="edge7" class="edge">
 <title>storage_choice:s&#45;&gt;storage_choice_project_b_env_route_0</title>
-<path fill="none" stroke="#32bc00" stroke-width="2.3" d="M618.28,-273.91C618.28,-273.91 472.01,-236.17 460.58,-233.22"/>
+<path fill="none" stroke="#32bc00" stroke-width="2.3" d="M618.28,-274.14C618.28,-274.14 472.01,-236.19 460.58,-233.22"/>
 </g>
 <!-- read_stack&#45;&gt;runtime_output -->
 <g id="edge9" class="edge">
@@ -101,12 +101,12 @@
 <!-- storage_choice -->
 <g id="node3" class="node">
 <title>storage_choice</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M563.15,-273.9C563.15,-273.9 673.4,-273.9 673.4,-273.9 679.4,-273.9 685.4,-279.9 685.4,-285.9 685.4,-285.9 685.4,-342.9 685.4,-342.9 685.4,-348.9 679.4,-354.9 673.4,-354.9 673.4,-354.9 563.15,-354.9 563.15,-354.9 557.15,-354.9 551.15,-348.9 551.15,-342.9 551.15,-342.9 551.15,-285.9 551.15,-285.9 551.15,-279.9 557.15,-273.9 563.15,-273.9"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M563.53,-273.9C563.53,-273.9 673.03,-273.9 673.03,-273.9 679.03,-273.9 685.03,-279.9 685.03,-285.9 685.03,-285.9 685.03,-342.9 685.03,-342.9 685.03,-348.9 679.03,-354.9 673.03,-354.9 673.03,-354.9 563.53,-354.9 563.53,-354.9 557.53,-354.9 551.53,-348.9 551.53,-342.9 551.53,-342.9 551.53,-285.9 551.53,-285.9 551.53,-279.9 557.53,-273.9 563.53,-273.9"/>
 <text xml:space="preserve" text-anchor="start" x="581.9" y="-340.4" font-family="sans-serif" font-weight="bold" font-size="10.00">storage choice</text>
 <text xml:space="preserve" text-anchor="start" x="554.53" y="-316.4" font-family="sans-serif" font-size="10.00">&#45;&#45;storage / &lt;APP&gt;_STORAGE</text>
-<text xml:space="preserve" text-anchor="start" x="569.15" y="-298.15" font-family="sans-serif" font-size="10.00">registered name only</text>
-<text xml:space="preserve" text-anchor="start" x="554.15" y="-279.9" font-family="sans-serif" font-size="10.00">root comes from apprc.toml</text>
-<path fill="none" stroke="#8b5cf6" d="M563.15,-273.9C563.15,-273.9 673.4,-273.9 673.4,-273.9 679.4,-273.9 685.4,-279.9 685.4,-285.9 685.4,-285.9 685.4,-342.9 685.4,-342.9 685.4,-348.9 679.4,-354.9 673.4,-354.9 673.4,-354.9 563.15,-354.9 563.15,-354.9 557.15,-354.9 551.15,-348.9 551.15,-342.9 551.15,-342.9 551.15,-285.9 551.15,-285.9 551.15,-279.9 557.15,-273.9 563.15,-273.9"/>
+<text xml:space="preserve" text-anchor="start" x="562.03" y="-298.15" font-family="sans-serif" font-size="10.00">registered name or path</text>
+<text xml:space="preserve" text-anchor="start" x="560.9" y="-279.9" font-family="sans-serif" font-size="10.00">path may bypass registry</text>
+<path fill="none" stroke="#8b5cf6" d="M563.53,-273.9C563.53,-273.9 673.03,-273.9 673.03,-273.9 679.03,-273.9 685.03,-279.9 685.03,-285.9 685.03,-285.9 685.03,-342.9 685.03,-342.9 685.03,-348.9 679.03,-354.9 673.03,-354.9 673.03,-354.9 563.53,-354.9 563.53,-354.9 557.53,-354.9 551.53,-348.9 551.53,-342.9 551.53,-342.9 551.53,-285.9 551.53,-285.9 551.53,-279.9 557.53,-273.9 563.53,-273.9"/>
 </g>
 <!-- read_stack -->
 <g id="node4" class="node">

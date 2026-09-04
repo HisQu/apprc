@@ -18,7 +18,6 @@ from apprc.interfaces.tui._styles import (
     lines_text,
     path_markup,
     path_text,
-    storage_name_text,
 )
 from apprc.interfaces.tui.editor.storage_base import StorageWorkflowBase
 from apprc.interfaces.tui.storage.selection import ActivePathStorageSelection
@@ -78,24 +77,14 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
         name = name_result.name
         if name in registry.storages:
             existing = registry.selected(name)
-            action = await self.editor.push_screen_wait(
-                ConfirmScreen(
-                    title="Replace storage entry?",
-                    message=lines_text(
-                        Text.assemble(
-                            storage_name_text(repr(name)),
-                            " is already registered at:",
-                        ),
-                        path_text(existing.root),
-                        "",
-                        "Replace it with:",
-                        path_text(guarded_root),
-                    ),
-                    actions=(("replace", "Replace", "warning"),),
-                )
+            self.editor.notify(
+                f"Storage {name!r} is already registered at "
+                f"{existing.root}. Choose another name, or use Location "
+                "to repoint it.",
+                severity="error",
+                markup=False,
             )
-            if action != "replace":
-                return
+            return
         try:
             self.editor.storage_registry = await asyncio.to_thread(
                 register_storage,

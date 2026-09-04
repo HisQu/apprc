@@ -214,10 +214,9 @@ def active_storage_root_from_state(
         kit.spec,
         proc_env=selector_env,
     )
-    if registry is None:
-        return None
     selection = resolve_active_storage_selection(
         registry=registry,
+        apprc_toml_path=kit.spec.preferred_apprc_toml_path(selector_env),
         storage=storage_state.storage,
         storage_selector_env_key=kit.spec.require_storage_selector_env_key(),
         original_env=os.environ,
@@ -260,10 +259,9 @@ def active_storage_root_from_env(
             kit.spec,
             proc_env=selector_env,
         )
-    if selected_registry is None:
-        return None
     selection = resolve_active_storage_selection(
         registry=selected_registry,
+        apprc_toml_path=kit.spec.preferred_apprc_toml_path(selector_env),
         storage=None,
         storage_selector_env_key=storage_selector_env_key,
         original_env=os.environ,
@@ -297,23 +295,20 @@ def initial_storage_from_state(
     if not kit.spec.uses_storage():
         return None
     storage_state = cast(StorageConfigCliState, state)
-    if storage_state.storage is not None:
-        return storage_state.storage
+    selector_env = selection_env(
+        original_env=os.environ,
+        explicit_values=explicit_values or {},
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+    )
     selected_registry = registry
     if selected_registry is None:
-        selector_env = selection_env(
-            original_env=os.environ,
-            explicit_values=explicit_values or {},
-            env_file_overrides_os_environ=env_file_overrides_os_environ,
-        )
         selected_registry = load_optional_runtime_storage_registry(
             kit.spec,
             proc_env=selector_env,
         )
-    if selected_registry is None:
-        return None
     selection = resolve_active_storage_selection(
         registry=selected_registry,
+        apprc_toml_path=kit.spec.preferred_apprc_toml_path(selector_env),
         storage=storage_state.storage,
         storage_selector_env_key=kit.spec.require_storage_selector_env_key(),
         original_env=os.environ,

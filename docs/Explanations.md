@@ -107,7 +107,8 @@ Bootstrap performs these operations:
 2. Read explicit `--env-file` values.
 3. Resolve the AppRC directory.
 4. Read packaged defaults and `apprc.user.env`.
-5. Load `apprc.toml`, select a registered storage, and validate its root.
+5. Load `apprc.toml` when present, resolve a storage name or path, and validate
+   its root and `apprc.storage.env` marker.
 6. Read the selected `apprc.storage.env`.
 7. Merge values using documented precedence.
 8. Write the merged values into this Python process.
@@ -129,18 +130,25 @@ boundaries where default bootstrap policy is always correct.
 
 ## Storage selection
 
-A selector is a registered name, never a filesystem path. Selection precedence
-is:
+A selector is a registered name or filesystem path. Selection precedence is:
 
-1. `--storage NAME`
-2. `<APP>_STORAGE=NAME` from the process or an explicit dotenv; the existing
+1. `--storage NAME_OR_PATH`
+2. `<APP>_STORAGE=NAME_OR_PATH` from the process or an explicit dotenv; the existing
    `--env-file-overrides-os-environ` option decides which of those wins
 3. `selected_storage` in `apprc.toml`
 
-Managed user, storage, and packaged dotenv files do not select storage. This
-prevents persistent application data from silently moving because a dotenv
-contains a path. The registry owns roots; relative roots resolve against the
-directory containing `apprc.toml`, not the current working directory.
+Managed user, storage, and packaged dotenv files do not select storage. Direct
+paths are invocation inputs, not persistent AppRC dotenv values. Relative paths
+resolve against the directory containing `apprc.toml`, not the current working
+directory. A direct path is usable only when it is an existing directory with
+a readable `apprc.storage.env`, which proves that AppRC initialized the root;
+it does not prove that application-specific data is complete.
+
+If one registry entry has the same resolved root, AppRC reports the associated
+name. No match means an unregistered one-run selection. Interactive CLIs offer
+to register it under a user-approved name; non-interactive callers do not
+write. Several matching aliases are ambiguous, so AppRC logs every match and
+does not choose a name.
 
 Registry lifecycle rules are shared by the CLI, editor, bootstrap, and doctor:
 
@@ -149,6 +157,7 @@ Registry lifecycle rules are shared by the CLI, editor, bootstrap, and doctor:
 - renaming the selected storage updates `selected_storage`;
 - removing the selected storage clears selection and warns;
 - duplicate names are rejected.
+- duplicate resolved roots are rejected for new additions and repoints.
 
 `repoint` changes only a registry path. `move` relocates the actual directory
 transactionally and then updates the registry. These operations are separate
@@ -180,6 +189,11 @@ doctor warns and purge can remove it.
 A storage declaration exposes every registry entry. Storage names are not
 declared in Python. The user adds, selects, renames, repoints, moves, and
 removes them through the registry commands or editor.
+
+The editor is also a repair interface. Selector, registry, and readiness
+failures become persistent startup state instead of preventing it from opening.
+Setup remains available, and storage dotenv fields stay disabled until the
+selected directory has the fixed AppRC marker.
 
 ## Migration model
 

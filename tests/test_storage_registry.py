@@ -10,6 +10,7 @@ import apprc.user_files.storage_roots.paths as storage_paths
 import apprc.user_files.storage_roots.registry as storage_registry_module
 from apprc.user_files.storage_roots._loading import (
     MissingStorageRegistryError,
+    inspect_storage_registry,
     load_existing_storage_registry,
 )
 from apprc.user_files.storage_roots.registry import (
@@ -19,6 +20,8 @@ from apprc.user_files.storage_roots.registry import (
     prune_missing_archived_storages,
     record_archived_storage,
     register_storage,
+    register_restored_storage,
+    repoint_storage,
     remove_archived_storage,
     suggested_storage_name,
     suggested_storage_root,
@@ -109,6 +112,71 @@ def test_register_storage_writes_sorted_toml_and_storage_dotenv(
     )
 
 
+def test_register_storage_rejects_duplicate_resolved_root(
+    tmp_path: Path,
+) -> None:
+    index_path = tmp_path / "apprc.toml"
+    root = tmp_path / "storage"
+    register_storage(name="alpha", root=root, path=index_path)
+
+    with pytest.raises(ValueError, match="already registered as 'alpha'"):
+        register_storage(name="beta", root=root, path=index_path)
+
+    assert sorted(load_storage_registry_or_empty(index_path).storages) == [
+        "alpha"
+    ]
+
+
+def test_repoint_storage_rejects_duplicate_resolved_root(
+    tmp_path: Path,
+) -> None:
+    """A metadata-only update cannot introduce a root alias.
+
+    :param tmp_path: Isolated registry and storage parent.
+    """
+    index_path = tmp_path / "apprc.toml"
+    alpha = tmp_path / "alpha"
+    beta = tmp_path / "beta"
+    register_storage(name="alpha", root=alpha, path=index_path)
+    register_storage(name="beta", root=beta, path=index_path)
+
+    with pytest.raises(ValueError, match="already registered as 'alpha'"):
+        repoint_storage(name="beta", root=alpha, path=index_path)
+
+    registry = load_storage_registry_or_empty(index_path)
+    assert registry.selected("beta").root == beta
+
+
+def test_registry_inspection_warns_about_existing_root_aliases(
+    tmp_path: Path,
+) -> None:
+    """Older duplicate rows stay readable but are diagnosed.
+
+    :param tmp_path: Isolated registry and storage parent.
+    """
+    kit = build_apprc_example_app_kit()
+    registry_path = tmp_path / "apprc" / "apprc.toml"
+    root = tmp_path / "storage"
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text(
+        'selected_storage = "alpha"\n\n'
+        f"[storages.alpha]\nroot = {json.dumps(str(root))}\n\n"
+        f"[storages.beta]\nroot = {json.dumps(str(root))}\n",
+        encoding="utf-8",
+    )
+
+    inspection = inspect_storage_registry(
+        kit.spec,
+        proc_env={
+            kit.spec.apprc_dir_env_key: str(registry_path.parent),
+        },
+    )
+
+    assert inspection.registry is not None
+    assert len(inspection.warnings) == 1
+    assert "alpha, beta" in inspection.warnings[0]
+
+
 def test_ordered_storage_names_are_sorted(tmp_path: Path) -> None:
     index_path = tmp_path / "config" / "demo.apprc.toml"
     register_storage(
@@ -193,6 +261,36 @@ def test_remove_and_prune_archived_storage_records(tmp_path: Path) -> None:
         "beta"
         not in load_storage_registry_or_empty(index_path).archived_storages
     )
+
+
+def test_register_restored_storage_replaces_archive_row_atomically(
+    tmp_path: Path,
+) -> None:
+    """Restoration moves one name from archived to live state.
+
+    :param tmp_path: Isolated registry and restored storage parent.
+    """
+    index_path = tmp_path / "apprc.toml"
+    root = tmp_path / "restored"
+    root.mkdir()
+    (root / "apprc.storage.env").write_text("", encoding="utf-8")
+    record_archived_storage(
+        name="alpha",
+        archive=tmp_path / "alpha.apprc.tar.xz",
+        source_root=root,
+        path=index_path,
+    )
+
+    registry = register_restored_storage(
+        name="alpha",
+        root=root,
+        path=index_path,
+        archived_name="alpha",
+    )
+
+    assert registry.selected("alpha").root == root
+    assert "alpha" not in registry.archived_storages
+    assert registry.selected_storage == "alpha"
 
 
 def test_unregister_storage_removes_rows_without_default_repair(

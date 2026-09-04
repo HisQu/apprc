@@ -64,13 +64,37 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+  - Breaking: `config storage add` and `config storage repoint` now reject a
+    resolved root already registered under another live name.
+    Affected: Users intentionally creating multiple aliases for one storage
+    directory.
+    Migration: Keep one name for each root, or point each name at a distinct
+    directory. Existing alias registries remain readable and `config doctor`
+    reports the ambiguity.
+
 <br>
 
 ### ➕ Added
 
+  - Added filesystem paths as runtime selectors for both `--storage` and
+    `<APP>_STORAGE`. Relative paths resolve from `apprc.toml`; initialized
+    unregistered paths work without registry writes, and interactive CLIs can
+    register them under a user-approved name.
+  - Added a three-way first-run choice for the default directory, a custom
+    directory with cross-platform path completion, or cancellation.
+  - Added `storage_selector_kind` to bootstrap results and
+    `selected_storage_selector_kind` to doctor and paths JSON.
+
 <br>
 
 ### 💔 Changed
+
+  - Changed runtime storage readiness to require an existing directory with a
+    readable `apprc.storage.env`. Error messages now include the failed path
+    and exact setup command.
+  - Changed `config edit` to open in repair mode when selection, registry, or
+    storage readiness is invalid. Setup remains enabled while uninitialized
+    storage fields remain disabled.
 
 <br>
 
@@ -83,6 +107,13 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+  - Fixed repeated bootstrap so unchanged values written by the prior AppRC
+    run are removed before reload while caller mutations are preserved; failed
+    reloads restore the prior successful process state.
+  - Fixed Textual duplicate registration and archive restoration. Duplicate
+    names are rejected before extraction, and archive installation, registry
+    registration, and archive-row cleanup now roll back together.
 
 <br>
 

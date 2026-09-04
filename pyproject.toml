@@ -39,6 +39,7 @@ dependencies = [
     # Core runtime packages only: imports needed when somebody installs and
     # uses this package with `python -m pip install -e "."`.
     "python-dotenv",       # < Loads .env files
+    "prompt-toolkit>=3.0,<4", # < Cross-platform interactive path completion
     "typed-settings[dotenv]", # < Typed env/config binding
     "rich",                # < Exception rendering
     "typer",               # < Reusable config CLI builder

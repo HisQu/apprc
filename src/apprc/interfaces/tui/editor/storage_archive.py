@@ -46,6 +46,7 @@ class StorageArchiveWorkflows(StorageWorkflowBase):
         archive_path: Path,
         destination_root: Path,
         replace_existing: bool = False,
+        after_install: Callable[[Path], None] | None = None,
     ) -> Path:
         """Run archive extraction with a progress modal.
 
@@ -53,6 +54,7 @@ class StorageArchiveWorkflows(StorageWorkflowBase):
         :param destination_root: Directory that receives archive contents.
         :param replace_existing: Whether a non-empty destination may be
             replaced.
+        :param after_install: Optional registry commit callback.
         :return: Destination directory.
         """
         return await self.run_storage_progress(
@@ -62,6 +64,7 @@ class StorageArchiveWorkflows(StorageWorkflowBase):
                 destination_root=destination_root,
                 progress=progress,
                 replace_existing=replace_existing,
+                after_install=after_install,
             ),
         )
 

@@ -212,3 +212,65 @@ def test_extract_archive_replace_existing_swaps_after_staged_extract(
     assert not (destination / "old-only.txt").exists()
     assert not list(tmp_path.glob(".restored.apprc-extract-*"))
     assert not list(tmp_path.glob(".restored.apprc-backup-*"))
+
+
+def test_extract_archive_rolls_back_new_destination_when_commit_fails(
+    tmp_path: Path,
+) -> None:
+    """A registry commit failure removes the uncommitted extraction.
+
+    :param tmp_path: Isolated archive and destination parent.
+    """
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "payload.txt").write_text("new", encoding="utf-8")
+    archive = archive_directory(
+        source_root=source,
+        archive_path=tmp_path / f"source{ARCHIVE_SUFFIX}",
+    )
+    destination = tmp_path / "restored"
+
+    def fail_commit(_root: Path) -> None:
+        raise OSError("registry unavailable")
+
+    with pytest.raises(OSError, match="registry unavailable"):
+        extract_archive(
+            archive_path=archive,
+            destination_root=destination,
+            after_install=fail_commit,
+        )
+
+    assert not destination.exists()
+
+
+def test_extract_archive_restores_replaced_destination_when_commit_fails(
+    tmp_path: Path,
+) -> None:
+    """A registry commit failure restores prior destination contents.
+
+    :param tmp_path: Isolated archive and destination parent.
+    """
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "payload.txt").write_text("new", encoding="utf-8")
+    archive = archive_directory(
+        source_root=source,
+        archive_path=tmp_path / f"source{ARCHIVE_SUFFIX}",
+    )
+    destination = tmp_path / "restored"
+    destination.mkdir()
+    (destination / "payload.txt").write_text("old", encoding="utf-8")
+
+    def fail_commit(_root: Path) -> None:
+        raise OSError("registry unavailable")
+
+    with pytest.raises(OSError, match="registry unavailable"):
+        extract_archive(
+            archive_path=archive,
+            destination_root=destination,
+            replace_existing=True,
+            after_install=fail_commit,
+        )
+
+    assert (destination / "payload.txt").read_text(encoding="utf-8") == "old"
+    assert not list(tmp_path.glob(".restored.apprc-backup-*"))

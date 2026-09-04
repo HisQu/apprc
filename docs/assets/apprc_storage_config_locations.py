@@ -67,8 +67,8 @@ def build_graph() -> Digraph:
         "storage choice",
         (
             "--storage / <APP>_STORAGE",
-            "registered name only",
-            "root comes from apprc.toml",
+            "registered name or path",
+            "path may bypass registry",
         ),
         pos=gv.fixed_position(8.95, 2.65),
         border_color=gg.PURPLE,

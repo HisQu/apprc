@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, DataTable
+from textual.widgets import Button, DataTable, Static
+from typer.testing import CliRunner
 
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.user_files.storage_roots.registry import register_storage
@@ -125,3 +126,88 @@ async def test_editor_saving_storage_value_creates_only_storage_dotenv(
             == 'APPRC_EXAMPLE_APP_PROFILE="storage-profile"\n'
         )
         assert not kit.spec.user_dotenv_path().exists()
+
+
+@pytest.mark.asyncio
+async def test_editor_disables_storage_fields_until_marker_exists(
+    tmp_path: Path,
+) -> None:
+    """A directory alone is not an initialized AppRC storage.
+
+    :param tmp_path: Isolated uninitialized storage directory.
+    """
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=None,
+        active_storage_root=storage_root,
+    )
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+
+        assert editor.query_one("#field-table", DataTable).disabled is True
+        assert editor.query_one("#config-setup", Button).disabled is False
+        assert "Missing AppRC marker" in str(
+            editor.query_one("#scope-title", Static).content
+        )
+
+
+@pytest.mark.asyncio
+async def test_editor_keeps_startup_failure_visible() -> None:
+    """The recovery message remains visible beside the Setup button."""
+    editor = ConfigEditorApp(
+        kit=build_apprc_example_app_kit(),
+        storage_registry=None,
+        storage_registry_error="apprc.toml is malformed",
+        storage_startup_error="Unknown storage 'broken'",
+    )
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+
+        status = editor.query_one("#setup-status", Static)
+        assert "Unknown storage 'broken'" in str(status.content)
+        assert editor.query_one("#config-setup", Button).disabled is False
+
+
+def test_config_edit_opens_when_storage_selector_is_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Editor startup converts selector failures into repairable state.
+
+    :param monkeypatch: Process environment mutation fixture.
+    :param tmp_path: Isolated AppRC directory.
+    """
+    kit = build_apprc_example_app_kit()
+    monkeypatch.setenv(
+        kit.spec.apprc_dir_env_key,
+        str(tmp_path / "apprc"),
+    )
+    monkeypatch.setenv(
+        kit.spec.require_storage_selector_env_key(),
+        "unknown",
+    )
+    launched: list[bool] = []
+
+    class HeadlessEditor(ConfigEditorApp):
+        """Record editor launch without starting a terminal application."""
+
+        def run(self, *args: object, **kwargs: object) -> None:
+            """Record one launch attempt.
+
+            :param args: Ignored Textual positional arguments.
+            :param kwargs: Ignored Textual keyword arguments.
+            :return: None.
+            """
+            launched.append(True)
+
+    app = kit.typer_app(editor_app_cls=HeadlessEditor)
+
+    result = CliRunner().invoke(app, ["edit"])
+
+    assert result.exit_code == 0, result.output
+    assert launched == [True]

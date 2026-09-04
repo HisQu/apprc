@@ -40,6 +40,7 @@ __all__ = [
     "prune_missing_archived_storages",
     "record_archived_storage",
     "register_storage",
+    "register_restored_storage",
     "rename_storage",
     "repoint_storage",
     "remove_archived_storage",
@@ -75,6 +76,11 @@ def register_storage(
             f"Storage name {name!r} is already used by an archived storage."
         )
     resolved_root = resolve_storage_root_path(root, base=current.path.parent)
+    _reject_duplicate_storage_root(
+        current,
+        root=resolved_root,
+        requested_name=name,
+    )
     root_existed = resolved_root.exists()
     storage_dotenv = resolved_root / storage_dotenv_filename
     storage_dotenv_existed = storage_dotenv.exists()
@@ -105,12 +111,69 @@ def register_storage(
     return updated
 
 
+def register_restored_storage(
+    *,
+    name: str,
+    root: Path,
+    path: Path,
+    archived_name: str | None = None,
+    storage_dotenv_filename: str = "apprc.storage.env",
+) -> StorageRegistry:
+    """Register an extracted archive and clear its archive row atomically.
+
+    The archive extraction layer calls this operation before discarding its
+    filesystem backup. A registry failure therefore lets extraction restore
+    the previous destination contents.
+
+    :param name: Name for the restored live storage.
+    :param root: Installed archive destination.
+    :param path: AppRC TOML location.
+    :param archived_name: Archive row to remove after restoration.
+    :param storage_dotenv_filename: Required storage marker filename.
+    :return: Updated registry.
+    """
+    validate_storage_name(name)
+    current = load_storage_registry_or_empty(path)
+    if name in current.storages:
+        raise ValueError(f"Storage name {name!r} is already registered.")
+    if name in current.archived_storages and name != archived_name:
+        raise ValueError(
+            f"Storage name {name!r} is already used by another archive."
+        )
+    resolved_root = resolve_storage_root_path(root, base=current.path.parent)
+    _reject_duplicate_storage_root(
+        current,
+        root=resolved_root,
+        requested_name=name,
+    )
+    storage_dotenv = resolved_root / storage_dotenv_filename
+    if not storage_dotenv.is_file():
+        raise ValueError(
+            f"Restored storage is missing its AppRC marker: {storage_dotenv}"
+        )
+    archived_storages = dict(current.archived_storages)
+    if archived_name is not None:
+        archived_storages.pop(archived_name, None)
+    updated = replace(
+        current,
+        storages={
+            **dict(current.storages),
+            name: StorageRecord(name=name, root=resolved_root),
+        },
+        selected_storage=current.selected_storage or name,
+        archived_storages=archived_storages,
+    )
+    write_storage_registry(updated)
+    return updated
+
+
 def _update_storage(
     *,
     current_name: str,
     name: str,
     root: Path | None,
     path: Path,
+    reject_duplicate_root: bool = False,
 ) -> StorageRegistry:
     """Rename or repoint one registered storage without touching its files.
 
@@ -124,6 +187,8 @@ def _update_storage(
     :param root: New storage root recorded in the registry, or ``None`` to
         preserve the current root exactly.
     :param path: AppRC TOML location.
+    :param reject_duplicate_root: Whether this operation changes the root and
+        must reject aliases.
     :return: Updated registry after one atomic write.
     :raises ValueError: If the source is missing or the target name is used by
         another live or archived storage.
@@ -137,6 +202,19 @@ def _update_storage(
         if root is None
         else resolve_storage_root_path(root, base=current.path.parent)
     )
+    current_root = resolve_storage_root_path(
+        current_record.root,
+        base=current.path.parent,
+    )
+    if name == current_name and updated_root == current_root:
+        return current
+    if reject_duplicate_root:
+        _reject_duplicate_storage_root(
+            current,
+            root=updated_root,
+            requested_name=name,
+            excluded_name=current_name,
+        )
 
     if name != current_name:
         if name in current.storages:
@@ -170,6 +248,40 @@ def _update_storage(
     )
     write_storage_registry(updated)
     return updated
+
+
+def _reject_duplicate_storage_root(
+    registry: StorageRegistry,
+    *,
+    root: Path,
+    requested_name: str,
+    excluded_name: str | None = None,
+) -> None:
+    """Reject a new alias for an already registered resolved root.
+
+    Older registries may contain aliases and remain readable. New writes must
+    not add ambiguity because direct-path selection cannot choose one alias
+    without inventing user intent.
+
+    :param registry: Current registry state.
+    :param root: Proposed resolved root.
+    :param requested_name: Name being added or repointed.
+    :param excluded_name: Existing row replaced by this operation.
+    :return: None.
+    :raises ValueError: If another live entry owns the same root.
+    """
+    for name, record in registry.storages.items():
+        if name == excluded_name:
+            continue
+        registered_root = resolve_storage_root_path(
+            record.root,
+            base=registry.path.parent,
+        )
+        if registered_root == root:
+            raise ValueError(
+                f"Storage root {root} is already registered as {name!r}; "
+                f"cannot also register it as {requested_name!r}."
+            )
 
 
 def rename_storage(
@@ -211,6 +323,7 @@ def repoint_storage(
         name=name,
         root=root,
         path=path,
+        reject_duplicate_root=True,
     )
 
 

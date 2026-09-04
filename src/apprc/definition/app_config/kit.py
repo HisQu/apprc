@@ -132,7 +132,8 @@ class AppConfigKit:
             process. Storage selection still runs for storage apps
             when this is ``False``, and explicit values may still provide the
             selector used for selection.
-        :param storage: Optional registered name supplied by ``--storage``.
+        :param storage: Optional registered name or filesystem path supplied
+            by ``--storage``.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
         """
@@ -144,14 +145,22 @@ class AppConfigKit:
                     "constructed afterward read the new process environment.",
                     self.spec.app_id,
                 )
-            result = bootstrap_env(
-                spec=self.spec,
-                env_files=env_files,
-                env_file_overrides_os_environ=env_file_overrides_os_environ,
-                load_dotenv_layers=load_dotenv_layers,
-                storage=storage,
-                logger=logger,
-            )
+            before_reload, baseline_env = self._bootstrap_state.begin_reload()
+            try:
+                result = bootstrap_env(
+                    spec=self.spec,
+                    env_files=env_files,
+                    env_file_overrides_os_environ=(
+                        env_file_overrides_os_environ
+                    ),
+                    load_dotenv_layers=load_dotenv_layers,
+                    storage=storage,
+                    logger=logger,
+                )
+            except Exception:
+                self._bootstrap_state.rollback_reload(before_reload)
+                raise
+            self._bootstrap_state.commit_reload(baseline_env=baseline_env)
             self._bootstrap_state.result = result
             return result
 

@@ -11,6 +11,7 @@ from rich.console import Console
 
 # == Internal ================================
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.interfaces.cli._interactive_setup import prompt_storage_setup_root
 from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupFlow
 from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
@@ -109,10 +110,11 @@ def _select_storage_root(
     if selected is None:
         if assume_yes:
             selected = suggested
-        elif typer.confirm(f"Create storage directory at {suggested}?"):
-            selected = suggested
         else:
-            raise typer.Exit(code=1)
+            selected = prompt_storage_setup_root(suggested=suggested)
+            if selected is None:
+                typer.echo("No files were changed.", err=True)
+                raise typer.Exit(code=1)
     if Path(selected) == Path("."):
         raise typer.BadParameter(
             "--storage-root must not be empty or the current directory.",

@@ -23,6 +23,8 @@ from apprc.interfaces.cli.config_command.state import (
     initial_storage_from_state,
 )
 from apprc.user_files.storage_roots.registry import StorageRegistry
+from apprc.user_files.storage_roots.selector import StorageSelectorError
+from apprc.user_files.app_home.locations import AppRCDirectoryError
 
 if TYPE_CHECKING:
     from apprc.interfaces.tui import ConfigEditorApp
@@ -58,6 +60,7 @@ class ConfigEditorLauncher:
         storage_registry: StorageRegistry | None,
         storage_registry_error: str | None = None,
         active_storage_root: Path | None,
+        storage_startup_error: str | None = None,
         selector_context: ConfigSelectorContext | None = None,
     ) -> None:
         """Create and run the Textual config editor.
@@ -66,17 +69,26 @@ class ConfigEditorLauncher:
         :param storage_registry: Named-storage records to display, if enabled.
         :param storage_registry_error: Read failure that blocks registry writes.
         :param active_storage_root: Directly selected storage path, if any.
+        :param storage_startup_error: Persistent selector/readiness message.
         :param selector_context: Host CLI selector inputs.
         """
-        selected_storage = (
-            self.initial_storage(
-                current_state,
-                storage_registry=storage_registry,
-                selector_context=selector_context,
-            )
-            if current_state is not None
-            else None
-        )
+        selected_storage = None
+        if current_state is not None:
+            try:
+                selected_storage = self.initial_storage(
+                    current_state,
+                    storage_registry=storage_registry,
+                    selector_context=selector_context,
+                )
+            except (
+                AppRCDirectoryError,
+                StorageSelectorError,
+                ValueError,
+            ) as exc:
+                storage_startup_error = _merge_startup_errors(
+                    storage_startup_error,
+                    str(exc),
+                )
         if self.editor_app_cls is not None:
             editor_app = self.editor_app_cls(
                 kit=self.kit,
@@ -98,6 +110,7 @@ class ConfigEditorLauncher:
                 storage_registry_error=storage_registry_error,
                 initial_storage=selected_storage,
                 active_storage_root=active_storage_root,
+                storage_startup_error=storage_startup_error,
                 config_group_name=self.config_group_name,
             )
         editor_app.run()
@@ -134,3 +147,13 @@ def _module_not_found_is_textual(exc: ModuleNotFoundError) -> bool:
     return missing_name == "textual" or (
         missing_name is not None and missing_name.startswith("textual.")
     )
+
+
+def _merge_startup_errors(*messages: str | None) -> str | None:
+    """Join distinct editor startup messages.
+
+    :param messages: Optional failure details.
+    :return: Newline-separated distinct messages, or ``None``.
+    """
+    distinct = tuple(dict.fromkeys(message for message in messages if message))
+    return "\n".join(distinct) if distinct else None

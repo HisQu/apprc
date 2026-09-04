@@ -23,6 +23,7 @@ def test_config_doctor_reports_config_package_convention_warnings(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     storage_root = tmp_path / "alpha"
     storage_root.mkdir()
     kit = build_apprc_example_app_kit()
@@ -91,6 +92,7 @@ def test_config_doctor_reports_a_missing_registry_once(
     :param tmp_path: Isolated absent AppRC directory.
     """
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
     kit = build_apprc_example_app_kit()
 
     payload = build_config_doctor_payload(kit, storage=None)

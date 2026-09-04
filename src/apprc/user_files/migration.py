@@ -223,7 +223,7 @@ def build_config_migration_plan(
         if selector_key is not None and selector_key in env:
             warnings.append(
                 f"Unset exported {selector_key} after migration if it contains "
-                "a path; runtime selectors now accept registered names only."
+                "a path; migration records it as the named default storage."
             )
         for key in spec.legacy_apprc_toml_env_keys():
             if env.get(key, "").strip():

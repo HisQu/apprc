@@ -15,6 +15,7 @@ from apprc.user_files.storage_roots.registry import (
     StorageRegistry,
     load_storage_registry_or_empty,
 )
+from apprc.user_files.storage_roots.paths import resolve_storage_root_path
 
 
 class MissingStorageRegistryError(ValueError):
@@ -213,8 +214,33 @@ def inspect_storage_registry(
         registry=registry,
         storage_count=len(registry.storages),
         issues=[],
-        warnings=[],
+        warnings=_duplicate_storage_root_warnings(registry),
     )
+
+
+def _duplicate_storage_root_warnings(
+    registry: StorageRegistry,
+) -> list[str]:
+    """Return warnings for ambiguous aliases retained from older registries.
+
+    :param registry: Parsed storage registry.
+    :return: One warning per root owned by multiple names.
+    """
+    names_by_root: dict[Path, list[str]] = {}
+    for name, record in registry.storages.items():
+        root = resolve_storage_root_path(
+            record.root,
+            base=registry.path.parent,
+        )
+        names_by_root.setdefault(root, []).append(name)
+    return [
+        "Duplicate storage root is registered under multiple names "
+        f"({', '.join(sorted(names))}): {root}. Repoint or remove an alias."
+        for root, names in sorted(
+            names_by_root.items(), key=lambda item: item[0]
+        )
+        if len(names) > 1
+    ]
 
 
 def _apprc_toml_read_error(path: Path, exc: OSError) -> AppRCDirectoryError:

@@ -18,10 +18,20 @@ class EditorConfigCommands(ConfigCommandBase):
         selector_context = self.cli_selector_context(ctx)
         current_state = self.resolved_config_state(ctx)
         try:
-            active_storage_root = self.active_storage_root_for_editor(
-                current_state,
-                selector_context=selector_context,
-            )
+            startup_errors: list[str] = []
+            try:
+                active_storage_root = self.active_storage_root_for_editor(
+                    current_state,
+                    selector_context=selector_context,
+                )
+            except typer.BadParameter as exc:
+                active_storage_root = (
+                    self.best_effort_active_storage_root_from_env(
+                        storage_registry=None,
+                        selector_context=selector_context,
+                    )
+                )
+                startup_errors.append(str(exc))
             storage_registry_error: str | None = None
             try:
                 optional_registry = (
@@ -32,15 +42,19 @@ class EditorConfigCommands(ConfigCommandBase):
                     else None
                 )
             except typer.BadParameter as exc:
-                if active_storage_root is None and self.kit.spec.uses_storage():
-                    raise
                 optional_registry = None
                 storage_registry_error = str(exc)
+                startup_errors.append(str(exc))
             self.launch_config_editor(
                 current_state=current_state,
                 storage_registry=optional_registry,
                 storage_registry_error=storage_registry_error,
                 active_storage_root=active_storage_root,
+                storage_startup_error=(
+                    "\n".join(dict.fromkeys(startup_errors))
+                    if startup_errors
+                    else None
+                ),
                 selector_context=selector_context,
             )
         except AppRCDirectoryError as exc:

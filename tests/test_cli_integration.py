@@ -289,7 +289,6 @@ def test_mount_config_cli_reports_app_setup_for_missing_storage(
     assert result.exit_code == 2, result.output
     assert "Selected Example App storage root" in output
     assert "apprc_example_app config setup" in output
-    assert "STORAGE_ROOT" in output
     assert "Traceback" not in result.output
 
 

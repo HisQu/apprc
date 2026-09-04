@@ -5,6 +5,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import apprc.interfaces.cli.config_command._runtime_commands as runtime_commands
+from apprc.interfaces.cli.setup_command import run_config_setup
 from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
 )
@@ -30,6 +32,38 @@ def test_config_paths_is_zero_write_and_uses_file_specific_names() -> None:
     assert Path(payload["apprc_toml"]).name == "apprc.toml"
     assert not Path(payload["user_dotenv"]).exists()
     assert not Path(payload["apprc_toml"]).exists()
+
+
+def test_setup_default_storage_follows_relocated_apprc_directory(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The default root remains beside AppRC files after relocation."""
+    apprc_dir = tmp_path / "relocated"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(apprc_dir))
+    kit = build_apprc_example_app_kit()
+
+    run_config_setup(kit, assume_yes=True)
+
+    registry = load_storage_registry_or_empty(
+        kit.spec.preferred_apprc_toml_path()
+    )
+    assert registry.selected("default").root == apprc_dir / "storage"
+    assert (apprc_dir / "storage" / "apprc.storage.env").is_file()
+
+
+def test_config_doctor_explains_missing_storage_selection(monkeypatch) -> None:
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    kit.spec.preferred_apprc_toml_path().write_text("", encoding="utf-8")
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    result = CliRunner().invoke(app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert "storage not selected" in result.output
+    assert "--storage NAME_OR_PATH" in result.output
+    assert "APPRC_EXAMPLE_APP_STORAGE=NAME_OR_PATH" in result.output
 
 
 def test_storage_free_app_hides_storage_commands() -> None:
@@ -167,3 +201,52 @@ def test_config_set_writes_user_dotenv_for_storage_free_app() -> None:
     assert kit.spec.user_dotenv_path().read_text(encoding="utf-8") == (
         'STORAGE_FREE_APP_PROFILE="local"\n'
     )
+
+
+def test_config_set_confirms_duplicate_cleanup_before_writing(
+    monkeypatch,
+) -> None:
+    kit = build_storage_free_example_kit()
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    dotenv = kit.spec.ensure_user_dotenv()
+    original = (
+        "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n"
+    )
+    dotenv.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(
+        runtime_commands,
+        "_is_interactive_terminal",
+        lambda: True,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["set", "global.profile", "new", "--scope", "user"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "comment out duplicate line 2" in result.output
+    assert "Continue with this dotenv edit?" in result.output
+    assert dotenv.read_text(encoding="utf-8") == original
+
+
+def test_config_set_warns_after_noninteractive_duplicate_cleanup() -> None:
+    kit = build_storage_free_example_kit()
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    dotenv = kit.spec.ensure_user_dotenv()
+    dotenv.write_text(
+        "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["set", "global.profile", "new", "--scope", "user"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.index("updated: STORAGE_FREE_APP_PROFILE") < (
+        result.output.index("Warning:")
+    )
+    assert "comment out duplicate line 2" in result.output

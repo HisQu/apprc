@@ -1,121 +1,102 @@
-"""Public registry for repository-local AppRC example apps."""
+"""Registry for repository-local AppRC example apps."""
 
 from __future__ import annotations
 
-# == Standard Library ========================
-from collections.abc import Mapping
+# == Standard Library ===========================================
 from dataclasses import dataclass
 
-# == Internal ================================
-from apprc.definition.app_config.kit import AppConfigKit
-from cli_runtime.config import KIT as CLI_RUNTIME_KIT
-from config_only.config import KIT as CONFIG_ONLY_KIT
-from explicit_env_precedence.config import (
-    KIT as EXPLICIT_ENV_PRECEDENCE_KIT,
-)
-from config_with_storage.config import KIT as CONFIG_WITH_STORAGE_KIT
+# == Internal ===================================================
+import apprc as rc
+from cli_runtime.config import MyRC as CLI_RUNTIME_RC
+from config_only.config import MyRC as CONFIG_ONLY_RC
+from config_with_storage.config import MyRC as CONFIG_WITH_STORAGE_RC
+from explicit_env_precedence.config import MyRC as PRECEDENCE_RC
 
 
 @dataclass(frozen=True, slots=True)
 class ExampleAppSpec:
-    """Files and values needed to bootstrap one example app.
+    """Identify one installed example command and its AppRC environment.
 
-    :param name: Human-readable scenario name used in summaries.
-    :param root_name: Repository-local sandbox directory name.
-    :param kit: AppRC contract for the example CLI.
-    :param explicit_values: Values written to the arbitrary sourceable
-        ``.env`` file.
-    :param app_values: Values written to the per-user dotenv file.
-    :param storage_values: Values written to the selected storage dotenv file.
-    :param storage_name: Named-storage selector registered in the TOML index.
+    :param name: Short selector accepted by the lab command.
+    :param command_name: Installed console-script name.
+    :param app_id: Stable AppRC application identifier.
+    :param apprc_dir_env_key: Environment key that relocates managed files.
+    :param env_prefix: Prefix removed from inherited lab environments.
+    :param uses_storage: Whether the application declares storage support.
+    :param required_storage_key: Required storage field populated by smoke
+        runs, or ``None`` for storage-free examples.
     """
 
     name: str
-    root_name: str
-    kit: AppConfigKit
-    explicit_values: Mapping[str, str]
-    app_values: Mapping[str, str]
-    storage_values: Mapping[str, str] | None = None
-    storage_name: str = "alpha"
+    command_name: str
+    app_id: str
+    apprc_dir_env_key: str
+    env_prefix: str
+    uses_storage: bool
+    required_storage_key: str | None = None
 
-    @property
-    def uses_storage(self) -> bool:
-        """Return whether this example has a selected storage root."""
-        return self.kit.spec.uses_storage()
+
+def _spec(
+    name: str,
+    command_name: str,
+    app_rc: rc.AppRC,
+    *,
+    env_prefix: str,
+    required_storage_key: str | None = None,
+) -> ExampleAppSpec:
+    """Build a registry row from one public AppRC facade."""
+    spec = app_rc.spec
+    return ExampleAppSpec(
+        name=name,
+        command_name=command_name,
+        app_id=spec.app_id,
+        apprc_dir_env_key=spec.apprc_dir_env_key,
+        env_prefix=env_prefix,
+        uses_storage=spec.uses_storage(),
+        required_storage_key=required_storage_key,
+    )
 
 
 EXAMPLE_APPS = (
-    ExampleAppSpec(
-        name="config_only",
-        root_name=".apprc-example-config-only",
-        kit=CONFIG_ONLY_KIT,
-        explicit_values={
-            "APPRC_EXAMPLE_CONFIG_PROFILE": "explicit-env-profile",
-            "APPRC_EXAMPLE_CONFIG_DEBUG": "true",
-        },
-        app_values={
-            "APPRC_EXAMPLE_CONFIG_PROFILE": "app-wide-profile",
-        },
+    _spec(
+        "config-only",
+        "apprc-config-only",
+        CONFIG_ONLY_RC,
+        env_prefix="APPRC_EXAMPLE_CONFIG_",
     ),
-    ExampleAppSpec(
-        name="config_with_storage",
-        root_name=".apprc-example-config-with-storage",
-        kit=CONFIG_WITH_STORAGE_KIT,
-        explicit_values={
-            "APPRC_EXAMPLE_STORAGE_ENABLED": "false",
-            "APPRC_EXAMPLE_STORAGE_RETRY_COUNT": "7",
-        },
-        app_values={
-            "APPRC_EXAMPLE_STORAGE_PROFILE": "app-wide-profile",
-        },
-        storage_values={
-            "APPRC_EXAMPLE_STORAGE_PROFILE": "storage-profile",
-            "APPRC_EXAMPLE_STORAGE_MODE": "MANUAL",
-            "APPRC_EXAMPLE_STORAGE_API_TOKEN": "storage-secret-token",
-        },
+    _spec(
+        "config-with-storage",
+        "apprc-config-with-storage",
+        CONFIG_WITH_STORAGE_RC,
+        env_prefix="APPRC_EXAMPLE_STORAGE_",
+        required_storage_key="api_token",
     ),
-    ExampleAppSpec(
-        name="explicit_env_precedence",
-        root_name=".apprc-example-explicit-env-precedence",
-        kit=EXPLICIT_ENV_PRECEDENCE_KIT,
-        explicit_values={
-            "APPRC_EXAMPLE_PRECEDENCE_LABEL": "explicit-env-label",
-        },
-        app_values={
-            "APPRC_EXAMPLE_PRECEDENCE_LABEL": "app-wide-label",
-        },
-        storage_values={
-            "APPRC_EXAMPLE_PRECEDENCE_LABEL": "storage-label",
-        },
+    _spec(
+        "explicit-env-precedence",
+        "apprc-explicit-env-precedence",
+        PRECEDENCE_RC,
+        env_prefix="APPRC_EXAMPLE_PRECEDENCE_",
     ),
-    ExampleAppSpec(
-        name="cli_runtime",
-        root_name=".apprc-example-cli-runtime",
-        kit=CLI_RUNTIME_KIT,
-        explicit_values={
-            "APPRC_EXAMPLE_RUNTIME_PROFILE": "explicit-runtime-profile",
-        },
-        app_values={
-            "APPRC_EXAMPLE_RUNTIME_PROFILE": "app-wide-runtime-profile",
-        },
-        storage_values={
-            "APPRC_EXAMPLE_RUNTIME_API_TOKEN": "runtime-secret-token",
-        },
+    _spec(
+        "cli-runtime",
+        "apprc-cli-runtime",
+        CLI_RUNTIME_RC,
+        env_prefix="APPRC_EXAMPLE_RUNTIME_",
+        required_storage_key="api_token",
     ),
 )
 
 
 def example_app_specs() -> tuple[ExampleAppSpec, ...]:
-    """Return all repository-local example app specs.
-
-    :return: Immutable registry entries for dev-only example CLIs.
-    """
+    """Return all repository-local example app definitions."""
     return EXAMPLE_APPS
 
 
-def example_kits() -> dict[str, AppConfigKit]:
-    """Return example AppRC kits keyed by registry name.
+def example_app(name: str) -> ExampleAppSpec:
+    """Return the selected example definition.
 
-    :return: Mapping from example registry name to AppRC kit.
+    :param name: Lab selector.
+    :return: Matching example definition.
+    :raises KeyError: If no example has that selector.
     """
-    return {spec.name: spec.kit for spec in EXAMPLE_APPS}
+    return {spec.name: spec for spec in EXAMPLE_APPS}[name]

@@ -62,6 +62,8 @@ def _doctor_next_steps(
     status: ConfigDoctorStatus,
     *,
     config_group_name: str,
+    storage_count: int,
+    selector_error: bool,
 ) -> list[str]:
     """Return recovery steps tailored to one doctor status.
 
@@ -69,20 +71,28 @@ def _doctor_next_steps(
     :param status: Public readiness status.
     :param config_group_name: Config command group name used in generated
         guidance.
+    :param storage_count: Number of registered live storages.
+    :param selector_error: Whether an explicit selector failed to resolve.
     :return: Ordered actions for human and JSON output.
     """
     if status == ConfigDoctorStatus.RUNNABLE:
         return []
-    if status == ConfigDoctorStatus.ENV_NOT_SET:
-        return [
+    if status == ConfigDoctorStatus.STORAGE_NOT_SELECTED:
+        selection_step = (
             config_command_text(
+                kit,
+                "storage select NAME",
+                config_group_name=config_group_name,
+            )
+            if storage_count
+            else config_command_text(
                 kit,
                 "setup --yes --storage-root /absolute/path/to/storage-root",
                 config_group_name=config_group_name,
-            ),
-            config_command_text(
-                kit, "paths", config_group_name=config_group_name
-            ),
+            )
+        )
+        return [
+            selection_step,
             config_command_text(
                 kit, "doctor", config_group_name=config_group_name
             ),
@@ -110,6 +120,16 @@ def _doctor_next_steps(
                 kit, "doctor", config_group_name=config_group_name
             ),
         ]
+    if selector_error:
+        return [
+            "Fix or unset the invalid storage selector shown above.",
+            config_command_text(
+                kit, "storage list", config_group_name=config_group_name
+            ),
+            config_command_text(
+                kit, "doctor", config_group_name=config_group_name
+            ),
+        ]
     return [
         "Ensure the selected storage root exists and contains "
         f"{kit.spec.storage_dotenv_filename}.",
@@ -122,24 +142,24 @@ def _doctor_next_steps(
     ]
 
 
-def _missing_env_issue(
+def _missing_storage_issue(
     kit: "AppConfigKit",
-    missing_env_keys: list[str],
     *,
+    selector_key: str,
     config_group_name: str,
 ) -> str:
-    """Return one readable issue for missing bootstrap env keys.
+    """Return one readable issue for a missing storage selection.
 
     :param kit: Application config facade.
-    :param missing_env_keys: Required env keys absent from this process.
+    :param selector_key: Optional environment selector key.
     :param config_group_name: Config command group name used in generated
         guidance.
     :return: Human-facing doctor issue.
     """
-    keys = ", ".join(missing_env_keys)
     return (
-        f"No storage is selected for {kit.spec.display_name}; selector key: "
-        f"{keys}. Run "
+        f"No storage is selected for {kit.spec.display_name}. Run "
         f"{config_command_text(kit, 'setup', config_group_name=config_group_name)} "
-        "to create and select one, or pass --storage NAME."
+        "to create one, choose a registered default with "
+        f"{config_command_text(kit, 'storage select NAME', config_group_name=config_group_name)}, "
+        f"pass --storage NAME_OR_PATH, or set {selector_key}=NAME_OR_PATH."
     )

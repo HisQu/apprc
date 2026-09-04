@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 from rich.text import Text
 
-from apprc.interfaces.tui._primitives import ConfirmScreen, PathInputResult
+from apprc.interfaces.tui._primitives import (
+    ConfirmScreen,
+    PathInputResult,
+    PathInputScreen,
+)
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.user_files.setup.text import setup_overview_text
 from apprc.user_files.storage_roots.registry import (
@@ -37,6 +41,8 @@ async def test_editor_setup_registers_default_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    apprc_dir = tmp_path / "relocated-apprc"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(apprc_dir))
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
     editor = ConfigEditorApp(kit=kit, storage_registry=None)
@@ -64,6 +70,9 @@ async def test_editor_setup_registers_default_storage(
     assert registry.selected("default").root == storage_root.resolve()
     assert kit.spec.user_dotenv_path().is_file()
     assert kit.spec.storage_dotenv_path(storage_root).is_file()
+    path_prompt = screens[0]
+    assert isinstance(path_prompt, PathInputScreen)
+    assert path_prompt.value == str(apprc_dir / "storage")
     summary = screens[-1]
     assert isinstance(summary, ConfirmScreen)
     assert isinstance(summary.message, Text)

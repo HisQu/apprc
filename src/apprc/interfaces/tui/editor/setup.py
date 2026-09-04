@@ -21,7 +21,6 @@ from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
 )
-from apprc.user_files.storage_roots.registry import suggested_storage_root
 from apprc.user_files.storage_roots._loading import (
     load_optional_runtime_storage_registry,
 )
@@ -60,7 +59,7 @@ class ConfigEditorSetupWorkflow:
     async def _open_storage_setup_flow(self) -> None:
         """Choose and initialize the default registered storage."""
         default_root = self.editor.active_storage_root or (
-            suggested_storage_root(self.editor.kit.spec.app_id)
+            self.editor.kit.spec.apprc_dir() / "storage"
         )
         path_result = await self.editor.push_screen_wait(
             PathInputScreen(

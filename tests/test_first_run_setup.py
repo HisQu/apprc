@@ -72,7 +72,7 @@ def test_first_runtime_use_accepts_suggested_storage(
     monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
     _enable_tty(monkeypatch)
     runtime = _runtime(tmp_path)
-    suggested = tmp_path / "data-home" / "first_run_demo" / "storage"
+    suggested = tmp_path / "apprc" / "storage"
     monkeypatch.setattr(
         runtime_module,
         "prompt_storage_setup_root",

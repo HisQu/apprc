@@ -2,25 +2,15 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
-import os
-from pathlib import Path
+# == Standard Library ===========================================
+import json
 
-# == 3rd Party ===============================
+# == 3rd Party ==================================================
 import typer
 
-# == Internal ================================
+# == Internal ===================================================
 import apprc as rc
-from _example_apps_utils._support import (
-    build_standard_app,
-    config_values,
-    run_isolated,
-)
-from config_with_storage.config import (
-    CONFIG_SECTIONS,
-    KIT,
-    ConfigWithStorageExampleConfig,
-)
+from config_with_storage.config import ConfigWithStorageExampleConfig, MyRC
 
 
 def build_app(
@@ -34,66 +24,60 @@ def build_app(
     :param editor_app_cls: Optional editor replacement for tests.
     :return: Typer application.
     """
-    return build_standard_app(
-        kit=KIT,
-        bundle_cls=ConfigWithStorageExampleConfig,
-        section_getter=lambda config: config.app,
-        help_text="Exercise AppRC with one selected storage path.",
+    app = typer.Typer(
+        help="Exercise AppRC with a storage selected by name or path.",
+        no_args_is_help=True,
+        pretty_exceptions_show_locals=False,
+    )
+    MyRC.mount_cli(
+        app,
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
+        runtime_payload=_runtime_payload,
     )
 
+    @app.command("run")
+    def run_cmd(ctx: typer.Context) -> None:
+        """Print the config resolved for this process."""
+        typer.echo(json.dumps(_runtime_payload(_state(ctx)), indent=2))
 
-app = build_app()
+    return app
 
 
-def run_demo(root: Path) -> dict[str, object]:
-    """Execute a compact config-with-storage scenario.
+def _runtime_payload(
+    state: rc.cli.DefaultConfigCliState,
+) -> dict[str, object]:
+    """Return values that this example application would use."""
+    config = ConfigWithStorageExampleConfig().app
+    bootstrap = state.env_bootstrap
+    return {
+        "app_id": MyRC.spec.app_id,
+        "storage_name": bootstrap.storage_name if bootstrap else None,
+        "storage_root": str(bootstrap.storage_root) if bootstrap else None,
+        "config": {
+            "profile": config.profile,
+            "mode": config.mode,
+            "enabled": config.enabled,
+            "retry_count": config.retry_count,
+            "cache_dir": str(config.cache_dir),
+            "api_token": "<redacted>",
+        },
+    }
 
-    :param root: Temporary run directory.
-    :return: JSON-friendly scenario summary.
-    """
 
-    def scenario() -> dict[str, object]:
-        os.environ[KIT.spec.apprc_dir_env_key] = str(root / "apprc")
-        storage_root = root / "storage"
-        storage_root.mkdir(parents=True)
-        rc.files.ensure_storage_dotenv_file(storage_root)
-        rc.files.set_storage_dotenv_value(
-            storage_root=storage_root,
-            reference="api_token",
-            raw_value="storage-secret",
-            owners=CONFIG_SECTIONS,
-        )
-        rc.storage.register_storage(
-            name="default",
-            root=storage_root,
-            path=KIT.spec.preferred_apprc_toml_path(),
-        )
-        bootstrap = KIT.bootstrap(
-            env_files=(),
-            env_file_overrides_os_environ=False,
-            load_dotenv_layers=True,
-            storage="default",
-        )
-        config = ConfigWithStorageExampleConfig()
-        return {
-            "scenario": "config_with_storage",
-            "selected_storage_root": str(bootstrap.storage_root),
-            "storage_dotenv": str(bootstrap.storage_dotenv),
-            "config": config_values(config.app),
-        }
-
-    return run_isolated(
-        root,
-        env_prefixes=("APPRC_EXAMPLE_STORAGE_",),
-        scenario=scenario,
-    )
+def _state(ctx: typer.Context) -> rc.cli.DefaultConfigCliState:
+    """Return runtime state after AppRC has prepared the command."""
+    if isinstance(ctx.obj, rc.cli.DefaultConfigCliState):
+        return ctx.obj
+    raise RuntimeError("AppRC runtime state was not initialized.")
 
 
 def main() -> None:
     """Run the config-with-storage example CLI."""
     app()
+
+
+app = build_app()
 
 
 if __name__ == "__main__":

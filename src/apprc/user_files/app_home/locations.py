@@ -186,7 +186,7 @@ def write_text_atomic(path: Path, text: str) -> Path:
         )
     temp_path = resolved.with_name(f".{resolved.name}.{os.getpid()}.tmp")
     try:
-        temp_path.write_text(text, encoding="utf-8")
+        temp_path.write_text(text, encoding="utf-8", newline="")
         temp_path.replace(resolved)
     except OSError as exc:
         raise AppRCDirectoryError(

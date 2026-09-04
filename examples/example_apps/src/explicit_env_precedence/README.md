@@ -1,40 +1,30 @@
 # Explicit Env Precedence Example
 
-`explicit_env_precedence` demonstrates a config-with-storage app where explicit
-env-file values can override or defer to shell env values.
+`explicit_env_precedence` makes selector and value precedence observable. Its
+`APPRC_EXAMPLE_PRECEDENCE_STORAGE` selector accepts a registered name or path.
 
-## Requirements
-
-- Install the example package from the repository checkout.
-- Source `.env.example_apps` or use direnv.
-- `APPRC_EXAMPLE_PRECEDENCE_ROOT` may contain a registered name or path. The root env
-  file selects the generated `alpha` storage.
-
-## Setup
+Start a clean session:
 
 ```bash
-set -a; source .env.example_apps; set +a
-python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"
-apprc-explicit-env-precedence run
+apprc-examples-lab explicit-env-precedence
 ```
 
-This setup fixes the common failure where the CLI has no storage selector.
-
-## Commands
+The lab prints commands that create `default` and `explicit` roots, give them
+different labels, and write an explicit dotenv file. It then exports shell
+values and runs both policies:
 
 ```bash
-apprc-explicit-env-precedence run
-apprc-explicit-env-precedence --env-file examples/example_app_disk_files/.apprc-example-explicit-env-precedence/.env run
-apprc-explicit-env-precedence --env-file examples/example_app_disk_files/.apprc-example-explicit-env-precedence/.env --env-file-overrides-os-environ run
+apprc-explicit-env-precedence --env-file EXPLICIT_ENV run
+apprc-explicit-env-precedence --env-file EXPLICIT_ENV --env-file-overrides-os-environ run
 ```
 
-## Upgrade Options
+The first command reports the shell-selected root and `shell` label. The
+second reports the explicit-file-selected root and `explicit-file` label. This
+shows that AppRC preserves its existing conditional precedence; explicit files
+do not always override the process environment.
 
-Use `config_with_storage` for a smaller storage-selected app. Use `cli_runtime`
-when selector handling must run inside a larger app-owned Typer callback.
+Copy [`cli.py`](cli.py) when an app needs to expose and test explicit dotenv
+precedence directly.
 
-## Docs
-
-- [Example app overview](../../README.md)
-- [Development guide](../../../../docs/Development.md#example-apps)
-- [Integration guide](../../../../docs/How-To-User-Guides.md#integrate-apprc)
+See the [example inventory](../../README.md#example-inventory) and
+[runtime precedence explanation](../../../../docs/Explanations.md#runtime-bootstrap).

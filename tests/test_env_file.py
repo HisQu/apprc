@@ -10,6 +10,7 @@ from apprc.user_files.env_files import (
     ensure_storage_dotenv_file,
     normalize_env_value,
     read_env_file,
+    set_env_file_value,
     set_storage_dotenv_value,
     write_env_file,
 )
@@ -37,7 +38,7 @@ def test_write_env_file_orders_known_keys_before_unknown_keys(
         owners=APPRC_EXAMPLE_APP_OWNERS,
     )
 
-    assert env_path.read_text(encoding="utf-8") == (
+    assert env_path.read_bytes().decode("utf-8") == (
         'APPRC_EXAMPLE_APP_PROFILE="local-profile"\n'
         'APPRC_EXAMPLE_APP_RETRY_COUNT="7"\n'
         'A_USER_EXTRA="first"\n'
@@ -236,6 +237,115 @@ def test_clear_env_file_value_absent_key_preserves_existing_file(
 
     assert update is None
     assert env_path.read_text(encoding="utf-8") == 'OTHER="value"\n'
+
+
+def test_set_env_file_value_preserves_unrelated_user_text(
+    tmp_path: Path,
+) -> None:
+    env_path = tmp_path / "apprc.user.env"
+    env_path.write_text(
+        "# Keep this explanation\r\n"
+        "export APPRC_EXAMPLE_APP_PROFILE = old # active profile\r\n"
+        "UNKNOWN='keep this quoting'\r\n"
+        "\r\n"
+        "APPRC_EXAMPLE_APP_PROFILE=stale\r\n"
+        "BROKEN='unterminated\r\n",
+        encoding="utf-8",
+    )
+
+    update = set_env_file_value(
+        path=env_path,
+        reference="app.profile",
+        raw_value="new profile",
+        owners=APPRC_EXAMPLE_APP_OWNERS,
+        layer_name="apprc.user.env",
+    )
+
+    assert env_path.read_bytes().decode("utf-8") == (
+        "# Keep this explanation\r\n"
+        'export APPRC_EXAMPLE_APP_PROFILE = "new profile" # active profile\r\n'
+        "UNKNOWN='keep this quoting'\r\n"
+        "\r\n"
+        "# AppRC disabled duplicate assignment: "
+        "APPRC_EXAMPLE_APP_PROFILE=stale\r\n"
+        "BROKEN='unterminated\r\n"
+    )
+    assert update.warnings == (
+        f"{env_path}: APPRC_EXAMPLE_APP_PROFILE is assigned more than once. "
+        "AppRC will update line 2 and comment out duplicate line 5.",
+    )
+
+
+def test_set_env_file_value_comments_multiline_duplicate(
+    tmp_path: Path,
+) -> None:
+    env_path = tmp_path / "apprc.user.env"
+    env_path.write_text(
+        "APPRC_EXAMPLE_APP_PROFILE=first\n"
+        'APPRC_EXAMPLE_APP_PROFILE="old\nvalue" # duplicate\n',
+        encoding="utf-8",
+    )
+
+    set_env_file_value(
+        path=env_path,
+        reference="app.profile",
+        raw_value="new",
+        owners=APPRC_EXAMPLE_APP_OWNERS,
+        layer_name="apprc.user.env",
+    )
+
+    assert env_path.read_text(encoding="utf-8") == (
+        'APPRC_EXAMPLE_APP_PROFILE="new"\n'
+        "# AppRC disabled duplicate assignment: "
+        'APPRC_EXAMPLE_APP_PROFILE="old\n'
+        '# value" # duplicate\n'
+    )
+
+
+def test_clear_env_file_value_removes_every_active_occurrence(
+    tmp_path: Path,
+) -> None:
+    env_path = tmp_path / "apprc.user.env"
+    env_path.write_text(
+        "# profile settings\n"
+        "APPRC_EXAMPLE_APP_PROFILE=first # remove with assignment\n"
+        "\n"
+        "KEEP=1\n"
+        "# APPRC_EXAMPLE_APP_PROFILE=commented\n"
+        "APPRC_EXAMPLE_APP_PROFILE=second\n",
+        encoding="utf-8",
+    )
+
+    update = clear_env_file_value(
+        path=env_path,
+        reference="app.profile",
+        owners=APPRC_EXAMPLE_APP_OWNERS,
+        layer_name="apprc.user.env",
+    )
+
+    assert update is not None
+    assert env_path.read_text(encoding="utf-8") == (
+        "# profile settings\n\nKEEP=1\n# APPRC_EXAMPLE_APP_PROFILE=commented\n"
+    )
+
+
+def test_set_env_file_value_appends_after_missing_final_newline(
+    tmp_path: Path,
+) -> None:
+    env_path = tmp_path / "apprc.user.env"
+    env_path.write_text("KEEP=1\r\nOTHER=2", encoding="utf-8")
+
+    set_env_file_value(
+        path=env_path,
+        reference="app.profile",
+        raw_value="new",
+        owners=APPRC_EXAMPLE_APP_OWNERS,
+        layer_name="apprc.user.env",
+    )
+
+    assert env_path.read_bytes().decode("utf-8") == (
+        'KEEP=1\r\nOTHER=2\r\nAPPRC_EXAMPLE_APP_PROFILE="new"\r\n'
+    )
 
 
 def test_normalize_env_value_rejects_invalid_choices_and_bool() -> None:

@@ -263,6 +263,32 @@ def test_rejects_required_field_with_python_fallback() -> None:
         )
 
 
+def test_field_rejects_unknown_keyword_options() -> None:
+    """Misspelled field options fail instead of becoming unused metadata."""
+    with pytest.raises(TypeError, match="secrte"):
+        rc.field("HAIU_LLM_TOKEN", secrte=True)  # type: ignore[call-arg]
+
+
+def test_field_accepts_explicit_compatibility_options() -> None:
+    """Supported legacy and advanced options remain visible in the signature."""
+    MyRC = _config_only_app()
+
+    @MyRC.config("llm", prefix="HAIU_LLM_")
+    class LLMConfig(rc.Config):
+        provider: str = rc.field(
+            "HAIU_LLM_PROVIDER",
+            shared_default="openai",
+            python_type=str,
+            explanation_short="Provider name.",
+            explanation_long="Provider name used for model calls.",
+        )
+
+    assert LLMConfig.config_owner is not None
+    spec = LLMConfig.config_owner.field("provider")
+    assert spec.packaged_default == "openai"
+    assert spec.explanation_short == "Provider name."
+
+
 def test_required_field_allows_packaged_default_and_constructor_value() -> None:
     """Packaged and explicit runtime values remain valid for required fields."""
     MyRC = _config_only_app()
@@ -275,7 +301,7 @@ def test_required_field_allows_packaged_default_and_constructor_value() -> None:
             packaged_default="openai",
         )
 
-    config = LLMConfig(provider="mock")  # pyright: ignore[reportCallIssue]
+    config = LLMConfig(provider="mock")
 
     assert config.provider == "mock"
     assert LLMConfig.config_owner is not None
@@ -299,9 +325,12 @@ def test_bundle_eager_construction_and_injection(
         package: str = "haiu.resources"
 
     @MyRC.bundle
+    @dataclass(kw_only=True)
     class HAIUConfig:
-        llm: LLMConfig
-        resources: PackageResources
+        llm: LLMConfig = dataclass_field(default_factory=LLMConfig)
+        resources: PackageResources = dataclass_field(
+            default_factory=PackageResources
+        )
 
     config = HAIUConfig()
     assert isinstance(config.llm, LLMConfig)
@@ -309,8 +338,8 @@ def test_bundle_eager_construction_and_injection(
     assert config.llm.api_key == "secret-value"
     assert "secret-value" not in repr(config)
 
-    injected = LLMConfig(provider="mock")  # pyright: ignore[reportCallIssue]
-    injected_bundle = HAIUConfig(llm=injected)  # pyright: ignore[reportCallIssue]
+    injected = LLMConfig(provider="mock")
+    injected_bundle = HAIUConfig(llm=injected)
     assert injected_bundle.llm is injected
 
     with pytest.raises(TypeError, match="unexpected config argument"):
@@ -333,8 +362,47 @@ def test_bundle_rejects_unregistered_config_class() -> None:
     with pytest.raises(TypeError, match="not registered with this AppRC"):
 
         @MyRC.bundle
+        @dataclass(kw_only=True)
+        class HAIUConfig:
+            llm: LLMConfig = dataclass_field(default_factory=LLMConfig)
+
+
+def test_bundle_rejects_annotation_only_class() -> None:
+    """Bundles require a constructor that static analyzers can inspect."""
+    MyRC = _config_only_app()
+
+    @MyRC.config("llm", prefix="HAIU_LLM_")
+    class LLMConfig(rc.Config):
+        provider: str = rc.field("HAIU_LLM_PROVIDER", default="openai")
+
+    with pytest.raises(TypeError, match="explicit keyword-only dataclass"):
+
+        @MyRC.bundle
         class HAIUConfig:
             llm: LLMConfig
+
+
+def test_bundle_rejects_non_keyword_and_missing_factory_fields() -> None:
+    """Bundle dataclasses must describe their real optional keyword API."""
+    MyRC = _config_only_app()
+
+    @MyRC.config("llm", prefix="HAIU_LLM_")
+    class LLMConfig(rc.Config):
+        provider: str = rc.field("HAIU_LLM_PROVIDER", default="openai")
+
+    @dataclass
+    class PositionalBundle:
+        llm: LLMConfig = dataclass_field(default_factory=LLMConfig)
+
+    with pytest.raises(TypeError, match="must be keyword-only"):
+        MyRC.bundle(PositionalBundle)
+
+    @dataclass(kw_only=True)
+    class MissingFactoryBundle:
+        llm: LLMConfig
+
+    with pytest.raises(TypeError, match="default_factory=LLMConfig"):
+        MyRC.bundle(MissingFactoryBundle)
 
 
 def test_bundle_supports_post_init_derived_config_fields() -> None:
@@ -352,8 +420,9 @@ def test_bundle_supports_post_init_derived_config_fields() -> None:
         storage: StorageConfig
 
     @MyRC.bundle
+    @dataclass(kw_only=True)
     class HAIUConfig:
-        storage: StorageConfig
+        storage: StorageConfig = dataclass_field(default_factory=StorageConfig)
         rag: RagConfig = dataclass_field(init=False)
 
         def __post_init__(self) -> None:
@@ -368,7 +437,7 @@ def test_bundle_supports_post_init_derived_config_fields() -> None:
     )
 
     injected_storage = StorageConfig(root="other")
-    injected = HAIUConfig(storage=injected_storage)  # pyright: ignore[reportCallIssue]
+    injected = HAIUConfig(storage=injected_storage)
     assert injected.storage is injected_storage
     assert injected.rag.storage is injected_storage
 
@@ -396,8 +465,9 @@ def test_bundle_preserves_post_init_hook_class_identity() -> None:
             """Record cooperative post-init dispatch."""
             base_calls.append(type(self).__name__)
 
+    @dataclass(kw_only=True)
     class HAIUConfig(BundlePostInitBase):
-        storage: StorageConfig
+        storage: StorageConfig = dataclass_field(default_factory=StorageConfig)
         rag: RagConfig = dataclass_field(init=False)
 
         def __post_init__(self) -> None:
@@ -424,8 +494,9 @@ def test_bundle_ignores_config_base_internal_fields() -> None:
         root: str = "storage"
 
     @MyRC.bundle
+    @dataclass(kw_only=True)
     class HAIUConfig(rc.ConfigBase):
-        storage: StorageConfig
+        storage: StorageConfig = dataclass_field(default_factory=StorageConfig)
 
     config = HAIUConfig()
     assert isinstance(config.storage, StorageConfig)
@@ -603,7 +674,7 @@ def test_public_config_runtime_assignment_updates_provenance() -> None:
     class LLMConfig(rc.Config):
         provider: str = rc.field("HAIU_LLM_PROVIDER", default="openai")
 
-    config = LLMConfig(provider="constructor")  # pyright: ignore[reportCallIssue]
+    config = LLMConfig(provider="constructor")
     assert config.provenance()["provider"].origin == (
         "python_constructor_argument"
     )

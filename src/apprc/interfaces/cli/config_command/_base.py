@@ -241,7 +241,7 @@ class ConfigCommandBase:
             raise typer.BadParameter(
                 f"No active {self.kit.spec.display_name} storage root. Run "
                 f"`{self.config_command_text('setup --yes --storage-root /absolute/path/to/storage')}` "
-                "or pass --storage NAME.",
+                "or pass --storage NAME_OR_PATH.",
                 param_hint="--storage",
             )
         return self.validate_storage_root_for_write(storage_root)

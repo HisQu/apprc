@@ -364,15 +364,18 @@ def _render_bundle_module(
     """Render ``config/bundle.py``."""
     return f'''"""Top-level AppRC config bundle."""
 
+from dataclasses import dataclass, field
+
 from {module_prefix}.app import MyRC
 from {module_prefix}.sections.app import AppSection
 
 
 @MyRC.bundle
+@dataclass(kw_only=True)
 class {bundle_name}:
     """Aggregate all registered AppRC config sections."""
 
-    app: AppSection
+    app: AppSection = field(default_factory=AppSection)
 '''
 
 

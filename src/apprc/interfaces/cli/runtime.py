@@ -47,7 +47,6 @@ from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupFlow
 from apprc.user_files.storage_roots._loading import (
     load_optional_runtime_storage_registry,
 )
-from apprc.user_files.storage_roots._naming import suggested_storage_root
 from apprc.user_files.storage_roots.selector import (
     MissingStorageSelectorError,
     StorageNotInitializedError,
@@ -451,7 +450,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 str(error),
                 param_hint=error.param_hint,
             ) from error
-        suggested = suggested_storage_root(self.kit.spec.app_id)
+        suggested = self.kit.spec.apprc_dir() / "storage"
         selected_root = prompt_storage_setup_root(suggested=suggested)
         if selected_root is None:
             typer.echo("No files were changed.", err=True)

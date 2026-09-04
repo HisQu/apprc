@@ -16,6 +16,7 @@ apprc-config-only = "config_only.cli:main"
 apprc-config-with-storage = "config_with_storage.cli:main"
 apprc-explicit-env-precedence = "explicit_env_precedence.cli:main"
 apprc-cli-runtime = "cli_runtime.cli:main"
+apprc-examples-lab = "_example_apps_utils.lab:main"
 apprc-examples-run-all = "_example_apps_utils.run_all:main"
 
 [tool.setuptools.packages.find]

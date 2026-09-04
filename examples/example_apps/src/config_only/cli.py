@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
-import os
-from pathlib import Path
+# == Standard Library ===========================================
+import json
 
-# == 3rd Party ===============================
+# == 3rd Party ==================================================
 import typer
 
-# == Internal ================================
+# == Internal ===================================================
 import apprc as rc
-from config_only.config import ConfigOnlyExampleConfig, KIT
-from _example_apps_utils._support import (
-    build_standard_app,
-    config_values,
-    run_isolated,
-    write_env,
-)
+from config_only.config import ConfigOnlyExampleConfig, MyRC
 
 
 def build_app(
@@ -31,60 +24,53 @@ def build_app(
     :param editor_app_cls: Optional editor replacement for tests.
     :return: Typer application.
     """
-    return build_standard_app(
-        kit=KIT,
-        bundle_cls=ConfigOnlyExampleConfig,
-        section_getter=lambda config: config.app,
-        help_text="Exercise AppRC config without storage.",
+    app = typer.Typer(
+        help="Exercise AppRC config without storage.",
+        no_args_is_help=True,
+        pretty_exceptions_show_locals=False,
+    )
+    MyRC.mount_cli(
+        app,
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
+        runtime_payload=_runtime_payload,
     )
 
+    @app.command("run")
+    def run_cmd(ctx: typer.Context) -> None:
+        """Print the config resolved for this process."""
+        typer.echo(json.dumps(_runtime_payload(_state(ctx)), indent=2))
 
-app = build_app()
+    return app
 
 
-def run_demo(root: Path) -> dict[str, object]:
-    """Execute a compact config-only scenario.
+def _runtime_payload(
+    _state: rc.cli.DefaultConfigCliState,
+) -> dict[str, object]:
+    """Return values that this example application would use."""
+    config = ConfigOnlyExampleConfig().app
+    return {
+        "app_id": MyRC.spec.app_id,
+        "config": {
+            "profile": config.profile,
+            "debug": config.debug,
+        },
+    }
 
-    :param root: Temporary run directory.
-    :return: JSON-friendly scenario summary.
-    """
 
-    def scenario() -> dict[str, object]:
-        os.environ[KIT.spec.apprc_dir_env_key] = str(root / "apprc")
-        explicit_env = write_env(
-            root / ".env",
-            {
-                "APPRC_EXAMPLE_CONFIG_DEBUG": "true",
-            },
-        )
-        doctor = rc.cli.build_config_doctor_payload(KIT, storage=None)
-        bootstrap = KIT.bootstrap(
-            env_files=(explicit_env,),
-            env_file_overrides_os_environ=True,
-            load_dotenv_layers=True,
-            storage=None,
-        )
-        config = ConfigOnlyExampleConfig()
-        return {
-            "scenario": "config_only",
-            "doctor_status": doctor.status,
-            "defaults_dotenv": str(bootstrap.defaults_dotenv),
-            "explicit_env_files": [str(path) for path in bootstrap.env_files],
-            "config": config_values(config.app),
-        }
-
-    return run_isolated(
-        root,
-        env_prefixes=("APPRC_EXAMPLE_CONFIG_",),
-        scenario=scenario,
-    )
+def _state(ctx: typer.Context) -> rc.cli.DefaultConfigCliState:
+    """Return runtime state after AppRC has prepared the command."""
+    if isinstance(ctx.obj, rc.cli.DefaultConfigCliState):
+        return ctx.obj
+    raise RuntimeError("AppRC runtime state was not initialized.")
 
 
 def main() -> None:
     """Run the config-only example CLI."""
     app()
+
+
+app = build_app()
 
 
 if __name__ == "__main__":

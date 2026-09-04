@@ -8,13 +8,13 @@ import pytest
 
 import apprc.user_files.storage_roots.paths as storage_paths
 import apprc.user_files.storage_roots.registry as storage_registry_module
+import apprc.user_files.storage_roots._naming as storage_naming
 from apprc.user_files.storage_roots._loading import (
     MissingStorageRegistryError,
     inspect_storage_registry,
     load_existing_storage_registry,
 )
 from apprc.user_files.storage_roots.registry import (
-    app_data_dir,
     load_storage_registry_or_empty,
     ordered_storage_names,
     prune_missing_archived_storages,
@@ -38,8 +38,9 @@ from tests.support_config import build_apprc_example_app_kit
 
 
 def test_storage_suggestion_uses_predictable_apprc_directory() -> None:
-    assert app_data_dir("demo").name == "demo"
-    assert suggested_storage_root("demo") == app_data_dir("demo") / "storage"
+    assert suggested_storage_root("demo") == (
+        storage_naming.default_apprc_dir("demo") / "storage"
+    )
 
 
 def test_suggested_storage_name_is_default() -> None:

@@ -17,7 +17,7 @@ class ExplicitEnvPrecedenceConfig(rc.Config):
     """Storage fields used to demonstrate explicit env-file precedence."""
 
     storage_root: Path = rc.field(
-        "APPRC_EXAMPLE_PRECEDENCE_ROOT",
+        "APPRC_EXAMPLE_PRECEDENCE_STORAGE",
         editable=False,
         required=True,
         title="Storage root",

@@ -36,7 +36,6 @@ _MODEL_EXPORTS = [
     "StorageRegistry",
 ]
 _NAMING_EXPORTS = [
-    "app_data_dir",
     "suggested_storage_name",
     "suggested_storage_root",
 ]

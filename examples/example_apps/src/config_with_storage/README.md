@@ -1,38 +1,38 @@
 # Config With Storage Example
 
-`config_with_storage` demonstrates `rc.AppRC(..., storage=rc.Storage(...))`
-with one active registered storage and storage-local values.
+`config_with_storage` demonstrates the normal storage-capable declaration:
+`rc.AppRC(..., storage=rc.Storage(...))`. Its selector environment variable is
+`APPRC_EXAMPLE_STORAGE_STORAGE`, which accepts a registered name or a path.
 
-## Requirements
-
-- Install the example package from the repository checkout.
-- Source `.env.example_apps` or use direnv.
-- `APPRC_EXAMPLE_STORAGE_ROOT` may contain a registered name or path. The root env
-  file selects the generated `alpha` storage.
-
-## Setup
+Start a clean session:
 
 ```bash
-set -a; source .env.example_apps; set +a
-python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"
-apprc-config-with-storage config doctor
+apprc-examples-lab config-with-storage
 ```
 
-The bootstrap helper writes the active storage under
-`examples/example_app_disk_files/.apprc-example-config-with-storage/storages/alpha`.
-
-## Commands
+The printed walkthrough covers setup, the required secret, runtime, and the
+registry:
 
 ```bash
+apprc-config-with-storage config setup --storage-root PATH --yes
+apprc-config-with-storage --storage default config set api_token lab-secret --scope storage
 apprc-config-with-storage run
 apprc-config-with-storage config storage list
-apprc-config-with-storage config show --json
 ```
 
-Use `cli_runtime` when a custom callback must prepare additional runtime state.
+Try both selector forms:
 
-## Docs
+```bash
+apprc-config-with-storage --storage default run
+apprc-config-with-storage --storage PATH run
+```
 
-- [Example app overview](../../README.md)
-- [Development guide](../../../../docs/Development.md#example-apps)
-- [Storage commands reference](../../../../docs/References.md#generated-cli-commands)
+The generated registry also exposes `add`, `select`, `rename`, `repoint`,
+`move`, and `remove`. `repoint` changes only `apprc.toml`; `move` transfers the
+actual directory and then updates the registry.
+
+Copy [`cli.py`](cli.py) and the [`config`](config) package for the common
+storage-backed integration.
+
+See the [example inventory](../../README.md#example-inventory) and
+[storage command reference](../../../../docs/References.md#generated-cli-commands).

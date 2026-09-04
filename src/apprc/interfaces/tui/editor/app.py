@@ -36,10 +36,12 @@ from textual.widgets import (
 from apprc.user_files.env_files.files import read_env_file
 from apprc.runtime._dotenv_layers import read_defaults_dotenv_values
 from apprc.user_files.env_files.updates import (
+    EnvFileEditPlan,
+    apply_env_file_edit,
     clear_env_file_value,
     clear_storage_dotenv_value,
-    set_env_file_value,
-    set_storage_dotenv_value,
+    plan_env_file_value_update,
+    plan_storage_dotenv_value_update,
 )
 from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.storage_roots.paths import StorageRootPathError
@@ -51,6 +53,7 @@ from apprc.interfaces.tui.modals import (
     ConfigValueEditScreen,
     ValueEditResult,
 )
+from apprc.interfaces.tui._primitives import ConfirmScreen
 from apprc.interfaces.tui._rendering import (
     FIELD_TABLE_COLUMNS,
     active_storage_title,
@@ -431,14 +434,17 @@ class ConfigEditorApp(App[None]):
         ):
             self.query_one(f"#{button_id}", Button).disabled = True
 
-    def _handle_edit_result(self, result: ValueEditResult | None) -> None:
+    async def _handle_edit_result(
+        self,
+        result: ValueEditResult | None,
+    ) -> None:
         """Persist the value returned by the edit modal."""
         if result is None:
             return
         if result.action == "clear":
             self._clear_env_key(result.env_key, scope=result.scope)
             return
-        self._save_env_key(
+        await self._save_env_key(
             result.env_key,
             result.raw_value,
             scope=result.scope,
@@ -461,17 +467,17 @@ class ConfigEditorApp(App[None]):
             return None
         return self.storage_registry
 
-    def _save_env_key(
+    async def _save_env_key(
         self,
         env_key: str,
         raw_value: str,
         *,
         scope: ConfigWriteScope,
     ) -> None:
-        """Validate and persist one app or storage env value."""
+        """Validate, confirm, and persist one app or storage env value."""
         try:
             if scope == "user":
-                update = set_env_file_value(
+                plan = plan_env_file_value_update(
                     path=self.kit.spec.user_dotenv_path(),
                     reference=env_key,
                     raw_value=raw_value,
@@ -479,7 +485,7 @@ class ConfigEditorApp(App[None]):
                     layer_name=self.kit.spec.user_dotenv_filename,
                 )
             else:
-                update = set_storage_dotenv_value(
+                plan = plan_storage_dotenv_value_update(
                     storage_root=self._current_storage_root(),
                     reference=env_key,
                     raw_value=raw_value,
@@ -495,9 +501,33 @@ class ConfigEditorApp(App[None]):
         ) as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
+        if not await self._confirm_env_file_edit(plan):
+            return
+        try:
+            update = apply_env_file_edit(plan)
+        except (AppRCDirectoryError, OSError) as exc:
+            self.notify(str(exc), severity="error", markup=False)
+            return
         self._refresh_values_after_write(scope=scope, path=update.path)
         self._populate_field_table()
         self.notify(f"Saved {update.env_key}")
+
+    async def _confirm_env_file_edit(self, plan: EnvFileEditPlan) -> bool:
+        """Ask before disabling duplicate dotenv assignments.
+
+        :param plan: Validated dotenv edit that may contain duplicate warnings.
+        :return: Whether the caller may write the edit.
+        """
+        if not plan.warnings:
+            return True
+        action = await self.push_screen_wait(
+            ConfirmScreen(
+                title="Duplicate dotenv assignments",
+                message=f"{plan.warnings[0]}\n\nProceed?",
+                actions=(("confirm", "Proceed", "warning"),),
+            )
+        )
+        return action == "confirm"
 
     def _clear_env_key(
         self,

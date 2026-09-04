@@ -4,9 +4,6 @@ import ast
 import json
 import os
 import re
-import shlex
-import subprocess
-import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,10 +30,6 @@ from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.runtime.diagnostics.messages import config_command_text
 from config_with_storage import cli as config_with_storage
 from config_with_storage.config import KIT as CONFIG_WITH_STORAGE_KIT
-from apprc_dev.example_apps.bootstrap import (
-    EXAMPLE_APP_DISK_FILES_ROOT,
-    bootstrap_example_apps,
-)
 from tests.support_config import build_apprc_example_app_kit
 
 ROOT = Path(__file__).parents[1]
@@ -309,6 +302,114 @@ def test_cli_runtime_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
     assert result.output.strip() == "runtime_status: runtime-independent"
 
 
+def test_config_only_help_describes_dotenv_skip_without_storage() -> None:
+    harness = ExampleCliHarness(EXAMPLE_CLIS[0])
+
+    result = _assert_success(harness.invoke(["--help"]))
+
+    assert "Do not merge AppRC dotenv" in result.output
+    assert "layers or explicit dotenv" in result.output
+    assert "Select storage" not in result.output
+
+
+def test_storage_example_exercises_registry_lifecycle_and_path_selection(
+    tmp_path: Path,
+) -> None:
+    definition = EXAMPLE_CLIS[1]
+    harness = ExampleCliHarness(definition)
+    default_root = tmp_path / "default"
+    alpha_root = tmp_path / "alpha"
+    repointed_root = tmp_path / "repointed"
+    moved_root = tmp_path / "moved"
+
+    _assert_success(
+        harness.invoke(
+            [
+                "config",
+                "setup",
+                "--storage-root",
+                str(default_root),
+                "--yes",
+            ]
+        )
+    )
+    _assert_success(
+        harness.invoke(
+            [
+                "--storage",
+                "default",
+                "config",
+                "set",
+                "api_token",
+                "example-secret",
+                "--scope",
+                "storage",
+            ]
+        )
+    )
+    selected_by_name = _assert_json_success(
+        harness.invoke(["--storage", "default", "run"])
+    )
+    selected_by_path = _assert_json_success(
+        harness.invoke(["--storage", str(default_root), "run"])
+    )
+    assert selected_by_name["storage_name"] == "default"
+    assert selected_by_path["storage_name"] == "default"
+    assert selected_by_path["storage_root"] == str(default_root.resolve())
+
+    _assert_success(
+        harness.invoke(
+            ["config", "storage", "add", "alpha", str(alpha_root), "--yes"]
+        )
+    )
+    after_add = _assert_json_success(
+        harness.invoke(["config", "storage", "list", "--json"])
+    )
+    storage_rows = after_add["storages"]
+    assert isinstance(storage_rows, list)
+    active_after_add = [
+        row["name"]
+        for row in storage_rows
+        if isinstance(row, dict) and row["active"]
+    ]
+    assert active_after_add == ["default"]
+
+    renamed = _assert_success(
+        harness.invoke(["config", "storage", "rename", "default", "primary"])
+    )
+    assert "selected_storage: primary" in renamed.output
+
+    _assert_success(harness.invoke(["config", "storage", "select", "alpha"]))
+    repointed_root.mkdir()
+    _assert_success(
+        harness.invoke(
+            [
+                "config",
+                "storage",
+                "repoint",
+                "alpha",
+                str(repointed_root),
+            ]
+        )
+    )
+    _assert_success(
+        harness.invoke(
+            [
+                "config",
+                "storage",
+                "move",
+                "alpha",
+                str(moved_root),
+                "--yes",
+            ]
+        )
+    )
+    removed = _assert_success(
+        harness.invoke(["config", "storage", "remove", "alpha"])
+    )
+    assert "no storage is selected" in removed.output
+
+
 def test_example_cli_env_file_options_control_apprc_directory(
     tmp_path: Path,
 ) -> None:
@@ -340,78 +441,6 @@ def test_example_cli_env_file_options_control_apprc_directory(
     )
 
 
-def test_example_bootstrap_writes_teaching_comments(tmp_path: Path) -> None:
-    output_root = tmp_path / "example_app_disk_files"
-    env_files = bootstrap_example_apps(output_root=output_root, clean=True)
-
-    assert {path.name for path in env_files} == {".env"}
-    assert all(path.is_relative_to(output_root) for path in env_files)
-    assert not list(tmp_path.glob(".apprc-example*"))
-
-    for env_file in env_files:
-        text = env_file.read_text(encoding="utf-8")
-        assert "AppRC does not choose a location for this file" in text
-        assert "set -a; source .env; set +a" in text
-
-    shared_apprc_directory = output_root / "apprc-directories"
-    assert {path.name for path in shared_apprc_directory.iterdir()} == {
-        definition.kit.spec.app_id for definition in EXAMPLE_CLIS
-    }
-
-    storage_roots = sorted(output_root.glob(".apprc-example*/storages/alpha"))
-    assert len(storage_roots) == sum(
-        definition.uses_storage for definition in EXAMPLE_CLIS
-    )
-
-    generated_files = sorted(output_root.glob("**/apprc.user.env"))
-    generated_files.extend(sorted(output_root.glob("**/apprc.storage.env")))
-    generated_files.extend(sorted(output_root.glob("**/*.toml")))
-    assert generated_files
-    for path in generated_files:
-        text = path.read_text(encoding="utf-8")
-        assert "Generated by python -m apprc_dev.example_apps.bootstrap" in text
-        assert "Real app location:" in text
-
-
-def test_example_bootstrap_default_output_root() -> None:
-    assert EXAMPLE_APP_DISK_FILES_ROOT == (
-        ROOT / "examples" / "example_app_disk_files"
-    )
-
-
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="requires a POSIX Bash shell",
-)
-def test_example_root_env_makes_precedence_app_runnable(
-    tmp_path: Path,
-) -> None:
-    env = _source_example_apps_env(project_root=tmp_path)
-    output_root = Path(env["APPRC_EXAMPLE_APPS_ROOT"])
-    bootstrap_example_apps(output_root=output_root, clean=True)
-
-    definition = next(
-        item
-        for item in EXAMPLE_CLIS
-        if item.scenario == "explicit_env_precedence"
-    )
-    harness = ExampleCliHarness(definition)
-    payload = _assert_json_success(harness.invoke(["run"], env=env))
-    bootstrap = payload["bootstrap"]
-    config = payload["config"]
-
-    assert payload["app_id"] == definition.kit.spec.app_id
-    assert isinstance(bootstrap, dict)
-    assert bootstrap["storage_root"] == str(
-        output_root
-        / ".apprc-example-explicit-env-precedence"
-        / "storages"
-        / "alpha"
-    )
-    assert isinstance(config, dict)
-    assert config["label"] == "explicit-env-label"
-
-
 def test_console_scripts_point_to_example_clis() -> None:
     root_pyproject = tomllib.loads(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -430,6 +459,7 @@ def test_console_scripts_point_to_example_clis() -> None:
         "apprc-config-with-storage": "config_with_storage.cli:main",
         "apprc-explicit-env-precedence": ("explicit_env_precedence.cli:main"),
         "apprc-cli-runtime": "cli_runtime.cli:main",
+        "apprc-examples-lab": "_example_apps_utils.lab:main",
         "apprc-examples-run-all": "_example_apps_utils.run_all:main",
     }
     assert demo_pyproject["tool"]["setuptools"]["packages"]["find"][
@@ -781,32 +811,6 @@ def _assert_json_success(result: Result) -> dict[str, object]:
     payload = json.loads(result.output)
     assert isinstance(payload, dict)
     return payload
-
-
-def _source_example_apps_env(*, project_root: Path) -> dict[str, str]:
-    """Return env values produced by sourcing the root example env file."""
-    command = (
-        f"PROJECT_ROOT={shlex.quote(project_root.as_posix())}; "
-        f"source {shlex.quote((ROOT / '.env.example_apps').as_posix())}; "
-        "env -0"
-    )
-    result = subprocess.run(
-        ["bash", "-c", command],
-        check=True,
-        capture_output=True,
-    )
-    env: dict[str, str] = {}
-    for item in result.stdout.split(b"\0"):
-        if not item:
-            continue
-        key, _, value = item.partition(b"=")
-        decoded_key = key.decode()
-        if decoded_key.startswith("APPRC_EXAMPLE_") or decoded_key in {
-            "PROJECT_ROOT",
-            "XDG_CONFIG_HOME",
-        }:
-            env[decoded_key] = value.decode()
-    return env
 
 
 def _imports_runtime_bootstrap(path: Path) -> bool:

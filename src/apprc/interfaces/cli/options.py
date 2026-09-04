@@ -52,8 +52,8 @@ SkipDotenvLayersOption: TypeAlias = Annotated[
         "--skip-dotenv-layers",
         "-s",
         help=(
-            "Select storage but do not merge packaged, storage-local, or "
-            "explicit dotenv values into the process env."
+            "Do not merge AppRC dotenv layers or explicit dotenv files "
+            "into the process environment."
         ),
     ),
 ]

@@ -39,8 +39,6 @@ class PublicFieldSpec:
     :param secret: Whether display surfaces should redact the value.
     :param choices: Optional accepted string values.
     :param python_type: Optional override for the annotation-derived type.
-    :param metadata: Additional extension metadata retained for future public
-        adapters.
     """
 
     env_key: str
@@ -56,7 +54,6 @@ class PublicFieldSpec:
     secret: bool = False
     choices: tuple[str, ...] = ()
     python_type: type[Any] | None = None
-    metadata: dict[str, object] = dataclass_field(default_factory=dict)
 
     @property
     def shared_default(self) -> Any:
@@ -85,7 +82,10 @@ def field(
     editable: bool = True,
     secret: bool = False,
     choices: tuple[str, ...] | list[str] | None = None,
-    **metadata: object,
+    shared_default: object = CONFIG_MISSING,
+    python_type: type[Any] | None = None,
+    explanation_short: str | None = None,
+    explanation_long: str | None = None,
 ) -> Any:
     """Declare one env-backed AppRC config field.
 
@@ -109,11 +109,16 @@ def field(
     :param secret: Whether display surfaces should redact the value. This does
         not encrypt values, change storage, or imply requiredness.
     :param choices: Optional accepted string values.
-    :param metadata: Advanced metadata passed through to AppRC's internal field
-        adapter, such as the deprecated ``shared_default`` or
-        ``explanation_short``.
+    :param shared_default: Deprecated name for ``packaged_default``.
+    :param python_type: Type to use when the Python attribute cannot carry a
+        usable annotation.
+    :param explanation_short: Compact table-facing explanation. Defaults to
+        ``description``.
+    :param explanation_long: Full editor-facing explanation. Defaults to
+        ``description`` and then ``explanation_short``.
     :return: Dataclass field consumed by ``@MyRC.config(...)``.
-    :raises TypeError: If ``env`` is not a non-empty string.
+    :raises TypeError: If ``env`` is not a non-empty string or an unsupported
+        keyword argument is passed.
     :raises ValueError: If conflicting defaults, required Python fallbacks, or
         unsupported optional missing semantics are requested.
     """
@@ -142,26 +147,28 @@ def field(
             "represented safely."
         )
 
-    legacy_shared_default = metadata.pop("shared_default", CONFIG_MISSING)
     if (
         packaged_default is not CONFIG_MISSING
-        and legacy_shared_default is not CONFIG_MISSING
+        and shared_default is not CONFIG_MISSING
     ):
         raise ValueError(
             "rc.field(...) cannot declare both packaged_default and the "
             "deprecated shared_default."
         )
     resolved_packaged_default = (
-        legacy_shared_default
+        shared_default
         if packaged_default is CONFIG_MISSING
         else packaged_default
     )
-    python_type = metadata.pop("python_type", None)
-    explanation_short = str(
-        metadata.pop("explanation_short", description or "")
+    resolved_explanation_short = (
+        explanation_short
+        if explanation_short is not None
+        else description or ""
     )
-    explanation_long = str(
-        metadata.pop("explanation_long", description or explanation_short)
+    resolved_explanation_long = (
+        explanation_long
+        if explanation_long is not None
+        else description or resolved_explanation_short
     )
     spec = PublicFieldSpec(
         env_key=env,
@@ -171,13 +178,12 @@ def field(
         required=required,
         title=title,
         description=description,
-        explanation_short=explanation_short,
-        explanation_long=explanation_long,
+        explanation_short=resolved_explanation_short,
+        explanation_long=resolved_explanation_long,
         editable=editable,
         secret=secret,
         choices=tuple(choices or ()),
-        python_type=cast(type[Any] | None, python_type),
-        metadata=dict(metadata),
+        python_type=python_type,
     )
     field_kwargs: dict[str, Any] = {
         "repr": not secret,

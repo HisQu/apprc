@@ -96,6 +96,74 @@ def test_doctor_reports_malformed_registry(
     assert payload.apprc_toml_error is not None
 
 
+def test_doctor_reports_storage_not_selected_without_missing_env_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    kit.spec.preferred_apprc_toml_path().write_text("", encoding="utf-8")
+
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_SELECTED.value
+    assert "missing_env_keys" not in payload.to_payload()
+    assert any("--storage NAME_OR_PATH" in issue for issue in payload.issues)
+    assert any(
+        "setup --yes --storage-root" in step for step in payload.next_steps
+    )
+
+
+def test_doctor_distinguishes_invalid_selector_from_missing_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "missing")
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    storage_root = tmp_path / "alpha"
+    register_storage(
+        name="alpha",
+        root=storage_root,
+        path=kit.spec.preferred_apprc_toml_path(),
+    )
+
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_READY.value
+    assert any("missing" in issue for issue in payload.issues)
+    assert all(
+        "No storage is selected" not in issue for issue in payload.issues
+    )
+    assert payload.next_steps[0].startswith("Fix or unset")
+
+
+def test_doctor_recommends_selecting_an_existing_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    storage_root = tmp_path / "alpha"
+    storage_root.mkdir()
+    (storage_root / "apprc.storage.env").write_text("", encoding="utf-8")
+    kit.spec.preferred_apprc_toml_path().write_text(
+        f'[storages.alpha]\nroot = "{storage_root}"\n',
+        encoding="utf-8",
+    )
+
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_SELECTED.value
+    assert payload.storage_count == 1
+    assert "storage select NAME" in payload.next_steps[0]
+
+
 def test_disk_registry_never_enables_storage_for_storage_free_app(
     tmp_path: Path,
 ) -> None:

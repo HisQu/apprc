@@ -92,14 +92,6 @@ def print_config_doctor(
         ),
     ):
         console.print(label_value_text(label, value))
-    if payload.missing_env_keys:
-        console.print(
-            label_value_text(
-                "missing_env_keys",
-                _env_key_list_text(payload.missing_env_keys),
-            )
-        )
-
     issues = payload.issues
     if issues:
         console.print("")
@@ -202,7 +194,10 @@ def _doctor_status_text(
     :return: Rich text status line.
     """
     status_labels = {
-        ConfigDoctorStatus.ENV_NOT_SET.value: ("env not set", MISSING_STYLE),
+        ConfigDoctorStatus.STORAGE_NOT_SELECTED.value: (
+            "storage not selected",
+            MISSING_STYLE,
+        ),
         ConfigDoctorStatus.STORAGE_NOT_READY.value: (
             "storage not ready",
             ERROR_STYLE,
@@ -266,20 +261,6 @@ def _bool_or_none_text(value: bool | None) -> Text:
     return _bool_text(value)
 
 
-def _env_key_list_text(env_keys: tuple[str, ...]) -> Text:
-    """Return a comma-delimited env key list with semantic styling.
-
-    :param env_keys: Missing env keys from the doctor payload.
-    :return: Rich text list.
-    """
-    rendered = Text()
-    for index, env_key in enumerate(env_keys):
-        if index:
-            rendered.append(", ")
-        rendered.append_text(env_key_text(env_key))
-    return rendered
-
-
 def _styled_issue_text(
     kit: AppConfigKit,
     payload: ConfigDoctorPayload,
@@ -294,7 +275,7 @@ def _styled_issue_text(
     """
     styles = {
         kit.spec.apprc_dir_env_key: ENV_KEY_STYLE,
-        "env_not_set": MISSING_STYLE,
+        "storage_not_selected": MISSING_STYLE,
         "user_dotenv_not_ready": ERROR_STYLE,
         "storage_registry_not_ready": MISSING_STYLE,
     }

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 # == Internal ===================================================
 from apprc.runtime._dotenv_layers import read_dotenv_file
-from apprc.runtime.diagnostics.messages import _missing_env_issue
+from apprc.runtime.diagnostics.messages import _missing_storage_issue
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
 from apprc.user_files.app_home.locations import AppRCDirectoryPaths
 from apprc.user_files.storage_roots._loading import (
@@ -37,7 +37,8 @@ class StorageDiagnosis:
     storage_root_exists: bool | None
     storage_dotenv: Path | None
     storage_dotenv_exists: bool | None
-    missing_env_keys: list[str]
+    selection_missing: bool
+    selector_error: bool
     issues: list[str]
     registry: StorageRegistryInspection
 
@@ -109,14 +110,15 @@ def diagnose_storage(
             storage_root_exists=None,
             storage_dotenv=None,
             storage_dotenv_exists=None,
-            missing_env_keys=[],
+            selection_missing=False,
+            selector_error=False,
             issues=[],
             registry=registry_inspection,
         )
 
     issues: list[str] = []
-    missing_env_keys: list[str] = []
     selection: StorageSelection | None = None
+    selector_error = False
     registry = registry_inspection.registry
     selector_key = kit.spec.require_storage_selector_env_key()
     try:
@@ -130,6 +132,7 @@ def diagnose_storage(
             env_file_overrides_os_environ=(env_file_overrides_os_environ),
         )
     except StorageSelectorError as exc:
+        selector_error = True
         issues.append(str(exc))
     if selection is not None and selection.selector_kind == "path":
         registry_inspection = replace(
@@ -142,12 +145,12 @@ def diagnose_storage(
         )
     else:
         issues = [*registry_inspection.issues, *issues]
-    if selection is None:
-        missing_env_keys.append(selector_key)
+    selection_missing = selection is None and not selector_error
+    if selection_missing:
         issues.append(
-            _missing_env_issue(
+            _missing_storage_issue(
                 kit,
-                missing_env_keys,
+                selector_key=selector_key,
                 config_group_name=config_group_name,
             )
         )
@@ -167,7 +170,8 @@ def diagnose_storage(
         storage_root_exists=root_exists,
         storage_dotenv=storage_dotenv,
         storage_dotenv_exists=dotenv_exists,
-        missing_env_keys=missing_env_keys,
+        selection_missing=selection_missing,
+        selector_error=selector_error,
         issues=issues,
         registry=registry_inspection,
     )
@@ -190,8 +194,8 @@ def doctor_status(
         return ConfigDoctorStatus.USER_DOTENV_NOT_READY
     if registry.issues:
         return ConfigDoctorStatus.STORAGE_REGISTRY_NOT_READY
-    if storage.missing_env_keys:
-        return ConfigDoctorStatus.ENV_NOT_SET
+    if storage.selection_missing:
+        return ConfigDoctorStatus.STORAGE_NOT_SELECTED
     if storage.issues:
         return ConfigDoctorStatus.STORAGE_NOT_READY
     return ConfigDoctorStatus.RUNNABLE

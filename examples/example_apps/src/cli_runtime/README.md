@@ -1,42 +1,28 @@
 # CLI Runtime Example
 
-`cli_runtime` demonstrates `CliRuntime`: an app-owned Typer callback prepares
-AppRC and app-specific runtime state before commands run.
+`cli_runtime` demonstrates the advanced path: an app-owned Typer callback
+passes AppRC options into `rc.cli.CliRuntime`, then adds its own runtime state.
+Its `APPRC_EXAMPLE_RUNTIME_STORAGE` selector accepts a registered name or path.
 
-## Requirements
-
-- Install the example package from the repository checkout.
-- Source `.env.example_apps` or use direnv.
-- `APPRC_EXAMPLE_RUNTIME_ROOT` may contain a registered name or path.
-- `--workspace` and `--model` are app-owned options for runtime commands.
-
-## Setup
+Start a clean session:
 
 ```bash
-set -a; source .env.example_apps; set +a
-python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"
-apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo run
+apprc-examples-lab cli-runtime
 ```
 
-The `status` command is runtime-independent and can run without storage
-bootstrap.
-
-## Commands
+After the printed storage setup and required-token commands, compare:
 
 ```bash
-apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo status
-apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo run
-apprc-cli-runtime config doctor
+apprc-cli-runtime status
+apprc-cli-runtime --workspace PATH --model demo --dry-run run
 ```
 
-## Upgrade Options
+`status` is declared runtime-independent and works before storage setup. `run`
+requires AppRC bootstrap and receives `workspace`, `model`, and `dry_run` in
+the app-owned `RuntimeState`.
 
-Use this layout when the app has its own root callback, logging setup, or
-state object. Split larger config areas into nested packages under
-`config/sections/`, as this example does with `runtime/`.
+Copy [`cli.py`](cli.py) only when the simpler `MyRC.mount_cli(app)` pattern is
+not enough. The other three examples use that shorter integration.
 
-## Docs
-
-- [Example app overview](../../README.md)
-- [Development guide](../../../../docs/Development.md#example-apps)
-- [CLI integration reference](../../../../docs/References.md#public-interfaces)
+See the [example inventory](../../README.md#example-inventory) and
+[public CLI interfaces](../../../../docs/References.md#public-interfaces).

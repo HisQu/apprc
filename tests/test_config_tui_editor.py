@@ -7,6 +7,7 @@ from textual.widgets import Button, DataTable, Static
 from typer.testing import CliRunner
 
 from apprc.interfaces.tui.editor import ConfigEditorApp
+from apprc.interfaces.tui._primitives import ConfirmScreen
 from apprc.user_files.storage_roots.registry import register_storage
 from tests.support_config import (
     build_apprc_example_app_kit,
@@ -86,7 +87,7 @@ async def test_editor_saving_user_value_creates_only_user_dotenv() -> None:
     async with editor.run_test() as pilot:
         await pilot.pause()
         user_dotenv = kit.spec.user_dotenv_path()
-        editor._save_env_key(
+        await editor._save_env_key(
             "STORAGE_FREE_APP_PROFILE",
             "user-profile",
             scope="user",
@@ -113,7 +114,7 @@ async def test_editor_saving_storage_value_creates_only_storage_dotenv(
 
     async with editor.run_test() as pilot:
         await pilot.pause()
-        editor._save_env_key(
+        await editor._save_env_key(
             "APPRC_EXAMPLE_APP_PROFILE",
             "storage-profile",
             scope="storage",
@@ -126,6 +127,39 @@ async def test_editor_saving_storage_value_creates_only_storage_dotenv(
             == 'APPRC_EXAMPLE_APP_PROFILE="storage-profile"\n'
         )
         assert not kit.spec.user_dotenv_path().exists()
+
+
+@pytest.mark.asyncio
+async def test_editor_duplicate_warning_cancels_before_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kit = build_storage_free_example_kit()
+    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+    user_dotenv = kit.spec.ensure_user_dotenv()
+    original = (
+        "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n"
+    )
+    user_dotenv.write_text(original, encoding="utf-8")
+    shown_screens: list[object] = []
+
+    async def cancel(screen: object) -> object | None:
+        """Capture the confirmation and decline the write."""
+        shown_screens.append(screen)
+        return None
+
+    monkeypatch.setattr(editor, "push_screen_wait", cancel)
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        await editor._save_env_key(
+            "STORAGE_FREE_APP_PROFILE",
+            "new",
+            scope="user",
+        )
+
+    assert len(shown_screens) == 1
+    assert isinstance(shown_screens[0], ConfirmScreen)
+    assert user_dotenv.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.asyncio

@@ -50,14 +50,15 @@ intentional namespaces such as `rc.cli`, `rc.files`, `rc.storage`,
    1. [Table Of Contents](#table-of-contents)
 2. [Installation](#installation)
 3. [Quickstart](#quickstart)
-4. [How AppRC Works](#how-apprc-works)
+4. [Runnable Examples](#runnable-examples)
+5. [How AppRC Works](#how-apprc-works)
    1. [Mental Model](#mental-model)
    2. [Config And Storage](#config-and-storage)
    3. [Runtime Precedence](#runtime-precedence)
-5. [Generated Workflows](#generated-workflows)
+6. [Generated Workflows](#generated-workflows)
    1. [Config CLI](#config-cli)
    2. [Setup And Diagnostics](#setup-and-diagnostics)
-6. [More Documentation](#more-documentation)
+7. [More Documentation](#more-documentation)
    1. [Detailed Manual](#detailed-manual)
    2. [Development](#development)
 
@@ -136,6 +137,7 @@ lightweight; import section classes in `bundle.py` from leaf modules such as
 `config.sections.client`, not from the `config.sections` package facade.
 
 ```python
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import typer
@@ -178,9 +180,10 @@ class PackageResources(rc.ConfigBase):
 
 
 @MyRC.bundle
+@dataclass(kw_only=True)
 class MyAppConfig:
-    app: AppSettings
-    resources: PackageResources
+    app: AppSettings = field(default_factory=AppSettings)
+    resources: PackageResources = field(default_factory=PackageResources)
 ```
 
 Add packaged defaults in `myapp/config/apprc.defaults.env`:
@@ -247,25 +250,15 @@ put the value in `apprc.defaults.env` and describe it with
 `secret=True` redacts display output; it does not encrypt values, store them
 elsewhere, or imply that the field is required.
 
-Run the integration examples from a checkout with:
+Install the local library plus its runnable examples from a checkout with:
 
 ```bash
-python -m pip install -e examples/example_apps --no-build-isolation
-set -a; source .env.example_apps; set +a
-python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"
-apprc-config-with-storage config doctor
-apprc-examples-run-all
+python -m pip install -e ".[tui]" -e examples/example_apps --no-build-isolation
 ```
 
-They cover apps with and without storage, named storage, explicit env-file
-selector precedence, and the `CliRuntime` app-callback integration. With
-direnv, `.envrc` sources
-[.env.example_apps](.env.example_apps) and bootstraps
-`examples/example_app_disk_files/` automatically. Without direnv, source
-`.env.example_apps` and run the bootstrap command above once. The generated
-directory contains `.apprc-example*/` sandboxes plus a shared
-`apprc-directories/` tree with commented user dotenv, storage dotenv, and TOML
-files showing where the same files would live for a real app.
+Start with `apprc-examples-lab config-with-storage`. It opens a disposable
+shell with no AppRC files and prints commands for the selected scenario. See
+[Runnable Examples](#runnable-examples) for the complete inventory.
 
 > [!NOTE]
 > For the step-by-step integration guide, see
@@ -274,6 +267,57 @@ files showing where the same files would live for a real app.
 > [docs/References.md#public-interfaces](docs/References.md#public-interfaces).
 
 <br>
+
+<br>
+
+# Runnable Examples
+
+The checkout contains four application CLIs and two test utilities:
+
+| Command | Storage | What it demonstrates |
+|---|---:|---|
+| `apprc-config-only` | No | The smallest `AppRC` integration with packaged, user, explicit-file, and process-environment values. |
+| `apprc-config-with-storage` | Yes | Named storage, direct path selection, storage-local dotenv values, and the generated storage lifecycle. |
+| `apprc-explicit-env-precedence` | Yes | The difference between normal process-environment precedence and `--env-file-overrides-os-environ`. |
+| `apprc-cli-runtime` | Yes | An app-owned Typer callback, custom runtime state, and runtime-independent commands through `CliRuntime`. |
+| `apprc-examples-lab EXAMPLE` | Depends | Opens one clean temporary shell, prints a walkthrough, and deletes its temporary state when the shell exits. |
+| `apprc-examples-run-all` | Both | Runs setup, doctor, application runtime, and purge through the installed CLIs, then prints a JSON summary. |
+
+Use the lab for manual testing:
+
+```bash
+apprc-examples-lab config-only
+apprc-examples-lab config-with-storage
+apprc-examples-lab explicit-env-precedence
+apprc-examples-lab cli-runtime
+```
+
+The lab removes inherited `APPRC_EXAMPLE_*` values and points the selected
+application's `<APP>_APPRC_DIR` at its temporary root. It does not create
+AppRC files before the shell opens. The root is removed on exit. A storage
+path that you explicitly choose outside the printed temporary root remains
+untouched.
+
+The four application commands are normal applications: if you invoke them
+outside the lab, they use their configured or default AppRC paths and can
+leave persistent files. Run `config paths` before setup and `config purge
+--dry-run` before removal.
+
+All four examples expose `config paths`, `setup`, `doctor`, `show`, `set`,
+`edit`, `migrate`, and `purge`. The three storage-capable examples also expose
+`config storage add`, `list`, `select`, `rename`, `repoint`, `move`, and
+`remove`, plus the root `--storage NAME_OR_PATH` option. Their package source
+is intentionally self-contained so each example can be copied without the
+lab or smoke-runner package.
+
+The automated example suite checks the common command surface on every app,
+the complete storage lifecycle on `apprc-config-with-storage`, name and path
+selection, both precedence outcomes, `CliRuntime` skip/runtime behavior, and
+temporary-lab cleanup. It does not claim that every generated command is run
+against every example.
+
+See [examples/example_apps/README.md](examples/example_apps/README.md) for
+copyable walkthroughs and source links.
 
 <br>
 
@@ -488,8 +532,16 @@ export is required. On an interactive terminal, the first storage-dependent
 runtime command can offer the same setup. Use `--storage-root PATH` for a
 custom path so the shell can complete it.
 
-`config doctor` reports a status such as `env_not_set`, `storage_not_ready`,
-`user_dotenv_not_ready`, `storage_registry_not_ready`, or `runnable`.
+`config doctor` reports a status such as `storage_not_selected`,
+`storage_not_ready`, `user_dotenv_not_ready`,
+`storage_registry_not_ready`, or `runnable`.
+
+`config set` changes only the requested dotenv assignment. It preserves
+unrelated comments, blank lines, quoting, `export` prefixes, and ordering. If
+the key has multiple active assignments, AppRC updates the first and comments
+out the later assignments. The interactive CLI and editor require confirmation
+before that cleanup. Non-interactive commands write the change and print a
+warning afterward.
 
 AppRC migrates the released 0.19 layout only. Inspect and apply it explicitly:
 
@@ -553,8 +605,8 @@ The repository also ships runnable example CLIs in
 [examples/example_apps](examples/example_apps). Each example is its own
 package, with a `config/` package,
 `cli.py`, and packaged `config/apprc.defaults.env` defaults so the source tree mirrors
-a real app integration. Generated example disk files live outside that source
-tree under `examples/example_app_disk_files/`.
+a real app integration. Use `apprc-examples-lab` to keep manual test state
+temporary.
 
 <br>
 

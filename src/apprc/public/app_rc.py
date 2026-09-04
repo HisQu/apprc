@@ -13,6 +13,7 @@ from typing import (
     TypeGuard,
     TypeVar,
     cast,
+    dataclass_transform,
     get_origin,
     get_type_hints,
 )
@@ -69,11 +70,13 @@ class _BundleFieldSpec:
     :param name: Attribute name on the bundle class.
     :param config_type: Registered config type expected for the field.
     :param init: Whether constructor injection and eager construction apply.
+    :param default_factory: Factory used when no child is injected.
     """
 
     name: str
     config_type: type[ConfigBase]
     init: bool
+    default_factory: Callable[[], object] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +162,7 @@ class AppRC:
         """Return the current lower-level application spec."""
         return self._kit.spec
 
+    @dataclass_transform()
     def config(
         self,
         key: str,
@@ -202,17 +206,19 @@ class AppRC:
     def bundle(self, bundle_type: BundleClassT) -> BundleClassT:
         """Register an eager aggregate runtime config class.
 
-        :param bundle_type: Class whose annotated fields reference registered
-            AppRC config classes.
-        :return: Dataclass-like bundle class with a custom eager constructor.
-        :raises TypeError: If an annotated field refers to an unregistered
-            config class.
+        :param bundle_type: Keyword-only dataclass whose fields reference
+            registered AppRC config classes.
+        :return: The same dataclass with eager construction and safe repr.
+        :raises TypeError: If the class lacks a typed dataclass constructor or
+            a field refers to an unregistered config class.
         """
-        resolved_bundle = self._ensure_dataclass(
-            bundle_type,
-            init=False,
-            repr=False,
-        )
+        if "__dataclass_fields__" not in bundle_type.__dict__:
+            raise TypeError(
+                "@MyRC.bundle requires an explicit keyword-only dataclass. "
+                "Place @dataclass(kw_only=True) directly below "
+                "@MyRC.bundle and give each eager child a default_factory."
+            )
+        resolved_bundle = bundle_type
         bundle_fields = self._bundle_fields(resolved_bundle)
         post_init = getattr(resolved_bundle, "__post_init__", None)
         setattr(
@@ -503,8 +509,46 @@ class AppRC:
                 name=field_name,
                 config_type=registered.config_type,
                 init=dataclass_fields[field_name].init,
+                default_factory=self._bundle_default_factory(
+                    bundle_type=bundle_type,
+                    field_name=field_name,
+                    config_type=registered.config_type,
+                    dataclass_field=dataclass_fields[field_name],
+                ),
             )
         return bundle_fields
+
+    @staticmethod
+    def _bundle_default_factory(
+        *,
+        bundle_type: type[object],
+        field_name: str,
+        config_type: type[ConfigBase],
+        dataclass_field: dataclasses.Field[Any],
+    ) -> Callable[[], object] | None:
+        """Return the factory for an eager keyword-only bundle field.
+
+        :param bundle_type: Bundle class being registered.
+        :param field_name: Registered child attribute.
+        :param config_type: Registered child type used by the factory.
+        :param dataclass_field: Standard dataclass field declaration.
+        :return: Factory for an eager field, or ``None`` for ``init=False``.
+        :raises TypeError: If the constructor contract cannot be typed.
+        """
+        if not dataclass_field.init:
+            return None
+        if not dataclass_field.kw_only:
+            raise TypeError(
+                f"{bundle_type.__name__}.{field_name} must be keyword-only. "
+                "Declare the bundle with @dataclass(kw_only=True)."
+            )
+        factory = dataclass_field.default_factory
+        if factory is dataclasses.MISSING:
+            raise TypeError(
+                f"{bundle_type.__name__}.{field_name} requires "
+                f"field(default_factory={config_type.__name__})."
+            )
+        return cast(Callable[[], object], factory)
 
     def _build_bundle_init(
         self,
@@ -548,7 +592,18 @@ class AppRC:
                         registered.key,
                         expected_type.__name__,
                     )
-                    value = expected_type()
+                    if spec.default_factory is None:
+                        raise TypeError(
+                            f"{bundle_type.__name__}.{field_name} has no "
+                            "default factory."
+                        )
+                    value = spec.default_factory()
+                    if not isinstance(value, expected_type):
+                        raise TypeError(
+                            f"{bundle_type.__name__}.{field_name} default "
+                            f"factory returned {type(value).__name__}; "
+                            f"expected {expected_type.__name__}."
+                        )
                 object.__setattr__(self, field_name, value)
             if post_init is not None:
                 post_init(self)

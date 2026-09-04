@@ -56,7 +56,6 @@ class ConfigDoctorPayload:
     selected_storage_root_exists: bool | None
     selected_storage_dotenv: str | None
     selected_storage_dotenv_exists: bool | None
-    missing_env_keys: tuple[str, ...]
     issues: tuple[str, ...]
     warnings: tuple[str, ...]
     next_steps: tuple[str, ...]
@@ -67,7 +66,7 @@ class ConfigDoctorPayload:
         :return: Diagnostic fields with tuples converted to lists.
         """
         payload = asdict(self)
-        for key in ("missing_env_keys", "issues", "warnings", "next_steps"):
+        for key in ("issues", "warnings", "next_steps"):
             payload[key] = list(payload[key])
         return payload
 
@@ -170,7 +169,6 @@ def build_config_doctor_payload(
         selected_storage_dotenv_exists=(
             storage_diagnosis.storage_dotenv_exists
         ),
-        missing_env_keys=tuple(storage_diagnosis.missing_env_keys),
         issues=tuple(issues),
         warnings=tuple(warnings),
         next_steps=tuple(
@@ -178,6 +176,8 @@ def build_config_doctor_payload(
                 kit,
                 status,
                 config_group_name=config_group_name,
+                storage_count=registry.storage_count,
+                selector_error=storage_diagnosis.selector_error,
             )
         ),
     )

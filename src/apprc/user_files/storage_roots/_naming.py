@@ -4,7 +4,6 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import re
-from collections.abc import Mapping
 from pathlib import Path
 
 # == Internal ===================================================
@@ -13,27 +12,13 @@ from apprc.user_files.app_home.locations import default_apprc_dir
 _STORAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def app_data_dir(
-    app_id: str,
-    proc_env: Mapping[str, str] | None = None,
-) -> Path:
-    """Return the per-user data directory for one application.
+def suggested_storage_root(app_id: str) -> Path:
+    """Return the first-setup storage path below the fixed AppRC directory.
 
-    :param app_id: Directory name below ``$XDG_DATA_HOME`` or
-        ``~/.local/share``.
-    :param proc_env: Environment mapping used for tests and subprocess setup.
-    :return: ``$XDG_DATA_HOME/<app_id>`` or ``~/.local/share/<app_id>``.
+    :param app_id: Stable application identity used as the directory name.
+    :return: ``~/.local/share/<app-id>/storage``.
     """
-    del proc_env
-    return default_apprc_dir(app_id)
-
-
-def suggested_storage_root(
-    app_id: str,
-    proc_env: Mapping[str, str] | None = None,
-) -> Path:
-    """Return the conventional active storage root for a fresh setup."""
-    return app_data_dir(app_id, proc_env) / "storage"
+    return default_apprc_dir(app_id) / "storage"
 
 
 def suggested_storage_name(app_id: str) -> str:

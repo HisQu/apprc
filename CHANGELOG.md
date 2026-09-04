@@ -32,24 +32,25 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.21.0 - 2026-09-04](#0210---2026-09-04)
-4. [0.20.0 - 2026-09-04](#0200---2026-09-04)
-5. [0.19.9 - 2026-09-02](#0199---2026-09-02)
-6. [0.19.8 - 2026-09-01](#0198---2026-09-01)
-7. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-8. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-9. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-10. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-11. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-12. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-13. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-14. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-15. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-16. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-17. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-18. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-19. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-20. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.22.0 - 2026-09-04](#0220---2026-09-04)
+4. [0.21.0 - 2026-09-04](#0210---2026-09-04)
+5. [0.20.0 - 2026-09-04](#0200---2026-09-04)
+6. [0.19.9 - 2026-09-02](#0199---2026-09-02)
+7. [0.19.8 - 2026-09-01](#0198---2026-09-01)
+8. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+9. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+10. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+11. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+12. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+13. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+14. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+15. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+16. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+17. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+18. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+19. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+20. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+21. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -88,6 +89,97 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.22.0 - 2026-09-04
+
+<br>
+
+### 💥 Breaking changes
+
+  - Breaking: `@MyRC.bundle` now requires an explicit keyword-only dataclass,
+    and every eagerly constructed child requires `field(default_factory=...)`.
+    Affected: Applications using annotation-only bundle classes or positional
+    bundle fields.
+    Migration: Add `@dataclass(kw_only=True)` directly below
+    `@MyRC.bundle` and give each eager child its config class as
+    `default_factory`. Keep derived children as `field(init=False)`.
+  - Breaking: `rc.field()` rejects unknown keyword arguments and
+    `PublicFieldSpec` no longer has an unused `metadata` mapping.
+    Affected: Applications passing undocumented extension metadata, including
+    misspelled options that AppRC previously ignored.
+    Migration: Remove unknown arguments or replace them with documented
+    options. `shared_default`, `python_type`, `explanation_short`, and
+    `explanation_long` remain explicit supported parameters.
+  - Breaking: `config doctor` replaces `env_not_set` with
+    `storage_not_selected` and removes `missing_env_keys` from its JSON
+    payload.
+    Affected: Scripts matching the old status or reading that payload key.
+    Migration: Match `storage_not_selected` and inspect
+    `storage_selector_env_key`; the selector environment variable is optional
+    when `apprc.toml` has `selected_storage`.
+  - Breaking: `apprc.storage.app_data_dir()` was removed and
+    `suggested_storage_root()` no longer accepts an ignored environment
+    mapping.
+    Affected: Callers using these advanced path helpers directly.
+    Migration: Use `apprc.files.default_apprc_dir(app_id)` for the AppRC
+    directory or `apprc.storage.suggested_storage_root(app_id)` for its
+    initial `storage` child.
+  - Breaking: The checkout-only `.env.example_apps` file and
+    `apprc_dev.example_apps.bootstrap` module were removed.
+    Affected: Contributors using the former persistent example sandboxes.
+    Migration: Install the local example package and run
+    `apprc-examples-lab EXAMPLE` for disposable manual sessions, or
+    `apprc-examples-run-all` for the automated CLI smoke pass.
+
+<br>
+
+### ➕ Added
+
+  - Added duplicate-assignment preflight to `config set` and the Textual
+    editor. Interactive writes require confirmation before later assignments
+    are commented out, while non-interactive writes report the cleanup after
+    completion.
+  - Added static constructor typing for classes registered through
+    `@MyRC.config(...)` and suppression-free typed bundle examples.
+  - Added `apprc-examples-lab`, which opens one example in a clean temporary
+    shell and removes its AppRC files when the shell exits.
+  - Added real subprocess smoke coverage for all four example CLIs, including
+    distinct shell and explicit-dotenv precedence outcomes.
+
+<br>
+
+### 💔 Changed
+
+  - Changed one-key dotenv writes to preserve unrelated comments, blank lines,
+    ordering, quoting, `export` prefixes, malformed text, and line endings.
+  - Changed the example selector keys to use the same `<APP>_STORAGE`
+    terminology as normal integrations. Each example CLI is now self-contained
+    and can be copied without the lab or runner package.
+
+<br>
+
+### 🔨 Fixed
+
+  - Fixed `config doctor` treating `<APP>_STORAGE` as a required environment
+    variable when no storage was selected. Invalid selectors now remain
+    distinct from a genuinely missing selection.
+  - Fixed storage recovery messages that still documented `--storage` as a
+    name-only option after paths became valid selectors.
+  - Fixed `rc.field()` typos such as `secrte=True` being accepted while secret
+    redaction remained disabled.
+  - Fixed setup, lazy runtime setup, and the Textual editor suggesting a
+    default storage outside a relocated `<APP>_APPRC_DIR`. The suggestion is
+    now always `<resolved AppRC directory>/storage`.
+  - Fixed storage-free CLI help describing `--skip-dotenv-layers` as a storage
+    operation.
 
 <br>
 

@@ -1,32 +1,15 @@
 # Example App Utilities
 
-`_example_apps_utils` is internal support code for the repository-local
-examples. It is not a user app template.
+`_example_apps_utils` is test infrastructure, not an application template.
 
-## What It Provides
+It owns:
 
-- The example app registry used by the bootstrap helper.
-- Shared CLI helper functions used by the runnable apps.
-- The `apprc-examples-run-all` scenario runner.
+- the four-command registry;
+- `apprc-examples-lab`, which opens one disposable shell;
+- `apprc-examples-run-all`, which invokes the real installed CLIs.
 
-## Requirements
+The user-facing application packages do not import this package. Copy one of
+those packages instead.
 
-The package is installed as part of the dev-only
-`examples/example_apps` editable package.
-
-## Commands
-
-```bash
-apprc-examples-run-all
-```
-
-## Upgrade Options
-
-Do not copy this package into downstream applications. Copy one runnable app
-package instead, then replace its app name, env prefixes, fields, and command
-name.
-
-## Docs
-
-- [Example app overview](../../README.md)
-- [Development guide](../../../../docs/Development.md#example-apps)
+See the [example overview](../../README.md) and
+[development guide](../../../../docs/Development.md#example-apps).

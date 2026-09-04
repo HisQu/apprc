@@ -5,13 +5,13 @@
 from _example_apps_utils.registry import (
     EXAMPLE_APPS,
     ExampleAppSpec,
+    example_app,
     example_app_specs,
-    example_kits,
 )
 
 __all__ = [
     "EXAMPLE_APPS",
     "ExampleAppSpec",
+    "example_app",
     "example_app_specs",
-    "example_kits",
 ]

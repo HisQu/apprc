@@ -72,6 +72,27 @@ MyRC = rc.AppRC(
 
 Managed filenames are fixed. There is no filename or path-abstraction API.
 
+`rc.field(...)` accepts only its documented keyword arguments. Misspelled
+options raise `TypeError`; AppRC does not retain arbitrary extension metadata.
+The deprecated `shared_default` argument remains an explicit alias for
+`packaged_default`.
+
+Bundles use a standard keyword-only dataclass so Python and static type
+checkers see the same constructor as AppRC:
+
+```python
+from dataclasses import dataclass, field
+
+
+@MyRC.bundle
+@dataclass(kw_only=True)
+class MyAppConfig:
+    app: AppSettings = field(default_factory=AppSettings)
+```
+
+Every eager child requires `default_factory`. Fields populated in
+`__post_init__` may use `field(init=False)`.
+
 ## Configuration files
 
 For `app_id="myapp"`:
@@ -192,7 +213,7 @@ any `config storage ...` commands and does not accept `--scope storage`.
 | Status | Meaning |
 | --- | --- |
 | `runnable` | The selected runtime inputs are usable. |
-| `env_not_set` | A storage app has no selected name or path. |
+| `storage_not_selected` | A storage app has no selected name or path. |
 | `storage_not_ready` | The selected root or storage dotenv is not ready. |
 | `user_dotenv_not_ready` | The fixed user dotenv is missing or unreadable. |
 | `storage_registry_not_ready` | The storage registry is missing, unreadable, or invalid. |
@@ -201,6 +222,9 @@ Machine-readable diagnostics use file-specific keys including
 `storage_enabled`, `apprc_dir`, `user_dotenv`, `apprc_toml`,
 `selected_storage`, `selected_storage_selector_kind`,
 `selected_storage_root`, and `selected_storage_dotenv`.
+
+The payload does not report `<APP>_STORAGE` as a missing environment key.
+That variable is an optional override when `selected_storage` exists.
 
 ## Dependency surfaces
 

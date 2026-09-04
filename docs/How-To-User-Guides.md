@@ -49,6 +49,7 @@ Omit `--storage` for a storage-free application. AppRC derives
 `MYAPP_STORAGE`; pass `--storage-selector-env-key` only to override it.
 
 ```python
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import apprc as rc
@@ -75,8 +76,9 @@ class AppSettings(rc.Config):
 
 
 @MyRC.bundle
+@dataclass(kw_only=True)
 class MyAppConfig:
-    app: AppSettings
+    app: AppSettings = field(default_factory=AppSettings)
 ```
 
 Put non-secret defaults in `myapp/config/apprc.defaults.env`, mount the
@@ -198,6 +200,12 @@ myapp config set MYAPP_TOKEN secret-value --scope storage
 myapp config edit
 ```
 
+AppRC preserves unrelated dotenv text during `config set` and editor saves.
+When one key has several active assignments, AppRC keeps the first assignment,
+comments out the later ones, and reports their line numbers. The interactive
+CLI and editor require confirmation before making that change. Non-interactive
+commands print the warning after the write.
+
 A storage-free declaration exposes only the user scope. It also hides
 `--storage`, all `config storage ...` commands, and the editor's storage
 section. An old `apprc.toml` on disk does not re-enable them.
@@ -263,7 +271,7 @@ myapp config doctor --json
 | Status | Meaning | Next action |
 | --- | --- | --- |
 | `runnable` | Required dotenv files and selected storage are usable. | Run the application. |
-| `env_not_set` | A storage app has no selected name or path. | Run setup, `storage select`, or pass a path. |
+| `storage_not_selected` | A storage app has no selected name or path. | Run setup, `storage select`, or pass a name or path. |
 | `storage_not_ready` | The selected root or storage dotenv is missing. | Correct the root or rerun setup. |
 | `user_dotenv_not_ready` | `apprc.user.env` is missing or unreadable. | Run setup or fix permissions. |
 | `storage_registry_not_ready` | `apprc.toml` is missing, unreadable, or invalid. | Run setup or fix the registry. |

@@ -49,7 +49,6 @@ def test_rewrite_repository_links_uses_github_urls() -> None:
     source = (
         "[Docs](docs/References.md#public-interfaces)\n"
         "[Examples](examples/example_apps)\n"
-        "[Env](.env.example_apps)\n"
         "![Figure](docs/assets/apprc-abstract-user-journey.svg)\n"
         '<img src="docs/assets/apprc-abstract-contract-workflows.svg">\n'
         "[Anchor](#local)\n"
@@ -61,8 +60,6 @@ def test_rewrite_repository_links_uses_github_urls() -> None:
         "docs/References.md#public-interfaces)\n"
         "[Examples](https://github.com/HisQu/apprc/blob/main/"
         "examples/example_apps)\n"
-        "[Env](https://github.com/HisQu/apprc/blob/main/"
-        ".env.example_apps)\n"
         "![Figure](https://raw.githubusercontent.com/HisQu/apprc/main/"
         "docs/assets/apprc-abstract-user-journey.svg)\n"
         '<img src="https://raw.githubusercontent.com/HisQu/apprc/main/'

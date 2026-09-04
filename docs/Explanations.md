@@ -33,7 +33,8 @@ The main objects have narrow jobs:
 - `rc.ConfigBase` holds Python-only settings.
 - `@MyRC.config(...)` registers a config section.
 - `rc.field(...)` records the full env key and editing metadata.
-- `@MyRC.bundle` builds one eager top-level config object.
+- `@MyRC.bundle` validates one explicit keyword-only dataclass and builds its
+  child configs from declared default factories.
 
 There is no capability matrix. `rc.AppRC(...)` is storage-free;
 `rc.AppRC(..., storage=rc.Storage())` supports storage. Files on disk never
@@ -71,6 +72,11 @@ Use exact file vocabulary in code and documentation. `apprc.user.env` and
 `apprc.storage.env` are dotenv files, not generic “config files.”
 `apprc.toml` is a storage registry. The directory containing the user dotenv
 and registry is the AppRC directory.
+
+Single-key edits preserve unrelated dotenv source text. When a key appears
+more than once, AppRC keeps the first assignment active and comments out later
+assignments after an interactive confirmation. This prevents a later duplicate
+from silently overriding the value the user just set.
 
 ## AppRC directory and storage
 

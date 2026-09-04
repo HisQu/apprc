@@ -4,7 +4,6 @@ from cli_runtime.cli import (
     RuntimeOptions,
     RuntimeState,
     build_app,
-    run_demo,
 )
 from cli_runtime.config import CliRuntimeConfig, KIT
 
@@ -14,5 +13,4 @@ __all__ = [
     "RuntimeState",
     "KIT",
     "build_app",
-    "run_demo",
 ]

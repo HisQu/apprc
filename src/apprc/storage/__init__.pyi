@@ -19,7 +19,6 @@ from apprc.user_files.storage_roots._loading import (
     load_runtime_storage_registry_for_selector as load_runtime_storage_registry_for_selector,
 )
 from apprc.user_files.storage_roots._naming import (
-    app_data_dir as app_data_dir,
     suggested_storage_name as suggested_storage_name,
     suggested_storage_root as suggested_storage_root,
 )

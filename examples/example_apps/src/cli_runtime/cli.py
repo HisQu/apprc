@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-import os
 from pathlib import Path
 from typing import Annotated
 
@@ -16,15 +15,8 @@ import typer
 # == Internal ================================
 import apprc as rc
 from cli_runtime.config import (
-    CONFIG_SECTIONS,
     CliRuntimeExampleConfig,
     KIT,
-)
-from _example_apps_utils._support import (
-    bootstrap_payload,
-    config_values,
-    run_isolated,
-    setup_example_logging,
 )
 
 
@@ -97,7 +89,6 @@ def build_app(
         args_provider=args_provider,
         runtime_payload=_runtime_payload,
         editor_app_cls=editor_app_cls,
-        setup_logging=setup_example_logging,
     )
 
     @app.callback()
@@ -184,6 +175,7 @@ def _runtime_payload(state: RuntimeState) -> dict[str, object]:
     :return: Payload with app options, bootstrap paths, and redacted config.
     """
     config = CliRuntimeExampleConfig()
+    bootstrap = state.env_bootstrap
     return {
         "app_id": KIT.spec.app_id,
         "command_name": KIT.spec.config_command_name(),
@@ -194,8 +186,12 @@ def _runtime_payload(state: RuntimeState) -> dict[str, object]:
             "model": state.model,
             "dry_run": state.dry_run,
         },
-        "bootstrap": bootstrap_payload(state.env_bootstrap),
-        "config": config_values(config.runtime),
+        "storage_name": bootstrap.storage_name if bootstrap else None,
+        "storage_root": str(bootstrap.storage_root) if bootstrap else None,
+        "config": {
+            "profile": config.runtime.profile,
+            "api_token": "<redacted>",
+        },
     }
 
 
@@ -209,56 +205,6 @@ def _require_runtime_state(ctx: typer.Context) -> RuntimeState:
     if isinstance(ctx.obj, RuntimeState):
         return ctx.obj
     raise RuntimeError("CLI runtime state was not initialized.")
-
-
-def run_demo(root: Path) -> dict[str, object]:
-    """Execute a compact runtime scenario without invoking a subprocess.
-
-    :param root: Temporary run directory.
-    :return: JSON-friendly scenario summary.
-    """
-
-    def scenario() -> dict[str, object]:
-        """Run the demo after environment isolation is active."""
-        os.environ[KIT.spec.apprc_dir_env_key] = str(root / "apprc")
-        storage_root = root / "runtime-storage"
-        storage_root.mkdir(parents=True)
-        rc.files.ensure_storage_dotenv_file(storage_root)
-        rc.files.set_storage_dotenv_value(
-            storage_root=storage_root,
-            reference="api_token",
-            raw_value="runtime-secret",
-            owners=CONFIG_SECTIONS,
-        )
-        rc.storage.register_storage(
-            name="default",
-            root=storage_root,
-            path=KIT.spec.preferred_apprc_toml_path(),
-        )
-        bootstrap = KIT.bootstrap(
-            env_files=(),
-            env_file_overrides_os_environ=False,
-            load_dotenv_layers=True,
-            storage="default",
-        )
-        state = RuntimeState(
-            env_bootstrap=bootstrap,
-            storage="default",
-            workspace=root / "workspace",
-            model="demo-model",
-            dry_run=True,
-        )
-        return {
-            "scenario": "cli_runtime",
-            "selected_storage_root": str(bootstrap.storage_root),
-            "payload": _runtime_payload(state),
-        }
-
-    return run_isolated(
-        root,
-        env_prefixes=("APPRC_EXAMPLE_RUNTIME_",),
-        scenario=scenario,
-    )
 
 
 def main() -> None:

@@ -2,23 +2,17 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
-import os
-from pathlib import Path
+# == Standard Library ===========================================
+import json
 
-# == 3rd Party ===============================
+# == 3rd Party ==================================================
 import typer
 
-# == Internal ================================
+# == Internal ===================================================
 import apprc as rc
-from _example_apps_utils._support import (
-    build_standard_app,
-    run_isolated,
-    write_env,
-)
 from explicit_env_precedence.config import (
     ExplicitEnvPrecedenceExampleConfig,
-    KIT,
+    MyRC,
 )
 
 
@@ -33,77 +27,53 @@ def build_app(
     :param editor_app_cls: Optional editor replacement for tests.
     :return: Typer application.
     """
-    return build_standard_app(
-        kit=KIT,
-        bundle_cls=ExplicitEnvPrecedenceExampleConfig,
-        section_getter=lambda config: config.precedence,
-        help_text="Exercise explicit env-file storage selector precedence.",
+    app = typer.Typer(
+        help="Exercise shell versus explicit dotenv precedence.",
+        no_args_is_help=True,
+        pretty_exceptions_show_locals=False,
+    )
+    MyRC.mount_cli(
+        app,
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
+        runtime_payload=_runtime_payload,
     )
 
+    @app.command("run")
+    def run_cmd(ctx: typer.Context) -> None:
+        """Print the selected root and its resolved label."""
+        typer.echo(json.dumps(_runtime_payload(_state(ctx)), indent=2))
 
-app = build_app()
+    return app
 
 
-def run_demo(root: Path) -> dict[str, object]:
-    """Execute the explicit env-file precedence scenario.
+def _runtime_payload(
+    state: rc.cli.DefaultConfigCliState,
+) -> dict[str, object]:
+    """Return values that make the winning env layer visible."""
+    config = ExplicitEnvPrecedenceExampleConfig().precedence
+    bootstrap = state.env_bootstrap
+    return {
+        "app_id": MyRC.spec.app_id,
+        "storage_name": bootstrap.storage_name if bootstrap else None,
+        "storage_root": str(bootstrap.storage_root) if bootstrap else None,
+        "label": config.label,
+    }
 
-    :param root: Temporary run directory.
-    :return: JSON-friendly scenario summary.
-    """
 
-    def scenario() -> dict[str, object]:
-        os.environ[KIT.spec.apprc_dir_env_key] = str(root / "apprc")
-        shell_root = root / "shell-storage"
-        explicit_root = root / "explicit-storage"
-        shell_root.mkdir(parents=True)
-        explicit_root.mkdir(parents=True)
-        rc.files.ensure_storage_dotenv_file(shell_root)
-        rc.files.ensure_storage_dotenv_file(explicit_root)
-        rc.storage.register_storage(
-            name="shell",
-            root=shell_root,
-            path=KIT.spec.preferred_apprc_toml_path(),
-        )
-        rc.storage.register_storage(
-            name="explicit",
-            root=explicit_root,
-            path=KIT.spec.preferred_apprc_toml_path(),
-        )
-        selector_env = write_env(
-            root / ".env",
-            {"APPRC_EXAMPLE_PRECEDENCE_ROOT": "explicit"},
-        )
-        os.environ["APPRC_EXAMPLE_PRECEDENCE_ROOT"] = "shell"
-        shell_wins = KIT.bootstrap(
-            env_files=(selector_env,),
-            env_file_overrides_os_environ=False,
-            load_dotenv_layers=True,
-            storage=None,
-        )
-        explicit_wins = KIT.bootstrap(
-            env_files=(selector_env,),
-            env_file_overrides_os_environ=True,
-            load_dotenv_layers=True,
-            storage=None,
-        )
-        return {
-            "scenario": "explicit_env_precedence",
-            "shell_wins": str(shell_wins.storage_root),
-            "explicit_wins": str(explicit_wins.storage_root),
-        }
-
-    return run_isolated(
-        root,
-        env_prefixes=("APPRC_EXAMPLE_PRECEDENCE_",),
-        scenario=scenario,
-    )
+def _state(ctx: typer.Context) -> rc.cli.DefaultConfigCliState:
+    """Return runtime state after AppRC has prepared the command."""
+    if isinstance(ctx.obj, rc.cli.DefaultConfigCliState):
+        return ctx.obj
+    raise RuntimeError("AppRC runtime state was not initialized.")
 
 
 def main() -> None:
     """Run the explicit env precedence example CLI."""
     app()
+
+
+app = build_app()
 
 
 if __name__ == "__main__":

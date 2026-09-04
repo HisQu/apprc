@@ -20,7 +20,6 @@ from apprc.user_files.storage_roots.model import (
     StorageRegistry,
 )
 from apprc.user_files.storage_roots._naming import (
-    app_data_dir,
     suggested_storage_name,
     suggested_storage_root,
     validate_storage_name,
@@ -34,7 +33,6 @@ __all__ = [
     "ArchivedStorageRecord",
     "StorageRecord",
     "StorageRegistry",
-    "app_data_dir",
     "load_storage_registry_or_empty",
     "ordered_storage_names",
     "prune_missing_archived_storages",

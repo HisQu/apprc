@@ -17,7 +17,7 @@ class AppSettings(rc.Config):
     """Storage-scoped config fields with typed and secret values."""
 
     storage_root: Path = rc.field(
-        "APPRC_EXAMPLE_STORAGE_ROOT",
+        "APPRC_EXAMPLE_STORAGE_STORAGE",
         editable=False,
         required=True,
         title="Storage root",

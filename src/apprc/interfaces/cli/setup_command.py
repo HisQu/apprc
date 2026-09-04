@@ -17,7 +17,6 @@ from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
     normalize_storage_root_path,
 )
-from apprc.user_files.storage_roots._naming import suggested_storage_root
 from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
 from apprc.interfaces._terminal_styles import (
     PATH_STYLE,
@@ -99,7 +98,7 @@ def _select_storage_root(
     :raises typer.BadParameter: If the path cannot be used as a directory.
     """
     selected = storage_root
-    suggested = suggested_storage_root(kit.spec.app_id)
+    suggested = kit.spec.apprc_dir() / "storage"
     registry_path = kit.spec.preferred_apprc_toml_path()
     try:
         registry = load_storage_registry_or_empty(registry_path)

@@ -39,6 +39,12 @@ def test_schema_namespace_exports_metadata_helpers() -> None:
     assert hasattr(rc.schema, "owner_for")
 
 
+def test_storage_namespace_uses_fixed_layout_helpers() -> None:
+    """The storage namespace does not expose an alternate app directory."""
+    assert not hasattr(rc.storage, "app_data_dir")
+    assert callable(rc.storage.suggested_storage_root)
+
+
 def test_root_does_not_export_legacy_symbols() -> None:
     """The breaking root API removes old declaration helpers."""
     assert not hasattr(rc, "secret")

@@ -13,7 +13,7 @@ class CliRuntimeConfig(rc.Config):
     """Storage fields used by the app-owned callback runtime example."""
 
     storage_root: Path = rc.field(
-        "APPRC_EXAMPLE_RUNTIME_ROOT",
+        "APPRC_EXAMPLE_RUNTIME_STORAGE",
         editable=False,
         required=True,
         title="Storage root",

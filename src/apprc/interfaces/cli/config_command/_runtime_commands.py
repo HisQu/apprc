@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import sys
 from pathlib import Path
 from typing import Literal, cast
 
@@ -26,8 +27,11 @@ from apprc.runtime.diagnostics.payload import build_config_doctor_payload
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
 from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.env_files.updates import (
-    set_env_file_value,
-    set_storage_dotenv_value,
+    EnvFileEditPlan,
+    EnvFileUpdate,
+    apply_env_file_edit,
+    plan_env_file_value_update,
+    plan_storage_dotenv_value_update,
 )
 from apprc.user_files.storage_roots.paths import StorageRootPathError
 from apprc.user_files.migration import (
@@ -297,9 +301,11 @@ class RuntimeConfigCommands(ConfigCommandBase):
             selector_context=selector_context,
         )
         if resolved_scope == "user":
-            update = self._set_user_value(key=key, value=value)
+            plan = self._plan_user_value(key=key, value=value)
+            update = self._confirm_and_apply_env_file_edit(plan)
             typer.echo(f"updated: {update.env_key}")
             typer.echo(f"user_dotenv: {update.path}")
+            self._print_post_write_warnings(plan)
             return
         if current_state is None:
             raise typer.BadParameter(
@@ -310,9 +316,40 @@ class RuntimeConfigCommands(ConfigCommandBase):
             current_state,
             selector_context=selector_context,
         )
-        update = self._set_storage_value(root=root, key=key, value=value)
+        plan = self._plan_storage_value(root=root, key=key, value=value)
+        update = self._confirm_and_apply_env_file_edit(plan)
         typer.echo(f"updated: {update.env_key}")
         typer.echo(f"storage_dotenv: {update.path}")
+        self._print_post_write_warnings(plan)
+
+    @staticmethod
+    def _confirm_and_apply_env_file_edit(
+        plan: EnvFileEditPlan,
+    ) -> EnvFileUpdate:
+        """Confirm duplicate cleanup when interactive, then write the edit.
+
+        :param plan: Validated dotenv edit to inspect and apply.
+        :return: Completed dotenv update.
+        """
+        interactive = _is_interactive_terminal()
+        if plan.warnings and interactive:
+            for warning in plan.warnings:
+                typer.echo(f"Warning: {warning}", err=True)
+            if not typer.confirm("Continue with this dotenv edit?"):
+                typer.echo("Aborted.")
+                raise typer.Exit(code=1)
+        return apply_env_file_edit(plan)
+
+    @staticmethod
+    def _print_post_write_warnings(plan: EnvFileEditPlan) -> None:
+        """Print warnings after a non-interactive dotenv write.
+
+        :param plan: Applied edit whose warnings may need output.
+        """
+        if _is_interactive_terminal():
+            return
+        for warning in plan.warnings:
+            typer.echo(f"Warning: {warning}", err=True)
 
     def _resolve_write_scope(
         self,
@@ -411,10 +448,10 @@ class RuntimeConfigCommands(ConfigCommandBase):
         )
         return storage_root is not None and storage_root.is_dir()
 
-    def _set_user_value(self, *, key: str, value: str):
-        """Write one value to the per-user dotenv file."""
+    def _plan_user_value(self, *, key: str, value: str) -> EnvFileEditPlan:
+        """Prepare one per-user dotenv edit without writing it."""
         try:
-            return set_env_file_value(
+            return plan_env_file_value_update(
                 path=self.kit.spec.user_dotenv_path(),
                 reference=key,
                 raw_value=value,
@@ -426,10 +463,16 @@ class RuntimeConfigCommands(ConfigCommandBase):
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="KEY") from exc
 
-    def _set_storage_value(self, *, root: Path, key: str, value: str):
-        """Write one value to the selected storage dotenv file."""
+    def _plan_storage_value(
+        self,
+        *,
+        root: Path,
+        key: str,
+        value: str,
+    ) -> EnvFileEditPlan:
+        """Prepare one selected-storage dotenv edit without writing it."""
         try:
-            return set_storage_dotenv_value(
+            return plan_storage_dotenv_value_update(
                 storage_root=root,
                 reference=key,
                 raw_value=value,
@@ -465,3 +508,8 @@ def _inactive_scope_message(
         "The storage dotenv layer is not active. Select a registered storage "
         f"with --storage or export {kit.spec.storage_selector_env_key}."
     )
+
+
+def _is_interactive_terminal() -> bool:
+    """Return whether duplicate cleanup can ask for confirmation."""
+    return sys.stdin.isatty() and sys.stdout.isatty()

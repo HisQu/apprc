@@ -1,18 +1,25 @@
 from __future__ import annotations
 
-from _example_apps_utils import example_app_specs, example_kits
+from _example_apps_utils import example_app, example_app_specs
 
 
-def test_example_app_registry_exposes_all_dev_kits() -> None:
-    """Keep dev-only example kit discovery out of maintainer scripts."""
+def test_example_app_registry_exposes_all_installed_commands() -> None:
+    """Keep lab and smoke-runner command discovery in one registry."""
     specs = example_app_specs()
     names = {spec.name for spec in specs}
 
     assert names == {
-        "cli_runtime",
-        "config_only",
-        "explicit_env_precedence",
-        "config_with_storage",
+        "cli-runtime",
+        "config-only",
+        "explicit-env-precedence",
+        "config-with-storage",
     }
-    assert set(example_kits()) == names
-    assert all(spec.kit.spec.app_id for spec in specs)
+    assert {spec.command_name for spec in specs} == {
+        "apprc-cli-runtime",
+        "apprc-config-only",
+        "apprc-config-with-storage",
+        "apprc-explicit-env-precedence",
+    }
+    assert example_app("config-only").uses_storage is False
+    assert example_app("config-with-storage").uses_storage is True
+    assert all(spec.app_id and spec.apprc_dir_env_key for spec in specs)

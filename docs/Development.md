@@ -76,7 +76,7 @@ Put changes where the repo already has an owner:
 | Broad AppRC utility helpers | [src/apprc/utils](../src/apprc/utils) |
 | Public facade exports | [src/apprc/__init__.py](../src/apprc/__init__.py) and package `__init__.py` files |
 | Example CLIs | [examples/example_apps](../examples/example_apps) |
-| Example bootstrap helper | [src/apprc_dev/example_apps](../src/apprc_dev/example_apps) |
+| Example lab and smoke runner | [examples/example_apps/src/_example_apps_utils](../examples/example_apps/src/_example_apps_utils) |
 | Tests | [tests](../tests) |
 | Documentation | [docs](.) and [README.md](../README.md) |
 | PyPI README generation helper | [src/apprc_dev/packaging](../src/apprc_dev/packaging) |
@@ -132,7 +132,7 @@ is missing, check whether the project environment is active and then try the
 
 The example package is a dev-only editable install at
 [examples/example_apps](../examples/example_apps). It exposes one console
-script per integration scenario:
+script per integration scenario and two test utilities:
 
 | Script | AppRC Surface |
 |---|---|
@@ -140,7 +140,8 @@ script per integration scenario:
 | `apprc-config-with-storage` | Direct `rc.AppRC(...)` with `rc.Storage(...)` |
 | `apprc-explicit-env-precedence` | Explicit env-file selector precedence |
 | `apprc-cli-runtime` | `CliRuntime` with an app-owned callback |
-| `apprc-examples-run-all` | Compact non-interactive scenario runner |
+| `apprc-examples-lab EXAMPLE` | One disposable interactive shell |
+| `apprc-examples-run-all` | Real-CLI non-interactive smoke runner |
 
 The source tree intentionally uses one Python package per app so the examples
 match what a downstream project should copy:
@@ -151,12 +152,11 @@ match what a downstream project should copy:
 | `config_with_storage` | Storage app with app and storage-local values. |
 | `explicit_env_precedence` | Storage selector precedence with explicit env files. |
 | `cli_runtime` | Typer callback integration through `CliRuntime`. |
-| `_example_apps_utils` | Shared scenario runner helpers; not a user app template. |
+| `_example_apps_utils` | Lab, registry, and smoke runner; not a user app template. |
 
-Generated files intentionally live outside this source tree under
-`examples/example_app_disk_files/`. That ignored directory contains local
-runtime state written by the bootstrap helper; do not import from it or copy it
-as an application template.
+The four application packages must not import `_example_apps_utils`. Each one
+is a copyable downstream pattern; test orchestration belongs in the utility
+package.
 
 Each app package owns its own `config/` package and points `config_package` at
 that package. Do not reintroduce a shared config module for the examples; that
@@ -193,7 +193,7 @@ New downstream apps can generate the same skeleton with:
 apprc scaffold config \
   --package myapp \
   --storage \
-  --app-name myapp \
+  --app-id myapp \
   --display-name "My App" \
   --storage-selector-env-key MYAPP_STORAGE \
   --target src
@@ -203,55 +203,37 @@ Install the example console scripts when the dev dependency group has not
 already installed them:
 
 ```bash
-python -m pip install -e examples/example_apps --no-build-isolation
+python -m pip install -e ".[tui]" -e examples/example_apps --no-build-isolation
 ```
 
-Bootstrap all local example files before manual testing:
+Open one clean manual-test shell:
 
 ```bash
-set -a; source .env.example_apps; set +a
-python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"
+apprc-examples-lab config-only
+apprc-examples-lab config-with-storage
+apprc-examples-lab explicit-env-precedence
+apprc-examples-lab cli-runtime
 ```
 
-When direnv is enabled, `.envrc` sources `.env.example_apps` and runs the
-bootstrap helper automatically after the project venv is active. Manual setup
-uses the same `.env.example_apps` file and `APPRC_EXAMPLE_APPS_ROOT`.
+The lab strips inherited `APPRC_EXAMPLE_*` variables, points the selected
+application's `<APP>_APPRC_DIR` at a temporary root, and opens the current
+user's shell before any AppRC files exist. It prints a scenario-specific
+walkthrough and removes its root when the shell exits. It never owns or removes
+paths the tester explicitly selects outside that root.
 
-This writes ignored files under `examples/example_app_disk_files/`:
-
-| File | Purpose |
-|---|---|
-| `.apprc-example-*/.env` | Per-app arbitrary user env file. AppRC does not choose this location; source it manually or pass it with `--env-file` when path relocation is not needed. |
-| `apprc-directories/<app>/apprc.user.env` | Generated per-user dotenv. |
-| `apprc-directories/<app>/apprc.toml` | Generated storage registry for storage examples. |
-| `.apprc-example-*/storages/alpha/apprc.storage.env` | Storage-local dotenv layer. |
-
-Every generated `.env` and `.toml` file starts with comments explaining the
-AppRC layer and where that file would normally live in a real application.
-
-Source one example environment when testing its console script:
+Direct example CLI calls remain realistic and can leave persistent AppRC files.
+Use the aggregate command for an isolated automated pass:
 
 ```bash
-set -a; source .env.example_apps; set +a
-apprc-config-with-storage config paths
-apprc-config-with-storage config doctor
-apprc-config-with-storage config storage list
-apprc-config-with-storage config show --json
+apprc-examples-run-all
 ```
 
-Use the runtime example to inspect the app-owned callback path:
-
-```bash
-set -a; source .env.example_apps; set +a
-apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo status
-apprc-cli-runtime --workspace /tmp/apprc-workspace --model demo run
-apprc-cli-runtime config doctor
-```
-
-The test suite exercises every generated command for every example scenario:
-`config paths`, `config show`, `config doctor`, `config setup`, `config set`,
-`config edit`, `config purge`, and all mounted `config storage` commands.
-Config-only scenarios also assert that storage commands are unavailable.
+The runner calls the installed application CLIs as subprocesses and covers
+setup, doctor, runtime, and purge. Its precedence case proves both policies
+with different roots and values. Pytest covers the common command surface on
+all four apps, the complete storage lifecycle on `config_with_storage`, name
+and path selectors, runtime skipping, headless editor launch, and lab cleanup.
+It does not claim every generated command runs against every example.
 
 <br>
 
@@ -516,7 +498,7 @@ For code changes:
 .venv/bin/ruff check .
 .venv/bin/pyright
 .venv/bin/pytest
-python -m apprc_dev.example_apps.bootstrap --clean
+apprc-examples-run-all
 ```
 
 Run focused tests first for narrow changes. Run the broader suite when shared

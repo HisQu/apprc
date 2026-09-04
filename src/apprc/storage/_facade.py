@@ -17,12 +17,13 @@ _ARCHIVE_EXPORTS = [
 _IO_EXPORTS = [
     "load_storage_registry_or_empty",
     "ordered_storage_names",
+    "render_storage_registry",
     "write_storage_registry",
 ]
 _LOADING_EXPORTS = [
+    "MissingStorageRegistryError",
     "StorageRegistryInspection",
     "apprc_toml_path_for_create",
-    "index_path_for_create",
     "inspect_storage_registry",
     "load_create_or_empty_storage_registry",
     "load_existing_storage_registry",
@@ -48,7 +49,10 @@ _REGISTRY_EXPORTS = [
     "prune_missing_archived_storages",
     "record_archived_storage",
     "register_storage",
+    "rename_storage",
+    "repoint_storage",
     "remove_archived_storage",
+    "select_storage",
     "unregister_storage",
 ]
 _SELECTOR_EXPORTS = [
@@ -57,9 +61,9 @@ _SELECTOR_EXPORTS = [
     "missing_storage_selector_error",
     "resolve_active_storage_selection",
     "resolve_registered_storage_name",
-    "resolve_setup_storage_root_from_env",
     "resolve_storage_selector_value",
 ]
+_MOVE_EXPORTS = ["StorageMoveError", "StorageMoveResult", "move_storage"]
 
 _SYMBOL_EXPORTS = {
     **{
@@ -67,6 +71,7 @@ _SYMBOL_EXPORTS = {
         for name in _ARCHIVE_EXPORTS
     },
     **{name: "apprc.user_files.storage_roots._io" for name in _IO_EXPORTS},
+    **{name: "apprc.user_files.storage_roots.move" for name in _MOVE_EXPORTS},
     **{
         name: "apprc.user_files.storage_roots._loading"
         for name in _LOADING_EXPORTS
@@ -94,6 +99,7 @@ __all__, __getattr__, __dir__ = build_lazy_facade(
         *_IO_EXPORTS,
         *_LOADING_EXPORTS,
         *_MODEL_EXPORTS,
+        *_MOVE_EXPORTS,
         *_NAMING_EXPORTS,
         *_PATH_EXPORTS,
         *_REGISTRY_EXPORTS,

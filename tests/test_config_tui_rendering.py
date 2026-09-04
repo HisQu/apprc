@@ -66,14 +66,14 @@ def _text_cell(row: FieldTableRow, index: int) -> Text:
 def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     rows = build_field_table_rows(
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        app_values={
+        user_dotenv_values={
             "APPRC_EXAMPLE_APP_ACCESS_TOKEN": "secret",
         },
         storage_values={
             "APPRC_EXAMPLE_APP_RETRY_COUNT": "9",
         },
         defaults_values=None,
-        include_app=True,
+        include_user_dotenv=True,
         include_storage=True,
         hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_STORAGE"}),
         shell_env={"APPRC_EXAMPLE_APP_MODE": "MANUAL"},
@@ -86,7 +86,7 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
         "Key",
         "Effective",
         "Shell",
-        "App-wide",
+        "User",
         "Storage",
         "Default",
         "Explanation",

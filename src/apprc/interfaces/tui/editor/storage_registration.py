@@ -102,7 +102,7 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
                 name=name,
                 root=guarded_root,
                 path=registry.path,
-                storage_env_filename=self.editor.kit.spec.require_storage().env_filename,
+                storage_dotenv_filename=self.editor.kit.spec.storage_dotenv_filename,
             )
         except (TypeError, ValueError, OSError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -155,15 +155,13 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
         if not any(resolved_root.iterdir()):
             return resolved_root
 
-        storage_env_filename = (
-            self.editor.kit.spec.require_storage().env_filename
-        )
-        env_path = resolved_root / storage_env_filename
+        storage_dotenv_filename = self.editor.kit.spec.storage_dotenv_filename
+        env_path = resolved_root / storage_dotenv_filename
         if env_path.is_file():
             keys = list(read_env_file(env_path))[:10]
             preview = ", ".join(keys) if keys else "<none>"
             message = (
-                f"Storage not empty, found {storage_env_filename} "
+                f"Storage not empty, found {storage_dotenv_filename} "
                 f"with these env vars: {preview}.\n"
                 "All these storage env vars will be exported on runtime. "
                 "Proceed?"
@@ -171,8 +169,8 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
         else:
             message = lines_text(
                 "Storage not empty, but no "
-                f"{storage_env_filename} found, initialize with "
-                f"empty {storage_env_filename}?",
+                f"{storage_dotenv_filename} found, initialize with "
+                f"empty {storage_dotenv_filename}?",
                 path_text(resolved_root),
             )
         action = await self.editor.push_screen_wait(

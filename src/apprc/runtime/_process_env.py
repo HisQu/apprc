@@ -19,27 +19,27 @@ from apprc.runtime.provenance import (
 def write_bootstrap_environment(
     values: Mapping[str, str],
     *,
-    storage_env_key: str | None = None,
+    storage_selector_env_key: str | None = None,
     storage_root: Path | None = None,
 ) -> None:
     """Apply bootstrap values to this Python process only.
 
     :param values: Merged dotenv and inherited environment values.
-    :param storage_env_key: App-owned env key that points at active storage.
+    :param storage_selector_env_key: App-owned env key that points at active storage.
     :param storage_root: Resolved active storage root written after merge.
     """
     os.environ.update(values)
-    if storage_env_key is not None and storage_root is not None:
-        os.environ[storage_env_key] = str(storage_root)
+    if storage_selector_env_key is not None and storage_root is not None:
+        os.environ[storage_selector_env_key] = str(storage_root)
 
 
-def app_env_keys(spec: AppConfigSpec) -> set[str]:
+def user_dotenv_keys(spec: AppConfigSpec) -> set[str]:
     """Return env keys owned by one application contract.
 
     :param spec: Application-specific bootstrap contract.
     :return: Full env keys that AppRC should track for this app.
     """
-    keys = {spec.apprc_toml_env_key}
+    keys = {spec.apprc_dir_env_key}
     if spec.storage_selector_env_key is not None:
         keys.add(spec.storage_selector_env_key)
     for owner in spec.owners:
@@ -51,12 +51,12 @@ def app_env_keys(spec: AppConfigSpec) -> set[str]:
 
 def original_env_value_origins(
     *,
-    app_env_keys: set[str],
+    user_dotenv_keys: set[str],
     original_env: Mapping[str, str],
 ) -> dict[str, EnvValueOrigin]:
     """Return shell-export origins from the pre-bootstrap process env.
 
-    :param app_env_keys: App-owned env keys eligible for provenance tracking.
+    :param user_dotenv_keys: App-owned env keys eligible for provenance tracking.
     :param original_env: Process environment captured before bootstrap writes.
     :return: Existing env values keyed by env key.
     """
@@ -66,19 +66,19 @@ def original_env_value_origins(
             origin="shell_export_variable",
             value=original_env[key],
         )
-        for key in app_env_keys
+        for key in user_dotenv_keys
         if key in original_env
     }
 
 
 def merged_env_value_origins(
     *,
-    app_env_keys: set[str],
-    defaults_env_path: Path,
+    user_dotenv_keys: set[str],
+    defaults_dotenv_path: Path,
     defaults_values: Mapping[str, str],
-    app_env_path: Path | None,
-    app_values: Mapping[str, str],
-    storage_env_path: Path | None,
+    user_dotenv_path: Path | None,
+    user_dotenv_values: Mapping[str, str],
+    storage_dotenv_path: Path | None,
     storage_values: Mapping[str, str],
     explicit_layers: tuple[ExplicitEnvLayer, ...],
     original_env: Mapping[str, str],
@@ -86,12 +86,12 @@ def merged_env_value_origins(
 ) -> dict[str, EnvValueOrigin]:
     """Return winning env-value origins using runtime bootstrap precedence.
 
-    :param app_env_keys: App-owned env keys eligible for provenance tracking.
-    :param defaults_env_path: Packaged defaults dotenv path.
+    :param user_dotenv_keys: App-owned env keys eligible for provenance tracking.
+    :param defaults_dotenv_path: Packaged defaults dotenv path.
     :param defaults_values: Parsed packaged defaults dotenv values.
-    :param app_env_path: Per-user app dotenv path.
-    :param app_values: Parsed per-user app dotenv values.
-    :param storage_env_path: Active storage dotenv path.
+    :param user_dotenv_path: Per-user dotenv path.
+    :param user_dotenv_values: Parsed per-user dotenv values.
+    :param storage_dotenv_path: Active storage dotenv path.
     :param storage_values: Parsed storage dotenv values.
     :param explicit_layers: Parsed explicit env files in command/API order.
     :param original_env: Process environment captured before bootstrap writes.
@@ -108,7 +108,7 @@ def merged_env_value_origins(
         path: Path | None = None,
     ) -> None:
         for key, value in values.items():
-            if key not in app_env_keys:
+            if key not in user_dotenv_keys:
                 continue
             origins[key] = EnvValueOrigin(
                 env_key=key,
@@ -118,19 +118,19 @@ def merged_env_value_origins(
             )
 
     apply_values(
-        defaults_values, "shell_dotenv_defaults", path=defaults_env_path
+        defaults_values, "shell_dotenv_defaults", path=defaults_dotenv_path
     )
-    if app_env_path is not None:
+    if user_dotenv_path is not None:
         apply_values(
-            app_values,
-            "shell_dotenv_app",
-            path=app_env_path,
+            user_dotenv_values,
+            "shell_dotenv_user",
+            path=user_dotenv_path,
         )
-    if storage_env_path is not None:
+    if storage_dotenv_path is not None:
         apply_values(
             storage_values,
             "shell_dotenv_storage",
-            path=storage_env_path,
+            path=storage_dotenv_path,
         )
     if env_file_overrides_os_environ:
         apply_values(original_env, "shell_export_variable")

@@ -94,11 +94,8 @@ def build_config_typer_app_from_options(
         no_args_is_help=False,
         pretty_exceptions_show_locals=False,
     )
-    app_group = typer.Typer(help="Manage per-user app config.")
     storage_group = typer.Typer(help="Manage named storages.")
-    if kit.spec.app_env_enabled():
-        app.add_typer(app_group, name="app")
-    if kit.spec.named_storage_enabled():
+    if kit.spec.uses_storage():
         app.add_typer(storage_group, name="storage")
 
     handlers = ConfigCommandHandlers(
@@ -154,29 +151,47 @@ def build_config_typer_app_from_options(
         """Check AppRC config readiness and print suggested fixes."""
         handlers.doctor(ctx, json_output=json_output)
 
-    @app.command("setup")
-    def config_setup_cmd(
-        assume_yes: Annotated[
-            bool,
-            typer.Option(
-                "--yes",
-                "-y",
-                help="Run setup non-interactively with the selected values.",
-            ),
-        ] = False,
-        storage_root: Annotated[
-            Path | None,
-            typer.Option(
-                "--storage-root",
-                help="Storage directory. Shell path completion is enabled.",
-            ),
-        ] = None,
-    ) -> None:
-        """Configure the files required by this AppRC declaration."""
-        handlers.setup(
-            assume_yes=assume_yes,
-            storage_root=storage_root,
-        )
+    if kit.spec.uses_storage():
+
+        @app.command("setup")
+        def config_storage_setup_cmd(
+            assume_yes: Annotated[
+                bool,
+                typer.Option(
+                    "--yes",
+                    "-y",
+                    help="Run setup non-interactively with the selected values.",
+                ),
+            ] = False,
+            storage_root: Annotated[
+                Path | None,
+                typer.Option(
+                    "--storage-root",
+                    help="Storage directory. Shell path completion is enabled.",
+                ),
+            ] = None,
+        ) -> None:
+            """Create the user dotenv and initial named storage."""
+            handlers.setup(
+                assume_yes=assume_yes,
+                storage_root=storage_root,
+            )
+
+    else:
+
+        @app.command("setup")
+        def config_user_setup_cmd(
+            assume_yes: Annotated[
+                bool,
+                typer.Option(
+                    "--yes",
+                    "-y",
+                    help="Create the user dotenv without prompting.",
+                ),
+            ] = False,
+        ) -> None:
+            """Create the empty per-user dotenv file."""
+            handlers.setup(assume_yes=assume_yes, storage_root=None)
 
     @app.command("migrate")
     def config_migrate_cmd(
@@ -204,51 +219,100 @@ def build_config_typer_app_from_options(
             assume_yes=assume_yes,
         )
 
-    @app.command("set")
-    def config_set_cmd(
-        ctx: typer.Context,
-        key: Annotated[
-            str,
-            typer.Argument(
-                help=(
-                    "Env key, dotted config path, or unique field name to "
-                    "write into an active AppRC dotenv override file."
-                ),
-            ),
-        ],
-        value: Annotated[
-            str,
-            typer.Argument(
-                help="Value to validate and store as an AppRC override."
-            ),
-        ],
-        scope: Annotated[
-            str | None,
+    @app.command("purge")
+    def config_purge_cmd(
+        dry_run: Annotated[
+            bool,
             typer.Option(
-                "--scope",
-                help="Writable layer to update: app or storage.",
+                "--dry-run",
+                help="Show exact removal targets without changing files.",
             ),
-        ] = None,
+        ] = False,
+        assume_yes: Annotated[
+            bool,
+            typer.Option(
+                "--yes",
+                "-y",
+                help="Remove the listed AppRC-managed targets without prompting.",
+            ),
+        ] = False,
     ) -> None:
-        """Write one active AppRC dotenv config override."""
-        handlers.set(ctx, key=key, value=value, scope=scope)
+        """Remove AppRC files that package uninstall leaves behind."""
+        handlers.purge(dry_run=dry_run, assume_yes=assume_yes)
+
+    if kit.spec.uses_storage():
+
+        @app.command("set")
+        def config_storage_set_cmd(
+            ctx: typer.Context,
+            key: Annotated[
+                str,
+                typer.Argument(
+                    help=(
+                        "Env key, dotted config path, or unique field name to "
+                        "write into an active AppRC dotenv override file."
+                    ),
+                ),
+            ],
+            value: Annotated[
+                str,
+                typer.Argument(
+                    help="Value to validate and store as an AppRC override."
+                ),
+            ],
+            scope: Annotated[
+                str | None,
+                typer.Option(
+                    "--scope",
+                    help="Writable layer to update: user or storage.",
+                ),
+            ] = None,
+        ) -> None:
+            """Write one user or storage dotenv override."""
+            handlers.set(ctx, key=key, value=value, scope=scope)
+
+    else:
+
+        @app.command("set")
+        def config_user_set_cmd(
+            ctx: typer.Context,
+            key: Annotated[
+                str,
+                typer.Argument(
+                    help=(
+                        "Env key, dotted config path, or unique field name to "
+                        "write into the user dotenv override file."
+                    ),
+                ),
+            ],
+            value: Annotated[
+                str,
+                typer.Argument(
+                    help="Value to validate and store as an AppRC override."
+                ),
+            ],
+            scope: Annotated[
+                str | None,
+                typer.Option(
+                    "--scope",
+                    help="Writable layer to update: user.",
+                ),
+            ] = None,
+        ) -> None:
+            """Write one user dotenv override."""
+            handlers.set(ctx, key=key, value=value, scope=scope)
 
     @app.command("edit")
     def config_edit_cmd(ctx: typer.Context) -> None:
         """Open the Textual editor for AppRC dotenv override files."""
         handlers.edit(ctx)
 
-    @app_group.command("init")
-    def config_app_init_cmd() -> None:
-        """Create the per-user app dotenv file."""
-        handlers.app_init()
-
     @storage_group.command("add")
     def config_storage_add_cmd(
         ctx: typer.Context,
         name: Annotated[
             str,
-            typer.Argument(help="Storage selector name to create or update."),
+            typer.Argument(help="New storage selector name."),
         ],
         path: Annotated[
             Path,
@@ -263,7 +327,7 @@ def build_config_typer_app_from_options(
             ),
         ] = False,
     ) -> None:
-        """Create or update one named storage entry."""
+        """Create one named storage entry."""
         handlers.storage_add(
             ctx,
             name=name,
@@ -281,6 +345,59 @@ def build_config_typer_app_from_options(
     ) -> None:
         """List named storage entries."""
         handlers.storage_list(ctx, json_output=json_output)
+
+    @storage_group.command("select")
+    def config_storage_select_cmd(
+        ctx: typer.Context,
+        name: Annotated[
+            str,
+            typer.Argument(help="Registered storage name to select."),
+        ],
+    ) -> None:
+        """Persist the selected storage name."""
+        handlers.storage_select(ctx, name=name)
+
+    @storage_group.command("rename")
+    def config_storage_rename_cmd(
+        ctx: typer.Context,
+        name: Annotated[str, typer.Argument(help="Current storage name.")],
+        new_name: Annotated[str, typer.Argument(help="New storage name.")],
+    ) -> None:
+        """Rename a registered storage without moving data."""
+        handlers.storage_rename(ctx, name=name, new_name=new_name)
+
+    @storage_group.command("repoint")
+    def config_storage_repoint_cmd(
+        ctx: typer.Context,
+        name: Annotated[str, typer.Argument(help="Registered storage name.")],
+        root: Annotated[
+            Path,
+            typer.Argument(help="New existing root; no data is moved."),
+        ],
+    ) -> None:
+        """Change only the registered root path."""
+        handlers.storage_repoint(ctx, name=name, root=root)
+
+    @storage_group.command("move")
+    def config_storage_move_cmd(
+        ctx: typer.Context,
+        name: Annotated[str, typer.Argument(help="Registered storage name.")],
+        destination: Annotated[
+            Path,
+            typer.Argument(help="New or empty destination directory."),
+        ],
+        assume_yes: Annotated[
+            bool,
+            typer.Option("--yes", "-y", help="Move without confirmation."),
+        ] = False,
+    ) -> None:
+        """Move the complete storage directory and update the registry."""
+        handlers.storage_move(
+            ctx,
+            name=name,
+            destination=destination,
+            assume_yes=assume_yes,
+        )
 
     @storage_group.command("remove")
     def config_storage_remove_cmd(

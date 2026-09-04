@@ -200,23 +200,45 @@ def mount_config_cli(
         logger=logger,
     )
 
-    @app.callback()
-    def apprc_host_callback(
-        ctx: typer.Context,
-        env_files: EnvFilesOption = None,
-        env_file_overrides_os_environ: EnvFileOverridesOption = False,
-        skip_dotenv_layers: SkipDotenvLayersOption = False,
-        storage: StorageOption = None,
-        log_level: LogLevelOption = None,
-    ) -> None:
-        """Bootstrap AppRC state for commands that need runtime config."""
-        options = CliRuntimeOptions.from_typer(
-            env_files=env_files,
-            env_file_overrides_os_environ=env_file_overrides_os_environ,
-            load_dotenv_layers=not skip_dotenv_layers,
-            storage=storage,
-            log_level=log_level,
-        )
-        runtime.prepare(ctx, options)
+    if kit.spec.uses_storage():
+
+        @app.callback()
+        def apprc_storage_host_callback(
+            ctx: typer.Context,
+            env_files: EnvFilesOption = None,
+            env_file_overrides_os_environ: EnvFileOverridesOption = False,
+            skip_dotenv_layers: SkipDotenvLayersOption = False,
+            storage: StorageOption = None,
+            log_level: LogLevelOption = None,
+        ) -> None:
+            """Bootstrap AppRC state for commands that need runtime config."""
+            options = CliRuntimeOptions.from_typer(
+                env_files=env_files,
+                env_file_overrides_os_environ=env_file_overrides_os_environ,
+                load_dotenv_layers=not skip_dotenv_layers,
+                storage=storage,
+                log_level=log_level,
+            )
+            runtime.prepare(ctx, options)
+
+    else:
+
+        @app.callback()
+        def apprc_storage_free_host_callback(
+            ctx: typer.Context,
+            env_files: EnvFilesOption = None,
+            env_file_overrides_os_environ: EnvFileOverridesOption = False,
+            skip_dotenv_layers: SkipDotenvLayersOption = False,
+            log_level: LogLevelOption = None,
+        ) -> None:
+            """Bootstrap a storage-free AppRC application."""
+            options = CliRuntimeOptions.from_typer(
+                env_files=env_files,
+                env_file_overrides_os_environ=env_file_overrides_os_environ,
+                load_dotenv_layers=not skip_dotenv_layers,
+                storage=None,
+                log_level=log_level,
+            )
+            runtime.prepare(ctx, options)
 
     return runtime.mount_config_group(app)

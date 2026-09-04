@@ -37,7 +37,7 @@ def build_graph() -> Digraph:
         0.25,
         1.65,
         "package apprc.defaults.env",
-        "app apprc.app.env",
+        "user apprc.user.env",
         "storage apprc.storage.env",
         "explicit --env-file",
         border_color=gg.GREEN,

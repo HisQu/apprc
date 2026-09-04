@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import os
 from pathlib import Path
 
 # == 3rd Party ===============================
@@ -51,6 +52,7 @@ def run_demo(root: Path) -> dict[str, object]:
     """
 
     def scenario() -> dict[str, object]:
+        os.environ[KIT.spec.apprc_dir_env_key] = str(root / "apprc")
         explicit_env = write_env(
             root / ".env",
             {
@@ -68,7 +70,7 @@ def run_demo(root: Path) -> dict[str, object]:
         return {
             "scenario": "config_only",
             "doctor_status": doctor.status,
-            "defaults_env": str(bootstrap.defaults_env),
+            "defaults_dotenv": str(bootstrap.defaults_dotenv),
             "explicit_env_files": [str(path) for path in bootstrap.env_files],
             "config": config_values(config.app),
         }

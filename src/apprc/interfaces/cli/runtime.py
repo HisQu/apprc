@@ -426,19 +426,12 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :raises typer.Exit: If the user declines setup.
         """
         storage = self.kit.spec.storage
-        if (
-            storage is None
-            or not storage.prompt_on_first_run
-            or not sys.stdin.isatty()
-            or not sys.stdout.isatty()
-        ):
+        if storage is None or not sys.stdin.isatty() or not sys.stdout.isatty():
             raise typer.BadParameter(
                 str(error),
                 param_hint=error.param_hint,
             ) from error
-        suggested = storage.suggested_root or suggested_storage_root(
-            self.kit.spec.app_name
-        )
+        suggested = suggested_storage_root(self.kit.spec.app_id)
         if not typer.confirm(f"Create storage directory at {suggested}?"):
             typer.echo("No files were changed.", err=True)
             typer.echo(

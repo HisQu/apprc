@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -184,7 +185,7 @@ def _runtime_payload(state: RuntimeState) -> dict[str, object]:
     """
     config = CliRuntimeExampleConfig()
     return {
-        "app_name": KIT.spec.app_name,
+        "app_id": KIT.spec.app_id,
         "command_name": KIT.spec.config_command_name(),
         "display_name": KIT.spec.display_name,
         "bundle": type(config).__name__,
@@ -219,24 +220,30 @@ def run_demo(root: Path) -> dict[str, object]:
 
     def scenario() -> dict[str, object]:
         """Run the demo after environment isolation is active."""
+        os.environ[KIT.spec.apprc_dir_env_key] = str(root / "apprc")
         storage_root = root / "runtime-storage"
         storage_root.mkdir(parents=True)
-        rc.files.ensure_storage_env_file(storage_root)
-        rc.files.set_storage_env_value(
+        rc.files.ensure_storage_dotenv_file(storage_root)
+        rc.files.set_storage_dotenv_value(
             storage_root=storage_root,
             reference="api_token",
             raw_value="runtime-secret",
             owners=CONFIG_SECTIONS,
         )
+        rc.storage.register_storage(
+            name="default",
+            root=storage_root,
+            path=KIT.spec.preferred_apprc_toml_path(),
+        )
         bootstrap = KIT.bootstrap(
             env_files=(),
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
-            storage=str(storage_root),
+            storage="default",
         )
         state = RuntimeState(
             env_bootstrap=bootstrap,
-            storage=str(storage_root),
+            storage="default",
             workspace=root / "workspace",
             model="demo-model",
             dry_run=True,

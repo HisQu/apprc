@@ -31,8 +31,8 @@ from apprc.interfaces.cli.config_command.state import (
     active_storage_root_from_env,
     active_storage_root_from_state,
 )
-from apprc.interfaces.cli._errors import config_home_bad_parameter
-from apprc.user_files.app_home.locations import ConfigHomeError
+from apprc.interfaces.cli._errors import apprc_dir_bad_parameter
+from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.storage_roots._loading import (
     load_create_or_empty_storage_registry,
     load_optional_runtime_storage_registry,
@@ -118,16 +118,16 @@ class ConfigCommandBase:
         """Return CLI explicit env-file values for selector-only reads."""
         return self.selector_context_reader.cli_selector_context(ctx)
 
-    def config_home_bad_parameter(
+    def apprc_dir_bad_parameter(
         self,
-        exc: ConfigHomeError | OSError,
+        exc: AppRCDirectoryError | OSError,
     ) -> typer.BadParameter:
-        """Return Typer's error type for AppRC config-home failures.
+        """Return Typer's error type for AppRC directory failures.
 
         :param exc: Path preparation failure from AppRC-managed files.
-        :return: Typer parameter error with the shared config-home hint.
+        :return: Typer parameter error with the shared directory hint.
         """
-        return config_home_bad_parameter(exc)
+        return apprc_dir_bad_parameter(exc)
 
     def apprc_toml_bad_parameter(
         self,
@@ -135,7 +135,7 @@ class ConfigCommandBase:
     ) -> typer.BadParameter:
         """Return Typer's error type for AppRC TOML failures."""
         return typer.BadParameter(
-            str(exc), param_hint=self.kit.spec.apprc_toml_env_key
+            str(exc), param_hint=self.kit.spec.apprc_dir_env_key
         )
 
     def require_storage_support(self) -> None:
@@ -146,14 +146,9 @@ class ConfigCommandBase:
                 param_hint="storage",
             )
 
-    def require_named_storage_support(self) -> None:
-        """Raise a CLI error when named storage is unavailable."""
+    def require_storage_registry_support(self) -> None:
+        """Raise a CLI error when storage is unavailable."""
         self.require_storage_support()
-        if not self.kit.spec.named_storage_enabled():
-            raise typer.BadParameter(
-                f"{self.kit.spec.display_name} does not enable named storage.",
-                param_hint="storage",
-            )
 
     def load_optional_storage_registry(
         self,
@@ -167,8 +162,8 @@ class ConfigCommandBase:
                 self.kit.spec,
                 proc_env=context.proc_env,
             )
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
+        except AppRCDirectoryError as exc:
+            raise self.apprc_dir_bad_parameter(exc) from exc
         except ValueError as exc:
             raise self.apprc_toml_bad_parameter(exc) from exc
 
@@ -177,15 +172,15 @@ class ConfigCommandBase:
         *,
         selector_context: ConfigSelectorContext | None = None,
     ) -> StorageRegistry:
-        """Return a parsed or empty named-storage registry without writing."""
-        self.require_named_storage_support()
+        """Return a parsed or empty storage registry without writing."""
+        self.require_storage_registry_support()
         context = selector_context or _empty_selector_context()
         try:
             return load_create_or_empty_storage_registry(
-                self.kit.spec.apprc_toml_path(proc_env=context.proc_env)
+                self.kit.spec.preferred_apprc_toml_path(context.proc_env)
             )
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
+        except AppRCDirectoryError as exc:
+            raise self.apprc_dir_bad_parameter(exc) from exc
         except ValueError as exc:
             raise self.apprc_toml_bad_parameter(exc) from exc
 
@@ -220,8 +215,8 @@ class ConfigCommandBase:
                 str(exc),
                 param_hint=exc.param_hint,
             ) from exc
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
+        except AppRCDirectoryError as exc:
+            raise self.apprc_dir_bad_parameter(exc) from exc
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--storage") from exc
 
@@ -240,7 +235,7 @@ class ConfigCommandBase:
             raise typer.BadParameter(
                 f"No active {self.kit.spec.display_name} storage root. Run "
                 f"`{self.config_command_text('setup --yes --storage-root /absolute/path/to/storage')}` "
-                "or pass --storage.",
+                "or pass --storage NAME.",
                 param_hint="--storage",
             )
         return self.validate_storage_root_for_write(storage_root)
@@ -275,8 +270,8 @@ class ConfigCommandBase:
             if storage_root is None or not storage_root.is_dir():
                 return None
             return storage_root
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
+        except AppRCDirectoryError as exc:
+            raise self.apprc_dir_bad_parameter(exc) from exc
         except StorageSelectorError:
             return None
         except ValueError:
@@ -310,8 +305,8 @@ class ConfigCommandBase:
                 str(exc),
                 param_hint=exc.param_hint,
             ) from exc
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
+        except AppRCDirectoryError as exc:
+            raise self.apprc_dir_bad_parameter(exc) from exc
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--storage") from exc
 

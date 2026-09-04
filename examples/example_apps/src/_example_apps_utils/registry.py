@@ -25,7 +25,7 @@ class ExampleAppSpec:
     :param kit: AppRC contract for the example CLI.
     :param explicit_values: Values written to the arbitrary sourceable
         ``.env`` file.
-    :param app_values: Values written to the per-user app dotenv file.
+    :param app_values: Values written to the per-user dotenv file.
     :param storage_values: Values written to the selected storage dotenv file.
     :param storage_name: Named-storage selector registered in the TOML index.
     """

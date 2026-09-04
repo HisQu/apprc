@@ -72,15 +72,6 @@ class ConfigField:
             return CONFIG_MISSING
         return self.default
 
-    @property
-    def shared_default(self) -> Any:
-        """Return ``packaged_default`` through the deprecated 0.19 name."""
-        return self.packaged_default
-
-    def shared_env_value(self) -> Any:
-        """Return the packaged value through the deprecated 0.19 name."""
-        return self.packaged_env_value()
-
 
 @dataclass(frozen=True, slots=True)
 class ConfigOwner:

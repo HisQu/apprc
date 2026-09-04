@@ -67,8 +67,8 @@ def build_graph() -> Digraph:
         "storage choice",
         (
             "--storage / <APP>_STORAGE",
-            "name: project-a",
-            "path: /data/project-b",
+            "registered name only",
+            "root comes from apprc.toml",
         ),
         pos=gv.fixed_position(8.95, 2.65),
         border_color=gg.PURPLE,
@@ -88,7 +88,7 @@ def build_graph() -> Digraph:
         "read at startup",
         (
             "defaults: apprc.defaults.env",
-            "app: apprc.app.env",
+            "user: apprc.user.env",
             "storage: chosen folder",
             "explicit: --env-file",
             "process: os.environ",
@@ -113,7 +113,7 @@ def build_graph() -> Digraph:
     )
     _dotenv_card(
         installed,
-        "defaults_env",
+        "defaults_dotenv",
         "apprc.defaults.env",
         ("packaged defaults", "used by: all apps"),
         pos=gv.fixed_position(1.25, 0.65),
@@ -138,9 +138,9 @@ def build_graph() -> Digraph:
     )
     _dotenv_card(
         user_config,
-        "app_env",
-        "apprc.app.env",
-        ("per-user settings", "created on first write"),
+        "user_dotenv",
+        "apprc.user.env",
+        ("per-user overrides", "created by setup"),
         pos=gv.fixed_position(8.95, 0.65),
         color=gg.ORANGE,
     )
@@ -231,7 +231,7 @@ def build_graph() -> Digraph:
     gv.add_fixed_label(
         figure.graph,
         "user_config_label",
-        "User config folder",
+        "AppRC directory",
         pos=gv.fixed_position(8.95, 1.88),
         color=gg.ORANGE,
     )
@@ -246,7 +246,7 @@ def build_graph() -> Digraph:
     _arrow(
         figure.graph,
         "package",
-        "defaults_env",
+        "defaults_dotenv",
         "ships",
         gg.BLUE,
         1.28,

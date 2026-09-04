@@ -7,7 +7,7 @@ AppRC and app-specific runtime state before commands run.
 
 - Install the example package from the repository checkout.
 - Source `.env.example_apps` or use direnv.
-- `APPRC_EXAMPLE_RUNTIME_ROOT` must point at a storage root.
+- `APPRC_EXAMPLE_RUNTIME_ROOT` must contain a registered storage name.
 - `--workspace` and `--model` are app-owned options for runtime commands.
 
 ## Setup

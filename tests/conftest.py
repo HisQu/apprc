@@ -9,22 +9,16 @@ from pathlib import Path
 import pytest
 
 import apprc.user_files.app_home.locations as app_home_locations
+import apprc.user_files.storage_roots._naming as storage_naming
 
 
-def _isolated_user_config_path(
-    *,
-    appname: str,
-    appauthor: bool,
-    roaming: bool,
-) -> Path:
-    """Return a per-test config path consistently on every host platform.
+def _isolated_default_apprc_dir(app_id: str) -> Path:
+    """Return one predictable per-test AppRC directory.
 
-    :param appname: Application directory name requested by AppRC.
-    :param appauthor: Unused platformdirs author-directory policy.
-    :param roaming: Unused platformdirs roaming-directory policy.
-    :return: Application path below the test's isolated config root.
+    :param app_id: Stable application identity.
+    :return: Application path below the test's isolated data root.
     """
-    return Path(os.environ["XDG_CONFIG_HOME"]) / appname
+    return Path(os.environ["APPRC_TEST_DATA_HOME"]) / app_id
 
 
 def _required_apprc_prefixes(item: pytest.Item) -> list[str]:
@@ -36,19 +30,18 @@ def _required_apprc_prefixes(item: pytest.Item) -> list[str]:
 
 
 def _bootstrap_env_keys_for(prefix: str) -> tuple[str, str]:
-    """Return the optional registry key and required storage key."""
-    return f"{prefix}_APPRC_TOML", f"{prefix}_STORAGE"
+    """Return the optional directory key and required storage key."""
+    return f"{prefix}_APPRC_DIR", f"{prefix}_STORAGE"
 
 
 def _format_bootstrap_usage(prefix: str) -> str:
     """Build concise guidance for one required bootstrap prefix."""
-    config_key, storage_key = _bootstrap_env_keys_for(prefix)
-    apprc_toml_name = f"{prefix.lower()}.apprc.toml"
+    directory_key, storage_key = _bootstrap_env_keys_for(prefix)
     return (
         f"{prefix}: set the storage variable in your shell startup (or env):\n"
-        f'  export {storage_key}="/path/to/{prefix.lower()}-storage"\n'
-        f"Optional multi-storage registry:\n"
-        f'  export {config_key}="/absolute/path/to/{apprc_toml_name}"\n'
+        f'  export {storage_key}="default"\n'
+        f"Optional AppRC directory relocation:\n"
+        f'  export {directory_key}="/absolute/path/to/apprc-directory"\n'
     )
 
 
@@ -88,11 +81,16 @@ def _set_default_apprc_example_app_bootstrap(
     tmp_path: Path,
 ) -> None:
     """Provide the common Example App bootstrap env for marked tests."""
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setenv("APPRC_TEST_DATA_HOME", str(tmp_path / "data-home"))
     monkeypatch.setattr(
         app_home_locations,
-        "user_config_path",
-        _isolated_user_config_path,
+        "default_apprc_dir",
+        _isolated_default_apprc_dir,
+    )
+    monkeypatch.setattr(
+        storage_naming,
+        "default_apprc_dir",
+        _isolated_default_apprc_dir,
     )
     if request.node.get_closest_marker("allow_missing_apprc_env") is not None:
         return

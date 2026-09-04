@@ -1,6 +1,6 @@
 """Path, read, and write helpers for AppRC dotenv override files.
 
-App-wide and storage-specific dotenv files use the same validation and write
+User and storage dotenv files use the same validation and write
 rules: values are checked against declared ``ConfigField`` metadata, known
 keys are written in declaration order, and unknown keys are preserved after
 known AppRC keys.
@@ -15,7 +15,7 @@ from typing import Iterable, Mapping
 
 # == Internal ================================
 from apprc.user_files.app_home.locations import (
-    ConfigHomeError,
+    AppRCDirectoryError,
     ensure_text_file,
     write_text_atomic,
 )
@@ -25,7 +25,7 @@ from apprc.user_files.env_files._parsing import parse_dotenv_file
 from apprc.user_files.storage_roots.paths import StorageRootPathError
 
 
-def storage_env_path(
+def storage_dotenv_path(
     storage_root: Path,
     filename: str = "apprc.storage.env",
 ) -> Path:
@@ -38,7 +38,7 @@ def storage_env_path(
     return Path(storage_root).expanduser().resolve() / filename
 
 
-def ensure_storage_env_file(
+def ensure_storage_dotenv_file(
     storage_root: Path,
     filename: str = "apprc.storage.env",
 ) -> Path:
@@ -53,7 +53,7 @@ def ensure_storage_env_file(
     path = root / filename
     try:
         return ensure_text_file(path)
-    except ConfigHomeError as exc:
+    except AppRCDirectoryError as exc:
         raise StorageRootPathError(str(exc)) from exc
 
 

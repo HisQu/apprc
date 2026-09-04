@@ -17,7 +17,7 @@ from apprc.runtime.result import EnvBootstrapResult
 def _config_only_app() -> rc.AppRC:
     """Return a small config-only public AppRC facade for tests."""
     return rc.AppRC(
-        app_name="public-demo",
+        app_id="public-demo",
         display_name="Public Demo",
         config_package="apprc",
     )
@@ -30,8 +30,8 @@ def _bootstrap_result(*, storage_count: int = 0) -> EnvBootstrapResult:
     :return: Bootstrap result without filesystem paths.
     """
     return EnvBootstrapResult(
-        defaults_env=None,
-        storage_env=None,
+        defaults_dotenv=None,
+        storage_dotenv=None,
         env_files=(),
         apprc_toml=None,
         storage_selector_source=None,
@@ -45,42 +45,26 @@ def _bootstrap_result(*, storage_count: int = 0) -> EnvBootstrapResult:
 def test_direct_declaration_accepts_optional_storage() -> None:
     """One constructor expresses config-only and storage applications."""
     MyRC = rc.AppRC(
-        app_name="haiu",
+        app_id="haiu",
         display_name="HAIU",
         config_package="haiu.config",
-        storage=rc.Storage(env_key="HAIU_STORAGE"),
+        storage=rc.Storage(selector_env_key="HAIU_STORAGE"),
     )
 
-    assert MyRC.spec.app_name == "haiu"
+    assert MyRC.spec.app_id == "haiu"
     assert MyRC.spec.display_name == "HAIU"
     assert MyRC.spec.storage_selector_env_key == "HAIU_STORAGE"
-    assert MyRC.spec.defaults_env_filename == "apprc.defaults.env"
-    assert MyRC.spec.app_env_filename == "apprc.app.env"
-    assert MyRC.spec.require_storage().env_filename == "apprc.storage.env"
+    assert MyRC.spec.defaults_dotenv_filename == "apprc.defaults.env"
+    assert MyRC.spec.user_dotenv_filename == "apprc.user.env"
+    assert MyRC.spec.storage_dotenv_filename == "apprc.storage.env"
     assert MyRC.spec.apprc_toml_filename == "apprc.toml"
 
 
-def test_legacy_mode_constructors_warn_and_remain_keyword_only() -> None:
-    """The 0.19 constructors retain their call contract through 0.20."""
-    with pytest.warns(DeprecationWarning, match="removed in 0.21"):
-        MyRC = rc.AppRC.storage_only(
-            app_name="haiu",
-            display_name="HAIU",
-            config_package="haiu.config",
-            storage_env_key="HAIU_STORAGE",
-        )
-
-    assert MyRC.spec.storage_selector_env_key == "HAIU_STORAGE"
-    assert MyRC.spec.defaults_env_filename == ".env.shared"
-    assert MyRC.spec.app_env_filename == ".env.apprc-app"
-    assert MyRC.spec.storage_env_filename == ".env.apprc-storage"
-    assert MyRC.spec.apprc_toml_filename == "haiu.apprc.toml"
-
-    with pytest.raises(TypeError):
-        rc.AppRC.storage_only("haiu", config_package="haiu.config")  # type: ignore[misc]
-
-    with pytest.raises(TypeError):
-        rc.AppRC.storage_only()  # type: ignore[call-arg]
+def test_legacy_mode_constructors_are_removed() -> None:
+    assert not hasattr(rc.AppRC, "env_only")
+    assert not hasattr(rc.AppRC, "storage_only")
+    assert not hasattr(rc.AppRC, "app_wide_config")
+    assert not hasattr(rc.AppRC, "app_wide_storage")
 
 
 def test_registers_env_backed_config_with_full_env_keys() -> None:

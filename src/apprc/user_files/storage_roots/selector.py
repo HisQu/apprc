@@ -1,28 +1,25 @@
-"""Resolve active storage selectors from CLI and environment values.
+"""Resolve active named storage selectors.
 
-Runtime commands require an explicit active storage selector. The selector may
-be a registered storage name or a path-like value from ``<APP>_STORAGE``. The
-same rules are shared by bootstrap and diagnostics so ``config doctor`` reports
-the state that runtime will actually use.
+Runtime storage selectors are names from ``apprc.toml``. Paths are registry
+attributes and never double as selectors.
 """
 
 from __future__ import annotations
 
-# == Standard Library ========================
+# == Standard Library ===========================================
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-# == Internal ================================
-from apprc.user_files.storage_roots.paths import normalize_storage_root_path
-from apprc.user_files.storage_roots.registry import StorageRegistry
+# == Internal ===================================================
+from apprc.user_files.storage_roots.model import StorageRegistry
 
 _WINDOWS_DRIVE_SELECTOR_PATTERN = re.compile(r"^[A-Za-z]:")
 
 
 class StorageSelectorError(ValueError):
-    """Readable storage-selector failure with optional CLI parameter context.
+    """Readable storage-selector failure with optional CLI context.
 
     :param message: Human-facing error text.
     :param param_hint: Optional Typer parameter hint for CLI callers.
@@ -35,23 +32,22 @@ class StorageSelectorError(ValueError):
 
 
 class MissingStorageSelectorError(StorageSelectorError):
-    """No CLI, process, app, or packaged storage selector was found."""
+    """No CLI, process, explicit-dotenv, or registry selector was found."""
 
 
 @dataclass(frozen=True, slots=True)
 class StorageSelection:
     """Resolved active storage selector.
 
-    :param source: User-visible selector source, such as ``--storage`` or the
-        app-specific storage env key.
-    :param raw_value: Original selector value before resolution.
-    :param storage_name: Registered storage name when the selector used one.
-    :param root: Resolved storage root used for runtime dotenv loading.
+    :param source: User-visible selector source.
+    :param raw_value: Original selector value.
+    :param storage_name: Registered storage name.
+    :param root: Resolved registered root.
     """
 
     source: str
     raw_value: str
-    storage_name: str | None
+    storage_name: str
     root: Path
 
 
@@ -64,18 +60,27 @@ def resolve_registered_storage_name(
     """Resolve one registered storage selector.
 
     :param registry: Parsed storage registry.
-    :param name: Storage name selected by a CLI option.
+    :param name: Storage name selected by a CLI option or environment value.
     :param source: User-visible source shown in diagnostics.
     :return: Resolved storage selection.
-    :raises StorageSelectorError: If ``name`` is not registered.
+    :raises StorageSelectorError: If ``name`` is a path or is not registered.
     """
+    selector = name.strip()
+    if not selector:
+        raise missing_storage_selector_error("storage selector")
+    if storage_selector_is_path_like(selector):
+        raise StorageSelectorError(
+            f"{source} must contain a registered storage name, not a path: "
+            f"{selector!r}.",
+            param_hint=source,
+        )
     try:
-        record = registry.selected(name)
+        record = registry.selected(selector)
     except ValueError as exc:
         raise StorageSelectorError(str(exc), param_hint=source) from exc
     return StorageSelection(
         source=source,
-        raw_value=name,
+        raw_value=selector,
         storage_name=record.name,
         root=record.root,
     )
@@ -83,146 +88,80 @@ def resolve_registered_storage_name(
 
 def resolve_active_storage_selection(
     *,
-    registry: StorageRegistry | None,
+    registry: StorageRegistry,
     storage: str | None,
-    storage_env_key: str,
+    storage_selector_env_key: str,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str] | None = None,
-    app_values: Mapping[str, str] | None = None,
-    defaults_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool = False,
 ) -> StorageSelection | None:
-    """Return the active storage selected by CLI, env, or explicit dotenv.
+    """Return the active storage selected by CLI, env, or registry.
 
-    ``--storage`` always wins. With a registry, selectors keep the
-    multi-storage rules: exact registered names resolve through TOML,
-    path-like values resolve as paths, and bare unknown names fail. Without a
-    registry, every non-empty selector resolves as a storage path.
+    ``--storage`` always wins. The existing explicit-dotenv precedence option
+    decides whether a selector from an explicit dotenv beats the process
+    environment. ``selected_storage`` is the final fallback.
 
-    :param registry: Parsed storage registry, or ``None`` for single-storage
-        path mode.
-    :param storage: Optional ``--storage`` selector.
-    :param storage_env_key: Env key that stores the active storage selector.
-    :param original_env: Process environment captured before dotenv loading.
-    :param explicit_values: Values read from ``--env-file``.
-    :param app_values: Per-user app dotenv values used as a persistent
-        storage selector fallback.
-    :param defaults_values: Packaged defaults used only as the
-        lowest-precedence storage selector fallback.
+    :param registry: Parsed storage registry.
+    :param storage: Optional ``--storage`` name.
+    :param storage_selector_env_key: Environment selector key.
+    :param original_env: Process environment before dotenv loading.
+    :param explicit_values: Values read from explicit dotenv files.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         already exported process values.
-    :return: Resolved selection, or ``None`` when no selector was provided.
-    :raises StorageSelectorError: If the selected value is invalid.
+    :return: Resolved selection, or ``None`` when the registry has no default.
     """
-    storage_selector = select_storage_selector(
+    selected = select_storage_selector(
         storage=storage,
         original_env=original_env,
         explicit_values=explicit_values or {},
-        app_values=app_values or {},
-        defaults_values=defaults_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
-        storage_env_key=storage_env_key,
+        storage_selector_env_key=storage_selector_env_key,
+        selected_storage=registry.selected_storage,
     )
-    if storage_selector is not None:
-        source, raw_value = storage_selector
-        return resolve_storage_selector_value(
-            registry=registry,
-            raw_value=raw_value,
-            storage_env_key=storage_env_key,
-            source=source,
-        )
-    return None
-
-
-def resolve_setup_storage_root_from_env(
-    *,
-    storage_env_key: str,
-    proc_env: Mapping[str, str],
-) -> Path | None:
-    """Return setup's path-first active storage root from the environment.
-
-    Setup uses the storage env var as a filesystem path even when the value is
-    a bare name such as ``alpha``. This is intentionally different from
-    registry-aware runtime selection.
-
-    :param storage_env_key: Env key that stores the active storage selector.
-    :param proc_env: Process environment to inspect.
-    :return: Normalized storage path, or ``None`` when unset.
-    :raises StorageRootPathError: If the value cannot be interpreted as a safe
-        storage root.
-    """
-    raw_value = proc_env.get(storage_env_key, "").strip()
-    if not raw_value:
+    if selected is None:
         return None
-    return normalize_storage_root_path(raw_value)
+    source, name = selected
+    return resolve_registered_storage_name(
+        registry=registry,
+        name=name,
+        source=source,
+    )
 
 
 def resolve_storage_selector_value(
     *,
-    registry: StorageRegistry | None,
+    registry: StorageRegistry,
     raw_value: str,
-    storage_env_key: str,
+    storage_selector_env_key: str,
     source: str | None = None,
 ) -> StorageSelection:
-    """Resolve one storage env value to a registered name or path.
+    """Resolve one environment selector as a registered name.
 
-    :param registry: Parsed storage registry, or ``None`` for single-storage
-        path mode.
-    :param raw_value: Value from ``<APP>_STORAGE`` or an explicit env file.
-    :param storage_env_key: Env key used in human-facing errors.
+    :param registry: Parsed storage registry.
+    :param raw_value: Selector from process or explicit dotenv state.
+    :param storage_selector_env_key: Environment key used in errors.
     :param source: User-visible source shown in diagnostics.
-    :return: Resolved storage selection.
-    :raises StorageSelectorError: If a bare selector is not registered.
+    :return: Resolved named storage.
     """
-    selector = raw_value.strip()
-    selection_source = source or storage_env_key
-    if not selector:
-        raise missing_storage_selector_error(storage_env_key)
-    if registry is None:
-        return StorageSelection(
-            source=selection_source,
-            raw_value=selector,
-            storage_name=None,
-            root=normalize_storage_root_path(selector).resolve(),
-        )
-    if selector in registry.storages:
-        record = registry.selected(selector)
-        return StorageSelection(
-            source=selection_source,
-            raw_value=selector,
-            storage_name=record.name,
-            root=record.root,
-        )
-    if storage_selector_is_path_like(selector) or not registry.storages:
-        return StorageSelection(
-            source=selection_source,
-            raw_value=selector,
-            storage_name=None,
-            root=normalize_storage_root_path(selector).resolve(),
-        )
-    known = ", ".join(sorted(registry.storages)) or "<none>"
-    raise StorageSelectorError(
-        f"{storage_env_key} value {selector!r} is not a registered storage "
-        f"name in {registry.path}. Known storages: {known}. Use "
-        f"{'./' + selector!r} if you meant a relative storage path.",
-        param_hint=storage_env_key,
+    return resolve_registered_storage_name(
+        registry=registry,
+        name=raw_value,
+        source=source or storage_selector_env_key,
     )
 
 
 def missing_storage_selector_error(
-    storage_env_key: str,
+    storage_selector_env_key: str,
 ) -> MissingStorageSelectorError:
     """Return the runtime error for a missing active storage selector.
 
-    :param storage_env_key: Env key that should hold the active storage selector.
+    :param storage_selector_env_key: Environment selector key.
     :return: Error carrying CLI parameter context.
     """
     return MissingStorageSelectorError(
-        f"{storage_env_key} is required and must select a storage path. "
-        "When the optional registry is enabled, it may also select a "
-        "registered storage name. Pass --storage PATH or export "
-        f'{storage_env_key}="/path/to/storage".',
-        param_hint=storage_env_key,
+        "No storage is selected. Pass --storage NAME, export "
+        f"{storage_selector_env_key}=NAME, or run config storage select NAME.",
+        param_hint=storage_selector_env_key,
     )
 
 
@@ -231,52 +170,47 @@ def select_storage_selector(
     storage: str | None,
     original_env: Mapping[str, str],
     explicit_values: Mapping[str, str],
-    app_values: Mapping[str, str] | None = None,
-    defaults_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool,
-    storage_env_key: str,
+    storage_selector_env_key: str,
+    selected_storage: str | None,
 ) -> tuple[str, str] | None:
-    """Return the raw selector selected by CLI and env precedence.
+    """Return the raw selector selected by the documented precedence.
 
-    ``--storage`` always wins. Env-file precedence then decides whether an
-    explicit dotenv value or the already-exported process environment supplies
-    ``<APP>_STORAGE``.
-
-    :param storage: Optional host-level CLI ``--storage`` value.
+    :param storage: Optional host-level ``--storage`` value.
     :param original_env: Process environment captured before dotenv loading.
-    :param explicit_values: Values read from ``--env-file``.
-    :param app_values: Per-user app dotenv values used as a persistent
-        selector fallback.
-    :param defaults_values: Packaged defaults used only as the
-        lowest-precedence storage selector fallback.
+    :param explicit_values: Values read from explicit dotenv files.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         already exported process values.
-    :param storage_env_key: Env key that stores the active storage selector.
-    :return: Raw selector value and its source, or ``None`` when unset.
+    :param storage_selector_env_key: Environment selector key.
+    :param selected_storage: Default name from ``apprc.toml``.
+    :return: Source and selector value, or ``None`` when unset.
     """
     if storage is not None:
         return "--storage", storage
     if env_file_overrides_os_environ:
-        raw_value = explicit_values.get(storage_env_key) or original_env.get(
-            storage_env_key
-        )
+        raw_value = explicit_values.get(
+            storage_selector_env_key
+        ) or original_env.get(storage_selector_env_key)
     else:
-        raw_value = original_env.get(storage_env_key) or explicit_values.get(
-            storage_env_key
-        )
+        raw_value = original_env.get(
+            storage_selector_env_key
+        ) or explicit_values.get(storage_selector_env_key)
     if raw_value:
-        return storage_env_key, raw_value
-    app_config_raw_value = (app_values or {}).get(storage_env_key)
-    if app_config_raw_value:
-        return "app config", app_config_raw_value
-    defaults_raw_value = (defaults_values or {}).get(storage_env_key)
-    if defaults_raw_value:
-        return "packaged defaults", defaults_raw_value
+        return storage_selector_env_key, raw_value
+    if selected_storage is not None:
+        return "apprc.toml selected_storage", selected_storage
     return None
 
 
 def storage_selector_is_path_like(value: str) -> bool:
-    """Return whether selector text should be interpreted as a path."""
+    """Return whether selector text looks like a filesystem path.
+
+    Migration uses this check to distinguish released 0.19 path selectors
+    from named selectors. Runtime resolution rejects either form as a path.
+
+    :param value: Selector text.
+    :return: Whether the value has path syntax.
+    """
     path = Path(value).expanduser()
     return (
         value in {".", "..", "~"}

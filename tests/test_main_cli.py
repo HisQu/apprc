@@ -180,13 +180,12 @@ def test_example_cli_runs_every_supported_config_command(
     paths_json = _assert_json_success(
         harness.invoke(["--log-level", "INFO", "config", "paths", "--json"])
     )
-    assert str(paths_json["config_home"]).endswith(definition.kit.spec.app_name)
+    assert str(paths_json["apprc_dir"]).endswith(definition.kit.spec.app_id)
 
     setup_args = ["config", "setup", "--yes"]
     if definition.uses_storage:
         setup_args.extend(["--storage-root", str(storage_root)])
     _assert_success(harness.invoke(setup_args))
-    _assert_success(harness.invoke(["config", "app", "init"]))
 
     if definition.uses_storage:
         _assert_success(
@@ -207,16 +206,15 @@ def test_example_cli_runs_every_supported_config_command(
         )
         storages = storage_list["storages"]
         assert isinstance(storages, list)
-        first_storage = storages[0]
-        assert isinstance(first_storage, dict)
-        assert first_storage["name"] == "alpha"
+        storage_names = {row["name"] for row in storages}
+        assert "alpha" in storage_names
         _assert_success(
             harness.invoke(["config", "storage", "remove", "alpha"])
         )
 
         assert definition.storage_key is not None
         assert definition.storage_value is not None
-        storage_prefix = ["--storage", str(storage_root)]
+        storage_prefix = ["--storage", "default"]
         _assert_success(
             harness.invoke(
                 [
@@ -239,7 +237,7 @@ def test_example_cli_runs_every_supported_config_command(
                     definition.app_key,
                     definition.app_value,
                     "--scope",
-                    "app",
+                    "user",
                 ]
             )
         )
@@ -255,7 +253,7 @@ def test_example_cli_runs_every_supported_config_command(
                     definition.app_key,
                     definition.app_value,
                     "--scope",
-                    "app",
+                    "user",
                 ]
             )
         )
@@ -271,7 +269,7 @@ def test_example_cli_runs_every_supported_config_command(
     show_json = _assert_json_success(
         harness.invoke([*runtime_prefix, "config", "show", "--json"])
     )
-    assert show_json["app_name"] == definition.kit.spec.app_name
+    assert show_json["app_id"] == definition.kit.spec.app_id
 
     HeadlessConfigEditorApp.reset()
     _assert_success(harness.invoke([*runtime_prefix, "config", "edit"]))
@@ -289,7 +287,7 @@ def test_example_cli_runs_every_supported_config_command(
             ]
         )
     run_payload = _assert_json_success(harness.invoke([*run_args, "run"]))
-    assert run_payload["app_name"] == definition.kit.spec.app_name
+    assert run_payload["app_id"] == definition.kit.spec.app_id
 
 
 def test_cli_runtime_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
@@ -311,15 +309,15 @@ def test_cli_runtime_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
     assert result.output.strip() == "runtime_status: runtime-independent"
 
 
-def test_example_cli_env_file_options_control_index_paths(
+def test_example_cli_env_file_options_control_apprc_directory(
     tmp_path: Path,
 ) -> None:
     definition = EXAMPLE_CLIS[1]
     harness = ExampleCliHarness(definition)
-    explicit_index = tmp_path / "explicit" / "storage.apprc.toml"
+    explicit_apprc_dir = tmp_path / "explicit"
     env_file = tmp_path / ".env"
     env_file.write_text(
-        f"{definition.kit.spec.apprc_toml_env_key}={explicit_index}\n",
+        f"{definition.kit.spec.apprc_dir_env_key}={explicit_apprc_dir}\n",
         encoding="utf-8",
     )
 
@@ -336,7 +334,10 @@ def test_example_cli_env_file_options_control_index_paths(
         )
     )
 
-    assert result["apprc_toml"] == str(explicit_index.resolve())
+    assert result["apprc_dir"] == str(explicit_apprc_dir.resolve())
+    assert result["apprc_toml"] == str(
+        explicit_apprc_dir.resolve() / "apprc.toml"
+    )
 
 
 def test_example_bootstrap_writes_teaching_comments(tmp_path: Path) -> None:
@@ -352,9 +353,9 @@ def test_example_bootstrap_writes_teaching_comments(tmp_path: Path) -> None:
         assert "AppRC does not choose a location for this file" in text
         assert "set -a; source .env; set +a" in text
 
-    shared_config_home = output_root / "xdg-config-home"
-    assert {path.name for path in shared_config_home.iterdir()} == {
-        definition.kit.spec.app_name for definition in EXAMPLE_CLIS
+    shared_apprc_directory = output_root / "apprc-directories"
+    assert {path.name for path in shared_apprc_directory.iterdir()} == {
+        definition.kit.spec.app_id for definition in EXAMPLE_CLIS
     }
 
     storage_roots = sorted(output_root.glob(".apprc-example*/storages/alpha"))
@@ -362,7 +363,8 @@ def test_example_bootstrap_writes_teaching_comments(tmp_path: Path) -> None:
         definition.uses_storage for definition in EXAMPLE_CLIS
     )
 
-    generated_files = sorted(output_root.glob("**/.env.apprc-*"))
+    generated_files = sorted(output_root.glob("**/apprc.user.env"))
+    generated_files.extend(sorted(output_root.glob("**/apprc.storage.env")))
     generated_files.extend(sorted(output_root.glob("**/*.toml")))
     assert generated_files
     for path in generated_files:
@@ -398,7 +400,7 @@ def test_example_root_env_makes_precedence_app_runnable(
     bootstrap = payload["bootstrap"]
     config = payload["config"]
 
-    assert payload["app_name"] == definition.kit.spec.app_name
+    assert payload["app_id"] == definition.kit.spec.app_id
     assert isinstance(bootstrap, dict)
     assert bootstrap["storage_root"] == str(
         output_root

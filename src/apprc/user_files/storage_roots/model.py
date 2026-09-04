@@ -42,12 +42,14 @@ class StorageRegistry:
     """Parsed storage registry.
 
     :param path: AppRC TOML location.
+    :param selected_storage: Persisted name used without a runtime override.
     :param storages: Named live storage roots by selector.
     :param archived_storages: Last known archive paths by selector.
     """
 
     path: Path
     storages: Mapping[str, StorageRecord]
+    selected_storage: str | None = None
     archived_storages: Mapping[str, ArchivedStorageRecord] = field(
         default_factory=dict
     )

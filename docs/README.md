@@ -85,10 +85,11 @@ Use these terms consistently in every docs file:
 |---|---|---|
 | AppRC | This package, `apprc`, which supplies runtime config, generated config CLI, and Textual editor helpers. | [System Model](Explanations.md#system-model) |
 | application | The downstream Python app that integrates AppRC. | [Integration Flow](Explanations.md#integration-flow) |
-| config contract | The `rc.Config` and `rc.ConfigBase` classes registered on one `rc.AppRC` facade. | [Config Contract Model](Explanations.md#config-contract-model) |
+| config contract | The `rc.Config` and `rc.ConfigBase` classes registered on one `rc.AppRC` facade. | [Runtime config model](Explanations.md#runtime-config-model) |
 | registered config | A related group of settings declared with `@MyRC.config(...)`. | [Public Interfaces](References.md#public-interfaces) |
 | config field | One typed setting declared with `rc.field("FULL_ENV_KEY", ...)`. | [Public Interfaces](References.md#public-interfaces) |
-| app config | The per-user `apprc.app.env` file below the platform config home. | [Configuration Files](References.md#configuration-files) |
+| AppRC directory | The predictable `~/.local/share/<app-id>/` directory containing the fixed user dotenv and optional storage registry. | [AppRC directory and storage](Explanations.md#apprc-directory-and-storage) |
+| user dotenv | The per-user `apprc.user.env` override file. | [Configuration Files](References.md#configuration-files) |
 | storage dotenv | The `apprc.storage.env` file inside one selected storage root. | [Configuration Files](References.md#configuration-files) |
-| AppRC TOML | The optional `apprc.toml` registry for named storage roots and future AppRC metadata. | [Storage Selection](Explanations.md#storage-selection) |
-| zero-write read | A command or runtime operation that inspects config without creating files. | [Zero-Write Policy](Explanations.md#zero-write-policy) |
+| AppRC TOML | The `apprc.toml` storage registry used only by storage-capable apps. | [Storage selection](Explanations.md#storage-selection) |
+| zero-write read | A command or runtime operation that inspects config without creating files. | [Zero-write and purge policy](Explanations.md#zero-write-and-purge-policy) |

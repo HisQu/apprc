@@ -7,8 +7,8 @@ env-file values can override or defer to shell env values.
 
 - Install the example package from the repository checkout.
 - Source `.env.example_apps` or use direnv.
-- `APPRC_EXAMPLE_PRECEDENCE_ROOT` must point at a storage root. The root env
-  file sets it to the generated `alpha` storage.
+- `APPRC_EXAMPLE_PRECEDENCE_ROOT` must contain a registered name. The root env
+  file selects the generated `alpha` storage.
 
 ## Setup
 
@@ -37,4 +37,4 @@ when selector handling must run inside a larger app-owned Typer callback.
 
 - [Example app overview](../../README.md)
 - [Development guide](../../../../docs/Development.md#example-apps)
-- [Integration guide](../../../../docs/How-To-User-Guides.md#2-integrate-apprc)
+- [Integration guide](../../../../docs/How-To-User-Guides.md#integrate-apprc)

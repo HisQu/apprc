@@ -17,9 +17,11 @@ from apprc.user_files.storage_roots.model import (
     StorageRegistry,
 )
 from apprc.user_files.storage_roots._naming import validate_storage_name
-from apprc.user_files.storage_roots.paths import normalize_storage_root_path
+from apprc.user_files.storage_roots.paths import resolve_storage_root_path
 
-_REGISTRY_TOP_LEVEL_KEYS = frozenset({"archived_storages", "storages"})
+_REGISTRY_TOP_LEVEL_KEYS = frozenset(
+    {"archived_storages", "selected_storage", "storages"}
+)
 
 
 def load_storage_registry_or_empty(path: Path) -> StorageRegistry:
@@ -34,6 +36,7 @@ def load_storage_registry_or_empty(path: Path) -> StorageRegistry:
         return StorageRegistry(
             path=apprc_toml_path,
             storages={},
+            selected_storage=None,
             archived_storages={},
         )
     try:
@@ -51,7 +54,7 @@ def write_storage_registry(registry: StorageRegistry) -> Path:
     :param registry: Registry object to serialize.
     :return: Written AppRC TOML path.
     """
-    return write_text_atomic(registry.path, _render_storage_registry(registry))
+    return write_text_atomic(registry.path, render_storage_registry(registry))
 
 
 def ordered_storage_names(registry: StorageRegistry) -> list[str]:
@@ -78,6 +81,11 @@ def _registry_from_toml(
             f"Supported keys: {supported_text}."
         )
 
+    selected_storage = _optional_toml_string(
+        data=data,
+        key="selected_storage",
+        path=path,
+    )
     raw_storages = _toml_table(data=data, key="storages", path=path)
     storages: dict[str, StorageRecord] = {}
     for name, raw_record in raw_storages.items():
@@ -97,7 +105,12 @@ def _registry_from_toml(
         )
         storages[name] = StorageRecord(
             name=name,
-            root=normalize_storage_root_path(raw_root),
+            root=resolve_storage_root_path(raw_root, base=path.parent),
+        )
+
+    if selected_storage is not None and selected_storage not in storages:
+        raise ValueError(
+            f"{path}: selected_storage {selected_storage!r} is not registered."
         )
 
     raw_archived = _toml_table(
@@ -130,15 +143,41 @@ def _registry_from_toml(
         )
         archived_storages[name] = ArchivedStorageRecord(
             name=name,
-            archive=normalize_storage_root_path(raw_archive),
-            source_root=normalize_storage_root_path(raw_source_root),
+            archive=resolve_storage_root_path(raw_archive, base=path.parent),
+            source_root=resolve_storage_root_path(
+                raw_source_root,
+                base=path.parent,
+            ),
         )
 
     return StorageRegistry(
         path=path,
         storages=storages,
+        selected_storage=selected_storage,
         archived_storages=archived_storages,
     )
+
+
+def _optional_toml_string(
+    *,
+    data: Mapping[str, object],
+    key: str,
+    path: Path,
+) -> str | None:
+    """Return one optional non-empty top-level string.
+
+    :param data: Parsed TOML mapping.
+    :param key: Field name to inspect.
+    :param path: Registry path used in errors.
+    :return: String value, or ``None`` when absent.
+    :raises ValueError: If the field is not a non-empty string.
+    """
+    if key not in data:
+        return None
+    value = data[key]
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{path}: {key} must be a non-empty string.")
+    return value
 
 
 def _toml_table(
@@ -182,23 +221,53 @@ def _toml_string_field(
     return value
 
 
-def _render_storage_registry(registry: StorageRegistry) -> str:
-    """Return deterministic TOML text for the supported schema."""
+def render_storage_registry(registry: StorageRegistry) -> str:
+    """Return deterministic TOML text for the supported schema.
+
+    :param registry: Registry to serialize.
+    :return: Complete TOML text.
+    """
     lines: list[str] = []
+    if registry.selected_storage is not None:
+        lines.append(
+            f"selected_storage = {_toml_string(registry.selected_storage)}"
+        )
     for name in sorted(registry.storages):
         record = registry.storages[name]
         if lines:
             lines.append("")
         lines.append(f"[storages.{name}]")
-        lines.append(f"root = {_toml_string(str(record.root))}")
+        lines.append(
+            f"root = {_toml_string(_stored_path(record.root, registry.path))}"
+        )
     for name in sorted(registry.archived_storages):
         record = registry.archived_storages[name]
         if lines:
             lines.append("")
         lines.append(f"[archived_storages.{name}]")
-        lines.append(f"archive = {_toml_string(str(record.archive))}")
-        lines.append(f"source_root = {_toml_string(str(record.source_root))}")
+        lines.append(
+            f"archive = {_toml_string(_stored_path(record.archive, registry.path))}"
+        )
+        lines.append(
+            "source_root = "
+            f"{_toml_string(_stored_path(record.source_root, registry.path))}"
+        )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _stored_path(path: Path, registry_path: Path) -> str:
+    """Return an internal path relative to ``apprc.toml`` when possible.
+
+    :param path: Resolved storage or archive path.
+    :param registry_path: AppRC TOML path.
+    :return: Portable registry spelling.
+    """
+    resolved = path.expanduser().absolute()
+    base = registry_path.parent.expanduser().absolute()
+    try:
+        return str(resolved.relative_to(base))
+    except ValueError:
+        return str(resolved)
 
 
 def _toml_string(value: str) -> str:

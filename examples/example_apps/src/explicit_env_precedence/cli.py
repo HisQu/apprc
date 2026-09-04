@@ -54,17 +54,28 @@ def run_demo(root: Path) -> dict[str, object]:
     """
 
     def scenario() -> dict[str, object]:
+        os.environ[KIT.spec.apprc_dir_env_key] = str(root / "apprc")
         shell_root = root / "shell-storage"
         explicit_root = root / "explicit-storage"
         shell_root.mkdir(parents=True)
         explicit_root.mkdir(parents=True)
-        rc.files.ensure_storage_env_file(shell_root)
-        rc.files.ensure_storage_env_file(explicit_root)
+        rc.files.ensure_storage_dotenv_file(shell_root)
+        rc.files.ensure_storage_dotenv_file(explicit_root)
+        rc.storage.register_storage(
+            name="shell",
+            root=shell_root,
+            path=KIT.spec.preferred_apprc_toml_path(),
+        )
+        rc.storage.register_storage(
+            name="explicit",
+            root=explicit_root,
+            path=KIT.spec.preferred_apprc_toml_path(),
+        )
         selector_env = write_env(
             root / ".env",
-            {"APPRC_EXAMPLE_PRECEDENCE_ROOT": str(explicit_root)},
+            {"APPRC_EXAMPLE_PRECEDENCE_ROOT": "explicit"},
         )
-        os.environ["APPRC_EXAMPLE_PRECEDENCE_ROOT"] = str(shell_root)
+        os.environ["APPRC_EXAMPLE_PRECEDENCE_ROOT"] = "shell"
         shell_wins = KIT.bootstrap(
             env_files=(selector_env,),
             env_file_overrides_os_environ=False,

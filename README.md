@@ -118,7 +118,7 @@ myapp/config/
 apprc scaffold config \
   --package myapp \
   --storage \
-  --app-name myapp \
+  --app-id myapp \
   --display-name "My App" \
   --storage-selector-env-key MYAPP_STORAGE \
   --target src
@@ -143,10 +143,10 @@ import apprc as rc
 
 
 MyRC = rc.AppRC(
-    app_name="myapp",
+    app_id="myapp",
     display_name="My App",
     config_package="myapp.config",
-    storage=rc.Storage(env_key="MYAPP_STORAGE"),
+    storage=rc.Storage(selector_env_key="MYAPP_STORAGE"),
 )
 
 
@@ -263,13 +263,13 @@ direnv, `.envrc` sources
 [.env.example_apps](.env.example_apps) and bootstraps
 `examples/example_app_disk_files/` automatically. Without direnv, source
 `.env.example_apps` and run the bootstrap command above once. The generated
-directory contains `.apprc-example*/` sandboxes plus commented app-config,
-storage-local, and TOML files showing where the same files would live for a
-real app.
+directory contains `.apprc-example*/` sandboxes plus a shared
+`apprc-directories/` tree with commented user dotenv, storage dotenv, and TOML
+files showing where the same files would live for a real app.
 
 > [!NOTE]
 > For the step-by-step integration guide, see
-> [docs/How-To-User-Guides.md#2-integrate-apprc](docs/How-To-User-Guides.md#2-integrate-apprc).
+> [docs/How-To-User-Guides.md#integrate-apprc](docs/How-To-User-Guides.md#integrate-apprc).
 > For the exact import surface, see
 > [docs/References.md#public-interfaces](docs/References.md#public-interfaces).
 
@@ -306,7 +306,7 @@ AppRC has one contract and several workflows built from it.
 > [!NOTE]
 > For the deeper architecture behind registered sections, fields, config layers,
 > provenance, and the zero-write policy, see
-> [docs/Explanations.md#3-runtime-config-model](docs/Explanations.md#3-runtime-config-model).
+> [docs/Explanations.md#runtime-config-model](docs/Explanations.md#runtime-config-model).
 
 <br>
 
@@ -315,32 +315,62 @@ AppRC has one contract and several workflows built from it.
 There are two declarations, not four capability levels:
 
 ```python
-# Config only. Per-user app config is available and created on first write.
+# Config only. No storage controls are generated.
 MyRC = rc.AppRC(
-    app_name="myapp",
+    app_id="myapp",
     config_package="myapp.config",
 )
 
 # The same config model plus storage.
 MyRC = rc.AppRC(
-    app_name="myapp",
+    app_id="myapp",
     config_package="myapp.config",
-    storage=rc.Storage(),
+    storage=rc.Storage(selector_env_key="MYAPP_STORAGE"),
 )
 ```
 
-`rc.Storage()` derives `MYAPP_STORAGE` and suggests the platform data directory.
-Pass `env_key=...`, `suggested_root=...`, or `prompt_on_first_run=False` only
-when the defaults do not fit the application.
+`rc.Storage()` derives `MYAPP_STORAGE` when `selector_env_key` is omitted. The
+first setup suggests `~/.local/share/myapp/storage/` on every operating system.
+The user sees that path before AppRC creates it and can pass another path with
+`config setup --storage-root PATH`.
 
 AppRC-managed persistence files are explicit:
 
 | Layer | Default location | Created by |
 | --- | --- | --- |
-| Packaged defaults | package `apprc.defaults.env` | the application package |
-| App config | platform config home `apprc.app.env` | first app-scope save, setup, or `config app init` |
-| Storage config | `<storage-root>/apprc.storage.env` | storage setup, `config storage add`, or storage-scope save |
-| AppRC TOML | `<config-home>/apprc.toml` | editor `New`/`Register` or `config storage add/remove` |
+| Packaged defaults | package `apprc.defaults.env` | shipped with package |
+| User dotenv | `~/.local/share/myapp/apprc.user.env` | `config setup` or first user-scope save |
+| Storage registry | `~/.local/share/myapp/apprc.toml` | storage setup or a storage registry command |
+| Storage dotenv | `<storage-root>/apprc.storage.env` | storage setup, `storage add`, or first storage-scope save |
+
+The directory containing `apprc.user.env` and `apprc.toml` is the **AppRC
+directory**. Set `MYAPP_APPRC_DIR` to relocate the complete directory. AppRC
+does not split default files between `.config`, `.local`, `%APPDATA%`, and
+`~/Library/Application Support`.
+
+The complete default layouts are:
+
+```text
+# rc.AppRC(...) — no storage
+~/.local/share/myapp/
+└── apprc.user.env
+
+# rc.AppRC(..., storage=rc.Storage()) — one default storage
+~/.local/share/myapp/
+├── apprc.user.env
+├── apprc.toml
+└── storage/
+    └── apprc.storage.env
+```
+
+Additional storage names are user-owned registry entries. Their roots may be
+anywhere; they do not gain another `storage/<name>/` directory automatically.
+
+> [!IMPORTANT]
+> Files on disk never enable application capabilities. Only
+> `storage=rc.Storage()` enables storage support. Without it, AppRC hides
+> `--storage`, `config storage ...`, the storage editor section, and
+> `--scope storage`; a stale `apprc.toml` produces only a doctor warning.
 
 > [!NOTE]
 > For declaration arguments, see
@@ -353,7 +383,7 @@ AppRC-managed persistence files are explicit:
 When dotenv layers are loaded, AppRC merges values in this order:
 
 1. packaged `apprc.defaults.env`
-2. app `apprc.app.env`, when present
+2. user `apprc.user.env`
 3. selected storage `apprc.storage.env`, when storage is selected and present
 4. explicit `--env-file` values
 5. existing `os.environ`
@@ -361,16 +391,17 @@ When dotenv layers are loaded, AppRC merges values in this order:
 With `--env-file-overrides-os-environ`, explicit env files move after
 `os.environ` and win over shell exports.
 
-Storage selector resolution uses:
+Storage selector resolution uses names only:
 
 1. CLI `--storage`
-2. shell env, for example `MYAPP_STORAGE`
-3. explicit env files, respecting `--env-file-overrides-os-environ`
-4. app `apprc.app.env`, when present
-5. packaged `apprc.defaults.env`
+2. process environment or explicit env files, in the order selected by
+   `--env-file-overrides-os-environ`
+3. `selected_storage` in `apprc.toml`
 
-Path selectors work without an AppRC TOML registry. Bare named selectors use
-`apprc.toml` when that registry exists.
+`apprc.user.env`, `apprc.storage.env`, and packaged defaults never select a
+storage. Path-valued runtime selectors are rejected. Paths belong only in the
+registry, and relative roots resolve from the directory containing
+`apprc.toml`, never from the current working directory.
 
 > [!NOTE]
 > For the rationale behind layer order and storage selector resolution, see
@@ -400,12 +431,16 @@ myapp config doctor
 myapp config show
 myapp config setup
 myapp config migrate --dry-run
-myapp config set KEY VALUE --scope app
+myapp config purge --dry-run
+myapp config set KEY VALUE --scope user
 myapp config set KEY VALUE --scope storage
 myapp config edit
-myapp config app init
 myapp config storage add NAME PATH
 myapp config storage list
+myapp config storage select NAME
+myapp config storage rename NAME NEW_NAME
+myapp config storage repoint NAME PATH
+myapp config storage move NAME PATH
 myapp config storage remove NAME
 ```
 
@@ -442,28 +477,40 @@ myapp config set access_token secret-value --scope storage
 myapp run
 ```
 
-Setup stores the absolute selector in `apprc.app.env`; no shell export is
-required. On an interactive terminal, the first runtime command can offer to
-create the suggested platform data directory. Use `--storage-root PATH` for a
+Setup creates the empty `apprc.user.env`, registers the initial storage as
+`default`, records it as `selected_storage`, and creates
+`apprc.storage.env`. No selector is written to a dotenv file and no shell
+export is required. On an interactive terminal, the first storage-dependent
+runtime command can offer the same setup. Use `--storage-root PATH` for a
 custom path so the shell can complete it.
 
 `config doctor` reports a status such as `env_not_set`, `storage_not_ready`,
-`app_config_not_ready`, `named_storage_not_ready`, or `runnable`.
+`user_dotenv_not_ready`, `storage_registry_not_ready`, or `runnable`.
 
-AppRC 0.20 reads the 0.19 filenames when their replacements do not exist. If
-both names exist, the current filename wins and AppRC warns instead of merging
-values. After changing the application declaration, inspect and apply the
-migration:
+AppRC migrates the released 0.19 layout only. Inspect and apply it explicitly:
 
 ```shell
 myapp config migrate --dry-run
 myapp config migrate --yes
 ```
 
-The migration moves files; it does not copy them. Custom filename overrides
-and an explicit `MYAPP_APPRC_TOML` path are left alone. The deprecated
-`env_only(...)`, `storage_only(...)`, `app_wide_config(...)`, and
-`app_wide_storage(...)` constructors remain for 0.20 and are removed in 0.21.
+Migration finds platform-specific 0.19 directories, custom
+`MYAPP_APPRC_TOML` locations, `.env.apprc-app`, `.env.apprc-storage`, and
+path-valued `MYAPP_STORAGE`. It converts a path selector into the named
+`default` storage and removes structural selector keys from the migrated user
+dotenv. The unreleased `apprc.app.env` name is intentionally ignored.
+
+Package uninstallers do not remove these user-owned files. Before uninstalling
+an AppRC application, run `config purge --dry-run`, review the exact targets,
+then run `config purge --yes` if desired. Purge deletes fixed AppRC files and
+registered storage roots strictly inside the AppRC directory. For external
+storage roots it deletes only `apprc.storage.env` and keeps all other data.
+It never follows symlinks and removes the AppRC directory only when empty.
+
+> [!CAUTION]
+> A registered internal storage root is application-owned. `config purge`
+> recursively deletes that root, including files AppRC did not create. Always
+> inspect the dry run first.
 
 > [!IMPORTANT]
 > Runtime reads and diagnostics do not create files. `bootstrap`, `config

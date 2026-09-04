@@ -11,15 +11,15 @@ from typing import Any
 import typer
 
 # == Internal ================================
-from apprc.interfaces.cli._errors import config_home_bad_parameter
+from apprc.interfaces.cli._errors import apprc_dir_bad_parameter
 from apprc.runtime._dotenv_layers import ExplicitEnvFileError
 from apprc.runtime.result import (
     BootstrapLogger,
     EnvBootstrapResult,
 )
-from apprc.user_files.app_home.locations import ConfigHomeError
+from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.definition.app_config.kit import AppConfigKit
-from apprc.user_files.app_home.index import ApprcTomlEnvError
+from apprc.user_files.storage_roots._loading import MissingStorageRegistryError
 from apprc.user_files.storage_roots.selector import StorageSelectorError
 from apprc.user_files.storage_roots.selector import MissingStorageSelectorError
 
@@ -48,20 +48,18 @@ def bootstrap_cli_env(
 
     :param kit: Application config facade.
     :param env_files: Optional CLI-run-local dotenv files that outrank
-        packaged ``apprc.defaults.env``, app ``apprc.app.env``, and active
+        packaged ``apprc.defaults.env``, user ``apprc.user.env``, and active
         storage ``apprc.storage.env``.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         existing values in ``os.environ`` inside this process. The parent shell
         is never mutated.
     :param load_dotenv_layers: Whether packaged ``apprc.defaults.env``, app
-        ``apprc.app.env``, active storage ``apprc.storage.env``, and
+        ``apprc.user.env``, active storage ``apprc.storage.env``, and
         explicit ``env_files`` values should be merged into this process. Registry
         selection still runs for storage apps when this is ``False``,
         and explicit values may still provide the storage selector used for
         selection.
-    :param storage: Optional ``--storage`` selector for storage apps.
-        With a registry it may be a registered storage name or path. Without a
-        registry it is always interpreted as a path.
+    :param storage: Optional registered name from ``--storage``.
     :param log_level: Optional CLI log-level token.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status messages.
@@ -83,10 +81,10 @@ def bootstrap_cli_env(
         raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
     except ExplicitEnvFileError as exc:
         raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
-    except ApprcTomlEnvError as exc:
+    except MissingStorageRegistryError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=kit.spec.apprc_toml_env_key,
+            param_hint=kit.spec.apprc_dir_env_key,
         ) from exc
     except MissingStorageSelectorError:
         raise
@@ -95,7 +93,7 @@ def bootstrap_cli_env(
             str(exc),
             param_hint=exc.param_hint,
         ) from exc
-    except ConfigHomeError as exc:
-        raise config_home_bad_parameter(exc) from exc
+    except AppRCDirectoryError as exc:
+        raise apprc_dir_bad_parameter(exc) from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint="--storage") from exc

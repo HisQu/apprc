@@ -74,7 +74,7 @@
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M103.88,-325C103.88,-325 176.12,-325 176.12,-325 182.12,-325 188.12,-331 188.12,-337 188.12,-337 188.12,-416 188.12,-416 188.12,-422 182.12,-428 176.12,-428 176.12,-428 103.88,-428 103.88,-428 97.88,-428 91.88,-422 91.88,-416 91.88,-416 91.88,-337 91.88,-337 91.88,-331 97.88,-325 103.88,-325"/>
 <text xml:space="preserve" text-anchor="start" x="102.88" y="-408.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Base layers</text>
 <text xml:space="preserve" text-anchor="start" x="96.88" y="-377.5" font-family="sans-serif" font-size="10.00">apprc.defaults.env</text>
-<text xml:space="preserve" text-anchor="start" x="96.88" y="-355.25" font-family="sans-serif" font-size="10.00">apprc.app.env</text>
+<text xml:space="preserve" text-anchor="start" x="96.88" y="-355.25" font-family="sans-serif" font-size="10.00">apprc.user.env</text>
 <text xml:space="preserve" text-anchor="start" x="96.88" y="-333" font-family="sans-serif" font-size="10.00">lower precedence</text>
 <path fill="none" stroke="#32bc00" d="M103.88,-325C103.88,-325 176.12,-325 176.12,-325 182.12,-325 188.12,-331 188.12,-337 188.12,-337 188.12,-416 188.12,-416 188.12,-422 182.12,-428 176.12,-428 176.12,-428 103.88,-428 103.88,-428 97.88,-428 91.88,-422 91.88,-416 91.88,-416 91.88,-337 91.88,-337 91.88,-331 97.88,-325 103.88,-325"/>
 </g>
@@ -104,8 +104,8 @@
 <title>selected_storage</title>
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M212.75,-325C212.75,-325 293.25,-325 293.25,-325 299.25,-325 305.25,-331 305.25,-337 305.25,-337 305.25,-416 305.25,-416 305.25,-422 299.25,-428 293.25,-428 293.25,-428 212.75,-428 212.75,-428 206.75,-428 200.75,-422 200.75,-416 200.75,-416 200.75,-337 200.75,-337 200.75,-331 206.75,-325 212.75,-325"/>
 <text xml:space="preserve" text-anchor="start" x="211.75" y="-408.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Selected storage</text>
-<text xml:space="preserve" text-anchor="start" x="205.75" y="-377.5" font-family="sans-serif" font-size="10.00">storage key</text>
-<text xml:space="preserve" text-anchor="start" x="205.75" y="-355.25" font-family="sans-serif" font-size="10.00">dotenv path</text>
+<text xml:space="preserve" text-anchor="start" x="205.75" y="-377.5" font-family="sans-serif" font-size="10.00">registered name</text>
+<text xml:space="preserve" text-anchor="start" x="205.75" y="-355.25" font-family="sans-serif" font-size="10.00">root from registry</text>
 <text xml:space="preserve" text-anchor="start" x="205.75" y="-333" font-family="sans-serif" font-size="10.00">runtime owner</text>
 <path fill="none" stroke="#f4a261" d="M212.75,-325C212.75,-325 293.25,-325 293.25,-325 299.25,-325 305.25,-331 305.25,-337 305.25,-337 305.25,-416 305.25,-416 305.25,-422 299.25,-428 293.25,-428 293.25,-428 212.75,-428 212.75,-428 206.75,-428 200.75,-422 200.75,-416 200.75,-416 200.75,-337 200.75,-337 200.75,-331 206.75,-325 212.75,-325"/>
 </g>

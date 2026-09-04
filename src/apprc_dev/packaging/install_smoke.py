@@ -80,6 +80,13 @@ def validate_install_snapshot(snapshot: InstallSnapshot) -> None:
         .startswith("textual")
         for requirement in core_requirements
     )
+    assert not any(
+        requirement.lower()
+        .split(";", maxsplit=1)[0]
+        .strip()
+        .startswith("platformdirs")
+        for requirement in core_requirements
+    )
     assert "tui" in snapshot.extras
     assert any(
         requirement.lower().startswith("textual") and "tui" in requirement

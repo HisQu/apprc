@@ -10,7 +10,7 @@
 <title>apprc_storage_config_locations</title>
 <g id="clust1" class="cluster">
 <title>cluster_startup</title>
-<path fill="#8b5cf6" fill-opacity="0.098039" stroke="#8b5cf6" stroke-width="1.8" d="M274.55,-273.9C274.55,-273.9 673.03,-273.9 673.03,-273.9 679.03,-273.9 685.03,-279.9 685.03,-285.9 685.03,-285.9 685.03,-342.9 685.03,-342.9 685.03,-348.9 679.03,-354.9 673.03,-354.9 673.03,-354.9 274.55,-354.9 274.55,-354.9 268.55,-354.9 262.55,-348.9 262.55,-342.9 262.55,-342.9 262.55,-285.9 262.55,-285.9 262.55,-279.9 268.55,-273.9 274.55,-273.9"/>
+<path fill="#8b5cf6" fill-opacity="0.098039" stroke="#8b5cf6" stroke-width="1.8" d="M274.55,-273.9C274.55,-273.9 673.4,-273.9 673.4,-273.9 679.4,-273.9 685.4,-279.9 685.4,-285.9 685.4,-285.9 685.4,-342.9 685.4,-342.9 685.4,-348.9 679.4,-354.9 673.4,-354.9 673.4,-354.9 274.55,-354.9 274.55,-354.9 268.55,-354.9 262.55,-348.9 262.55,-342.9 262.55,-342.9 262.55,-285.9 262.55,-285.9 262.55,-279.9 268.55,-273.9 274.55,-273.9"/>
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_runtime_read</title>
@@ -22,7 +22,7 @@
 </g>
 <g id="clust4" class="cluster">
 <title>cluster_user_config</title>
-<path fill="#f4a261" fill-opacity="0.098039" stroke="#f4a261" stroke-width="1.8" d="M577.4,-8.2C577.4,-8.2 659.15,-8.2 659.15,-8.2 665.15,-8.2 671.15,-14.2 671.15,-20.2 671.15,-20.2 671.15,-200.4 671.15,-200.4 671.15,-206.4 665.15,-212.4 659.15,-212.4 659.15,-212.4 577.4,-212.4 577.4,-212.4 571.4,-212.4 565.4,-206.4 565.4,-200.4 565.4,-200.4 565.4,-20.2 565.4,-20.2 565.4,-14.2 571.4,-8.2 577.4,-8.2"/>
+<path fill="#f4a261" fill-opacity="0.098039" stroke="#f4a261" stroke-width="1.8" d="M573.28,-8.2C573.28,-8.2 663.28,-8.2 663.28,-8.2 669.28,-8.2 675.28,-14.2 675.28,-20.2 675.28,-20.2 675.28,-195.4 675.28,-195.4 675.28,-201.4 669.28,-207.4 663.28,-207.4 663.28,-207.4 573.28,-207.4 573.28,-207.4 567.28,-207.4 561.28,-201.4 561.28,-195.4 561.28,-195.4 561.28,-20.2 561.28,-20.2 561.28,-14.2 567.28,-8.2 573.28,-8.2"/>
 </g>
 <g id="clust5" class="cluster">
 <title>cluster_storages</title>
@@ -31,12 +31,12 @@
 <!-- storage_choice&#45;&gt;storage_choice_address_book_route_0 -->
 <g id="edge2" class="edge">
 <title>storage_choice:s&#45;&gt;storage_choice_address_book_route_0</title>
-<path fill="none" stroke="#8b5cf6" stroke-width="2.3" d="M618.28,-274.14C618.28,-274.14 649.92,-233.59 653.87,-228.52"/>
+<path fill="none" stroke="#8b5cf6" stroke-width="2.3" d="M618.28,-273.91C618.28,-273.91 649.92,-233.56 653.87,-228.52"/>
 </g>
 <!-- storage_choice&#45;&gt;storage_choice_project_b_env_route_0 -->
 <g id="edge7" class="edge">
 <title>storage_choice:s&#45;&gt;storage_choice_project_b_env_route_0</title>
-<path fill="none" stroke="#32bc00" stroke-width="2.3" d="M618.28,-274.14C618.28,-274.14 472.01,-236.19 460.58,-233.22"/>
+<path fill="none" stroke="#32bc00" stroke-width="2.3" d="M618.28,-273.91C618.28,-273.91 472.01,-236.17 460.58,-233.22"/>
 </g>
 <!-- read_stack&#45;&gt;runtime_output -->
 <g id="edge9" class="edge">
@@ -44,9 +44,9 @@
 <path fill="none" stroke="#32bc00" stroke-width="2.3" d="M798.27,-121.75C798.27,-121.75 798.27,-111.02 798.27,-102.47"/>
 <polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.3" points="800.73,-102.59 798.28,-95.59 795.83,-102.59 800.73,-102.59"/>
 </g>
-<!-- package&#45;&gt;defaults_env -->
+<!-- package&#45;&gt;defaults_dotenv -->
 <g id="edge1" class="edge">
-<title>package:n&#45;&gt;defaults_env:s</title>
+<title>package:n&#45;&gt;defaults_dotenv:s</title>
 <path fill="none" stroke="#00a2ff" stroke-width="2.3" d="M63.88,-86.55C63.87,-86.55 63.87,-109.26 63.87,-123.1"/>
 <polygon fill="#00a2ff" stroke="#00a2ff" stroke-width="2.3" points="61.42,-123.04 63.87,-130.04 66.32,-123.04 61.42,-123.04"/>
 </g>
@@ -101,12 +101,12 @@
 <!-- storage_choice -->
 <g id="node3" class="node">
 <title>storage_choice</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M563.53,-273.9C563.53,-273.9 673.03,-273.9 673.03,-273.9 679.03,-273.9 685.03,-279.9 685.03,-285.9 685.03,-285.9 685.03,-342.9 685.03,-342.9 685.03,-348.9 679.03,-354.9 673.03,-354.9 673.03,-354.9 563.53,-354.9 563.53,-354.9 557.53,-354.9 551.53,-348.9 551.53,-342.9 551.53,-342.9 551.53,-285.9 551.53,-285.9 551.53,-279.9 557.53,-273.9 563.53,-273.9"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M563.15,-273.9C563.15,-273.9 673.4,-273.9 673.4,-273.9 679.4,-273.9 685.4,-279.9 685.4,-285.9 685.4,-285.9 685.4,-342.9 685.4,-342.9 685.4,-348.9 679.4,-354.9 673.4,-354.9 673.4,-354.9 563.15,-354.9 563.15,-354.9 557.15,-354.9 551.15,-348.9 551.15,-342.9 551.15,-342.9 551.15,-285.9 551.15,-285.9 551.15,-279.9 557.15,-273.9 563.15,-273.9"/>
 <text xml:space="preserve" text-anchor="start" x="581.9" y="-340.4" font-family="sans-serif" font-weight="bold" font-size="10.00">storage choice</text>
 <text xml:space="preserve" text-anchor="start" x="554.53" y="-316.4" font-family="sans-serif" font-size="10.00">&#45;&#45;storage / &lt;APP&gt;_STORAGE</text>
-<text xml:space="preserve" text-anchor="start" x="582.28" y="-298.15" font-family="sans-serif" font-size="10.00">name: project&#45;a</text>
-<text xml:space="preserve" text-anchor="start" x="570.65" y="-279.9" font-family="sans-serif" font-size="10.00">path: /data/project&#45;b</text>
-<path fill="none" stroke="#8b5cf6" d="M563.53,-273.9C563.53,-273.9 673.03,-273.9 673.03,-273.9 679.03,-273.9 685.03,-279.9 685.03,-285.9 685.03,-285.9 685.03,-342.9 685.03,-342.9 685.03,-348.9 679.03,-354.9 673.03,-354.9 673.03,-354.9 563.53,-354.9 563.53,-354.9 557.53,-354.9 551.53,-348.9 551.53,-342.9 551.53,-342.9 551.53,-285.9 551.53,-285.9 551.53,-279.9 557.53,-273.9 563.53,-273.9"/>
+<text xml:space="preserve" text-anchor="start" x="569.15" y="-298.15" font-family="sans-serif" font-size="10.00">registered name only</text>
+<text xml:space="preserve" text-anchor="start" x="554.15" y="-279.9" font-family="sans-serif" font-size="10.00">root comes from apprc.toml</text>
+<path fill="none" stroke="#8b5cf6" d="M563.15,-273.9C563.15,-273.9 673.4,-273.9 673.4,-273.9 679.4,-273.9 685.4,-279.9 685.4,-285.9 685.4,-285.9 685.4,-342.9 685.4,-342.9 685.4,-348.9 679.4,-354.9 673.4,-354.9 673.4,-354.9 563.15,-354.9 563.15,-354.9 557.15,-354.9 551.15,-348.9 551.15,-342.9 551.15,-342.9 551.15,-285.9 551.15,-285.9 551.15,-279.9 557.15,-273.9 563.15,-273.9"/>
 </g>
 <!-- read_stack -->
 <g id="node4" class="node">
@@ -114,7 +114,7 @@
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M742.77,-122.45C742.77,-122.45 853.77,-122.45 853.77,-122.45 859.77,-122.45 865.77,-128.45 865.77,-134.45 865.77,-134.45 865.77,-227.95 865.77,-227.95 865.77,-233.95 859.77,-239.95 853.77,-239.95 853.77,-239.95 742.77,-239.95 742.77,-239.95 736.77,-239.95 730.77,-233.95 730.77,-227.95 730.77,-227.95 730.77,-134.45 730.77,-134.45 730.77,-128.45 736.77,-122.45 742.77,-122.45"/>
 <text xml:space="preserve" text-anchor="start" x="760.77" y="-225.45" font-family="sans-serif" font-weight="bold" font-size="10.00">read at startup</text>
 <text xml:space="preserve" text-anchor="start" x="733.77" y="-201.45" font-family="sans-serif" font-size="10.00">defaults: apprc.defaults.env</text>
-<text xml:space="preserve" text-anchor="start" x="754.02" y="-183.2" font-family="sans-serif" font-size="10.00">app: apprc.app.env</text>
+<text xml:space="preserve" text-anchor="start" x="751.4" y="-183.2" font-family="sans-serif" font-size="10.00">user: apprc.user.env</text>
 <text xml:space="preserve" text-anchor="start" x="746.15" y="-164.95" font-family="sans-serif" font-size="10.00">storage: chosen folder</text>
 <text xml:space="preserve" text-anchor="start" x="759.65" y="-146.7" font-family="sans-serif" font-size="10.00">explicit: &#45;&#45;env&#45;file</text>
 <text xml:space="preserve" text-anchor="start" x="753.65" y="-128.45" font-family="sans-serif" font-size="10.00">process: os.environ</text>
@@ -136,9 +136,9 @@
 <text xml:space="preserve" text-anchor="start" x="758.15" y="-28.7" font-family="sans-serif" font-size="10.00"> merged at startup</text>
 <path fill="none" stroke="#32bc00" stroke-width="2" d="M756.15,-19.2C756.15,-19.2 840.4,-19.2 840.4,-19.2 846.4,-19.2 852.4,-25.2 852.4,-31.2 852.4,-31.2 852.4,-79.2 852.4,-79.2 852.4,-85.2 846.4,-91.2 840.4,-91.2 840.4,-91.2 756.15,-91.2 756.15,-91.2 750.15,-91.2 744.15,-85.2 744.15,-79.2 744.15,-79.2 744.15,-31.2 744.15,-31.2 744.15,-25.2 750.15,-19.2 756.15,-19.2"/>
 </g>
-<!-- defaults_env -->
+<!-- defaults_dotenv -->
 <g id="node6" class="node">
-<title>defaults_env</title>
+<title>defaults_dotenv</title>
 <path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M13,-134.4C13,-134.4 114.75,-134.4 114.75,-134.4 120.75,-134.4 126.75,-140.4 126.75,-146.4 126.75,-146.4 126.75,-194.4 126.75,-194.4 126.75,-200.4 120.75,-206.4 114.75,-206.4 114.75,-206.4 13,-206.4 13,-206.4 7,-206.4 1,-200.4 1,-194.4 1,-194.4 1,-146.4 1,-146.4 1,-140.4 7,-134.4 13,-134.4"/>
 <polygon fill="#add1b2" stroke="none" points="9,-178.4 9,-198.4 17,-198.4 17,-178.4 9,-178.4"/>
 <polygon fill="none" stroke="#181818" points="9,-178.4 9,-198.4 17,-198.4 17,-178.4 9,-178.4"/>
@@ -161,22 +161,21 @@
 <text xml:space="preserve" text-anchor="start" x="21.88" y="-29.83" font-family="sans-serif" font-size="10.00">read&#45;only package</text>
 <path fill="none" stroke="#00a2ff" d="M30.88,-23.83C30.88,-23.83 96.88,-23.83 96.88,-23.83 102.88,-23.83 108.88,-29.83 108.88,-35.83 108.88,-35.83 108.88,-74.58 108.88,-74.58 108.88,-80.58 102.88,-86.58 96.88,-86.58 96.88,-86.58 30.88,-86.58 30.88,-86.58 24.88,-86.58 18.88,-80.58 18.88,-74.58 18.88,-74.58 18.88,-35.83 18.88,-35.83 18.88,-29.83 24.88,-23.83 30.88,-23.83"/>
 </g>
-<!-- app_env -->
+<!-- user_dotenv -->
 <g id="node8" class="node">
-<title>app_env</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M578.4,-129.4C578.4,-129.4 658.15,-129.4 658.15,-129.4 664.15,-129.4 670.15,-135.4 670.15,-141.4 670.15,-141.4 670.15,-199.4 670.15,-199.4 670.15,-205.4 664.15,-211.4 658.15,-211.4 658.15,-211.4 578.4,-211.4 578.4,-211.4 572.4,-211.4 566.4,-205.4 566.4,-199.4 566.4,-199.4 566.4,-141.4 566.4,-141.4 566.4,-135.4 572.4,-129.4 578.4,-129.4"/>
-<polygon fill="#add1b2" stroke="none" points="574.4,-183.4 574.4,-203.4 582.82,-203.4 582.82,-183.4 574.4,-183.4"/>
-<polygon fill="none" stroke="#181818" points="574.4,-183.4 574.4,-203.4 582.82,-203.4 582.82,-183.4 574.4,-183.4"/>
-<text xml:space="preserve" text-anchor="start" x="575.61" y="-189.28" font-family="sans-serif" font-size="10.00">C</text>
-<text xml:space="preserve" text-anchor="start" x="606.82" y="-194.9" font-family="sans-serif" font-style="italic" font-size="10.00">«dotenv»</text>
-<text xml:space="preserve" text-anchor="start" x="591.44" y="-184.9" font-family="sans-serif" font-weight="bold" font-size="10.00">apprc.app.env</text>
-<polygon fill="#f4a261" stroke="none" points="567.4,-174.4 567.4,-176.4 669.15,-176.4 669.15,-174.4 567.4,-174.4"/>
-<text xml:space="preserve" text-anchor="start" x="574.4" y="-158.9" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="580.4" y="-158.9" font-family="sans-serif" font-size="10.00"> per&#45;user settings</text>
-<text xml:space="preserve" text-anchor="start" x="574.4" y="-148.9" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
-<text xml:space="preserve" text-anchor="start" x="580.4" y="-148.9" font-family="sans-serif" font-size="10.00"> created on first</text>
-<text xml:space="preserve" text-anchor="start" x="574.4" y="-138.9" font-family="sans-serif" font-size="10.00">write</text>
-<path fill="none" stroke="#f4a261" stroke-width="2" d="M578.4,-129.4C578.4,-129.4 658.15,-129.4 658.15,-129.4 664.15,-129.4 670.15,-135.4 670.15,-141.4 670.15,-141.4 670.15,-199.4 670.15,-199.4 670.15,-205.4 664.15,-211.4 658.15,-211.4 658.15,-211.4 578.4,-211.4 578.4,-211.4 572.4,-211.4 566.4,-205.4 566.4,-199.4 566.4,-199.4 566.4,-141.4 566.4,-141.4 566.4,-135.4 572.4,-129.4 578.4,-129.4"/>
+<title>user_dotenv</title>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M574.28,-134.4C574.28,-134.4 662.28,-134.4 662.28,-134.4 668.28,-134.4 674.28,-140.4 674.28,-146.4 674.28,-146.4 674.28,-194.4 674.28,-194.4 674.28,-200.4 668.28,-206.4 662.28,-206.4 662.28,-206.4 574.28,-206.4 574.28,-206.4 568.28,-206.4 562.28,-200.4 562.28,-194.4 562.28,-194.4 562.28,-146.4 562.28,-146.4 562.28,-140.4 568.28,-134.4 574.28,-134.4"/>
+<polygon fill="#add1b2" stroke="none" points="570.28,-178.4 570.28,-198.4 580.44,-198.4 580.44,-178.4 570.28,-178.4"/>
+<polygon fill="none" stroke="#181818" points="570.28,-178.4 570.28,-198.4 580.44,-198.4 580.44,-178.4 570.28,-178.4"/>
+<text xml:space="preserve" text-anchor="start" x="572.36" y="-184.28" font-family="sans-serif" font-size="10.00">C</text>
+<text xml:space="preserve" text-anchor="start" x="608.57" y="-189.9" font-family="sans-serif" font-style="italic" font-size="10.00">«dotenv»</text>
+<text xml:space="preserve" text-anchor="start" x="591.69" y="-179.9" font-family="sans-serif" font-weight="bold" font-size="10.00">apprc.user.env</text>
+<polygon fill="#f4a261" stroke="none" points="563.28,-169.4 563.28,-171.4 673.28,-171.4 673.28,-169.4 563.28,-169.4"/>
+<text xml:space="preserve" text-anchor="start" x="570.28" y="-153.9" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
+<text xml:space="preserve" text-anchor="start" x="576.28" y="-153.9" font-family="sans-serif" font-size="10.00"> per&#45;user overrides</text>
+<text xml:space="preserve" text-anchor="start" x="570.28" y="-143.9" font-family="sans-serif" font-size="10.00" fill="#038048">∘</text>
+<text xml:space="preserve" text-anchor="start" x="576.28" y="-143.9" font-family="sans-serif" font-size="10.00"> created by setup</text>
+<path fill="none" stroke="#f4a261" stroke-width="2" d="M574.28,-134.4C574.28,-134.4 662.28,-134.4 662.28,-134.4 668.28,-134.4 674.28,-140.4 674.28,-146.4 674.28,-146.4 674.28,-194.4 674.28,-194.4 674.28,-200.4 668.28,-206.4 662.28,-206.4 662.28,-206.4 574.28,-206.4 574.28,-206.4 568.28,-206.4 562.28,-200.4 562.28,-194.4 562.28,-194.4 562.28,-146.4 562.28,-146.4 562.28,-140.4 568.28,-134.4 574.28,-134.4"/>
 </g>
 <!-- address_book -->
 <g id="node9" class="node">
@@ -272,16 +271,16 @@
 <!-- user_config_label -->
 <g id="node17" class="node">
 <title>user_config_label</title>
-<text xml:space="preserve" text-anchor="start" x="576.28" y="-254.84" font-family="sans-serif" font-size="10.00" fill="#f4a261">User config folder</text>
+<text xml:space="preserve" text-anchor="start" x="580.78" y="-254.84" font-family="sans-serif" font-size="10.00" fill="#f4a261">AppRC directory</text>
 </g>
 <!-- storages_label -->
 <g id="node18" class="node">
 <title>storages_label</title>
 <text xml:space="preserve" text-anchor="start" x="348.65" y="-254.84" font-family="sans-serif" font-size="10.00" fill="#32bc00">Storage folders</text>
 </g>
-<!-- package_defaults_env_label -->
+<!-- package_defaults_dotenv_label -->
 <g id="node19" class="node">
-<title>package_defaults_env_label</title>
+<title>package_defaults_dotenv_label</title>
 <polygon fill="#00a2ff" stroke="none" points="51.03,-98.39 51.03,-117.14 81.03,-117.14 81.03,-98.39 51.03,-98.39"/>
 <text xml:space="preserve" text-anchor="start" x="54.03" y="-106.59" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">ships</text>
 <polygon fill="none" stroke="#00a2ff" points="51.03,-98.39 51.03,-117.14 81.03,-117.14 81.03,-98.39 51.03,-98.39"/>

@@ -157,7 +157,7 @@ def test_config_request_skips_runtime_for_setup_only_commands() -> None:
     assert (
         skips(tokens=["--storage", "alpha", "config", "--", "--help"]) is False
     )
-    assert skips(tokens=["config", "app", "init"])
+    assert skips(tokens=["config", "setup"])
     assert skips(tokens=["config", "storage", "add", "alpha", "/tmp/storage"])
     assert skips(tokens=["config", "paths"])
     assert skips(tokens=["config", "show"]) is False

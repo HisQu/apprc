@@ -15,7 +15,7 @@ class ConfigScaffoldRequest:
 
     :param package: Import package that receives ``config/``.
     :param storage: Whether the generated app declares storage.
-    :param app_name: Stable AppRC application name.
+    :param app_id: Stable AppRC application name.
     :param display_name: Human-readable application label.
     :param target: Source root containing the package.
     :param storage_selector_env_key: Optional storage selector env key override.
@@ -24,7 +24,7 @@ class ConfigScaffoldRequest:
     """
 
     package: str
-    app_name: str
+    app_id: str
     target: Path
     storage: bool = False
     display_name: str | None = None
@@ -62,7 +62,7 @@ def scaffold_config_package(
     package_dir = request.target.joinpath(*package_parts)
     config_dir = package_dir / "config"
     env_prefix = request.env_prefix or _default_env_prefix(request)
-    bundle_name = f"{_pascal_identifier(request.app_name)}Config"
+    bundle_name = f"{_pascal_identifier(request.app_id)}Config"
     files = _render_files(
         request=request,
         config_dir=config_dir,
@@ -92,8 +92,8 @@ def scaffold_config_package(
 def _validate_request(request: ConfigScaffoldRequest) -> None:
     """Reject inconsistent scaffold inputs before touching the filesystem."""
     _validate_package(request.package)
-    if not request.app_name:
-        raise ValueError("--app-name must be non-empty.")
+    if not request.app_id:
+        raise ValueError("--app-id must be non-empty.")
     if not request.storage and request.storage_selector_env_key:
         raise ValueError("--storage-selector-env-key requires --storage.")
     if request.storage_selector_env_key and request.env_prefix:
@@ -150,7 +150,7 @@ def _default_env_prefix(request: ConfigScaffoldRequest) -> str:
         and "_" in request.storage_selector_env_key
     ):
         return request.storage_selector_env_key.rsplit("_", 1)[0] + "_"
-    return _upper_env_token(request.app_name) + "_"
+    return _upper_env_token(request.app_id) + "_"
 
 
 def _upper_env_token(value: str) -> str:
@@ -256,11 +256,11 @@ def _render_app_module(
     module_prefix: str,
 ) -> str:
     """Render ``config/app.py``."""
-    display_name = request.display_name or request.app_name
+    display_name = request.display_name or request.app_id
     storage_line = ""
     if request.storage:
         env_key = (
-            f"env_key={request.storage_selector_env_key!r}"
+            f"selector_env_key={request.storage_selector_env_key!r}"
             if request.storage_selector_env_key is not None
             else ""
         )
@@ -271,10 +271,10 @@ import apprc as rc
 
 
 MyRC = rc.AppRC(
-    app_name={request.app_name!r},
+    app_id={request.app_id!r},
     display_name={display_name!r},
     config_package={module_prefix!r},
-{storage_line}    command_name={request.app_name!r},
+{storage_line}    command_name={request.app_id!r},
 )
 
 '''

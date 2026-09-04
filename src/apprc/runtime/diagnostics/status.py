@@ -11,6 +11,6 @@ class ConfigDoctorStatus(StrEnum):
 
     ENV_NOT_SET = "env_not_set"
     STORAGE_NOT_READY = "storage_not_ready"
-    APP_CONFIG_NOT_READY = "app_config_not_ready"
-    NAMED_STORAGE_NOT_READY = "named_storage_not_ready"
+    USER_DOTENV_NOT_READY = "user_dotenv_not_ready"
+    STORAGE_REGISTRY_NOT_READY = "storage_registry_not_ready"
     RUNNABLE = "runnable"

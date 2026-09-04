@@ -4,11 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from apprc.definition.app_config.spec import (
-    AppConfigSpec,
-    CapabilityState,
-    StorageLayerState,
-)
+from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.storage import Storage
 from apprc.definition.env_config.env import EnvConfig
 from apprc.definition.env_config.fields import env_field, env_owner
@@ -63,7 +59,7 @@ def _spec(
     storage: Storage | None = None,
 ) -> AppConfigSpec:
     return AppConfigSpec(
-        app_name="demo",
+        app_id="demo",
         display_name="Demo",
         config_package="apprc",
         storage=storage,
@@ -79,18 +75,16 @@ def test_app_config_spec_derives_legacy_apprc_toml_filename() -> None:
     assert derive("???") == "app.apprc.toml"
 
 
-def test_app_config_spec_derives_apprc_toml_env_key() -> None:
-    assert _spec().apprc_toml_env_key == "DEMO_APPRC_TOML"
+def test_app_config_spec_derives_apprc_dir_env_key() -> None:
+    assert _spec().apprc_dir_env_key == "DEMO_APPRC_DIR"
 
 
 def test_app_config_spec_defaults_to_config_without_storage() -> None:
     spec = _spec()
 
     assert spec.uses_storage() is False
-    assert spec.app_env_enabled() is True
-    assert spec.named_storage_enabled() is False
     assert spec.storage_selector_env_key is None
-    assert spec.app_env_filename == "apprc.app.env"
+    assert spec.user_dotenv_filename == "apprc.user.env"
     assert spec.apprc_toml_filename == "apprc.toml"
     assert spec.storage is None
 
@@ -100,92 +94,57 @@ def test_app_config_spec_storage_derives_selector_env_key() -> None:
 
     assert spec.uses_storage() is True
     assert spec.storage_selector_env_key == "DEMO_STORAGE"
-    assert spec.named_storage_enabled() is True
-    assert spec.require_storage().env_filename == "apprc.storage.env"
+    assert spec.storage_dotenv_filename == "apprc.storage.env"
 
 
-def test_app_config_spec_retains_019_read_aliases() -> None:
-    """Deprecated readers remain available for the 0.20 migration window."""
+def test_app_config_spec_uses_fixed_filenames() -> None:
     spec = _spec(storage=Storage())
 
-    assert AppConfigSpec.derive_index_filename("demo") == "demo.apprc.toml"
-    assert spec.storage_layer == StorageLayerState.REQUIRED
-    assert spec.app_wide_layer == CapabilityState.OPTIONAL
-    assert spec.named_storage_layer == CapabilityState.OPTIONAL
-    assert spec.storage_env_key == spec.storage_selector_env_key
-    assert spec.index_env_key == spec.apprc_toml_env_key
-    assert spec.storage_required() == spec.uses_storage()
-    assert spec.app_wide_allowed() == spec.app_env_enabled()
-    assert spec.named_storage_allowed() == spec.named_storage_enabled()
+    assert spec.defaults_dotenv_filename == "apprc.defaults.env"
+    assert spec.user_dotenv_filename == "apprc.user.env"
+    assert spec.storage_dotenv_filename == "apprc.storage.env"
+    assert spec.apprc_toml_filename == "apprc.toml"
 
 
-def test_app_config_spec_rejects_storage_key_without_storage() -> None:
-    with pytest.raises(ValueError, match="require storage"):
+def test_app_config_spec_rejects_legacy_storage_key_argument() -> None:
+    with pytest.raises(TypeError, match="storage_env_key"):
         AppConfigSpec(
-            app_name="demo",
+            app_id="demo",
             display_name="Demo",
             config_package="apprc",
-            storage_env_key="DEMO_STORAGE",
+            storage_env_key="DEMO_STORAGE",  # pyright: ignore[reportCallIssue]
         )
 
 
-@pytest.mark.parametrize(
-    "legacy_filename",
-    ("shared_env_filename", "app_wide_env_filename", "index_filename"),
-)
-def test_app_config_spec_rejects_empty_legacy_filename_alias(
-    legacy_filename: str,
-) -> None:
-    """Compatibility names preserve the current basename validation."""
-    with pytest.raises(ValueError, match="must not be empty"):
-        AppConfigSpec(
-            app_name="demo",
-            display_name="Demo",
-            config_package="apprc",
-            **{legacy_filename: ""},  # pyright: ignore[reportArgumentType]
-        )
-
-
-def test_app_config_spec_rejects_named_storage_without_storage() -> None:
-    with pytest.raises(ValueError, match="named_storage_layer"):
-        AppConfigSpec(
-            app_name="demo",
-            display_name="Demo",
-            config_package="apprc",
-            named_storage_layer=CapabilityState.OPTIONAL,
-        )
-
-
-def test_app_config_spec_apprc_toml_path_uses_env_override(
+def test_app_config_spec_apprc_dir_uses_env_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    custom_apprc_toml = tmp_path / "custom" / "demo.apprc.toml"
+    custom_apprc_dir = tmp_path / "custom"
     spec = _spec()
 
-    monkeypatch.setenv("DEMO_APPRC_TOML", str(custom_apprc_toml))
+    monkeypatch.setenv("DEMO_APPRC_DIR", str(custom_apprc_dir))
 
-    assert spec.apprc_toml_path() == custom_apprc_toml
+    assert spec.apprc_dir() == custom_apprc_dir
+    assert spec.preferred_apprc_toml_path() == custom_apprc_dir / "apprc.toml"
 
 
 def test_app_config_spec_rejects_manual_owner_argument() -> None:
     with pytest.raises(TypeError, match="owners"):
         AppConfigSpec(
-            app_name="demo",
+            app_id="demo",
             display_name="Demo",
             config_package="apprc",
             owners=(),  # pyright: ignore[reportCallIssue]
-            apprc_toml_filename="demo.apprc.toml",
         )
 
 
 def test_app_config_spec_rejects_duplicate_owner_keys() -> None:
     with pytest.raises(ValueError, match="Duplicate owner key"):
         AppConfigSpec(
-            app_name="demo",
+            app_id="demo",
             display_name="Demo",
             config_package="apprc",
-            apprc_toml_filename="demo.apprc.toml",
             envs=(_DuplicateOwnerA, _DuplicateOwnerB),
         )
 
@@ -193,9 +152,8 @@ def test_app_config_spec_rejects_duplicate_owner_keys() -> None:
 def test_app_config_spec_rejects_duplicate_env_keys() -> None:
     with pytest.raises(ValueError, match="Duplicate env key"):
         AppConfigSpec(
-            app_name="demo",
+            app_id="demo",
             display_name="Demo",
             config_package="apprc",
-            apprc_toml_filename="demo.apprc.toml",
             envs=(_DuplicateEnvA, _DuplicateEnvB),
         )

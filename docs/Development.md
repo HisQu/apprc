@@ -222,8 +222,8 @@ This writes ignored files under `examples/example_app_disk_files/`:
 | File | Purpose |
 |---|---|
 | `.apprc-example-*/.env` | Per-app arbitrary user env file. AppRC does not choose this location; source it manually or pass it with `--env-file` when path relocation is not needed. |
-| `xdg-config-home/<app>/apprc.app.env` | Generated per-user app config. |
-| `xdg-config-home/<app>/apprc.toml` | Generated named-storage registry for storage examples. |
+| `apprc-directories/<app>/apprc.user.env` | Generated per-user dotenv. |
+| `apprc-directories/<app>/apprc.toml` | Generated storage registry for storage examples. |
 | `.apprc-example-*/storages/alpha/apprc.storage.env` | Storage-local dotenv layer. |
 
 Every generated `.env` and `.toml` file starts with comments explaining the
@@ -250,7 +250,7 @@ apprc-cli-runtime config doctor
 
 The test suite exercises every generated command for every example scenario:
 `config paths`, `config show`, `config doctor`, `config setup`, `config set`,
-`config edit`, `config app init`, and all mounted `config storage` commands.
+`config edit`, `config purge`, and all mounted `config storage` commands.
 Config-only scenarios also assert that storage commands are unavailable.
 
 <br>

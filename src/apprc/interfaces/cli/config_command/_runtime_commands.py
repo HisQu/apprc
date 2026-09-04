@@ -24,10 +24,10 @@ from apprc.interfaces.cli.doctor_output import (
 from apprc.interfaces.cli._typer_utils import dump_json
 from apprc.runtime.diagnostics.payload import build_config_doctor_payload
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
-from apprc.user_files.app_home.locations import ConfigHomeError
+from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.env_files.updates import (
     set_env_file_value,
-    set_storage_env_value,
+    set_storage_dotenv_value,
 )
 from apprc.user_files.storage_roots.paths import StorageRootPathError
 from apprc.user_files.migration import (
@@ -37,9 +37,14 @@ from apprc.user_files.migration import (
     apply_config_migration,
     build_config_migration_plan,
 )
+from apprc.user_files.purge import (
+    ConfigPurgeError,
+    apply_config_purge,
+    build_config_purge_plan,
+)
 
 
-type ConfigSetScope = Literal["app", "storage"]
+type ConfigSetScope = Literal["user", "storage"]
 
 
 class RuntimeConfigCommands(ConfigCommandBase):
@@ -126,8 +131,10 @@ class RuntimeConfigCommands(ConfigCommandBase):
         """Move legacy AppRC-managed files to current filenames."""
         plan = self._migration_plan(ctx)
         self._reject_migration_conflicts(plan)
-        if not plan.moves:
-            typer.echo("AppRC files already use the current filenames.")
+        if not plan.moves and not plan.writes:
+            typer.echo("No released AppRC 0.19 files need migration.")
+            for warning in plan.warnings:
+                typer.echo(f"warning: {warning}", err=True)
             return
         self._print_migration_moves(plan, dry_run=dry_run)
         if dry_run:
@@ -136,7 +143,45 @@ class RuntimeConfigCommands(ConfigCommandBase):
             typer.echo("No files were changed.")
             raise typer.Exit(code=1)
         result = self._apply_migration_plan(plan)
-        typer.echo(f"migrated_files: {len(result.moved)}")
+        typer.echo(f"migrated_files: {len(result.moved) + len(result.written)}")
+        for warning in plan.warnings:
+            typer.echo(f"warning: {warning}", err=True)
+
+    def purge(self, *, dry_run: bool, assume_yes: bool) -> None:
+        """Remove only fixed AppRC files and registered internal storage."""
+        try:
+            plan = build_config_purge_plan(self.kit.spec)
+        except ConfigPurgeError as exc:
+            raise typer.BadParameter(str(exc), param_hint="purge") from exc
+        typer.echo(f"apprc_dir: {plan.apprc_dir}")
+        for path in plan.managed_files:
+            typer.echo(f"{'would_remove' if dry_run else 'remove'}: {path}")
+        for root in plan.internal_storage_roots:
+            typer.echo(
+                f"{'would_remove_tree' if dry_run else 'remove_tree'}: {root}"
+            )
+        for root in plan.external_storage_roots:
+            typer.echo(f"keep_external_storage_data: {root}")
+        if plan.stale_storage:
+            typer.echo(
+                "warning: apprc.toml contains stale storage configuration for "
+                "an app that no longer declares storage.",
+                err=True,
+            )
+        if dry_run:
+            return
+        if not assume_yes and not typer.confirm(
+            "Remove these AppRC-managed files and internal storage roots?"
+        ):
+            typer.echo("No files were changed.")
+            raise typer.Exit(code=1)
+        try:
+            result = apply_config_purge(plan)
+        except OSError as exc:
+            raise typer.BadParameter(str(exc), param_hint="purge") from exc
+        typer.echo(f"removed_entries: {len(result.removed)}")
+        for path in result.skipped:
+            typer.echo(f"skipped_unsafe_target: {path}", err=True)
 
     def _migration_plan(self, ctx: typer.Context) -> ConfigMigrationPlan:
         """Build a migration plan from every CLI-visible storage root.
@@ -208,6 +253,12 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 f"{'would_move' if dry_run else 'move'}: "
                 f"{move.source} -> {move.destination}"
             )
+        for write in plan.writes:
+            typer.echo(
+                f"{'would_write' if dry_run else 'write'}: {write.destination}"
+            )
+            if write.source is not None and write.source != write.destination:
+                typer.echo(f"  remove_legacy: {write.source}")
 
     @staticmethod
     def _apply_migration_plan(
@@ -245,10 +296,10 @@ class RuntimeConfigCommands(ConfigCommandBase):
             requested_scope=scope,
             selector_context=selector_context,
         )
-        if resolved_scope == "app":
-            update = self._set_app_value(key=key, value=value)
+        if resolved_scope == "user":
+            update = self._set_user_value(key=key, value=value)
             typer.echo(f"updated: {update.env_key}")
-            typer.echo(f"app_env: {update.path}")
+            typer.echo(f"user_dotenv: {update.path}")
             return
         if current_state is None:
             raise typer.BadParameter(
@@ -261,7 +312,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         )
         update = self._set_storage_value(root=root, key=key, value=value)
         typer.echo(f"updated: {update.env_key}")
-        typer.echo(f"storage_env: {update.path}")
+        typer.echo(f"storage_dotenv: {update.path}")
 
     def _resolve_write_scope(
         self,
@@ -278,9 +329,18 @@ class RuntimeConfigCommands(ConfigCommandBase):
         :raises typer.BadParameter: If no layer or multiple layers qualify.
         """
         if requested_scope is not None:
-            if requested_scope not in {"app", "storage"}:
+            supported_scopes = (
+                {"user", "storage"}
+                if self.kit.spec.uses_storage()
+                else {"user"}
+            )
+            if requested_scope not in supported_scopes:
                 raise typer.BadParameter(
-                    "--scope must be 'app' or 'storage'.",
+                    "--scope must be "
+                    + " or ".join(
+                        repr(item) for item in sorted(supported_scopes)
+                    )
+                    + ".",
                     param_hint="--scope",
                 )
             resolved_requested_scope = cast(ConfigSetScope, requested_scope)
@@ -307,13 +367,12 @@ class RuntimeConfigCommands(ConfigCommandBase):
         if not active_scopes:
             raise typer.BadParameter(
                 "No writable AppRC layer is active. Run "
-                f"`{self.config_command_text('app init')}`, select a storage "
-                "root, or set environment variables directly.",
+                f"`{self.config_command_text('setup')}`.",
                 param_hint="--scope",
             )
         raise typer.BadParameter(
-            "Both app config and storage config are writable. Pass "
-            "--scope app or --scope storage.",
+            "Both user and storage dotenv files are writable. Pass "
+            "--scope user or --scope storage.",
             param_hint="--scope",
         )
 
@@ -326,7 +385,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         """Return write scopes currently active for ``config set``."""
         return [
             scope
-            for scope in ("app", "storage")
+            for scope in ("user", "storage")
             if self._write_scope_is_active(
                 state,
                 scope,
@@ -342,13 +401,8 @@ class RuntimeConfigCommands(ConfigCommandBase):
         selector_context: ConfigSelectorContext,
     ) -> bool:
         """Return whether one write scope can be updated now."""
-        if scope == "app":
-            if not self.kit.spec.uses_legacy_constructor():
-                return True
-            app_path = self.kit.spec.app_env_path()
-            return self.kit.spec.app_env_enabled() and (
-                self.kit.spec.setup_creates_app_env() or app_path.is_file()
-            )
+        if scope == "user":
+            return True
         if not self.kit.spec.uses_storage() or state is None:
             return False
         storage_root = self.active_storage_root_for_cli(
@@ -357,32 +411,32 @@ class RuntimeConfigCommands(ConfigCommandBase):
         )
         return storage_root is not None and storage_root.is_dir()
 
-    def _set_app_value(self, *, key: str, value: str):
-        """Write one value to the per-user app dotenv file."""
+    def _set_user_value(self, *, key: str, value: str):
+        """Write one value to the per-user dotenv file."""
         try:
             return set_env_file_value(
-                path=self.kit.spec.app_env_path(),
+                path=self.kit.spec.user_dotenv_path(),
                 reference=key,
                 raw_value=value,
                 owners=self.kit.spec.owners,
-                layer_name=self.kit.spec.app_env_filename,
+                layer_name=self.kit.spec.user_dotenv_filename,
             )
-        except (ConfigHomeError, OSError) as exc:
-            raise self.config_home_bad_parameter(exc) from exc
+        except (AppRCDirectoryError, OSError) as exc:
+            raise self.apprc_dir_bad_parameter(exc) from exc
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="KEY") from exc
 
     def _set_storage_value(self, *, root: Path, key: str, value: str):
         """Write one value to the selected storage dotenv file."""
         try:
-            return set_storage_env_value(
+            return set_storage_dotenv_value(
                 storage_root=root,
                 reference=key,
                 raw_value=value,
                 owners=self.kit.spec.owners,
-                storage_env_filename=self.kit.spec.require_storage().env_filename,
+                storage_dotenv_filename=self.kit.spec.storage_dotenv_filename,
             )
-        except (ConfigHomeError, OSError, StorageRootPathError) as exc:
+        except (AppRCDirectoryError, OSError, StorageRootPathError) as exc:
             raise typer.BadParameter(
                 str(exc),
                 param_hint="--storage",
@@ -405,13 +459,9 @@ def _inactive_scope_message(
         guidance.
     :return: Human-facing CLI error.
     """
-    if scope == "app":
-        return (
-            "App config is not active. Run "
-            f"`{kit.spec.config_command_name()} {config_group_name} app init` "
-            "first."
-        )
+    if scope == "user":
+        return "The user dotenv layer is unavailable."
     return (
-        "The storage layer is not active. Select a storage root with --storage "
-        f"or export {kit.spec.storage_selector_env_key}."
+        "The storage dotenv layer is not active. Select a registered storage "
+        f"with --storage or export {kit.spec.storage_selector_env_key}."
     )

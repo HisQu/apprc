@@ -6,7 +6,7 @@ from apprc.interfaces.cli.config_command._output import storage_list_payload
 from apprc.user_files.storage_roots.registry import register_storage
 
 
-def test_storage_list_payload_reports_storage_env_status(
+def test_storage_list_payload_reports_storage_dotenv_status(
     tmp_path: Path,
 ) -> None:
     index_path = tmp_path / "config" / "demo.apprc.toml"
@@ -16,18 +16,18 @@ def test_storage_list_payload_reports_storage_env_status(
         name="beta",
         root=beta_root,
         path=index_path,
-        storage_env_filename=".env.demo",
+        storage_dotenv_filename=".env.demo",
     )
     registry = register_storage(
         name="alpha",
         root=alpha_root,
         path=index_path,
-        storage_env_filename=".env.demo",
+        storage_dotenv_filename=".env.demo",
     )
 
     payload = storage_list_payload(
         registry,
-        storage_env_filename=".env.demo",
+        storage_dotenv_filename=".env.demo",
         active_storage_root=alpha_root,
     )
 
@@ -38,15 +38,15 @@ def test_storage_list_payload_reports_storage_env_status(
             "name": "alpha",
             "root": str(alpha_root.resolve()),
             "root_exists": True,
-            "storage_env": str(alpha_root.resolve() / ".env.demo"),
-            "storage_env_exists": True,
+            "storage_dotenv": str(alpha_root.resolve() / ".env.demo"),
+            "storage_dotenv_exists": True,
         },
         {
             "active": False,
             "name": "beta",
             "root": str(beta_root.resolve()),
             "root_exists": True,
-            "storage_env": str(beta_root.resolve() / ".env.demo"),
-            "storage_env_exists": True,
+            "storage_dotenv": str(beta_root.resolve() / ".env.demo"),
+            "storage_dotenv_exists": True,
         },
     ]

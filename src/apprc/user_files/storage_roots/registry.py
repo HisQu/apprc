@@ -13,7 +13,7 @@ from apprc.user_files.storage_roots._io import (
     ordered_storage_names,
     write_storage_registry,
 )
-from apprc.user_files.env_files.files import ensure_storage_env_file
+from apprc.user_files.env_files.files import ensure_storage_dotenv_file
 from apprc.user_files.storage_roots.model import (
     ArchivedStorageRecord,
     StorageRecord,
@@ -26,6 +26,7 @@ from apprc.user_files.storage_roots._naming import (
     validate_storage_name,
 )
 from apprc.user_files.storage_roots.paths import normalize_storage_root_path
+from apprc.user_files.storage_roots.paths import resolve_storage_root_path
 
 LOG = logging.getLogger(__name__)
 
@@ -39,7 +40,10 @@ __all__ = [
     "prune_missing_archived_storages",
     "record_archived_storage",
     "register_storage",
+    "rename_storage",
+    "repoint_storage",
     "remove_archived_storage",
+    "select_storage",
     "suggested_storage_name",
     "suggested_storage_root",
     "unregister_storage",
@@ -52,40 +56,49 @@ def register_storage(
     name: str,
     root: Path,
     path: Path,
-    storage_env_filename: str = "apprc.storage.env",
+    storage_dotenv_filename: str = "apprc.storage.env",
 ) -> StorageRegistry:
-    """Add or update one storage entry and write the registry.
+    """Add one storage entry and write the registry.
 
-    :param name: Storage selector to create or update.
+    :param name: New storage selector.
     :param root: Storage root directory.
     :param path: AppRC TOML location.
-    :param storage_env_filename: Storage dotenv filename to create.
+    :param storage_dotenv_filename: Storage dotenv filename to create.
     :return: Updated registry.
     """
     validate_storage_name(name)
-    resolved_root = normalize_storage_root_path(root).resolve()
     current = load_storage_registry_or_empty(path)
+    if name in current.storages:
+        raise ValueError(f"Storage name {name!r} is already registered.")
+    if name in current.archived_storages:
+        raise ValueError(
+            f"Storage name {name!r} is already used by an archived storage."
+        )
+    resolved_root = resolve_storage_root_path(root, base=current.path.parent)
     root_existed = resolved_root.exists()
-    storage_env = resolved_root / storage_env_filename
-    storage_env_existed = storage_env.exists()
+    storage_dotenv = resolved_root / storage_dotenv_filename
+    storage_dotenv_existed = storage_dotenv.exists()
 
     try:
         resolved_root.mkdir(parents=True, exist_ok=True)
-        ensure_storage_env_file(resolved_root, filename=storage_env_filename)
+        ensure_storage_dotenv_file(
+            resolved_root, filename=storage_dotenv_filename
+        )
         updated = replace(
             current,
             storages={
                 **dict(current.storages),
                 name: StorageRecord(name=name, root=resolved_root),
             },
+            selected_storage=current.selected_storage or name,
         )
         write_storage_registry(updated)
     except Exception as exc:
         _rollback_created_storage_artifacts(
             root=resolved_root,
             root_existed=root_existed,
-            storage_env=storage_env,
-            storage_env_existed=storage_env_existed,
+            storage_dotenv=storage_dotenv,
+            storage_dotenv_existed=storage_dotenv_existed,
             original_error=exc,
         )
         raise
@@ -122,7 +135,7 @@ def _update_storage(
     updated_root = (
         current_record.root
         if root is None
-        else normalize_storage_root_path(root).resolve()
+        else resolve_storage_root_path(root, base=current.path.parent)
     )
 
     if name != current_name:
@@ -148,8 +161,72 @@ def _update_storage(
     updated = replace(
         current,
         storages=storages,
+        selected_storage=(
+            name
+            if current.selected_storage == current_name
+            else current.selected_storage
+        ),
         archived_storages=archived_storages,
     )
+    write_storage_registry(updated)
+    return updated
+
+
+def rename_storage(
+    *,
+    current_name: str,
+    name: str,
+    path: Path,
+) -> StorageRegistry:
+    """Rename a storage without changing its root.
+
+    :param current_name: Registered selector to replace.
+    :param name: New selector.
+    :param path: AppRC TOML path.
+    :return: Updated registry.
+    """
+    return _update_storage(
+        current_name=current_name,
+        name=name,
+        root=None,
+        path=path,
+    )
+
+
+def repoint_storage(
+    *,
+    name: str,
+    root: Path,
+    path: Path,
+) -> StorageRegistry:
+    """Change a registry root without moving filesystem data.
+
+    :param name: Registered selector to update.
+    :param root: New root, resolved relative to ``apprc.toml``.
+    :param path: AppRC TOML path.
+    :return: Updated registry.
+    """
+    return _update_storage(
+        current_name=name,
+        name=name,
+        root=root,
+        path=path,
+    )
+
+
+def select_storage(*, name: str, path: Path) -> StorageRegistry:
+    """Persist the selected storage name.
+
+    :param name: Registered storage to use when no runtime override exists.
+    :param path: AppRC TOML path.
+    :return: Updated registry.
+    """
+    validate_storage_name(name)
+    current = load_storage_registry_or_empty(path)
+    current.selected(name)
+    if current.selected_storage == name:
+        return current
+    updated = replace(current, selected_storage=name)
     write_storage_registry(updated)
     return updated
 
@@ -158,27 +235,27 @@ def _rollback_created_storage_artifacts(
     *,
     root: Path,
     root_existed: bool,
-    storage_env: Path,
-    storage_env_existed: bool,
+    storage_dotenv: Path,
+    storage_dotenv_existed: bool,
     original_error: Exception,
 ) -> None:
     """Best-effort removal of empty artifacts from a failed registration.
 
     :param root: Storage root that may have been created by registration.
     :param root_existed: Whether the root existed before registration.
-    :param storage_env: Storage dotenv path that may have been created.
-    :param storage_env_existed: Whether the dotenv file existed beforehand.
+    :param storage_dotenv: Storage dotenv path that may have been created.
+    :param storage_dotenv_existed: Whether the dotenv file existed beforehand.
     :param original_error: Registration error that receives cleanup notes.
     """
-    if not storage_env_existed:
+    if not storage_dotenv_existed:
         try:
-            if storage_env.is_file() and storage_env.stat().st_size == 0:
-                storage_env.unlink()
+            if storage_dotenv.is_file() and storage_dotenv.stat().st_size == 0:
+                storage_dotenv.unlink()
         except OSError as exc:
             _record_rollback_cleanup_failure(
                 original_error=original_error,
                 action="remove empty storage env file",
-                path=storage_env,
+                path=storage_dotenv,
                 cleanup_error=exc,
             )
     if root_existed:
@@ -237,6 +314,11 @@ def unregister_storage(
     updated = replace(
         current,
         storages=storages,
+        selected_storage=(
+            None
+            if current.selected_storage == name
+            else current.selected_storage
+        ),
     )
     write_storage_registry(updated)
     return updated

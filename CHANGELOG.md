@@ -32,22 +32,23 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.19.9 - 2026-09-02](#0199---2026-09-02)
-4. [0.19.8 - 2026-09-01](#0198---2026-09-01)
-5. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-6. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-7. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-8. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-9. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-10. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-11. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-12. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-13. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-14. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-15. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-16. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-17. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-18. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.20.0 - 2026-09-04](#0200---2026-09-04)
+4. [0.19.9 - 2026-09-02](#0199---2026-09-02)
+5. [0.19.8 - 2026-09-01](#0198---2026-09-01)
+6. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+7. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+8. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+9. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+10. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+11. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+12. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+13. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+14. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+15. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+16. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+17. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+18. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+19. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -63,117 +64,17 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
-  - Breaking: `AppRC(...)` now declares an application directly and accepts
-    optional `storage=rc.Storage(...)` instead of a `mode` argument.
-    Affected: Users that instantiate `AppRC` directly or depend on the four
-    capability levels as the primary public model.
-    Migration: Remove `mode`, instantiate `rc.AppRC(...)` directly, and add
-    `storage=rc.Storage(...)` only when the application owns persistent data.
-    The `env_only`, `storage_only`, `app_wide_config`, and `app_wide_storage`
-    class methods remain as deprecated 0.20 compatibility shims.
-
-  - Breaking: Current declarations use `apprc.defaults.env`, `apprc.app.env`,
-    `apprc.storage.env`, and `apprc.toml` as managed filenames.
-    Affected: App authors shipping `.env.shared`, users with AppRC-managed
-    dotenv files or `<app>.apprc.toml`, and integrations that assume the old
-    default paths.
-    Migration: Rename packaged `.env.shared` to `apprc.defaults.env`, then run
-    `<app> config migrate` to move user-managed files. AppRC 0.20 continues to
-    use an old file when the new file is absent; when both exist, the new file
-    wins and AppRC reports the conflict instead of merging them.
-
-  - Breaking: Machine-readable config output now uses the direct vocabulary,
-    including `storage_enabled`, `app_config_enabled`, `app_env`,
-    `storage_selector_env_key`, and `apprc_toml`; provenance uses
-    `shell_dotenv_defaults` and `shell_dotenv_app`.
-    Affected: Scripts that parse `config paths --json`, `config doctor --json`,
-    `config storage list --json`, or serialized provenance values.
-    Migration: Replace the former `capabilities`, `app_wide_*`, `storage_env_key`,
-    and `index_*` keys and the `shell_dotenv_shared` and
-    `shell_dotenv_app_wide` origin values with their direct-name equivalents.
-
-  - Breaking: `apprc scaffold config` now selects only whether storage is
-    present; `--mode` and `--storage-env-key` were removed.
-    Affected: Scripts and documentation that invoke the config scaffold.
-    Migration: Use `--storage` when persistent data is needed and
-    `--storage-selector-env-key NAME` only to override the derived selector.
-
-  - Breaking: `rc.field(..., required=True)` and internal
-    `env_field(..., required=True)` now reject a Python `default` or
-    `default_factory`.
-    Affected: Config declarations that mark a field as required while also
-    giving every instance a Python fallback.
-    Migration: Remove `required=True` when the fallback is intentional, remove
-    the fallback when the value must be supplied, or ship the value in
-    `apprc.defaults.env` and describe it with `packaged_default` when bootstrap
-    should load it.
-
 <br>
 
 ### ➕ Added
-
-  - Added `rc.Storage(...)` for declaring storage selection, its managed
-    dotenv filename, named-storage support, and first-run prompting without
-    introducing another AppRC constructor.
-
-  - Added `config migrate` with dry-run planning, whole-operation conflict
-    preflight, no-replace execution checks, and migration of the app dotenv,
-    AppRC TOML, active storage, and registered storage dotenv files. Blocking
-    path types and destinations created after planning stop without data loss.
-
-  - Added a first-run terminal prompt for storage-backed applications. It can
-    create the platform-aware suggested data directory or decline without
-    changing files. Custom paths remain available through the shell-completed
-    `config setup --storage-root PATH` option. Failed setup removes only the
-    artifacts created by that attempt and preserves pre-existing storage data.
-
-  - Added storage creation, rename, location change, and directory move
-    controls to the config editor for every storage-backed declaration. The
-    existing `Setup` action remains visible for an explicit recovery path.
-
-  - Added parameterless `AppRC.ensure_bootstrapped()` for high-level
-    convenience boundaries that use the default bootstrap policy, plus
-    `AppRC.bootstrap_result` for inspecting the latest successful bootstrap.
 
 <br>
 
 ### 💔 Changed
 
-  - Changed user-facing status, diagnostics, editor labels, examples, and
-    documentation to explain the two independent facts directly: whether the
-    app uses storage and whether a named storage is selected.
-
-  - Changed the suggested storage root to the operating system's user data
-    directory while keeping the proposed path visible and editable during
-    first-run setup.
-
-  - Changed the internal compatibility boundary so current declarations stay
-    statically typed, legacy filename aliases retain basename validation, and
-    deprecated capability vocabulary is isolated to compatibility code.
-
-  - Changed explicit repeated `AppRC.bootstrap(...)` calls to warn, reload the
-    process environment, and retain the newest successful result. A failed
-    reload preserves the preceding successful result, and config registration
-    after bootstrap remains allowed with an incomplete-provenance warning.
-
-  - Changed runtime documentation to distinguish config construction,
-    entrypoint-owned bootstrap, caller-provided config, and explicit
-    bootstrap-on-demand without introducing application/library modes or a
-    config resolver. Consolidated the dev examples into `config_only`,
-    `config_with_storage`, `explicit_env_precedence`, and `cli_runtime`.
-
 <br>
 
 ### ⚠️ Deprecated
-
-  - Deprecated `AppRC.env_only(...)`, `AppRC.storage_only(...)`,
-    `AppRC.app_wide_config(...)`, and `AppRC.app_wide_storage(...)`. They keep
-    their 0.19 file and setup behavior in 0.20 and are scheduled for removal in
-    0.21.
-
-  - Deprecated Python read aliases that use `shared`, `app_wide`, `index`, or
-    `storage_env_key` terminology. Use `defaults`, `app`, `apprc_toml`, and
-    `storage_selector_env_key` names instead.
 
 <br>
 
@@ -186,6 +87,126 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.20.0 - 2026-09-04
+
+<br>
+
+### 💥 Breaking changes
+
+  - Breaking: `AppRC(...)` now requires `app_id` and declares storage only
+    through optional `storage=rc.Storage(...)`; the 0.19 capability
+    constructors and `mode` model were removed.
+    Affected: Applications using `env_only`, `storage_only`,
+    `app_wide_config`, `app_wide_storage`, `app_name`, or `mode`.
+    Migration: Construct `rc.AppRC(app_id=..., config_package=...)` directly
+    and add `rc.Storage(selector_env_key=...)` only for persistent user data.
+
+  - Breaking: New installations use the fixed
+    `~/.local/share/<app-id>/` AppRC directory on every operating system, with
+    `apprc.user.env`, `apprc.toml`, and an initial `storage/` root; managed
+    filenames and platformdirs path selection were removed.
+    Affected: Applications and users relying on platform config/data paths,
+    filename overrides, `.env.apprc-app`, `.env.apprc-storage`, or
+    `<app>.apprc.toml`.
+    Migration: Rename packaged `.env.shared` to `apprc.defaults.env`, declare
+    stable `app_id` and optional `legacy_app_ids`, then run
+    `<app> config migrate --dry-run` and `<app> config migrate --yes`.
+
+  - Breaking: Runtime storage selectors now accept registered names only;
+    `selected_storage` in `apprc.toml` replaces path selectors persisted in a
+    user dotenv.
+    Affected: Users passing a path through `--storage`, `<APP>_STORAGE`, or an
+    explicit dotenv, and applications shipping a selector default.
+    Migration: Register the path with `config storage add NAME ROOT`, select
+    the name, and pass only `NAME`; `config migrate` converts a released 0.19
+    path selector into the named `default` storage.
+
+  - Breaking: User dotenv operations use `user` instead of `app`, and
+    storage-free declarations no longer expose `--storage`, `config storage`,
+    or `--scope storage` even when an old TOML file exists.
+    Affected: CLI scripts using `--scope app`, `config app init`, or storage
+    controls for an app that does not declare `Storage`.
+    Migration: Run `config setup` to create the always-present user dotenv and
+    use `--scope user`; add `storage=rc.Storage()` in Python only when the app
+    actually supports persistent storage.
+
+  - Breaking: Machine-readable paths, doctor statuses, and provenance now use
+    file-specific `apprc_dir`, `user_dotenv`, `storage_dotenv`,
+    `user_dotenv_not_ready`, `storage_registry_not_ready`, and
+    `shell_dotenv_user` names.
+    Affected: Code parsing config JSON or provenance origin literals.
+    Migration: Replace 0.19 config-home, app-config, named-storage, and
+    `shell_dotenv_app` keys with the corresponding file-specific names.
+
+  - Breaking: `rc.field(..., required=True)` and internal
+    `env_field(..., required=True)` now reject a Python `default` or
+    `default_factory`.
+    Affected: Config declarations that mark a field required while providing
+    every instance with a Python fallback.
+    Migration: Remove `required=True` when the fallback is intentional, or
+    remove the fallback and provide the value through the environment,
+    constructor, or `apprc.defaults.env`.
+
+<br>
+
+### ➕ Added
+
+  - Added a single named-storage registry model with explicit `add`, `select`,
+    `rename`, `repoint`, `move`, and `remove` operations shared by the CLI and
+    Textual editor. The first entry becomes selected, later additions preserve
+    selection, rename follows selection, and removing the selected entry
+    clears it with a warning.
+
+  - Added `config migrate` for released 0.19 platform directories, custom
+    `<APP>_APPRC_TOML` locations, legacy dotenv filenames, legacy app IDs, and
+    path-valued storage selectors. It preflights conflicts and never replaces
+    an existing destination.
+
+  - Added `config purge` with dry-run output, malformed-registry preflight,
+    symlink barriers, exact fixed-file removal, recursive deletion limited to
+    registered roots inside the AppRC directory, and preservation of external
+    storage data.
+
+  - Added parameterless `AppRC.ensure_bootstrapped()` and
+    `AppRC.bootstrap_result` for high-level convenience boundaries that use
+    default bootstrap policy.
+
+<br>
+
+### 💔 Changed
+
+  - Changed the default initial storage root to
+    `~/.local/share/<app-id>/storage/` without a redundant `default/`
+    component. Relative registry roots now resolve against `apprc.toml`.
+
+  - Changed setup to create an empty `apprc.user.env` for every app and to
+    register storage under the name `default` without writing structural
+    selectors into a managed dotenv.
+
+  - Changed selector precedence to preserve
+    `--env-file-overrides-os-environ`: `--storage` wins, process and explicit
+    dotenv selectors follow that option, and TOML selection is the fallback.
+
+  - Changed repeated explicit bootstrap calls to reload the process
+    environment while retaining the latest successful result; failed reloads
+    keep the preceding successful result.
+
+<br>
+
+### 🗑️ Removed
+
+  - Removed the runtime `platformdirs` dependency and all current-layout
+    path abstraction. A small internal locator remains only to find released
+    0.19 files during explicit migration.
 
 <br>
 

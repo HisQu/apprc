@@ -34,32 +34,33 @@ def print_config_doctor(
     console.print("")
     for label, value in (
         ("storage_enabled", _bool_text(payload.storage_enabled)),
-        ("app_config_enabled", _bool_text(payload.app_config_enabled)),
-        ("named_storage_enabled", _bool_text(payload.named_storage_enabled)),
         ("writes", "none"),
     ):
         rendered = value if isinstance(value, Text) else Text(value)
         console.print(label_value_text(label, rendered))
     console.print("")
     for label, value in (
-        ("config_home", path_text(payload.config_home)),
-        ("config_home_exists", _bool_text(payload.config_home_exists)),
-        ("app_env", path_text(payload.app_env)),
-        ("app_env_exists", _bool_text(payload.app_env_exists)),
-        ("app_config_active", _bool_text(payload.app_config_active)),
+        ("apprc_dir", path_text(payload.apprc_dir)),
+        ("apprc_dir_exists", _bool_text(payload.apprc_dir_exists)),
+        ("user_dotenv", path_text(payload.user_dotenv)),
+        ("user_dotenv_exists", _bool_text(payload.user_dotenv_exists)),
         (
             "storage_selector_env_key",
             _env_key_or_none_text(payload.storage_selector_env_key),
         ),
-        ("apprc_toml_env_key", env_key_text(payload.apprc_toml_env_key)),
+        ("apprc_dir_env_key", env_key_text(payload.apprc_dir_env_key)),
         (
-            "apprc_toml_env_value",
-            _path_or_none_text(payload.apprc_toml_env_value),
+            "apprc_dir_env_value",
+            _path_or_none_text(payload.apprc_dir_env_value),
         ),
         ("apprc_toml", _path_or_none_text(payload.apprc_toml)),
         ("apprc_toml_exists", _bool_text(payload.apprc_toml_exists)),
         ("apprc_toml_parse_ok", _bool_text(payload.apprc_toml_parse_ok)),
         ("storage_count", Text(str(payload.storage_count))),
+        (
+            "configured_selected_storage",
+            _optional_text(payload.configured_selected_storage),
+        ),
         ("selected_storage", _optional_text(payload.selected_storage)),
         (
             "selected_storage_source",
@@ -78,12 +79,12 @@ def print_config_doctor(
             _bool_or_none_text(payload.selected_storage_root_exists),
         ),
         (
-            "selected_storage_env",
-            _path_or_none_text(payload.selected_storage_env),
+            "selected_storage_dotenv",
+            _path_or_none_text(payload.selected_storage_dotenv),
         ),
         (
-            "selected_storage_env_exists",
-            _bool_or_none_text(payload.selected_storage_env_exists),
+            "selected_storage_dotenv_exists",
+            _bool_or_none_text(payload.selected_storage_dotenv_exists),
         ),
     ):
         console.print(label_value_text(label, value))
@@ -127,32 +128,33 @@ def print_config_paths(
     console.print("")
     for label, value in (
         ("storage_enabled", _bool_text(payload.storage_enabled)),
-        ("app_config_enabled", _bool_text(payload.app_config_enabled)),
-        ("named_storage_enabled", _bool_text(payload.named_storage_enabled)),
         ("writes", payload.writes),
     ):
         rendered = value if isinstance(value, Text) else Text(value)
         console.print(label_value_text(label, rendered))
     console.print("")
     for label, value in (
-        ("config_home", path_text(payload.config_home)),
-        ("config_home_exists", _bool_text(payload.config_home_exists)),
-        ("app_env", path_text(payload.app_env)),
-        ("app_env_exists", _bool_text(payload.app_env_exists)),
-        ("app_config_active", _bool_text(payload.app_config_active)),
+        ("apprc_dir", path_text(payload.apprc_dir)),
+        ("apprc_dir_exists", _bool_text(payload.apprc_dir_exists)),
+        ("user_dotenv", path_text(payload.user_dotenv)),
+        ("user_dotenv_exists", _bool_text(payload.user_dotenv_exists)),
         (
             "storage_selector_env_key",
             _env_key_or_none_text(payload.storage_selector_env_key),
         ),
-        ("apprc_toml_env_key", env_key_text(payload.apprc_toml_env_key)),
+        ("apprc_dir_env_key", env_key_text(payload.apprc_dir_env_key)),
         (
-            "apprc_toml_env_value",
-            _path_or_none_text(payload.apprc_toml_env_value),
+            "apprc_dir_env_value",
+            _path_or_none_text(payload.apprc_dir_env_value),
         ),
         ("apprc_toml", _path_or_none_text(payload.apprc_toml)),
         ("apprc_toml_exists", _bool_text(payload.apprc_toml_exists)),
         ("apprc_toml_parse_ok", _bool_text(payload.apprc_toml_parse_ok)),
         ("storage_count", Text(str(payload.storage_count))),
+        (
+            "configured_selected_storage",
+            _optional_text(payload.configured_selected_storage),
+        ),
         (
             "selected_storage_source",
             _optional_text(payload.selected_storage_source),
@@ -170,12 +172,12 @@ def print_config_paths(
             _bool_or_none_text(payload.selected_storage_root_exists),
         ),
         (
-            "selected_storage_env",
-            _path_or_none_text(payload.selected_storage_env),
+            "selected_storage_dotenv",
+            _path_or_none_text(payload.selected_storage_dotenv),
         ),
         (
-            "selected_storage_env_exists",
-            _bool_or_none_text(payload.selected_storage_env_exists),
+            "selected_storage_dotenv_exists",
+            _bool_or_none_text(payload.selected_storage_dotenv_exists),
         ),
     ):
         console.print(label_value_text(label, value))
@@ -197,12 +199,12 @@ def _doctor_status_text(
             "storage not ready",
             ERROR_STYLE,
         ),
-        ConfigDoctorStatus.APP_CONFIG_NOT_READY.value: (
-            "app config not ready",
+        ConfigDoctorStatus.USER_DOTENV_NOT_READY.value: (
+            "user dotenv not ready",
             ERROR_STYLE,
         ),
-        ConfigDoctorStatus.NAMED_STORAGE_NOT_READY.value: (
-            "named storage not ready",
+        ConfigDoctorStatus.STORAGE_REGISTRY_NOT_READY.value: (
+            "storage registry not ready",
             MISSING_STYLE,
         ),
         ConfigDoctorStatus.RUNNABLE.value: (
@@ -283,10 +285,10 @@ def _styled_issue_text(
     :return: Rich issue text.
     """
     styles = {
-        kit.spec.apprc_toml_env_key: ENV_KEY_STYLE,
+        kit.spec.apprc_dir_env_key: ENV_KEY_STYLE,
         "env_not_set": MISSING_STYLE,
-        "app_config_not_ready": ERROR_STYLE,
-        "named_storage_not_ready": MISSING_STYLE,
+        "user_dotenv_not_ready": ERROR_STYLE,
+        "storage_registry_not_ready": MISSING_STYLE,
     }
     if kit.spec.storage_selector_env_key is not None:
         styles[kit.spec.storage_selector_env_key] = ENV_KEY_STYLE
@@ -294,12 +296,12 @@ def _styled_issue_text(
         {
             str(value): PATH_STYLE
             for value in (
-                payload.config_home,
-                payload.app_env,
-                payload.apprc_toml_env_value,
+                payload.apprc_dir,
+                payload.user_dotenv,
+                payload.apprc_dir_env_value,
                 payload.apprc_toml,
                 payload.selected_storage_root,
-                payload.selected_storage_env,
+                payload.selected_storage_dotenv,
             )
             if value
         }

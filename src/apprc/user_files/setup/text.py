@@ -17,44 +17,37 @@ def setup_overview_text(kit: AppConfigKit) -> str:
     """
     if kit.spec.uses_storage():
         return (
-            f"{kit.spec.display_name} setup initializes one storage directory "
-            "and saves it in per-user app config."
+            f"{kit.spec.display_name} setup creates apprc.user.env and "
+            "registers a storage named default in apprc.toml."
         )
-    return (
-        f"{kit.spec.display_name} needs no setup. Per-user app config is "
-        "created when a value is first saved. writes: none"
-    )
+    return f"{kit.spec.display_name} setup creates an empty apprc.user.env."
 
 
 def setup_finish_text(
     kit: AppConfigKit,
     *,
     storage_root: Path | None = None,
-    storage_env: Path | None = None,
-    app_env: Path | None = None,
+    storage_dotenv: Path | None = None,
+    user_dotenv: Path | None = None,
     config_group_name: str = "config",
 ) -> str:
     """Return setup completion copy for initialized managed files.
 
     :param kit: Application config facade.
     :param storage_root: Storage root selected by setup, if any.
-    :param storage_env: Storage dotenv file initialized by setup, if any.
-    :param app_env: Per-user app dotenv file initialized by setup, if any.
+    :param storage_dotenv: Storage dotenv file initialized by setup, if any.
+    :param user_dotenv: Per-user dotenv file initialized by setup, if any.
     :param config_group_name: Config command group name used in generated
         guidance.
     :return: Human-facing setup completion text.
     """
     lines = [f"{kit.spec.display_name} AppRC setup complete.", ""]
-    if app_env is not None:
-        lines.append(f"app_env: {app_env}")
+    if user_dotenv is not None:
+        lines.append(f"user_dotenv: {user_dotenv}")
     if storage_root is not None:
         lines.append(f"storage_root: {storage_root}")
-    if storage_env is not None:
-        lines.append(f"storage_env: {storage_env}")
-    export_commands = shell_export_commands(kit, storage_root)
-    if export_commands:
-        lines.extend(("", "Add this to your shell or dotenv file:"))
-        lines.extend(f"  {command}" for command in export_commands)
+    if storage_dotenv is not None:
+        lines.append(f"storage_dotenv: {storage_dotenv}")
     lines.extend(
         (
             "",
@@ -78,13 +71,8 @@ def shell_export_commands(
     :param storage_root: Storage root selected by setup, if any.
     :return: Shell command lines.
     """
-    if (
-        storage_root is None
-        or kit.spec.storage_selector_env_key is None
-        or not kit.spec.uses_legacy_constructor()
-    ):
-        return []
-    return [f'export {kit.spec.storage_selector_env_key}="{storage_root}"']
+    del kit, storage_root
+    return []
 
 
 def dotenv_assignment_commands(
@@ -97,9 +85,8 @@ def dotenv_assignment_commands(
     :param storage_root: Storage root selected by setup, if any.
     :return: Dotenv assignment lines.
     """
-    if storage_root is None or kit.spec.storage_selector_env_key is None:
-        return []
-    return [f'{kit.spec.storage_selector_env_key}="{storage_root}"']
+    del kit, storage_root
+    return []
 
 
 def verification_commands(

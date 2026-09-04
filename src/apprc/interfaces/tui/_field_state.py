@@ -23,10 +23,10 @@ class SelectedField:
 
 
 type EditableConfigValueSourceKey = Literal[
-    "effective", "shell", "app", "storage", "defaults"
+    "effective", "shell", "user", "storage", "defaults"
 ]
-type ConfigResolvedSourceKey = Literal["shell", "app", "storage", "defaults"]
-type ConfigWriteScope = Literal["app", "storage"]
+type ConfigResolvedSourceKey = Literal["shell", "user", "storage", "defaults"]
+type ConfigWriteScope = Literal["user", "storage"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,31 +82,33 @@ def config_value_sources(
     *,
     spec: ConfigField,
     env_key: str,
-    app_values: Mapping[str, str],
+    user_dotenv_values: Mapping[str, str],
     storage_values: Mapping[str, str],
     shell_env: Mapping[str, str],
     defaults_values: Mapping[str, str] | None,
-    include_app: bool,
+    include_user_dotenv: bool,
     include_storage: bool,
 ) -> tuple[EditableConfigValueSource, ...]:
     """Return copyable values for one config field in precedence order.
 
     The effective source mirrors AppRC runtime precedence for layers the
     editor can inspect without running full CLI bootstrap: shell, storage,
-    app config, then packaged or declared defaults.
+    user dotenv, then packaged or declared defaults.
 
     :param spec: Field declaration that owns defaults and type metadata.
     :param env_key: Full env key for the selected row.
-    :param app_values: Parsed per-user app dotenv values.
+    :param user_dotenv_values: Parsed per-user dotenv values.
     :param storage_values: Parsed storage dotenv values.
     :param shell_env: Current process environment.
     :param defaults_values: Parsed packaged defaults, when known.
-    :param include_app: Whether app config is active in the editor.
+    :param include_user_dotenv: Whether the user dotenv is active.
     :param include_storage: Whether a storage layer is selected in the editor.
     :return: Effective, shell, persistence layers, and defaults source rows.
     """
     shell_value = shell_env[env_key] if env_key in shell_env else None
-    app_value = app_values[env_key] if env_key in app_values else None
+    user_dotenv_value = (
+        user_dotenv_values[env_key] if env_key in user_dotenv_values else None
+    )
     storage_value = (
         storage_values[env_key] if env_key in storage_values else None
     )
@@ -118,7 +120,7 @@ def config_value_sources(
     effective_value, origin_key = _first_available_source(
         ("shell", shell_value),
         ("storage", storage_value if include_storage else None),
-        ("app", app_value if include_app else None),
+        ("user", user_dotenv_value if include_user_dotenv else None),
         ("defaults", default_value),
     )
     sources: list[EditableConfigValueSource] = [
@@ -129,9 +131,9 @@ def config_value_sources(
         ),
         EditableConfigValueSource(key="shell", raw_value=shell_value),
     ]
-    if include_app:
+    if include_user_dotenv:
         sources.append(
-            EditableConfigValueSource(key="app", raw_value=app_value)
+            EditableConfigValueSource(key="user", raw_value=user_dotenv_value)
         )
     if include_storage:
         sources.append(

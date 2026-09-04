@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import os
 from pathlib import Path
 
 # == 3rd Party ===============================
@@ -54,26 +55,32 @@ def run_demo(root: Path) -> dict[str, object]:
     """
 
     def scenario() -> dict[str, object]:
+        os.environ[KIT.spec.apprc_dir_env_key] = str(root / "apprc")
         storage_root = root / "storage"
         storage_root.mkdir(parents=True)
-        rc.files.ensure_storage_env_file(storage_root)
-        rc.files.set_storage_env_value(
+        rc.files.ensure_storage_dotenv_file(storage_root)
+        rc.files.set_storage_dotenv_value(
             storage_root=storage_root,
             reference="api_token",
             raw_value="storage-secret",
             owners=CONFIG_SECTIONS,
         )
+        rc.storage.register_storage(
+            name="default",
+            root=storage_root,
+            path=KIT.spec.preferred_apprc_toml_path(),
+        )
         bootstrap = KIT.bootstrap(
             env_files=(),
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
-            storage=str(storage_root),
+            storage="default",
         )
         config = ConfigWithStorageExampleConfig()
         return {
             "scenario": "config_with_storage",
             "selected_storage_root": str(bootstrap.storage_root),
-            "storage_env": str(bootstrap.storage_env),
+            "storage_dotenv": str(bootstrap.storage_dotenv),
             "config": config_values(config.app),
         }
 

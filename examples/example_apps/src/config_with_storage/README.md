@@ -1,14 +1,14 @@
 # Config With Storage Example
 
 `config_with_storage` demonstrates `rc.AppRC(..., storage=rc.Storage(...))`
-with one active storage root, storage-local values, and optional storage names.
+with one active registered storage and storage-local values.
 
 ## Requirements
 
 - Install the example package from the repository checkout.
 - Source `.env.example_apps` or use direnv.
-- `APPRC_EXAMPLE_STORAGE_ROOT` must point at a storage root. The root env file
-  sets it to the generated `alpha` storage.
+- `APPRC_EXAMPLE_STORAGE_ROOT` must contain a registered name. The root env
+  file selects the generated `alpha` storage.
 
 ## Setup
 
@@ -35,4 +35,4 @@ Use `cli_runtime` when a custom callback must prepare additional runtime state.
 
 - [Example app overview](../../README.md)
 - [Development guide](../../../../docs/Development.md#example-apps)
-- [Storage commands reference](../../../../docs/References.md#public-interfaces)
+- [Storage commands reference](../../../../docs/References.md#generated-cli-commands)

@@ -6,11 +6,11 @@ import pytest
 
 from apprc.user_files.env_files import (
     clear_env_file_value,
-    clear_storage_env_value,
-    ensure_storage_env_file,
+    clear_storage_dotenv_value,
+    ensure_storage_dotenv_file,
     normalize_env_value,
     read_env_file,
-    set_storage_env_value,
+    set_storage_dotenv_value,
     write_env_file,
 )
 from apprc.user_files.storage_roots.paths import StorageRootPathError
@@ -45,13 +45,13 @@ def test_write_env_file_orders_known_keys_before_unknown_keys(
     )
 
 
-def test_ensure_storage_env_file_creates_file_in_existing_root(
+def test_ensure_storage_dotenv_file_creates_file_in_existing_root(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
 
-    path = ensure_storage_env_file(
+    path = ensure_storage_dotenv_file(
         storage_root, filename=".env.apprc_example_app"
     )
 
@@ -59,42 +59,44 @@ def test_ensure_storage_env_file_creates_file_in_existing_root(
     assert path.is_file()
 
 
-def test_ensure_storage_env_file_rejects_missing_root(tmp_path: Path) -> None:
+def test_ensure_storage_dotenv_file_rejects_missing_root(
+    tmp_path: Path,
+) -> None:
     storage_root = tmp_path / "storage"
 
     with pytest.raises(StorageRootPathError, match="does not exist"):
-        ensure_storage_env_file(
+        ensure_storage_dotenv_file(
             storage_root,
             filename=".env.apprc_example_app",
         )
 
 
-def test_set_storage_env_value_accepts_env_key_config_path_or_unique_name(
+def test_set_storage_dotenv_value_accepts_env_key_config_path_or_unique_name(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
 
-    update_by_env = set_storage_env_value(
+    update_by_env = set_storage_dotenv_value(
         storage_root=storage_root,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         raw_value="local-profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_env_filename=".env.apprc_example_app",
+        storage_dotenv_filename=".env.apprc_example_app",
     )
-    update_by_path = set_storage_env_value(
+    update_by_path = set_storage_dotenv_value(
         storage_root=storage_root,
         reference="app.retry_count",
         raw_value="5",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_env_filename=".env.apprc_example_app",
+        storage_dotenv_filename=".env.apprc_example_app",
     )
-    update_by_name = set_storage_env_value(
+    update_by_name = set_storage_dotenv_value(
         storage_root=storage_root,
         reference="enabled",
         raw_value="yes",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_env_filename=".env.apprc_example_app",
+        storage_dotenv_filename=".env.apprc_example_app",
     )
 
     assert update_by_env.env_key == "APPRC_EXAMPLE_APP_PROFILE"
@@ -107,7 +109,7 @@ def test_set_storage_env_value_accepts_env_key_config_path_or_unique_name(
     }
 
 
-def test_set_storage_env_value_rejects_registry_owned_storage_root(
+def test_set_storage_dotenv_value_rejects_registry_owned_storage_root(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
@@ -117,50 +119,50 @@ def test_set_storage_env_value_rejects_registry_owned_storage_root(
         ValueError,
         match=r"managed outside \.env\.apprc_example_app",
     ):
-        set_storage_env_value(
+        set_storage_dotenv_value(
             storage_root=storage_root,
             reference="APPRC_EXAMPLE_APP_STORAGE",
             raw_value="/tmp/storage",
             owners=APPRC_EXAMPLE_APP_OWNERS,
-            storage_env_filename=".env.apprc_example_app",
+            storage_dotenv_filename=".env.apprc_example_app",
         )
 
 
-def test_set_storage_env_value_rejects_missing_storage_root(
+def test_set_storage_dotenv_value_rejects_missing_storage_root(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
 
     with pytest.raises(StorageRootPathError, match="does not exist"):
-        set_storage_env_value(
+        set_storage_dotenv_value(
             storage_root=storage_root,
             reference="APPRC_EXAMPLE_APP_PROFILE",
             raw_value="local-profile",
             owners=APPRC_EXAMPLE_APP_OWNERS,
-            storage_env_filename=".env.apprc_example_app",
+            storage_dotenv_filename=".env.apprc_example_app",
         )
 
     assert not storage_root.exists()
 
 
-def test_clear_storage_env_value_removes_existing_override(
+def test_clear_storage_dotenv_value_removes_existing_override(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
-    set_storage_env_value(
+    set_storage_dotenv_value(
         storage_root=storage_root,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         raw_value="local-profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_env_filename=".env.apprc_example_app",
+        storage_dotenv_filename=".env.apprc_example_app",
     )
 
-    update = clear_storage_env_value(
+    update = clear_storage_dotenv_value(
         storage_root=storage_root,
         reference="app.profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_env_filename=".env.apprc_example_app",
+        storage_dotenv_filename=".env.apprc_example_app",
     )
 
     assert update is not None
@@ -169,7 +171,7 @@ def test_clear_storage_env_value_removes_existing_override(
     assert read_env_file(storage_root / ".env.apprc_example_app") == {}
 
 
-def test_clear_storage_env_value_rejects_registry_owned_storage_root(
+def test_clear_storage_dotenv_value_rejects_registry_owned_storage_root(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
@@ -179,25 +181,25 @@ def test_clear_storage_env_value_rejects_registry_owned_storage_root(
         ValueError,
         match=r"managed outside \.env\.apprc_example_app",
     ):
-        clear_storage_env_value(
+        clear_storage_dotenv_value(
             storage_root=storage_root,
             reference="APPRC_EXAMPLE_APP_STORAGE",
             owners=APPRC_EXAMPLE_APP_OWNERS,
-            storage_env_filename=".env.apprc_example_app",
+            storage_dotenv_filename=".env.apprc_example_app",
         )
 
 
-def test_clear_storage_env_value_rejects_missing_storage_root(
+def test_clear_storage_dotenv_value_rejects_missing_storage_root(
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "storage"
 
     with pytest.raises(StorageRootPathError, match="does not exist"):
-        clear_storage_env_value(
+        clear_storage_dotenv_value(
             storage_root=storage_root,
             reference="APPRC_EXAMPLE_APP_PROFILE",
             owners=APPRC_EXAMPLE_APP_OWNERS,
-            storage_env_filename=".env.apprc_example_app",
+            storage_dotenv_filename=".env.apprc_example_app",
         )
 
     assert not storage_root.exists()

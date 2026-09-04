@@ -1,101 +1,114 @@
-"""Platform-native AppRC config-home path helpers."""
+"""Paths below one application's predictable AppRC directory."""
 
 from __future__ import annotations
 
-# == Standard Library ========================
+# == Standard Library ===========================================
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
-# == 3rd Party ===============================
-from platformdirs import user_config_path
 
-
-class ConfigHomeError(ValueError):
-    """Invalid AppRC-managed config-home path or filename."""
+class AppRCDirectoryError(ValueError):
+    """An AppRC directory or managed file path is invalid."""
 
 
 @dataclass(frozen=True, slots=True)
-class AppConfigHome:
+class AppRCDirectoryPaths:
     """Resolved AppRC-managed paths for one application.
 
-    :param root: Platform-native per-user config directory.
-    :param app_env: Per-user app dotenv override file.
+    :param root: Application-owned AppRC directory.
+    :param user_dotenv: Per-user dotenv override file.
     :param apprc_toml: Storage registry and AppRC metadata file.
     """
 
     root: Path
-    app_env: Path
+    user_dotenv: Path
     apprc_toml: Path
 
-    @property
-    def app_wide_env(self) -> Path:
-        """Return ``app_env`` through the deprecated 0.19 name."""
-        return self.app_env
 
-    @property
-    def index(self) -> Path:
-        """Return ``apprc_toml`` through the deprecated 0.19 name."""
-        return self.apprc_toml
+def default_apprc_dir(app_id: str) -> Path:
+    """Return the same default AppRC directory on every operating system.
 
-
-def app_config_home(app_name: str) -> Path:
-    """Return the platform-native per-user config directory for an app.
-
-    :param app_name: Application name from the AppRC integration spec.
-    :return: User config directory such as ``~/.config/<app>`` on Linux.
+    :param app_id: Stable application identity used as the directory name.
+    :return: ``~/.local/share/<app-id>`` below the current user's home.
     """
-    return user_config_path(
-        appname=app_name,
-        appauthor=False,
-        roaming=True,
-    )
+    return Path.home() / ".local" / "share" / app_id
 
 
-def app_config_file(app_name: str, filename: str) -> Path:
-    """Return an app-owned config file path without creating it.
+def normalize_apprc_dir(path: str | Path) -> Path:
+    """Return an absolute AppRC directory path without creating it.
 
-    :param app_name: Application name from the AppRC integration spec.
-    :param filename: File basename owned by the host application.
-    :return: Path below the platform-native config directory.
+    :param path: Declared or user-provided directory.
+    :return: Absolute, user-expanded path.
     """
-    return app_config_home(app_name) / require_config_filename(
-        filename,
-        field_name="filename",
-    )
+    return Path(path).expanduser().absolute()
 
 
-def resolve_app_config_home(
+def resolve_apprc_dir(
     *,
-    app_name: str,
-    app_env_path: Path,
-    apprc_toml_path: Path,
-) -> AppConfigHome:
-    """Return AppRC-managed config paths without creating files.
+    app_id: str,
+    declared_path: Path | None,
+    env_key: str,
+    proc_env: Mapping[str, str] | None = None,
+) -> Path:
+    """Resolve the environment, declaration, or default AppRC directory.
 
-    :param app_name: Application name from the AppRC integration spec.
-    :param app_env_path: Selected per-user app dotenv path.
-    :param apprc_toml_path: Selected AppRC TOML path.
-    :return: Resolved config-home paths.
+    :param app_id: Stable application identity.
+    :param declared_path: Optional application-declared directory.
+    :param env_key: Environment key that may override the directory.
+    :param proc_env: Environment mapping used instead of ``os.environ``.
+    :return: Absolute AppRC directory path without filesystem writes.
     """
-    root = app_config_home(app_name)
-    return AppConfigHome(
-        root=root,
-        app_env=app_env_path,
+    env = os.environ if proc_env is None else proc_env
+    raw_path = env.get(env_key, "").strip()
+    if raw_path:
+        return normalize_apprc_dir(raw_path)
+    if declared_path is not None:
+        return normalize_apprc_dir(declared_path)
+    return default_apprc_dir(app_id)
+
+
+def apprc_file(apprc_dir: Path, filename: str) -> Path:
+    """Return one fixed file below an AppRC directory.
+
+    :param apprc_dir: Resolved AppRC directory.
+    :param filename: Managed file basename.
+    :return: File path without creating it.
+    """
+    return apprc_dir / require_filename(filename, field_name="filename")
+
+
+def resolve_apprc_directory_paths(
+    *,
+    apprc_dir: Path,
+    user_dotenv_path: Path,
+    apprc_toml_path: Path,
+) -> AppRCDirectoryPaths:
+    """Return AppRC-managed paths without creating files.
+
+    :param apprc_dir: Resolved application directory.
+    :param user_dotenv_path: Per-user dotenv path.
+    :param apprc_toml_path: Storage registry path.
+    :return: Resolved AppRC directory paths.
+    """
+    return AppRCDirectoryPaths(
+        root=apprc_dir,
+        user_dotenv=user_dotenv_path,
         apprc_toml=apprc_toml_path,
     )
 
 
-def require_config_filename(filename: str, *, field_name: str) -> str:
-    """Return a config-home basename or raise for path-like input.
+def require_filename(filename: str, *, field_name: str) -> str:
+    """Return a basename or raise for path-like input.
 
-    :param filename: Candidate file basename from an integration spec.
+    :param filename: Candidate managed-file basename.
     :param field_name: Human-facing attribute name for error messages.
-    :return: The original filename when it is safe to join under config home.
-    :raises ConfigHomeError: If the value is empty or path-like.
+    :return: The original filename when it is safe to join below AppRC.
+    :raises AppRCDirectoryError: If the value is empty or path-like.
     """
     if not filename:
-        raise ConfigHomeError(f"{field_name} must not be empty.")
+        raise AppRCDirectoryError(f"{field_name} must not be empty.")
     if (
         filename in {".", ".."}
         or "/" in filename
@@ -103,7 +116,7 @@ def require_config_filename(filename: str, *, field_name: str) -> str:
         or Path(filename).is_absolute()
         or PureWindowsPath(filename).drive
     ):
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"{field_name} must be a single filename, not a path: {filename!r}"
         )
     return filename
@@ -114,23 +127,23 @@ def ensure_text_file(path: Path) -> Path:
 
     :param path: File path that should exist.
     :return: Resolved file path.
-    :raises ConfigHomeError: If the target or parent is not file-compatible.
+    :raises AppRCDirectoryError: If the target or parent is incompatible.
     """
     resolved = Path(path).expanduser().resolve()
     _ensure_parent_dir(resolved)
     if resolved.exists() and not resolved.is_file():
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"AppRC-managed file path exists but is not a file: {resolved}"
         )
     try:
         resolved.open("x", encoding="utf-8").close()
     except FileExistsError:
         if not resolved.is_file():
-            raise ConfigHomeError(
+            raise AppRCDirectoryError(
                 f"AppRC-managed file path exists but is not a file: {resolved}"
             )
     except OSError as exc:
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"AppRC-managed file could not be created: {resolved}: {exc}"
         ) from exc
     return resolved
@@ -141,17 +154,17 @@ def require_readable_text_file(path: Path) -> Path:
 
     :param path: File path that should be readable by the current process.
     :return: Resolved file path.
-    :raises ConfigHomeError: If the target is not a readable file.
+    :raises AppRCDirectoryError: If the target is not a readable file.
     """
     resolved = Path(path).expanduser().resolve()
     if not resolved.is_file():
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"AppRC-managed file path exists but is not a file: {resolved}"
         )
     try:
         resolved.open("r", encoding="utf-8").close()
     except OSError as exc:
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"AppRC-managed file could not be read: {resolved}: {exc}"
         ) from exc
     return resolved
@@ -163,12 +176,12 @@ def write_text_atomic(path: Path, text: str) -> Path:
     :param path: Destination file path.
     :param text: UTF-8 text to write.
     :return: Resolved destination path.
-    :raises ConfigHomeError: If the target or parent is not file-compatible.
+    :raises AppRCDirectoryError: If the target or parent is incompatible.
     """
     resolved = Path(path).expanduser().resolve()
     _ensure_parent_dir(resolved)
     if resolved.exists() and not resolved.is_file():
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"AppRC-managed file path exists but is not a file: {resolved}"
         )
     temp_path = resolved.with_name(f".{resolved.name}.{os.getpid()}.tmp")
@@ -176,7 +189,7 @@ def write_text_atomic(path: Path, text: str) -> Path:
         temp_path.write_text(text, encoding="utf-8")
         temp_path.replace(resolved)
     except OSError as exc:
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"AppRC-managed file could not be written: {resolved}: {exc}"
         ) from exc
     return resolved
@@ -186,16 +199,16 @@ def _ensure_parent_dir(path: Path) -> None:
     """Create a path parent or raise when a non-directory blocks it.
 
     :param path: File path whose parent should be writable.
-    :raises ConfigHomeError: If an existing parent is not a directory.
+    :raises AppRCDirectoryError: If an existing parent is not a directory.
     """
     parent = path.parent
     if parent.exists() and not parent.is_dir():
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"AppRC-managed file parent exists but is not a directory: {parent}"
         )
     try:
         parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise ConfigHomeError(
+        raise AppRCDirectoryError(
             f"AppRC-managed file parent could not be created: {parent}: {exc}"
         ) from exc

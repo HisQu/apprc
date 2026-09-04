@@ -34,9 +34,9 @@ def scaffold_config_cmd(
             help="Import package that receives config/, for example myapp.",
         ),
     ],
-    app_name: Annotated[
+    app_id: Annotated[
         str,
-        typer.Option("--app-name", help="Stable AppRC application name."),
+        typer.Option("--app-id", help="Stable AppRC application identity."),
     ],
     storage: Annotated[
         bool,
@@ -86,7 +86,7 @@ def scaffold_config_cmd(
         result = scaffold_config_package(
             ConfigScaffoldRequest(
                 package=package,
-                app_name=app_name,
+                app_id=app_id,
                 display_name=display_name,
                 target=target,
                 storage=storage,

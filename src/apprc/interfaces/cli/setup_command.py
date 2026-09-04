@@ -17,8 +17,8 @@ from apprc.user_files.storage_roots.paths import (
     normalize_storage_root_path,
 )
 from apprc.user_files.storage_roots._naming import suggested_storage_root
+from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
 from apprc.interfaces._terminal_styles import (
-    ENV_KEY_STYLE,
     PATH_STYLE,
     style_literals,
 )
@@ -47,21 +47,18 @@ def run_config_setup(
                 f"{kit.spec.display_name} does not use AppRC storage.",
                 param_hint="--storage-root",
             )
-        if kit.spec.setup_creates_app_env():
-            try:
-                result = ConfigSetupFlow(kit).run_app_setup()
-            except ConfigSetupError as exc:
-                raise typer.BadParameter(
-                    str(exc),
-                    param_hint=exc.param_hint,
-                ) from exc
-            _print_app_setup(
-                kit,
-                app_path=result.app_env,
-                config_group_name=config_group_name,
-            )
-            return
-        _print_config_only_setup(kit, config_group_name=config_group_name)
+        try:
+            result = ConfigSetupFlow(kit).run_app_setup()
+        except ConfigSetupError as exc:
+            raise typer.BadParameter(
+                str(exc),
+                param_hint=exc.param_hint,
+            ) from exc
+        _print_app_setup(
+            kit,
+            user_dotenv=result.user_dotenv,
+            config_group_name=config_group_name,
+        )
         return
 
     root = _select_storage_root(
@@ -79,8 +76,8 @@ def run_config_setup(
     _print_storage_setup(
         kit,
         storage_root=result.active_storage_root,
-        storage_env=result.storage_env,
-        app_path=result.app_env,
+        storage_dotenv=result.storage_dotenv,
+        app_path=result.user_dotenv,
         config_group_name=config_group_name,
     )
 
@@ -101,12 +98,14 @@ def _select_storage_root(
     :raises typer.BadParameter: If the path cannot be used as a directory.
     """
     selected = storage_root
-    suggested = (
-        kit.spec.storage.suggested_root
-        if kit.spec.storage is not None
-        and kit.spec.storage.suggested_root is not None
-        else suggested_storage_root(kit.spec.app_name)
-    )
+    suggested = suggested_storage_root(kit.spec.app_id)
+    registry_path = kit.spec.preferred_apprc_toml_path()
+    try:
+        registry = load_storage_registry_or_empty(registry_path)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--apprc-dir") from exc
+    if registry.selected_storage is not None:
+        suggested = registry.selected(registry.selected_storage).root
     if selected is None:
         if assume_yes:
             selected = suggested
@@ -139,47 +138,25 @@ def _select_storage_root(
     return root
 
 
-def _print_config_only_setup(
-    kit: AppConfigKit,
-    *,
-    config_group_name: str,
-) -> None:
-    """Print setup-free guidance for config-only integrations."""
-    text = "\n".join(
-        (
-            f"{kit.spec.display_name} needs no AppRC setup.",
-            "",
-            "writes: none",
-            "",
-            "Per-user app config is created when a value is first saved.",
-            "Inspect the current paths:",
-            f"  {kit.spec.config_command_name()} {config_group_name} paths",
-        )
-    )
-    Console(soft_wrap=True).print(text)
-
-
 def _print_app_setup(
     kit: AppConfigKit,
     *,
-    app_path: Path | None,
+    user_dotenv: Path,
     config_group_name: str,
 ) -> None:
-    """Print setup completion for per-user app config."""
-    if app_path is None:
-        raise typer.BadParameter("App setup did not create a dotenv file.")
+    """Print setup completion for the per-user dotenv file."""
     text = "\n".join(
         (
-            f"{kit.spec.display_name} app config is ready.",
+            f"{kit.spec.display_name} user dotenv is ready.",
             "",
-            f"app_env: {app_path}",
+            f"user_dotenv: {user_dotenv}",
             "",
             "Then verify:",
             f"  {kit.spec.config_command_name()} {config_group_name} doctor",
         )
     )
     Console(soft_wrap=True).print(
-        style_literals(text, {str(app_path): PATH_STYLE})
+        style_literals(text, {str(user_dotenv): PATH_STYLE})
     )
 
 
@@ -187,32 +164,22 @@ def _print_storage_setup(
     kit: AppConfigKit,
     *,
     storage_root: Path | None,
-    storage_env: Path | None,
+    storage_dotenv: Path | None,
     app_path: Path | None,
     config_group_name: str,
 ) -> None:
     """Print setup completion for storage-capable integrations."""
-    if storage_root is None or storage_env is None:
+    if storage_root is None or storage_dotenv is None:
         raise typer.BadParameter("Storage setup did not create a dotenv file.")
-    storage_key = kit.spec.require_storage_selector_env_key()
     lines = [
-        f"{kit.spec.display_name} storage config is ready.",
+        f"{kit.spec.display_name} AppRC files are ready.",
         "",
         f"storage_root: {storage_root}",
-        f"storage_env: {storage_env}",
+        f"storage_dotenv: {storage_dotenv}",
     ]
     if app_path is not None:
-        lines.append(f"app_env: {app_path}")
-    if kit.spec.uses_legacy_constructor():
-        lines.extend(
-            (
-                "",
-                "Add this to your shell or dotenv file:",
-                f'  export {storage_key}="{storage_root}"',
-            )
-        )
-    else:
-        lines.extend(("", f"selector_saved: {storage_key}"))
+        lines.append(f"user_dotenv: {app_path}")
+    lines.extend(("", "selected_storage: default"))
     lines.extend(
         (
             "",
@@ -220,14 +187,13 @@ def _print_storage_setup(
             f"  {kit.spec.config_command_name()} {config_group_name} doctor",
         )
     )
-    paths = {str(storage_root): PATH_STYLE, str(storage_env): PATH_STYLE}
+    paths = {str(storage_root): PATH_STYLE, str(storage_dotenv): PATH_STYLE}
     if app_path is not None:
         paths[str(app_path)] = PATH_STYLE
     Console(soft_wrap=True).print(
         style_literals(
             "\n".join(lines),
             {
-                storage_key: ENV_KEY_STYLE,
                 **paths,
             },
         )

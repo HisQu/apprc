@@ -17,13 +17,13 @@ def test_value_edit_modal_opens_empty_target_for_multiple_scopes() -> None:
         spec=APPRC_EXAMPLE_APP_OWNER.field("profile"),
         env_key="APPRC_EXAMPLE_APP_PROFILE",
         value_sources=(
-            EditableConfigValueSource(key="app", raw_value="app-profile"),
+            EditableConfigValueSource(key="user", raw_value="user-profile"),
             EditableConfigValueSource(
                 key="storage",
                 raw_value="storage-profile",
             ),
         ),
-        writable_scopes=("app", "storage"),
+        writable_scopes=("user", "storage"),
     )
 
     assert screen._target_value() == ""
@@ -34,12 +34,12 @@ def test_value_edit_modal_prefills_only_writable_scope() -> None:
         spec=APPRC_EXAMPLE_APP_OWNER.field("profile"),
         env_key="APPRC_EXAMPLE_APP_PROFILE",
         value_sources=(
-            EditableConfigValueSource(key="app", raw_value="app-profile"),
+            EditableConfigValueSource(key="user", raw_value="user-profile"),
         ),
-        writable_scopes=("app",),
+        writable_scopes=("user",),
     )
 
-    assert screen._target_value() == "app-profile"
+    assert screen._target_value() == "user-profile"
 
 
 def test_value_edit_modal_keyboard_save_requires_unambiguous_scope(
@@ -49,13 +49,13 @@ def test_value_edit_modal_keyboard_save_requires_unambiguous_scope(
         spec=APPRC_EXAMPLE_APP_OWNER.field("profile"),
         env_key="APPRC_EXAMPLE_APP_PROFILE",
         value_sources=(
-            EditableConfigValueSource(key="app", raw_value="app-profile"),
+            EditableConfigValueSource(key="user", raw_value="user-profile"),
             EditableConfigValueSource(
                 key="storage",
                 raw_value="storage-profile",
             ),
         ),
-        writable_scopes=("app", "storage"),
+        writable_scopes=("user", "storage"),
     )
     notifications: list[str] = []
 
@@ -74,7 +74,7 @@ def test_value_edit_modal_keyboard_save_requires_unambiguous_scope(
 
     screen.action_save()
 
-    assert notifications == ["Choose Save App-wide or Save Storage."]
+    assert notifications == ["Choose Save User or Save Storage."]
 
 
 def test_source_copy_availability_uses_actual_source_value() -> None:

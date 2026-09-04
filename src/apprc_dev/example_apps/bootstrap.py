@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE_SRC = ROOT / "examples" / "example_apps" / "src"
 EXAMPLE_APP_DISK_FILES_ROOT = ROOT / "examples" / "example_app_disk_files"
-SHARED_XDG_CONFIG_HOME_NAME = "xdg-config-home"
+SHARED_APPRC_DIRECTORY_NAME = "apprc-directories"
 
 if TYPE_CHECKING:
     from _example_apps_utils import ExampleAppSpec
@@ -40,12 +40,12 @@ def bootstrap_example_apps(
         _remove_generated_files(output_root=output_root, specs=specs)
 
     env_files: list[Path] = []
-    xdg_config_home = output_root / SHARED_XDG_CONFIG_HOME_NAME
+    apprc_directories = output_root / SHARED_APPRC_DIRECTORY_NAME
     for spec in specs:
         env_files.append(
             _bootstrap_one(
                 output_root=output_root,
-                xdg_config_home=xdg_config_home,
+                apprc_directories=apprc_directories,
                 spec=spec,
             )
         )
@@ -58,9 +58,9 @@ def _remove_generated_files(
     specs: tuple[ExampleAppSpec, ...],
 ) -> None:
     """Remove generated children without deleting the output root itself."""
-    xdg_config_home = output_root / SHARED_XDG_CONFIG_HOME_NAME
-    if xdg_config_home.exists():
-        shutil.rmtree(xdg_config_home)
+    apprc_directories = output_root / SHARED_APPRC_DIRECTORY_NAME
+    if apprc_directories.exists():
+        shutil.rmtree(apprc_directories)
     for spec in specs:
         root = output_root / spec.root_name
         if root.exists():
@@ -70,36 +70,36 @@ def _remove_generated_files(
 def _bootstrap_one(
     *,
     output_root: Path,
-    xdg_config_home: Path,
+    apprc_directories: Path,
     spec: ExampleAppSpec,
 ) -> Path:
     """Create one example sandbox and return its sourceable env file."""
     root = output_root / spec.root_name
     root.mkdir(parents=True, exist_ok=True)
-    config_home = xdg_config_home / spec.kit.spec.app_name
-    config_home.mkdir(parents=True, exist_ok=True)
+    apprc_dir = apprc_directories / spec.kit.spec.app_id
+    apprc_dir.mkdir(parents=True, exist_ok=True)
 
-    app_env = config_home / spec.kit.spec.app_env_filename
+    user_dotenv = apprc_dir / spec.kit.spec.user_dotenv_filename
     _write_env_layer(
-        path=app_env,
-        layer="per-user app dotenv overrides",
+        path=user_dotenv,
+        layer="per-user dotenv overrides",
         real_location=(
-            "<platform config home>/"
-            f"{spec.kit.spec.app_name}/{spec.kit.spec.app_env_filename}"
+            "~/.local/share/"
+            f"{spec.kit.spec.app_id}/{spec.kit.spec.user_dotenv_filename}"
         ),
         values=spec.app_values,
     )
 
     storage_root = None
-    apprc_toml = config_home / spec.kit.spec.apprc_toml_filename
+    apprc_toml = apprc_dir / spec.kit.spec.apprc_toml_filename
     if spec.uses_storage:
         storage_root = root / "storages" / spec.storage_name
         storage_root.mkdir(parents=True, exist_ok=True)
         _write_env_layer(
-            path=storage_root / spec.kit.spec.require_storage().env_filename,
+            path=storage_root / spec.kit.spec.storage_dotenv_filename,
             layer="storage-local dotenv overrides",
             real_location=(
-                f"<selected storage root>/{spec.kit.spec.require_storage().env_filename}"
+                f"<selected storage root>/{spec.kit.spec.storage_dotenv_filename}"
             ),
             values=spec.storage_values or {},
         )
@@ -107,7 +107,7 @@ def _bootstrap_one(
             path=apprc_toml,
             storage_name=spec.storage_name,
             storage_root=storage_root,
-            app_name=spec.kit.spec.app_name,
+            app_id=spec.kit.spec.app_id,
             apprc_toml_filename=spec.kit.spec.apprc_toml_filename,
         )
 
@@ -115,8 +115,7 @@ def _bootstrap_one(
     _write_sourceable_env(
         path=env_path,
         spec=spec,
-        xdg_config_home=xdg_config_home,
-        apprc_toml=apprc_toml,
+        apprc_dir=apprc_dir,
         storage_root=storage_root,
     )
     return env_path
@@ -136,21 +135,19 @@ def _write_sourceable_env(
     *,
     path: Path,
     spec: ExampleAppSpec,
-    xdg_config_home: Path,
-    apprc_toml: Path,
+    apprc_dir: Path,
     storage_root: Path | None,
 ) -> None:
     """Write the arbitrary user-owned env file for one example."""
     values = {
-        "XDG_CONFIG_HOME": str(xdg_config_home.resolve()),
+        spec.kit.spec.apprc_dir_env_key: str(apprc_dir.resolve()),
         **dict(spec.explicit_values),
     }
     if spec.uses_storage:
         storage_env_key = spec.kit.spec.require_storage_selector_env_key()
         if storage_root is None:
             raise RuntimeError(f"{spec.name} requires a storage root.")
-        values[storage_env_key] = str(storage_root.resolve())
-        values[spec.kit.spec.apprc_toml_env_key] = str(apprc_toml.resolve())
+        values[storage_env_key] = spec.storage_name
 
     comment = [
         "# Generated by python -m apprc_dev.example_apps.bootstrap.",
@@ -193,7 +190,7 @@ def _write_storage_index(
     path: Path,
     storage_name: str,
     storage_root: Path,
-    app_name: str,
+    app_id: str,
     apprc_toml_filename: str,
 ) -> None:
     """Write named-storage AppRC TOML with explanatory comments."""
@@ -203,7 +200,9 @@ def _write_storage_index(
             "# Generated by python -m apprc_dev.example_apps.bootstrap.",
             "# AppRC layer: named-storage AppRC TOML.",
             f"# Bootstrapped checkout path: {path.resolve()}",
-            f"# Real app location: <platform config home>/{app_name}/{apprc_toml_filename}",
+            f"# Real app location: ~/.local/share/{app_id}/{apprc_toml_filename}",
+            "",
+            f"selected_storage = {json.dumps(storage_name)}",
             "",
             f"[storages.{storage_name}]",
             f"root = {json.dumps(str(storage_root.resolve()))}",

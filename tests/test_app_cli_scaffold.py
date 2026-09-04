@@ -18,7 +18,7 @@ def test_scaffold_config_package_generates_importable_standard_layout(
     result = scaffold_config_package(
         ConfigScaffoldRequest(
             package="demo_app",
-            app_name="demo-app",
+            app_id="demo-app",
             storage=True,
             display_name="Demo App",
             storage_selector_env_key="DEMO_APP_STORAGE",
@@ -61,7 +61,7 @@ def test_scaffold_config_package_keeps_leaf_imports_lightweight(
     scaffold_config_package(
         ConfigScaffoldRequest(
             package="leaf_demo",
-            app_name="leaf-demo",
+            app_id="leaf-demo",
             target=source_root,
         )
     )
@@ -83,7 +83,7 @@ def test_scaffold_config_package_keeps_leaf_imports_lightweight(
     assert "leaf_demo.config.catalog" not in sys.modules
 
     config_pkg = importlib.import_module("leaf_demo.config")
-    assert config_pkg.MyRC.kit.spec.app_name == "leaf-demo"
+    assert config_pkg.MyRC.kit.spec.app_id == "leaf-demo"
     assert "leaf_demo.config.bundle" not in sys.modules
     assert "leaf_demo.config.catalog" not in sys.modules
 
@@ -99,7 +99,7 @@ def test_scaffold_config_package_refuses_unrelated_storage_prefix(
         scaffold_config_package(
             ConfigScaffoldRequest(
                 package="demo_app",
-                app_name="demo-app",
+                app_id="demo-app",
                 storage=True,
                 storage_selector_env_key="OTHER_STORAGE",
                 env_prefix="DEMO_APP_",
@@ -117,7 +117,7 @@ def test_scaffold_config_package_escapes_generated_python_literals(
     scaffold_config_package(
         ConfigScaffoldRequest(
             package="quoted_demo",
-            app_name="quoted-demo",
+            app_id="quoted-demo",
             display_name="Demo's App",
             target=source_root,
         )
@@ -135,7 +135,7 @@ def test_scaffold_config_package_refuses_overwrite_without_force(
     """Scaffold reruns should be explicit about replacing files."""
     request = ConfigScaffoldRequest(
         package="demo_app",
-        app_name="demo-app",
+        app_id="demo-app",
         target=tmp_path / "src",
     )
 
@@ -147,7 +147,7 @@ def test_scaffold_config_package_refuses_overwrite_without_force(
     forced = scaffold_config_package(
         ConfigScaffoldRequest(
             package="demo_app",
-            app_name="demo-app",
+            app_id="demo-app",
             target=tmp_path / "src",
             force=True,
         )
@@ -168,7 +168,7 @@ def test_app_cli_scaffold_config_command_writes_standard_layout(
             "config",
             "--package",
             "cli_demo",
-            "--app-name",
+            "--app-id",
             "cli-demo",
             "--display-name",
             "CLI Demo",

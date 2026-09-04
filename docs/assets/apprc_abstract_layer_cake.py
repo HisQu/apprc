@@ -33,7 +33,7 @@ def build_graph() -> Digraph:
             "base_layers",
             "Base layers",
             "apprc.defaults.env",
-            "apprc.app.env",
+            "apprc.user.env",
             "lower precedence",
             border_color=gg.GREEN,
         )
@@ -64,8 +64,8 @@ def build_graph() -> Digraph:
         selector.text(
             "selected_storage",
             "Selected storage",
-            "storage key",
-            "dotenv path",
+            "registered name",
+            "root from registry",
             "runtime owner",
             border_color=gg.ORANGE,
         )

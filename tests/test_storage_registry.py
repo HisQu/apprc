@@ -8,11 +8,8 @@ import pytest
 
 import apprc.user_files.storage_roots.paths as storage_paths
 import apprc.user_files.storage_roots.registry as storage_registry_module
-from apprc.user_files.app_home.index import ApprcTomlEnvError
-from apprc.user_files.app_home.index import (
-    missing_apprc_toml_env_message,
-)
 from apprc.user_files.storage_roots._loading import (
+    MissingStorageRegistryError,
     load_existing_storage_registry,
 )
 from apprc.user_files.storage_roots.registry import (
@@ -37,21 +34,14 @@ from apprc.user_files.storage_roots.paths import (
 from tests.support_config import build_apprc_example_app_kit
 
 
-def test_app_data_dir_uses_xdg_data_home(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
-
-    assert app_data_dir("demo") == tmp_path / "data" / "demo"
-    assert suggested_storage_root("demo") == tmp_path / "data" / "demo"
+def test_storage_suggestion_uses_predictable_apprc_directory() -> None:
+    assert app_data_dir("demo").name == "demo"
+    assert suggested_storage_root("demo") == app_data_dir("demo") / "storage"
 
 
-def test_suggested_storage_name_uses_valid_host_specific_selector() -> None:
-    assert suggested_storage_name("demo") == "demo_stor-1"
-    assert suggested_storage_name("my-app.rc") == "my-app_rc_stor-1"
-    assert suggested_storage_name("") == "apprc_stor-1"
-    assert suggested_storage_name("???") == "apprc_stor-1"
+def test_suggested_storage_name_is_default() -> None:
+    assert suggested_storage_name("demo") == "default"
+    assert suggested_storage_name("my-app.rc") == "default"
 
 
 def test_missing_existing_storage_registry_uses_custom_config_group_name(
@@ -60,30 +50,34 @@ def test_missing_existing_storage_registry_uses_custom_config_group_name(
     kit = build_apprc_example_app_kit()
     missing_index = tmp_path / "missing.apprc.toml"
 
-    with pytest.raises(ApprcTomlEnvError) as exc_info:
+    with pytest.raises(MissingStorageRegistryError) as exc_info:
         load_existing_storage_registry(
             kit.spec,
-            proc_env={kit.spec.apprc_toml_env_key: str(missing_index)},
+            proc_env={kit.spec.apprc_dir_env_key: str(missing_index.parent)},
             config_group_name="settings",
         )
 
-    assert " settings storage add NAME PATH`" in str(exc_info.value)
-    assert " config storage add NAME PATH`" not in str(exc_info.value)
+    assert " settings storage add NAME ROOT`" in str(exc_info.value)
+    assert " config storage add NAME ROOT`" not in str(exc_info.value)
 
 
-def test_apprc_toml_env_guidance_uses_custom_config_group_name() -> None:
-    message = missing_apprc_toml_env_message(
-        apprc_toml_env_key="DEMO_APPRC_TOML",
-        apprc_toml_filename="demo.apprc.toml",
-        command_name="demo",
-        config_group_name="settings",
-    )
+def test_missing_registry_guidance_uses_custom_config_group_name(
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app_kit()
+    with pytest.raises(MissingStorageRegistryError) as exc_info:
+        load_existing_storage_registry(
+            kit.spec,
+            proc_env={kit.spec.apprc_dir_env_key: str(tmp_path)},
+            config_group_name="settings",
+        )
 
-    assert "demo settings storage add NAME /absolute/path/to/storage" in message
-    assert "demo config storage add NAME" not in message
+    message = str(exc_info.value)
+    assert "settings storage add NAME ROOT" in message
+    assert "config storage add NAME ROOT" not in message
 
 
-def test_register_storage_writes_sorted_toml_and_storage_env(
+def test_register_storage_writes_sorted_toml_and_storage_dotenv(
     tmp_path: Path,
 ) -> None:
     index_path = tmp_path / "config" / "demo.apprc.toml"
@@ -94,17 +88,19 @@ def test_register_storage_writes_sorted_toml_and_storage_env(
         name="zeta",
         root=second_root,
         path=index_path,
-        storage_env_filename=".env.demo",
+        storage_dotenv_filename=".env.demo",
     )
     register_storage(
         name="alpha",
         root=first_root,
         path=index_path,
-        storage_env_filename=".env.demo",
+        storage_dotenv_filename=".env.demo",
     )
 
     assert (first_root / ".env.demo").is_file()
     assert index_path.read_text(encoding="utf-8") == (
+        'selected_storage = "zeta"\n'
+        "\n"
         "[storages.alpha]\n"
         f"root = {json.dumps(str(first_root.resolve()))}\n"
         "\n"
@@ -153,7 +149,7 @@ def test_archived_storage_records_round_trip_sorted_toml(
         name="alpha",
         root=tmp_path / "alpha",
         path=index_path,
-        storage_env_filename=".env.demo",
+        storage_dotenv_filename=".env.demo",
     )
 
     registry = record_archived_storage(
@@ -288,7 +284,7 @@ def test_internal_update_storage_renames_matching_archive_with_one_write(
     assert persisted.archived_storages["beta"] == archived
 
 
-def test_internal_update_storage_rename_preserves_relative_root_spelling(
+def test_internal_update_storage_rename_keeps_relative_root_resolution(
     tmp_path: Path,
 ) -> None:
     index_path = tmp_path / "demo.apprc.toml"
@@ -305,9 +301,10 @@ def test_internal_update_storage_rename_preserves_relative_root_spelling(
         path=index_path,
     )
 
-    assert registry.selected("beta").root == stored_root
+    resolved_root = (index_path.parent / stored_root).absolute()
+    assert registry.selected("beta").root == resolved_root
     persisted = load_storage_registry_or_empty(index_path)
-    assert persisted.selected("beta").root == stored_root
+    assert persisted.selected("beta").root == resolved_root
     assert f"root = {json.dumps(str(stored_root))}" in index_path.read_text(
         encoding="utf-8"
     )
@@ -443,7 +440,7 @@ def test_register_storage_normalizes_windows_root(
     normalized_root = tmp_path / "demo-storage"
 
     monkeypatch.setattr(
-        "apprc.user_files.storage_roots.registry.normalize_storage_root_path",
+        "apprc.user_files.storage_roots.paths.normalize_storage_root_path",
         lambda path: normalized_root,
     )
 
@@ -451,7 +448,7 @@ def test_register_storage_normalizes_windows_root(
         name="demo",
         root=Path(r"D:\Training\demo-project"),
         path=index_path,
-        storage_env_filename=".env.demo",
+        storage_dotenv_filename=".env.demo",
     )
 
     assert registry.selected("demo").root == normalized_root.resolve()

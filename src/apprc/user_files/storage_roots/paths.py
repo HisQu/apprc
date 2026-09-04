@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -15,6 +16,7 @@ __all__ = [
     "StorageRootPathError",
     "normalize_apprc_toml_path",
     "normalize_storage_root_path",
+    "resolve_storage_root_path",
     "windows_drive_path_to_posix",
 ]
 
@@ -50,6 +52,21 @@ def normalize_storage_root_path(path: str | Path) -> Path:
     if _is_windows_drive_path(path_text) and not _IS_NATIVE_WINDOWS:
         return windows_drive_path_to_posix(path_text).expanduser()
     return Path(path_text).expanduser()
+
+
+def resolve_storage_root_path(path: str | Path, *, base: Path) -> Path:
+    """Resolve storage-root text against the registry directory.
+
+    :param path: Absolute root or root relative to ``apprc.toml``.
+    :param base: Directory containing the registry.
+    :return: Absolute normalized root.
+    """
+    normalized = normalize_storage_root_path(path)
+    if normalized.is_absolute():
+        return Path(os.path.abspath(normalized))
+    return Path(
+        os.path.abspath(Path(base).expanduser().absolute() / normalized)
+    )
 
 
 def windows_drive_path_to_posix(path: str) -> Path:

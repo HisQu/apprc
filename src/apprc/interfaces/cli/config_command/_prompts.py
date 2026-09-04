@@ -62,7 +62,7 @@ def confirm_existing_storage_root(
     managed_files.add_column(style="cyan")
     managed_files.add_row(
         "storage env",
-        str(storage_root / kit.spec.require_storage().env_filename),
+        str(storage_root / kit.spec.storage_dotenv_filename),
     )
     managed_files.add_row(
         "AppRC TOML",

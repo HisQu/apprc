@@ -24,7 +24,7 @@ def valid_snapshot() -> InstallSnapshot:
         field_is_callable=True,
         public_names=frozenset({"AppRC", "Config", "ConfigBase", "field"}),
         requirements=(
-            "platformdirs",
+            "python-dotenv",
             'textual; extra == "tui"',
         ),
         extras=frozenset({"tui"}),
@@ -41,7 +41,7 @@ def test_validate_install_snapshot_accepts_clean_base_install() -> None:
     ("replacement", "value"),
     [
         ("app_rc_name", "LegacyAppRC"),
-        ("requirements", ("platformdirs", "textual")),
+        ("requirements", ("platformdirs", 'textual; extra == "tui"')),
         ("extras", frozenset()),
         ("textual_available", True),
         ("loaded_modules", frozenset({"apprc", "textual.app"})),

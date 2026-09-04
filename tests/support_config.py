@@ -123,16 +123,16 @@ class StorageFreeExampleEnv(EnvConfig):
 STORAGE_FREE_EXAMPLE_OWNER = config_owner_for(StorageFreeExampleEnv)
 
 
-def assert_config_home_cli_error(result: Result) -> None:
-    """Assert that a CLI failure reports AppRC config-home readiness.
+def assert_apprc_dir_cli_error(result: Result) -> None:
+    """Assert that a CLI failure reports AppRC-directory readiness.
 
     :param result: Captured Typer invocation result.
     """
     assert result.exit_code != 0, result.output
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "config-home" in result.output
+    assert "AppRC" in result.output
     assert (
-        "AppRC config home" in result.output
+        "AppRC directory" in result.output
         or "AppRC-managed file" in result.output
     )
     assert "Traceback" not in result.output
@@ -147,16 +147,16 @@ def assert_config_home_cli_error(result: Result) -> None:
     assert "Invalid value for '--name'" not in result.output
 
 
-def block_config_home_with_file(kit: AppConfigKit) -> Path:
-    """Replace the app config home directory with a blocking file.
+def block_apprc_dir_with_file(kit: AppConfigKit) -> Path:
+    """Replace the AppRC directory with a blocking file.
 
     :param kit: App config facade under test.
     :return: Path that now blocks config-home creation.
     """
-    config_home = kit.spec.config_home()
-    config_home.parent.mkdir(parents=True, exist_ok=True)
-    config_home.write_text("not a directory", encoding="utf-8")
-    return config_home
+    apprc_dir = kit.spec.apprc_dir()
+    apprc_dir.parent.mkdir(parents=True, exist_ok=True)
+    apprc_dir.write_text("not a directory", encoding="utf-8")
+    return apprc_dir
 
 
 @dataclass(slots=True)
@@ -185,18 +185,18 @@ class StorageFreeExampleConfigStateWithoutStorage:
 def build_apprc_example_app_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that behaves like a real application."""
     return AppConfigKit(
-        app_name="apprc_example_app",
+        app_id="apprc_example_app",
         display_name="Example App",
         config_package="config_with_storage.config",
         envs=(ApprcExampleAppEnv,),
-        storage=Storage(env_key="APPRC_EXAMPLE_APP_STORAGE"),
+        storage=Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
     )
 
 
 def build_storage_free_example_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that does not use storage."""
     return AppConfigKit(
-        app_name="storage_free_app",
+        app_id="storage_free_app",
         display_name="Storage-Free App",
         config_package="config_only.config",
         envs=(StorageFreeExampleEnv,),
@@ -243,13 +243,15 @@ def set_apprc_example_app_bootstrap(
     )
     active_storage_root.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_APPRC_TOML",
-        str(index_path),
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(index_path.parent))
+    register_storage(
+        name="default",
+        root=active_storage_root,
+        path=index_path,
     )
     monkeypatch.setenv(
         "APPRC_EXAMPLE_APP_STORAGE",
-        str(active_storage_root.resolve()),
+        "default",
     )
     return index_path, active_storage_root
 
@@ -261,10 +263,10 @@ def apprc_example_app_state(
     """Return generic CLI state with one active storage root."""
     return ApprcExampleAppConfigState(
         env_bootstrap=EnvBootstrapResult(
-            defaults_env=None,
-            storage_env=storage_root / kit.spec.require_storage().env_filename,
+            defaults_dotenv=None,
+            storage_dotenv=storage_root / kit.spec.storage_dotenv_filename,
             env_files=(),
-            apprc_toml=kit.spec.apprc_toml_path(),
+            apprc_toml=kit.spec.preferred_apprc_toml_path(),
             storage_selector_source="--storage",
             storage_selector_value="alpha",
             storage_name="alpha",
@@ -291,8 +293,8 @@ def register_storage_for_kit(
     return register_storage(
         name=name,
         root=root,
-        path=kit.spec.apprc_toml_path(),
-        storage_env_filename=kit.spec.require_storage().env_filename,
+        path=kit.spec.preferred_apprc_toml_path(),
+        storage_dotenv_filename=kit.spec.storage_dotenv_filename,
     )
 
 
@@ -315,5 +317,5 @@ def record_archived_storage_for_kit(
         name=name,
         archive=archive,
         source_root=source_root,
-        path=kit.spec.apprc_toml_path(),
+        path=kit.spec.preferred_apprc_toml_path(),
     )

@@ -7,7 +7,7 @@ import typer
 
 # == Internal ================================
 from apprc.interfaces.cli.config_command._base import ConfigCommandBase
-from apprc.user_files.app_home.locations import ConfigHomeError
+from apprc.user_files.app_home.locations import AppRCDirectoryError
 
 
 class EditorConfigCommands(ConfigCommandBase):
@@ -28,14 +28,11 @@ class EditorConfigCommands(ConfigCommandBase):
                     self.load_storage_registry_or_empty(
                         selector_context=selector_context,
                     )
-                    if self.kit.spec.named_storage_enabled()
+                    if self.kit.spec.uses_storage()
                     else None
                 )
             except typer.BadParameter as exc:
-                if (
-                    active_storage_root is None
-                    and self.kit.spec.apprc_toml_required()
-                ):
+                if active_storage_root is None and self.kit.spec.uses_storage():
                     raise
                 optional_registry = None
                 storage_registry_error = str(exc)
@@ -46,5 +43,5 @@ class EditorConfigCommands(ConfigCommandBase):
                 active_storage_root=active_storage_root,
                 selector_context=selector_context,
             )
-        except ConfigHomeError as exc:
-            raise self.config_home_bad_parameter(exc) from exc
+        except AppRCDirectoryError as exc:
+            raise self.apprc_dir_bad_parameter(exc) from exc

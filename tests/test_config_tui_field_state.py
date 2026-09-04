@@ -49,7 +49,7 @@ def test_selected_field_for_row_resolves_known_env_key() -> None:
     assert selected.owner.env_key("profile") == "APPRC_EXAMPLE_APP_PROFILE"
 
 
-def test_config_value_sources_prefer_shell_over_storage_app_and_shared() -> (
+def test_config_value_sources_prefer_shell_over_storage_user_and_defaults() -> (
     None
 ):
     profile = APPRC_EXAMPLE_APP_OWNER.field("profile")
@@ -58,11 +58,11 @@ def test_config_value_sources_prefer_shell_over_storage_app_and_shared() -> (
     sources = config_value_sources(
         spec=profile,
         env_key=env_key,
-        app_values={env_key: "app-profile"},
+        user_dotenv_values={env_key: "user-profile"},
         storage_values={env_key: "storage-profile"},
         shell_env={env_key: "shell-profile"},
         defaults_values={env_key: "shared-profile"},
-        include_app=True,
+        include_user_dotenv=True,
         include_storage=True,
     )
     sources_by_key = {source.key: source for source in sources}
@@ -70,7 +70,7 @@ def test_config_value_sources_prefer_shell_over_storage_app_and_shared() -> (
     assert sources_by_key["effective"].raw_value == "shell-profile"
     assert sources_by_key["effective"].origin_key == "shell"
     assert sources_by_key["shell"].raw_value == "shell-profile"
-    assert sources_by_key["app"].raw_value == "app-profile"
+    assert sources_by_key["user"].raw_value == "user-profile"
     assert sources_by_key["storage"].raw_value == "storage-profile"
     assert sources_by_key["defaults"].raw_value == "shared-profile"
 
@@ -82,11 +82,11 @@ def test_config_value_sources_keep_empty_storage_values_copyable() -> None:
     sources = config_value_sources(
         spec=profile,
         env_key=env_key,
-        app_values={},
+        user_dotenv_values={},
         storage_values={env_key: ""},
         shell_env={},
         defaults_values={env_key: "shared-profile"},
-        include_app=False,
+        include_user_dotenv=False,
         include_storage=True,
     )
     sources_by_key = {source.key: source for source in sources}
@@ -104,29 +104,29 @@ def test_config_value_sources_disable_missing_required_values() -> None:
     sources = config_value_sources(
         spec=access_token,
         env_key=env_key,
-        app_values={},
+        user_dotenv_values={},
         storage_values={},
         shell_env={},
         defaults_values={},
-        include_app=True,
+        include_user_dotenv=True,
         include_storage=True,
     )
 
     assert all(not source.is_available for source in sources)
 
 
-def test_config_value_sources_fall_back_to_declared_shared_default() -> None:
+def test_config_value_sources_fall_back_to_declared_default() -> None:
     enabled = APPRC_EXAMPLE_APP_OWNER.field("enabled")
     env_key = APPRC_EXAMPLE_APP_OWNER.env_key("enabled")
 
     sources = config_value_sources(
         spec=enabled,
         env_key=env_key,
-        app_values={},
+        user_dotenv_values={},
         storage_values={},
         shell_env={},
         defaults_values=None,
-        include_app=False,
+        include_user_dotenv=False,
         include_storage=False,
     )
     sources_by_key = {source.key: source for source in sources}

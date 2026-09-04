@@ -15,4 +15,4 @@ def test_example_app_registry_exposes_all_dev_kits() -> None:
         "config_with_storage",
     }
     assert set(example_kits()) == names
-    assert all(spec.kit.spec.app_name for spec in specs)
+    assert all(spec.kit.spec.app_id for spec in specs)

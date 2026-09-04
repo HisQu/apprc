@@ -3,7 +3,6 @@
 # == Standard Library ========================
 import dataclasses
 import logging
-import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -24,15 +23,7 @@ import typer
 # == Internal ================================
 import apprc.utils as ut
 from apprc.definition.app_config.kit import AppConfigKit
-from apprc.definition.app_config.spec import (
-    DEFAULT_APP_ENV_FILENAME,
-    DEFAULT_APPRC_TOML_FILENAME,
-    DEFAULT_DEFAULTS_ENV_FILENAME,
-    LEGACY_APP_ENV_FILENAME,
-    LEGACY_DEFAULTS_ENV_FILENAME,
-    LEGACY_STORAGE_ENV_FILENAME,
-    AppConfigSpec,
-)
+from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.storage import Storage
 from apprc.definition.env_config._validation import validate_config_owner
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
@@ -89,31 +80,31 @@ class _BundleFieldSpec:
 class _AppRCDeclaration:
     """Typed values shared by every rebuild of one public facade.
 
-    :param app_name: Stable application name.
+    :param app_id: Stable application identity.
     :param display_name: Human-readable application name.
     :param config_package: Package containing managed defaults.
     :param command_name: Executable name used in guidance.
     :param storage: Optional persistent-storage declaration.
-    :param defaults_env_filename: Packaged defaults basename.
-    :param app_env_filename: Per-user app dotenv basename.
-    :param apprc_toml_filename: AppRC TOML basename.
+    :param apprc_dir: Optional application-declared AppRC directory.
+    :param apprc_dir_env_key: Explicit directory override key.
+    :param legacy_app_ids: Released 0.19 identities accepted by migration.
     """
 
-    app_name: str
+    app_id: str
     display_name: str
     config_package: str
     command_name: str | None
     storage: Storage | None
-    defaults_env_filename: str
-    app_env_filename: str
-    apprc_toml_filename: str
+    apprc_dir: Path | None
+    apprc_dir_env_key: str | None
+    legacy_app_ids: tuple[str, ...]
 
 
 class AppRC:
     """Public facade for one application's AppRC integration.
 
     App authors create one ``AppRC`` object, add :class:`Storage` when the app
-    writes data outside its config home, register config classes through
+    writes persistent data, register config classes through
     ``@MyRC.config(...)``, and mount runtime behavior with :meth:`mount_cli` or
     :meth:`bootstrap`.
     """
@@ -121,189 +112,42 @@ class AppRC:
     def __init__(
         self,
         *,
-        app_name: str,
+        app_id: str,
         config_package: str,
         display_name: str | None = None,
         command_name: str | None = None,
         storage: Storage | None = None,
-        defaults_env_filename: str = DEFAULT_DEFAULTS_ENV_FILENAME,
-        app_env_filename: str = DEFAULT_APP_ENV_FILENAME,
-        apprc_toml_filename: str = DEFAULT_APPRC_TOML_FILENAME,
-        _legacy_mode: str | None = None,
-        _legacy_kit_kwargs: Mapping[str, object] | None = None,
+        apprc_dir: Path | None = None,
+        apprc_dir_env_key: str | None = None,
+        legacy_app_ids: tuple[str, ...] = (),
     ) -> None:
         """Build an application declaration with optional storage.
 
-        :param app_name: Lowercase application name.
+        :param app_id: Stable application identity.
         :param config_package: Package containing packaged config resources.
         :param display_name: Human-readable name, or ``None`` to use
-            ``app_name``.
+            ``app_id``.
         :param command_name: Executable name shown in generated instructions.
         :param storage: Storage declaration, or ``None`` for config-only apps.
-        :param defaults_env_filename: Packaged defaults dotenv filename.
-        :param app_env_filename: Per-user app dotenv filename.
-        :param apprc_toml_filename: AppRC TOML filename in the config home.
+        :param apprc_dir: Optional application-declared AppRC directory.
+        :param apprc_dir_env_key: Explicit directory override key.
+        :param legacy_app_ids: Released 0.19 identities accepted by migration.
         """
         self._declaration = _AppRCDeclaration(
-            app_name=app_name,
-            display_name=display_name or app_name,
+            app_id=app_id,
+            display_name=display_name or app_id,
             config_package=config_package,
             command_name=command_name,
             storage=storage,
-            defaults_env_filename=defaults_env_filename,
-            app_env_filename=app_env_filename,
-            apprc_toml_filename=apprc_toml_filename,
-        )
-        self._legacy_kit_kwargs = (
-            self._build_legacy_kit_kwargs(
-                declaration=self._declaration,
-                legacy_mode=_legacy_mode,
-                legacy_kit_kwargs=_legacy_kit_kwargs or {},
-            )
-            if _legacy_mode is not None
-            else None
+            apprc_dir=apprc_dir,
+            apprc_dir_env_key=apprc_dir_env_key,
+            legacy_app_ids=legacy_app_ids,
         )
         self._registered_by_key: dict[str, RegisteredConfig] = {}
         self._registered_by_type: dict[type[ConfigBase], RegisteredConfig] = {}
         self._env_key_index: dict[str, tuple[str, str]] = {}
         self._bootstrap_state = BootstrapState()
         self._kit = self._build_kit()
-
-    @classmethod
-    def env_only(
-        cls,
-        *,
-        app_name: str,
-        display_name: str | None = None,
-        config_package: str,
-        **kwargs: object,
-    ) -> "AppRC":
-        """Create an env/package/shell-only AppRC integration.
-
-        :param app_name: Lowercase application name.
-        :param display_name: Human-readable name, or ``None`` to use
-            ``app_name``.
-        :param config_package: Package containing packaged config resources.
-        :param kwargs: Lower-level AppRC kit constructor options.
-        :return: Public AppRC facade.
-        """
-        cls._warn_legacy_constructor("env_only")
-        return cls(
-            app_name=app_name,
-            display_name=display_name,
-            config_package=config_package,
-            _legacy_mode="env_only",
-            _legacy_kit_kwargs=kwargs,
-        )
-
-    @classmethod
-    def storage_only(
-        cls,
-        *,
-        app_name: str,
-        display_name: str | None = None,
-        config_package: str,
-        storage_env_key: str | None = None,
-        **kwargs: object,
-    ) -> "AppRC":
-        """Create an integration that requires one active storage selector.
-
-        :param app_name: Lowercase application name.
-        :param display_name: Human-readable name, or ``None`` to use
-            ``app_name``.
-        :param config_package: Package containing packaged config resources.
-        :param storage_env_key: Optional storage selector env key.
-        :param kwargs: Lower-level AppRC kit constructor options.
-        :return: Public AppRC facade.
-        """
-        cls._warn_legacy_constructor("storage_only")
-        return cls(
-            app_name=app_name,
-            display_name=display_name,
-            config_package=config_package,
-            storage=Storage(
-                env_key=storage_env_key,
-                prompt_on_first_run=False,
-                env_filename=LEGACY_STORAGE_ENV_FILENAME,
-            ),
-            _legacy_mode="storage_only",
-            _legacy_kit_kwargs=kwargs,
-        )
-
-    @classmethod
-    def app_wide_config(
-        cls,
-        *,
-        app_name: str,
-        display_name: str | None = None,
-        config_package: str,
-        **kwargs: object,
-    ) -> "AppRC":
-        """Create an integration centered on app-wide config.
-
-        :param app_name: Lowercase application name.
-        :param display_name: Human-readable name, or ``None`` to use
-            ``app_name``.
-        :param config_package: Package containing packaged config resources.
-        :param kwargs: Lower-level AppRC kit constructor options.
-        :return: Public AppRC facade.
-        """
-        cls._warn_legacy_constructor("app_wide_config")
-        return cls(
-            app_name=app_name,
-            display_name=display_name,
-            config_package=config_package,
-            _legacy_mode="app_wide_config",
-            _legacy_kit_kwargs=kwargs,
-        )
-
-    @classmethod
-    def app_wide_storage(
-        cls,
-        *,
-        app_name: str,
-        display_name: str | None = None,
-        config_package: str,
-        storage_env_key: str | None = None,
-        **kwargs: object,
-    ) -> "AppRC":
-        """Create an integration with app-wide config and storage roots.
-
-        :param app_name: Lowercase application name.
-        :param display_name: Human-readable name, or ``None`` to use
-            ``app_name``.
-        :param config_package: Package containing packaged config resources.
-        :param storage_env_key: Optional storage selector env key.
-        :param kwargs: Lower-level AppRC kit constructor options.
-        :return: Public AppRC facade.
-        """
-        cls._warn_legacy_constructor("app_wide_storage")
-        return cls(
-            app_name=app_name,
-            display_name=display_name,
-            config_package=config_package,
-            storage=Storage(
-                env_key=storage_env_key,
-                prompt_on_first_run=False,
-                env_filename=LEGACY_STORAGE_ENV_FILENAME,
-            ),
-            _legacy_mode="app_wide_storage",
-            _legacy_kit_kwargs=kwargs,
-        )
-
-    @staticmethod
-    def _warn_legacy_constructor(name: str) -> None:
-        """Warn that a capability constructor will be removed in 0.21.
-
-        :param name: Deprecated constructor name used by the caller.
-        """
-        warnings.warn(
-            f"AppRC.{name}(...) is deprecated in AppRC 0.20 and will be "
-            "removed in 0.21. Instantiate AppRC(...) directly and pass "
-            "storage=rc.Storage(...) when the app needs storage.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
 
     @property
     def kit(self) -> AppConfigKit:
@@ -452,72 +296,6 @@ class AppRC:
         """
         return self._kit._ensure_bootstrapped()
 
-    @staticmethod
-    def _build_legacy_kit_kwargs(
-        *,
-        declaration: _AppRCDeclaration,
-        legacy_mode: str,
-        legacy_kit_kwargs: Mapping[str, object],
-    ) -> dict[str, object]:
-        """Return arguments used only by deprecated mode constructors.
-
-        :param declaration: Typed public declaration values.
-        :param legacy_mode: Deprecated constructor name.
-        :param legacy_kit_kwargs: Extra 0.19 constructor arguments.
-        :return: Normalized lower-level compatibility arguments.
-        """
-        if "envs" in legacy_kit_kwargs:
-            raise TypeError(
-                "AppRC mode constructors do not accept envs=.... Register "
-                "config classes with @MyRC.config(...)."
-            )
-        common: dict[str, object] = {
-            "app_name": declaration.app_name,
-            "display_name": declaration.display_name,
-            "config_package": declaration.config_package,
-            "command_name": declaration.command_name,
-        }
-        resolved = {**common, **legacy_kit_kwargs}
-        resolved.setdefault(
-            "shared_env_filename",
-            LEGACY_DEFAULTS_ENV_FILENAME,
-        )
-        resolved.setdefault(
-            "app_wide_env_filename",
-            LEGACY_APP_ENV_FILENAME,
-        )
-        resolved.setdefault(
-            "storage_env_filename",
-            LEGACY_STORAGE_ENV_FILENAME,
-        )
-        resolved.setdefault(
-            "index_filename",
-            AppConfigSpec.derive_legacy_apprc_toml_filename(
-                declaration.app_name
-            ),
-        )
-        resolved["_legacy_constructor"] = legacy_mode
-        if legacy_mode in {"env_only", "app_wide_config"}:
-            resolved["storage_layer"] = "disabled"
-            resolved["named_storage_layer"] = "disabled"
-        else:
-            resolved["storage_layer"] = "required"
-            resolved["named_storage_layer"] = "optional"
-            if (
-                declaration.storage is not None
-                and declaration.storage.env_key is not None
-            ):
-                resolved.setdefault(
-                    "storage_env_key",
-                    declaration.storage.env_key,
-                )
-        resolved["app_wide_layer"] = (
-            "default"
-            if legacy_mode in {"app_wide_config", "app_wide_storage"}
-            else "optional"
-        )
-        return resolved
-
     def _build_kit(self) -> AppConfigKit:
         """Build a lower-level kit from the current registrations."""
         envs = tuple(
@@ -525,23 +303,17 @@ class AppRC:
             for item in self._registered_by_key.values()
             if _is_env_config(item.config_type)
         )
-        if self._legacy_kit_kwargs is not None:
-            return AppConfigKit(
-                **cast(Any, self._legacy_kit_kwargs),
-                envs=envs,
-                _bootstrap_state=self._bootstrap_state,
-            )
         declaration = self._declaration
         return AppConfigKit(
-            app_name=declaration.app_name,
+            app_id=declaration.app_id,
             display_name=declaration.display_name,
             config_package=declaration.config_package,
             envs=envs,
             storage=declaration.storage,
             command_name=declaration.command_name,
-            defaults_env_filename=declaration.defaults_env_filename,
-            app_env_filename=declaration.app_env_filename,
-            apprc_toml_filename=declaration.apprc_toml_filename,
+            apprc_dir=declaration.apprc_dir,
+            apprc_dir_env_key=declaration.apprc_dir_env_key,
+            legacy_app_ids=declaration.legacy_app_ids,
             _bootstrap_state=self._bootstrap_state,
         )
 
@@ -603,7 +375,7 @@ class AppRC:
                 "bootstrap provenance for this late registration is "
                 "incomplete. Import the root config bundle before bootstrap.",
                 resolved_type.__name__,
-                self._declaration.app_name,
+                self._declaration.app_id,
             )
         self._registered_by_key[key] = registered
         self._registered_by_type[resolved_type] = registered

@@ -362,7 +362,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
             return
         if scope_count > 1:
             self.notify(
-                "Choose Save App-wide or Save Storage.",
+                "Choose Save User or Save Storage.",
                 severity="warning",
             )
             return
@@ -438,7 +438,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
     def _write_scope(self, raw_scope: str) -> ConfigWriteScope | None:
         """Return a validated write scope from widget id text."""
         if raw_scope in self.writable_scopes and raw_scope in {
-            "app",
+            "user",
             "storage",
         }:
             return raw_scope

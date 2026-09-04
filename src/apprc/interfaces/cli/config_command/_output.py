@@ -26,8 +26,8 @@ class StorageListRowPayload(TypedDict):
     active: bool
     root: str
     root_exists: bool
-    storage_env: str
-    storage_env_exists: bool
+    storage_dotenv: str
+    storage_dotenv_exists: bool
 
 
 class StorageListPayload(TypedDict):
@@ -40,13 +40,13 @@ class StorageListPayload(TypedDict):
 def storage_list_payload(
     registry: StorageRegistry,
     *,
-    storage_env_filename: str,
+    storage_dotenv_filename: str,
     active_storage_root: Path | None = None,
 ) -> StorageListPayload:
     """Return JSON-friendly named storage rows for ``config storage list``.
 
     :param registry: Storage table to serialize.
-    :param storage_env_filename: Dotenv filename expected inside each root.
+    :param storage_dotenv_filename: Dotenv filename expected inside each root.
     :param active_storage_root: Root selected by ``<APP>_STORAGE``, if known.
     :return: Machine-readable storage summary.
     """
@@ -59,15 +59,15 @@ def storage_list_payload(
     for name in ordered_storage_names(registry):
         record = registry.selected(name)
         record_root = Path(record.root).expanduser().resolve()
-        storage_env = record.root / storage_env_filename
+        storage_dotenv = record.root / storage_dotenv_filename
         storages.append(
             {
                 "name": record.name,
                 "active": active_root == record_root,
                 "root": str(record.root),
                 "root_exists": record.root.is_dir(),
-                "storage_env": str(storage_env),
-                "storage_env_exists": storage_env.is_file(),
+                "storage_dotenv": str(storage_dotenv),
+                "storage_dotenv_exists": storage_dotenv.is_file(),
             }
         )
     return {
@@ -97,11 +97,13 @@ def print_storage_list(payload: StorageListPayload) -> None:
                 bool(storage["root_exists"]),
             )
         )
-        branch.add(_storage_detail_text("storage_env", storage["storage_env"]))
+        branch.add(
+            _storage_detail_text("storage_dotenv", storage["storage_dotenv"])
+        )
         branch.add(
             _storage_bool_text(
-                "storage_env_exists",
-                bool(storage["storage_env_exists"]),
+                "storage_dotenv_exists",
+                bool(storage["storage_dotenv_exists"]),
             )
         )
     console.print(tree)

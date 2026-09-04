@@ -51,7 +51,7 @@ def sample_changelog(
         f"{version_toc}\n"
         "# [Unreleased]\n\n"
         "<br>\n\n"
-        "### 💥 Breaking Change Summary\n\n"
+        "### 💥 Breaking changes\n\n"
         "<br>\n\n"
         "### ➕ Added\n\n"
         f"{unreleased_entry}\n\n"

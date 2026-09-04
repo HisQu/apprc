@@ -1,7 +1,7 @@
 # Config Only Example
 
 `config_only` demonstrates an AppRC declaration with no storage root. It loads
-package defaults, per-user app values, explicit env files, and shell values.
+package defaults, per-user dotenv values, explicit env files, and shell values.
 
 ## Requirements
 
@@ -17,8 +17,9 @@ python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_RO
 apprc-config-only config doctor
 ```
 
-The app uses `config/apprc.defaults.env` from the package and the generated app
-file under `examples/example_app_disk_files/xdg-config-home/`.
+The app uses `config/apprc.defaults.env` from the package and the generated
+`apprc.user.env` below
+`examples/example_app_disk_files/apprc-directories/`.
 
 ## Commands
 
@@ -35,4 +36,4 @@ storage root.
 
 - [Example app overview](../../README.md)
 - [Development guide](../../../../docs/Development.md#example-apps)
-- [Integration guide](../../../../docs/How-To-User-Guides.md#2-integrate-apprc)
+- [Integration guide](../../../../docs/How-To-User-Guides.md#integrate-apprc)

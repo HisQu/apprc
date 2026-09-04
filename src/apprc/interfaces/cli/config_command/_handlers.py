@@ -9,9 +9,6 @@ from pathlib import Path
 import typer
 
 # == Internal ================================
-from apprc.interfaces.cli.config_command._app_commands import (
-    AppConfigCommands,
-)
 from apprc.interfaces.cli.config_command._editor_commands import (
     EditorConfigCommands,
 )
@@ -28,7 +25,6 @@ from apprc.interfaces.cli._typer_utils import exit_missing_action
 class ConfigCommandHandlers(
     RuntimeConfigCommands,
     StorageConfigCommands,
-    AppConfigCommands,
     EditorConfigCommands,
 ):
     """Command implementations for the generated ``config`` Typer group."""

@@ -46,8 +46,8 @@ def config_setup_message(
     storage_key = kit.spec.require_storage_selector_env_key()
     return (
         f"No active {kit.spec.display_name} storage is selected.\n\n"
-        f"Set {storage_key} to a storage path or pass --storage PATH. The "
-        "AppRC TOML registry is optional and only needed for named selectors.\n"
+        f"Set {storage_key} to a registered name, pass --storage NAME, or "
+        "select a default in apprc.toml.\n"
         "For guided setup:\n"
         f"  {config_command_text(kit, 'setup --yes --storage-root /absolute/path/to/storage-root', config_group_name=config_group_name)}\n\n"
         "Then inspect the setup:\n"
@@ -86,18 +86,18 @@ def _doctor_next_steps(
                 kit, "doctor", config_group_name=config_group_name
             ),
         ]
-    if status == ConfigDoctorStatus.APP_CONFIG_NOT_READY:
+    if status == ConfigDoctorStatus.USER_DOTENV_NOT_READY:
         return [
             config_command_text(
                 kit,
-                "app init",
+                "setup",
                 config_group_name=config_group_name,
             ),
             config_command_text(
                 kit, "doctor", config_group_name=config_group_name
             ),
         ]
-    if status == ConfigDoctorStatus.NAMED_STORAGE_NOT_READY:
+    if status == ConfigDoctorStatus.STORAGE_REGISTRY_NOT_READY:
         return [
             "Fix AppRC TOML or create a new storage entry:",
             config_command_text(
@@ -111,7 +111,7 @@ def _doctor_next_steps(
         ]
     return [
         "Ensure the selected storage root exists and contains "
-        f"{kit.spec.require_storage().env_filename}.",
+        f"{kit.spec.storage_dotenv_filename}.",
         config_command_text(
             kit,
             "setup --yes --storage-root /absolute/path/to/storage-root",
@@ -140,5 +140,5 @@ def _missing_env_issue(
         f"No storage is selected for {kit.spec.display_name}; selector key: "
         f"{keys}. Run "
         f"{config_command_text(kit, 'setup', config_group_name=config_group_name)} "
-        "to create and save one, or pass --storage PATH."
+        "to create and select one, or pass --storage NAME."
     )

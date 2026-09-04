@@ -15,7 +15,6 @@ from apprc.user_files.env_files.files import read_env_file
 from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupFlow
 from apprc.user_files.setup.text import (
     setup_finish_text,
-    setup_overview_text,
     storage_root_reuse_text,
 )
 from apprc.user_files.storage_roots.paths import (
@@ -24,7 +23,6 @@ from apprc.user_files.storage_roots.paths import (
 )
 from apprc.user_files.storage_roots.registry import suggested_storage_root
 from apprc.interfaces.tui._primitives import (
-    ButtonVariant,
     ConfirmScreen,
     PathInputScreen,
 )
@@ -50,21 +48,12 @@ class ConfigEditorSetupWorkflow:
         if self.editor.storage_enabled:
             await self._open_storage_setup_flow()
             return
-        if self.editor.kit.spec.setup_creates_app_env():
-            await self._run_app_setup()
-            return
-        await self._show_env_only_guidance()
+        await self._run_app_setup()
 
     async def _open_storage_setup_flow(self) -> None:
-        """Choose and initialize a storage root, then offer registration."""
-        declared_root = (
-            self.editor.kit.spec.storage.suggested_root
-            if self.editor.kit.spec.storage is not None
-            else None
-        )
+        """Choose and initialize the default registered storage."""
         default_root = self.editor.active_storage_root or (
-            declared_root
-            or suggested_storage_root(self.editor.kit.spec.app_name)
+            suggested_storage_root(self.editor.kit.spec.app_id)
         )
         path_result = await self.editor.push_screen_wait(
             PathInputScreen(
@@ -98,16 +87,16 @@ class ConfigEditorSetupWorkflow:
             return
 
         self.editor.active_storage_root = result.active_storage_root
-        self.editor.app_values = (
-            read_env_file(result.app_env)
-            if result.app_env is not None
-            else self.editor.app_values
+        self.editor.user_dotenv_values = (
+            read_env_file(result.user_dotenv)
+            if result.user_dotenv is not None
+            else self.editor.user_dotenv_values
         )
         await self.editor._refresh_storage_list()
         await self._show_storage_setup_result(
             storage_root=result.active_storage_root,
-            storage_env=result.storage_env,
-            app_env=result.app_env,
+            storage_dotenv=result.storage_dotenv,
+            user_dotenv=result.user_dotenv,
         )
 
     async def _confirm_storage_root(self, path: Path) -> Path | None:
@@ -157,70 +146,24 @@ class ConfigEditorSetupWorkflow:
         self,
         *,
         storage_root: Path,
-        storage_env: Path | None,
-        app_env: Path | None,
+        storage_dotenv: Path | None,
+        user_dotenv: Path | None,
     ) -> None:
         """Show initialized files and optionally register the selected path.
 
         :param storage_root: Directory initialized by setup.
-        :param storage_env: Storage dotenv file created by setup.
-        :param app_env: App-wide dotenv file created by setup.
+        :param storage_dotenv: Storage dotenv file created by setup.
+        :param user_dotenv: User dotenv file created by setup.
         """
-        can_register = (
-            self.editor.named_storage_enabled
-            and self.editor.storage_registry is not None
-        )
-        actions: tuple[tuple[str, str, ButtonVariant], ...] = (
-            (
-                ("register", "Register name", "primary"),
-                ("done", "Done", "default"),
-            )
-            if can_register
-            else (("done", "Done", "primary"),)
-        )
-        action = await self.editor.push_screen_wait(
+        await self.editor.push_screen_wait(
             ConfirmScreen(
                 title="Storage setup complete",
                 message=Text(
                     setup_finish_text(
                         self.editor.kit,
                         storage_root=storage_root,
-                        storage_env=storage_env,
-                        app_env=app_env,
-                        config_group_name=self.editor.config_group_name,
-                    )
-                ),
-                actions=actions,
-                cancel_label=None,
-            )
-        )
-        if action != "register":
-            return
-        await self.editor.storage_workflows.register_storage_directory_flow(
-            storage_root,
-            default_name=self.editor._suggest_storage_name(storage_root),
-            directory_already_approved=True,
-        )
-
-    async def _run_app_setup(self) -> None:
-        """Initialize per-user app config and refresh editor values."""
-        try:
-            result = await asyncio.to_thread(
-                ConfigSetupFlow(self.editor.kit).run_app_setup
-            )
-        except (ConfigSetupError, OSError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
-            return
-        if result.app_env is not None:
-            self.editor.app_values = read_env_file(result.app_env)
-        await self.editor._refresh_storage_list()
-        await self.editor.push_screen_wait(
-            ConfirmScreen(
-                title="Setup complete",
-                message=Text(
-                    setup_finish_text(
-                        self.editor.kit,
-                        app_env=result.app_env,
+                        storage_dotenv=storage_dotenv,
+                        user_dotenv=user_dotenv,
                         config_group_name=self.editor.config_group_name,
                     )
                 ),
@@ -229,24 +172,28 @@ class ConfigEditorSetupWorkflow:
             )
         )
 
-    async def _show_env_only_guidance(self) -> None:
-        """Explain why an env-only app needs no AppRC file setup."""
-        message = "\n".join(
-            (
-                setup_overview_text(self.editor.kit),
-                "",
-                "Set required values in the shell or an explicit env file.",
-                "The editor table shows the current value for every field.",
-                "",
-                "Then verify:",
-                f"  {self.editor.kit.spec.config_command_name()} "
-                f"{self.editor.config_group_name} doctor",
+    async def _run_app_setup(self) -> None:
+        """Initialize the per-user dotenv and refresh editor values."""
+        try:
+            result = await asyncio.to_thread(
+                ConfigSetupFlow(self.editor.kit).run_app_setup
             )
-        )
+        except (ConfigSetupError, OSError) as exc:
+            self.editor.notify(str(exc), severity="error", markup=False)
+            return
+        if result.user_dotenv is not None:
+            self.editor.user_dotenv_values = read_env_file(result.user_dotenv)
+        await self.editor._refresh_storage_list()
         await self.editor.push_screen_wait(
             ConfirmScreen(
-                title="Environment setup",
-                message=Text(message),
+                title="Setup complete",
+                message=Text(
+                    setup_finish_text(
+                        self.editor.kit,
+                        user_dotenv=result.user_dotenv,
+                        config_group_name=self.editor.config_group_name,
+                    )
+                ),
                 actions=(("done", "Done", "primary"),),
                 cancel_label=None,
             )

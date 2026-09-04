@@ -39,10 +39,9 @@ wheels = [
 
 [[package]]
 name = "apprc"
-version = "0.19.9"
+version = "0.20.0"
 source = { editable = "." }
 dependencies = [
-    { name = "platformdirs" },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "typed-settings", extra = ["dotenv"] },
@@ -75,7 +74,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "platformdirs" },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "textual", marker = "extra == 'tui'" },

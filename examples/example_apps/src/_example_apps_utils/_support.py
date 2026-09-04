@@ -129,7 +129,7 @@ def runtime_payload(
     bundle = bundle_cls()
     config = section_getter(bundle)
     return {
-        "app_name": kit.spec.app_name,
+        "app_id": kit.spec.app_id,
         "command_name": kit.spec.config_command_name(),
         "display_name": kit.spec.display_name,
         "bundle": type(bundle).__name__,
@@ -149,9 +149,9 @@ def bootstrap_payload(
     """
     if bootstrap is None:
         return {
-            "defaults_env": None,
-            "app_env": None,
-            "storage_env": None,
+            "defaults_dotenv": None,
+            "user_dotenv": None,
+            "storage_dotenv": None,
             "env_files": [],
             "apprc_toml": None,
             "storage_selector_source": None,
@@ -161,9 +161,9 @@ def bootstrap_payload(
             "storage_count": 0,
         }
     return {
-        "defaults_env": _path_text(bootstrap.defaults_env),
-        "app_env": _path_text(bootstrap.app_env),
-        "storage_env": _path_text(bootstrap.storage_env),
+        "defaults_dotenv": _path_text(bootstrap.defaults_dotenv),
+        "user_dotenv": _path_text(bootstrap.user_dotenv),
+        "storage_dotenv": _path_text(bootstrap.storage_dotenv),
         "env_files": [str(path) for path in bootstrap.env_files],
         "apprc_toml": _path_text(bootstrap.apprc_toml),
         "storage_selector_source": bootstrap.storage_selector_source,
@@ -201,7 +201,7 @@ def isolated_apprc_environment(
     *,
     env_prefixes: tuple[str, ...],
 ) -> Iterator[None]:
-    """Run one demo without reading or mutating the user's config home.
+    """Run one demo without retaining environment changes.
 
     :param root: Temporary directory allocated for one demo run.
     :param env_prefixes: Env prefixes owned by the example.
@@ -212,7 +212,6 @@ def isolated_apprc_environment(
         for key in tuple(os.environ):
             if key.startswith(env_prefixes):
                 del os.environ[key]
-        os.environ["XDG_CONFIG_HOME"] = str(root / "xdg-config-home")
         yield
     finally:
         os.environ.clear()

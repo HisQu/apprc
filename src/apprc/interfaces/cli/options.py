@@ -61,10 +61,7 @@ StorageOption: TypeAlias = Annotated[
     str | None,
     typer.Option(
         "--storage",
-        help=(
-            "Storage selector for this CLI run. Registered names resolve "
-            "through the AppRC TOML index when one is active."
-        ),
+        help=("Registered storage name for this CLI run."),
     ),
 ]
 LogLevelOption: TypeAlias = Annotated[

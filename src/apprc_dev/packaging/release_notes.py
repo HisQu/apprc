@@ -15,7 +15,7 @@ RELEASE_HEADING_RE = re.compile(
 )
 UNRELEASED_HEADING = "# [Unreleased]"
 UNRELEASED_SECTIONS = (
-    "### 💥 Breaking Change Summary",
+    "### 💥 Breaking changes",
     "### ➕ Added",
     "### 💔 Changed",
     "### ⚠️ Deprecated",

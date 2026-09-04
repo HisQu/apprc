@@ -36,13 +36,14 @@ from tests.support_config import (
     StorageFreeExampleEnv,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
+    register_storage_for_kit,
 )
 
 
 def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
     """Return a storage-free kit whose package includes defaults."""
     return AppConfigKit(
-        app_name="storage_free_app",
+        app_id="storage_free_app",
         display_name="Storage-Free App",
         config_package="config_only.config",
         envs=(StorageFreeExampleEnv,),
@@ -235,7 +236,7 @@ def test_mount_config_cli_passes_storage_to_default_config_show(
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"
-    storage_root.mkdir()
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
     app = typer.Typer()
     mount_config_cli(app, kit)
 
@@ -243,7 +244,7 @@ def test_mount_config_cli_passes_storage_to_default_config_show(
         app,
         [
             "--storage",
-            str(storage_root),
+            "alpha",
             "config",
             "show",
             "--json",
@@ -264,6 +265,12 @@ def test_mount_config_cli_reports_app_setup_for_missing_storage(
     """
     kit = build_apprc_example_app_kit()
     missing_root = tmp_path / "missing-storage"
+    registry = kit.spec.preferred_apprc_toml_path()
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        f'selected_storage = "missing"\n\n[storages.missing]\nroot = "{missing_root}"\n',
+        encoding="utf-8",
+    )
     app = typer.Typer()
     mount_config_cli(app, kit)
 
@@ -273,7 +280,7 @@ def test_mount_config_cli_reports_app_setup_for_missing_storage(
 
     result = CliRunner().invoke(
         app,
-        ["--storage", str(missing_root), "run"],
+        ["--storage", "missing", "run"],
         terminal_width=500,
     )
 
@@ -418,10 +425,10 @@ def test_mount_config_cli_runtime_independent_set_uses_context_not_app_hooks(
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"
-    storage_root.mkdir()
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
     args = [
         "--storage",
-        str(storage_root),
+        "alpha",
         "config",
         "set",
         "access_token",
@@ -478,8 +485,8 @@ def test_mount_config_cli_runtime_payload_receives_factory_state(
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    args = ["--storage", str(storage_root), "config", "show", "--json"]
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
+    args = ["--storage", "alpha", "config", "show", "--json"]
 
     @dataclass(slots=True)
     class CustomState(DefaultConfigCliState):
@@ -516,7 +523,7 @@ def test_mount_config_cli_runtime_payload_receives_factory_state(
     assert json.loads(result.output) == {
         "bootstrapped": True,
         "marker": "factory-state",
-        "storage": str(storage_root),
+        "storage": "alpha",
     }
 
 
@@ -623,7 +630,7 @@ def test_mount_config_cli_custom_config_group_name_appears_in_guidance(
         "app.profile",
         "demo",
         "--scope",
-        "app",
+        "user",
     ]
     app_scope = CliRunner().invoke(
         app,
@@ -631,9 +638,9 @@ def test_mount_config_cli_custom_config_group_name_appears_in_guidance(
     )
 
     assert setup.exit_code == 0, setup.output
-    assert f"{kit.spec.app_name} settings doctor" in setup.output
+    assert f"{kit.spec.app_id} settings doctor" in setup.output
     assert app_scope.exit_code == 0, app_scope.output
-    assert kit.spec.app_env_path().is_file()
+    assert kit.spec.user_dotenv_path().is_file()
 
 
 def test_config_doctor_payload_custom_config_group_name_next_steps(
@@ -655,7 +662,7 @@ def test_config_doctor_payload_custom_config_group_name_next_steps(
     )
 
     assert any(
-        step.startswith(f"{kit.spec.app_name} settings setup")
+        step.startswith(f"{kit.spec.app_id} settings setup")
         for step in payload.next_steps
     )
     assert all("apprc config" not in step for step in payload.next_steps)
@@ -702,7 +709,7 @@ def test_generated_config_set_uses_context_without_ctx_obj(
 
     kit = APPRC_EXAMPLE_APP_KIT
     storage_root = tmp_path / "storage"
-    storage_root.mkdir()
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
     app = typer.Typer()
 
     @app.callback()
@@ -723,7 +730,7 @@ def test_generated_config_set_uses_context_without_ctx_obj(
         app,
         [
             "--storage",
-            str(storage_root),
+            "alpha",
             "config",
             "set",
             "access_token",

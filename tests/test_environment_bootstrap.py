@@ -21,160 +21,122 @@ def _clear_example_env(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.delenv(key, raising=False)
 
 
-def _kit() -> AppConfigKit:
+def _kit(tmp_path: Path) -> AppConfigKit:
+    """Return an isolated storage-capable application declaration."""
     return AppConfigKit(
-        app_name="apprc_example_app",
+        app_id="apprc_example_app",
         display_name="Example App",
         config_package="config_with_storage.config",
         envs=(ApprcExampleAppEnv,),
-        storage=Storage(env_key="APPRC_EXAMPLE_APP_STORAGE"),
+        storage=Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
+        apprc_dir=tmp_path / "apprc",
     )
 
 
-def test_bootstrap_storage_path_selector_does_not_create_files(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
-    kit = _kit()
-
-    result = kit.bootstrap(
-        env_files=(),
-        env_file_overrides_os_environ=False,
-        load_dotenv_layers=True,
-        storage=None,
-    )
-
-    assert result.storage_root == storage_root.resolve()
-    assert result.storage_env == storage_root.resolve() / "apprc.storage.env"
-    assert result.apprc_toml == kit.spec.preferred_apprc_toml_path()
-    assert result.apprc_toml is not None
-    assert result.storage_env is not None
-    assert not result.apprc_toml.exists()
-    assert not result.storage_env.exists()
-    assert os.environ["APPRC_EXAMPLE_APP_STORAGE"] == str(
-        storage_root.resolve()
+def _register(kit: AppConfigKit, *, name: str, root: Path) -> None:
+    """Register one test storage using the application's fixed files."""
+    register_storage(
+        name=name,
+        root=root,
+        path=kit.spec.preferred_apprc_toml_path(),
+        storage_dotenv_filename=kit.spec.storage_dotenv_filename,
     )
 
 
-def test_bootstrap_rejects_missing_storage_root(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Report the owning app's setup command without creating the root.
+def test_bootstrap_rejects_path_valued_runtime_selector(tmp_path: Path) -> None:
+    kit = _kit(tmp_path)
+    root = tmp_path / "storage"
+    _register(kit, name="default", root=root)
 
-    :param monkeypatch: Isolated process environment fixture.
-    :param tmp_path: Temporary parent for the missing storage root.
-    """
-    missing_root = tmp_path / "missing-storage"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(missing_root))
-
-    with pytest.raises(StorageSelectorError) as error:
-        _kit().bootstrap(
-            env_files=(),
-            env_file_overrides_os_environ=False,
-            load_dotenv_layers=True,
-            storage=None,
-        )
-
-    message = str(error.value)
-    assert "Selected Example App storage root does not exist" in message
-    assert str(missing_root.resolve()) in message
-    assert (
-        "apprc_example_app config setup --yes --storage-root STORAGE_ROOT"
-        in message
-    )
-    assert not missing_root.exists()
-
-
-def test_bootstrap_rejects_storage_root_file(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Reject a selected file before reading storage-local configuration.
-
-    :param monkeypatch: Isolated process environment fixture.
-    :param tmp_path: Temporary parent for the invalid storage root.
-    """
-    storage_file = tmp_path / "storage-file"
-    storage_file.write_text("not a directory", encoding="utf-8")
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_file))
-
-    with pytest.raises(StorageSelectorError) as error:
-        _kit().bootstrap(
-            env_files=(),
-            env_file_overrides_os_environ=False,
-            load_dotenv_layers=True,
-            storage=None,
-        )
-
-    message = str(error.value)
-    assert "Selected Example App storage root is not a directory" in message
-    assert "APPRC_EXAMPLE_APP_STORAGE" in message
-
-
-def test_bootstrap_path_selector_ignores_corrupt_optional_index(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
-    kit = _kit()
-    index_path = kit.spec.apprc_toml_path()
-    index_path.parent.mkdir(parents=True)
-    index_path.write_text("[invalid", encoding="utf-8")
-
-    result = kit.bootstrap(
-        env_files=(),
-        env_file_overrides_os_environ=False,
-        load_dotenv_layers=True,
-        storage=None,
-    )
-
-    assert result.storage_root == storage_root.resolve()
-    assert result.apprc_toml == index_path
-    assert result.storage_name is None
-
-
-def test_bootstrap_bare_selector_fails_with_corrupt_existing_index(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
-    kit = _kit()
-    index_path = kit.spec.apprc_toml_path()
-    index_path.parent.mkdir(parents=True)
-    index_path.write_text("[invalid", encoding="utf-8")
-
-    with pytest.raises(ValueError):
+    with pytest.raises(StorageSelectorError, match="registered storage name"):
         kit.bootstrap(
             env_files=(),
             env_file_overrides_os_environ=False,
             load_dotenv_layers=True,
-            storage=None,
+            storage=str(root),
         )
 
 
-def test_bootstrap_reads_app_wide_selector_only_when_file_exists(
+def test_bootstrap_uses_first_registered_storage_as_toml_default(
+    tmp_path: Path,
+) -> None:
+    kit = _kit(tmp_path)
+    alpha = tmp_path / "alpha"
+    beta = tmp_path / "beta"
+    _register(kit, name="alpha", root=alpha)
+    _register(kit, name="beta", root=beta)
+
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.storage_name == "alpha"
+    assert result.storage_root == alpha.resolve()
+    assert result.storage_selector_source == "apprc.toml selected_storage"
+    assert os.environ["APPRC_EXAMPLE_APP_STORAGE"] == str(alpha.resolve())
+
+
+def test_bootstrap_cli_selector_beats_process_and_explicit_values(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    kit = _kit()
-    app_wide_env = kit.spec.app_env_path()
+    kit = _kit(tmp_path)
+    for name in ("alpha", "beta", "gamma"):
+        _register(kit, name=name, root=tmp_path / name)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
+    explicit = tmp_path / "explicit.env"
+    explicit.write_text("APPRC_EXAMPLE_APP_STORAGE=beta\n", encoding="utf-8")
+
+    result = kit.bootstrap(
+        env_files=(explicit,),
+        env_file_overrides_os_environ=True,
+        load_dotenv_layers=True,
+        storage="gamma",
+    )
+
+    assert result.storage_name == "gamma"
+    assert result.storage_selector_source == "--storage"
+
+
+@pytest.mark.parametrize(
+    ("explicit_overrides", "expected"),
+    [(False, "alpha"), (True, "beta")],
+)
+def test_bootstrap_preserves_explicit_env_override_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    explicit_overrides: bool,
+    expected: str,
+) -> None:
+    kit = _kit(tmp_path)
+    _register(kit, name="alpha", root=tmp_path / "alpha")
+    _register(kit, name="beta", root=tmp_path / "beta")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
+    explicit = tmp_path / "explicit.env"
+    explicit.write_text("APPRC_EXAMPLE_APP_STORAGE=beta\n", encoding="utf-8")
+
+    result = kit.bootstrap(
+        env_files=(explicit,),
+        env_file_overrides_os_environ=explicit_overrides,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.storage_name == expected
+
+
+def test_user_dotenv_does_not_select_storage(tmp_path: Path) -> None:
+    kit = _kit(tmp_path)
+    _register(kit, name="alpha", root=tmp_path / "alpha")
+    _register(kit, name="beta", root=tmp_path / "beta")
     write_env_file(
-        app_wide_env,
+        kit.spec.user_dotenv_path(),
         {
-            "APPRC_EXAMPLE_APP_STORAGE": str(storage_root),
-            "APPRC_EXAMPLE_APP_PROFILE": "from-app",
+            "APPRC_EXAMPLE_APP_STORAGE": "beta",
+            "APPRC_EXAMPLE_APP_PROFILE": "from-user",
         },
         owners=kit.spec.owners,
     )
@@ -186,58 +148,20 @@ def test_bootstrap_reads_app_wide_selector_only_when_file_exists(
         storage=None,
     )
 
-    assert result.storage_root == storage_root.resolve()
-    assert result.storage_selector_source == "app config"
-    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "from-app"
-    assert not kit.spec.preferred_apprc_toml_path().exists()
+    assert result.storage_name == "alpha"
+    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "from-user"
 
 
-def test_bootstrap_storage_env_overrides_app_wide_values(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
-    kit = _kit()
-    app_wide_env = kit.spec.app_env_path()
-    app_wide_env.parent.mkdir(parents=True)
-    app_wide_env.write_text(
-        'APPRC_EXAMPLE_APP_PROFILE="from-app"\n',
-        encoding="utf-8",
+def test_storage_dotenv_overrides_user_dotenv(tmp_path: Path) -> None:
+    kit = _kit(tmp_path)
+    root = tmp_path / "storage"
+    _register(kit, name="default", root=root)
+    kit.spec.user_dotenv_path().write_text(
+        'APPRC_EXAMPLE_APP_PROFILE="from-user"\n', encoding="utf-8"
     )
-    kit.spec.storage_env_path(storage_root).write_text(
-        'APPRC_EXAMPLE_APP_PROFILE="from-storage"\n',
-        encoding="utf-8",
+    kit.spec.storage_dotenv_path(root).write_text(
+        'APPRC_EXAMPLE_APP_PROFILE="from-storage"\n', encoding="utf-8"
     )
-
-    kit.bootstrap(
-        env_files=(),
-        env_file_overrides_os_environ=False,
-        load_dotenv_layers=True,
-        storage=None,
-    )
-
-    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "from-storage"
-
-
-def test_bootstrap_named_selector_uses_index_when_present(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    kit = _kit()
-    index_path = tmp_path / "config" / "apprc_example_app.apprc.toml"
-    alpha_root = tmp_path / "alpha"
-    register_storage(
-        name="alpha",
-        root=alpha_root,
-        path=index_path,
-        storage_env_filename=kit.spec.require_storage().env_filename,
-    )
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_TOML", str(index_path))
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
 
     result = kit.bootstrap(
         env_files=(),
@@ -246,40 +170,45 @@ def test_bootstrap_named_selector_uses_index_when_present(
         storage=None,
     )
 
-    assert result.storage_name == "alpha"
-    assert result.storage_root == alpha_root.resolve()
-    assert result.storage_count == 1
-    assert result.apprc_toml == index_path
+    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "from-storage"
+    assert result.user_dotenv == kit.spec.user_dotenv_path()
+    assert result.storage_dotenv == kit.spec.storage_dotenv_path(root)
 
 
-def test_bootstrap_preserves_explicit_env_override_policy(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", str(storage_root))
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_PROFILE", "from-shell")
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        'APPRC_EXAMPLE_APP_PROFILE="from-explicit"\n',
+def test_bootstrap_rejects_missing_registered_root(tmp_path: Path) -> None:
+    kit = _kit(tmp_path)
+    registry = kit.spec.preferred_apprc_toml_path()
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        'selected_storage = "missing"\n\n'
+        '[storages.missing]\nroot = "../missing"\n',
         encoding="utf-8",
     )
-    kit = _kit()
 
-    kit.bootstrap(
-        env_files=(env_file,),
-        env_file_overrides_os_environ=False,
-        load_dotenv_layers=True,
-        storage=None,
-    )
-    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "from-shell"
+    with pytest.raises(StorageSelectorError, match="does not exist"):
+        kit.bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage=None,
+        )
 
-    kit.bootstrap(
-        env_files=(env_file,),
-        env_file_overrides_os_environ=True,
-        load_dotenv_layers=True,
-        storage=None,
+
+def test_bootstrap_rejects_registered_root_file(tmp_path: Path) -> None:
+    kit = _kit(tmp_path)
+    root = tmp_path / "storage-file"
+    root.write_text("not a directory", encoding="utf-8")
+    registry = kit.spec.preferred_apprc_toml_path()
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        f'selected_storage = "invalid"\n\n[storages.invalid]\nroot = "{root}"\n',
+        encoding="utf-8",
     )
-    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "from-explicit"
+
+    with pytest.raises(StorageSelectorError, match="not a directory"):
+        kit.bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage=None,
+        )

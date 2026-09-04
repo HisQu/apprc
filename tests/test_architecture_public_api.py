@@ -51,7 +51,7 @@ def test_top_level_facade_exports_stable_config_interfaces() -> None:
     assert storage_api.StorageRegistry is StorageRegistry
     assert callable(files_api.resolve_package_root)
     assert callable(storage_api.register_storage)
-    assert callable(files_api.set_storage_env_value)
+    assert callable(files_api.set_storage_dotenv_value)
     assert callable(provenance_api.provenance_of)
 
 

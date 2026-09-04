@@ -1,72 +1,45 @@
 from __future__ import annotations
 
-# == Standard Library ===========================================
 from pathlib import Path
 
-# == 3rd Party ==================================================
 import pytest
 from rich.text import Text
 
-# == Internal ===================================================
-from apprc.definition.app_config.kit import AppConfigKit
-from apprc.interfaces.tui._primitives import (
-    ConfirmScreen,
-    PathInputResult,
-    StorageNameResult,
-)
-from apprc.user_files.setup.text import setup_overview_text
-from apprc.interfaces.tui.setup import ConfigSetupApp
+from apprc.interfaces.tui._primitives import ConfirmScreen, PathInputResult
 from apprc.interfaces.tui.editor import ConfigEditorApp
-from apprc.interfaces.tui.storage.selection import ActivePathStorageSelection
+from apprc.user_files.setup.text import setup_overview_text
 from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
 )
 from tests.support_config import (
-    StorageFreeExampleEnv,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
 )
 
 
-def test_setup_overview_text_describes_storage_route() -> None:
+def test_setup_overview_describes_fixed_storage_files() -> None:
     text = setup_overview_text(build_apprc_example_app_kit())
 
-    assert "storage directory" in text
-    assert "per-user app config" in text
+    assert "apprc.user.env" in text
+    assert "storage named default" in text
+    assert "apprc.toml" in text
 
 
-def test_setup_overview_text_describes_lazy_app_config() -> None:
+def test_setup_overview_describes_storage_free_user_dotenv() -> None:
     text = setup_overview_text(build_storage_free_example_kit())
 
-    assert "needs no setup" in text
-    assert "created when a value is first saved" in text
-
-
-def test_config_setup_app_stores_kit() -> None:
-    kit = build_apprc_example_app_kit()
-    app = ConfigSetupApp(kit=kit)
-
-    assert app.kit is kit
+    assert "empty apprc.user.env" in text
+    assert "registers" not in text
 
 
 @pytest.mark.asyncio
-async def test_editor_setup_initializes_path_without_requiring_registration(
+async def test_editor_setup_registers_default_storage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Create usable storage while leaving the missing index untouched.
-
-    :param monkeypatch: Fixture used to script modal answers.
-    :param tmp_path: Temporary root for config and storage files.
-    """
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_apprc_example_app_kit()
-    index_path = kit.spec.apprc_toml_path()
     storage_root = tmp_path / "storage"
-    editor = ConfigEditorApp(
-        kit=kit,
-        storage_registry=load_storage_registry_or_empty(index_path),
-    )
+    editor = ConfigEditorApp(kit=kit, storage_registry=None)
     responses: list[object | None] = [
         PathInputResult(path=storage_root),
         "setup",
@@ -84,70 +57,23 @@ async def test_editor_setup_initializes_path_without_requiring_registration(
         await pilot.pause()
         await editor.setup_workflow.open_setup_flow()
 
-        assert (storage_root / "apprc.storage.env").is_file()
-        assert not index_path.exists()
-        assert editor.active_storage_root == storage_root.resolve()
-        assert isinstance(editor.selection, ActivePathStorageSelection)
-
+    registry = load_storage_registry_or_empty(
+        kit.spec.preferred_apprc_toml_path()
+    )
+    assert registry.selected_storage == "default"
+    assert registry.selected("default").root == storage_root.resolve()
+    assert kit.spec.user_dotenv_path().is_file()
+    assert kit.spec.storage_dotenv_path(storage_root).is_file()
     summary = screens[-1]
     assert isinstance(summary, ConfirmScreen)
     assert isinstance(summary.message, Text)
-    assert f"app_env: {kit.spec.app_env_path()}" in summary.message.plain
-    assert "export APPRC_EXAMPLE_APP_STORAGE" not in summary.message.plain
+    assert "user_dotenv:" in summary.message.plain
 
 
 @pytest.mark.asyncio
-async def test_editor_setup_can_register_initialized_storage(
+async def test_storage_free_editor_setup_creates_user_dotenv(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    """Create the first named-storage index after setup when requested.
-
-    :param monkeypatch: Fixture used to script modal answers.
-    :param tmp_path: Temporary root for config and storage files.
-    """
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    kit = build_apprc_example_app_kit()
-    index_path = kit.spec.apprc_toml_path()
-    storage_root = tmp_path / "storage"
-    editor = ConfigEditorApp(
-        kit=kit,
-        storage_registry=load_storage_registry_or_empty(index_path),
-    )
-    responses: list[object | None] = [
-        PathInputResult(path=storage_root),
-        "setup",
-        "register",
-        StorageNameResult(name="alpha"),
-    ]
-
-    async def push_screen_wait(_: object) -> object | None:
-        return responses.pop(0)
-
-    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-        await editor.setup_workflow.open_setup_flow()
-
-        assert editor.storage_registry is not None
-        assert editor.storage_registry.selected("alpha").root == (
-            storage_root.resolve()
-        )
-        assert index_path.is_file()
-
-
-@pytest.mark.asyncio
-async def test_editor_setup_explains_lazy_app_config(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Explain lazy app config from an editor without storage controls.
-
-    :param monkeypatch: Fixture used to isolate files and close the summary.
-    :param tmp_path: Temporary root for the config home.
-    """
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_storage_free_example_kit()
     editor = ConfigEditorApp(kit=kit, storage_registry=None)
 
@@ -160,42 +86,5 @@ async def test_editor_setup_explains_lazy_app_config(
         await pilot.pause()
         await editor.setup_workflow.open_setup_flow()
 
-    assert not kit.spec.app_env_path().exists()
-
-
-@pytest.mark.asyncio
-async def test_editor_setup_explains_env_only_mode_without_writes(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Explain env-only setup without creating AppRC-managed files.
-
-    :param monkeypatch: Fixture used to isolate files and capture the modal.
-    :param tmp_path: Temporary root for the config home.
-    """
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    kit = AppConfigKit.env_only(
-        app_name="env_app",
-        display_name="Env App",
-        config_package="apprc",
-        envs=(StorageFreeExampleEnv,),
-    )
-    editor = ConfigEditorApp(kit=kit, storage_registry=None)
-    screens: list[object] = []
-
-    async def push_screen_wait(screen: object) -> object | None:
-        screens.append(screen)
-        return "done"
-
-    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-        await editor.setup_workflow.open_setup_flow()
-
-    summary = screens[-1]
-    assert isinstance(summary, ConfirmScreen)
-    assert isinstance(summary.message, Text)
-    assert "writes: none" in summary.message.plain
-    assert not kit.spec.app_env_path().exists()
-    assert not kit.spec.apprc_toml_path().exists()
+    assert kit.spec.user_dotenv_path().read_text(encoding="utf-8") == ""
+    assert not kit.spec.preferred_apprc_toml_path().exists()

@@ -5,26 +5,27 @@ from __future__ import annotations
 from apprc._lazy import build_lazy_facade
 
 _APP_HOME_EXPORTS = [
-    "AppConfigHome",
-    "ConfigHomeError",
-    "app_config_file",
-    "app_config_home",
+    "AppRCDirectoryError",
+    "AppRCDirectoryPaths",
+    "apprc_file",
+    "default_apprc_dir",
     "ensure_text_file",
-    "resolve_app_config_home",
+    "resolve_apprc_dir",
+    "resolve_apprc_directory_paths",
     "resolve_package_root",
     "write_text_atomic",
 ]
 _ENV_FILE_EXPORTS = [
     "EnvFileUpdate",
     "clear_env_file_value",
-    "clear_storage_env_value",
+    "clear_storage_dotenv_value",
     "ensure_env_file",
-    "ensure_storage_env_file",
+    "ensure_storage_dotenv_file",
     "normalize_env_value",
     "read_env_file",
     "set_env_file_value",
-    "set_storage_env_value",
-    "storage_env_path",
+    "set_storage_dotenv_value",
+    "storage_dotenv_path",
     "write_env_file",
 ]
 _SETUP_EXPORTS = [
@@ -41,12 +42,13 @@ _SYMBOL_EXPORTS = {
     **{
         name: "apprc.user_files.app_home.locations"
         for name in [
-            "AppConfigHome",
-            "ConfigHomeError",
-            "app_config_file",
-            "app_config_home",
+            "AppRCDirectoryError",
+            "AppRCDirectoryPaths",
+            "apprc_file",
+            "default_apprc_dir",
             "ensure_text_file",
-            "resolve_app_config_home",
+            "resolve_apprc_dir",
+            "resolve_apprc_directory_paths",
             "write_text_atomic",
         ]
     },
@@ -54,9 +56,9 @@ _SYMBOL_EXPORTS = {
         name: "apprc.user_files.env_files.files"
         for name in [
             "ensure_env_file",
-            "ensure_storage_env_file",
+            "ensure_storage_dotenv_file",
             "read_env_file",
-            "storage_env_path",
+            "storage_dotenv_path",
             "write_env_file",
         ]
     },
@@ -65,9 +67,9 @@ _SYMBOL_EXPORTS = {
         for name in [
             "EnvFileUpdate",
             "clear_env_file_value",
-            "clear_storage_env_value",
+            "clear_storage_dotenv_value",
             "set_env_file_value",
-            "set_storage_env_value",
+            "set_storage_dotenv_value",
         ]
     },
     **{

@@ -34,6 +34,7 @@ from tests.support_config import (
     StorageFreeExampleEnv,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
+    register_storage_for_kit,
 )
 
 
@@ -398,7 +399,7 @@ def test_config_cli_runtime_builds_state_for_host_command(
 
 def test_config_cli_runtime_default_state_for_host_command() -> None:
     kit = _build_storage_free_kit_with_shared_env()
-    args = ["--storage", "demo", "run"]
+    args = ["run"]
     app = typer.Typer()
     sessions: list[CliRuntimeSession[DefaultConfigCliState]] = []
     runtime = CliRuntime[HaiuLikeOptions, DefaultConfigCliState](
@@ -434,7 +435,7 @@ def test_config_cli_runtime_default_state_for_host_command() -> None:
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == {
         "bootstrapped": True,
-        "storage": "demo",
+        "storage": None,
     }
     assert isinstance(sessions[0].state, DefaultConfigCliState)
 
@@ -669,8 +670,8 @@ def test_config_cli_runtime_runtime_independent_paths_uses_context_only(
     assert factory_calls == []
     payload = json.loads(result.output)
     assert payload["writes"] == "none"
-    assert payload["app_config_enabled"] is True
     assert payload["storage_enabled"] is False
+    assert payload["user_dotenv"].endswith("apprc.user.env")
 
 
 def test_config_cli_runtime_rejects_direct_config_policy_group_drift() -> None:
@@ -726,10 +727,10 @@ def test_config_cli_runtime_runtime_independent_set_skips_state_factory(
 ) -> None:
     kit = build_apprc_example_app_kit()
     storage_root = tmp_path / "storage"
-    storage_root.mkdir()
+    register_storage_for_kit(kit, name="alpha", root=storage_root)
     args = [
         "--storage",
-        str(storage_root),
+        "alpha",
         "config",
         "set",
         "access_token",
@@ -870,7 +871,7 @@ def _ctx(command_name: str | None) -> typer.Context:
 
 def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
     return AppConfigKit(
-        app_name="storage_free_app",
+        app_id="storage_free_app",
         display_name="Storage-Free App",
         config_package="config_with_storage.config",
         envs=(StorageFreeExampleEnv,),

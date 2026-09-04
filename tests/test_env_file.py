@@ -243,14 +243,15 @@ def test_set_env_file_value_preserves_unrelated_user_text(
     tmp_path: Path,
 ) -> None:
     env_path = tmp_path / "apprc.user.env"
-    env_path.write_text(
-        "# Keep this explanation\r\n"
-        "export APPRC_EXAMPLE_APP_PROFILE = old # active profile\r\n"
-        "UNKNOWN='keep this quoting'\r\n"
-        "\r\n"
-        "APPRC_EXAMPLE_APP_PROFILE=stale\r\n"
-        "BROKEN='unterminated\r\n",
-        encoding="utf-8",
+    env_path.write_bytes(
+        (
+            "# Keep this explanation\r\n"
+            "export APPRC_EXAMPLE_APP_PROFILE = old # active profile\r\n"
+            "UNKNOWN='keep this quoting'\r\n"
+            "\r\n"
+            "APPRC_EXAMPLE_APP_PROFILE=stale\r\n"
+            "BROKEN='unterminated\r\n"
+        ).encode("utf-8")
     )
 
     update = set_env_file_value(
@@ -333,7 +334,7 @@ def test_set_env_file_value_appends_after_missing_final_newline(
     tmp_path: Path,
 ) -> None:
     env_path = tmp_path / "apprc.user.env"
-    env_path.write_text("KEEP=1\r\nOTHER=2", encoding="utf-8")
+    env_path.write_bytes(b"KEEP=1\r\nOTHER=2")
 
     set_env_file_value(
         path=env_path,

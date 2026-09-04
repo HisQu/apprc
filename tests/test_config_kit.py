@@ -8,7 +8,12 @@ from apprc.definition.app_config.kit import AppConfigKit
 from apprc.definition.app_config.storage import Storage
 from apprc.runtime.diagnostics.payload import build_config_doctor_payload
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
-from apprc.user_files.storage_roots.registry import register_storage
+from apprc.user_files.storage_roots.registry import (
+    StorageRecord,
+    StorageRegistry,
+    register_storage,
+    write_storage_registry,
+)
 from tests.support_config import (
     ApprcExampleAppEnv,
     build_apprc_example_app_kit,
@@ -152,9 +157,14 @@ def test_doctor_recommends_selecting_an_existing_storage(
     storage_root = tmp_path / "alpha"
     storage_root.mkdir()
     (storage_root / "apprc.storage.env").write_text("", encoding="utf-8")
-    kit.spec.preferred_apprc_toml_path().write_text(
-        f'[storages.alpha]\nroot = "{storage_root}"\n',
-        encoding="utf-8",
+    registry_path = kit.spec.preferred_apprc_toml_path()
+    write_storage_registry(
+        StorageRegistry(
+            path=registry_path,
+            storages={"alpha": StorageRecord(name="alpha", root=storage_root)},
+            selected_storage=None,
+            archived_storages={},
+        )
     )
 
     payload = build_config_doctor_payload(kit, storage=None)

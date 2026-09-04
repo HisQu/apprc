@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -201,7 +202,8 @@ def test_bootstrap_rejects_registered_root_file(tmp_path: Path) -> None:
     registry = kit.spec.preferred_apprc_toml_path()
     registry.parent.mkdir(parents=True)
     registry.write_text(
-        f'selected_storage = "invalid"\n\n[storages.invalid]\nroot = "{root}"\n',
+        'selected_storage = "invalid"\n\n'
+        f"[storages.invalid]\nroot = {json.dumps(str(root))}\n",
         encoding="utf-8",
     )
 

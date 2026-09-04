@@ -26,8 +26,8 @@ def test_config_paths_is_zero_write_and_uses_file_specific_names() -> None:
     payload = json.loads(result.output)
     assert payload["writes"] == "none"
     assert payload["storage_enabled"] is True
-    assert payload["user_dotenv"].endswith("/apprc.user.env")
-    assert payload["apprc_toml"].endswith("/apprc.toml")
+    assert Path(payload["user_dotenv"]).name == "apprc.user.env"
+    assert Path(payload["apprc_toml"]).name == "apprc.toml"
     assert not Path(payload["user_dotenv"]).exists()
     assert not Path(payload["apprc_toml"]).exists()
 

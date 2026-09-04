@@ -268,7 +268,8 @@ def test_mount_config_cli_reports_app_setup_for_missing_storage(
     registry = kit.spec.preferred_apprc_toml_path()
     registry.parent.mkdir(parents=True)
     registry.write_text(
-        f'selected_storage = "missing"\n\n[storages.missing]\nroot = "{missing_root}"\n',
+        'selected_storage = "missing"\n\n'
+        f"[storages.missing]\nroot = {json.dumps(str(missing_root))}\n",
         encoding="utf-8",
     )
     app = typer.Typer()

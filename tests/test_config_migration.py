@@ -10,6 +10,7 @@ from apprc.user_files.migration import (
     ConfigMigrationError,
     apply_config_migration,
     build_config_migration_plan,
+    legacy_platform_config_dir,
 )
 from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
@@ -30,11 +31,28 @@ def _spec(
     )
 
 
+def _legacy_environment(tmp_path: Path) -> dict[str, str]:
+    """Return platform base-directory overrides below a temporary directory.
+
+    :param tmp_path: Temporary directory owned by the test.
+    :return: Linux, macOS, and Windows base-directory environment values.
+    """
+    return {
+        "APPDATA": str(tmp_path / "legacy-config"),
+        "HOME": str(tmp_path / "legacy-home"),
+        "XDG_CONFIG_HOME": str(tmp_path / "legacy-config"),
+    }
+
+
 def test_migration_converts_released_path_selector_to_default_storage(
     tmp_path: Path,
 ) -> None:
     spec = _spec(tmp_path)
-    legacy_dir = tmp_path / "legacy-config" / "migration_demo"
+    proc_env = _legacy_environment(tmp_path)
+    legacy_dir = legacy_platform_config_dir(
+        "migration_demo",
+        proc_env=proc_env,
+    )
     legacy_dir.mkdir(parents=True)
     storage_root = tmp_path / "old-storage"
     storage_root.mkdir()
@@ -42,14 +60,11 @@ def test_migration_converts_released_path_selector_to_default_storage(
         "LOCAL=1\n", encoding="utf-8"
     )
     (legacy_dir / ".env.apprc-app").write_text(
-        f"KEEP=1\nMIGRATION_DEMO_STORAGE={storage_root}\n",
+        f"KEEP=1\nMIGRATION_DEMO_STORAGE={storage_root.as_posix()}\n",
         encoding="utf-8",
     )
 
-    plan = build_config_migration_plan(
-        spec,
-        proc_env={"XDG_CONFIG_HOME": str(tmp_path / "legacy-config")},
-    )
+    plan = build_config_migration_plan(spec, proc_env=proc_env)
     result = apply_config_migration(plan)
 
     assert not plan.conflicts
@@ -110,16 +125,17 @@ def test_migration_reads_custom_legacy_toml_and_resolves_relative_roots(
 
 def test_migration_conflict_preflight_makes_no_changes(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
-    legacy_dir = tmp_path / "legacy-config" / "migration_demo"
+    proc_env = _legacy_environment(tmp_path)
+    legacy_dir = legacy_platform_config_dir(
+        "migration_demo",
+        proc_env=proc_env,
+    )
     legacy_dir.mkdir(parents=True)
     legacy = legacy_dir / ".env.apprc-app"
     legacy.write_text("OLD=1\n", encoding="utf-8")
     spec.ensure_user_dotenv().write_text("NEW=1\n", encoding="utf-8")
 
-    plan = build_config_migration_plan(
-        spec,
-        proc_env={"XDG_CONFIG_HOME": str(tmp_path / "legacy-config")},
-    )
+    plan = build_config_migration_plan(spec, proc_env=proc_env)
 
     assert plan.conflicts
     with pytest.raises(ConfigMigrationError, match="No files were changed"):
@@ -169,14 +185,12 @@ def test_migration_ignores_unreleased_apprc_app_env(tmp_path: Path) -> None:
 
 def test_migration_scans_declared_legacy_app_ids(tmp_path: Path) -> None:
     spec = _spec(tmp_path, legacy_app_ids=("pdb",))
-    legacy_dir = tmp_path / "legacy-config" / "pdb"
+    proc_env = _legacy_environment(tmp_path)
+    legacy_dir = legacy_platform_config_dir("pdb", proc_env=proc_env)
     legacy_dir.mkdir(parents=True)
     (legacy_dir / ".env.apprc-app").write_text("KEEP=1\n", encoding="utf-8")
 
-    plan = build_config_migration_plan(
-        spec,
-        proc_env={"XDG_CONFIG_HOME": str(tmp_path / "legacy-config")},
-    )
+    plan = build_config_migration_plan(spec, proc_env=proc_env)
     apply_config_migration(plan)
 
     assert spec.user_dotenv_path().read_text(encoding="utf-8") == "KEEP=1\n"

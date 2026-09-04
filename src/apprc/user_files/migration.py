@@ -343,7 +343,11 @@ def legacy_platform_config_dir(
     if active_platform == "win32":
         base = Path(env.get("APPDATA", Path.home() / "AppData" / "Roaming"))
     elif active_platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
+        base = (
+            Path(env.get("HOME", Path.home()))
+            / "Library"
+            / "Application Support"
+        )
     else:
         base = Path(env.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return base.expanduser() / app_id

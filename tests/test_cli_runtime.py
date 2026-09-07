@@ -873,7 +873,7 @@ def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
     return AppConfigKit(
         app_id="storage_free_app",
         display_name="Storage-Free App",
-        config_package="config_with_storage.config",
+        config_package="user_dotenv_with_storage.config",
         envs=(StorageFreeExampleEnv,),
     )
 

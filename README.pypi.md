@@ -54,7 +54,7 @@ command references, see [docs/References.md](https://github.com/HisQu/apprc/blob
 4. [Runnable Examples](#runnable-examples)
 5. [How AppRC Works](#how-apprc-works)
    1. [Mental Model](#mental-model)
-   2. [Config And Storage](#config-and-storage)
+   2. [Managed File Capabilities](#managed-file-capabilities)
    3. [Runtime Precedence](#runtime-precedence)
 6. [Generated Workflows](#generated-workflows)
    1. [Config CLI](#config-cli)
@@ -120,6 +120,7 @@ myapp/config/
 ```bash
 apprc scaffold config \
   --package myapp \
+  --user-dotenv \
   --storage \
   --app-id myapp \
   --display-name "My App" \
@@ -150,6 +151,7 @@ MyRC = rc.AppRC(
     app_id="myapp",
     display_name="My App",
     config_package="myapp.config",
+    user_dotenv=rc.UserDotenv(),
     storage=rc.Storage(selector_env_key="MYAPP_STORAGE"),
 )
 
@@ -188,7 +190,7 @@ class MyAppConfig:
     resources: PackageResources = field(default_factory=PackageResources)
 ```
 
-Add packaged defaults in `myapp/config/apprc.defaults.env`:
+Optionally add packaged defaults in `myapp/config/apprc.defaults.env`:
 
 ```dotenv
 MYAPP_PROFILE="default"
@@ -258,7 +260,7 @@ Install the local library plus its runnable examples from a checkout with:
 python -m pip install -e ".[tui]" -e examples/example_apps --no-build-isolation
 ```
 
-Start with `apprc-examples-lab config-with-storage`. It opens a disposable
+Start with `apprc-examples-lab user-dotenv-with-storage`. It opens a disposable
 shell with no AppRC files and prints commands for the selected scenario. See
 [Runnable Examples](#runnable-examples) for the complete inventory.
 
@@ -275,46 +277,49 @@ For the exact import surface, see
 
 # Runnable Examples
 
-The checkout contains four application CLIs and two test utilities:
+The checkout contains four capability examples, two advanced examples, and two
+test utilities:
 
-| Command | Storage | What it demonstrates |
-|---|---:|---|
-| `apprc-config-only` | No | The smallest `AppRC` integration with packaged, user, explicit-file, and process-environment values. |
-| `apprc-config-with-storage` | Yes | Named storage, direct path selection, storage-local dotenv values, and the generated storage lifecycle. |
-| `apprc-explicit-env-precedence` | Yes | The difference between normal process-environment precedence and `--env-file-overrides-os-environ`. |
-| `apprc-cli-runtime` | Yes | An app-owned Typer callback, custom runtime state, and runtime-independent commands through `CliRuntime`. |
-| `apprc-examples-lab EXAMPLE` | Depends | Opens one clean temporary shell, prints a walkthrough, and deletes its temporary state when the shell exits. |
-| `apprc-examples-run-all` | Both | Runs setup, doctor, application runtime, and purge through the installed CLIs, then prints a JSON summary. |
+| Command | User dotenv | Storage | What it demonstrates |
+|---|---:|---:|---|
+| `apprc-process-env` | No | No | Process environment and Python defaults without managed user files. |
+| `apprc-user-dotenv` | Yes | No | One managed user dotenv and the user write scope. |
+| `apprc-storage` | No | Yes | Named storage and storage-local values without a user dotenv. |
+| `apprc-user-dotenv-with-storage` | Yes | Yes | Both persistent capabilities and both write scopes. |
+| `apprc-explicit-env-precedence` | Yes | Yes | Normal process precedence versus `--env-file-overrides-os-environ`. |
+| `apprc-cli-runtime` | Yes | Yes | App-owned Typer state and runtime-independent commands through `CliRuntime`. |
+| `apprc-examples-lab EXAMPLE` | Depends | Depends | One clean temporary shell with a scenario walkthrough. |
+| `apprc-examples-run-all` | All | All | Automated setup, diagnostics, runtime, and cleanup through installed CLIs. |
 
 Use the lab for manual testing:
 
 ```bash
-apprc-examples-lab config-only
-apprc-examples-lab config-with-storage
+apprc-examples-lab process-env
+apprc-examples-lab user-dotenv
+apprc-examples-lab storage
+apprc-examples-lab user-dotenv-with-storage
 apprc-examples-lab explicit-env-precedence
 apprc-examples-lab cli-runtime
 ```
 
-The lab removes inherited `APPRC_EXAMPLE_*` values and points the selected
-application's `<APP>_APPRC_DIR` at its temporary root. It does not create
-AppRC files before the shell opens. The root is removed on exit. A storage
-path that you explicitly choose outside the printed temporary root remains
+The lab removes inherited `APPRC_EXAMPLE_*` values. For examples with managed
+files, it points `<APP>_APPRC_DIR` at its temporary root. It does not create
+AppRC files before the shell opens. The root is removed on exit. A storage path
+that you explicitly choose outside the printed temporary root remains
 untouched.
 
-The four application commands are normal applications: if you invoke them
-outside the lab, they use their configured or default AppRC paths and can
-leave persistent files. Run `config paths` before setup and `config purge
---dry-run` before removal.
+The commands are normal applications. Managed-capability examples use their
+configured or default AppRC paths outside the lab and can leave persistent
+files. Run `config paths` before setup and `config purge --dry-run` before
+removal.
 
-All four examples expose `config paths`, `setup`, `doctor`, `show`, `set`,
-`edit`, `migrate`, and `purge`. The three storage-capable examples also expose
-`config storage add`, `list`, `select`, `rename`, `repoint`, `move`, and
-`remove`, plus the root `--storage NAME_OR_PATH` option. Their package source
-is intentionally self-contained so each example can be copied without the
-lab or smoke-runner package.
+Every example exposes `config paths`, `show`, `doctor`, and cleanup-only
+`purge`. `setup`, `set`, `edit`, and `migrate` appear only when the declaration
+contains `rc.UserDotenv()` or `rc.Storage()`. Storage declarations also expose
+the root `--storage NAME_OR_PATH` option and `config storage ...` commands.
 
 The automated example suite checks the common command surface on every app,
-the complete storage lifecycle on `apprc-config-with-storage`, name and path
+the complete storage lifecycle on `apprc-storage`, name and path
 selection, both precedence outcomes, `CliRuntime` skip/runtime behavior, and
 temporary-lab cleanup. It does not claim that every generated command is run
 against every example.
@@ -358,53 +363,59 @@ provenance, and the zero-write policy, see
 
 <br>
 
-## Config And Storage
+## Managed File Capabilities
 
-There are two declarations, not four capability levels:
+User-wide dotenv overrides and named storage are independent features:
 
 ```python
-# Config only. No storage controls are generated.
-MyRC = rc.AppRC(
-    app_id="myapp",
-    config_package="myapp.config",
-)
+common = {"app_id": "myapp", "config_package": "myapp.config"}
 
-# The same config model plus storage.
-MyRC = rc.AppRC(
-    app_id="myapp",
-    config_package="myapp.config",
-    storage=rc.Storage(selector_env_key="MYAPP_STORAGE"),
+process_only = rc.AppRC(**common)
+user_only = rc.AppRC(**common, user_dotenv=rc.UserDotenv())
+storage_only = rc.AppRC(**common, storage=rc.Storage())
+both = rc.AppRC(
+    **common,
+    user_dotenv=rc.UserDotenv(),
+    storage=rc.Storage(),
 )
 ```
 
 `rc.Storage()` derives `MYAPP_STORAGE` when `selector_env_key` is omitted. The
 first setup suggests `~/.local/share/myapp/storage/` on every operating system.
-The user sees that path before AppRC creates it and can pass another path with
-`config setup --storage-root PATH`. Interactive setup offers the default path,
-a custom path with directory completion, or cancellation.
+Interactive setup first lets the user accept or replace the AppRC directory,
+then does the same for the storage root. Both path prompts provide filesystem
+completion. Scripts can pass `--apprc-dir PATH` and `--storage-root PATH`.
 
 AppRC-managed persistence files are explicit:
 
-| Layer | Default location | Created by |
+| Layer | Default location | Availability and creation |
 | --- | --- | --- |
-| Packaged defaults | package `apprc.defaults.env` | shipped with package |
-| User dotenv | `~/.local/share/myapp/apprc.user.env` | `config setup` or first user-scope save |
-| Storage registry | `~/.local/share/myapp/apprc.toml` | storage setup or a storage registry command |
-| Storage dotenv | `<storage-root>/apprc.storage.env` | storage setup, `storage add`, or first storage-scope save |
+| Packaged defaults | package `apprc.defaults.env` | Optional application resource; never created for the user. |
+| User dotenv | `~/.local/share/myapp/apprc.user.env` | Only with `rc.UserDotenv()`; created by setup. |
+| Storage registry | `~/.local/share/myapp/apprc.toml` | Only with `rc.Storage()`; created by storage setup or registry commands. |
+| Storage dotenv | `<storage-root>/apprc.storage.env` | Only with `rc.Storage()`; created by setup or `storage add`. |
 
-The directory containing `apprc.user.env` and `apprc.toml` is the **AppRC
-directory**. Set `MYAPP_APPRC_DIR` to relocate the complete directory. AppRC
-does not split default files between `.config`, `.local`, `%APPDATA%`, and
-`~/Library/Application Support`.
+The directory containing the declared central files is the **AppRC directory**.
+Set `MYAPP_APPRC_DIR` to relocate it. AppRC does not split default files between
+`.config`, `.local`, `%APPDATA%`, and `~/Library/Application Support`.
 
 The complete default layouts are:
 
 ```text
-# rc.AppRC(...) — no storage
+# rc.AppRC(...) — process environment only
+# No AppRC directory or managed user files.
+
+# rc.AppRC(..., user_dotenv=rc.UserDotenv())
 ~/.local/share/myapp/
 └── apprc.user.env
 
-# rc.AppRC(..., storage=rc.Storage()) — one default storage
+# rc.AppRC(..., storage=rc.Storage())
+~/.local/share/myapp/
+├── apprc.toml
+└── storage/
+    └── apprc.storage.env
+
+# rc.AppRC(..., user_dotenv=rc.UserDotenv(), storage=rc.Storage())
 ~/.local/share/myapp/
 ├── apprc.user.env
 ├── apprc.toml
@@ -417,10 +428,9 @@ anywhere; they do not gain another `storage/<name>/` directory automatically.
 
 **Important**
 
-Files on disk never enable application capabilities. Only
-`storage=rc.Storage()` enables storage support. Without it, AppRC hides
-`--storage`, `config storage ...`, the storage editor section, and
-`--scope storage`; a stale `apprc.toml` produces only a doctor warning.
+Files on disk never enable application capabilities. Python declarations
+control whether the user dotenv, storage controls, and their write scopes
+exist. Stale files produce doctor warnings and remain eligible for purge.
 
 **Note**
 
@@ -433,8 +443,8 @@ For declaration arguments, see
 
 When dotenv layers are loaded, AppRC merges values in this order:
 
-1. packaged `apprc.defaults.env`
-2. user `apprc.user.env`
+1. optional packaged `apprc.defaults.env`
+2. user `apprc.user.env`, when declared
 3. selected storage `apprc.storage.env`, when storage is selected and present
 4. explicit `--env-file` values
 5. existing `os.environ`
@@ -478,18 +488,27 @@ contract to users, setup commands, diagnostics, and the Textual editor.
 
 ## Config CLI
 
-Mounting `APP_CONFIG.typer_app(...)` gives your app these commands:
+All declarations get read-only inspection and cleanup commands:
 
 ```shell
 myapp config paths
 myapp config doctor
 myapp config show
+myapp config purge --dry-run
+```
+
+Declarations with `rc.UserDotenv()`, `rc.Storage()`, or both also get:
+
+```shell
 myapp config setup
 myapp config migrate --dry-run
-myapp config purge --dry-run
-myapp config set KEY VALUE --scope user
-myapp config set KEY VALUE --scope storage
+myapp config set KEY VALUE --scope DECLARED_SCOPE
 myapp config edit
+```
+
+Storage declarations additionally get `--storage NAME_OR_PATH` and:
+
+```shell
 myapp config storage add NAME PATH
 myapp config storage list
 myapp config storage select NAME
@@ -499,16 +518,16 @@ myapp config storage move NAME PATH
 myapp config storage remove NAME
 ```
 
-Storage commands appear when the declaration includes `rc.Storage()`. The app
-config commands are always available.
+The user write scope exists only with `rc.UserDotenv()`. The storage write
+scope and storage commands exist only with `rc.Storage()`.
 
 `config edit` requires the optional TUI extra:
 `python -m pip install "apprc[tui]"`.
 
-The editor always shows `Setup`. It runs the same declaration-aware setup as
-`config setup`. Storage apps also show `New`, `Register`,
-`Rename`, `Location`, `Move`, `Archive`, and `Delete`. `New` and `Register`
-can create the first AppRC TOML registry; opening the editor itself still
+The editor names any missing setup work and shows a setup action only when a
+declared file or storage needs initialization or repair. Setup lets the user
+choose the AppRC directory and storage root with path completion. Storage apps
+also expose their registered storage operations. Opening the editor itself
 writes nothing.
 
 **Note**
@@ -520,10 +539,9 @@ For the generated command table, see
 
 ## Setup And Diagnostics
 
-Use `config paths` before setup to see candidate paths and the declaration
-without writing anything. Use `config setup` or the editor's
-`Setup` action for explicit first storage setup, then use `config doctor` when
-a machine is not runnable.
+Use `config paths` before setup to inspect declared paths without writing. Use
+`config setup` or the editor's named setup action to initialize declared files,
+then use `config doctor` when a machine is not runnable.
 
 ```shell
 myapp config paths
@@ -533,12 +551,12 @@ myapp config set access_token secret-value --scope storage
 myapp run
 ```
 
-Setup creates the empty `apprc.user.env`, registers the initial storage as
-`default`, records it as `selected_storage`, and creates
-`apprc.storage.env`. No selector is written to a dotenv file and no shell
-export is required. On an interactive terminal, the first storage-dependent
-runtime command can offer the same setup. Use `--storage-root PATH` for a
-custom path so the shell can complete it.
+Setup creates `apprc.user.env` only when the application declares
+`rc.UserDotenv()`. For storage applications it registers the initial storage
+as `default`, records it as `selected_storage`, and creates
+`apprc.storage.env`. No selector is written to a dotenv file. A custom
+`--apprc-dir` applies only to the setup process, so setup prints shell-specific
+commands that persist `MYAPP_APPRC_DIR` for later runs.
 
 `config doctor` reports a status such as `storage_not_selected`,
 `storage_not_ready`, `user_dotenv_not_ready`,
@@ -550,6 +568,11 @@ the key has multiple active assignments, AppRC updates the first and comments
 out the later assignments. The interactive CLI and editor require confirmation
 before that cleanup. Non-interactive commands write the change and print a
 warning afterward.
+
+User-scoped writes require an existing declared `apprc.user.env`; run setup
+first. Storage-scoped writes require an initialized selected storage. A
+process-environment-only declaration has neither write scope and therefore no
+`setup`, `set`, `edit`, or `migrate` command.
 
 AppRC migrates the released 0.19 layout only. Inspect and apply it explicitly:
 
@@ -581,9 +604,9 @@ inspect the dry run first.
 
 Runtime reads and diagnostics do not create files. `bootstrap`, `config
 paths`, `config doctor`, and opening `config edit` are zero-write. Editor
-actions such as `Setup`, `New`, and `Register` write only after confirmation. For
-storage-backed applications, bootstrap requires the selected root to exist
-and be a directory. Run `config setup` before runtime startup.
+actions such as setup, `New`, and `Register` write only after confirmation.
+For storage-backed applications, bootstrap requires the selected root to
+exist and be a directory. Run `config setup` before runtime startup.
 
 **Note**
 

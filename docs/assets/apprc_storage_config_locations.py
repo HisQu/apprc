@@ -87,9 +87,9 @@ def build_graph() -> Digraph:
         "read_stack",
         "read at startup",
         (
-            "defaults: apprc.defaults.env",
-            "user: apprc.user.env",
-            "storage: chosen folder",
+            "defaults: optional package file",
+            "user: when declared",
+            "storage: when declared",
             "explicit: --env-file",
             "process: os.environ",
         ),
@@ -115,7 +115,7 @@ def build_graph() -> Digraph:
         installed,
         "defaults_dotenv",
         "apprc.defaults.env",
-        ("packaged defaults", "used by: all apps"),
+        ("packaged defaults", "optional for all apps"),
         pos=gv.fixed_position(1.25, 0.65),
         color=gg.BLUE,
     )
@@ -140,7 +140,7 @@ def build_graph() -> Digraph:
         user_config,
         "user_dotenv",
         "apprc.user.env",
-        ("per-user overrides", "created by setup"),
+        ("per-user overrides", "only with rc.UserDotenv"),
         pos=gv.fixed_position(8.95, 0.65),
         color=gg.ORANGE,
     )
@@ -148,7 +148,7 @@ def build_graph() -> Digraph:
         user_config,
         "address_book",
         "apprc.toml",
-        ("storage address book", "example name -> folder"),
+        ("only with rc.Storage", "example name -> folder"),
         pos=gv.fixed_position(8.95, -0.95),
     )
     figure.graph.subgraph(user_config)
@@ -231,7 +231,7 @@ def build_graph() -> Digraph:
     gv.add_fixed_label(
         figure.graph,
         "user_config_label",
-        "AppRC directory",
+        "AppRC directory (declared features only)",
         pos=gv.fixed_position(8.95, 1.88),
         color=gg.ORANGE,
     )

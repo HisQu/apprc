@@ -71,16 +71,16 @@ def build_graph() -> Digraph:
     gv.add_fixed_text_box(
         operator,
         "setup_and_doctor",
-        "Setup + diagnose",
-        ("config paths", "config setup", "config doctor"),
+        "Inspect + optional setup",
+        ("config paths", "config doctor", "setup if declared"),
         pos=gv.fixed_position(4.65, 0.0),
         border_color=gg.ORANGE,
     )
     gv.add_fixed_text_box(
         operator,
         "edit_values",
-        "Configure values",
-        ("config set", "config edit", "dotenv writes"),
+        "Optional file writes",
+        ("config set", "config edit", "declared scopes only"),
         pos=gv.fixed_position(7.05, 0.0),
         border_color=gg.ORANGE,
     )

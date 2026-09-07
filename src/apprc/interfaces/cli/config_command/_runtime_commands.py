@@ -151,10 +151,19 @@ class RuntimeConfigCommands(ConfigCommandBase):
         for warning in plan.warnings:
             typer.echo(f"warning: {warning}", err=True)
 
-    def purge(self, *, dry_run: bool, assume_yes: bool) -> None:
+    def purge(
+        self,
+        *,
+        apprc_dir: Path | None,
+        dry_run: bool,
+        assume_yes: bool,
+    ) -> None:
         """Remove only fixed AppRC files and registered internal storage."""
         try:
-            plan = build_config_purge_plan(self.kit.spec)
+            plan = build_config_purge_plan(
+                self.kit.spec,
+                apprc_dir=apprc_dir,
+            )
         except ConfigPurgeError as exc:
             raise typer.BadParameter(str(exc), param_hint="purge") from exc
         typer.echo(f"apprc_dir: {plan.apprc_dir}")
@@ -172,6 +181,12 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 "an app that no longer declares storage.",
                 err=True,
             )
+        if plan.stale_user_dotenv:
+            typer.echo(
+                "warning: apprc.user.env exists for an app that no longer "
+                "declares user-dotenv support.",
+                err=True,
+            )
         if dry_run:
             return
         if not assume_yes and not typer.confirm(
@@ -186,6 +201,12 @@ class RuntimeConfigCommands(ConfigCommandBase):
         typer.echo(f"removed_entries: {len(result.removed)}")
         for path in result.skipped:
             typer.echo(f"skipped_unsafe_target: {path}", err=True)
+        if plan.apprc_dir.exists():
+            typer.echo(
+                "remaining_unmanaged_data: "
+                f"{plan.apprc_dir} was kept because it is not empty.",
+                err=True,
+            )
 
     def _migration_plan(self, ctx: typer.Context) -> ConfigMigrationPlan:
         """Build a migration plan from every CLI-visible storage root.
@@ -366,11 +387,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         :raises typer.BadParameter: If no layer or multiple layers qualify.
         """
         if requested_scope is not None:
-            supported_scopes = (
-                {"user", "storage"}
-                if self.kit.spec.uses_storage()
-                else {"user"}
-            )
+            supported_scopes = set(self._declared_write_scopes())
             if requested_scope not in supported_scopes:
                 raise typer.BadParameter(
                     "--scope must be "
@@ -422,7 +439,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         """Return write scopes currently active for ``config set``."""
         return [
             scope
-            for scope in ("user", "storage")
+            for scope in self._declared_write_scopes()
             if self._write_scope_is_active(
                 state,
                 scope,
@@ -439,7 +456,10 @@ class RuntimeConfigCommands(ConfigCommandBase):
     ) -> bool:
         """Return whether one write scope can be updated now."""
         if scope == "user":
-            return True
+            return (
+                self.kit.spec.uses_user_dotenv()
+                and self.kit.spec.user_dotenv_path().is_file()
+            )
         if not self.kit.spec.uses_storage() or state is None:
             return False
         storage_root = self.active_storage_root_for_cli(
@@ -448,8 +468,18 @@ class RuntimeConfigCommands(ConfigCommandBase):
         )
         return storage_root is not None and storage_root.is_dir()
 
+    def _declared_write_scopes(self) -> tuple[ConfigSetScope, ...]:
+        """Return dotenv scopes enabled by the Python declaration."""
+        scopes: list[ConfigSetScope] = []
+        if self.kit.spec.uses_user_dotenv():
+            scopes.append("user")
+        if self.kit.spec.uses_storage():
+            scopes.append("storage")
+        return tuple(scopes)
+
     def _plan_user_value(self, *, key: str, value: str) -> EnvFileEditPlan:
         """Prepare one per-user dotenv edit without writing it."""
+        self.kit.spec.require_user_dotenv()
         try:
             return plan_env_file_value_update(
                 path=self.kit.spec.user_dotenv_path(),
@@ -503,7 +533,16 @@ def _inactive_scope_message(
     :return: Human-facing CLI error.
     """
     if scope == "user":
-        return "The user dotenv layer is unavailable."
+        if kit.spec.uses_user_dotenv():
+            return (
+                "The user dotenv is not set up. Run "
+                f"`{kit.spec.config_command_name()} {config_group_name} "
+                "setup` before writing user-scoped values."
+            )
+        return (
+            f"{kit.spec.display_name} does not declare a user dotenv. "
+            "Only declared write scopes are available."
+        )
     return (
         "The storage dotenv layer is not active. Select a registered storage "
         f"with --storage or export {kit.spec.storage_selector_env_key}."

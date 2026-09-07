@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, overload
 # == Internal ================================
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.env_config.env import EnvConfig
 from apprc.runtime._bootstrap_state import BootstrapState
 from apprc.runtime.bootstrap import (
@@ -64,6 +65,7 @@ class AppConfigKit:
         display_name: str | None,
         config_package: str,
         envs: tuple[type[EnvConfig], ...] = (),
+        user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
         command_name: str | None = None,
         apprc_dir: Path | None = None,
@@ -80,6 +82,7 @@ class AppConfigKit:
         display_name: str | None = None,
         config_package: str | None = None,
         envs: tuple[type[EnvConfig], ...] = (),
+        user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
         command_name: str | None = None,
         apprc_dir: Path | None = None,
@@ -102,6 +105,7 @@ class AppConfigKit:
             display_name=display_name or app_id,
             config_package=config_package,
             envs=envs,
+            user_dotenv=user_dotenv,
             storage=storage,
             command_name=command_name,
             apprc_dir=apprc_dir,

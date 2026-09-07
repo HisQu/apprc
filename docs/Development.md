@@ -136,8 +136,10 @@ script per integration scenario and two test utilities:
 
 | Script | AppRC Surface |
 |---|---|
-| `apprc-config-only` | Direct `rc.AppRC(...)` without storage |
-| `apprc-config-with-storage` | Direct `rc.AppRC(...)` with `rc.Storage(...)` |
+| `apprc-process-env` | No persistent capability |
+| `apprc-user-dotenv` | `rc.UserDotenv()` only |
+| `apprc-storage` | `rc.Storage()` only |
+| `apprc-user-dotenv-with-storage` | Both persistent capabilities |
 | `apprc-explicit-env-precedence` | Explicit env-file selector precedence |
 | `apprc-cli-runtime` | `CliRuntime` with an app-owned callback |
 | `apprc-examples-lab EXAMPLE` | One disposable interactive shell |
@@ -148,13 +150,15 @@ match what a downstream project should copy:
 
 | Package | Purpose |
 |---|---|
-| `config_only` | Config-only app with packaged and per-user values. |
-| `config_with_storage` | Storage app with app and storage-local values. |
+| `process_env` | Process environment and Python defaults; no managed files. |
+| `user_dotenv` | User-wide dotenv without storage. |
+| `storage` | Named storage without a user dotenv. |
+| `user_dotenv_with_storage` | Both user and storage dotenv scopes. |
 | `explicit_env_precedence` | Storage selector precedence with explicit env files. |
 | `cli_runtime` | Typer callback integration through `CliRuntime`. |
 | `_example_apps_utils` | Lab, registry, and smoke runner; not a user app template. |
 
-The four application packages must not import `_example_apps_utils`. Each one
+The six application packages must not import `_example_apps_utils`. Each one
 is a copyable downstream pattern; test orchestration belongs in the utility
 package.
 
@@ -162,7 +166,8 @@ Each app package owns its own `config/` package and points `config_package` at
 that package. Do not reintroduce a shared config module for the examples; that
 would teach the wrong integration shape.
 
-The example config packages follow the standard AppRC app layout:
+The scaffold and advanced config packages follow the standard AppRC app
+layout:
 
 ```text
 <example>/config/
@@ -177,7 +182,7 @@ The example config packages follow the standard AppRC app layout:
     app.py
   bundle.py
   catalog.py
-  apprc.defaults.env
+  apprc.defaults.env  # optional
 ```
 
 Simple sections stay as files under `sections/`. Larger sections become nested
@@ -192,6 +197,7 @@ New downstream apps can generate the same skeleton with:
 ```bash
 apprc scaffold config \
   --package myapp \
+  --user-dotenv \
   --storage \
   --app-id myapp \
   --display-name "My App" \
@@ -209,17 +215,19 @@ python -m pip install -e ".[tui]" -e examples/example_apps --no-build-isolation
 Open one clean manual-test shell:
 
 ```bash
-apprc-examples-lab config-only
-apprc-examples-lab config-with-storage
+apprc-examples-lab process-env
+apprc-examples-lab user-dotenv
+apprc-examples-lab storage
+apprc-examples-lab user-dotenv-with-storage
 apprc-examples-lab explicit-env-precedence
 apprc-examples-lab cli-runtime
 ```
 
-The lab strips inherited `APPRC_EXAMPLE_*` variables, points the selected
-application's `<APP>_APPRC_DIR` at a temporary root, and opens the current
-user's shell before any AppRC files exist. It prints a scenario-specific
-walkthrough and removes its root when the shell exits. It never owns or removes
-paths the tester explicitly selects outside that root.
+The lab strips inherited `APPRC_EXAMPLE_*` variables. For apps with managed
+files, it points `<APP>_APPRC_DIR` at a temporary root. It opens the current
+user's shell before any AppRC files exist, prints a scenario-specific
+walkthrough, and removes its root when the shell exits. It never owns or
+removes paths the tester explicitly selects outside that root.
 
 Direct example CLI calls remain realistic and can leave persistent AppRC files.
 Use the aggregate command for an isolated automated pass:
@@ -231,7 +239,7 @@ apprc-examples-run-all
 The runner calls the installed application CLIs as subprocesses and covers
 setup, doctor, runtime, and purge. Its precedence case proves both policies
 with different roots and values. Pytest covers the common command surface on
-all four apps, the complete storage lifecycle on `config_with_storage`, name
+all six apps, the complete storage lifecycle on `storage`, name
 and path selectors, runtime skipping, headless editor launch, and lab cleanup.
 It does not claim every generated command runs against every example.
 
@@ -244,18 +252,18 @@ It does not claim every generated command runs against every example.
 ## Release Workflow
 <!-- ======================================================== -->
 
-AppRC publishes from an annotated `vMAJOR.MINOR.PATCH` tag. A tag push runs the
+AppRC releases from an annotated `vMAJOR.MINOR.PATCH` tag. A tag push runs the
 complete CI matrix, builds and validates the wheel and source distribution,
-waits for approval in the GitHub `pypi` environment, publishes the preserved
-artifacts to PyPI through Trusted Publishing, and then creates the GitHub
-Release from the matching curated changelog section.
+and creates a GitHub Release from the matching curated changelog section. PyPI
+publication is optional and disabled unless the repository variable
+`PUBLISH_PYPI` is exactly `true`.
 
 > [!IMPORTANT]
 >
-> Configure the PyPI Trusted Publisher before the first automated release:
+> To enable PyPI publication, set the repository variable `PUBLISH_PYPI=true`
+> and configure the PyPI Trusted Publisher:
 > owner `HisQu`, repository `apprc`, workflow `release.yml`, and environment
-> `pypi`. The GitHub environment must require `markur4` as a reviewer. It does
-> not contain a PyPI token or any repository secret.
+> `pypi`. The environment does not contain a PyPI token or repository secret.
 
 Prepare a release on `main` only after the intended changes have passed CI:
 
@@ -304,9 +312,9 @@ commit.
 
 > [!NOTE]
 >
-> The local rehearsal cannot reproduce Windows, GitHub environment approval,
-> OIDC token issuance, the real PyPI upload, or GitHub Release creation. The
-> pushed tag remains subject to those GitHub-hosted gates.
+> The local rehearsal cannot reproduce Windows, GitHub Release creation,
+> environment approval, OIDC token issuance, or a real PyPI upload. The pushed
+> tag remains subject to those GitHub-hosted gates.
 
 The pushed release tag `v*` triggers the automated GitHub release workflow:
 
@@ -317,16 +325,15 @@ The pushed release tag `v*` triggers the automated GitHub release workflow:
    generated README, wheel, sdist, install smoke checks, and publication dry
    run without repeating the Linux source-check matrix.
 3. Preserve the wheel, sdist, and release notes as one workflow artifact.
-4. Wait for approval on the `pypi` environment.
-5. Publish the preserved distributions with `uv publish` through GitHub OIDC.
-6. Create the GitHub Release only after PyPI accepts the distributions, using
-   the same wheel and sdist plus the curated changelog notes.
+4. Create the GitHub Release with the wheel, sdist, and curated notes.
+5. If `PUBLISH_PYPI=true`, enter the `pypi` environment and publish the same
+   distributions through GitHub OIDC.
 
 If CI, metadata validation, or packaging fails, fix the release commit and use
 a new version; do not move a tag that has reached the remote. If approval is
-rejected, no package or GitHub Release is published. If PyPI succeeds but the
-final GitHub command fails, rerun the failed workflow: `uv publish` recognizes
-the identical existing PyPI files and the Release step can continue.
+rejected or skipped, the GitHub Release remains available and no package is
+uploaded to PyPI. Rerun a failed optional PyPI job only after checking whether
+the distributions already exist there.
 
 After publication, verify the clean package install explicitly:
 

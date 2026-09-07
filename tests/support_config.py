@@ -15,6 +15,7 @@ from typer.testing import Result
 
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.env_config.env import EnvConfig
 from apprc.definition.env_config.fields import (
     config_owner_for,
@@ -187,8 +188,9 @@ def build_apprc_example_app_kit() -> AppConfigKit:
     return AppConfigKit(
         app_id="apprc_example_app",
         display_name="Example App",
-        config_package="config_with_storage.config",
+        config_package="user_dotenv_with_storage.config",
         envs=(ApprcExampleAppEnv,),
+        user_dotenv=UserDotenv(),
         storage=Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
     )
 
@@ -198,8 +200,9 @@ def build_storage_free_example_kit() -> AppConfigKit:
     return AppConfigKit(
         app_id="storage_free_app",
         display_name="Storage-Free App",
-        config_package="config_only.config",
+        config_package="user_dotenv.config",
         envs=(StorageFreeExampleEnv,),
+        user_dotenv=UserDotenv(),
     )
 
 

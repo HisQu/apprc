@@ -10,10 +10,10 @@ from apprc.user_files.storage_roots.registry import (
 )
 from apprc.interfaces.tui._field_state import EditableConfigValueSource
 from apprc.interfaces.tui._rendering import (
-    FIELD_TABLE_COLUMNS,
     FieldTableRow,
     archived_storage_title,
     build_field_table_rows,
+    field_table_columns,
     field_type_label,
     field_type_style,
     live_storage_title,
@@ -80,14 +80,17 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     )
     rows_by_key = {row.env_key: row for row in rows if row.env_key is not None}
 
-    assert FIELD_TABLE_COLUMNS == (
+    assert field_table_columns(
+        include_user_dotenv=True,
+        include_storage=True,
+    ) == (
         "#",
         "Section",
-        "Key",
+        "Setting",
         "Effective",
-        "Shell",
-        "User",
-        "Storage",
+        "Process environment",
+        "Storage dotenv",
+        "User dotenv",
         "Default",
         "Explanation",
     )
@@ -97,7 +100,7 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
         == "<secret>"
     )
     assert (
-        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"], 5).style
+        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"], 6).style
         == SECRET_STYLE
     )
     assert _text_cell(rows_by_key["APPRC_EXAMPLE_APP_MODE"], 4).plain == "shell"
@@ -106,12 +109,34 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
         == CHOICE_STYLE
     )
     assert (
-        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"], 6).style
+        _text_cell(rows_by_key["APPRC_EXAMPLE_APP_RETRY_COUNT"], 5).style
         == NUMBER_STYLE
     )
     assert (
         _text_cell(rows_by_key["APPRC_EXAMPLE_APP_CACHE_DIR"], 7).style
         == PATH_STYLE
+    )
+    assert _text_cell(rows_by_key["APPRC_EXAMPLE_APP_MODE"], 2).plain == (
+        "Mode\nAPPRC_EXAMPLE_APP_MODE"
+    )
+
+
+def test_field_table_columns_only_show_declared_sources() -> None:
+    assert field_table_columns(
+        include_user_dotenv=False,
+        include_storage=False,
+    ) == (
+        "#",
+        "Section",
+        "Setting",
+        "Effective",
+        "Process environment",
+        "Default",
+        "Explanation",
+    )
+    assert "User dotenv" not in field_table_columns(
+        include_user_dotenv=False,
+        include_storage=True,
     )
 
 

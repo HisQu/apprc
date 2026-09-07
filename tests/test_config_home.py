@@ -6,6 +6,7 @@ import pytest
 
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.user_files.app_home.locations import (
     AppRCDirectoryError,
     apprc_file,
@@ -51,6 +52,7 @@ def test_ensure_user_dotenv_rejects_apprc_directory_file(
         app_id="demo",
         display_name="Demo",
         config_package="apprc",
+        user_dotenv=UserDotenv(),
         apprc_dir=apprc_dir,
     )
 
@@ -65,6 +67,7 @@ def test_ensure_user_dotenv_rejects_directory_target(tmp_path: Path) -> None:
         app_id="demo",
         display_name="Demo",
         config_package="apprc",
+        user_dotenv=UserDotenv(),
         apprc_dir=apprc_dir,
     )
 

@@ -67,13 +67,51 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+  - Breaking: `rc.AppRC(...)` no longer implies a managed user dotenv, and
+    `storage=rc.Storage()` no longer creates or loads one implicitly.
+    Affected: Applications that rely on `apprc.user.env`, the user write
+    scope, or `config setup/set/edit/migrate` without declaring that feature.
+    Migration: Add `user_dotenv=rc.UserDotenv()` to preserve user-wide dotenv
+    behavior. Storage-only applications should keep only `rc.Storage()`.
+  - Breaking: Process-environment-only declarations no longer expose
+    `config setup`, `set`, `edit`, or `migrate`; unsupported paths in doctor
+    and paths JSON are now `null`, with `user_dotenv_enabled` identifying the
+    declared capability.
+    Affected: Scripts that invoke write commands or assume every diagnostics
+    payload contains an AppRC directory and user dotenv path.
+    Migration: Declare `rc.UserDotenv()` or `rc.Storage()` when the app owns
+    persistent files, and branch on the capability flags before reading paths.
+  - Breaking: The checkout example commands `apprc-config-only` and
+    `apprc-config-with-storage` were replaced by four capability-specific
+    commands.
+    Affected: Contributors and automation invoking the dev-only examples.
+    Migration: Use `apprc-process-env`, `apprc-user-dotenv`, `apprc-storage`,
+    or `apprc-user-dotenv-with-storage` according to the feature combination.
+
 <br>
 
 ### ➕ Added
 
+  - Added `rc.UserDotenv()` as the explicit declaration for a managed
+    `apprc.user.env`, independent of `rc.Storage()`.
+  - Added `--user-dotenv` to `apprc scaffold config` and coverage for all four
+    user-dotenv/storage declaration combinations.
+  - Added AppRC-directory selection with path completion to CLI and Textual
+    setup. A command-only custom path prints POSIX, PowerShell, and `cmd.exe`
+    assignments for the derived `<APP>_APPRC_DIR` key.
+
 <br>
 
 ### 💔 Changed
+
+  - Changed packaged `apprc.defaults.env` from a required resource to an
+    optional runtime layer.
+  - Changed the Textual editor to name missing setup work, show only declared
+    source columns, and display a field title together with its exact
+    environment key.
+  - Changed tag releases to create the GitHub Release by default. PyPI
+    publication now runs afterward only when the repository variable
+    `PUBLISH_PYPI` is `true`.
 
 <br>
 
@@ -86,6 +124,14 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+  - Fixed `config set` and editor writes creating a missing user dotenv
+    implicitly. Declared user dotenv writes now require setup first.
+  - Fixed storage-only setup and migration creating an unrelated
+    `apprc.user.env`.
+  - Fixed stale `apprc.user.env` and `apprc.toml` files implying capabilities
+    that the application did not declare; doctor warns while purge remains
+    available for cleanup.
 
 <br>
 

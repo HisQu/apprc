@@ -24,7 +24,8 @@ def _example_environment(spec: ExampleAppSpec, root: Path) -> dict[str, str]:
         for key, value in os.environ.items()
         if not key.startswith("APPRC_EXAMPLE_")
     }
-    env[spec.apprc_dir_env_key] = str(root / "apprc")
+    if spec.uses_user_dotenv or spec.uses_storage:
+        env[spec.apprc_dir_env_key] = str(root / "apprc")
     return env
 
 
@@ -111,8 +112,10 @@ def _smoke_standard(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
     if spec.uses_storage:
         _setup_storage(spec, root, env)
         runtime_prefix = ["--storage", "default"]
-    else:
+    elif spec.uses_user_dotenv:
         _run_cli(spec, ["config", "setup", "--yes"], env=env)
+        runtime_prefix = []
+    else:
         runtime_prefix = []
     doctor = _json_output(
         _run_cli(spec, [*runtime_prefix, "config", "doctor", "--json"], env=env)
@@ -129,7 +132,10 @@ def _smoke_standard(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
             ]
         )
     run_payload = _json_output(_run_cli(spec, [*run_args, "run"], env=env))
-    _run_cli(spec, [*runtime_prefix, "config", "purge", "--yes"], env=env)
+    purge_args = [*runtime_prefix, "config", "purge", "--yes"]
+    if not spec.uses_user_dotenv and not spec.uses_storage:
+        purge_args.extend(("--apprc-dir", str(root / "apprc")))
+    _run_cli(spec, purge_args, env=env)
     return {
         "example": spec.name,
         "doctor_status": doctor["status"],

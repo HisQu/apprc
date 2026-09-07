@@ -32,8 +32,8 @@ def build_graph() -> Digraph:
         layers.text(
             "base_layers",
             "Base layers",
-            "apprc.defaults.env",
-            "apprc.user.env",
+            "apprc.defaults.env (optional)",
+            "apprc.user.env (when declared)",
             "lower precedence",
             border_color=gg.GREEN,
         )

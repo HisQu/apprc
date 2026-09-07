@@ -55,10 +55,10 @@ from apprc.interfaces.tui.modals import (
 )
 from apprc.interfaces.tui._primitives import ConfirmScreen
 from apprc.interfaces.tui._rendering import (
-    FIELD_TABLE_COLUMNS,
     active_storage_title,
     archived_storage_title,
     build_field_table_rows,
+    field_table_columns,
     live_storage_title,
     missing_storage_title,
 )
@@ -163,6 +163,7 @@ class ConfigEditorApp(App[None]):
         self.initial_storage = initial_storage
         self.config_group_name = config_group_name
         self.storage_enabled = kit.spec.uses_storage()
+        self.user_dotenv_enabled = kit.spec.uses_user_dotenv()
         self.init_command = (
             f"{kit.spec.config_command_name()} "
             f"{config_group_name} storage add NAME PATH"
@@ -214,11 +215,12 @@ class ConfigEditorApp(App[None]):
             with Vertical(id="editor-pane"):
                 yield Static("", id="scope-title")
                 with HorizontalScroll(id="config-action-row"):
-                    yield Button(
-                        "Setup",
-                        variant="primary",
-                        id="config-setup",
-                    )
+                    if self._setup_needed():
+                        yield Button(
+                            self._setup_button_label(),
+                            variant="primary",
+                            id="config-setup",
+                        )
                     if self.storage_enabled:
                         yield Button(
                             "New",
@@ -419,7 +421,8 @@ class ConfigEditorApp(App[None]):
     def _disable_config_action_controls(self) -> None:
         """Block controls that could conflict with a config action."""
         self.query_one("#field-table", DataTable).disabled = True
-        self.query_one("#config-setup", Button).disabled = True
+        for button in self.query("#config-setup"):
+            button.disabled = True
         if not self.storage_enabled:
             return
         self.query_one("#storage-list", ListView).disabled = True
@@ -475,6 +478,12 @@ class ConfigEditorApp(App[None]):
         scope: ConfigWriteScope,
     ) -> None:
         """Validate, confirm, and persist one app or storage env value."""
+        if scope == "user" and not self.user_dotenv_active:
+            self.notify(
+                "Set up the user dotenv before writing user-scoped values.",
+                severity="error",
+            )
+            return
         try:
             if scope == "user":
                 plan = plan_env_file_value_update(
@@ -536,6 +545,12 @@ class ConfigEditorApp(App[None]):
         scope: ConfigWriteScope,
     ) -> None:
         """Remove one key from an app or storage env file."""
+        if scope == "user" and not self.user_dotenv_active:
+            self.notify(
+                "Set up the user dotenv before clearing user-scoped values.",
+                severity="error",
+            )
+            return
         try:
             if scope == "user":
                 update = clear_env_file_value(
@@ -644,7 +659,7 @@ class ConfigEditorApp(App[None]):
         )
         self._populate_field_table()
         self._set_storage_controls_enabled(
-            fields=True,
+            fields=bool(self._writable_scopes()),
             register_active=self.storage_registry is not None,
             rename=False,
             location=False,
@@ -694,6 +709,9 @@ class ConfigEditorApp(App[None]):
         self.storage_startup_error = None
         for status in self.query("#setup-status"):
             await status.remove()
+        if not self._setup_needed():
+            for button in self.query("#config-setup"):
+                await button.remove()
 
     def _select_missing_storage(self, name: str) -> None:
         """Show a registered storage whose root no longer exists."""
@@ -753,15 +771,20 @@ class ConfigEditorApp(App[None]):
         table = self.query_one("#field-table", DataTable)
         table.clear(columns=True)
         table.cursor_type = "row"
-        table.add_columns(*FIELD_TABLE_COLUMNS)
+        table.add_columns(
+            *field_table_columns(
+                include_user_dotenv=self.user_dotenv_enabled,
+                include_storage=self.storage_enabled,
+            )
+        )
         self.row_env_keys = []
         for row in build_field_table_rows(
             owners=self.owners,
             user_dotenv_values=self.user_dotenv_values,
             storage_values=self.storage_values,
             defaults_values=self.defaults_values,
-            include_user_dotenv=self.user_dotenv_active,
-            include_storage=self._storage_scope_is_active(),
+            include_user_dotenv=self.user_dotenv_enabled,
+            include_storage=self.storage_enabled,
             hidden_env_keys=self.hidden_env_keys,
             shell_env=os.environ,
         ):
@@ -807,9 +830,8 @@ class ConfigEditorApp(App[None]):
         self.query_one("#field-table", DataTable).disabled = (
             self._config_action_in_progress or not enabled
         )
-        self.query_one(
-            "#config-setup", Button
-        ).disabled = self._config_action_in_progress
+        for button in self.query("#config-setup"):
+            button.disabled = self._config_action_in_progress
 
     def _set_live_controls_enabled(self, enabled: bool) -> None:
         """Enable storage-specific controls only for live storages."""
@@ -904,7 +926,10 @@ class ConfigEditorApp(App[None]):
 
     def _user_dotenv_is_active(self) -> bool:
         """Return whether the user dotenv source should be visible."""
-        return True
+        return (
+            self.user_dotenv_enabled
+            and self.kit.spec.user_dotenv_path().is_file()
+        )
 
     def _storage_scope_is_active(self) -> bool:
         """Return whether the current selection can read/write storage env."""
@@ -969,14 +994,56 @@ class ConfigEditorApp(App[None]):
     def _user_dotenv_message(self) -> str:
         """Return source guidance for the per-user dotenv."""
         if self.user_dotenv_active:
+            return f"User dotenv:\n{self.kit.spec.user_dotenv_path()}"
+        if self.user_dotenv_enabled:
             return (
-                "Editing user dotenv values from the AppRC directory:\n"
-                f"{self.kit.spec.user_dotenv_path()}"
+                "The user dotenv is not set up.\n"
+                f"Proposed path: {self.kit.spec.user_dotenv_path()}\n"
+                f"Run {self.kit.spec.config_command_name()} "
+                f"{self.config_group_name} setup or choose Set up user "
+                "dotenv."
             )
         return (
-            "No AppRC writable layer is active. Existing shell environment "
-            "values and packaged defaults are shown."
+            "This application reads process environment values and defaults. "
+            "It does not declare a user dotenv."
         )
+
+    def _setup_needed(self) -> bool:
+        """Return whether a declared managed feature needs initialization."""
+        user_missing = self.user_dotenv_enabled and not self.user_dotenv_active
+        return user_missing or self._storage_setup_needed()
+
+    def _storage_setup_needed(self) -> bool:
+        """Return whether the declared storage feature needs initialization."""
+        if not self.storage_enabled:
+            return False
+        if self.storage_startup_error is not None:
+            return True
+        if self.active_storage_root is not None:
+            return not self._env_file_path_for_root(
+                self.active_storage_root
+            ).is_file()
+        registry = self.storage_registry
+        if registry is None or not registry.storages:
+            return True
+        selected_name = registry.selected_storage
+        if selected_name is None:
+            return False
+        return not self._env_file_path_for_root(
+            registry.selected(selected_name).root
+        ).is_file()
+
+    def _setup_button_label(self) -> str:
+        """Return a setup action that names the missing capability."""
+        user_missing = self.user_dotenv_enabled and not self.user_dotenv_active
+        storage_missing = self._storage_setup_needed()
+        if user_missing and storage_missing:
+            return "Set up user dotenv and storage..."
+        if user_missing:
+            return "Set up user dotenv..."
+        if storage_missing:
+            return "Set up storage..."
+        return "Finish setup..."
 
 
 def _read_packaged_defaults_values(kit: AppConfigKit) -> dict[str, str]:

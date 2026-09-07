@@ -65,16 +65,20 @@ class PathSuggester(Suggester):
         prefix = "" if text.endswith(os.sep) else expanded.name
         if not parent.is_dir():
             return None
-        for child in sorted(parent.iterdir(), key=lambda item: item.name):
-            if not child.name.startswith(prefix):
-                continue
-            suggestion = str(child)
-            if text.startswith("~"):
-                home = str(Path.home())
-                suggestion = suggestion.replace(home, "~", 1)
-            if child.is_dir():
-                suggestion += os.sep
-            return suggestion
+        try:
+            children = sorted(parent.iterdir(), key=lambda item: item.name)
+            for child in children:
+                if not child.name.startswith(prefix):
+                    continue
+                suggestion = str(child)
+                if text.startswith("~"):
+                    home = str(Path.home())
+                    suggestion = suggestion.replace(home, "~", 1)
+                if child.is_dir():
+                    suggestion += os.sep
+                return suggestion
+        except OSError:
+            return None
         return None
 
 

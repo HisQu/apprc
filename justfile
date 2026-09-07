@@ -281,7 +281,7 @@ publish-check:
         echo "👉 Next step: run just release <patch|minor|major>."
     fi
 
-# Prepare a checked version commit and annotated local release tag
+# Prepare a checked version commit and annotated local release tag.
 release level="patch":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -295,8 +295,7 @@ release level="patch":
         exit 1
     fi
 
-    echo "ℹ️ just release prepares ${tag} locally; it does not publish anything."
-    echo "  Publication starts only after you explicitly push main and ${tag}."
+    echo "Preparing ${tag} locally. Nothing will upload until you push main and ${tag}."
 
     release_root="$(mktemp -d)"
     notes_file="$release_root/release-notes.md"
@@ -334,11 +333,23 @@ release level="patch":
         exit 1
     fi
 
-    echo "✅ Prepared local release ${tag}; nothing has been published."
     echo
-    echo "👉 Next Step: Review the version commit and annotated tag, then start the GitHub release pipeline with:"
+    echo "================================================================="
+    echo "✅  RELEASE ${tag} PREPARED LOCALLY"
+    echo "================================================================="
+    echo
+    echo "Nothing has been uploaded."
+    echo
+    echo "NEXT COMMAND, THIS STARTS THE RELEASE:"
+    echo
     echo "  git push origin main ${tag}"
-    echo "  GitHub will run CI, wait for pypi approval, publish to PyPI, and create the GitHub Release."
+    echo
+    echo "GitHub will run CI, validate wheel and sdist artifacts, and create"
+    echo "the GitHub Release. PyPI stays disabled unless PUBLISH_PYPI=true."
+    echo "================================================================="
+
+# GitHub Releases are always created from pushed tags. Set the repository
+# variable PUBLISH_PYPI=true only after configuring PyPI trusted publishing.
 
 # Verify the published PyPI package in a fresh plain-pip virtualenv.
 verify-pypi requirement="apprc":

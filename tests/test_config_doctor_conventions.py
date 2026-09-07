@@ -6,6 +6,7 @@ import pytest
 
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.runtime.diagnostics._diagnosis import (
     config_package_convention_warnings,
 )
@@ -71,6 +72,7 @@ def test_config_doctor_reports_missing_user_dotenv_as_issue(
         display_name="Example App",
         config_package="missing_app.config",
         envs=(ApprcExampleAppEnv,),
+        user_dotenv=UserDotenv(),
     )
 
     payload = build_config_doctor_payload(kit, storage=None)

@@ -38,6 +38,13 @@ def scaffold_config_cmd(
         str,
         typer.Option("--app-id", help="Stable AppRC application identity."),
     ],
+    user_dotenv: Annotated[
+        bool,
+        typer.Option(
+            "--user-dotenv",
+            help="Generate a declaration with a managed user dotenv.",
+        ),
+    ] = False,
     storage: Annotated[
         bool,
         typer.Option(
@@ -89,6 +96,7 @@ def scaffold_config_cmd(
                 app_id=app_id,
                 display_name=display_name,
                 target=target,
+                user_dotenv=user_dotenv,
                 storage=storage,
                 storage_selector_env_key=storage_selector_env_key,
                 env_prefix=env_prefix,

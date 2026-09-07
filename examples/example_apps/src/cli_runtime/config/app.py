@@ -7,6 +7,7 @@ MyRC = rc.AppRC(
     app_id="apprc-example-cli-runtime",
     display_name="AppRC CLI Runtime Example",
     config_package="cli_runtime.config",
+    user_dotenv=rc.UserDotenv(),
     storage=rc.Storage(selector_env_key="APPRC_EXAMPLE_RUNTIME_STORAGE"),
     command_name="apprc-cli-runtime",
 )

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.app_config.storage import Storage
 from apprc.runtime.diagnostics.payload import build_config_doctor_payload
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
@@ -55,6 +56,7 @@ def test_doctor_reports_missing_user_dotenv_without_writing() -> None:
 
     assert payload.status == ConfigDoctorStatus.USER_DOTENV_NOT_READY.value
     assert payload.user_dotenv_exists is False
+    assert payload.user_dotenv is not None
     assert not Path(payload.user_dotenv).exists()
     assert payload.writes == "none"
 
@@ -182,6 +184,7 @@ def test_disk_registry_never_enables_storage_for_storage_free_app(
         display_name="Config Only",
         config_package="apprc",
         envs=(ApprcExampleAppEnv,),
+        user_dotenv=UserDotenv(),
         apprc_dir=tmp_path / "apprc",
     )
     kit.spec.ensure_user_dotenv()
@@ -198,3 +201,30 @@ def test_disk_registry_never_enables_storage_for_storage_free_app(
     assert any(
         "stale storage" in warning.lower() for warning in payload.warnings
     )
+
+
+def test_disk_files_never_enable_features_for_process_env_app(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    apprc_dir = tmp_path / "stale-apprc"
+    apprc_dir.mkdir()
+    (apprc_dir / "apprc.user.env").write_text("OLD=1\n", encoding="utf-8")
+    (apprc_dir / "apprc.toml").write_text("", encoding="utf-8")
+    monkeypatch.setenv("PROCESS_ONLY_APPRC_DIR", str(apprc_dir))
+    kit = AppConfigKit(
+        app_id="process_only",
+        display_name="Process Only",
+        config_package="process_env.config",
+    )
+
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
+    assert payload.user_dotenv_enabled is False
+    assert payload.storage_enabled is False
+    assert payload.apprc_dir is None
+    assert payload.user_dotenv is None
+    assert payload.apprc_toml is None
+    assert any("stale user dotenv" in item.lower() for item in payload.warnings)
+    assert any("stale apprc.toml" in item.lower() for item in payload.warnings)

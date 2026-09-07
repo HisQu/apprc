@@ -14,6 +14,7 @@ class ConfigScaffoldRequest:
     """Input values for one generated config package.
 
     :param package: Import package that receives ``config/``.
+    :param user_dotenv: Whether the app declares a managed user dotenv.
     :param storage: Whether the generated app declares storage.
     :param app_id: Stable AppRC application name.
     :param display_name: Human-readable application label.
@@ -26,6 +27,7 @@ class ConfigScaffoldRequest:
     package: str
     app_id: str
     target: Path
+    user_dotenv: bool = False
     storage: bool = False
     display_name: str | None = None
     storage_selector_env_key: str | None = None
@@ -257,6 +259,9 @@ def _render_app_module(
 ) -> str:
     """Render ``config/app.py``."""
     display_name = request.display_name or request.app_id
+    user_dotenv_line = (
+        "    user_dotenv=rc.UserDotenv(),\n" if request.user_dotenv else ""
+    )
     storage_line = ""
     if request.storage:
         env_key = (
@@ -274,7 +279,7 @@ MyRC = rc.AppRC(
     app_id={request.app_id!r},
     display_name={display_name!r},
     config_package={module_prefix!r},
-{storage_line}    command_name={request.app_id!r},
+{user_dotenv_line}{storage_line}    command_name={request.app_id!r},
 )
 
 '''

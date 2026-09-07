@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # == Standard Library ===========================================
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 # == Internal ===================================================
@@ -47,14 +48,16 @@ class ConfigSetupError(ValueError):
 class ConfigSetupResult:
     """Files initialized by one setup run.
 
+    :param apprc_dir: AppRC directory used for this setup run.
     :param active_storage_root: Registered storage root, if supported.
     :param storage_dotenv: Storage-local dotenv file, if supported.
-    :param user_dotenv: Per-user dotenv file.
+    :param user_dotenv: Per-user dotenv file, if declared.
     """
 
+    apprc_dir: Path
     active_storage_root: Path | None
     storage_dotenv: Path | None
-    user_dotenv: Path
+    user_dotenv: Path | None
 
 
 class ConfigSetupFlow:
@@ -64,28 +67,37 @@ class ConfigSetupFlow:
         """Store the application whose managed files will be initialized."""
         self.kit = kit
 
-    def ensure_user_dotenv(self) -> Path:
+    def ensure_user_dotenv(self, *, apprc_dir: Path | None = None) -> Path:
         """Create the per-user dotenv file.
 
         :return: Fixed ``apprc.user.env`` path.
         """
         try:
-            return self.kit.spec.ensure_user_dotenv()
+            return self.kit.spec.ensure_user_dotenv(
+                self._proc_env_for_apprc_dir(apprc_dir)
+            )
         except AppRCDirectoryError as exc:
             raise ConfigSetupError(
                 str(exc),
                 param_hint="--apprc-dir",
             ) from exc
 
-    def run_app_setup(self) -> ConfigSetupResult:
-        """Create the always-present per-user dotenv file.
+    def run_user_dotenv_setup(
+        self,
+        *,
+        apprc_dir: Path | None = None,
+    ) -> ConfigSetupResult:
+        """Create the explicitly declared per-user dotenv file.
 
+        :param apprc_dir: Optional directory override for this setup run.
         :return: Initialized file paths.
         """
+        proc_env = self._proc_env_for_apprc_dir(apprc_dir)
         return ConfigSetupResult(
+            apprc_dir=self.kit.spec.apprc_dir(proc_env),
             active_storage_root=None,
             storage_dotenv=None,
-            user_dotenv=self.ensure_user_dotenv(),
+            user_dotenv=self.ensure_user_dotenv(apprc_dir=apprc_dir),
         )
 
     def run_storage_setup(
@@ -93,19 +105,23 @@ class ConfigSetupFlow:
         storage_root: Path,
         *,
         storage_name: str = "default",
+        apprc_dir: Path | None = None,
     ) -> ConfigSetupResult:
-        """Create user dotenv, registry, and one named storage.
+        """Create the registry and one named storage.
 
         Repeating setup for the same name and root is safe. Setup never
-        repoints or moves an existing storage implicitly.
+        repoints or moves an existing storage implicitly. A user dotenv is
+        created only when the application declares that separate feature.
 
         :param storage_root: Root for the initial named storage.
         :param storage_name: Registry name, normally ``default``.
+        :param apprc_dir: Optional directory override for this setup run.
         :return: Initialized file paths.
         """
         spec = self.kit.spec
         spec.require_storage()
-        registry_path = spec.preferred_apprc_toml_path()
+        proc_env = self._proc_env_for_apprc_dir(apprc_dir)
+        registry_path = spec.preferred_apprc_toml_path(proc_env)
         try:
             root = resolve_storage_root_path(
                 storage_root,
@@ -122,10 +138,18 @@ class ConfigSetupFlow:
                 param_hint="--storage-root",
             )
 
-        user_dotenv = spec.user_dotenv_path()
-        user_dotenv_existed = path_entry_exists(user_dotenv)
+        user_dotenv = (
+            spec.user_dotenv_path(proc_env) if spec.uses_user_dotenv() else None
+        )
+        user_dotenv_existed = (
+            path_entry_exists(user_dotenv) if user_dotenv is not None else False
+        )
         try:
-            ensured_user_dotenv = self.ensure_user_dotenv()
+            ensured_user_dotenv = (
+                self.ensure_user_dotenv(apprc_dir=apprc_dir)
+                if spec.uses_user_dotenv()
+                else None
+            )
             registry = load_storage_registry_or_empty(registry_path)
             existing = registry.storages.get(storage_name)
             if existing is None:
@@ -161,19 +185,24 @@ class ConfigSetupFlow:
             raise ConfigSetupError(str(exc)) from exc
 
         return ConfigSetupResult(
+            apprc_dir=registry_path.parent,
             active_storage_root=root,
             storage_dotenv=spec.storage_dotenv_path(root),
             user_dotenv=ensured_user_dotenv,
         )
 
     @staticmethod
-    def _remove_new_user_dotenv(path: Path, *, existed: bool) -> None:
+    def _remove_new_user_dotenv(
+        path: Path | None,
+        *,
+        existed: bool,
+    ) -> None:
         """Remove a newly created empty user dotenv after setup failure.
 
         :param path: User dotenv candidate.
         :param existed: Whether it existed before setup.
         """
-        if existed or not path.is_file():
+        if path is None or existed or not path.is_file():
             return
         try:
             if path.stat().st_size == 0:
@@ -181,3 +210,19 @@ class ConfigSetupFlow:
                 path.parent.rmdir()
         except OSError:
             return
+
+    def _proc_env_for_apprc_dir(
+        self,
+        apprc_dir: Path | None,
+    ) -> dict[str, str] | None:
+        """Return setup-local directory selection without changing the shell.
+
+        :param apprc_dir: Optional command or editor selection.
+        :return: Process environment copy with the selection, or ``None``.
+        """
+        if apprc_dir is None:
+            return None
+        return {
+            **os.environ,
+            self.kit.spec.apprc_dir_env_key: str(apprc_dir),
+        }

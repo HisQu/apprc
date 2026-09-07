@@ -22,7 +22,7 @@ requires AppRC bootstrap and receives `workspace`, `model`, and `dry_run` in
 the app-owned `RuntimeState`.
 
 Copy [`cli.py`](cli.py) only when the simpler `MyRC.mount_cli(app)` pattern is
-not enough. The other three examples use that shorter integration.
+not enough. The other five examples use that shorter integration.
 
 See the [example inventory](../../README.md#example-inventory) and
 [public CLI interfaces](../../../../docs/References.md#public-interfaces).

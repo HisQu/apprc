@@ -33,13 +33,15 @@ def write_bootstrap_environment(
         os.environ[storage_selector_env_key] = str(storage_root)
 
 
-def user_dotenv_keys(spec: AppConfigSpec) -> set[str]:
+def app_env_keys(spec: AppConfigSpec) -> set[str]:
     """Return env keys owned by one application contract.
 
     :param spec: Application-specific bootstrap contract.
     :return: Full env keys that AppRC should track for this app.
     """
-    keys = {spec.apprc_dir_env_key}
+    keys: set[str] = set()
+    if spec.uses_managed_files():
+        keys.add(spec.apprc_dir_env_key)
     if spec.storage_selector_env_key is not None:
         keys.add(spec.storage_selector_env_key)
     for owner in spec.owners:
@@ -51,12 +53,12 @@ def user_dotenv_keys(spec: AppConfigSpec) -> set[str]:
 
 def original_env_value_origins(
     *,
-    user_dotenv_keys: set[str],
+    app_env_keys: set[str],
     original_env: Mapping[str, str],
 ) -> dict[str, EnvValueOrigin]:
     """Return shell-export origins from the pre-bootstrap process env.
 
-    :param user_dotenv_keys: App-owned env keys eligible for provenance tracking.
+    :param app_env_keys: App-owned env keys eligible for provenance tracking.
     :param original_env: Process environment captured before bootstrap writes.
     :return: Existing env values keyed by env key.
     """
@@ -66,15 +68,15 @@ def original_env_value_origins(
             origin="shell_export_variable",
             value=original_env[key],
         )
-        for key in user_dotenv_keys
+        for key in app_env_keys
         if key in original_env
     }
 
 
 def merged_env_value_origins(
     *,
-    user_dotenv_keys: set[str],
-    defaults_dotenv_path: Path,
+    app_env_keys: set[str],
+    defaults_dotenv_path: Path | None,
     defaults_values: Mapping[str, str],
     user_dotenv_path: Path | None,
     user_dotenv_values: Mapping[str, str],
@@ -86,7 +88,7 @@ def merged_env_value_origins(
 ) -> dict[str, EnvValueOrigin]:
     """Return winning env-value origins using runtime bootstrap precedence.
 
-    :param user_dotenv_keys: App-owned env keys eligible for provenance tracking.
+    :param app_env_keys: App-owned env keys eligible for provenance tracking.
     :param defaults_dotenv_path: Packaged defaults dotenv path.
     :param defaults_values: Parsed packaged defaults dotenv values.
     :param user_dotenv_path: Per-user dotenv path.
@@ -108,7 +110,7 @@ def merged_env_value_origins(
         path: Path | None = None,
     ) -> None:
         for key, value in values.items():
-            if key not in user_dotenv_keys:
+            if key not in app_env_keys:
                 continue
             origins[key] = EnvValueOrigin(
                 env_key=key,

@@ -25,6 +25,7 @@ class ConfigPurgePlan:
     :param internal_storage_roots: Registered roots strictly below AppRC dir.
     :param external_storage_roots: Registered roots whose other data is kept.
     :param stale_storage: Whether records came from an unsupported capability.
+    :param stale_user_dotenv: Whether an undeclared user dotenv exists.
     """
 
     apprc_dir: Path
@@ -32,6 +33,7 @@ class ConfigPurgePlan:
     internal_storage_roots: tuple[Path, ...]
     external_storage_roots: tuple[Path, ...]
     stale_storage: bool
+    stale_user_dotenv: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +48,11 @@ class ConfigPurgeResult:
     skipped: tuple[Path, ...]
 
 
-def build_config_purge_plan(spec: AppConfigSpec) -> ConfigPurgePlan:
+def build_config_purge_plan(
+    spec: AppConfigSpec,
+    *,
+    apprc_dir: Path | None = None,
+) -> ConfigPurgePlan:
     """Resolve exact purge targets and validate the registry first.
 
     A malformed registry stops planning before any write. Files on disk never
@@ -54,10 +60,16 @@ def build_config_purge_plan(spec: AppConfigSpec) -> ConfigPurgePlan:
     purge.
 
     :param spec: Application declaration.
+    :param apprc_dir: Optional cleanup-only directory override.
     :return: Preflighted purge plan.
     :raises ConfigPurgeError: If an existing registry cannot be parsed.
     """
-    paths = spec.paths()
+    proc_env = (
+        {spec.apprc_dir_env_key: str(apprc_dir)}
+        if apprc_dir is not None
+        else None
+    )
+    paths = spec.paths(proc_env)
     if _has_symlink_at_or_above(paths.root):
         raise ConfigPurgeError(
             "Refusing to purge through a symbolic-link component in the "
@@ -95,6 +107,9 @@ def build_config_purge_plan(spec: AppConfigSpec) -> ConfigPurgePlan:
         internal_storage_roots=_unique_paths(internal_roots),
         external_storage_roots=_unique_paths(external_roots),
         stale_storage=registry is not None and not spec.uses_storage(),
+        stale_user_dotenv=(
+            paths.user_dotenv.is_file() and not spec.uses_user_dotenv()
+        ),
     )
 
 

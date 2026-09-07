@@ -15,6 +15,7 @@ from apprc.definition.app_config._validation import (
     resolve_storage_selector_env_key,
 )
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.env_config._validation import (
     validate_config_owner_inventory,
 )
@@ -44,14 +45,14 @@ LEGACY_STORAGE_DOTENV_FILENAME = ".env.apprc-storage"
 class AppConfigSpec:
     """Complete configuration contract for one application.
 
-    Python code determines whether storage exists as a capability. The TOML
-    file records user-created instances only and cannot enable storage for an
-    application that omitted :class:`Storage`.
+    Python code determines whether user-dotenv and storage capabilities exist.
+    Files on disk record instances of those features and never enable them.
 
     :param app_id: Stable application identity used in paths and derived keys.
     :param display_name: Human-readable application name.
-    :param config_package: Package containing ``apprc.defaults.env``.
+    :param config_package: Package that may contain ``apprc.defaults.env``.
     :param envs: Environment-backed config classes registered by the facade.
+    :param user_dotenv: User dotenv declaration, or ``None`` when disabled.
     :param storage: Storage declaration, or ``None`` for a storage-free app.
     :param command_name: Executable name shown in generated instructions.
     :param apprc_dir: Optional application-declared AppRC directory.
@@ -64,6 +65,7 @@ class AppConfigSpec:
     config_package: str
     owners: tuple[ConfigOwner, ...]
     envs: tuple[type[EnvConfig], ...]
+    user_dotenv: UserDotenv | None
     storage: Storage | None
     storage_selector_env_key: str | None
     command_name: str | None
@@ -82,6 +84,7 @@ class AppConfigSpec:
         display_name: str,
         config_package: str,
         envs: tuple[type[EnvConfig], ...] = (),
+        user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
         command_name: str | None = None,
         apprc_dir: Path | None = None,
@@ -91,6 +94,17 @@ class AppConfigSpec:
         """Normalize one direct AppRC declaration."""
         if not app_id.strip():
             raise ValueError("app_id must not be empty.")
+        if user_dotenv is None and storage is None:
+            if apprc_dir is not None:
+                raise ValueError(
+                    "apprc_dir requires user_dotenv=rc.UserDotenv() or "
+                    "storage=rc.Storage()."
+                )
+            if apprc_dir_env_key is not None:
+                raise ValueError(
+                    "apprc_dir_env_key requires user_dotenv=rc.UserDotenv() "
+                    "or storage=rc.Storage()."
+                )
         resolved_owners = tuple(config_owner_for(env_cls) for env_cls in envs)
         validate_config_owner_inventory(resolved_owners)
         resolved_selector_key = (
@@ -110,6 +124,7 @@ class AppConfigSpec:
         object.__setattr__(self, "config_package", config_package)
         object.__setattr__(self, "owners", resolved_owners)
         object.__setattr__(self, "envs", tuple(envs))
+        object.__setattr__(self, "user_dotenv", user_dotenv)
         object.__setattr__(self, "storage", storage)
         object.__setattr__(
             self,
@@ -172,6 +187,14 @@ class AppConfigSpec:
     def uses_storage(self) -> bool:
         """Return whether Python code enables storage support."""
         return self.storage is not None
+
+    def uses_user_dotenv(self) -> bool:
+        """Return whether Python code enables user-dotenv persistence."""
+        return self.user_dotenv is not None
+
+    def uses_managed_files(self) -> bool:
+        """Return whether the application declares any persistent files."""
+        return self.uses_user_dotenv() or self.uses_storage()
 
     def apprc_dir(
         self,
@@ -237,7 +260,8 @@ class AppConfigSpec:
         self,
         proc_env: Mapping[str, str] | None = None,
     ) -> Path:
-        """Create the per-user dotenv for an explicit write."""
+        """Create the declared per-user dotenv for an explicit setup."""
+        self.require_user_dotenv()
         return ensure_text_file(self.user_dotenv_path(proc_env))
 
     def ensure_apprc_toml(
@@ -263,3 +287,15 @@ class AppConfigSpec:
         if self.storage is None:
             raise ValueError(f"{self.display_name} does not use AppRC storage.")
         return self.storage
+
+    def require_user_dotenv(self) -> UserDotenv:
+        """Return the user-dotenv declaration or raise when absent.
+
+        :return: User dotenv declaration owned by this application.
+        :raises ValueError: If Python code did not enable user-dotenv support.
+        """
+        if self.user_dotenv is None:
+            raise ValueError(
+                f"{self.display_name} does not use an AppRC user dotenv."
+            )
+        return self.user_dotenv

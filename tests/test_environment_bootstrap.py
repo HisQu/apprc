@@ -8,6 +8,7 @@ import pytest
 
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.user_files.env_files import write_env_file
 from apprc.user_files.storage_roots.registry import register_storage
 from apprc.user_files.storage_roots.selector import StorageSelectorError
@@ -27,8 +28,9 @@ def _kit(tmp_path: Path) -> AppConfigKit:
     return AppConfigKit(
         app_id="apprc_example_app",
         display_name="Example App",
-        config_package="config_with_storage.config",
+        config_package="user_dotenv_with_storage.config",
         envs=(ApprcExampleAppEnv,),
+        user_dotenv=UserDotenv(),
         storage=Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
         apprc_dir=tmp_path / "apprc",
     )

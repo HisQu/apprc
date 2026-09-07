@@ -7,6 +7,7 @@ MyRC = rc.AppRC(
     app_id="apprc-example-explicit-env-precedence",
     display_name="AppRC Explicit Env Precedence Example",
     config_package="explicit_env_precedence.config",
+    user_dotenv=rc.UserDotenv(),
     storage=rc.Storage(selector_env_key="APPRC_EXAMPLE_PRECEDENCE_STORAGE"),
     command_name="apprc-explicit-env-precedence",
 )

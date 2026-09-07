@@ -46,19 +46,6 @@ from apprc.interfaces.tui._styles import (
     storage_name_text,
 )
 
-FIELD_TABLE_COLUMNS = (
-    "#",
-    "Section",
-    "Key",
-    "Effective",
-    "Shell",
-    "User",
-    "Storage",
-    "Default",
-    "Explanation",
-)
-_SEPARATOR_CELL_WIDTHS = (3, 14, 22, 12, 10, 14, 14, 14, 32)
-
 type FieldTableCell = str | Text
 
 
@@ -77,6 +64,26 @@ class FieldTableRow:
     env_key: str | None
     cells: tuple[FieldTableCell, ...]
     height: int | None = None
+
+
+def field_table_columns(
+    *,
+    include_user_dotenv: bool,
+    include_storage: bool,
+) -> tuple[str, ...]:
+    """Return source columns supported by the application declaration.
+
+    :param include_user_dotenv: Whether the app declares a user dotenv.
+    :param include_storage: Whether the app declares storage.
+    :return: Table headings in runtime precedence order.
+    """
+    columns = ["#", "Section", "Setting", "Effective", "Process environment"]
+    if include_storage:
+        columns.append("Storage dotenv")
+    if include_user_dotenv:
+        columns.append("User dotenv")
+    columns.extend(("Default", "Explanation"))
+    return tuple(columns)
 
 
 def build_field_table_rows(
@@ -118,7 +125,16 @@ def build_field_table_rows(
         if not visible_specs:
             continue
         if rendered_section:
-            rows.append(section_separator_row())
+            rows.append(
+                section_separator_row(
+                    column_count=len(
+                        field_table_columns(
+                            include_user_dotenv=include_user_dotenv,
+                            include_storage=include_storage,
+                        )
+                    )
+                )
+            )
         rendered_section = True
         for spec in visible_specs:
             env_key = owner.env_key(spec.name)
@@ -141,26 +157,34 @@ def build_field_table_rows(
                 user_dotenv_value=user_dotenv_value,
                 default_value=default_value,
             )
+            cells: list[FieldTableCell] = [
+                str(row_number),
+                Text(owner.title, style="bold"),
+                setting_cell(spec, env_key),
+                source_value_cell(spec, effective_value),
+                shell_status_cell(env_is_set),
+            ]
+            if include_storage:
+                cells.append(source_value_cell(spec, storage_value))
+            if include_user_dotenv:
+                cells.append(source_value_cell(spec, user_dotenv_value))
+            cells.extend(
+                (
+                    default_value_cell(
+                        spec,
+                        user_dotenv_value=user_dotenv_value,
+                        storage_value=storage_value,
+                        env_is_set=env_is_set,
+                        default_value=default_value,
+                    ),
+                    Text(short_explanation(spec), style=LABEL_STYLE),
+                )
+            )
             rows.append(
                 FieldTableRow(
                     env_key=env_key,
-                    cells=(
-                        str(row_number),
-                        Text(owner.title, style="bold"),
-                        env_key,
-                        source_value_cell(spec, effective_value),
-                        shell_status_cell(env_is_set),
-                        source_value_cell(spec, user_dotenv_value),
-                        source_value_cell(spec, storage_value),
-                        default_value_cell(
-                            spec,
-                            user_dotenv_value=user_dotenv_value,
-                            storage_value=storage_value,
-                            env_is_set=env_is_set,
-                            default_value=default_value,
-                        ),
-                        Text(short_explanation(spec), style=LABEL_STYLE),
-                    ),
+                    cells=tuple(cells),
+                    height=2,
                 )
             )
             row_number += 1
@@ -291,13 +315,27 @@ def possible_values_style(spec: ConfigField) -> str:
     return GENERIC_VALUE_STYLE
 
 
-def section_separator_row() -> FieldTableRow:
-    """Return a non-editable visual divider between config sections."""
+def setting_cell(spec: ConfigField, env_key: str) -> Text:
+    """Return a readable title with the exact environment key below it.
+
+    :param spec: Field declaration whose title is displayed.
+    :param env_key: Full process environment key.
+    :return: Two-line setting label.
+    """
+    title = spec.title or spec.name.replace("_", " ").title()
+    return Text.assemble((title, "bold"), "\n", (env_key, LABEL_STYLE))
+
+
+def section_separator_row(*, column_count: int) -> FieldTableRow:
+    """Return a non-editable visual divider between config sections.
+
+    :param column_count: Number of cells in the current capability layout.
+    :return: One separator row.
+    """
     return FieldTableRow(
         env_key=None,
         cells=tuple(
-            Text("─" * width, style=LABEL_STYLE)
-            for width in _SEPARATOR_CELL_WIDTHS
+            Text("────────────", style=LABEL_STYLE) for _ in range(column_count)
         ),
         height=1,
     )

@@ -26,14 +26,30 @@ def default_runtime_payload(
         if storage_root is not None
         else None
     )
+    apprc_dir = (
+        str(kit.spec.apprc_dir()) if kit.spec.uses_managed_files() else None
+    )
     return {
         "app_id": kit.spec.app_id,
         "display_name": kit.spec.display_name,
+        "user_dotenv_enabled": kit.spec.uses_user_dotenv(),
         "storage_enabled": kit.spec.uses_storage(),
-        "apprc_dir": str(kit.spec.apprc_dir()),
-        "apprc_dir_env_key": kit.spec.apprc_dir_env_key,
-        "user_dotenv": str(kit.spec.user_dotenv_path()),
-        "apprc_toml": str(kit.spec.preferred_apprc_toml_path()),
+        "apprc_dir": apprc_dir,
+        "apprc_dir_env_key": (
+            kit.spec.apprc_dir_env_key
+            if kit.spec.uses_managed_files()
+            else None
+        ),
+        "user_dotenv": (
+            str(kit.spec.user_dotenv_path())
+            if kit.spec.uses_user_dotenv()
+            else None
+        ),
+        "apprc_toml": (
+            str(kit.spec.preferred_apprc_toml_path())
+            if kit.spec.uses_storage()
+            else None
+        ),
         "storage_root": str(storage_root) if storage_root else None,
         "storage_dotenv": storage_dotenv,
     }

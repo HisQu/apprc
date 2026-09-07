@@ -4,6 +4,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.storage import Storage
 from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
 )
@@ -29,6 +31,25 @@ def test_storage_free_setup_creates_empty_user_dotenv() -> None:
     assert "user_dotenv:" in result.output
 
 
+def test_setup_accepts_custom_apprc_directory_for_current_run(
+    tmp_path: Path,
+) -> None:
+    kit = build_storage_free_example_kit()
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    custom_dir = tmp_path / "custom-apprc"
+
+    result = CliRunner().invoke(
+        app,
+        ["setup", "--yes", "--apprc-dir", str(custom_dir)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (custom_dir / "apprc.user.env").is_file()
+    assert f"export {kit.spec.apprc_dir_env_key}=" in result.output
+    assert f"$env:{kit.spec.apprc_dir_env_key}" in result.output
+    assert f'set "{kit.spec.apprc_dir_env_key}=' in result.output
+
+
 def test_storage_setup_creates_fixed_files_and_default_registry(
     tmp_path: Path,
 ) -> None:
@@ -50,6 +71,30 @@ def test_storage_setup_creates_fixed_files_and_default_registry(
     assert registry.selected_storage == "default"
     assert registry.selected("default").root == storage_root.resolve()
     assert "selected_storage: default" in result.output
+
+
+def test_storage_only_setup_does_not_create_user_dotenv(
+    tmp_path: Path,
+) -> None:
+    kit = AppConfigKit(
+        app_id="storage_only_setup",
+        display_name="Storage Only Setup",
+        config_package="storage.config",
+        storage=Storage(),
+    )
+    app = kit.typer_app()
+    storage_root = tmp_path / "storage"
+
+    result = CliRunner().invoke(
+        app,
+        ["setup", "--yes", "--storage-root", str(storage_root)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert kit.spec.preferred_apprc_toml_path().is_file()
+    assert kit.spec.storage_dotenv_path(storage_root).is_file()
+    assert not kit.spec.user_dotenv_path().exists()
+    assert "user_dotenv:" not in result.output
 
 
 def test_storage_setup_uses_default_storage_root_without_extra_nesting() -> (

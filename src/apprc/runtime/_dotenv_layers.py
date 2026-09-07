@@ -48,10 +48,8 @@ def read_defaults_dotenv_values(
 ) -> tuple[Path | None, dict[str, str]]:
     """Read packaged defaults dotenv values when the resource exists.
 
-    Missing resources are tolerated here so storage selection can use a
-    packaged default when present without making defaults mandatory for every
-    AppRC integration. ``bootstrap_env`` raises later when dotenv layers are
-    enabled and the resource is absent.
+    Packaged defaults are optional. Python defaults, explicit dotenv files,
+    and the process environment remain usable when the resource is absent.
 
     :param spec: Application-specific bootstrap contract.
     :return: Defaults dotenv path and parsed values, or ``(None, {})``.

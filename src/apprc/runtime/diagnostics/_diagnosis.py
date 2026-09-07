@@ -49,6 +49,7 @@ class UserDotenvDiagnosis:
 
     active: bool
     issues: list[str]
+    warnings: list[str]
 
 
 def diagnose_user_dotenv(
@@ -62,11 +63,25 @@ def diagnose_user_dotenv(
     :param paths: Fixed paths below the selected AppRC directory.
     :return: Per-user dotenv diagnosis.
     """
-    del kit
+    if not kit.spec.uses_user_dotenv():
+        warnings = (
+            [
+                "Ignored stale user dotenv because the application does not "
+                f"declare user-dotenv support: {paths.user_dotenv}"
+            ]
+            if paths.user_dotenv.is_file()
+            else []
+        )
+        return UserDotenvDiagnosis(
+            active=False,
+            issues=[],
+            warnings=warnings,
+        )
     if not paths.user_dotenv.is_file():
         return UserDotenvDiagnosis(
             active=True,
             issues=[f"User dotenv file does not exist: {paths.user_dotenv}"],
+            warnings=[],
         )
     try:
         read_dotenv_file(paths.user_dotenv)
@@ -76,8 +91,9 @@ def diagnose_user_dotenv(
             issues=[
                 f"User dotenv file could not be read: {paths.user_dotenv}: {exc}"
             ],
+            warnings=[],
         )
-    return UserDotenvDiagnosis(active=True, issues=[])
+    return UserDotenvDiagnosis(active=True, issues=[], warnings=[])
 
 
 def diagnose_storage(
@@ -105,6 +121,20 @@ def diagnose_storage(
         proc_env=selector_env,
     )
     if not kit.spec.uses_storage():
+        stale_warnings = [
+            *registry_inspection.warnings,
+            *registry_inspection.issues,
+        ]
+        if registry_inspection.exists:
+            stale_warnings.append(
+                "Ignored stale apprc.toml because the application does not "
+                f"declare storage support: {registry_inspection.path}"
+            )
+        registry_inspection = replace(
+            registry_inspection,
+            issues=[],
+            warnings=list(dict.fromkeys(stale_warnings)),
+        )
         return StorageDiagnosis(
             selection=None,
             storage_root_exists=None,
@@ -240,14 +270,11 @@ def legacy_file_warnings(
     :param storage_root: Selected storage root, if any.
     :return: Human-readable migration warnings.
     """
-    candidates = [
-        spec.apprc_dir() / ".env.apprc-app",
-        *(
-            [storage_root / ".env.apprc-storage"]
-            if storage_root is not None
-            else []
-        ),
-    ]
+    candidates = []
+    if spec.uses_user_dotenv():
+        candidates.append(spec.apprc_dir() / ".env.apprc-app")
+    if storage_root is not None:
+        candidates.append(storage_root / ".env.apprc-storage")
     return [
         f"Legacy AppRC file exists: {path}. Run `config migrate`."
         for path in candidates

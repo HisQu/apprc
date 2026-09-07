@@ -33,6 +33,7 @@ def print_config_doctor(
     console.print(_doctor_status_text(kit, payload))
     console.print("")
     for label, value in (
+        ("user_dotenv_enabled", _bool_text(payload.user_dotenv_enabled)),
         ("storage_enabled", _bool_text(payload.storage_enabled)),
         ("writes", "none"),
     ):
@@ -40,22 +41,28 @@ def print_config_doctor(
         console.print(label_value_text(label, rendered))
     console.print("")
     for label, value in (
-        ("apprc_dir", path_text(payload.apprc_dir)),
-        ("apprc_dir_exists", _bool_text(payload.apprc_dir_exists)),
-        ("user_dotenv", path_text(payload.user_dotenv)),
-        ("user_dotenv_exists", _bool_text(payload.user_dotenv_exists)),
+        ("apprc_dir", _path_or_disabled_text(payload.apprc_dir)),
+        ("apprc_dir_exists", _bool_or_none_text(payload.apprc_dir_exists)),
+        ("user_dotenv", _path_or_disabled_text(payload.user_dotenv)),
+        ("user_dotenv_exists", _bool_or_none_text(payload.user_dotenv_exists)),
         (
             "storage_selector_env_key",
             _env_key_or_none_text(payload.storage_selector_env_key),
         ),
-        ("apprc_dir_env_key", env_key_text(payload.apprc_dir_env_key)),
+        (
+            "apprc_dir_env_key",
+            _env_key_or_none_text(payload.apprc_dir_env_key),
+        ),
         (
             "apprc_dir_env_value",
             _path_or_none_text(payload.apprc_dir_env_value),
         ),
         ("apprc_toml", _path_or_none_text(payload.apprc_toml)),
-        ("apprc_toml_exists", _bool_text(payload.apprc_toml_exists)),
-        ("apprc_toml_parse_ok", _bool_text(payload.apprc_toml_parse_ok)),
+        ("apprc_toml_exists", _bool_or_none_text(payload.apprc_toml_exists)),
+        (
+            "apprc_toml_parse_ok",
+            _bool_or_none_text(payload.apprc_toml_parse_ok),
+        ),
         ("storage_count", Text(str(payload.storage_count))),
         (
             "configured_selected_storage",
@@ -123,6 +130,7 @@ def print_config_paths(
     console.print(Text(f"{kit.spec.display_name} config paths", style="bold"))
     console.print("")
     for label, value in (
+        ("user_dotenv_enabled", _bool_text(payload.user_dotenv_enabled)),
         ("storage_enabled", _bool_text(payload.storage_enabled)),
         ("writes", payload.writes),
     ):
@@ -130,22 +138,28 @@ def print_config_paths(
         console.print(label_value_text(label, rendered))
     console.print("")
     for label, value in (
-        ("apprc_dir", path_text(payload.apprc_dir)),
-        ("apprc_dir_exists", _bool_text(payload.apprc_dir_exists)),
-        ("user_dotenv", path_text(payload.user_dotenv)),
-        ("user_dotenv_exists", _bool_text(payload.user_dotenv_exists)),
+        ("apprc_dir", _path_or_disabled_text(payload.apprc_dir)),
+        ("apprc_dir_exists", _bool_or_none_text(payload.apprc_dir_exists)),
+        ("user_dotenv", _path_or_disabled_text(payload.user_dotenv)),
+        ("user_dotenv_exists", _bool_or_none_text(payload.user_dotenv_exists)),
         (
             "storage_selector_env_key",
             _env_key_or_none_text(payload.storage_selector_env_key),
         ),
-        ("apprc_dir_env_key", env_key_text(payload.apprc_dir_env_key)),
+        (
+            "apprc_dir_env_key",
+            _env_key_or_none_text(payload.apprc_dir_env_key),
+        ),
         (
             "apprc_dir_env_value",
             _path_or_none_text(payload.apprc_dir_env_value),
         ),
         ("apprc_toml", _path_or_none_text(payload.apprc_toml)),
-        ("apprc_toml_exists", _bool_text(payload.apprc_toml_exists)),
-        ("apprc_toml_parse_ok", _bool_text(payload.apprc_toml_parse_ok)),
+        ("apprc_toml_exists", _bool_or_none_text(payload.apprc_toml_exists)),
+        (
+            "apprc_toml_parse_ok",
+            _bool_or_none_text(payload.apprc_toml_parse_ok),
+        ),
         ("storage_count", Text(str(payload.storage_count))),
         (
             "configured_selected_storage",
@@ -238,6 +252,17 @@ def _path_or_none_text(value: str | None) -> Text:
     """
     if value is None:
         return Text("<none>", style=LABEL_STYLE)
+    return path_text(value)
+
+
+def _path_or_disabled_text(value: str | None) -> Text:
+    """Return a styled path or an explicit capability marker.
+
+    :param value: Path emitted only for a declared managed-file feature.
+    :return: Rich path text or ``<disabled>``.
+    """
+    if value is None:
+        return Text("<disabled>", style=LABEL_STYLE)
     return path_text(value)
 
 

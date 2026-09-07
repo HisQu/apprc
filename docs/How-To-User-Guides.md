@@ -13,14 +13,14 @@
 
 ## Choose a declaration
 
-AppRC always uses one user dotenv. Add `rc.Storage()` only when the application
-needs persistent user data.
+Declare user dotenv and storage support independently.
 
-| Application | Declaration | Normal files below `~/.local/share/<app-id>/` | Structural environment variables |
+| Application | Declaration | Normal managed files | Structural environment variables |
 | --- | --- | --- | --- |
-| No storage | `rc.AppRC(...)` | `apprc.user.env` | `<APP>_APPRC_DIR` only when relocating the AppRC directory |
-| One storage | `rc.AppRC(..., storage=rc.Storage())` | `apprc.user.env`, `apprc.toml`, `storage/apprc.storage.env` | `<APP>_APPRC_DIR` for relocation; `<APP>_STORAGE=NAME_OR_PATH` only to override `selected_storage` |
-| Several storages | Same storage declaration | Same fixed files; extra storage roots are listed in `apprc.toml` | Same variables; storage names are registry data, not Python declarations |
+| Process environment only | `rc.AppRC(...)` | None | None |
+| User dotenv only | `rc.AppRC(..., user_dotenv=rc.UserDotenv())` | `~/.local/share/<app-id>/apprc.user.env` | `<APP>_APPRC_DIR` only when relocating it |
+| Storage only | `rc.AppRC(..., storage=rc.Storage())` | `apprc.toml`, `storage/apprc.storage.env` | `<APP>_APPRC_DIR` for relocation; `<APP>_STORAGE=NAME_OR_PATH` only to override `selected_storage` |
+| User dotenv and storage | Both arguments | `apprc.user.env`, `apprc.toml`, `storage/apprc.storage.env` | Both structural variables have the same roles |
 
 Application setting variables such as `MYAPP_PROFILE` are separate from these
 structural variables. The application declares them with `rc.field(...)`.
@@ -41,11 +41,13 @@ apprc scaffold config \
   --package myapp \
   --app-id myapp \
   --display-name "My App" \
+  --user-dotenv \
   --storage \
   --target src
 ```
 
-Omit `--storage` for a storage-free application. AppRC derives
+Omit `--user-dotenv` or `--storage` when the application does not need that
+feature. AppRC derives
 `MYAPP_STORAGE`; pass `--storage-selector-env-key` only to override it.
 
 ```python
@@ -60,6 +62,7 @@ MyRC = rc.AppRC(
     display_name="My App",
     config_package="myapp.config",
     command_name="myapp",
+    user_dotenv=rc.UserDotenv(),
     storage=rc.Storage(selector_env_key="MYAPP_STORAGE"),
 )
 
@@ -81,7 +84,7 @@ class MyAppConfig:
     app: AppSettings = field(default_factory=AppSettings)
 ```
 
-Put non-secret defaults in `myapp/config/apprc.defaults.env`, mount the
+Optionally put non-secret defaults in `myapp/config/apprc.defaults.env`, mount the
 generated commands, and construct config only after AppRC prepares the CLI
 runtime:
 
@@ -110,7 +113,7 @@ storage or dotenv policy.
 Installing the Python package installs only code and packaged defaults. The
 application then owns an explicit setup step.
 
-For a storage-free app:
+For a user-dotenv-only app:
 
 ```bash
 python -m pip install myapp
@@ -119,8 +122,10 @@ myapp config setup --yes
 myapp config doctor
 ```
 
-Setup creates an empty `~/.local/share/myapp/apprc.user.env` so the file model
-does not gain a separate “user dotenv absent” state.
+Setup creates an empty `~/.local/share/myapp/apprc.user.env`. Until setup has
+created it, `config set --scope user` and user-scoped editor writes are
+disabled. A process-environment-only app has no setup command because it owns
+no user files.
 
 For a storage app:
 
@@ -131,21 +136,27 @@ myapp config setup
 myapp config doctor
 ```
 
-Interactive setup shows the proposed root
-`~/.local/share/myapp/storage/` before creating it. Choose the default, enter a
-custom directory with path completion, or cancel. To provide the root directly
-or run non-interactively:
+Interactive setup first asks for the AppRC directory, with path completion,
+then asks for the storage root. The suggested storage root is
+`~/.local/share/myapp/storage/`. To provide either path directly or run
+non-interactively:
 
 ```bash
-myapp config setup --storage-root /absolute/path/to/storage
+myapp config setup \
+  --apprc-dir /absolute/path/to/apprc \
+  --storage-root /absolute/path/to/storage
 myapp config setup --yes
 ```
 
-Storage setup creates the user dotenv, registers the initial root under the
-name `default`, selects it in `apprc.toml`, and creates
-`apprc.storage.env` inside the root. It does not write `MYAPP_STORAGE` to a
-dotenv file. A normal run uses `selected_storage`; export
+Storage setup registers the initial root under the name `default`, selects it
+in `apprc.toml`, and creates `apprc.storage.env` inside the root. It creates
+`apprc.user.env` only when `rc.UserDotenv()` is also declared. It does not write
+`MYAPP_STORAGE` to a dotenv file. A normal run uses `selected_storage`; export
 `MYAPP_STORAGE=NAME_OR_PATH` only for a run-level selection override.
+
+`--apprc-dir` affects the setup command's process only. When it differs from
+the currently resolved directory, setup prints copyable commands for POSIX,
+PowerShell, and `cmd.exe` that persist `<APP>_APPRC_DIR` for future runs.
 
 The path form must point to an existing directory containing a readable
 `apprc.storage.env`. AppRC logs whether it matched a registered name. If it is
@@ -206,9 +217,11 @@ comments out the later ones, and reports their line numbers. The interactive
 CLI and editor require confirmation before making that change. Non-interactive
 commands print the warning after the write.
 
-A storage-free declaration exposes only the user scope. It also hides
-`--storage`, all `config storage ...` commands, and the editor's storage
-section. An old `apprc.toml` on disk does not re-enable them.
+A user-dotenv-only declaration exposes only the user scope. A storage-only
+declaration exposes only the storage scope. A process-environment-only
+declaration exposes neither and has no `config set` or `config edit`. Missing
+declared files require setup before writes. Old files on disk never enable a
+scope or command that Python code did not declare.
 
 ## Migrate from 0.19
 
@@ -276,9 +289,9 @@ myapp config doctor --json
 | `user_dotenv_not_ready` | `apprc.user.env` is missing or unreadable. | Run setup or fix permissions. |
 | `storage_registry_not_ready` | `apprc.toml` is missing, unreadable, or invalid. | Run setup or fix the registry. |
 
-For a storage-free declaration, doctor reports stale `apprc.toml` as a warning
-only. The JSON payload uses file-specific keys such as `apprc_dir`,
-`user_dotenv`, `apprc_toml`, and `storage_dotenv`. `config edit` still opens
-when selection or storage setup is invalid. It shows the failure beside an
-enabled Setup action and does not enable storage field editing until the
-selected root contains `apprc.storage.env`.
+For a declaration without storage, doctor reports stale `apprc.toml` as a
+warning only. For one without `rc.UserDotenv()`, it does the same for a stale
+`apprc.user.env`. Unsupported paths are `null` in the JSON payload.
+`config edit` still opens when a declared file or storage selection is invalid.
+It names the missing feature beside a setup action and disables writes until
+setup creates the required dotenv marker.

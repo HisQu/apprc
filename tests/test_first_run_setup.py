@@ -41,7 +41,7 @@ def _runtime(
     kit = AppConfigKit(
         app_id="first_run_demo",
         display_name="First Run Demo",
-        config_package="config_with_storage.config",
+        config_package="storage.config",
         storage=Storage(selector_env_key="FIRST_RUN_DEMO_STORAGE"),
         apprc_dir=tmp_path / "apprc",
     )
@@ -85,7 +85,7 @@ def test_first_runtime_use_accepts_suggested_storage(
     assert session.apprc_context.env_bootstrap is not None
     assert session.apprc_context.env_bootstrap.storage_root == suggested
     assert (suggested / "apprc.storage.env").is_file()
-    assert runtime.kit.spec.user_dotenv_path().is_file()
+    assert not runtime.kit.spec.user_dotenv_path().exists()
     assert runtime.kit.spec.preferred_apprc_toml_path().is_file()
 
 

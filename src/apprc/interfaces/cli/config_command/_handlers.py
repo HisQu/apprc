@@ -39,12 +39,14 @@ class ConfigCommandHandlers(
         self,
         *,
         assume_yes: bool,
+        apprc_dir: str | Path | None,
         storage_root: str | Path | None,
     ) -> None:
         """Configure the files required by this AppRC declaration."""
         run_config_setup(
             self.kit,
             assume_yes=assume_yes,
+            apprc_dir=apprc_dir,
             storage_root=storage_root,
             config_group_name=self.config_group_name,
         )

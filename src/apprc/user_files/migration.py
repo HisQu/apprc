@@ -271,9 +271,7 @@ def build_config_migration_plan(
         if paths.user_dotenv.is_file()
         else None
     )
-    should_create_user = user_source is not None or (
-        spec.uses_storage() and registry is not None
-    )
+    should_create_user = spec.uses_user_dotenv() and user_source is not None
     if should_create_user and current_user_text != filtered_user_text:
         writes.append(
             TextMigration(

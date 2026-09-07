@@ -27,7 +27,8 @@ def _clean_environment(spec: ExampleAppSpec, root: Path) -> dict[str, str]:
         if not key.startswith("APPRC_EXAMPLE_")
     }
     env["APPRC_EXAMPLE_LAB_ROOT"] = str(root)
-    env[spec.apprc_dir_env_key] = str(root / "apprc")
+    if spec.uses_user_dotenv or spec.uses_storage:
+        env[spec.apprc_dir_env_key] = str(root / "apprc")
     return env
 
 
@@ -35,7 +36,14 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
     """Return copyable commands for one fresh lab session."""
     command = spec.command_name
     storage_root = root / "storage"
-    if spec.name == "config-only":
+    if spec.name == "process-env":
+        return (
+            f"{command} config paths",
+            f"{command} run",
+            f"{command} config doctor",
+            (f"{command} config purge --apprc-dir {root / 'apprc'} --dry-run"),
+        )
+    if spec.name == "user-dotenv":
         return (
             f"{command} config paths",
             f"{command} config setup --yes",
@@ -115,7 +123,10 @@ def run_lab(name: str) -> int:
         env = _clean_environment(spec, root)
         print(f"AppRC example: {name}")
         print(f"Temporary root: {root}")
-        print(f"AppRC directory: {root / 'apprc'} (not created yet)")
+        if spec.uses_user_dotenv or spec.uses_storage:
+            print(f"AppRC directory: {root / 'apprc'} (not created yet)")
+        else:
+            print("Managed AppRC files: none")
         print("\nTry these commands:\n")
         for command in _walkthrough(spec, root):
             print(f"  {command}")

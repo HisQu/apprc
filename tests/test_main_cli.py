@@ -17,8 +17,6 @@ from typer.testing import CliRunner, Result
 
 from cli_runtime import cli as cli_runtime
 from cli_runtime.config import KIT as RUNTIME_KIT
-from config_only import cli as config_only
-from config_only.config import KIT as CONFIG_ONLY_KIT
 from explicit_env_precedence import (
     cli as explicit_env_precedence,
 )
@@ -28,8 +26,14 @@ from explicit_env_precedence.config import (
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.runtime.diagnostics.messages import config_command_text
-from config_with_storage import cli as config_with_storage
-from config_with_storage.config import KIT as CONFIG_WITH_STORAGE_KIT
+from process_env import cli as process_env
+from process_env.config import MyRC as PROCESS_ENV_RC
+from storage import cli as storage
+from storage.config import MyRC as STORAGE_RC
+from user_dotenv import cli as user_dotenv
+from user_dotenv.config import MyRC as USER_DOTENV_RC
+from user_dotenv_with_storage import cli as user_dotenv_with_storage
+from user_dotenv_with_storage.config import MyRC as BOTH_RC
 from tests.support_config import build_apprc_example_app_kit
 
 ROOT = Path(__file__).parents[1]
@@ -69,25 +73,48 @@ class ExampleCliDefinition:
         """Return whether this example mounts storage commands."""
         return self.kit.spec.uses_storage()
 
+    @property
+    def uses_user_dotenv(self) -> bool:
+        """Return whether this example mounts user-dotenv commands."""
+        return self.kit.spec.uses_user_dotenv()
+
 
 EXAMPLE_CLIS = (
     ExampleCliDefinition(
-        scenario="config_only",
-        command_name="apprc-config-only",
-        kit=CONFIG_ONLY_KIT,
-        build_app=config_only.build_app,
+        scenario="process_env",
+        command_name="apprc-process-env",
+        kit=PROCESS_ENV_RC.kit,
+        build_app=process_env.build_app,
         app_key="profile",
-        app_value="config-only-app-profile",
+        app_value="process-env-profile",
     ),
     ExampleCliDefinition(
-        scenario="config_with_storage",
-        command_name="apprc-config-with-storage",
-        kit=CONFIG_WITH_STORAGE_KIT,
-        build_app=config_with_storage.build_app,
+        scenario="user_dotenv",
+        command_name="apprc-user-dotenv",
+        kit=USER_DOTENV_RC.kit,
+        build_app=user_dotenv.build_app,
         app_key="profile",
-        app_value="config-with-storage-app-profile",
+        app_value="user-dotenv-profile",
+    ),
+    ExampleCliDefinition(
+        scenario="storage",
+        command_name="apprc-storage",
+        kit=STORAGE_RC.kit,
+        build_app=storage.build_app,
+        app_key="profile",
+        app_value="storage-profile",
         storage_key="api_token",
-        storage_value="config-with-storage-secret",
+        storage_value="storage-secret",
+    ),
+    ExampleCliDefinition(
+        scenario="user_dotenv_with_storage",
+        command_name="apprc-user-dotenv-with-storage",
+        kit=BOTH_RC.kit,
+        build_app=user_dotenv_with_storage.build_app,
+        app_key="profile",
+        app_value="combined-profile",
+        storage_key="api_token",
+        storage_value="combined-secret",
     ),
     ExampleCliDefinition(
         scenario="explicit_env_precedence",
@@ -173,12 +200,18 @@ def test_example_cli_runs_every_supported_config_command(
     paths_json = _assert_json_success(
         harness.invoke(["--log-level", "INFO", "config", "paths", "--json"])
     )
-    assert str(paths_json["apprc_dir"]).endswith(definition.kit.spec.app_id)
+    if definition.uses_user_dotenv or definition.uses_storage:
+        assert str(paths_json["apprc_dir"]).endswith(definition.kit.spec.app_id)
+    else:
+        assert paths_json["apprc_dir"] is None
 
-    setup_args = ["config", "setup", "--yes"]
-    if definition.uses_storage:
-        setup_args.extend(["--storage-root", str(storage_root)])
-    _assert_success(harness.invoke(setup_args))
+    if definition.uses_user_dotenv or definition.uses_storage:
+        setup_args = ["config", "setup", "--yes"]
+        if definition.uses_storage:
+            setup_args.extend(["--storage-root", str(storage_root)])
+        _assert_success(harness.invoke(setup_args))
+    else:
+        assert harness.invoke(["config", "setup", "--yes"]).exit_code != 0
 
     if definition.uses_storage:
         _assert_success(
@@ -221,35 +254,39 @@ def test_example_cli_runs_every_supported_config_command(
                 ]
             )
         )
-        _assert_success(
-            harness.invoke(
-                [
-                    *storage_prefix,
-                    "config",
-                    "set",
-                    definition.app_key,
-                    definition.app_value,
-                    "--scope",
-                    "user",
-                ]
+        if definition.uses_user_dotenv:
+            _assert_success(
+                harness.invoke(
+                    [
+                        *storage_prefix,
+                        "config",
+                        "set",
+                        definition.app_key,
+                        definition.app_value,
+                        "--scope",
+                        "user",
+                    ]
+                )
             )
-        )
         runtime_prefix = storage_prefix
     else:
         unavailable = harness.invoke(["config", "storage", "list"])
         assert unavailable.exit_code != 0
-        _assert_success(
-            harness.invoke(
-                [
-                    "config",
-                    "set",
-                    definition.app_key,
-                    definition.app_value,
-                    "--scope",
-                    "user",
-                ]
+        if definition.uses_user_dotenv:
+            _assert_success(
+                harness.invoke(
+                    [
+                        "config",
+                        "set",
+                        definition.app_key,
+                        definition.app_value,
+                        "--scope",
+                        "user",
+                    ]
+                )
             )
-        )
+        else:
+            assert harness.invoke(["config", "set", "x", "y"]).exit_code != 0
         runtime_prefix = []
 
     _assert_success(harness.invoke([*runtime_prefix, "config", "doctor"]))
@@ -264,9 +301,12 @@ def test_example_cli_runs_every_supported_config_command(
     )
     assert show_json["app_id"] == definition.kit.spec.app_id
 
-    HeadlessConfigEditorApp.reset()
-    _assert_success(harness.invoke([*runtime_prefix, "config", "edit"]))
-    assert HeadlessConfigEditorApp.run_count == 1
+    if definition.uses_user_dotenv or definition.uses_storage:
+        HeadlessConfigEditorApp.reset()
+        _assert_success(harness.invoke([*runtime_prefix, "config", "edit"]))
+        assert HeadlessConfigEditorApp.run_count == 1
+    else:
+        assert harness.invoke(["config", "edit"]).exit_code != 0
 
     run_args = [*runtime_prefix]
     if definition.runtime:
@@ -302,7 +342,7 @@ def test_cli_runtime_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
     assert result.output.strip() == "runtime_status: runtime-independent"
 
 
-def test_config_only_help_describes_dotenv_skip_without_storage() -> None:
+def test_process_env_help_describes_dotenv_skip_without_storage() -> None:
     harness = ExampleCliHarness(EXAMPLE_CLIS[0])
 
     result = _assert_success(harness.invoke(["--help"]))
@@ -315,7 +355,7 @@ def test_config_only_help_describes_dotenv_skip_without_storage() -> None:
 def test_storage_example_exercises_registry_lifecycle_and_path_selection(
     tmp_path: Path,
 ) -> None:
-    definition = EXAMPLE_CLIS[1]
+    definition = EXAMPLE_CLIS[2]
     harness = ExampleCliHarness(definition)
     default_root = tmp_path / "default"
     alpha_root = tmp_path / "alpha"
@@ -413,7 +453,7 @@ def test_storage_example_exercises_registry_lifecycle_and_path_selection(
 def test_example_cli_env_file_options_control_apprc_directory(
     tmp_path: Path,
 ) -> None:
-    definition = EXAMPLE_CLIS[1]
+    definition = EXAMPLE_CLIS[2]
     harness = ExampleCliHarness(definition)
     explicit_apprc_dir = tmp_path / "explicit"
     env_file = tmp_path / ".env"
@@ -455,8 +495,10 @@ def test_console_scripts_point_to_example_clis() -> None:
         "apprc": "apprc.__main__:main",
     }
     assert demo_pyproject["project"]["scripts"] == {
-        "apprc-config-only": "config_only.cli:main",
-        "apprc-config-with-storage": "config_with_storage.cli:main",
+        "apprc-process-env": "process_env.cli:main",
+        "apprc-user-dotenv": "user_dotenv.cli:main",
+        "apprc-storage": "storage.cli:main",
+        "apprc-user-dotenv-with-storage": ("user_dotenv_with_storage.cli:main"),
         "apprc-explicit-env-precedence": ("explicit_env_precedence.cli:main"),
         "apprc-cli-runtime": "cli_runtime.cli:main",
         "apprc-examples-lab": "_example_apps_utils.lab:main",
@@ -466,10 +508,11 @@ def test_console_scripts_point_to_example_clis() -> None:
         "include"
     ] == [
         "cli_runtime*",
-        "config_only*",
+        "process_env*",
+        "user_dotenv*",
+        "storage*",
         "_example_apps_utils",
         "explicit_env_precedence*",
-        "config_with_storage*",
     ]
 
 
@@ -581,22 +624,26 @@ def test_ci_is_reusable_without_running_twice_for_release_tags() -> None:
     assert "run: just --summary" in workflow
 
 
-def test_release_workflow_checks_builds_approves_and_publishes() -> None:
+def test_release_workflow_creates_github_release_before_optional_pypi() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
     checks, remainder = workflow.split("  build:", maxsplit=1)
-    build, publish = remainder.split("  publish:", maxsplit=1)
+    build, remainder = remainder.split("  github-release:", maxsplit=1)
+    github_release, pypi_publish = remainder.split(
+        "  pypi-publish:", maxsplit=1
+    )
 
     assert '      - "v*"' in workflow
     assert "uses: ./.github/workflows/ci.yml" in workflow
     assert "needs: checks" in workflow
     assert "needs: build" in workflow
-    assert "name: pypi" in workflow
+    assert "environment: pypi" in pypi_publish
     assert "id-token: write" in workflow
     assert "contents: write" in workflow
     assert "--trusted-publishing always" in workflow
-    assert "--check-url https://pypi.org/simple/apprc/" in workflow
+    assert "if: vars.PUBLISH_PYPI == 'true'" in pypi_publish
+    assert "needs: github-release" in pypi_publish
     assert 'gh release create "$GITHUB_REF_NAME"' in workflow
     assert "just _release-artifact-check release/release-notes.md" in workflow
     assert "just publish-check" not in build
@@ -611,10 +658,12 @@ def test_release_workflow_checks_builds_approves_and_publishes() -> None:
     assert "id-token:" not in checks
     assert "id-token:" not in build
     assert "actions/upload-artifact@v4" in build
-    assert "actions/download-artifact@v4" in publish
+    assert "actions/download-artifact@v4" in github_release
+    assert "actions/download-artifact@v4" in pypi_publish
     assert "dist/*.whl" in workflow
     assert "dist/*.tar.gz" in workflow
-    assert "--notes-file release/release-notes.md" in publish
+    assert "--notes-file release/release-notes.md" in github_release
+    assert "--trusted-publishing always" in pypi_publish
 
 
 def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
@@ -704,10 +753,11 @@ def test_release_checks_before_commit_and_tag() -> None:
     assert recipe.index("git commit") < recipe.index('git tag -a "${tag}"')
     assert 'git tag -a "${tag}"' in recipe
     assert re.search(r"(?m)^\s+git push\b", recipe) is None
-    assert "it does not publish anything" in recipe
-    assert "nothing has been published" in recipe
+    assert "Nothing has been uploaded" in recipe
     assert "git push origin main ${tag}" in recipe
-    assert "run CI, wait for pypi approval, publish to PyPI" in recipe
+    assert "create" in recipe
+    assert "the GitHub Release" in recipe
+    assert "PyPI stays disabled unless PUBLISH_PYPI=true" in recipe
     assert "PYPI_API_KEY" not in justfile
     assert "publish-pypi" not in justfile
 
@@ -794,8 +844,8 @@ def test_command_name_falls_back_or_uses_declared_command() -> None:
         "apprc_example_app config show"
     )
     assert (
-        config_command_text(CONFIG_WITH_STORAGE_KIT, "show")
-        == "apprc-config-with-storage config show"
+        config_command_text(STORAGE_RC.kit, "show")
+        == "apprc-storage config show"
     )
 
 

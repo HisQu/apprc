@@ -46,6 +46,7 @@ def test_scaffold_config_package_generates_importable_standard_layout(
     config_module = importlib.import_module("demo_app.config")
 
     assert config_module.MyRC.kit.spec.uses_storage() is True
+    assert config_module.MyRC.kit.spec.uses_user_dotenv() is False
     assert config_module.CONFIG_SPEC.owners[0].key == "app"
     assert "app" in config_module.SECTION_BY_KEY
     generated_bundle = config_module.DemoAppConfig()
@@ -106,6 +107,33 @@ def test_scaffold_config_package_refuses_unrelated_storage_prefix(
                 target=tmp_path / "src",
             )
         )
+
+
+@pytest.mark.parametrize(
+    ("user_dotenv", "storage"),
+    ((False, False), (True, False), (False, True), (True, True)),
+)
+def test_scaffold_config_package_renders_independent_capabilities(
+    tmp_path: Path,
+    *,
+    user_dotenv: bool,
+    storage: bool,
+) -> None:
+    """Every capability combination should produce an explicit declaration."""
+    result = scaffold_config_package(
+        ConfigScaffoldRequest(
+            package="capability_demo",
+            app_id="capability-demo",
+            target=tmp_path / "src",
+            user_dotenv=user_dotenv,
+            storage=storage,
+        )
+    )
+
+    source = (result.config_package_dir / "app.py").read_text(encoding="utf-8")
+
+    assert ("user_dotenv=rc.UserDotenv()" in source) is user_dotenv
+    assert ("storage=rc.Storage(" in source) is storage
 
 
 def test_scaffold_config_package_escapes_generated_python_literals(

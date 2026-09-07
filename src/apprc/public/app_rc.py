@@ -26,6 +26,7 @@ import apprc.utils as ut
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.env_config._validation import validate_config_owner
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.interfaces.cli.mount import mount_config_cli
@@ -85,8 +86,9 @@ class _AppRCDeclaration:
 
     :param app_id: Stable application identity.
     :param display_name: Human-readable application name.
-    :param config_package: Package containing managed defaults.
+    :param config_package: Package that may contain managed defaults.
     :param command_name: Executable name used in guidance.
+    :param user_dotenv: Optional user-wide dotenv declaration.
     :param storage: Optional persistent-storage declaration.
     :param apprc_dir: Optional application-declared AppRC directory.
     :param apprc_dir_env_key: Explicit directory override key.
@@ -97,6 +99,7 @@ class _AppRCDeclaration:
     display_name: str
     config_package: str
     command_name: str | None
+    user_dotenv: UserDotenv | None
     storage: Storage | None
     apprc_dir: Path | None
     apprc_dir_env_key: str | None
@@ -106,7 +109,8 @@ class _AppRCDeclaration:
 class AppRC:
     """Public facade for one application's AppRC integration.
 
-    App authors create one ``AppRC`` object, add :class:`Storage` when the app
+    App authors create one ``AppRC`` object, add :class:`UserDotenv` when the
+    app needs persistent user overrides, add :class:`Storage` when the app
     writes persistent data, register config classes through
     ``@MyRC.config(...)``, and mount runtime behavior with :meth:`mount_cli` or
     :meth:`bootstrap`.
@@ -119,19 +123,22 @@ class AppRC:
         config_package: str,
         display_name: str | None = None,
         command_name: str | None = None,
+        user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
         apprc_dir: Path | None = None,
         apprc_dir_env_key: str | None = None,
         legacy_app_ids: tuple[str, ...] = (),
     ) -> None:
-        """Build an application declaration with optional storage.
+        """Build an application declaration with optional writable features.
 
         :param app_id: Stable application identity.
         :param config_package: Package containing packaged config resources.
         :param display_name: Human-readable name, or ``None`` to use
             ``app_id``.
         :param command_name: Executable name shown in generated instructions.
-        :param storage: Storage declaration, or ``None`` for config-only apps.
+        :param user_dotenv: User dotenv declaration, or ``None`` to avoid that
+            persistent layer.
+        :param storage: Storage declaration, or ``None`` for storage-free apps.
         :param apprc_dir: Optional application-declared AppRC directory.
         :param apprc_dir_env_key: Explicit directory override key.
         :param legacy_app_ids: Released 0.19 identities accepted by migration.
@@ -141,6 +148,7 @@ class AppRC:
             display_name=display_name or app_id,
             config_package=config_package,
             command_name=command_name,
+            user_dotenv=user_dotenv,
             storage=storage,
             apprc_dir=apprc_dir,
             apprc_dir_env_key=apprc_dir_env_key,
@@ -315,6 +323,7 @@ class AppRC:
             display_name=declaration.display_name,
             config_package=declaration.config_package,
             envs=envs,
+            user_dotenv=declaration.user_dotenv,
             storage=declaration.storage,
             command_name=declaration.command_name,
             apprc_dir=declaration.apprc_dir,

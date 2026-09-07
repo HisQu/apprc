@@ -33,7 +33,7 @@ from apprc.runtime._dotenv_layers import (
     read_defaults_dotenv_values,
 )
 from apprc.runtime._process_env import (
-    user_dotenv_keys,
+    app_env_keys,
     merged_env_value_origins,
     original_env_value_origins,
     selection_env,
@@ -117,9 +117,15 @@ def bootstrap_env(
         explicit_values=explicit_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
-    paths = spec.paths(proc_env=selector_env)
+    paths = (
+        spec.paths(proc_env=selector_env) if spec.uses_managed_files() else None
+    )
     defaults_dotenv_path, defaults_values = read_defaults_dotenv_values(spec)
-    user_dotenv_path = paths.user_dotenv
+    user_dotenv_path = (
+        paths.user_dotenv
+        if paths is not None and spec.uses_user_dotenv()
+        else None
+    )
     user_dotenv_values: dict[str, str] = {}
     try:
         if user_dotenv_path is not None and user_dotenv_path.is_file():
@@ -128,7 +134,7 @@ def bootstrap_env(
         raise AppRCDirectoryError(
             f"AppRC-managed file could not be read: {user_dotenv_path}: {exc}"
         ) from exc
-    owned_env_keys = user_dotenv_keys(spec)
+    owned_env_keys = app_env_keys(spec)
     emit.info(
         "AppRC bootstrap starting for %s: explicit_env_files=%s "
         "load_dotenv_layers=%s env_file_overrides_os_environ=%s",
@@ -143,6 +149,8 @@ def bootstrap_env(
     active_storage_dotenv: Path | None = None
     storage_selector_env_key = spec.storage_selector_env_key
     if spec.uses_storage():
+        if paths is None:
+            raise RuntimeError("Storage requires an AppRC directory.")
         storage_selector_env_key = spec.require_storage_selector_env_key()
         try:
             registry = load_optional_runtime_storage_registry(
@@ -203,11 +211,13 @@ def bootstrap_env(
             registry.path if registry is not None else None,
             len(registry.storages) if registry is not None else 0,
         )
-    else:
+    elif spec.uses_user_dotenv():
         emit.info("AppRC bootstrap using user dotenv: %s", user_dotenv_path)
+    else:
+        emit.info("AppRC bootstrap has no managed user files.")
 
     env_origins = original_env_value_origins(
-        user_dotenv_keys=owned_env_keys,
+        app_env_keys=owned_env_keys,
         original_env=original_env,
     )
     loaded_storage_dotenv: Path | None = None
@@ -215,11 +225,6 @@ def bootstrap_env(
     if load_dotenv_layers:
         loaded_storage_dotenv = active_storage_dotenv
         loaded_user_dotenv = user_dotenv_path
-        if defaults_dotenv_path is None:
-            raise FileNotFoundError(
-                "Did not find packaged defaults file "
-                f"{spec.defaults_dotenv_filename} for {spec.config_package}."
-            )
         try:
             storage_values = read_dotenv_file(active_storage_dotenv)
         except OSError as exc:
@@ -237,7 +242,7 @@ def bootstrap_env(
             env_file_overrides_os_environ=env_file_overrides_os_environ,
         )
         env_origins = merged_env_value_origins(
-            user_dotenv_keys=owned_env_keys,
+            app_env_keys=owned_env_keys,
             defaults_dotenv_path=defaults_dotenv_path,
             defaults_values=defaults_values,
             user_dotenv_path=user_dotenv_path,
@@ -291,7 +296,11 @@ def bootstrap_env(
         defaults_dotenv=defaults_dotenv_path if load_dotenv_layers else None,
         storage_dotenv=loaded_storage_dotenv,
         env_files=loaded_env_files,
-        apprc_toml=paths.apprc_toml,
+        apprc_toml=(
+            paths.apprc_toml
+            if paths is not None and spec.uses_storage()
+            else None
+        ),
         storage_selector_source=(
             selection.source if selection is not None else None
         ),
@@ -301,7 +310,7 @@ def bootstrap_env(
         storage_name=selection.storage_name if selection is not None else None,
         storage_root=active_storage_root,
         storage_count=len(registry.storages) if registry is not None else 0,
-        apprc_dir=paths.root,
+        apprc_dir=paths.root if paths is not None else None,
         user_dotenv=loaded_user_dotenv,
         storage_selector_kind=(
             selection.selector_kind if selection is not None else None

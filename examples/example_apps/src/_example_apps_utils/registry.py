@@ -8,9 +8,11 @@ from dataclasses import dataclass
 # == Internal ===================================================
 import apprc as rc
 from cli_runtime.config import MyRC as CLI_RUNTIME_RC
-from config_only.config import MyRC as CONFIG_ONLY_RC
-from config_with_storage.config import MyRC as CONFIG_WITH_STORAGE_RC
 from explicit_env_precedence.config import MyRC as PRECEDENCE_RC
+from process_env.config import MyRC as PROCESS_ENV_RC
+from storage.config import MyRC as STORAGE_RC
+from user_dotenv.config import MyRC as USER_DOTENV_RC
+from user_dotenv_with_storage.config import MyRC as BOTH_RC
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +24,7 @@ class ExampleAppSpec:
     :param app_id: Stable AppRC application identifier.
     :param apprc_dir_env_key: Environment key that relocates managed files.
     :param env_prefix: Prefix removed from inherited lab environments.
+    :param uses_user_dotenv: Whether setup manages a user dotenv.
     :param uses_storage: Whether the application declares storage support.
     :param required_storage_key: Required storage field populated by smoke
         runs, or ``None`` for storage-free examples.
@@ -32,6 +35,7 @@ class ExampleAppSpec:
     app_id: str
     apprc_dir_env_key: str
     env_prefix: str
+    uses_user_dotenv: bool
     uses_storage: bool
     required_storage_key: str | None = None
 
@@ -52,6 +56,7 @@ def _spec(
         app_id=spec.app_id,
         apprc_dir_env_key=spec.apprc_dir_env_key,
         env_prefix=env_prefix,
+        uses_user_dotenv=spec.uses_user_dotenv(),
         uses_storage=spec.uses_storage(),
         required_storage_key=required_storage_key,
     )
@@ -59,16 +64,29 @@ def _spec(
 
 EXAMPLE_APPS = (
     _spec(
-        "config-only",
-        "apprc-config-only",
-        CONFIG_ONLY_RC,
-        env_prefix="APPRC_EXAMPLE_CONFIG_",
+        "process-env",
+        "apprc-process-env",
+        PROCESS_ENV_RC,
+        env_prefix="APPRC_EXAMPLE_PROCESS_",
     ),
     _spec(
-        "config-with-storage",
-        "apprc-config-with-storage",
-        CONFIG_WITH_STORAGE_RC,
+        "user-dotenv",
+        "apprc-user-dotenv",
+        USER_DOTENV_RC,
+        env_prefix="APPRC_EXAMPLE_USER_",
+    ),
+    _spec(
+        "storage",
+        "apprc-storage",
+        STORAGE_RC,
         env_prefix="APPRC_EXAMPLE_STORAGE_",
+        required_storage_key="api_token",
+    ),
+    _spec(
+        "user-dotenv-with-storage",
+        "apprc-user-dotenv-with-storage",
+        BOTH_RC,
+        env_prefix="APPRC_EXAMPLE_BOTH_",
         required_storage_key="api_token",
     ),
     _spec(

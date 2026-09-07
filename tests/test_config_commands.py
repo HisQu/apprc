@@ -6,12 +6,15 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 import apprc.interfaces.cli.config_command._runtime_commands as runtime_commands
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.storage import Storage
 from apprc.interfaces.cli.setup_command import run_config_setup
 from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
 )
 from tests.support_config import (
     ApprcExampleAppConfigState,
+    ApprcExampleAppEnv,
     StorageFreeExampleConfigState,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
@@ -191,16 +194,84 @@ def test_relative_storage_roots_resolve_from_apprc_toml(
 def test_config_set_writes_user_dotenv_for_storage_free_app() -> None:
     kit = build_storage_free_example_kit()
     app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    setup = CliRunner().invoke(app, ["setup", "--yes"])
 
     result = CliRunner().invoke(
         app,
         ["set", "global.profile", "local", "--scope", "user"],
     )
 
+    assert setup.exit_code == 0, setup.output
     assert result.exit_code == 0, result.output
     assert kit.spec.user_dotenv_path().read_text(encoding="utf-8") == (
         'STORAGE_FREE_APP_PROFILE="local"\n'
     )
+
+
+def test_config_set_requires_user_dotenv_setup() -> None:
+    kit = build_storage_free_example_kit()
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+
+    result = CliRunner().invoke(
+        app,
+        ["set", "global.profile", "local", "--scope", "user"],
+    )
+
+    assert result.exit_code != 0
+    assert "user dotenv is not set up" in result.output
+    assert "config setup" in result.output
+    assert not kit.spec.user_dotenv_path().exists()
+
+
+def test_config_purge_reports_unmanaged_data_that_remains() -> None:
+    kit = build_storage_free_example_kit()
+    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    kit.spec.ensure_user_dotenv()
+    unrelated = kit.spec.apprc_dir() / "keep.txt"
+    unrelated.write_text("keep", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["purge", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert "remaining_unmanaged_data:" in result.output
+    assert unrelated.read_text(encoding="utf-8") == "keep"
+
+
+def test_generated_commands_follow_declared_capabilities() -> None:
+    process_only = AppConfigKit(
+        app_id="process_only",
+        display_name="Process Only",
+        config_package="process_env.config",
+        envs=(ApprcExampleAppEnv,),
+    ).typer_app()
+    storage_only = AppConfigKit(
+        app_id="storage_only",
+        display_name="Storage Only",
+        config_package="storage.config",
+        envs=(ApprcExampleAppEnv,),
+        storage=Storage(),
+    ).typer_app()
+
+    assert {command.name for command in process_only.registered_commands} == {
+        "paths",
+        "show",
+        "doctor",
+        "purge",
+    }
+    assert {command.name for command in storage_only.registered_commands} == {
+        "paths",
+        "show",
+        "doctor",
+        "setup",
+        "migrate",
+        "purge",
+        "set",
+        "edit",
+    }
+    assert {group.name for group in process_only.registered_groups} == set()
+    assert {group.name for group in storage_only.registered_groups} == {
+        "storage"
+    }
 
 
 def test_config_set_confirms_duplicate_cleanup_before_writing(

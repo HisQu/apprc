@@ -47,6 +47,27 @@ async def test_editor_hides_storage_controls_for_storage_free_app() -> None:
         ):
             assert list(editor.query(f"#{button_id}")) == []
         assert editor.query_one("#field-table", DataTable).row_count > 0
+        setup = editor.query_one("#config-setup", Button)
+        assert str(setup.label) == "Set up user dotenv..."
+        assert (
+            "user dotenv is not set up"
+            in str(editor.query_one("#scope-title", Static).content).lower()
+        )
+
+
+@pytest.mark.asyncio
+async def test_editor_hides_setup_after_user_dotenv_is_initialized() -> None:
+    kit = build_storage_free_example_kit()
+    kit.spec.ensure_user_dotenv()
+    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+
+        assert list(editor.query("#config-setup")) == []
+        scope_text = str(editor.query_one("#scope-title", Static).content)
+        assert "User dotenv:" in scope_text
+        assert str(kit.spec.user_dotenv_path()) in scope_text
 
 
 @pytest.mark.asyncio
@@ -82,6 +103,7 @@ async def test_editor_exposes_every_user_registered_storage(
 @pytest.mark.asyncio
 async def test_editor_saving_user_value_creates_only_user_dotenv() -> None:
     kit = build_storage_free_example_kit()
+    kit.spec.ensure_user_dotenv()
     editor = ConfigEditorApp(kit=kit, storage_registry=None)
 
     async with editor.run_test() as pilot:
@@ -134,8 +156,8 @@ async def test_editor_duplicate_warning_cancels_before_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     kit = build_storage_free_example_kit()
-    editor = ConfigEditorApp(kit=kit, storage_registry=None)
     user_dotenv = kit.spec.ensure_user_dotenv()
+    editor = ConfigEditorApp(kit=kit, storage_registry=None)
     original = (
         "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n"
     )

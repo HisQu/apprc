@@ -23,6 +23,7 @@ Normal integrations use `import apprc as rc`.
 | Name | Purpose |
 | --- | --- |
 | `rc.AppRC` | Declares one application, registers config, bootstraps runtime state, and mounts generated commands. |
+| `rc.UserDotenv` | Enables one managed `apprc.user.env`. |
 | `rc.Storage` | Enables storage and optionally declares its selector environment key. |
 | `rc.Config` | Base for env-backed typed config. |
 | `rc.ConfigBase` | Base for Python-only config. |
@@ -45,6 +46,7 @@ MyRC = rc.AppRC(
     config_package="myapp.config",
     display_name="My App",
     command_name="myapp",
+    user_dotenv=rc.UserDotenv(),
     storage=rc.Storage(selector_env_key="MYAPP_STORAGE"),
     apprc_dir_env_key="MYAPP_APPRC_DIR",
     legacy_app_ids=("old-myapp",),
@@ -56,12 +58,13 @@ MyRC = rc.AppRC(
 | Argument | Default | Meaning |
 | --- | --- | --- |
 | `app_id` | required | Stable identity used for the default directory and derived keys. |
-| `config_package` | required | Import package containing `apprc.defaults.env`. |
+| `config_package` | required | Import package that may contain `apprc.defaults.env`. |
 | `display_name` | `app_id` | Label shown to users. |
 | `command_name` | `None`, rendered as `app_id` | Executable shown in generated instructions. |
-| `storage` | `None` | `rc.Storage(...)` when the application persists user data. |
-| `apprc_dir` | `None` | Application-declared AppRC directory override. |
-| `apprc_dir_env_key` | derived `<APP>_APPRC_DIR` | Explicit environment key that relocates the AppRC directory. |
+| `user_dotenv` | `None` | `rc.UserDotenv()` when the app supports user-wide dotenv overrides. |
+| `storage` | `None` | `rc.Storage(...)` when the app supports named storage roots. |
+| `apprc_dir` | `None` | Application-declared AppRC directory override; invalid without a persistent capability. |
+| `apprc_dir_env_key` | derived `<APP>_APPRC_DIR` | Explicit relocation key; invalid without a persistent capability. |
 | `legacy_app_ids` | `()` | Released 0.19 identities scanned by migration. |
 
 `Storage` has one argument:
@@ -99,14 +102,13 @@ For `app_id="myapp"`:
 
 | File | Location | Role |
 | --- | --- | --- |
-| `apprc.defaults.env` | `config_package` | Non-secret defaults shipped by the app. |
-| `apprc.user.env` | `~/.local/share/myapp/` | Per-user dotenv overrides; created empty by setup. |
-| `apprc.toml` | `~/.local/share/myapp/` | Registered storage names, roots, and persistent selection. |
-| `apprc.storage.env` | Each registered storage root | Storage-specific dotenv overrides. |
+| `apprc.defaults.env` | `config_package` | Optional non-secret defaults shipped by the app. |
+| `apprc.user.env` | `~/.local/share/myapp/` | Present only with `rc.UserDotenv()`; setup creates it empty. |
+| `apprc.toml` | `~/.local/share/myapp/` | Present only with `rc.Storage()`; stores names, roots, and selection. |
+| `apprc.storage.env` | Each registered storage root | Present only with `rc.Storage()`; storage-specific overrides. |
 
-`MYAPP_APPRC_DIR=/some/path` changes both fixed user files to
-`/some/path/apprc.user.env` and `/some/path/apprc.toml`. It does not alter
-storage roots recorded in the TOML.
+`MYAPP_APPRC_DIR=/some/path` changes the location of whichever central files
+the application declared. It does not alter storage roots recorded in TOML.
 
 The default first storage is:
 
@@ -125,8 +127,8 @@ For `app_id="myapp"`:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `MYAPP_APPRC_DIR` | No | Relocate the complete AppRC directory. |
-| `MYAPP_STORAGE` | No when `selected_storage` exists | Override the selected storage with a registered name or initialized filesystem path. |
+| `MYAPP_APPRC_DIR` | No; unavailable without persistent capabilities | Relocate the complete AppRC directory. |
+| `MYAPP_STORAGE` | No when `selected_storage` exists; storage apps only | Override the selected storage with a registered name or initialized filesystem path. |
 | App-declared keys | Defined by each field | Typed runtime settings such as `MYAPP_PROFILE`. |
 
 `MYAPP_STORAGE` is structural input during selection. After bootstrap resolves
@@ -146,8 +148,8 @@ Later rows win unless noted:
 
 | Order | Dotenv value source |
 | --- | --- |
-| 1 | Packaged `apprc.defaults.env` |
-| 2 | Per-user `apprc.user.env` |
+| 1 | Optional packaged `apprc.defaults.env` |
+| 2 | Declared per-user `apprc.user.env`, if any |
 | 3 | Selected storage `apprc.storage.env` |
 | 4 | Explicit `--env-file` values, in argument order |
 | 5 | Existing `os.environ` |
@@ -190,13 +192,13 @@ associated with a name only when exactly one registry entry matches.
 | `config paths [--json]` | All apps | No | Show declared paths. |
 | `config doctor [--json]` | All apps | No | Diagnose readiness and give next steps. |
 | `config show [--json]` | All apps | No | Show resolved runtime config. |
-| `config setup [-y]` | All apps | Yes | Create the empty user dotenv. |
-| `config setup [--storage-root PATH] [-y]` | Storage apps | Yes | Also register and select initial storage. |
-| `config migrate [--dry-run] [-y]` | All apps | Unless dry-run or cancelled | Migrate released 0.19 files after full preflight. |
-| `config purge [--dry-run] [-y]` | All apps | Unless dry-run or cancelled | Remove fixed AppRC files and registered internal roots. |
-| `config set KEY VALUE --scope user` | All apps | Yes | Validate and save one user dotenv override. |
+| `config setup [--apprc-dir PATH] [-y]` | Apps with a persistent capability | Yes | Initialize the declared user dotenv and/or storage registry. |
+| `config setup [--apprc-dir PATH] [--storage-root PATH] [-y]` | Storage apps | Yes | Register and select the initial storage; create a user dotenv only if declared. |
+| `config migrate [--dry-run] [-y]` | Apps with a persistent capability | Unless dry-run or cancelled | Migrate released 0.19 files after full preflight. |
+| `config purge [--apprc-dir PATH] [--dry-run] [-y]` | All apps | Unless dry-run or cancelled | Remove fixed AppRC files and registered internal roots; cleanup-only for process-env apps. |
+| `config set KEY VALUE --scope user` | User-dotenv apps | Yes | Validate and save one user dotenv override after setup. |
 | `config set KEY VALUE --scope storage` | Storage apps | Yes | Validate and save one storage dotenv override. |
-| `config edit` | All apps | Opening: no | Open the Textual editor; confirmed actions may write. |
+| `config edit` | Apps with a persistent capability | Opening: no | Open the Textual editor; confirmed actions may write. |
 | `config storage add NAME ROOT` | Storage apps | Yes | Register a unique storage and initialize its dotenv. |
 | `config storage list [--json]` | Storage apps | No | List registered roots. |
 | `config storage select NAME` | Storage apps | Yes | Persist the selected name. |
@@ -205,8 +207,10 @@ associated with a name only when exactly one registry entry matches.
 | `config storage move NAME DESTINATION` | Storage apps | Yes | Move data and then update the registry. |
 | `config storage remove NAME` | Storage apps | Yes | Remove one registry entry without deleting data. |
 
-A storage-free declaration does not mount the host-level `--storage` option or
-any `config storage ...` commands and does not accept `--scope storage`.
+A declaration without storage does not mount `--storage`, storage commands, or
+the storage scope. A declaration without `rc.UserDotenv()` does not expose the
+user scope. A process-environment-only declaration mounts no normal write or
+setup commands; `purge` remains available for cleanup of stale files.
 
 ## Doctor statuses
 
@@ -215,15 +219,16 @@ any `config storage ...` commands and does not accept `--scope storage`.
 | `runnable` | The selected runtime inputs are usable. |
 | `storage_not_selected` | A storage app has no selected name or path. |
 | `storage_not_ready` | The selected root or storage dotenv is not ready. |
-| `user_dotenv_not_ready` | The fixed user dotenv is missing or unreadable. |
+| `user_dotenv_not_ready` | A declared user dotenv is missing or unreadable. |
 | `storage_registry_not_ready` | The storage registry is missing, unreadable, or invalid. |
 
 Machine-readable diagnostics use file-specific keys including
-`storage_enabled`, `apprc_dir`, `user_dotenv`, `apprc_toml`,
+`user_dotenv_enabled`, `storage_enabled`, `apprc_dir`, `user_dotenv`, `apprc_toml`,
 `selected_storage`, `selected_storage_selector_kind`,
 `selected_storage_root`, and `selected_storage_dotenv`.
 
-The payload does not report `<APP>_STORAGE` as a missing environment key.
+Unsupported file paths are `null` in JSON diagnostics. The payload does not
+report `<APP>_STORAGE` as a missing environment key.
 That variable is an optional override when `selected_storage` exists.
 
 ## Dependency surfaces

@@ -34,17 +34,18 @@ class ConfigDoctorPayload:
 
     status: str
     writes: str
+    user_dotenv_enabled: bool
     storage_enabled: bool
-    apprc_dir: str
-    apprc_dir_env_key: str
+    apprc_dir: str | None
+    apprc_dir_env_key: str | None
     apprc_dir_env_value: str | None
-    apprc_dir_exists: bool
-    user_dotenv: str
-    user_dotenv_exists: bool
+    apprc_dir_exists: bool | None
+    user_dotenv: str | None
+    user_dotenv_exists: bool | None
     storage_selector_env_key: str | None
-    apprc_toml: str
-    apprc_toml_exists: bool
-    apprc_toml_parse_ok: bool
+    apprc_toml: str | None
+    apprc_toml_exists: bool | None
+    apprc_toml_parse_ok: bool | None
     apprc_toml_error: str | None
     storage_count: int
     configured_selected_storage: str | None
@@ -113,6 +114,7 @@ def build_config_doctor_payload(
     )
     warnings = [
         *config_package_convention_warnings(kit),
+        *user_dotenv.warnings,
         *registry.warnings,
         *legacy_file_warnings(kit.spec, storage_root=selected_root),
     ]
@@ -139,20 +141,41 @@ def build_config_doctor_payload(
     return ConfigDoctorPayload(
         status=status.value,
         writes="none",
+        user_dotenv_enabled=kit.spec.uses_user_dotenv(),
         storage_enabled=kit.spec.uses_storage(),
-        apprc_dir=str(paths.root),
-        apprc_dir_env_key=kit.spec.apprc_dir_env_key,
-        apprc_dir_env_value=registry.env_value,
-        apprc_dir_exists=paths.root.is_dir(),
-        user_dotenv=str(paths.user_dotenv),
-        user_dotenv_exists=paths.user_dotenv.is_file(),
+        apprc_dir=str(paths.root) if kit.spec.uses_managed_files() else None,
+        apprc_dir_env_key=(
+            kit.spec.apprc_dir_env_key
+            if kit.spec.uses_managed_files()
+            else None
+        ),
+        apprc_dir_env_value=(
+            registry.env_value if kit.spec.uses_managed_files() else None
+        ),
+        apprc_dir_exists=(
+            paths.root.is_dir() if kit.spec.uses_managed_files() else None
+        ),
+        user_dotenv=(
+            str(paths.user_dotenv) if kit.spec.uses_user_dotenv() else None
+        ),
+        user_dotenv_exists=(
+            paths.user_dotenv.is_file() if kit.spec.uses_user_dotenv() else None
+        ),
         storage_selector_env_key=kit.spec.storage_selector_env_key,
-        apprc_toml=str(paths.apprc_toml),
-        apprc_toml_exists=registry.exists,
-        apprc_toml_parse_ok=registry.parse_ok,
-        apprc_toml_error=registry.error,
-        storage_count=registry.storage_count,
-        configured_selected_storage=configured_selected_storage,
+        apprc_toml=(str(paths.apprc_toml) if kit.spec.uses_storage() else None),
+        apprc_toml_exists=(
+            registry.exists if kit.spec.uses_storage() else None
+        ),
+        apprc_toml_parse_ok=(
+            registry.parse_ok if kit.spec.uses_storage() else None
+        ),
+        apprc_toml_error=(registry.error if kit.spec.uses_storage() else None),
+        storage_count=(
+            registry.storage_count if kit.spec.uses_storage() else 0
+        ),
+        configured_selected_storage=(
+            configured_selected_storage if kit.spec.uses_storage() else None
+        ),
         selected_storage=selection.storage_name if selection else None,
         selected_storage_source=selection.source if selection else None,
         selected_storage_selector=selection.raw_value if selection else None,

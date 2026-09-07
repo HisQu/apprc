@@ -36,6 +36,7 @@ from apprc.interfaces.cli.runtime import (
 from apprc.public.app_rc import AppRC
 from apprc.public.config import Config, ConfigBase
 from apprc.public.field import field
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.runtime.provenance import ConfigProvenance, provenance_of
 from apprc.user_files.app_home._package_resources import resolve_package_root
 from apprc.user_files.env_files.updates import set_env_file_value
@@ -60,6 +61,7 @@ def test_root_facade_exports_clean_public_api() -> None:
     assert apprc.AppRC is AppRC
     assert apprc.Config is Config
     assert apprc.ConfigBase is ConfigBase
+    assert apprc.UserDotenv is UserDotenv
     assert apprc.field is field
     assert apprc.cli is apprc_cli
     assert apprc.files is apprc_files

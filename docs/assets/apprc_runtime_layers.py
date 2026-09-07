@@ -33,12 +33,12 @@ def build_graph() -> Digraph:
     )
     figure.fixed_text_box(
         "files",
-        "Managed Files",
+        "Optional Files",
         0.25,
         1.65,
-        "package apprc.defaults.env",
-        "user apprc.user.env",
-        "storage apprc.storage.env",
+        "package defaults dotenv",
+        "declared user dotenv",
+        "declared storage dotenv",
         "explicit --env-file",
         border_color=gg.GREEN,
     )

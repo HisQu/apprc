@@ -115,11 +115,10 @@ def test_purge_rejects_apprc_directory_below_symlink(tmp_path: Path) -> None:
         app_id="symlinked",
         display_name="Symlinked",
         config_package="config_only.config",
-        apprc_dir=link / "apprc",
     )
 
     with pytest.raises(ConfigPurgeError, match="symbolic-link component"):
-        build_config_purge_plan(kit.spec)
+        build_config_purge_plan(kit.spec, apprc_dir=link / "apprc")
 
 
 def test_storage_free_purge_marks_stale_registry_as_removable() -> None:

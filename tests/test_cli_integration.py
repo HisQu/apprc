@@ -12,6 +12,7 @@ import typer
 from typer.testing import CliRunner
 
 from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.interfaces.cli import (
     DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS,
     CliArgvProvider,
@@ -45,8 +46,9 @@ def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
     return AppConfigKit(
         app_id="storage_free_app",
         display_name="Storage-Free App",
-        config_package="config_only.config",
+        config_package="user_dotenv.config",
         envs=(StorageFreeExampleEnv,),
+        user_dotenv=UserDotenv(),
     )
 
 
@@ -573,6 +575,7 @@ def test_mount_config_cli_runtime_policy_can_force_config_set_bootstrap(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = _build_storage_free_kit_with_shared_env()
+    kit.spec.ensure_user_dotenv()
     args = ["config", "set", "profile", "forced"]
     factory_calls: list[CliRuntimeContext] = []
 
@@ -752,6 +755,7 @@ def test_config_runtime_policy_can_force_config_set_bootstrap(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
     kit = build_storage_free_example_kit()
+    kit.spec.ensure_user_dotenv()
     bootstrapped_commands: list[str | None] = []
     policy = ConfigRuntimePolicy(
         runtime_independent_actions=DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS

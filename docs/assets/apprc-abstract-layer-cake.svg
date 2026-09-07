@@ -5,18 +5,18 @@
  -->
 <!-- Title: apprc_abstract_layer_cake Pages: 1 -->
 <svg width="900px" height="900px"
- viewBox="-188.5 0 769 769" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-<g id="graph0" class="graph" transform="scale(1.22309 1.22309) rotate(0) translate(2.88 626.13)">
+ viewBox="-196.5 0 769 769" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1.17185 1.17185) rotate(0) translate(2.88 653.63)">
 <title>apprc_abstract_layer_cake</title>
 <g id="clust1" class="cluster">
 <title>cluster_precedence</title>
-<path fill="#32bc00" fill-opacity="0.098039" stroke="#32bc00" stroke-width="2" d="M20,-160C20,-160 185,-160 185,-160 191,-160 197,-166 197,-172 197,-172 197,-440.25 197,-440.25 197,-446.25 191,-452.25 185,-452.25 185,-452.25 20,-452.25 20,-452.25 14,-452.25 8,-446.25 8,-440.25 8,-440.25 8,-172 8,-172 8,-166 14,-160 20,-160"/>
-<text xml:space="preserve" text-anchor="middle" x="102.5" y="-438.75" font-family="sans-serif" font-size="10.00" fill="#32bc00">Dotenv and environment precedence</text>
+<path fill="#32bc00" fill-opacity="0.098039" stroke="#32bc00" stroke-width="2" d="M20,-160C20,-160 185,-160 185,-160 191,-160 197,-166 197,-172 197,-172 197,-467.75 197,-467.75 197,-473.75 191,-479.75 185,-479.75 185,-479.75 20,-479.75 20,-479.75 14,-479.75 8,-473.75 8,-467.75 8,-467.75 8,-172 8,-172 8,-166 14,-160 20,-160"/>
+<text xml:space="preserve" text-anchor="middle" x="102.5" y="-466.25" font-family="sans-serif" font-size="10.00" fill="#32bc00">Dotenv and environment precedence</text>
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_storage_selection</title>
-<path fill="#f4a261" fill-opacity="0.098039" stroke="#f4a261" stroke-width="2" d="M211,-323C211,-323 295,-323 295,-323 301,-323 307,-329 307,-335 307,-335 307,-603.25 307,-603.25 307,-609.25 301,-615.25 295,-615.25 295,-615.25 211,-615.25 211,-615.25 205,-615.25 199,-609.25 199,-603.25 199,-603.25 199,-335 199,-335 199,-329 205,-323 211,-323"/>
-<text xml:space="preserve" text-anchor="middle" x="253" y="-601.75" font-family="sans-serif" font-size="10.00" fill="#f4a261">Storage selector</text>
+<path fill="#f4a261" fill-opacity="0.098039" stroke="#f4a261" stroke-width="2" d="M211,-336.25C211,-336.25 295,-336.25 295,-336.25 301,-336.25 307,-342.25 307,-348.25 307,-348.25 307,-630.75 307,-630.75 307,-636.75 301,-642.75 295,-642.75 295,-642.75 211,-642.75 211,-642.75 205,-642.75 199,-636.75 199,-630.75 199,-630.75 199,-348.25 199,-348.25 199,-342.25 205,-336.25 211,-336.25"/>
+<text xml:space="preserve" text-anchor="middle" x="253" y="-629.25" font-family="sans-serif" font-size="10.00" fill="#f4a261">Storage selector</text>
 </g>
 <g id="clust3" class="cluster">
 <title>cluster_runtime_output</title>
@@ -26,11 +26,11 @@
 <!-- base_layers&#45;&gt;selected_layers -->
 <g id="edge1" class="edge">
 <title>base_layers&#45;&gt;selected_layers</title>
-<path fill="none" stroke="#32bc00" stroke-width="2.5" d="M141.68,-325.18C141.97,-316.47 142.28,-307.27 142.58,-298.11"/>
-<polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.5" points="145.2,-298.37 142.83,-290.79 139.95,-298.19 145.2,-298.37"/>
-<polygon fill="#32bc00" stroke="none" points="142.5,-296.25 142.5,-315 178.5,-315 178.5,-296.25 142.5,-296.25"/>
-<text xml:space="preserve" text-anchor="start" x="145.5" y="-304.45" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">higher</text>
-<polygon fill="none" stroke="#32bc00" points="142.5,-296.25 142.5,-315 178.5,-315 178.5,-296.25 142.5,-296.25"/>
+<path fill="none" stroke="#32bc00" stroke-width="2.5" d="M141.98,-324.28C142.24,-315.8 142.5,-307.05 142.77,-298.44"/>
+<polygon fill="#32bc00" stroke="#32bc00" stroke-width="2.5" points="145.39,-298.59 143,-291.02 140.14,-298.43 145.39,-298.59"/>
+<polygon fill="#32bc00" stroke="none" points="142.8,-296.25 142.8,-315 178.8,-315 178.8,-296.25 142.8,-296.25"/>
+<text xml:space="preserve" text-anchor="start" x="145.8" y="-304.45" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">higher</text>
+<polygon fill="none" stroke="#32bc00" points="142.8,-296.25 142.8,-315 178.8,-315 178.8,-296.25 142.8,-296.25"/>
 </g>
 <!-- selected_layers&#45;&gt;effective_config -->
 <g id="edge2" class="edge">
@@ -44,17 +44,17 @@
 <!-- selector_sources&#45;&gt;selected_storage -->
 <g id="edge3" class="edge">
 <title>selector_sources&#45;&gt;selected_storage</title>
-<path fill="none" stroke="#f4a261" stroke-width="2.5" d="M253,-488C253,-472.42 253,-455.08 253,-438.85"/>
-<polygon fill="#f4a261" stroke="#f4a261" stroke-width="2.5" points="255.63,-439.1 253,-431.6 250.38,-439.1 255.63,-439.1"/>
-<polygon fill="#f4a261" stroke="none" points="253,-460.25 253,-479 285.25,-479 285.25,-460.25 253,-460.25"/>
-<text xml:space="preserve" text-anchor="start" x="256" y="-468.45" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">select</text>
-<polygon fill="none" stroke="#f4a261" points="253,-460.25 253,-479 285.25,-479 285.25,-460.25 253,-460.25"/>
+<path fill="none" stroke="#f4a261" stroke-width="2.5" d="M253,-515.78C253,-495.89 253,-472.83 253,-451.98"/>
+<polygon fill="#f4a261" stroke="#f4a261" stroke-width="2.5" points="255.63,-452.26 253,-444.76 250.38,-452.26 255.63,-452.26"/>
+<polygon fill="#f4a261" stroke="none" points="253,-487.75 253,-506.5 285.25,-506.5 285.25,-487.75 253,-487.75"/>
+<text xml:space="preserve" text-anchor="start" x="256" y="-495.95" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">select</text>
+<polygon fill="none" stroke="#f4a261" points="253,-487.75 253,-506.5 285.25,-506.5 285.25,-487.75 253,-487.75"/>
 </g>
 <!-- selected_storage&#45;&gt;selected_layers -->
 <g id="edge4" class="edge">
 <title>selected_storage&#45;&gt;selected_layers</title>
-<path fill="none" stroke="#f4a261" stroke-width="2.5" d="M209.19,-325.09C206.54,-321.72 203.95,-318.33 201.5,-315 197.11,-309.04 192.71,-302.74 188.4,-296.36"/>
-<polygon fill="#f4a261" stroke="#f4a261" stroke-width="2.5" points="190.59,-294.92 184.26,-290.13 186.22,-297.82 190.59,-294.92"/>
+<path fill="none" stroke="#f4a261" stroke-width="2.5" d="M217.51,-338.58C212.09,-330.73 206.6,-322.67 201.5,-315 197.47,-308.94 193.34,-302.61 189.22,-296.25"/>
+<polygon fill="#f4a261" stroke="#f4a261" stroke-width="2.5" points="191.54,-295 185.27,-290.11 187.12,-297.83 191.54,-295"/>
 <polygon fill="#f4a261" stroke="none" points="201.5,-296.25 201.5,-315 242,-315 242,-296.25 201.5,-296.25"/>
 <text xml:space="preserve" text-anchor="start" x="204.5" y="-304.45" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">storage</text>
 <polygon fill="none" stroke="#f4a261" points="201.5,-296.25 201.5,-315 242,-315 242,-296.25 201.5,-296.25"/>
@@ -62,21 +62,23 @@
 <!-- selected_storage&#45;&gt;effective_config -->
 <g id="edge5" class="edge">
 <title>selected_storage&#45;&gt;effective_config</title>
-<path fill="none" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="5,2" d="M246.52,-325.41C244.95,-315.69 243.11,-305.62 241,-296.25 227.12,-234.55 224.06,-218.48 200,-160 193.2,-143.48 184.6,-126.12 176.23,-110.44"/>
+<path fill="none" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="5,2" d="M248.01,-338.57C246.22,-324.78 243.91,-309.87 241,-296.25 227.78,-234.41 224.06,-218.48 200,-160 193.2,-143.48 184.6,-126.12 176.23,-110.44"/>
 <polygon fill="#8b5cf6" stroke="#8b5cf6" stroke-width="2.5" points="178.75,-109.58 172.87,-104.24 174.14,-112.09 178.75,-109.58"/>
-<polygon fill="#8b5cf6" stroke="none" points="238.78,-215.25 238.78,-234 265.78,-234 265.78,-215.25 238.78,-215.25"/>
-<text xml:space="preserve" text-anchor="start" x="241.78" y="-223.45" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">path</text>
-<polygon fill="none" stroke="#8b5cf6" points="238.78,-215.25 238.78,-234 265.78,-234 265.78,-215.25 238.78,-215.25"/>
+<polygon fill="#8b5cf6" stroke="none" points="238.88,-215.25 238.88,-234 265.88,-234 265.88,-215.25 238.88,-215.25"/>
+<text xml:space="preserve" text-anchor="start" x="241.88" y="-223.45" font-family="sans-serif" font-weight="bold" font-size="9.00" fill="#ffffff">path</text>
+<polygon fill="none" stroke="#8b5cf6" points="238.88,-215.25 238.88,-234 265.88,-234 265.88,-215.25 238.88,-215.25"/>
 </g>
 <!-- base_layers -->
 <g id="node1" class="node">
 <title>base_layers</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M103.88,-325C103.88,-325 176.12,-325 176.12,-325 182.12,-325 188.12,-331 188.12,-337 188.12,-337 188.12,-416 188.12,-416 188.12,-422 182.12,-428 176.12,-428 176.12,-428 103.88,-428 103.88,-428 97.88,-428 91.88,-422 91.88,-416 91.88,-416 91.88,-337 91.88,-337 91.88,-331 97.88,-325 103.88,-325"/>
-<text xml:space="preserve" text-anchor="start" x="102.88" y="-408.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Base layers</text>
-<text xml:space="preserve" text-anchor="start" x="96.88" y="-377.5" font-family="sans-serif" font-size="10.00">apprc.defaults.env</text>
-<text xml:space="preserve" text-anchor="start" x="96.88" y="-355.25" font-family="sans-serif" font-size="10.00">apprc.user.env</text>
-<text xml:space="preserve" text-anchor="start" x="96.88" y="-333" font-family="sans-serif" font-size="10.00">lower precedence</text>
-<path fill="none" stroke="#32bc00" d="M103.88,-325C103.88,-325 176.12,-325 176.12,-325 182.12,-325 188.12,-331 188.12,-337 188.12,-337 188.12,-416 188.12,-416 188.12,-422 182.12,-428 176.12,-428 176.12,-428 103.88,-428 103.88,-428 97.88,-428 91.88,-422 91.88,-416 91.88,-416 91.88,-337 91.88,-337 91.88,-331 97.88,-325 103.88,-325"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M103.88,-324C103.88,-324 176.12,-324 176.12,-324 182.12,-324 188.12,-330 188.12,-336 188.12,-336 188.12,-443.5 188.12,-443.5 188.12,-449.5 182.12,-455.5 176.12,-455.5 176.12,-455.5 103.88,-455.5 103.88,-455.5 97.88,-455.5 91.88,-449.5 91.88,-443.5 91.88,-443.5 91.88,-336 91.88,-336 91.88,-330 97.88,-324 103.88,-324"/>
+<text xml:space="preserve" text-anchor="start" x="102.88" y="-436" font-family="sans-serif" font-weight="bold" font-size="10.00">Base layers</text>
+<text xml:space="preserve" text-anchor="start" x="96.88" y="-405" font-family="sans-serif" font-size="10.00">apprc.defaults.env</text>
+<text xml:space="preserve" text-anchor="start" x="118.25" y="-390.75" font-family="sans-serif" font-size="10.00">(optional)</text>
+<text xml:space="preserve" text-anchor="start" x="96.88" y="-368.5" font-family="sans-serif" font-size="10.00">apprc.user.env</text>
+<text xml:space="preserve" text-anchor="start" x="96.88" y="-354.25" font-family="sans-serif" font-size="10.00">(when declared)</text>
+<text xml:space="preserve" text-anchor="start" x="96.88" y="-332" font-family="sans-serif" font-size="10.00">lower precedence</text>
+<path fill="none" stroke="#32bc00" d="M103.88,-324C103.88,-324 176.12,-324 176.12,-324 182.12,-324 188.12,-330 188.12,-336 188.12,-336 188.12,-443.5 188.12,-443.5 188.12,-449.5 182.12,-455.5 176.12,-455.5 176.12,-455.5 103.88,-455.5 103.88,-455.5 97.88,-455.5 91.88,-449.5 91.88,-443.5 91.88,-443.5 91.88,-336 91.88,-336 91.88,-330 97.88,-324 103.88,-324"/>
 </g>
 <!-- selected_layers -->
 <g id="node2" class="node">
@@ -92,22 +94,22 @@
 <!-- selector_sources -->
 <g id="node3" class="node">
 <title>selector_sources</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M213.12,-488C213.12,-488 292.88,-488 292.88,-488 298.88,-488 304.88,-494 304.88,-500 304.88,-500 304.88,-579 304.88,-579 304.88,-585 298.88,-591 292.88,-591 292.88,-591 213.12,-591 213.12,-591 207.12,-591 201.12,-585 201.12,-579 201.12,-579 201.12,-500 201.12,-500 201.12,-494 207.12,-488 213.12,-488"/>
-<text xml:space="preserve" text-anchor="start" x="212.12" y="-571.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Selector sources</text>
-<text xml:space="preserve" text-anchor="start" x="206.12" y="-540.5" font-family="sans-serif" font-size="10.00">&#45;&#45;storage</text>
-<text xml:space="preserve" text-anchor="start" x="206.12" y="-518.25" font-family="sans-serif" font-size="10.00">MYAPP_STORAGE</text>
-<text xml:space="preserve" text-anchor="start" x="206.12" y="-496" font-family="sans-serif" font-size="10.00">apprc.toml</text>
-<path fill="none" stroke="#f4a261" d="M213.12,-488C213.12,-488 292.88,-488 292.88,-488 298.88,-488 304.88,-494 304.88,-500 304.88,-500 304.88,-579 304.88,-579 304.88,-585 298.88,-591 292.88,-591 292.88,-591 213.12,-591 213.12,-591 207.12,-591 201.12,-585 201.12,-579 201.12,-579 201.12,-500 201.12,-500 201.12,-494 207.12,-488 213.12,-488"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M213.12,-515.5C213.12,-515.5 292.88,-515.5 292.88,-515.5 298.88,-515.5 304.88,-521.5 304.88,-527.5 304.88,-527.5 304.88,-606.5 304.88,-606.5 304.88,-612.5 298.88,-618.5 292.88,-618.5 292.88,-618.5 213.12,-618.5 213.12,-618.5 207.12,-618.5 201.12,-612.5 201.12,-606.5 201.12,-606.5 201.12,-527.5 201.12,-527.5 201.12,-521.5 207.12,-515.5 213.12,-515.5"/>
+<text xml:space="preserve" text-anchor="start" x="212.12" y="-599" font-family="sans-serif" font-weight="bold" font-size="10.00">Selector sources</text>
+<text xml:space="preserve" text-anchor="start" x="206.12" y="-568" font-family="sans-serif" font-size="10.00">&#45;&#45;storage</text>
+<text xml:space="preserve" text-anchor="start" x="206.12" y="-545.75" font-family="sans-serif" font-size="10.00">MYAPP_STORAGE</text>
+<text xml:space="preserve" text-anchor="start" x="206.12" y="-523.5" font-family="sans-serif" font-size="10.00">apprc.toml</text>
+<path fill="none" stroke="#f4a261" d="M213.12,-515.5C213.12,-515.5 292.88,-515.5 292.88,-515.5 298.88,-515.5 304.88,-521.5 304.88,-527.5 304.88,-527.5 304.88,-606.5 304.88,-606.5 304.88,-612.5 298.88,-618.5 292.88,-618.5 292.88,-618.5 213.12,-618.5 213.12,-618.5 207.12,-618.5 201.12,-612.5 201.12,-606.5 201.12,-606.5 201.12,-527.5 201.12,-527.5 201.12,-521.5 207.12,-515.5 213.12,-515.5"/>
 </g>
 <!-- selected_storage -->
 <g id="node4" class="node">
 <title>selected_storage</title>
-<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M212.75,-325C212.75,-325 293.25,-325 293.25,-325 299.25,-325 305.25,-331 305.25,-337 305.25,-337 305.25,-416 305.25,-416 305.25,-422 299.25,-428 293.25,-428 293.25,-428 212.75,-428 212.75,-428 206.75,-428 200.75,-422 200.75,-416 200.75,-416 200.75,-337 200.75,-337 200.75,-331 206.75,-325 212.75,-325"/>
-<text xml:space="preserve" text-anchor="start" x="211.75" y="-408.5" font-family="sans-serif" font-weight="bold" font-size="10.00">Selected storage</text>
-<text xml:space="preserve" text-anchor="start" x="205.75" y="-377.5" font-family="sans-serif" font-size="10.00">name or path</text>
-<text xml:space="preserve" text-anchor="start" x="205.75" y="-355.25" font-family="sans-serif" font-size="10.00">resolved root</text>
-<text xml:space="preserve" text-anchor="start" x="205.75" y="-333" font-family="sans-serif" font-size="10.00">runtime owner</text>
-<path fill="none" stroke="#f4a261" d="M212.75,-325C212.75,-325 293.25,-325 293.25,-325 299.25,-325 305.25,-331 305.25,-337 305.25,-337 305.25,-416 305.25,-416 305.25,-422 299.25,-428 293.25,-428 293.25,-428 212.75,-428 212.75,-428 206.75,-428 200.75,-422 200.75,-416 200.75,-416 200.75,-337 200.75,-337 200.75,-331 206.75,-325 212.75,-325"/>
+<path fill="#cccccc" fill-opacity="0.466667" stroke="none" d="M212.75,-338.25C212.75,-338.25 293.25,-338.25 293.25,-338.25 299.25,-338.25 305.25,-344.25 305.25,-350.25 305.25,-350.25 305.25,-429.25 305.25,-429.25 305.25,-435.25 299.25,-441.25 293.25,-441.25 293.25,-441.25 212.75,-441.25 212.75,-441.25 206.75,-441.25 200.75,-435.25 200.75,-429.25 200.75,-429.25 200.75,-350.25 200.75,-350.25 200.75,-344.25 206.75,-338.25 212.75,-338.25"/>
+<text xml:space="preserve" text-anchor="start" x="211.75" y="-421.75" font-family="sans-serif" font-weight="bold" font-size="10.00">Selected storage</text>
+<text xml:space="preserve" text-anchor="start" x="205.75" y="-390.75" font-family="sans-serif" font-size="10.00">name or path</text>
+<text xml:space="preserve" text-anchor="start" x="205.75" y="-368.5" font-family="sans-serif" font-size="10.00">resolved root</text>
+<text xml:space="preserve" text-anchor="start" x="205.75" y="-346.25" font-family="sans-serif" font-size="10.00">runtime owner</text>
+<path fill="none" stroke="#f4a261" d="M212.75,-338.25C212.75,-338.25 293.25,-338.25 293.25,-338.25 299.25,-338.25 305.25,-344.25 305.25,-350.25 305.25,-350.25 305.25,-429.25 305.25,-429.25 305.25,-435.25 299.25,-441.25 293.25,-441.25 293.25,-441.25 212.75,-441.25 212.75,-441.25 206.75,-441.25 200.75,-435.25 200.75,-429.25 200.75,-429.25 200.75,-350.25 200.75,-350.25 200.75,-344.25 206.75,-338.25 212.75,-338.25"/>
 </g>
 <!-- effective_config -->
 <g id="node5" class="node">

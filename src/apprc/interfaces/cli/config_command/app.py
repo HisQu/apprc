@@ -163,6 +163,16 @@ def build_config_typer_app_from_options(
                     help="Run setup non-interactively with the selected values.",
                 ),
             ] = False,
+            apprc_dir: Annotated[
+                Path | None,
+                typer.Option(
+                    "--apprc-dir",
+                    help=(
+                        "Directory for AppRC-managed files. Shell path "
+                        "completion is enabled."
+                    ),
+                ),
+            ] = None,
             storage_root: Annotated[
                 Path | None,
                 typer.Option(
@@ -171,13 +181,14 @@ def build_config_typer_app_from_options(
                 ),
             ] = None,
         ) -> None:
-            """Create the user dotenv and initial named storage."""
+            """Choose managed-file paths and initialize named storage."""
             handlers.setup(
                 assume_yes=assume_yes,
+                apprc_dir=apprc_dir,
                 storage_root=storage_root,
             )
 
-    else:
+    elif kit.spec.uses_user_dotenv():
 
         @app.command("setup")
         def config_user_setup_cmd(
@@ -189,38 +200,61 @@ def build_config_typer_app_from_options(
                     help="Create the user dotenv without prompting.",
                 ),
             ] = False,
+            apprc_dir: Annotated[
+                Path | None,
+                typer.Option(
+                    "--apprc-dir",
+                    help=(
+                        "Directory for apprc.user.env. Shell path completion "
+                        "is enabled."
+                    ),
+                ),
+            ] = None,
         ) -> None:
             """Create the empty per-user dotenv file."""
-            handlers.setup(assume_yes=assume_yes, storage_root=None)
+            handlers.setup(
+                assume_yes=assume_yes,
+                apprc_dir=apprc_dir,
+                storage_root=None,
+            )
 
-    @app.command("migrate")
-    def config_migrate_cmd(
-        ctx: typer.Context,
-        dry_run: Annotated[
-            bool,
-            typer.Option(
-                "--dry-run",
-                help="Show legacy file moves without changing files.",
-            ),
-        ] = False,
-        assume_yes: Annotated[
-            bool,
-            typer.Option(
-                "--yes",
-                "-y",
-                help="Apply all conflict-free moves without prompting.",
-            ),
-        ] = False,
-    ) -> None:
-        """Move legacy AppRC files to their current filenames."""
-        handlers.migrate(
-            ctx,
-            dry_run=dry_run,
-            assume_yes=assume_yes,
-        )
+    if kit.spec.uses_managed_files():
+
+        @app.command("migrate")
+        def config_migrate_cmd(
+            ctx: typer.Context,
+            dry_run: Annotated[
+                bool,
+                typer.Option(
+                    "--dry-run",
+                    help="Show legacy file moves without changing files.",
+                ),
+            ] = False,
+            assume_yes: Annotated[
+                bool,
+                typer.Option(
+                    "--yes",
+                    "-y",
+                    help="Apply all conflict-free moves without prompting.",
+                ),
+            ] = False,
+        ) -> None:
+            """Move supported legacy files to their current filenames."""
+            handlers.migrate(
+                ctx,
+                dry_run=dry_run,
+                assume_yes=assume_yes,
+            )
 
     @app.command("purge")
     def config_purge_cmd(
+        apprc_dir: Annotated[
+            Path | None,
+            typer.Option(
+                "--apprc-dir",
+                help="AppRC directory to inspect and clean.",
+            ),
+        ] = None,
         dry_run: Annotated[
             bool,
             typer.Option(
@@ -238,19 +272,23 @@ def build_config_typer_app_from_options(
         ] = False,
     ) -> None:
         """Remove AppRC files that package uninstall leaves behind."""
-        handlers.purge(dry_run=dry_run, assume_yes=assume_yes)
+        handlers.purge(
+            apprc_dir=apprc_dir,
+            dry_run=dry_run,
+            assume_yes=assume_yes,
+        )
 
-    if kit.spec.uses_storage():
+    if kit.spec.uses_managed_files():
 
         @app.command("set")
-        def config_storage_set_cmd(
+        def config_set_cmd(
             ctx: typer.Context,
             key: Annotated[
                 str,
                 typer.Argument(
                     help=(
                         "Env key, dotted config path, or unique field name to "
-                        "write into an active AppRC dotenv override file."
+                        "write into a declared AppRC dotenv file."
                     ),
                 ),
             ],
@@ -264,48 +302,20 @@ def build_config_typer_app_from_options(
                 str | None,
                 typer.Option(
                     "--scope",
-                    help="Writable layer to update: user or storage.",
-                ),
-            ] = None,
-        ) -> None:
-            """Write one user or storage dotenv override."""
-            handlers.set(ctx, key=key, value=value, scope=scope)
-
-    else:
-
-        @app.command("set")
-        def config_user_set_cmd(
-            ctx: typer.Context,
-            key: Annotated[
-                str,
-                typer.Argument(
                     help=(
-                        "Env key, dotted config path, or unique field name to "
-                        "write into the user dotenv override file."
+                        "Writable layer to update. Available values depend on "
+                        "the application declaration."
                     ),
                 ),
-            ],
-            value: Annotated[
-                str,
-                typer.Argument(
-                    help="Value to validate and store as an AppRC override."
-                ),
-            ],
-            scope: Annotated[
-                str | None,
-                typer.Option(
-                    "--scope",
-                    help="Writable layer to update: user.",
-                ),
             ] = None,
         ) -> None:
-            """Write one user dotenv override."""
+            """Write one override into a declared and initialized dotenv."""
             handlers.set(ctx, key=key, value=value, scope=scope)
 
-    @app.command("edit")
-    def config_edit_cmd(ctx: typer.Context) -> None:
-        """Open the Textual editor for AppRC dotenv override files."""
-        handlers.edit(ctx)
+        @app.command("edit")
+        def config_edit_cmd(ctx: typer.Context) -> None:
+            """Open the Textual editor for declared dotenv files."""
+            handlers.edit(ctx)
 
     @storage_group.command("add")
     def config_storage_add_cmd(

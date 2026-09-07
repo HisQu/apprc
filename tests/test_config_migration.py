@@ -6,6 +6,7 @@ import pytest
 
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.user_files.migration import (
     ConfigMigrationError,
     apply_config_migration,
@@ -25,6 +26,7 @@ def _spec(
         app_id="migration_demo",
         display_name="Migration Demo",
         config_package="apprc",
+        user_dotenv=UserDotenv(),
         storage=Storage(selector_env_key="MIGRATION_DEMO_STORAGE"),
         apprc_dir=tmp_path / "new-apprc",
         legacy_app_ids=legacy_app_ids,
@@ -77,6 +79,37 @@ def test_migration_converts_released_path_selector_to_default_storage(
         "LOCAL=1\n"
     )
     assert not (storage_root / ".env.apprc-storage").exists()
+
+
+def test_storage_only_migration_converts_selector_without_creating_user_dotenv(
+    tmp_path: Path,
+) -> None:
+    spec = AppConfigSpec(
+        app_id="migration_demo",
+        display_name="Migration Demo",
+        config_package="storage.config",
+        storage=Storage(selector_env_key="MIGRATION_DEMO_STORAGE"),
+        apprc_dir=tmp_path / "new-apprc",
+    )
+    proc_env = _legacy_environment(tmp_path)
+    legacy_dir = legacy_platform_config_dir(
+        "migration_demo",
+        proc_env=proc_env,
+    )
+    legacy_dir.mkdir(parents=True)
+    storage_root = tmp_path / "old-storage"
+    storage_root.mkdir()
+    (legacy_dir / ".env.apprc-app").write_text(
+        f"MIGRATION_DEMO_STORAGE={storage_root}\n",
+        encoding="utf-8",
+    )
+
+    apply_config_migration(build_config_migration_plan(spec, proc_env=proc_env))
+
+    registry = load_storage_registry_or_empty(spec.preferred_apprc_toml_path())
+    assert registry.selected_storage == "default"
+    assert registry.selected("default").root == storage_root
+    assert not spec.user_dotenv_path().exists()
 
 
 def test_migration_resolves_relative_path_selector_from_new_apprc_toml(
@@ -170,6 +203,7 @@ def test_migration_ignores_unreleased_apprc_app_env(tmp_path: Path) -> None:
         app_id="migration_demo",
         display_name="Migration Demo",
         config_package="apprc",
+        user_dotenv=UserDotenv(),
         apprc_dir=tmp_path / "apprc",
     )
     unreleased = spec.apprc_dir() / "apprc.app.env"

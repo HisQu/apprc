@@ -27,8 +27,9 @@ commands, the Textual editor, and provenance.
 
 The main objects have narrow jobs:
 
-- `rc.AppRC` owns application identity and the optional storage capability.
-- `rc.Storage` declares that the app needs persistent user data.
+- `rc.AppRC` owns application identity and independent persistent features.
+- `rc.UserDotenv` enables one user-wide dotenv.
+- `rc.Storage` enables the named-storage registry and storage dotenv files.
 - `rc.Config` holds env-backed typed settings.
 - `rc.ConfigBase` holds Python-only settings.
 - `@MyRC.config(...)` registers a config section.
@@ -36,19 +37,28 @@ The main objects have narrow jobs:
 - `@MyRC.bundle` validates one explicit keyword-only dataclass and builds its
   child configs from declared default factories.
 
-There is no capability matrix. `rc.AppRC(...)` is storage-free;
-`rc.AppRC(..., storage=rc.Storage())` supports storage. Files on disk never
-enable a capability that Python code did not declare.
+The two persistent capabilities are independent:
+
+| Declaration | User dotenv | Storage |
+| --- | ---: | ---: |
+| `rc.AppRC(...)` | No | No |
+| `rc.AppRC(..., user_dotenv=rc.UserDotenv())` | Yes | No |
+| `rc.AppRC(..., storage=rc.Storage())` | No | Yes |
+| Both arguments | Yes | Yes |
+
+Files on disk never enable a capability that Python code did not declare.
 
 ## Integration flow
 
 The normal order is:
 
-1. Create `rc.AppRC(...)`, with `storage=rc.Storage()` when needed.
+1. Create `rc.AppRC(...)`, adding only the persistent capabilities the app
+   needs.
 2. Register `rc.Config` and `rc.ConfigBase` classes.
-3. Ship non-secret defaults in `apprc.defaults.env`.
+3. Optionally ship non-secret defaults in `apprc.defaults.env`.
 4. Mount the generated CLI or call bootstrap at the application entrypoint.
-5. Run `config setup` during installation or first use.
+5. For declarations with persistent capabilities, run `config setup` during
+   installation or first use.
 6. Construct config from Python values and the current process environment.
 
 Importing AppRC or a config class does not read files and does not modify
@@ -70,8 +80,8 @@ controls display redaction only; it is not encryption.
 
 Use exact file vocabulary in code and documentation. `apprc.user.env` and
 `apprc.storage.env` are dotenv files, not generic “config files.”
-`apprc.toml` is a storage registry. The directory containing the user dotenv
-and registry is the AppRC directory.
+`apprc.toml` is a storage registry. The directory containing whichever central
+files the application declares is the AppRC directory.
 
 Single-key edits preserve unrelated dotenv source text. When a key appears
 more than once, AppRC keeps the first assignment active and comments out later
@@ -86,15 +96,16 @@ AppRC uses one predictable default on every operating system:
 ~/.local/share/<app-id>/
 ```
 
-The optional `<APP>_APPRC_DIR` variable relocates that complete directory. A
-storage-free app normally contains only `apprc.user.env`. A storage-capable app
-also contains `apprc.toml`; its initial registered root is
-`~/.local/share/<app-id>/storage/`.
+The optional `<APP>_APPRC_DIR` variable relocates that complete directory for
+apps that declare a user dotenv, storage, or both. A process-environment-only
+app has no AppRC directory. A user-dotenv app may contain `apprc.user.env`; a
+storage app contains `apprc.toml` and uses
+`~/.local/share/<app-id>/storage/` as its suggested initial root.
 
 ```text
 ~/.local/share/myapp/
-├── apprc.user.env
-├── apprc.toml
+├── apprc.user.env  # only when rc.UserDotenv() is declared
+├── apprc.toml      # only when rc.Storage() is declared
 └── storage/
     └── apprc.storage.env
 ```
@@ -111,8 +122,8 @@ Bootstrap performs these operations:
 
 1. Capture the original process environment.
 2. Read explicit `--env-file` values.
-3. Resolve the AppRC directory.
-4. Read packaged defaults and `apprc.user.env`.
+3. Resolve the AppRC directory when a persistent feature requires it.
+4. Read optional packaged defaults and the declared `apprc.user.env`, if any.
 5. Load `apprc.toml` when present, resolve a storage name or path, and validate
    its root and `apprc.storage.env` marker.
 6. Read the selected `apprc.storage.env`.
@@ -187,23 +198,27 @@ stops the operation before deletion, and symlinks are never followed.
 
 ## Generated interfaces
 
-The generated CLI and Textual editor are two views of the same contract. A
-storage-free declaration has no `--storage`, `config storage ...`, storage
-scope, or storage editor section. A stale `apprc.toml` does not change that;
-doctor warns and purge can remove it.
+The generated CLI and Textual editor are two views of the same contract. Every
+app gets read-only `paths`, `show`, and `doctor`, plus cleanup-only `purge`.
+`setup`, `set`, `edit`, and `migrate` exist only when a persistent feature is
+declared. A declaration without storage has no `--storage`,
+`config storage ...`, storage scope, or storage editor section. A declaration
+without a user dotenv has no user write scope or user-dotenv column. Stale
+files do not change those capabilities; doctor warns and purge can remove them.
 
 A storage declaration exposes every registry entry. Storage names are not
 declared in Python. The user adds, selects, renames, repoints, moves, and
 removes them through the registry commands or editor.
 
-The editor is also a repair interface. Selector, registry, and readiness
-failures become persistent startup state instead of preventing it from opening.
-Setup remains available, and storage dotenv fields stay disabled until the
-selected directory has the fixed AppRC marker.
+The editor is also a repair interface. It distinguishes a missing declared
+user dotenv from an app that never declared one. Selector, registry, and
+readiness failures become persistent startup state instead of preventing it
+from opening. Setup names the missing feature and lets the user choose the
+AppRC directory with path completion before choosing any storage root.
 
 ## Migration model
 
-AppRC 0.20 migrates only layouts released by 0.19. It scans the former
+AppRC migrates only layouts released by 0.19. It scans the former
 platform-specific config directory, declared legacy app IDs, custom
 `<APP>_APPRC_TOML` locations, `.env.apprc-app`, `.env.apprc-storage`, and the
 former `<app>.apprc.toml` filename.

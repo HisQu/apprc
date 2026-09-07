@@ -4,7 +4,7 @@
 
 It owns:
 
-- the four-command registry;
+- the six-command registry;
 - `apprc-examples-lab`, which opens one disposable shell;
 - `apprc-examples-run-all`, which invokes the real installed CLIs.
 

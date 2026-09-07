@@ -255,13 +255,12 @@ It does not claim every generated command runs against every example.
 AppRC releases from an annotated `vMAJOR.MINOR.PATCH` tag. A tag push runs the
 complete CI matrix, builds and validates the wheel and source distribution,
 and creates a GitHub Release from the matching curated changelog section. PyPI
-publication is optional and disabled unless the repository variable
-`PUBLISH_PYPI` is exactly `true`.
+publication follows `RELEASE_PYPI` in the tagged justfile. AppRC sets it to
+`true`, so normal releases publish to PyPI after the GitHub Release succeeds.
 
 > [!IMPORTANT]
 >
-> To enable PyPI publication, set the repository variable `PUBLISH_PYPI=true`
-> and configure the PyPI Trusted Publisher:
+> Keep the PyPI Trusted Publisher configured with:
 > owner `HisQu`, repository `apprc`, workflow `release.yml`, and environment
 > `pypi`. The environment does not contain a PyPI token or repository secret.
 
@@ -285,12 +284,15 @@ Prepare a release on `main` only after the intended changes have passed CI:
    - validates the prepared changelog before changing version files;
    - temporarily bumps `pyproject.toml`, `uv.lock`, and `pylock.toml`;
    - runs the complete `just publish-check` rehearsal;
-   - creates the version commit and annotated tag only after every check passes.
-5. Inspect the version commit and local tag, then push only those intended refs:
+   - creates the version commit and annotated tag only after every check passes;
+   - atomically pushes `main` and the tag.
 
-   ```bash
-   git push origin main vMAJOR.MINOR.PATCH
-   ```
+To inspect the commit and tag before pushing, use the split form:
+
+```bash
+just release-prepare patch
+just release-push vMAJOR.MINOR.PATCH
+```
 
 `publish-check` uses temporary locked environments and leaves the active
 project `.venv` unchanged. It runs the complete Linux CI command sequence under
@@ -303,12 +305,12 @@ no files will be uploaded. `uv` may describe simulated uploads, but the recipe
 ends with explicit confirmation that nothing was published and prints the next
 manual release command.
 
-If the rehearsal or version commit fails, `release` restores all three version
-files and creates no commit or tag. Fix the reported problem, commit any source
-correction such as a regenerated `README.pypi.md`, and rerun `release`. If the
-version commit succeeds but annotated-tag creation alone fails, the recipe
-prints the exact `git tag -a ...` retry command and retains the clean version
-commit.
+If the rehearsal or version commit fails, `release-prepare` restores all three
+version files and creates no commit or tag. Fix the reported problem, commit
+any source correction such as a regenerated `README.pypi.md`, and rerun the
+recipe. If tag creation fails after the version commit, the recipe prints the
+exact `git tag -a ...` retry command. If the remote push fails, retry it with
+`just release-push vMAJOR.MINOR.PATCH`.
 
 > [!NOTE]
 >
@@ -326,14 +328,16 @@ The pushed release tag `v*` triggers the automated GitHub release workflow:
    run without repeating the Linux source-check matrix.
 3. Preserve the wheel, sdist, and release notes as one workflow artifact.
 4. Create the GitHub Release with the wheel, sdist, and curated notes.
-5. If `PUBLISH_PYPI=true`, enter the `pypi` environment and publish the same
-   distributions through GitHub OIDC.
+5. If the tagged justfile sets `RELEASE_PYPI := "true"`, enter the `pypi`
+   environment and publish the same distributions through GitHub OIDC.
 
 If CI, metadata validation, or packaging fails, fix the release commit and use
 a new version; do not move a tag that has reached the remote. If approval is
 rejected or skipped, the GitHub Release remains available and no package is
-uploaded to PyPI. Rerun a failed optional PyPI job only after checking whether
-the distributions already exist there.
+uploaded to PyPI. After checking that the distributions do not exist on PyPI,
+run `just publish-pypi vMAJOR.MINOR.PATCH`. The manual workflow downloads the
+existing GitHub Release assets, validates their names and metadata, and
+publishes them without rebuilding.
 
 After publication, verify the clean package install explicitly:
 

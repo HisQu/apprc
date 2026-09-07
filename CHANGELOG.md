@@ -67,6 +67,12 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+  - Breaking: `just release patch|minor|major` now pushes `main` and the created
+    tag after local preparation succeeds.
+    Affected: Maintainers who use `just release` only to prepare and inspect a
+    local version commit and tag.
+    Migration: Use `just release-prepare patch|minor|major` for local-only
+    preparation, then run `just release-push vX.Y.Z` when ready.
   - Breaking: `rc.AppRC(...)` no longer implies a managed user dotenv, and
     `storage=rc.Storage()` no longer creates or loads one implicitly.
     Affected: Applications that rely on `apprc.user.env`, the user write
@@ -92,6 +98,8 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+  - Added `just publish-pypi vX.Y.Z` to publish the validated wheel and source
+    archive attached to an existing non-draft GitHub Release without rebuilding.
   - Added `rc.UserDotenv()` as the explicit declaration for a managed
     `apprc.user.env`, independent of `rc.Storage()`.
   - Added `--user-dotenv` to `apprc scaffold config` and coverage for all four
@@ -109,9 +117,10 @@ All notable changes to `AppRC` will be documented in this file.
   - Changed the Textual editor to name missing setup work, show only declared
     source columns, and display a field title together with its exact
     environment key.
-  - Changed tag releases to create the GitHub Release by default. PyPI
-    publication now runs afterward only when the repository variable
-    `PUBLISH_PYPI` is `true`.
+  - Changed tag releases to create the GitHub Release and then follow
+    `RELEASE_PYPI` from the tagged justfile. AppRC keeps this tracked policy
+    enabled. Release artifact transfer now uses `actions/upload-artifact@v7`
+    and `actions/download-artifact@v8`.
 
 <br>
 

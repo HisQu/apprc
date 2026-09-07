@@ -630,11 +630,14 @@ def test_release_workflow_creates_github_release_before_optional_pypi() -> None:
     )
     checks, remainder = workflow.split("  build:", maxsplit=1)
     build, remainder = remainder.split("  github-release:", maxsplit=1)
-    github_release, pypi_publish = remainder.split(
-        "  pypi-publish:", maxsplit=1
+    github_release, remainder = remainder.split("  pypi-publish:", maxsplit=1)
+    pypi_publish, publish_existing = remainder.split(
+        "  publish-existing-release:", maxsplit=1
     )
 
     assert '      - "v*"' in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "release_tag:" in workflow
     assert "uses: ./.github/workflows/ci.yml" in workflow
     assert "needs: checks" in workflow
     assert "needs: build" in workflow
@@ -642,8 +645,9 @@ def test_release_workflow_creates_github_release_before_optional_pypi() -> None:
     assert "id-token: write" in workflow
     assert "contents: write" in workflow
     assert "--trusted-publishing always" in workflow
-    assert "if: vars.PUBLISH_PYPI == 'true'" in pypi_publish
-    assert "needs: github-release" in pypi_publish
+    assert "needs.build.outputs.release_pypi == 'true'" in pypi_publish
+    assert "      - github-release" in pypi_publish
+    assert "just --evaluate RELEASE_PYPI" in build
     assert 'gh release create "$GITHUB_REF_NAME"' in workflow
     assert "just _release-artifact-check release/release-notes.md" in workflow
     assert "just publish-check" not in build
@@ -657,13 +661,24 @@ def test_release_workflow_creates_github_release_before_optional_pypi() -> None:
     assert "contents: read" in build
     assert "id-token:" not in checks
     assert "id-token:" not in build
-    assert "actions/upload-artifact@v4" in build
-    assert "actions/download-artifact@v4" in github_release
-    assert "actions/download-artifact@v4" in pypi_publish
+    assert "actions/upload-artifact@v7" in build
+    assert "actions/download-artifact@v8" in github_release
+    assert "actions/download-artifact@v8" in pypi_publish
+    assert "artifact@v4" not in workflow
     assert "dist/*.whl" in workflow
     assert "dist/*.tar.gz" in workflow
     assert "--notes-file release/release-notes.md" in github_release
     assert "--trusted-publishing always" in pypi_publish
+    assert "if: github.event_name == 'workflow_dispatch'" in publish_existing
+    assert "gh release download" in publish_existing
+    assert "exactly one wheel and one source archive" in publish_existing
+    assert "apprc-${version}-*.whl" in publish_existing
+    assert '"apprc-${version}.tar.gz"' in publish_existing
+    assert "twine check" in publish_existing
+    assert "uv build" not in publish_existing
+    assert "actions/checkout" not in publish_existing
+    assert "--check-url https://pypi.org/simple/apprc/" in workflow
+    assert "PUBLISH_PYPI" not in workflow
 
 
 def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
@@ -721,7 +736,14 @@ def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
 def test_release_recipe_surface_is_minimal() -> None:
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
 
-    for recipe in ("release", "publish-check", "verify-pypi"):
+    for recipe in (
+        "release",
+        "release-prepare",
+        "release-push",
+        "publish-check",
+        "publish-pypi",
+        "verify-pypi",
+    ):
         assert _just_recipe(recipe)
     for removed_recipe in ("bump", "bump-version", "build", "pypi-readme"):
         assert (
@@ -743,7 +765,7 @@ def test_release_recipe_surface_is_minimal() -> None:
 
 def test_release_checks_before_commit_and_tag() -> None:
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
-    recipe = _just_recipe("release")
+    recipe = _just_recipe("release-prepare")
 
     assert "release_notes.py" in recipe
     assert "restore_version_files=true" in recipe
@@ -754,12 +776,44 @@ def test_release_checks_before_commit_and_tag() -> None:
     assert 'git tag -a "${tag}"' in recipe
     assert re.search(r"(?m)^\s+git push\b", recipe) is None
     assert "Nothing has been uploaded" in recipe
-    assert "git push origin main ${tag}" in recipe
+    assert "just release-push ${tag}" in recipe
     assert "create" in recipe
     assert "the GitHub Release" in recipe
-    assert "PyPI stays disabled unless PUBLISH_PYPI=true" in recipe
+    assert "PyPI follows RELEASE_PYPI in the tagged justfile" in recipe
     assert "PYPI_API_KEY" not in justfile
-    assert "publish-pypi" not in justfile
+    assert "PUBLISH_PYPI" not in justfile
+
+
+def test_release_recipe_pushes_prepared_tag_atomically() -> None:
+    """Release orchestration should preserve a retryable local result."""
+    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+    release = _just_recipe("release")
+    release_push = _just_recipe("release-push")
+    publish_pypi = _just_recipe("publish-pypi")
+
+    assert 'RELEASE_PYPI := "true"' in justfile
+    assert 'just release-prepare "{{level}}"' in release
+    assert 'just release-push "$tag"' in release
+    assert 'git push --atomic origin main "$tag"' in release_push
+    assert "git branch --show-current" in release_push
+    assert 'git cat-file -e "${tag}^{tag}"' in release_push
+    assert "just --evaluate RELEASE_PYPI" in release_push
+    assert "gh workflow run release.yml" in publish_pypi
+    assert "isDraft" in publish_pypi
+    assert "exactly one wheel and one source archive" in publish_pypi
+
+
+def test_release_prepare_keeps_existing_result_banner() -> None:
+    """The new split command should retain the established visual structure."""
+    recipe = _just_recipe("release-prepare")
+
+    assert (
+        'echo "================================================================="'
+        in recipe
+    )
+    assert 'echo "✅  RELEASE ${tag} PREPARED LOCALLY"' in recipe
+    assert 'echo "Nothing has been uploaded."' in recipe
+    assert 'echo "NEXT COMMAND, THIS STARTS THE RELEASE:"' in recipe
 
 
 def test_release_metadata_links_to_github_and_pypi_surfaces() -> None:
@@ -810,7 +864,7 @@ def _just_recipe(name: str) -> str:
     """Return one recipe body from the project justfile."""
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
     match = re.search(
-        rf"(?ms)^{re.escape(name)}(?:[^\n]*):\n(?P<body>.*?)(?=^\S|\Z)",
+        rf"(?ms)^{re.escape(name)}(?:[ \t][^\n]*)?:\n(?P<body>.*?)(?=^\S|\Z)",
         justfile,
     )
     assert match is not None

@@ -17,6 +17,9 @@
 # Let recipes use Bash features and fail-fast in pipelines
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
+# > Include PyPI in normal tag releases. Keep this policy in version control.
+RELEASE_PYPI := "true"
+
 # Run `just` with no recipe to list tasks
 default:
     @just --list
@@ -36,6 +39,17 @@ _check-uv:
     @command -v uv >/dev/null || { \
         echo "✗ uv not found. Install from https://docs.astral.sh/uv/ then retry." >&2; \
         exit 127; \
+    }
+
+[private]
+_check-gh:
+    @command -v gh >/dev/null || { \
+        echo "gh not found. Install it from https://cli.github.com/ and retry." >&2; \
+        exit 127; \
+    }
+    @gh auth status >/dev/null 2>&1 || { \
+        echo "gh is not authenticated. Run 'gh auth login' and retry." >&2; \
+        exit 1; \
     }
 
 [private]
@@ -282,7 +296,7 @@ publish-check:
     fi
 
 # Prepare a checked version commit and annotated local release tag.
-release level="patch":
+release-prepare level="patch":
     #!/usr/bin/env bash
     set -euo pipefail
     just _check-uv
@@ -342,14 +356,90 @@ release level="patch":
     echo
     echo "NEXT COMMAND, THIS STARTS THE RELEASE:"
     echo
-    echo "  git push origin main ${tag}"
+    echo "  just release-push ${tag}"
     echo
     echo "GitHub will run CI, validate wheel and sdist artifacts, and create"
-    echo "the GitHub Release. PyPI stays disabled unless PUBLISH_PYPI=true."
+    echo "the GitHub Release. PyPI follows RELEASE_PYPI in the tagged justfile."
     echo "================================================================="
 
-# GitHub Releases are always created from pushed tags. Set the repository
-# variable PUBLISH_PYPI=true only after configuring PyPI trusted publishing.
+# Push a prepared release commit and tag as one remote operation.
+release-push tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _check-clean-worktree "pushing the release"
+    tag="{{tag}}"
+
+    if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+        echo "Invalid release tag '${tag}'; expected vMAJOR.MINOR.PATCH." >&2
+        exit 1
+    fi
+    if [[ "$(git branch --show-current)" != "main" ]]; then
+        echo "Release pushes must run from the main branch." >&2
+        exit 1
+    fi
+    if ! git cat-file -e "${tag}^{tag}" 2>/dev/null; then
+        echo "Annotated local tag ${tag} does not exist." >&2
+        exit 1
+    fi
+    if [[ "$(git rev-list -n 1 "$tag")" != "$(git rev-parse HEAD)" ]]; then
+        echo "Tag ${tag} does not point to the current main commit." >&2
+        exit 1
+    fi
+    release_pypi="$(just --evaluate RELEASE_PYPI)"
+    if [[ "$release_pypi" != "true" && "$release_pypi" != "false" ]]; then
+        echo "RELEASE_PYPI must be \"true\" or \"false\", found '${release_pypi}'." >&2
+        exit 1
+    fi
+
+    echo "Pushing main and ${tag} atomically. RELEASE_PYPI=${release_pypi}."
+    if ! git push --atomic origin main "$tag"; then
+        echo "The remote push failed. The release remains prepared locally." >&2
+        echo "Retry with: just release-push ${tag}" >&2
+        exit 1
+    fi
+    echo "GitHub Actions will create the release. This command does not wait for it."
+    echo "If PyPI was skipped, run: just publish-pypi ${tag}"
+
+# Prepare and push a release. GitHub Actions owns artifact publication.
+release level="patch":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just release-prepare "{{level}}"
+    tag="v$(uv version --short)"
+    if ! just release-push "$tag"; then
+        echo "Release ${tag} remains prepared locally." >&2
+        echo "Retry with: just release-push ${tag}" >&2
+        exit 1
+    fi
+
+# Publish the artifacts attached to an existing GitHub Release.
+publish-pypi tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _check-gh
+    tag="{{tag}}"
+
+    if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+        echo "Invalid release tag '${tag}'; expected vMAJOR.MINOR.PATCH." >&2
+        exit 1
+    fi
+    if ! is_draft="$(gh release view "$tag" --json isDraft --jq .isDraft)"; then
+        echo "GitHub Release ${tag} does not exist." >&2
+        exit 1
+    fi
+    if [[ "$is_draft" == "true" ]]; then
+        echo "GitHub Release ${tag} is still a draft and cannot be published." >&2
+        exit 1
+    fi
+    wheel_count="$(gh release view "$tag" --json assets --jq '[.assets[].name | select(endswith(".whl"))] | length')"
+    sdist_count="$(gh release view "$tag" --json assets --jq '[.assets[].name | select(endswith(".tar.gz"))] | length')"
+    if [[ "$wheel_count" != 1 || "$sdist_count" != 1 ]]; then
+        echo "GitHub Release ${tag} must contain exactly one wheel and one source archive." >&2
+        exit 1
+    fi
+
+    gh workflow run release.yml --raw-field "release_tag=${tag}"
+    echo "Requested PyPI publication for ${tag}. Follow the workflow URL above."
 
 # Verify the published PyPI package in a fresh plain-pip virtualenv.
 verify-pypi requirement="apprc":

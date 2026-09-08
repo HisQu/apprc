@@ -517,11 +517,13 @@ scope and storage commands exist only with `rc.Storage()`.
 `config edit` requires the optional TUI extra:
 `python -m pip install "apprc[tui]"`.
 
-The editor names any missing setup work and shows a setup action only when a
-declared file or storage needs initialization or repair. Setup lets the user
-choose the AppRC directory and storage root with path completion. Storage apps
-also expose their registered storage operations. Opening the editor itself
-writes nothing.
+The editor keeps selector errors separate from setup. If a shell variable,
+explicit dotenv, or `--storage` value names an unknown storage, the editor
+shows the winning source and the `selected_storage` value it overrides. Valid
+registry entries remain available. Setup appears only for a missing declared
+dotenv or storage marker. A missing registered directory exposes
+**Reconnect**, which updates only `apprc.toml`; **Move** remains limited to a
+new or empty destination. Opening the editor itself writes nothing.
 
 > [!NOTE]
 > For the generated command table, see
@@ -544,9 +546,11 @@ myapp run
 ```
 
 Setup creates `apprc.user.env` only when the application declares
-`rc.UserDotenv()`. For storage applications it registers the initial storage
-as `default`, records it as `selected_storage`, and creates
-`apprc.storage.env`. No selector is written to a dotenv file. A custom
+`rc.UserDotenv()`. For storage applications it registers the initial storage,
+records it as `selected_storage`, and creates `apprc.storage.env`. The initial
+name is `default` unless an empty registry is opened with a bare
+`<APP>_STORAGE` value, in which case setup uses that requested name. No
+selector is written to a dotenv file. A custom
 `--apprc-dir` applies only to the setup process, so setup prints shell-specific
 commands that persist `MYAPP_APPRC_DIR` for later runs.
 
@@ -577,7 +581,22 @@ Migration finds platform-specific 0.19 directories, custom
 `MYAPP_APPRC_TOML` locations, `.env.apprc-app`, `.env.apprc-storage`, and
 path-valued `MYAPP_STORAGE`. It converts a path selector into the named
 `default` storage and removes structural selector keys from the migrated user
-dotenv. The unreleased `apprc.app.env` name is intentionally ignored.
+dotenv. If a bare selector such as `MYAPP_STORAGE=ontology` is not registered,
+interactive migration asks for its existing directory with path completion,
+then asks whether to add it or replace an old registry name. Automation must
+state the mapping explicitly:
+
+```shell
+myapp config migrate --storage-root /existing/ontology --yes
+myapp config migrate \
+  --storage-root /existing/ontology \
+  --replace-storage old-name \
+  --yes
+```
+
+`--yes` never chooses a replacement. Migration initializes a missing storage
+marker but does not move or delete application data. The unreleased
+`apprc.app.env` name is intentionally ignored.
 
 Package uninstallers do not remove these user-owned files. Before uninstalling
 an AppRC application, run `config purge --dry-run`, review the exact targets,
@@ -596,7 +615,9 @@ It never follows symlinks and removes the AppRC directory only when empty.
 > paths`, `config doctor`, and opening `config edit` are zero-write. Editor
 > actions such as setup, `New`, and `Register` write only after confirmation.
 > For storage-backed applications, bootstrap requires the selected root to
-> exist and be a directory. Run `config setup` before runtime startup.
+> exist and be a directory. Run `config setup` for a missing marker. If a
+> registered directory was moved manually, reconnect it with `config storage
+> repoint NAME /existing/path`; setup does not recreate it.
 
 > [!NOTE]
 > For doctor troubleshooting, see

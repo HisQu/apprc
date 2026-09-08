@@ -40,6 +40,7 @@ from apprc.user_files.storage_roots._loading import (
 )
 from apprc.user_files.storage_roots.registry import StorageRegistry
 from apprc.user_files.storage_roots.selector import (
+    StorageSelectorIssue,
     StorageSelectorError,
     resolve_storage_selector_value,
     select_storage_selector,
@@ -351,7 +352,7 @@ class ConfigCommandBase:
         storage_registry: StorageRegistry | None,
         storage_registry_error: str | None,
         active_storage_root: Path | None,
-        storage_startup_error: str | None = None,
+        storage_selector_issue: StorageSelectorIssue | None = None,
         selector_context: ConfigSelectorContext | None = None,
     ) -> None:
         """Create and run the Textual config editor."""
@@ -360,7 +361,7 @@ class ConfigCommandBase:
             storage_registry=storage_registry,
             storage_registry_error=storage_registry_error,
             active_storage_root=active_storage_root,
-            storage_startup_error=storage_startup_error,
+            storage_selector_issue=storage_selector_issue,
             selector_context=selector_context,
         )
 

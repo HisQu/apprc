@@ -328,8 +328,8 @@ def _validate_runtime_storage_root(
     """Reject a selected root that AppRC setup has not prepared.
 
     Runtime bootstrap reads configuration but never creates directories. The
-    generated setup command owns that write so applications get one consistent
-    recovery path before they construct storage-backed runtime objects.
+    generated config commands own recovery so applications get one consistent
+    path before they construct storage-backed runtime objects.
 
     :param spec: Application contract used to build recovery instructions.
     :param storage_root: Resolved path selected for this process.
@@ -342,10 +342,22 @@ def _validate_runtime_storage_root(
         f"{spec.config_command_name()} config setup --yes "
         f"--storage-root {storage_root}"
     )
+    reconnect_command = (
+        f"{spec.config_command_name()} config storage repoint {storage_name} "
+        "/absolute/path/to/existing-storage"
+        if storage_name is not None
+        else setup_command
+    )
+    missing_root_guidance = (
+        f"Run `{reconnect_command}` after locating the existing storage. "
+        "Setup will not recreate a missing registered root."
+        if storage_name is not None
+        else f"Run `{setup_command}` to initialize this path."
+    )
     if not storage_root.exists():
         raise StorageNotInitializedError(
             f"Selected {spec.display_name} storage root does not exist: "
-            f"{storage_root}. Run `{setup_command}` before runtime use.",
+            f"{storage_root}. {missing_root_guidance}",
             storage_root=storage_root,
             storage_name=storage_name,
             param_hint=param_hint,
@@ -353,8 +365,8 @@ def _validate_runtime_storage_root(
     if not storage_root.is_dir():
         raise StorageNotInitializedError(
             f"Selected {spec.display_name} storage root is not a directory: "
-            f"{storage_root}. Repoint or move its registered storage, then run "
-            f"`{setup_command}`.",
+            f"{storage_root}. Run `{reconnect_command}` after locating the "
+            "existing storage.",
             storage_root=storage_root,
             storage_name=storage_name,
             param_hint=param_hint,

@@ -110,11 +110,13 @@ storage app contains `apprc.toml` and uses
     └── apprc.storage.env
 ```
 
-The initial storage is named `default`, but its directory is not nested below
-another `default/` component. Later storage names are user-owned entries in
-`apprc.toml`. Each may point anywhere. There is no separate “external storage”
-feature; internal and external describe only where a registered root happens
-to be, which matters during purge.
+The initial storage is normally named `default`, but its directory is not
+nested below another `default/` component. If an empty registry is opened with
+a bare `<APP>_STORAGE` selector, setup adopts that requested name. Later
+storage names are user-owned entries in `apprc.toml`. Each may point anywhere.
+There is no separate “external storage” feature; internal and external
+describe only where a registered root happens to be, which matters during
+purge.
 
 ## Runtime bootstrap
 
@@ -211,10 +213,11 @@ declared in Python. The user adds, selects, renames, repoints, moves, and
 removes them through the registry commands or editor.
 
 The editor is also a repair interface. It distinguishes a missing declared
-user dotenv from an app that never declared one. Selector, registry, and
-readiness failures become persistent startup state instead of preventing it
-from opening. Setup names the missing feature and lets the user choose the
-AppRC directory with path completion before choosing any storage root.
+user dotenv from an app that never declared one. Selector errors identify the
+winning input layer and any TOML selection hidden by that override while valid
+registry entries remain usable. Setup is reserved for files AppRC can
+initialize. **Reconnect** updates the registry after a manual directory move;
+**Move** relocates data only to a new or empty destination.
 
 ## Migration model
 
@@ -228,6 +231,13 @@ storage. Structural path and TOML selectors are removed from the migrated user
 dotenv. Exported process variables cannot be edited, so migration warns the
 user to unset them. The unreleased `apprc.app.env` name is not a migration
 source.
+
+An unregistered bare selector has no implied directory. Interactive migration
+asks for an existing directory and whether the mapping adds a new entry or
+renames and repoints an old one. Non-interactive callers provide
+`--storage-root` and, only for replacement, `--replace-storage`. `--yes` does
+not infer replacement intent. These operations change registry metadata and a
+missing AppRC marker only; they do not move or delete application data.
 
 `config migrate` preflights every source and destination. A conflict stops the
 whole operation. Moves never replace an existing destination and cross-device

@@ -21,6 +21,7 @@ from apprc.user_files.storage_roots._io import (
 )
 from apprc.user_files.storage_roots.model import StorageRecord, StorageRegistry
 from apprc.user_files.storage_roots.paths import resolve_storage_root_path
+from apprc.user_files.storage_roots._naming import validate_storage_name
 from apprc.user_files.storage_roots.selector import (
     storage_selector_is_path_like,
 )
@@ -71,6 +72,32 @@ class MigrationConflict:
 
 
 @dataclass(frozen=True, slots=True)
+class StorageMigrationResolution:
+    """Explicit directory mapping for an unresolved bare selector.
+
+    :param root: Existing storage directory assigned to the selector.
+    :param replace_storage: Existing registry name to rename and repoint.
+    """
+
+    root: Path
+    replace_storage: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StorageMigrationMapping:
+    """Registry change included in a migration plan.
+
+    :param selector_name: Environment-selected name made runnable.
+    :param root: Existing directory registered under that name.
+    :param replaced_storage: Previous registry name removed by replacement.
+    """
+
+    selector_name: str
+    root: Path
+    replaced_storage: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ConfigMigrationPlan:
     """Complete released-0.19 migration preflight.
 
@@ -78,12 +105,14 @@ class ConfigMigrationPlan:
     :param writes: New or transformed text files.
     :param conflicts: Ambiguous files that need manual resolution.
     :param warnings: Environment cleanup that AppRC cannot perform.
+    :param storage_mapping: Explicit selector-to-directory registry change.
     """
 
     moves: tuple[FileMigration, ...]
     writes: tuple[TextMigration, ...]
     conflicts: tuple[MigrationConflict, ...]
     warnings: tuple[str, ...] = ()
+    storage_mapping: StorageMigrationMapping | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,11 +145,38 @@ class ConfigMigrationError(ValueError):
         self.completed = completed
 
 
+class UnresolvedStorageMigrationError(ConfigMigrationError):
+    """Migration needs a directory for one unregistered bare selector.
+
+    :param key: Environment key that supplied the selector.
+    :param selector_name: Bare selector absent from the registry.
+    :param registry: Registry available during migration preflight.
+    """
+
+    def __init__(
+        self,
+        *,
+        key: str,
+        selector_name: str,
+        registry: StorageRegistry,
+    ) -> None:
+        """Store the missing mapping used by interactive CLI recovery."""
+        known = ", ".join(sorted(registry.storages)) or "<none>"
+        super().__init__(
+            f"{key} selects unregistered storage {selector_name!r}. Known "
+            f"storages: {known}. Supply its existing directory."
+        )
+        self.key = key
+        self.selector_name = selector_name
+        self.registry = registry
+
+
 def build_config_migration_plan(
     spec: AppConfigSpec,
     *,
     storage_roots: tuple[Path, ...] = (),
     proc_env: Mapping[str, str] | None = None,
+    storage_resolution: StorageMigrationResolution | None = None,
 ) -> ConfigMigrationPlan:
     """Preflight every released AppRC 0.19 location and selector.
 
@@ -132,6 +188,8 @@ def build_config_migration_plan(
     :param spec: Current application declaration.
     :param storage_roots: Additional registered roots already visible to CLI.
     :param proc_env: Environment mapping used instead of ``os.environ``.
+    :param storage_resolution: Explicit directory mapping for an unknown bare
+        selector.
     :return: Complete preflight without filesystem writes.
     """
     env = os.environ if proc_env is None else proc_env
@@ -150,6 +208,7 @@ def build_config_migration_plan(
     moves: list[FileMigration] = []
     writes: list[TextMigration] = []
     warnings: list[str] = []
+    storage_mapping: StorageMigrationMapping | None = None
 
     user_sources = _existing_files(
         directory / ".env.apprc-app" for directory in legacy_dirs
@@ -209,10 +268,11 @@ def build_config_migration_plan(
             user_values=user_values,
         )
         if selector_value is not None:
-            registry = _apply_legacy_selector(
+            registry, storage_mapping = _apply_legacy_selector(
                 registry,
                 key=selector_key or spec.require_storage_selector_env_key(),
                 value=selector_value,
+                resolution=storage_resolution,
             )
         elif registry.selected_storage is None and len(registry.storages) == 1:
             registry = replace(
@@ -248,6 +308,32 @@ def build_config_migration_plan(
                     destination=destination,
                     moves=moves,
                     conflicts=conflicts,
+                )
+
+        if registry.selected_storage is not None:
+            selected_root = (
+                registry.selected(registry.selected_storage)
+                .root.expanduser()
+                .resolve()
+            )
+            selected_dotenv = selected_root / spec.storage_dotenv_filename
+            legacy_selected_dotenv = selected_root / ".env.apprc-storage"
+            planned_destination = any(
+                move.destination == selected_dotenv for move in moves
+            )
+            if (
+                selected_root.is_dir()
+                and not selected_dotenv.exists()
+                and not legacy_selected_dotenv.exists()
+                and not planned_destination
+            ):
+                writes.append(
+                    TextMigration(
+                        source=None,
+                        destination=selected_dotenv,
+                        text="",
+                        label=f"storage dotenv ({selected_root})",
+                    )
                 )
 
         rendered = render_storage_registry(registry)
@@ -287,6 +373,7 @@ def build_config_migration_plan(
         writes=tuple(writes),
         conflicts=tuple(conflicts),
         warnings=tuple(dict.fromkeys(warnings)),
+        storage_mapping=storage_mapping,
     )
 
 
@@ -418,23 +505,32 @@ def _apply_legacy_selector(
     *,
     key: str,
     value: str,
-) -> StorageRegistry:
+    resolution: StorageMigrationResolution | None,
+) -> tuple[StorageRegistry, StorageMigrationMapping | None]:
     """Convert a released selector into ``selected_storage``.
 
     :param registry: Registry being migrated.
     :param key: Legacy environment key used in errors.
     :param value: Name or path from the released setup.
-    :return: Updated registry.
+    :param resolution: Explicit root and optional registry entry replacement.
+    :return: Updated registry and optional mapping description.
     """
     selector = value.strip()
     if selector in registry.storages:
-        return replace(registry, selected_storage=selector)
-    if registry.storages and not storage_selector_is_path_like(selector):
-        known = ", ".join(sorted(registry.storages))
-        raise ConfigMigrationError(
-            f"{key} contains unknown storage name {selector!r}. Known "
-            f"storages: {known}. Resolve it before migration."
+        return replace(registry, selected_storage=selector), None
+    if not storage_selector_is_path_like(selector):
+        if resolution is None:
+            raise UnresolvedStorageMigrationError(
+                key=key,
+                selector_name=selector,
+                registry=registry,
+            )
+        resolved_registry, mapping = _apply_storage_resolution(
+            registry,
+            selector_name=selector,
+            resolution=resolution,
         )
+        return resolved_registry, mapping
     root = resolve_storage_root_path(selector, base=registry.path.parent)
     existing = registry.storages.get("default")
     if existing is not None and existing.root != root:
@@ -444,10 +540,92 @@ def _apply_legacy_selector(
         )
     storages = dict(registry.storages)
     storages["default"] = StorageRecord(name="default", root=root)
-    return replace(
-        registry,
-        storages=storages,
-        selected_storage="default",
+    return (
+        replace(
+            registry,
+            storages=storages,
+            selected_storage="default",
+        ),
+        None,
+    )
+
+
+def _apply_storage_resolution(
+    registry: StorageRegistry,
+    *,
+    selector_name: str,
+    resolution: StorageMigrationResolution,
+) -> tuple[StorageRegistry, StorageMigrationMapping]:
+    """Apply one explicit name-to-directory mapping to registry data.
+
+    :param registry: Registry being transformed during migration preflight.
+    :param selector_name: Unregistered selector that must become runnable.
+    :param resolution: Existing directory and optional entry replacement.
+    :return: Updated in-memory registry and mapping description.
+    :raises ConfigMigrationError: If the requested mapping is ambiguous or
+        references missing data.
+    """
+    try:
+        validate_storage_name(selector_name)
+    except ValueError as exc:
+        raise ConfigMigrationError(str(exc)) from exc
+    root = resolve_storage_root_path(
+        resolution.root,
+        base=registry.path.parent,
+    )
+    if not root.is_dir():
+        raise ConfigMigrationError(
+            f"Migration storage root does not exist or is not a directory: "
+            f"{root}"
+        )
+
+    replace_name = resolution.replace_storage
+    storages = dict(registry.storages)
+    archived_storages = dict(registry.archived_storages)
+    if replace_name is not None:
+        try:
+            validate_storage_name(replace_name)
+            storages.pop(replace_name)
+        except (KeyError, ValueError) as exc:
+            raise ConfigMigrationError(
+                f"Cannot replace unknown storage {replace_name!r}."
+            ) from exc
+        archived_record = archived_storages.pop(replace_name, None)
+        if archived_record is not None:
+            archived_storages[selector_name] = replace(
+                archived_record,
+                name=selector_name,
+            )
+
+    duplicate_names = [
+        name
+        for name, record in storages.items()
+        if record.root.expanduser().resolve() == root
+    ]
+    if duplicate_names:
+        duplicate = duplicate_names[0]
+        raise ConfigMigrationError(
+            f"Storage root {root} is already registered as {duplicate!r}. "
+            f"Use --replace-storage {duplicate} to rename that entry to "
+            f"{selector_name!r}."
+        )
+
+    storages[selector_name] = StorageRecord(
+        name=selector_name,
+        root=root,
+    )
+    return (
+        replace(
+            registry,
+            storages=storages,
+            selected_storage=selector_name,
+            archived_storages=archived_storages,
+        ),
+        StorageMigrationMapping(
+            selector_name=selector_name,
+            root=root,
+            replaced_storage=replace_name,
+        ),
     )
 
 

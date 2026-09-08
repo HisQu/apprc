@@ -73,6 +73,39 @@ def test_storage_setup_creates_fixed_files_and_default_registry(
     assert "selected_storage: default" in result.output
 
 
+def test_initial_setup_uses_bare_environment_selector_as_storage_name(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """An empty registry adopts the requested name instead of ``default``.
+
+    :param monkeypatch: Process environment mutation fixture.
+    :param tmp_path: Isolated storage parent.
+    """
+    kit = build_apprc_example_app_kit()
+    storage_root = tmp_path / "ontology"
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "ontology")
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "--yes",
+            "--storage-root",
+            str(storage_root),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    registry = load_storage_registry_or_empty(
+        kit.spec.preferred_apprc_toml_path()
+    )
+    assert registry.selected_storage == "ontology"
+    assert tuple(registry.storages) == ("ontology",)
+    assert "selected_storage: ontology" in result.output
+
+
 def test_storage_only_setup_does_not_create_user_dotenv(
     tmp_path: Path,
 ) -> None:
@@ -150,6 +183,57 @@ def test_repeated_setup_never_implicitly_repoints_default_storage(
     )
     assert registry.selected("default").root == first_root.resolve()
     assert not second_root.exists()
+
+
+def test_setup_repairs_marker_for_selected_named_storage(
+    tmp_path: Path,
+) -> None:
+    """Setup initializes the selected name instead of assuming ``default``.
+
+    :param tmp_path: Isolated storage parent.
+    """
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    storage_root = tmp_path / "ontology"
+    first = CliRunner().invoke(
+        app,
+        ["storage", "add", "ontology", str(storage_root), "--yes"],
+    )
+    marker = kit.spec.storage_dotenv_path(storage_root)
+    marker.unlink()
+
+    repaired = CliRunner().invoke(app, ["setup", "--yes"])
+
+    assert first.exit_code == 0, first.output
+    assert repaired.exit_code == 0, repaired.output
+    assert marker.is_file()
+    assert "selected_storage: ontology" in repaired.output
+
+
+def test_setup_does_not_recreate_missing_registered_root(
+    tmp_path: Path,
+) -> None:
+    """A missing root requires repointing to the user's existing data.
+
+    :param tmp_path: Isolated storage parent.
+    """
+    kit = build_apprc_example_app_kit()
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    storage_root = tmp_path / "ontology"
+    first = CliRunner().invoke(
+        app,
+        ["storage", "add", "ontology", str(storage_root), "--yes"],
+    )
+    kit.spec.storage_dotenv_path(storage_root).unlink()
+    storage_root.rmdir()
+
+    result = CliRunner().invoke(app, ["setup", "--yes"])
+
+    assert first.exit_code == 0, first.output
+    assert result.exit_code != 0
+    assert "storage repoint" in result.output
+    assert "will not recreate" in result.output
+    assert not storage_root.exists()
 
 
 def test_setup_reports_blocking_apprc_directory_without_touching_storage(

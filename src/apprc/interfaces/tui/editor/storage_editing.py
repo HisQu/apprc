@@ -109,19 +109,19 @@ class StorageEditingWorkflows(StorageWorkflowBase):
         await self.editor._refresh_storage_list(select_name=name)
         self.editor.notify(f"Renamed storage {record.name!r} to {name!r}")
 
-    async def open_storage_location_flow(self) -> None:
-        """Prompt for an existing directory to record as the storage root."""
+    async def open_storage_reconnect_flow(self) -> None:
+        """Connect a named storage to its existing directory."""
         registry = self.editor._require_storage_registry()
         record = self._selected_editable_storage()
         if registry is None or record is None:
             return
         result = await self.editor.push_screen_wait(
             PathInputScreen(
-                title="Storage location",
+                title="Reconnect storage",
                 message=(
-                    "Enter an existing storage directory. This changes only "
-                    "the registry entry; it does not create, move, or delete "
-                    "files."
+                    "Enter the existing directory for this storage. AppRC "
+                    "will update only the registry entry; it will not create, "
+                    "move, or delete files."
                 ),
                 placeholder="Existing storage directory",
                 value=str(record.root),
@@ -134,23 +134,21 @@ class StorageEditingWorkflows(StorageWorkflowBase):
             return
         action = await self.editor.push_screen_wait(
             ConfirmScreen(
-                title="Update storage location",
+                title="Reconnect storage",
                 message=lines_text(
                     label_value_text(
                         "Storage",
                         storage_name_text(record.name),
                     ),
-                    label_value_text(
-                        "Current location", path_text(record.root)
-                    ),
-                    label_value_text("New location", path_text(root)),
+                    label_value_text("Registered path", path_text(record.root)),
+                    label_value_text("Existing directory", path_text(root)),
                     "",
                     "This changes only the storage registry entry.",
                     "It does not create, move, or delete files.",
                     "External --storage arguments and environment values "
                     "that use the current name are not changed.",
                 ),
-                actions=(("update", "Update location", "warning"),),
+                actions=(("update", "Reconnect", "warning"),),
             )
         )
         if action != "update":
@@ -166,7 +164,7 @@ class StorageEditingWorkflows(StorageWorkflowBase):
             self.editor.notify(str(exc), severity="error", markup=False)
             return
         await self.editor._refresh_storage_list(select_name=record.name)
-        self.editor.notify(f"Updated location for storage {record.name!r}")
+        self.editor.notify(f"Reconnected storage {record.name!r}")
 
     async def open_move_storage_flow(self) -> None:
         """Move the selected storage through the transactional service."""

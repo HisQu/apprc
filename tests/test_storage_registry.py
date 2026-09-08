@@ -34,6 +34,9 @@ from apprc.user_files.storage_roots.paths import (
     normalize_storage_root_path,
     windows_drive_path_to_posix,
 )
+from apprc.user_files.storage_roots.selector import (
+    select_storage_selector_input,
+)
 from tests.support_config import build_apprc_example_app_kit
 
 
@@ -46,6 +49,38 @@ def test_storage_suggestion_uses_predictable_apprc_directory() -> None:
 def test_suggested_storage_name_is_default() -> None:
     assert suggested_storage_name("demo") == "default"
     assert suggested_storage_name("my-app.rc") == "default"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_value", "expected_source_kind"),
+    [
+        (False, "shell", "process_environment"),
+        (True, "dotenv", "explicit_dotenv"),
+    ],
+)
+def test_selector_input_reports_winning_environment_layer(
+    overrides: bool,
+    expected_value: str,
+    expected_source_kind: str,
+) -> None:
+    """Selector provenance follows the configured environment precedence.
+
+    :param overrides: Whether the explicit dotenv wins over the process.
+    :param expected_value: Selector expected from the winning layer.
+    :param expected_source_kind: Stable layer identifier expected by the UI.
+    """
+    selected = select_storage_selector_input(
+        storage=None,
+        original_env={"DEMO_STORAGE": "shell"},
+        explicit_values={"DEMO_STORAGE": "dotenv"},
+        env_file_overrides_os_environ=overrides,
+        storage_selector_env_key="DEMO_STORAGE",
+        selected_storage="registry",
+    )
+
+    assert selected is not None
+    assert selected.raw_value == expected_value
+    assert selected.source_kind == expected_source_kind
 
 
 def test_missing_existing_storage_registry_uses_custom_config_group_name(

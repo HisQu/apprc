@@ -148,8 +148,10 @@ myapp config setup \
 myapp config setup --yes
 ```
 
-Storage setup registers the initial root under the name `default`, selects it
-in `apprc.toml`, and creates `apprc.storage.env` inside the root. It creates
+Storage setup normally registers the initial root under the name `default`,
+selects it in `apprc.toml`, and creates `apprc.storage.env` inside the root. If
+the registry is empty and a bare `<APP>_STORAGE` value is present, setup uses
+that requested name instead. It creates
 `apprc.user.env` only when `rc.UserDotenv()` is also declared. It does not write
 `MYAPP_STORAGE` to a dotenv file. A normal run uses `selected_storage`; export
 `MYAPP_STORAGE=NAME_OR_PATH` only for a run-level selection override.
@@ -194,7 +196,8 @@ myapp config storage remove primary
 ```
 
 Relative roots resolve relative to `apprc.toml`, not the current directory.
-`config edit` exposes the same supported operations.
+`config edit` calls the registry-only operation **Reconnect** and keeps
+**Move** for filesystem relocation.
 
 New `add` and `repoint` operations reject a root already owned by another
 name. Older duplicate aliases remain readable; `config doctor` warns, and a
@@ -247,6 +250,27 @@ dotenv and warns about exported structural variables that the process cannot
 edit. It ignores `apprc.app.env` because no released AppRC version used that
 name.
 
+If the active environment contains a bare name that is not registered,
+migration does not guess whether an existing entry should be renamed. In an
+interactive terminal it asks for the existing directory with path completion,
+then offers to add the name or replace one old entry. For automation, provide
+the decision explicitly:
+
+```bash
+# Add the missing name and keep all existing entries.
+myapp config migrate --storage-root /existing/ontology --yes
+
+# Rename and repoint one old entry; no application data is moved or deleted.
+myapp config migrate \
+  --storage-root /existing/ontology \
+  --replace-storage old-name \
+  --yes
+```
+
+`--yes` accepts a complete decision; it never selects an entry to replace.
+When the chosen directory has no `apprc.storage.env`, migration creates the
+empty marker so the result can bootstrap immediately.
+
 Conflicts stop the operation before changes. Existing destinations are never
 replaced.
 
@@ -285,13 +309,17 @@ myapp config doctor --json
 | --- | --- | --- |
 | `runnable` | Required dotenv files and selected storage are usable. | Run the application. |
 | `storage_not_selected` | A storage app has no selected name or path. | Run setup, `storage select`, or pass a name or path. |
-| `storage_not_ready` | The selected root or storage dotenv is missing. | Correct the root or rerun setup. |
+| `storage_not_ready` | The selector is invalid, a registered root is missing, or the storage dotenv is missing. | Fix or unset the selector; reconnect a manually moved registered root; run setup only for a missing marker. |
 | `user_dotenv_not_ready` | `apprc.user.env` is missing or unreadable. | Run setup or fix permissions. |
-| `storage_registry_not_ready` | `apprc.toml` is missing, unreadable, or invalid. | Run setup or fix the registry. |
+| `storage_registry_not_ready` | `apprc.toml` is missing, unreadable, or invalid. | Run setup if it is absent; fix it if it is unreadable or invalid. |
 
 For a declaration without storage, doctor reports stale `apprc.toml` as a
 warning only. For one without `rc.UserDotenv()`, it does the same for a stale
 `apprc.user.env`. Unsupported paths are `null` in the JSON payload.
 `config edit` still opens when a declared file or storage selection is invalid.
-It names the missing feature beside a setup action and disables writes until
-setup creates the required dotenv marker.
+For an invalid override it reports whether `--storage`, the process
+environment, an explicit dotenv, or `apprc.toml` supplied the value. It keeps
+valid registry entries usable and does not present Setup as a selector repair.
+For a missing registered directory, select the entry and use **Reconnect**.
+Setup remains available when AppRC can initialize a missing declared dotenv or
+storage marker.

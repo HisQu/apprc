@@ -258,10 +258,10 @@ def test_mount_config_cli_passes_storage_to_default_config_show(
     assert payload["storage_root"] == str(storage_root.resolve())
 
 
-def test_mount_config_cli_reports_app_setup_for_missing_storage(
+def test_mount_config_cli_reports_repoint_for_missing_registered_storage(
     tmp_path: Path,
 ) -> None:
-    """Fail before the host command runs and name its config command.
+    """Fail before runtime and identify the non-destructive repair command.
 
     :param tmp_path: Temporary parent for the missing selected root.
     """
@@ -290,7 +290,9 @@ def test_mount_config_cli_reports_app_setup_for_missing_storage(
     output = " ".join(result.output.split())
     assert result.exit_code == 2, result.output
     assert "Selected Example App storage root" in output
-    assert "apprc_example_app config setup" in output
+    assert "apprc_example_app config storage repoint missing" in output
+    assert "/absolute/path/to/existing-storage" in output
+    assert "Setup will not recreate a missing registered root" in output
     assert "Traceback" not in result.output
 
 

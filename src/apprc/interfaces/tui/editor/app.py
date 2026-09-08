@@ -49,6 +49,10 @@ from apprc.user_files.storage_roots.registry import (
     StorageRegistry,
     suggested_storage_name,
 )
+from apprc.user_files.storage_roots.selector import StorageSelectorIssue
+from apprc.user_files.storage_roots.selector import (
+    storage_selector_is_path_like,
+)
 from apprc.interfaces.tui.modals import (
     ConfigValueEditScreen,
     ValueEditResult,
@@ -105,7 +109,7 @@ class ConfigEditorApp(App[None]):
         padding: 0 1;
     }
 
-    #setup-status {
+    #selector-status {
         border: solid $warning;
         color: $warning;
         padding: 0 1;
@@ -135,7 +139,7 @@ class ConfigEditorApp(App[None]):
         kit: AppConfigKit,
         storage_registry: StorageRegistry | None,
         storage_registry_error: str | None = None,
-        storage_startup_error: str | None = None,
+        storage_selector_issue: StorageSelectorIssue | None = None,
         initial_storage: str | None = None,
         active_storage_root: Path | None = None,
         config_group_name: str = "config",
@@ -147,7 +151,8 @@ class ConfigEditorApp(App[None]):
             editor.
         :param storage_registry_error: Read failure that prevents named-storage
             writes while direct-path editing remains available.
-        :param storage_startup_error: Persistent startup/readiness explanation.
+        :param storage_selector_issue: Active selector failure kept separate
+            from managed-file readiness.
         :param initial_storage: Optional storage entry selected on startup.
         :param active_storage_root: Optional path-backed storage selected by
             the current CLI invocation.
@@ -158,7 +163,7 @@ class ConfigEditorApp(App[None]):
         self.kit = kit
         self.storage_registry = storage_registry
         self.storage_registry_error = storage_registry_error
-        self.storage_startup_error = storage_startup_error
+        self.storage_selector_issue = storage_selector_issue
         self.owners = kit.spec.owners
         self.initial_storage = initial_storage
         self.config_group_name = config_group_name
@@ -202,12 +207,10 @@ class ConfigEditorApp(App[None]):
     def compose(self) -> ComposeResult:
         """Compose the storage list and field editor."""
         yield Header()
-        if self.storage_startup_error is not None:
+        if self.storage_selector_issue is not None:
             yield Static(
-                "AppRC setup is incomplete:\n"
-                f"{self.storage_startup_error}\n"
-                "Use Setup to repair the managed files.",
-                id="setup-status",
+                self._storage_selector_issue_message(),
+                id="selector-status",
             )
         with Horizontal():
             if self.storage_enabled:
@@ -237,7 +240,7 @@ class ConfigEditorApp(App[None]):
                             disabled=True,
                         )
                         yield Button(
-                            "Location",
+                            "Reconnect",
                             id="storage-location",
                             disabled=True,
                         )
@@ -362,7 +365,7 @@ class ConfigEditorApp(App[None]):
             return
         if event.button.id == "storage-location":
             self._start_config_action(
-                self.storage_workflows.open_storage_location_flow
+                self.storage_workflows.open_storage_reconnect_flow
             )
             return
         if event.button.id == "storage-move":
@@ -414,6 +417,7 @@ class ConfigEditorApp(App[None]):
             await workflow()
         finally:
             self._config_action_in_progress = False
+            await self.clear_resolved_selector_issue()
             await self._refresh_storage_list(
                 select_name=self._selected_storage_name()
             )
@@ -640,7 +644,7 @@ class ConfigEditorApp(App[None]):
             self.storage_values = {}
             self.query_one("#scope-title", Static).update(
                 f"Storage path: {root}\nMissing AppRC marker: {path}. "
-                "Use Setup before editing storage values."
+                "Initialize storage config before editing storage values."
             )
             self._clear_field_table()
             self._set_storage_controls_enabled(
@@ -680,8 +684,8 @@ class ConfigEditorApp(App[None]):
             self.storage_values = {}
             self.query_one("#scope-title", Static).update(
                 f"Storage {name!r}: {record.root}\n"
-                f"Missing AppRC marker: {path}. Use Setup before editing "
-                "storage values."
+                f"Missing AppRC marker: {path}. Initialize storage config "
+                "before editing storage values."
             )
             self._clear_field_table()
             self._set_storage_controls_enabled(
@@ -702,16 +706,54 @@ class ConfigEditorApp(App[None]):
         self._set_live_controls_enabled(True)
 
     async def clear_setup_status(self) -> None:
-        """Remove the persistent setup banner after successful repair.
+        """Remove the setup action after successful initialization.
 
         :return: None.
         """
-        self.storage_startup_error = None
-        for status in self.query("#setup-status"):
-            await status.remove()
         if not self._setup_needed():
             for button in self.query("#config-setup"):
                 await button.remove()
+
+    async def clear_resolved_selector_issue(self) -> None:
+        """Remove the selector warning after its name becomes registered."""
+        issue = self.storage_selector_issue
+        registry = self.storage_registry
+        if issue is None or issue.selector is None or registry is None:
+            return
+        if issue.selector.raw_value.strip() not in registry.storages:
+            return
+        self.storage_selector_issue = None
+        for status in self.query("#selector-status"):
+            await status.remove()
+
+    def _storage_marker_setup_target(self) -> tuple[str, Path] | None:
+        """Return a registered live root whose marker must be initialized."""
+        selection = self.selection
+        if isinstance(selection, LiveStorageSelection):
+            record = selection.record
+        else:
+            registry = self.storage_registry
+            if registry is None or not registry.storages:
+                return None
+            name = registry.selected_storage or next(iter(registry.storages))
+            record = registry.storages.get(name)
+            if record is None:
+                return None
+        if not record.root.is_dir():
+            return None
+        if self._env_file_path_for_root(record.root).is_file():
+            return None
+        return record.name, record.root
+
+    def _requested_storage_name(self) -> str | None:
+        """Return a bare failed selector that setup can register by name."""
+        issue = self.storage_selector_issue
+        if issue is None or issue.selector is None:
+            return None
+        value = issue.selector.raw_value.strip()
+        if not value or storage_selector_is_path_like(value):
+            return None
+        return value
 
     def _select_missing_storage(self, name: str) -> None:
         """Show a registered storage whose root no longer exists."""
@@ -1017,21 +1059,28 @@ class ConfigEditorApp(App[None]):
         """Return whether the declared storage feature needs initialization."""
         if not self.storage_enabled:
             return False
-        if self.storage_startup_error is not None:
-            return True
+        if self.storage_registry_error is not None:
+            return False
+        registry = self.storage_registry
         if self.active_storage_root is not None:
+            registered = registry is not None and any(
+                record.root.expanduser().resolve() == self.active_storage_root
+                for record in registry.storages.values()
+            )
+            if registered and not self.active_storage_root.is_dir():
+                return False
             return not self._env_file_path_for_root(
                 self.active_storage_root
             ).is_file()
-        registry = self.storage_registry
         if registry is None or not registry.storages:
             return True
-        selected_name = registry.selected_storage
-        if selected_name is None:
+        selected_name = registry.selected_storage or next(
+            iter(registry.storages)
+        )
+        record = registry.storages.get(selected_name)
+        if record is None or not record.root.is_dir():
             return False
-        return not self._env_file_path_for_root(
-            registry.selected(selected_name).root
-        ).is_file()
+        return not self._env_file_path_for_root(record.root).is_file()
 
     def _setup_button_label(self) -> str:
         """Return a setup action that names the missing capability."""
@@ -1042,8 +1091,54 @@ class ConfigEditorApp(App[None]):
         if user_missing:
             return "Set up user dotenv..."
         if storage_missing:
+            if self.storage_registry and self.storage_registry.storages:
+                return "Initialize storage config..."
             return "Set up storage..."
         return "Finish setup..."
+
+    def _storage_selector_issue_message(self) -> str:
+        """Explain one selector failure without claiming setup is damaged."""
+        issue = self.storage_selector_issue
+        if issue is None:
+            return ""
+        selector = issue.selector
+        lines = ["Storage selection needs attention:", issue.message]
+        if selector is not None:
+            source_labels = {
+                "cli": "command-line --storage",
+                "process_environment": (
+                    f"{selector.source} from the process environment"
+                ),
+                "explicit_dotenv": (
+                    f"{selector.source} from an explicit dotenv file"
+                ),
+                "registry": "apprc.toml selected_storage",
+            }
+            lines.append(f"Source: {source_labels[selector.source_kind]}.")
+            if (
+                selector.source_kind != "registry"
+                and issue.configured_storage is not None
+            ):
+                lines.append(
+                    f"This value overrides selected_storage="
+                    f"{issue.configured_storage!r}."
+                )
+        registry = self.storage_registry
+        if registry is not None and registry.storages:
+            lines.append(
+                "Registered storages: "
+                + ", ".join(sorted(registry.storages))
+                + "."
+            )
+            lines.append(
+                "Select a registered storage below to inspect it. This does "
+                "not change the runtime selector."
+            )
+        lines.append(
+            "Register or rename the requested storage, or change/unset the "
+            "selector at its source. Setup is not a selector repair."
+        )
+        return "\n".join(lines)
 
 
 def _read_packaged_defaults_values(kit: AppConfigKit) -> dict[str, str]:

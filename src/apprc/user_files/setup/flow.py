@@ -162,8 +162,10 @@ class ConfigSetupFlow:
             elif existing.root != root:
                 raise ConfigSetupError(
                     f"Storage {storage_name!r} already points to "
-                    f"{existing.root}. Use `config storage repoint` or "
-                    "`config storage move` to change it.",
+                    f"{existing.root}. Setup does not change registered "
+                    "locations. If the files were moved manually, use "
+                    "`config storage repoint`. Use `config storage move` "
+                    "only when AppRC should move the files.",
                     param_hint="--storage-root",
                 )
             else:

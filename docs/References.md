@@ -195,6 +195,7 @@ associated with a name only when exactly one registry entry matches.
 | `config setup [--apprc-dir PATH] [-y]` | Apps with a persistent capability | Yes | Initialize the declared user dotenv and/or storage registry. |
 | `config setup [--apprc-dir PATH] [--storage-root PATH] [-y]` | Storage apps | Yes | Register and select the initial storage; create a user dotenv only if declared. |
 | `config migrate [--dry-run] [-y]` | Apps with a persistent capability | Unless dry-run or cancelled | Migrate released 0.19 files after full preflight. |
+| `config migrate --storage-root ROOT [--replace-storage NAME] [-y]` | Storage apps with an unregistered bare selector | Unless dry-run or cancelled | Map the selector to an existing root; optionally rename and repoint one old entry. |
 | `config purge [--apprc-dir PATH] [--dry-run] [-y]` | All apps | Unless dry-run or cancelled | Remove fixed AppRC files and registered internal roots; cleanup-only for process-env apps. |
 | `config set KEY VALUE --scope user` | User-dotenv apps | Yes | Validate and save one user dotenv override after setup. |
 | `config set KEY VALUE --scope storage` | Storage apps | Yes | Validate and save one storage dotenv override. |

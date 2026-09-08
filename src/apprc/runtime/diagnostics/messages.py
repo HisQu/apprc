@@ -64,6 +64,8 @@ def _doctor_next_steps(
     config_group_name: str,
     storage_count: int,
     selector_error: bool,
+    selected_storage: str | None,
+    storage_root_exists: bool | None,
 ) -> list[str]:
     """Return recovery steps tailored to one doctor status.
 
@@ -73,10 +75,23 @@ def _doctor_next_steps(
         guidance.
     :param storage_count: Number of registered live storages.
     :param selector_error: Whether an explicit selector failed to resolve.
+    :param selected_storage: Registered name associated with the selection.
+    :param storage_root_exists: Whether the selected root is a directory.
     :return: Ordered actions for human and JSON output.
     """
     if status == ConfigDoctorStatus.RUNNABLE:
         return []
+    if selector_error:
+        return [
+            "Fix or unset the invalid storage selector shown above. Setup "
+            "does not repair selector overrides.",
+            config_command_text(
+                kit, "storage list", config_group_name=config_group_name
+            ),
+            config_command_text(
+                kit, "doctor", config_group_name=config_group_name
+            ),
+        ]
     if status == ConfigDoctorStatus.STORAGE_NOT_SELECTED:
         selection_step = (
             config_command_text(
@@ -120,11 +135,13 @@ def _doctor_next_steps(
                 kit, "doctor", config_group_name=config_group_name
             ),
         ]
-    if selector_error:
+    if selected_storage is not None and storage_root_exists is False:
         return [
-            "Fix or unset the invalid storage selector shown above.",
             config_command_text(
-                kit, "storage list", config_group_name=config_group_name
+                kit,
+                f"storage repoint {selected_storage} "
+                "/absolute/path/to/existing-storage",
+                config_group_name=config_group_name,
             ),
             config_command_text(
                 kit, "doctor", config_group_name=config_group_name

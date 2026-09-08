@@ -16,8 +16,11 @@ from apprc.interfaces.tui._primitives import (
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.user_files.setup.text import setup_overview_text
 from apprc.user_files.storage_roots.registry import (
+    StorageRecord,
+    StorageRegistry,
     load_storage_registry_or_empty,
     register_storage,
+    write_storage_registry,
 )
 from tests.support_config import (
     build_apprc_example_app_kit,
@@ -112,6 +115,10 @@ async def test_storage_free_editor_setup_creates_user_dotenv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     kit = build_storage_free_example_kit()
+    monkeypatch.setenv(
+        kit.spec.apprc_dir_env_key,
+        str(kit.spec.apprc_dir()),
+    )
     editor = ConfigEditorApp(kit=kit, storage_registry=None)
     responses: list[object | None] = [
         PathInputResult(path=kit.spec.apprc_dir()),
@@ -129,6 +136,64 @@ async def test_storage_free_editor_setup_creates_user_dotenv(
 
     assert kit.spec.user_dotenv_path().read_text(encoding="utf-8") == ""
     assert not kit.spec.preferred_apprc_toml_path().exists()
+
+
+@pytest.mark.asyncio
+async def test_editor_initializes_marker_for_existing_named_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Marker repair keeps the registered name and directory unchanged.
+
+    :param monkeypatch: TUI response replacement fixture.
+    :param tmp_path: Isolated storage parent.
+    """
+    kit = build_apprc_example_app_kit()
+    monkeypatch.setenv(
+        kit.spec.apprc_dir_env_key,
+        str(kit.spec.apprc_dir()),
+    )
+    kit.spec.ensure_user_dotenv()
+    storage_root = tmp_path / "ontology"
+    storage_root.mkdir()
+    registry = StorageRegistry(
+        path=kit.spec.preferred_apprc_toml_path(),
+        storages={
+            "ontology": StorageRecord(
+                name="ontology",
+                root=storage_root,
+            )
+        },
+        selected_storage="ontology",
+        archived_storages={},
+    )
+    write_storage_registry(registry)
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=registry,
+        initial_storage="ontology",
+    )
+    responses: list[object | None] = ["setup", "done"]
+    screens: list[object] = []
+
+    async def push_screen_wait(screen: object) -> object | None:
+        screens.append(screen)
+        return responses.pop(0)
+
+    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        setup = editor.query_one("#config-setup", Button)
+        assert str(setup.label) == "Initialize storage config..."
+        await editor.setup_workflow.open_setup_flow()
+
+    updated = load_storage_registry_or_empty(registry.path)
+    assert updated.selected_storage == "ontology"
+    assert updated.selected("ontology").root == storage_root
+    assert kit.spec.storage_dotenv_path(storage_root).is_file()
+    assert len(screens) == 2
+    assert all(isinstance(screen, ConfirmScreen) for screen in screens)
 
 
 @pytest.mark.asyncio

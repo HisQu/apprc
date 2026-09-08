@@ -201,6 +201,10 @@ def build_config_doctor_payload(
                 config_group_name=config_group_name,
                 storage_count=registry.storage_count,
                 selector_error=storage_diagnosis.selector_error,
+                selected_storage=(
+                    selection.storage_name if selection is not None else None
+                ),
+                storage_root_exists=storage_diagnosis.storage_root_exists,
             )
         ),
     )

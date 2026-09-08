@@ -54,6 +54,18 @@ class ConfigEditorSetupWorkflow:
 
     async def open_setup_flow(self) -> None:
         """Run the declared setup route and report what the user must do."""
+        marker_target = self.editor._storage_marker_setup_target()
+        if marker_target is not None:
+            storage_name, storage_root = marker_target
+            confirmed_root = await self._confirm_storage_root(storage_root)
+            if confirmed_root is None:
+                return
+            await self._run_storage_setup(
+                apprc_dir=self.editor.kit.spec.apprc_dir(),
+                storage_root=confirmed_root,
+                storage_name=storage_name,
+            )
+            return
         apprc_dir = await self._choose_apprc_dir()
         if apprc_dir is None:
             return
@@ -89,7 +101,7 @@ class ConfigEditorSetupWorkflow:
             return None
 
     async def _open_storage_setup_flow(self, apprc_dir: Path) -> None:
-        """Choose and initialize the default registered storage.
+        """Choose and initialize the first or selected registered storage.
 
         :param apprc_dir: AppRC directory selected in the first setup step.
         """
@@ -129,11 +141,30 @@ class ConfigEditorSetupWorkflow:
         storage_root = await self._confirm_storage_root(path_result.path)
         if storage_root is None:
             return
+        storage_name = self._storage_name_for_setup(
+            storage_root,
+            registry=target_registry,
+        )
+        await self._run_storage_setup(
+            apprc_dir=apprc_dir,
+            storage_root=storage_root,
+            storage_name=storage_name,
+        )
+
+    async def _run_storage_setup(
+        self,
+        *,
+        apprc_dir: Path,
+        storage_root: Path,
+        storage_name: str,
+    ) -> None:
+        """Initialize one named root and refresh the editor.
+
+        :param apprc_dir: AppRC directory containing the registry.
+        :param storage_root: Existing or new storage directory.
+        :param storage_name: Registry name to initialize.
+        """
         try:
-            storage_name = self._storage_name_for_setup(
-                storage_root,
-                registry=target_registry,
-            )
             result = await asyncio.to_thread(
                 ConfigSetupFlow(self.editor.kit).run_storage_setup,
                 storage_root,
@@ -167,6 +198,7 @@ class ConfigEditorSetupWorkflow:
             result.user_dotenv is not None or self.editor.user_dotenv_active
         )
         await self.editor.clear_setup_status()
+        await self.editor.clear_resolved_selector_issue()
         await self.editor._refresh_storage_list()
         await self._show_storage_setup_result(
             storage_root=result.active_storage_root,
@@ -188,7 +220,7 @@ class ConfigEditorSetupWorkflow:
         :return: Existing associated name or a stable new suggestion.
         """
         if registry is None or not registry.storages:
-            return "default"
+            return self.editor._requested_storage_name() or "default"
         resolved_root = storage_root.expanduser().resolve()
         matches = [
             name

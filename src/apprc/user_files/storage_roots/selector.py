@@ -56,6 +56,46 @@ class StorageNotInitializedError(StorageSelectorError):
         self.storage_name = storage_name
 
 
+type StorageSelectorSourceKind = Literal[
+    "cli",
+    "process_environment",
+    "explicit_dotenv",
+    "registry",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class StorageSelectorInput:
+    """One raw selector together with the layer that supplied it.
+
+    :param source: Existing user-facing source label.
+    :param raw_value: Selector text before name or path resolution.
+    :param source_kind: Layer that won selector precedence.
+    """
+
+    source: str
+    raw_value: str
+    source_kind: StorageSelectorSourceKind
+
+
+@dataclass(frozen=True, slots=True)
+class StorageSelectorIssue:
+    """Selector failure retained for management interfaces.
+
+    Runtime callers still receive :class:`StorageSelectorError`. The config
+    editor keeps this richer value so it can explain which input failed
+    without treating the registry as damaged.
+
+    :param selector: Raw selector and its winning layer.
+    :param message: Resolution failure without interface formatting.
+    :param configured_storage: TOML fallback hidden by the failed override.
+    """
+
+    selector: StorageSelectorInput | None
+    message: str
+    configured_storage: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class StorageSelection:
     """Resolved active storage selector.
@@ -139,7 +179,7 @@ def resolve_active_storage_selection(
         already exported process values.
     :return: Resolved selection, or ``None`` when the registry has no default.
     """
-    selected = select_storage_selector(
+    selected = select_storage_selector_input(
         storage=storage,
         original_env=original_env,
         explicit_values=explicit_values or {},
@@ -151,13 +191,12 @@ def resolve_active_storage_selection(
     )
     if selected is None:
         return None
-    source, raw_value = selected
     return resolve_storage_selector_value(
         registry=registry,
         apprc_toml_path=apprc_toml_path,
-        raw_value=raw_value,
+        raw_value=selected.raw_value,
         storage_selector_env_key=storage_selector_env_key,
-        source=source,
+        source=selected.source,
     )
 
 
@@ -262,20 +301,71 @@ def select_storage_selector(
     :param selected_storage: Default name from ``apprc.toml``.
     :return: Source and selector value, or ``None`` when unset.
     """
+    selected = select_storage_selector_input(
+        storage=storage,
+        original_env=original_env,
+        explicit_values=explicit_values,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        storage_selector_env_key=storage_selector_env_key,
+        selected_storage=selected_storage,
+    )
+    if selected is None:
+        return None
+    return selected.source, selected.raw_value
+
+
+def select_storage_selector_input(
+    *,
+    storage: str | None,
+    original_env: Mapping[str, str],
+    explicit_values: Mapping[str, str],
+    env_file_overrides_os_environ: bool,
+    storage_selector_env_key: str,
+    selected_storage: str | None,
+) -> StorageSelectorInput | None:
+    """Return the winning selector and the layer that supplied it.
+
+    :param storage: Optional host-level ``--storage`` value.
+    :param original_env: Process environment before explicit dotenv loading.
+    :param explicit_values: Values read from explicit dotenv files.
+    :param env_file_overrides_os_environ: Whether explicit values beat the
+        process environment.
+    :param storage_selector_env_key: Environment selector key.
+    :param selected_storage: Default name stored in ``apprc.toml``.
+    :return: Winning selector input, or ``None`` when no layer selects one.
+    """
     if storage is not None:
-        return "--storage", storage
-    if env_file_overrides_os_environ:
-        raw_value = explicit_values.get(
-            storage_selector_env_key
-        ) or original_env.get(storage_selector_env_key)
-    else:
-        raw_value = original_env.get(
-            storage_selector_env_key
-        ) or explicit_values.get(storage_selector_env_key)
-    if raw_value:
-        return storage_selector_env_key, raw_value
+        return StorageSelectorInput("--storage", storage, "cli")
+
+    process_value = original_env.get(storage_selector_env_key)
+    explicit_value = explicit_values.get(storage_selector_env_key)
+    ordered_values: tuple[
+        tuple[str | None, StorageSelectorSourceKind],
+        tuple[str | None, StorageSelectorSourceKind],
+    ] = (
+        (
+            (explicit_value, "explicit_dotenv"),
+            (process_value, "process_environment"),
+        )
+        if env_file_overrides_os_environ
+        else (
+            (process_value, "process_environment"),
+            (explicit_value, "explicit_dotenv"),
+        )
+    )
+    for raw_value, source_kind in ordered_values:
+        if raw_value:
+            return StorageSelectorInput(
+                storage_selector_env_key,
+                raw_value,
+                source_kind,
+            )
     if selected_storage is not None:
-        return "apprc.toml selected_storage", selected_storage
+        return StorageSelectorInput(
+            "apprc.toml selected_storage",
+            selected_storage,
+            "registry",
+        )
     return None
 
 

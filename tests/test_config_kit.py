@@ -146,6 +146,44 @@ def test_doctor_distinguishes_invalid_selector_from_missing_selection(
         "No storage is selected" not in issue for issue in payload.issues
     )
     assert payload.next_steps[0].startswith("Fix or unset")
+    assert all(" config setup" not in step for step in payload.next_steps)
+
+
+def test_doctor_recommends_repoint_for_missing_registered_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A manually moved named storage is not reported as missing setup.
+
+    :param monkeypatch: Process environment mutation fixture.
+    :param tmp_path: Isolated AppRC and missing storage parent.
+    """
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    registry_path = kit.spec.preferred_apprc_toml_path()
+    write_storage_registry(
+        StorageRegistry(
+            path=registry_path,
+            storages={
+                "ontology": StorageRecord(
+                    name="ontology",
+                    root=tmp_path / "missing",
+                )
+            },
+            selected_storage="ontology",
+            archived_storages={},
+        )
+    )
+
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_READY.value
+    assert payload.next_steps[0].endswith(
+        "config storage repoint ontology /absolute/path/to/existing-storage"
+    )
+    assert all("setup" not in step.lower() for step in payload.next_steps)
 
 
 def test_doctor_recommends_selecting_an_existing_storage(

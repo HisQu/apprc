@@ -24,6 +24,9 @@ from apprc.user_files.storage_roots.paths import (
     normalize_storage_root_path,
 )
 from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
+from apprc.user_files.storage_roots.selector import (
+    storage_selector_is_path_like,
+)
 from apprc.interfaces._terminal_styles import (
     PATH_STYLE,
     style_literals,
@@ -82,7 +85,7 @@ def run_config_setup(
         )
         return
 
-    root = _select_storage_root(
+    root, storage_name = _select_storage_root(
         kit,
         apprc_dir=selected_apprc_dir,
         storage_root=storage_root,
@@ -91,6 +94,7 @@ def run_config_setup(
     try:
         result = ConfigSetupFlow(kit).run_storage_setup(
             root,
+            storage_name=storage_name,
             apprc_dir=selected_apprc_dir,
         )
     except ConfigSetupError as exc:
@@ -101,6 +105,7 @@ def run_config_setup(
     _print_storage_setup(
         kit,
         apprc_dir=result.apprc_dir,
+        storage_name=storage_name,
         storage_root=result.active_storage_root,
         storage_dotenv=result.storage_dotenv,
         app_path=result.user_dotenv,
@@ -141,14 +146,14 @@ def _select_storage_root(
     apprc_dir: Path,
     storage_root: str | Path | None,
     assume_yes: bool,
-) -> Path:
-    """Return the storage root selected for setup before creation.
+) -> tuple[Path, str]:
+    """Return the storage root and registry name selected for setup.
 
     :param kit: Application config facade.
     :param apprc_dir: AppRC directory selected earlier in this setup run.
     :param storage_root: Optional CLI-provided root.
     :param assume_yes: Whether setup may run without prompts.
-    :return: Normalized storage root.
+    :return: Normalized storage root and registry name.
     :raises typer.Exit: If the user cancels.
     :raises typer.BadParameter: If the path cannot be used as a directory.
     """
@@ -160,8 +165,22 @@ def _select_storage_root(
         registry = load_storage_registry_or_empty(registry_path)
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="--apprc-dir") from exc
-    if registry.selected_storage is not None:
-        suggested = registry.selected(registry.selected_storage).root
+    selected_record = (
+        registry.storages.get(registry.selected_storage)
+        if registry.selected_storage is not None
+        else None
+    )
+    if selected_record is not None:
+        suggested = selected_record.root
+        if storage_root is None and not selected_record.root.is_dir():
+            raise typer.BadParameter(
+                f"Registered storage {selected_record.name!r} points to a "
+                f"missing directory: {selected_record.root}. If the files "
+                "were moved manually, use `config storage repoint` with the "
+                "existing directory. Setup will not recreate a missing "
+                "registered root.",
+                param_hint="--storage-root",
+            )
     if selected is None:
         if assume_yes:
             selected = suggested
@@ -192,7 +211,27 @@ def _select_storage_root(
             f"Reuse non-empty storage root for {kit.spec.display_name}?"
         ):
             raise typer.Exit(code=1)
-    return root
+    matching_names = [
+        name
+        for name, record in registry.storages.items()
+        if record.root.expanduser().resolve() == root.expanduser().resolve()
+    ]
+    if len(matching_names) == 1:
+        storage_name = matching_names[0]
+    elif selected_record is not None:
+        storage_name = selected_record.name
+    elif registry.storages:
+        storage_name = next(iter(registry.storages))
+    else:
+        selector_key = kit.spec.require_storage_selector_env_key()
+        requested_name = os.environ.get(selector_key, "").strip()
+        storage_name = (
+            requested_name
+            if requested_name
+            and not storage_selector_is_path_like(requested_name)
+            else "default"
+        )
+    return root, storage_name
 
 
 def _print_app_setup(
@@ -235,12 +274,22 @@ def _print_storage_setup(
     kit: AppConfigKit,
     *,
     apprc_dir: Path,
+    storage_name: str,
     storage_root: Path | None,
     storage_dotenv: Path | None,
     app_path: Path | None,
     config_group_name: str,
 ) -> None:
-    """Print setup completion for storage-capable integrations."""
+    """Print setup completion for storage-capable integrations.
+
+    :param kit: Application config facade.
+    :param apprc_dir: Directory containing central AppRC files.
+    :param storage_name: Registered storage initialized by setup.
+    :param storage_root: Initialized storage directory.
+    :param storage_dotenv: Storage-local dotenv created by setup.
+    :param app_path: Per-user dotenv created by setup, when declared.
+    :param config_group_name: Generated config command group name.
+    """
     if storage_root is None or storage_dotenv is None:
         raise typer.BadParameter("Storage setup did not create a dotenv file.")
     lines = [
@@ -252,7 +301,7 @@ def _print_storage_setup(
     ]
     if app_path is not None:
         lines.append(f"user_dotenv: {app_path}")
-    lines.extend(("", "selected_storage: default"))
+    lines.extend(("", f"selected_storage: {storage_name}"))
     lines.extend(shell_export_commands(kit, apprc_dir))
     lines.extend(
         (

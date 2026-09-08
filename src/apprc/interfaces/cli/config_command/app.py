@@ -218,10 +218,60 @@ def build_config_typer_app_from_options(
                 storage_root=None,
             )
 
-    if kit.spec.uses_managed_files():
+    if kit.spec.uses_storage():
 
         @app.command("migrate")
-        def config_migrate_cmd(
+        def config_storage_migrate_cmd(
+            ctx: typer.Context,
+            dry_run: Annotated[
+                bool,
+                typer.Option(
+                    "--dry-run",
+                    help="Show legacy file moves without changing files.",
+                ),
+            ] = False,
+            assume_yes: Annotated[
+                bool,
+                typer.Option(
+                    "--yes",
+                    "-y",
+                    help="Apply all conflict-free moves without prompting.",
+                ),
+            ] = False,
+            storage_root: Annotated[
+                Path | None,
+                typer.Option(
+                    "--storage-root",
+                    help=(
+                        "Existing directory for an unregistered bare storage "
+                        "selector. Shell path completion is enabled."
+                    ),
+                ),
+            ] = None,
+            replace_storage: Annotated[
+                str | None,
+                typer.Option(
+                    "--replace-storage",
+                    help=(
+                        "Existing storage entry to rename and repoint to the "
+                        "unregistered selector."
+                    ),
+                ),
+            ] = None,
+        ) -> None:
+            """Move supported legacy files to their current filenames."""
+            handlers.migrate(
+                ctx,
+                dry_run=dry_run,
+                assume_yes=assume_yes,
+                storage_root=storage_root,
+                replace_storage=replace_storage,
+            )
+
+    elif kit.spec.uses_managed_files():
+
+        @app.command("migrate")
+        def config_user_migrate_cmd(
             ctx: typer.Context,
             dry_run: Annotated[
                 bool,

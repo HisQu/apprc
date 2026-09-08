@@ -32,26 +32,27 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.22.1 - 2026-09-04](#0221---2026-09-04)
-4. [0.22.0 - 2026-09-04](#0220---2026-09-04)
-5. [0.21.0 - 2026-09-04](#0210---2026-09-04)
-6. [0.20.0 - 2026-09-04](#0200---2026-09-04)
-7. [0.19.9 - 2026-09-02](#0199---2026-09-02)
-8. [0.19.8 - 2026-09-01](#0198---2026-09-01)
-9. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-10. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-11. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-12. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-13. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-14. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-15. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-16. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-17. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-18. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-19. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-20. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-21. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-22. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.23.0 - 2026-09-08](#0230---2026-09-08)
+4. [0.22.1 - 2026-09-04](#0221---2026-09-04)
+5. [0.22.0 - 2026-09-04](#0220---2026-09-04)
+6. [0.21.0 - 2026-09-04](#0210---2026-09-04)
+7. [0.20.0 - 2026-09-04](#0200---2026-09-04)
+8. [0.19.9 - 2026-09-02](#0199---2026-09-02)
+9. [0.19.8 - 2026-09-01](#0198---2026-09-01)
+10. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+11. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+12. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+13. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+14. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+15. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+16. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+17. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+18. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+19. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+20. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+21. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+22. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+23. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -62,6 +63,44 @@ All notable changes to `AppRC` will be documented in this file.
 <!-- ======================================================== -->
 
 # [Unreleased]
+
+<br>
+
+### 💥 Breaking changes
+
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.23.0 - 2026-09-08
 
 <br>
 
@@ -100,6 +139,11 @@ All notable changes to `AppRC` will be documented in this file.
 
   - Added `just publish-pypi vX.Y.Z` to publish the validated wheel and source
     archive attached to an existing non-draft GitHub Release without rebuilding.
+  - Added `config migrate --storage-root PATH` and
+    `--replace-storage OLD_NAME` for mapping an unregistered bare environment
+    selector to existing data without guessing whether to add or replace a
+    registry entry. Interactive migration provides path completion and the
+    same explicit choice.
   - Added `rc.UserDotenv()` as the explicit declaration for a managed
     `apprc.user.env`, independent of `rc.Storage()`.
   - Added `--user-dotenv` to `apprc scaffold config` and coverage for all four
@@ -124,27 +168,29 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
 ### 🔨 Fixed
 
   - Fixed `config set` and editor writes creating a missing user dotenv
     implicitly. Declared user dotenv writes now require setup first.
   - Fixed storage-only setup and migration creating an unrelated
     `apprc.user.env`.
+  - Fixed `config edit` describing an invalid storage override as incomplete
+    setup. The editor now reports the winning selector source and hidden TOML
+    selection, keeps valid registry entries usable, and reserves Setup for
+    files that AppRC can initialize.
+  - Fixed manually moved registered storage directories being sent through
+    Setup or Move. The editor now calls the registry-only action Reconnect,
+    while CLI and doctor output point to `config storage repoint` and do not
+    recreate a missing registered root.
+  - Fixed setup assuming the storage name `default` when repairing an existing
+    named storage. An empty registry may also adopt a bare environment selector
+    as its initial storage name.
+  - Fixed migration leaving a resolved storage without
+    `apprc.storage.env`; migration now creates the empty marker when needed so
+    the selected directory is immediately bootstrappable.
   - Fixed stale `apprc.user.env` and `apprc.toml` files implying capabilities
     that the application did not declare; doctor warns while purge remains
     available for cleanup.
-
-<br>
-
-### 🔒 Security
 
 <br>
 

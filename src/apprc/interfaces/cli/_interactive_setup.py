@@ -11,7 +11,11 @@ import typer
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import PathCompleter, WordCompleter
 
+# == Internal ===================================================
+from apprc.user_files.storage_roots.registry import StorageRegistry
+
 type SetupDirectoryChoice = Literal["default", "custom", "cancel"]
+type MigrationStorageChoice = tuple[Literal["add", "replace"], str | None]
 
 
 def prompt_apprc_setup_dir(*, suggested: Path) -> Path | None:
@@ -88,6 +92,105 @@ def prompt_storage_registration_name(*, suggested: str) -> str | None:
         return prompt("Storage name: ", default=suggested).strip() or suggested
     except (EOFError, KeyboardInterrupt):
         return None
+
+
+def prompt_storage_migration_root(*, selector_name: str) -> Path | None:
+    """Ask for the existing directory behind an unregistered selector.
+
+    :param selector_name: Bare storage name that migration must register.
+    :return: Entered path, or ``None`` when canceled or left blank.
+    """
+    typer.echo(
+        f"Storage selector {selector_name!r} needs an existing directory."
+    )
+    try:
+        raw_path = prompt(
+            f"Directory for {selector_name}: ",
+            completer=PathCompleter(
+                only_directories=True,
+                expanduser=True,
+            ),
+        ).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+    return Path(raw_path).expanduser() if raw_path else None
+
+
+def prompt_storage_migration_choice(
+    *,
+    selector_name: str,
+    storage_root: Path,
+    registry: StorageRegistry,
+) -> MigrationStorageChoice | None:
+    """Choose whether migration adds or replaces a registry entry.
+
+    A root already registered under another name cannot gain a second alias.
+    In that case the only useful migration is an explicitly confirmed rename.
+
+    :param selector_name: Unregistered selector that must become runnable.
+    :param storage_root: Existing directory supplied for that selector.
+    :param registry: Current named-storage registry.
+    :return: Add or replace choice, or ``None`` when canceled.
+    """
+    resolved_root = storage_root.expanduser().resolve()
+    matching_names = [
+        name
+        for name, record in registry.storages.items()
+        if record.root.expanduser().resolve() == resolved_root
+    ]
+    if matching_names:
+        existing_name = matching_names[0]
+        if typer.confirm(
+            f"{storage_root} is registered as {existing_name!r}. Rename that "
+            f"entry to {selector_name!r}?"
+        ):
+            return "replace", existing_name
+        return None
+    if not registry.storages:
+        return "add", None
+
+    typer.echo(f"Register {selector_name!r} at {storage_root}.")
+    typer.echo("Choose [n]ew, [r]eplace an existing entry, or [c]ancel.")
+    try:
+        raw_choice = (
+            prompt(
+                "Storage mapping [c]: ",
+                completer=WordCompleter(
+                    ["new", "replace", "cancel"],
+                    ignore_case=True,
+                ),
+            )
+            .strip()
+            .lower()
+        )
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if raw_choice in {"n", "new"}:
+        return "add", None
+    if raw_choice not in {"r", "replace"}:
+        return None
+
+    names = sorted(registry.storages)
+    for name in names:
+        record = registry.storages[name]
+        status = "exists" if record.root.is_dir() else "missing"
+        typer.echo(f"  {name}: {record.root} ({status})")
+    try:
+        replace_name = prompt(
+            "Replace storage: ",
+            completer=WordCompleter(names),
+        ).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if replace_name not in registry.storages:
+        typer.echo(f"Unknown storage {replace_name!r}.", err=True)
+        return None
+    if not typer.confirm(
+        f"Rename and repoint {replace_name!r} to {selector_name!r} at "
+        f"{storage_root}? No application data will be moved or deleted."
+    ):
+        return None
+    return "replace", replace_name
 
 
 def _parse_setup_directory_choice(value: str) -> SetupDirectoryChoice:

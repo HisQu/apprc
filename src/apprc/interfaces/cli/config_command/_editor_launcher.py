@@ -24,6 +24,7 @@ from apprc.interfaces.cli.config_command.state import (
 )
 from apprc.user_files.storage_roots.registry import StorageRegistry
 from apprc.user_files.storage_roots.selector import StorageSelectorError
+from apprc.user_files.storage_roots.selector import StorageSelectorIssue
 from apprc.user_files.app_home.locations import AppRCDirectoryError
 
 if TYPE_CHECKING:
@@ -60,7 +61,7 @@ class ConfigEditorLauncher:
         storage_registry: StorageRegistry | None,
         storage_registry_error: str | None = None,
         active_storage_root: Path | None,
-        storage_startup_error: str | None = None,
+        storage_selector_issue: StorageSelectorIssue | None = None,
         selector_context: ConfigSelectorContext | None = None,
     ) -> None:
         """Create and run the Textual config editor.
@@ -69,7 +70,8 @@ class ConfigEditorLauncher:
         :param storage_registry: Named-storage records to display, if enabled.
         :param storage_registry_error: Read failure that blocks registry writes.
         :param active_storage_root: Directly selected storage path, if any.
-        :param storage_startup_error: Persistent selector/readiness message.
+        :param storage_selector_issue: Selector failure shown without treating
+            managed files as incomplete.
         :param selector_context: Host CLI selector inputs.
         """
         selected_storage = None
@@ -85,34 +87,34 @@ class ConfigEditorLauncher:
                 StorageSelectorError,
                 ValueError,
             ) as exc:
-                storage_startup_error = _merge_startup_errors(
-                    storage_startup_error,
-                    str(exc),
+                storage_selector_issue = _merge_selector_issue(
+                    storage_selector_issue,
+                    message=str(exc),
+                    configured_storage=(
+                        storage_registry.selected_storage
+                        if storage_registry is not None
+                        else None
+                    ),
                 )
-        if self.editor_app_cls is not None:
-            editor_app = self.editor_app_cls(
-                kit=self.kit,
-                storage_registry=storage_registry,
-                initial_storage=selected_storage,
-                active_storage_root=active_storage_root,
-            )
-        else:
+        editor_app_cls = self.editor_app_cls
+        if editor_app_cls is None:
             try:
                 from apprc.interfaces.tui import ConfigEditorApp
             except ModuleNotFoundError as exc:
                 if _module_not_found_is_textual(exc):
                     raise typer.BadParameter(MISSING_TUI_EXTRA_MESSAGE) from exc
                 raise
+            editor_app_cls = ConfigEditorApp
 
-            editor_app = ConfigEditorApp(
-                kit=self.kit,
-                storage_registry=storage_registry,
-                storage_registry_error=storage_registry_error,
-                initial_storage=selected_storage,
-                active_storage_root=active_storage_root,
-                storage_startup_error=storage_startup_error,
-                config_group_name=self.config_group_name,
-            )
+        editor_app = editor_app_cls(
+            kit=self.kit,
+            storage_registry=storage_registry,
+            storage_registry_error=storage_registry_error,
+            initial_storage=selected_storage,
+            active_storage_root=active_storage_root,
+            storage_selector_issue=storage_selector_issue,
+            config_group_name=self.config_group_name,
+        )
         editor_app.run()
 
     def initial_storage(
@@ -149,11 +151,28 @@ def _module_not_found_is_textual(exc: ModuleNotFoundError) -> bool:
     )
 
 
-def _merge_startup_errors(*messages: str | None) -> str | None:
-    """Join distinct editor startup messages.
+def _merge_selector_issue(
+    issue: StorageSelectorIssue | None,
+    *,
+    message: str,
+    configured_storage: str | None,
+) -> StorageSelectorIssue:
+    """Add one distinct failure message without losing selector provenance.
 
-    :param messages: Optional failure details.
-    :return: Newline-separated distinct messages, or ``None``.
+    :param issue: Earlier selector issue, when active-root resolution failed.
+    :param message: Later initial-selection failure.
+    :param configured_storage: Registry fallback hidden by an override.
+    :return: Complete selector issue for the editor.
     """
-    distinct = tuple(dict.fromkeys(message for message in messages if message))
-    return "\n".join(distinct) if distinct else None
+    messages = [issue.message] if issue is not None else []
+    if message not in messages:
+        messages.append(message)
+    return StorageSelectorIssue(
+        selector=issue.selector if issue is not None else None,
+        message="\n".join(messages),
+        configured_storage=(
+            issue.configured_storage
+            if issue is not None
+            else configured_storage
+        ),
+    )

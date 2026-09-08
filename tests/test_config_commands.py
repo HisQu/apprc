@@ -18,6 +18,7 @@ from tests.support_config import (
     StorageFreeExampleConfigState,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
+    register_storage_for_kit,
 )
 
 
@@ -272,6 +273,82 @@ def test_generated_commands_follow_declared_capabilities() -> None:
     assert {group.name for group in storage_only.registered_groups} == {
         "storage"
     }
+
+
+def test_migrate_storage_mapping_options_follow_storage_capability() -> None:
+    """Only storage declarations expose selector migration options."""
+    storage_app = build_apprc_example_app_kit().typer_app()
+    user_dotenv_app = build_storage_free_example_kit().typer_app()
+    runner = CliRunner()
+
+    storage_help = runner.invoke(storage_app, ["migrate", "--help"])
+    user_help = runner.invoke(user_dotenv_app, ["migrate", "--help"])
+
+    assert storage_help.exit_code == 0, storage_help.output
+    assert "--storage-root" in storage_help.output
+    assert "--replace-storage" in storage_help.output
+    assert user_help.exit_code == 0, user_help.output
+    assert "--storage-root" not in user_help.output
+    assert "--replace-storage" not in user_help.output
+
+
+def test_migrate_unknown_selector_requires_explicit_root_noninteractively(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A bare unknown selector produces one copyable recovery command."""
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    register_storage_for_kit(kit, name="opa", root=tmp_path / "opa")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "ontology")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "legacy-config"))
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    result = CliRunner().invoke(app, ["migrate", "--dry-run"])
+
+    assert result.exit_code != 0
+    assert "unregistered storage 'ontology'" in result.output
+    output = " ".join(result.output.split())
+    assert (
+        "apprc_example_app config migrate --storage-root "
+        "/absolute/path/to/ontology --yes"
+    ) in output
+    assert "--replace-storage OLD_NAME" in output
+
+
+def test_migrate_unknown_selector_registers_explicit_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The non-interactive option maps a name without replacing entries."""
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    register_storage_for_kit(kit, name="opa", root=tmp_path / "opa")
+    ontology_root = tmp_path / "ontology"
+    ontology_root.mkdir()
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "ontology")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "legacy-config"))
+    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "migrate",
+            "--storage-root",
+            str(ontology_root),
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"register: ontology -> {ontology_root.resolve()}" in result.output
+    registry = load_storage_registry_or_empty(
+        kit.spec.preferred_apprc_toml_path()
+    )
+    assert set(registry.storages) == {"opa", "ontology"}
+    assert registry.selected_storage == "ontology"
+    assert registry.selected("ontology").root == ontology_root.resolve()
+    assert kit.spec.storage_dotenv_path(ontology_root).is_file()
 
 
 def test_config_set_confirms_duplicate_cleanup_before_writing(

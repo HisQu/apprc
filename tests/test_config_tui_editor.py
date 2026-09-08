@@ -8,7 +8,16 @@ from typer.testing import CliRunner
 
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.interfaces.tui._primitives import ConfirmScreen
-from apprc.user_files.storage_roots.registry import register_storage
+from apprc.user_files.storage_roots.registry import (
+    StorageRecord,
+    StorageRegistry,
+    register_storage,
+    write_storage_registry,
+)
+from apprc.user_files.storage_roots.selector import (
+    StorageSelectorInput,
+    StorageSelectorIssue,
+)
 from tests.support_config import (
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
@@ -212,21 +221,110 @@ async def test_editor_disables_storage_fields_until_marker_exists(
 
 
 @pytest.mark.asyncio
-async def test_editor_keeps_startup_failure_visible() -> None:
-    """The recovery message remains visible beside the Setup button."""
+async def test_editor_keeps_selector_failure_separate_from_setup() -> None:
+    """A selector error does not claim that managed files need setup."""
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
     editor = ConfigEditorApp(
-        kit=build_apprc_example_app_kit(),
+        kit=kit,
         storage_registry=None,
         storage_registry_error="apprc.toml is malformed",
-        storage_startup_error="Unknown storage 'broken'",
+        storage_selector_issue=StorageSelectorIssue(
+            selector=StorageSelectorInput(
+                source="APPRC_EXAMPLE_APP_STORAGE",
+                raw_value="broken",
+                source_kind="process_environment",
+            ),
+            message="Unknown storage 'broken'",
+        ),
     )
 
     async with editor.run_test() as pilot:
         await pilot.pause()
 
-        status = editor.query_one("#setup-status", Static)
+        status = editor.query_one("#selector-status", Static)
         assert "Unknown storage 'broken'" in str(status.content)
-        assert editor.query_one("#config-setup", Button).disabled is False
+        assert "process environment" in str(status.content)
+        assert list(editor.query("#config-setup")) == []
+
+
+@pytest.mark.asyncio
+async def test_editor_keeps_registered_storages_usable_with_bad_override(
+    tmp_path: Path,
+) -> None:
+    """An invalid shell selector must not hide valid registry entries.
+
+    :param tmp_path: Isolated storage parent.
+    """
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    registry = register_storage(
+        name="opa",
+        root=tmp_path / "opa",
+        path=kit.spec.preferred_apprc_toml_path(),
+    )
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=registry,
+        initial_storage="opa",
+        storage_selector_issue=StorageSelectorIssue(
+            selector=StorageSelectorInput(
+                source="APPRC_EXAMPLE_APP_STORAGE",
+                raw_value="ontology",
+                source_kind="process_environment",
+            ),
+            message="Unknown storage 'ontology'. Known storages: opa.",
+            configured_storage="opa",
+        ),
+    )
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+
+        status = str(editor.query_one("#selector-status", Static).content)
+        assert "overrides selected_storage='opa'" in status
+        assert "Registered storages: opa" in status
+        assert len(editor.query_one("#storage-list").children) == 1
+        assert editor.query_one("#field-table", DataTable).disabled is False
+        assert list(editor.query("#config-setup")) == []
+        assert str(editor.query_one("#storage-location", Button).label) == (
+            "Reconnect"
+        )
+
+
+@pytest.mark.asyncio
+async def test_editor_offers_reconnect_for_missing_registered_root(
+    tmp_path: Path,
+) -> None:
+    """A missing registered directory is not a setup operation.
+
+    :param tmp_path: Isolated storage parent.
+    """
+    kit = build_apprc_example_app_kit()
+    kit.spec.ensure_user_dotenv()
+    root = tmp_path / "manually-moved"
+    registry = StorageRegistry(
+        path=kit.spec.preferred_apprc_toml_path(),
+        storages={"opa": StorageRecord(name="opa", root=root)},
+        selected_storage="opa",
+        archived_storages={},
+    )
+    write_storage_registry(registry)
+    editor = ConfigEditorApp(
+        kit=kit,
+        storage_registry=registry,
+        initial_storage="opa",
+    )
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+
+        assert list(editor.query("#config-setup")) == []
+        reconnect = editor.query_one("#storage-location", Button)
+        assert str(reconnect.label) == "Reconnect"
+        assert reconnect.disabled is False
+        scope = str(editor.query_one("#scope-title", Static).content)
+        assert "Missing storage root" in scope
 
 
 def test_config_edit_opens_when_storage_selector_is_invalid(
@@ -247,7 +345,13 @@ def test_config_edit_opens_when_storage_selector_is_invalid(
         kit.spec.require_storage_selector_env_key(),
         "unknown",
     )
-    launched: list[bool] = []
+    kit.spec.ensure_user_dotenv()
+    register_storage(
+        name="opa",
+        root=tmp_path / "opa",
+        path=kit.spec.preferred_apprc_toml_path(),
+    )
+    launched: list[tuple[StorageSelectorIssue | None, tuple[str, ...]]] = []
 
     class HeadlessEditor(ConfigEditorApp):
         """Record editor launch without starting a terminal application."""
@@ -259,11 +363,24 @@ def test_config_edit_opens_when_storage_selector_is_invalid(
             :param kwargs: Ignored Textual keyword arguments.
             :return: None.
             """
-            launched.append(True)
+            registry = self.storage_registry
+            launched.append(
+                (
+                    self.storage_selector_issue,
+                    tuple(registry.storages) if registry is not None else (),
+                )
+            )
 
     app = kit.typer_app(editor_app_cls=HeadlessEditor)
 
     result = CliRunner().invoke(app, ["edit"])
 
     assert result.exit_code == 0, result.output
-    assert launched == [True]
+    assert len(launched) == 1
+    issue, storage_names = launched[0]
+    assert issue is not None
+    assert issue.selector is not None
+    assert issue.selector.raw_value == "unknown"
+    assert issue.selector.source_kind == "process_environment"
+    assert issue.configured_storage == "opa"
+    assert storage_names == ("opa",)

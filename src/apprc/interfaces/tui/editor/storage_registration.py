@@ -79,8 +79,8 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
             existing = registry.selected(name)
             self.editor.notify(
                 f"Storage {name!r} is already registered at "
-                f"{existing.root}. Choose another name, or use Location "
-                "to repoint it.",
+                f"{existing.root}. Choose another name, or use Reconnect "
+                "to update its registered directory.",
                 severity="error",
                 markup=False,
             )

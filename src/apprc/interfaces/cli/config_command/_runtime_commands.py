@@ -23,6 +23,10 @@ from apprc.interfaces.cli.doctor_output import (
     print_config_paths,
 )
 from apprc.interfaces.cli._typer_utils import dump_json
+from apprc.interfaces.cli._interactive_setup import (
+    prompt_storage_migration_choice,
+    prompt_storage_migration_root,
+)
 from apprc.runtime.diagnostics.payload import build_config_doctor_payload
 from apprc.runtime.diagnostics.status import ConfigDoctorStatus
 from apprc.user_files.app_home.locations import AppRCDirectoryError
@@ -38,6 +42,8 @@ from apprc.user_files.migration import (
     ConfigMigrationPlan,
     ConfigMigrationResult,
     ConfigMigrationError,
+    StorageMigrationResolution,
+    UnresolvedStorageMigrationError,
     apply_config_migration,
     build_config_migration_plan,
 )
@@ -131,9 +137,16 @@ class RuntimeConfigCommands(ConfigCommandBase):
         *,
         dry_run: bool,
         assume_yes: bool,
+        storage_root: Path | None = None,
+        replace_storage: str | None = None,
     ) -> None:
         """Move legacy AppRC-managed files to current filenames."""
-        plan = self._migration_plan(ctx)
+        plan = self._migration_plan(
+            ctx,
+            assume_yes=assume_yes,
+            storage_root=storage_root,
+            replace_storage=replace_storage,
+        )
         self._reject_migration_conflicts(plan)
         if not plan.moves and not plan.writes:
             typer.echo("No released AppRC 0.19 files need migration.")
@@ -143,7 +156,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
         self._print_migration_moves(plan, dry_run=dry_run)
         if dry_run:
             return
-        if not assume_yes and not typer.confirm("Move these files?"):
+        if not assume_yes and not typer.confirm("Apply this migration plan?"):
             typer.echo("No files were changed.")
             raise typer.Exit(code=1)
         result = self._apply_migration_plan(plan)
@@ -208,20 +221,128 @@ class RuntimeConfigCommands(ConfigCommandBase):
                 err=True,
             )
 
-    def _migration_plan(self, ctx: typer.Context) -> ConfigMigrationPlan:
+    def _migration_plan(
+        self,
+        ctx: typer.Context,
+        *,
+        assume_yes: bool,
+        storage_root: Path | None,
+        replace_storage: str | None,
+    ) -> ConfigMigrationPlan:
         """Build a migration plan from every CLI-visible storage root.
 
         :param ctx: Active Typer context.
+        :param assume_yes: Whether migration must avoid interactive choices.
+        :param storage_root: Explicit directory for an unresolved selector.
+        :param replace_storage: Existing entry to rename and repoint.
         :return: Conflict and move inventory.
         """
+        if replace_storage is not None and storage_root is None:
+            raise typer.BadParameter(
+                "--replace-storage requires --storage-root.",
+                param_hint="--replace-storage",
+            )
         selector_context = self.cli_selector_context(ctx)
         try:
-            return build_config_migration_plan(
+            plan = build_config_migration_plan(
                 self.kit.spec,
                 storage_roots=self._migration_storage_roots(selector_context),
             )
+        except UnresolvedStorageMigrationError as exc:
+            resolution = self._migration_storage_resolution(
+                exc,
+                assume_yes=assume_yes,
+                storage_root=storage_root,
+                replace_storage=replace_storage,
+            )
+            try:
+                return build_config_migration_plan(
+                    self.kit.spec,
+                    storage_roots=self._migration_storage_roots(
+                        selector_context
+                    ),
+                    storage_resolution=resolution,
+                )
+            except ConfigMigrationError as resolved_exc:
+                raise typer.BadParameter(
+                    str(resolved_exc),
+                    param_hint="migrate",
+                ) from resolved_exc
         except ConfigMigrationError as exc:
             raise typer.BadParameter(str(exc), param_hint="migrate") from exc
+        if storage_root is not None or replace_storage is not None:
+            raise typer.BadParameter(
+                "--storage-root and --replace-storage are used only when a "
+                "bare storage selector is not registered.",
+                param_hint="migrate",
+            )
+        return plan
+
+    def _migration_storage_resolution(
+        self,
+        error: UnresolvedStorageMigrationError,
+        *,
+        assume_yes: bool,
+        storage_root: Path | None,
+        replace_storage: str | None,
+    ) -> StorageMigrationResolution:
+        """Resolve an unknown migration selector without guessing intent.
+
+        :param error: Typed preflight failure with selector and registry.
+        :param assume_yes: Whether migration must avoid interactive choices.
+        :param storage_root: Optional non-interactive directory mapping.
+        :param replace_storage: Optional existing entry to replace.
+        :return: Explicit mapping used for the second migration preflight.
+        """
+        selected_root = storage_root
+        interactive = sys.stdin.isatty() and sys.stdout.isatty()
+        if selected_root is None:
+            if not interactive:
+                command = self.config_command_text(
+                    "migrate --storage-root "
+                    f"/absolute/path/to/{error.selector_name} --yes"
+                )
+                replacement = ""
+                if error.registry.storages:
+                    replacement = (
+                        " If this directory replaces a registered storage, "
+                        "add `--replace-storage OLD_NAME`."
+                    )
+                typer.echo(f"Recovery command: {command}", err=True)
+                raise typer.BadParameter(
+                    f"{error}{replacement}",
+                    param_hint="--storage-root",
+                )
+            selected_root = prompt_storage_migration_root(
+                selector_name=error.selector_name
+            )
+            if selected_root is None:
+                typer.echo("No files were changed.", err=True)
+                raise typer.Exit(code=1)
+
+        resolved_root = selected_root.expanduser().resolve()
+        if not resolved_root.is_dir():
+            raise typer.BadParameter(
+                "Migration storage root does not exist or is not a directory: "
+                f"{resolved_root}",
+                param_hint="--storage-root",
+            )
+
+        selected_replacement = replace_storage
+        if selected_replacement is None and interactive and not assume_yes:
+            choice = prompt_storage_migration_choice(
+                selector_name=error.selector_name,
+                storage_root=resolved_root,
+                registry=error.registry,
+            )
+            if choice is None:
+                typer.echo("No files were changed.", err=True)
+                raise typer.Exit(code=1)
+            _, selected_replacement = choice
+        return StorageMigrationResolution(
+            root=resolved_root,
+            replace_storage=selected_replacement,
+        )
 
     def _migration_storage_roots(
         self,
@@ -273,6 +394,19 @@ class RuntimeConfigCommands(ConfigCommandBase):
         :param plan: Conflict-free migration inventory.
         :param dry_run: Whether the command stops after presentation.
         """
+        mapping = plan.storage_mapping
+        if mapping is not None:
+            action = "replace" if mapping.replaced_storage else "register"
+            label = f"would_{action}" if dry_run else action
+            if mapping.replaced_storage is None:
+                typer.echo(
+                    f"{label}: {mapping.selector_name} -> {mapping.root}"
+                )
+            else:
+                typer.echo(
+                    f"{label}: {mapping.replaced_storage} -> "
+                    f"{mapping.selector_name} at {mapping.root}"
+                )
         for move in plan.moves:
             typer.echo(
                 f"{'would_move' if dry_run else 'move'}: "

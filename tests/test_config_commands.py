@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from rich.text import Text
 from typer.testing import CliRunner
 
 import apprc.interfaces.cli.config_command._runtime_commands as runtime_commands
@@ -293,11 +294,13 @@ def test_migrate_storage_mapping_options_follow_storage_capability() -> None:
     )
 
     assert storage_help.exit_code == 0, storage_help.output
-    assert "--storage-root" in storage_help.output
-    assert "--replace-storage" in storage_help.output
+    storage_output = Text.from_ansi(storage_help.output).plain
+    user_output = Text.from_ansi(user_help.output).plain
+    assert "--storage-root" in storage_output
+    assert "--replace-storage" in storage_output
     assert user_help.exit_code == 0, user_help.output
-    assert "--storage-root" not in user_help.output
-    assert "--replace-storage" not in user_help.output
+    assert "--storage-root" not in user_output
+    assert "--replace-storage" not in user_output
 
 
 def test_migrate_unknown_selector_requires_explicit_root_noninteractively(
@@ -320,7 +323,7 @@ def test_migrate_unknown_selector_requires_explicit_root_noninteractively(
 
     assert result.exit_code != 0
     assert "unregistered storage 'ontology'" in result.output
-    output = " ".join(result.output.split())
+    output = " ".join(Text.from_ansi(result.output).plain.split())
     assert (
         "apprc_example_app config migrate --storage-root "
         "/absolute/path/to/ontology --yes"

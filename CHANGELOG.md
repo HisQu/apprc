@@ -32,7 +32,7 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.23.3 - 2026-09-08](#0233---2026-09-08)
+3. [0.23.4 - 2026-09-08](#0234---2026-09-08)
 4. [0.22.1 - 2026-09-04](#0221---2026-09-04)
 5. [0.22.0 - 2026-09-04](#0220---2026-09-04)
 6. [0.21.0 - 2026-09-04](#0210---2026-09-04)
@@ -100,7 +100,7 @@ All notable changes to `AppRC` will be documented in this file.
 
 <!-- ======================================================== -->
 
-# 0.23.3 - 2026-09-08
+# 0.23.4 - 2026-09-08
 
 <br>
 

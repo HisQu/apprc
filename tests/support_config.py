@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pytest import MonkeyPatch
-from typer.testing import Result
+from typer.testing import CliRunner, Result
 
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.definition.app_config.storage import Storage
@@ -29,6 +29,16 @@ from apprc.user_files.storage_roots.registry import (
     record_archived_storage,
     register_storage,
 )
+
+
+def build_plain_cli_runner() -> CliRunner:
+    """Return a CLI runner with stable plain-text output.
+
+    :return: Runner with color disabled and a wide fixed terminal.
+    """
+    return CliRunner(
+        env={"COLUMNS": "500", "FORCE_COLOR": None, "NO_COLOR": "1"}
+    )
 
 
 @env_owner(

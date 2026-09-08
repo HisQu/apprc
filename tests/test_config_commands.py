@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from rich.text import Text
 from typer.testing import CliRunner
 
 import apprc.interfaces.cli.config_command._runtime_commands as runtime_commands
@@ -17,6 +16,7 @@ from tests.support_config import (
     ApprcExampleAppConfigState,
     ApprcExampleAppEnv,
     StorageFreeExampleConfigState,
+    build_plain_cli_runner,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
     register_storage_for_kit,
@@ -63,13 +63,12 @@ def test_config_doctor_explains_missing_storage_selection(monkeypatch) -> None:
     kit.spec.preferred_apprc_toml_path().write_text("", encoding="utf-8")
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
 
-    result = CliRunner().invoke(app, ["doctor"])
-    output = Text.from_ansi(result.output).plain
+    result = build_plain_cli_runner().invoke(app, ["doctor"])
 
     assert result.exit_code == 1
-    assert "storage not selected" in output
-    assert "--storage NAME_OR_PATH" in output
-    assert "APPRC_EXAMPLE_APP_STORAGE=NAME_OR_PATH" in output
+    assert "storage not selected" in result.output
+    assert "--storage NAME_OR_PATH" in result.output
+    assert "APPRC_EXAMPLE_APP_STORAGE=NAME_OR_PATH" in result.output
 
 
 def test_storage_free_app_hides_storage_commands() -> None:
@@ -281,27 +280,17 @@ def test_migrate_storage_mapping_options_follow_storage_capability() -> None:
     """Only storage declarations expose selector migration options."""
     storage_app = build_apprc_example_app_kit().typer_app()
     user_dotenv_app = build_storage_free_example_kit().typer_app()
-    runner = CliRunner()
+    runner = build_plain_cli_runner()
 
-    storage_help = runner.invoke(
-        storage_app,
-        ["migrate", "--help"],
-        terminal_width=500,
-    )
-    user_help = runner.invoke(
-        user_dotenv_app,
-        ["migrate", "--help"],
-        terminal_width=500,
-    )
+    storage_help = runner.invoke(storage_app, ["migrate", "--help"])
+    user_help = runner.invoke(user_dotenv_app, ["migrate", "--help"])
 
     assert storage_help.exit_code == 0, storage_help.output
-    storage_output = Text.from_ansi(storage_help.output).plain
-    user_output = Text.from_ansi(user_help.output).plain
-    assert "--storage-root" in storage_output
-    assert "--replace-storage" in storage_output
+    assert "--storage-root" in storage_help.output
+    assert "--replace-storage" in storage_help.output
     assert user_help.exit_code == 0, user_help.output
-    assert "--storage-root" not in user_output
-    assert "--replace-storage" not in user_output
+    assert "--storage-root" not in user_help.output
+    assert "--replace-storage" not in user_help.output
 
 
 def test_migrate_unknown_selector_requires_explicit_root_noninteractively(
@@ -316,15 +305,11 @@ def test_migrate_unknown_selector_requires_explicit_root_noninteractively(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "legacy-config"))
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
 
-    result = CliRunner().invoke(
-        app,
-        ["migrate", "--dry-run"],
-        terminal_width=500,
-    )
+    result = build_plain_cli_runner().invoke(app, ["migrate", "--dry-run"])
 
     assert result.exit_code != 0
     assert "unregistered storage 'ontology'" in result.output
-    output = " ".join(Text.from_ansi(result.output).plain.split())
+    output = " ".join(result.output.split())
     assert (
         "apprc_example_app config migrate --storage-root "
         "/absolute/path/to/ontology --yes"

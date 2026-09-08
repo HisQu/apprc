@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rich.text import Text
 from typer.testing import CliRunner
 
 from apprc.definition.app_config.kit import AppConfigKit
@@ -15,6 +14,7 @@ from tests.support_config import (
     StorageFreeExampleConfigState,
     assert_apprc_dir_cli_error,
     block_apprc_dir_with_file,
+    build_plain_cli_runner,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
 )
@@ -166,7 +166,7 @@ def test_repeated_setup_never_implicitly_repoints_default_storage(
 ) -> None:
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
+    runner = build_plain_cli_runner()
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     first = runner.invoke(
@@ -178,7 +178,7 @@ def test_repeated_setup_never_implicitly_repoints_default_storage(
 
     assert first.exit_code == 0, first.output
     assert second.exit_code != 0, second.output
-    assert "storage repoint" in Text.from_ansi(second.output).plain
+    assert "storage repoint" in second.output
     registry = load_storage_registry_or_empty(
         kit.spec.preferred_apprc_toml_path()
     )
@@ -228,13 +228,12 @@ def test_setup_does_not_recreate_missing_registered_root(
     kit.spec.storage_dotenv_path(storage_root).unlink()
     storage_root.rmdir()
 
-    result = CliRunner().invoke(app, ["setup", "--yes"])
-    output = Text.from_ansi(result.output).plain
+    result = build_plain_cli_runner().invoke(app, ["setup", "--yes"])
 
     assert first.exit_code == 0, first.output
     assert result.exit_code != 0
-    assert "storage repoint" in output
-    assert "will not recreate" in output
+    assert "storage repoint" in result.output
+    assert "will not recreate" in result.output
     assert not storage_root.exists()
 
 

@@ -14,9 +14,9 @@ from tests.support_config import (
     StorageFreeExampleConfigState,
     assert_apprc_dir_cli_error,
     block_apprc_dir_with_file,
-    build_plain_cli_runner,
     build_apprc_example_app_kit,
     build_storage_free_example_kit,
+    compact_cli_output,
 )
 
 
@@ -166,9 +166,10 @@ def test_repeated_setup_never_implicitly_repoints_default_storage(
 ) -> None:
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    runner = build_plain_cli_runner()
-    first_root = tmp_path / "first"
-    second_root = tmp_path / "second"
+    runner = CliRunner()
+    long_parent = tmp_path / ("long-storage-parent-" * 4)
+    first_root = long_parent / "first"
+    second_root = long_parent / "second"
     first = runner.invoke(
         app, ["setup", "--yes", "--storage-root", str(first_root)]
     )
@@ -178,7 +179,7 @@ def test_repeated_setup_never_implicitly_repoints_default_storage(
 
     assert first.exit_code == 0, first.output
     assert second.exit_code != 0, second.output
-    assert "storage repoint" in second.output
+    assert "storagerepoint" in compact_cli_output(second)
     registry = load_storage_registry_or_empty(
         kit.spec.preferred_apprc_toml_path()
     )
@@ -220,7 +221,7 @@ def test_setup_does_not_recreate_missing_registered_root(
     """
     kit = build_apprc_example_app_kit()
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
-    storage_root = tmp_path / "ontology"
+    storage_root = tmp_path / ("long-storage-parent-" * 4) / "ontology"
     first = CliRunner().invoke(
         app,
         ["storage", "add", "ontology", str(storage_root), "--yes"],
@@ -228,12 +229,13 @@ def test_setup_does_not_recreate_missing_registered_root(
     kit.spec.storage_dotenv_path(storage_root).unlink()
     storage_root.rmdir()
 
-    result = build_plain_cli_runner().invoke(app, ["setup", "--yes"])
+    result = CliRunner().invoke(app, ["setup", "--yes"])
+    output = compact_cli_output(result)
 
     assert first.exit_code == 0, first.output
     assert result.exit_code != 0
-    assert "storage repoint" in result.output
-    assert "will not recreate" in result.output
+    assert "storagerepoint" in output
+    assert "willnotrecreate" in output
     assert not storage_root.exists()
 
 

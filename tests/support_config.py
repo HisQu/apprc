@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pytest import MonkeyPatch
-from typer.testing import CliRunner, Result
+from rich.text import Text
+from typer.testing import Result
 
 from apprc.definition.app_config.kit import AppConfigKit
 from apprc.definition.app_config.storage import Storage
@@ -31,13 +32,21 @@ from apprc.user_files.storage_roots.registry import (
 )
 
 
-def build_plain_cli_runner() -> CliRunner:
-    """Return a CLI runner with stable plain-text output.
+def compact_cli_output(result: Result) -> str:
+    """Return rendered CLI text without terminal presentation details.
 
-    :return: Runner with color disabled and a wide fixed terminal.
+    Typer and Rich may insert ANSI codes, whitespace, or table borders inside
+    a phrase according to the host terminal. Content assertions use this
+    representation so those presentation details cannot change their result.
+
+    :param result: Captured command result.
+    :return: Command text without styling, whitespace, or box-drawing glyphs.
     """
-    return CliRunner(
-        env={"COLUMNS": "500", "FORCE_COLOR": None, "NO_COLOR": "1"}
+    plain = Text.from_ansi(result.output).plain
+    return "".join(
+        character
+        for character in plain
+        if not character.isspace() and not "\u2500" <= character <= "\u257f"
     )
 
 

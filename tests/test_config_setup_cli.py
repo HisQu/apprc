@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rich.text import Text
 from typer.testing import CliRunner
 
 from apprc.definition.app_config.kit import AppConfigKit
@@ -177,7 +178,7 @@ def test_repeated_setup_never_implicitly_repoints_default_storage(
 
     assert first.exit_code == 0, first.output
     assert second.exit_code != 0, second.output
-    assert "storage repoint" in second.output
+    assert "storage repoint" in Text.from_ansi(second.output).plain
     registry = load_storage_registry_or_empty(
         kit.spec.preferred_apprc_toml_path()
     )
@@ -228,11 +229,12 @@ def test_setup_does_not_recreate_missing_registered_root(
     storage_root.rmdir()
 
     result = CliRunner().invoke(app, ["setup", "--yes"])
+    output = Text.from_ansi(result.output).plain
 
     assert first.exit_code == 0, first.output
     assert result.exit_code != 0
-    assert "storage repoint" in result.output
-    assert "will not recreate" in result.output
+    assert "storage repoint" in output
+    assert "will not recreate" in output
     assert not storage_root.exists()
 
 

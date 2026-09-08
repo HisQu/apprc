@@ -64,11 +64,12 @@ def test_config_doctor_explains_missing_storage_selection(monkeypatch) -> None:
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
 
     result = CliRunner().invoke(app, ["doctor"])
+    output = Text.from_ansi(result.output).plain
 
     assert result.exit_code == 1
-    assert "storage not selected" in result.output
-    assert "--storage NAME_OR_PATH" in result.output
-    assert "APPRC_EXAMPLE_APP_STORAGE=NAME_OR_PATH" in result.output
+    assert "storage not selected" in output
+    assert "--storage NAME_OR_PATH" in output
+    assert "APPRC_EXAMPLE_APP_STORAGE=NAME_OR_PATH" in output
 
 
 def test_storage_free_app_hides_storage_commands() -> None:

@@ -281,8 +281,16 @@ def test_migrate_storage_mapping_options_follow_storage_capability() -> None:
     user_dotenv_app = build_storage_free_example_kit().typer_app()
     runner = CliRunner()
 
-    storage_help = runner.invoke(storage_app, ["migrate", "--help"])
-    user_help = runner.invoke(user_dotenv_app, ["migrate", "--help"])
+    storage_help = runner.invoke(
+        storage_app,
+        ["migrate", "--help"],
+        terminal_width=500,
+    )
+    user_help = runner.invoke(
+        user_dotenv_app,
+        ["migrate", "--help"],
+        terminal_width=500,
+    )
 
     assert storage_help.exit_code == 0, storage_help.output
     assert "--storage-root" in storage_help.output
@@ -304,7 +312,11 @@ def test_migrate_unknown_selector_requires_explicit_root_noninteractively(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "legacy-config"))
     app = kit.typer_app(state_type=ApprcExampleAppConfigState)
 
-    result = CliRunner().invoke(app, ["migrate", "--dry-run"])
+    result = CliRunner().invoke(
+        app,
+        ["migrate", "--dry-run"],
+        terminal_width=500,
+    )
 
     assert result.exit_code != 0
     assert "unregistered storage 'ontology'" in result.output

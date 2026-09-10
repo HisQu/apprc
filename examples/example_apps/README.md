@@ -72,6 +72,12 @@ managed features can create persistent files at the selected paths. Use
 The advanced examples declare both capabilities. `cli_runtime` also exposes
 app-owned `status`, `--workspace`, `--model`, and `--dry-run` behavior.
 
+All six examples use the backward-compatible required defaults. An application
+with storage-backed commands and storage-free core commands can instead
+declare `rc.Storage(required=False)`, then set `storage_required=True` only on
+the `CliRuntime` that owns the storage-backed commands. The capability remains
+visible in the same generated config interface.
+
 ## Automated Smoke Run
 
 ```bash

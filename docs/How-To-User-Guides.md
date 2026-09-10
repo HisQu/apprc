@@ -25,6 +25,31 @@ Declare user dotenv and storage support independently.
 Application setting variables such as `MYAPP_PROFILE` are separate from these
 structural variables. The application declares them with `rc.field(...)`.
 
+The declarations above are required by default. To let core commands run
+without setup while keeping persistence available, mark the capabilities
+optional:
+
+```python
+MyRC = rc.AppRC(
+    app_id="myapp",
+    display_name="My App",
+    config_package="myapp.config",
+    user_dotenv=rc.UserDotenv(required=False),
+    storage=rc.Storage(required=False),
+)
+```
+
+Then require storage only where it is actually used:
+
+```python
+runtime = rc.cli.CliRuntime(MyRC.kit, storage_required=True)
+```
+
+The strict runtime opens first-use setup in an interactive terminal. In a
+script or pipeline it fails without writing and prints
+`myapp config setup --yes`. Other runtimes can use the declaration default and
+start without managed files.
+
 ## Integrate AppRC
 
 Install the runtime and optional editor:
@@ -111,7 +136,8 @@ storage or dotenv policy.
 ## Install and set up an AppRC app
 
 Installing the Python package installs only code and packaged defaults. The
-application then owns an explicit setup step.
+application then owns any explicit setup step. Optional capabilities need no
+setup until a command requires them or the user chooses to enable them.
 
 For a user-dotenv-only app:
 

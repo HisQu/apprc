@@ -34,7 +34,9 @@ def print_config_doctor(
     console.print("")
     for label, value in (
         ("user_dotenv_enabled", _bool_text(payload.user_dotenv_enabled)),
+        ("user_dotenv_required", _bool_text(payload.user_dotenv_required)),
         ("storage_enabled", _bool_text(payload.storage_enabled)),
+        ("storage_required", _bool_text(payload.storage_required)),
         ("writes", "none"),
     ):
         rendered = value if isinstance(value, Text) else Text(value)
@@ -131,7 +133,9 @@ def print_config_paths(
     console.print("")
     for label, value in (
         ("user_dotenv_enabled", _bool_text(payload.user_dotenv_enabled)),
+        ("user_dotenv_required", _bool_text(payload.user_dotenv_required)),
         ("storage_enabled", _bool_text(payload.storage_enabled)),
+        ("storage_required", _bool_text(payload.storage_required)),
         ("writes", payload.writes),
     ):
         rendered = value if isinstance(value, Text) else Text(value)

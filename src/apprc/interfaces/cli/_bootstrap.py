@@ -40,6 +40,7 @@ def bootstrap_cli_env(
     env_file_overrides_os_environ: bool,
     load_dotenv_layers: bool,
     storage: str | None,
+    storage_required: bool | None = None,
     log_level: str | None = None,
     setup_logging: Callable[..., Any] | None = None,
     logger: BootstrapLogger | None = None,
@@ -60,6 +61,8 @@ def bootstrap_cli_env(
         and explicit values may still provide the storage selector used for
         selection.
     :param storage: Optional registered name or path from ``--storage``.
+    :param storage_required: Runtime storage policy, or ``None`` to use the
+        declaration's ``Storage.required`` value.
     :param log_level: Optional CLI log-level token.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status messages.
@@ -75,6 +78,7 @@ def bootstrap_cli_env(
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
             storage=storage,
+            storage_required=storage_required,
             logger=logger,
         )
     except FileNotFoundError as exc:

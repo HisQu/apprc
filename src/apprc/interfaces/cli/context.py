@@ -143,6 +143,7 @@ def bootstrap_cli_options(
     kit: AppConfigKit,
     options: CliRuntimeOptionsProtocol,
     *,
+    storage_required: bool | None = None,
     setup_logging: Callable[..., Any] | None = None,
     logger: BootstrapLogger | None = None,
 ) -> EnvBootstrapResult:
@@ -150,6 +151,8 @@ def bootstrap_cli_options(
 
     :param kit: Application config facade.
     :param options: Parsed AppRC runtime options.
+    :param storage_required: Runtime storage policy, or ``None`` to use the
+        declaration's ``Storage.required`` value.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status.
     :return: Bootstrap summary for diagnostics and command state.
@@ -161,6 +164,7 @@ def bootstrap_cli_options(
         env_file_overrides_os_environ=(parsed.env_file_overrides_os_environ),
         load_dotenv_layers=parsed.load_dotenv_layers,
         storage=parsed.storage,
+        storage_required=storage_required,
         log_level=parsed.log_level,
         setup_logging=setup_logging,
         logger=logger,
@@ -173,6 +177,7 @@ def prepare_cli_runtime_context(
     options: OptionsT,
     *,
     skip_runtime_setup: bool = False,
+    storage_required: bool | None = None,
     setup_logging: Callable[..., Any] | None = None,
     logger: BootstrapLogger | None = None,
 ) -> CliRuntimeContext[OptionsT]:
@@ -182,6 +187,8 @@ def prepare_cli_runtime_context(
     :param kit: Application config facade.
     :param options: Parsed AppRC runtime options.
     :param skip_runtime_setup: Whether runtime setup should be skipped.
+    :param storage_required: Runtime storage policy, or ``None`` to use the
+        declaration's ``Storage.required`` value.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for bootstrap status.
     :return: Context stored on ``ctx.meta`` for child commands.
@@ -192,6 +199,7 @@ def prepare_cli_runtime_context(
         env_bootstrap = bootstrap_cli_options(
             kit,
             parsed,
+            storage_required=storage_required,
             setup_logging=setup_logging,
             logger=logger,
         )

@@ -35,7 +35,9 @@ class ConfigDoctorPayload:
     status: str
     writes: str
     user_dotenv_enabled: bool
+    user_dotenv_required: bool
     storage_enabled: bool
+    storage_required: bool
     apprc_dir: str | None
     apprc_dir_env_key: str | None
     apprc_dir_env_value: str | None
@@ -142,7 +144,9 @@ def build_config_doctor_payload(
         status=status.value,
         writes="none",
         user_dotenv_enabled=kit.spec.uses_user_dotenv(),
+        user_dotenv_required=kit.spec.requires_user_dotenv(),
         storage_enabled=kit.spec.uses_storage(),
+        storage_required=kit.spec.requires_storage(),
         apprc_dir=str(paths.root) if kit.spec.uses_managed_files() else None,
         apprc_dir_env_key=(
             kit.spec.apprc_dir_env_key

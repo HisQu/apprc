@@ -376,6 +376,38 @@ both = rc.AppRC(
 )
 ```
 
+Capabilities are required by default, which preserves the setup behavior of
+earlier releases. Use `required=False` when an application should expose the
+managed layer without making it a prerequisite for every command:
+
+```python
+optional_persistence = rc.AppRC(
+    **common,
+    user_dotenv=rc.UserDotenv(required=False),
+    storage=rc.Storage(required=False),
+)
+```
+
+An optional declaration still exposes setup, editing, and storage management.
+Bootstrap loads it when it exists. With no selected storage, runtime continues
+using packaged defaults, explicit dotenv files, and the process environment.
+Invalid selectors and broken selected roots remain errors. A malformed
+registry remains an error unless an explicit initialized path uses AppRC's
+existing one-run fallback.
+
+A command that needs storage can enforce that requirement at its runtime
+boundary:
+
+```python
+storage_runtime = rc.cli.CliRuntime(
+    optional_persistence.kit,
+    storage_required=True,
+)
+```
+
+This does not change the application declaration. Other runtimes using the
+same `AppRC` can keep storage optional.
+
 `rc.Storage()` derives `MYAPP_STORAGE` when `selector_env_key` is omitted. The
 first setup suggests `~/.local/share/myapp/storage/` on every operating system.
 Interactive setup first lets the user accept or replace the AppRC directory,
@@ -557,6 +589,16 @@ commands that persist `MYAPP_APPRC_DIR` for later runs.
 `config doctor` reports a status such as `storage_not_selected`,
 `storage_not_ready`, `user_dotenv_not_ready`,
 `storage_registry_not_ready`, or `runnable`.
+
+For optional declarations, a missing user dotenv or absent storage selection
+is a warning and the status remains `runnable`. The JSON payload reports
+`user_dotenv_required` and `storage_required` so integrations do not have to
+infer policy from missing files.
+
+When `CliRuntime(storage_required=True)` reaches a command without a selected
+storage, an interactive terminal offers first-use setup with path completion.
+A non-interactive terminal writes nothing and prints the exact
+`myapp config setup --yes` recovery command.
 
 `config set` changes only the requested dotenv assignment. It preserves
 unrelated comments, blank lines, quoting, `export` prefixes, and ordering. If

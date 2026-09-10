@@ -120,6 +120,7 @@ class AppConfigKit:
         env_file_overrides_os_environ: bool,
         load_dotenv_layers: bool,
         storage: str | None,
+        storage_required: bool | None = None,
         logger: BootstrapLogger | None = None,
     ) -> EnvBootstrapResult:
         """Populate ``os.environ`` for this application.
@@ -138,6 +139,8 @@ class AppConfigKit:
             selector used for selection.
         :param storage: Optional registered name or filesystem path supplied
             by ``--storage``.
+        :param storage_required: Runtime storage policy, or ``None`` to use
+            the declaration's ``Storage.required`` value.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
         """
@@ -159,6 +162,7 @@ class AppConfigKit:
                     ),
                     load_dotenv_layers=load_dotenv_layers,
                     storage=storage,
+                    storage_required=storage_required,
                     logger=logger,
                 )
             except Exception:

@@ -70,6 +70,7 @@ def bootstrap_env(
     env_file_overrides_os_environ: bool = False,
     load_dotenv_layers: bool = True,
     storage: str | None = None,
+    storage_required: bool | None = None,
     logger: BootstrapLogger | None = None,
 ) -> EnvBootstrapResult:
     """Populate ``os.environ`` for one application CLI process.
@@ -99,10 +100,13 @@ def bootstrap_env(
         runs for storage apps when this is ``False``.
     :param storage: Optional registered storage name or filesystem path from
         ``--storage``.
+    :param storage_required: Runtime storage policy, or ``None`` to use the
+        declaration's ``Storage.required`` value.
     :param logger: Optional application logger for bootstrap status messages.
     :return: Bootstrap summary for diagnostics and tests.
     """
     emit = logger or LOG
+    effective_storage_required = spec.requires_storage(storage_required)
     if storage is not None and not spec.uses_storage():
         raise StorageSelectorError(
             f"{spec.display_name} does not declare storage support.",
@@ -187,30 +191,39 @@ def bootstrap_env(
             explicit_values=explicit_values,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
         )
-        if selection is None:
+        if selection is None and effective_storage_required:
             raise missing_storage_selector_error(storage_selector_env_key)
-        emit.info(
-            "AppRC bootstrap selected storage selector: source=%s value=%s",
-            selection.source,
-            selection.raw_value,
-        )
-        active_storage_root = selection.root
-        _validate_runtime_storage_root(
-            spec=spec,
-            storage_root=active_storage_root,
-            storage_name=selection.storage_name,
-            param_hint=selection.source,
-        )
-        active_storage_dotenv = spec.storage_dotenv_path(active_storage_root)
-        _log_storage_association(emit, selection=selection)
-        emit.info(
-            "AppRC bootstrap resolved storage: name=%s root=%s "
-            "registry_path=%s registry_storage_count=%s",
-            selection.storage_name,
-            active_storage_root,
-            registry.path if registry is not None else None,
-            len(registry.storages) if registry is not None else 0,
-        )
+        if selection is None:
+            emit.info(
+                "AppRC bootstrap has no active optional storage: "
+                "selector_key=%s",
+                storage_selector_env_key,
+            )
+        else:
+            emit.info(
+                "AppRC bootstrap selected storage selector: source=%s value=%s",
+                selection.source,
+                selection.raw_value,
+            )
+            active_storage_root = selection.root
+            _validate_runtime_storage_root(
+                spec=spec,
+                storage_root=active_storage_root,
+                storage_name=selection.storage_name,
+                param_hint=selection.source,
+            )
+            active_storage_dotenv = spec.storage_dotenv_path(
+                active_storage_root
+            )
+            _log_storage_association(emit, selection=selection)
+            emit.info(
+                "AppRC bootstrap resolved storage: name=%s root=%s "
+                "registry_path=%s registry_storage_count=%s",
+                selection.storage_name,
+                active_storage_root,
+                registry.path if registry is not None else None,
+                len(registry.storages) if registry is not None else 0,
+            )
     elif spec.uses_user_dotenv():
         emit.info("AppRC bootstrap using user dotenv: %s", user_dotenv_path)
     else:

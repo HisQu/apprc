@@ -47,6 +47,9 @@ The two persistent capabilities are independent:
 | Both arguments | Yes | Yes |
 
 Files on disk never enable a capability that Python code did not declare.
+Each capability is required by default. `required=False` keeps its setup and
+management interfaces available while allowing runtime and doctor to continue
+when that layer is absent.
 
 ## Integration flow
 
@@ -57,8 +60,8 @@ The normal order is:
 2. Register `rc.Config` and `rc.ConfigBase` classes.
 3. Optionally ship non-secret defaults in `apprc.defaults.env`.
 4. Mount the generated CLI or call bootstrap at the application entrypoint.
-5. For declarations with persistent capabilities, run `config setup` during
-   installation or first use.
+5. For required persistent capabilities, run `config setup` during
+   installation or first use. Optional capabilities can remain absent.
 6. Construct config from Python values and the current process environment.
 
 Importing AppRC or a config class does not read files and does not modify
@@ -132,6 +135,15 @@ Bootstrap performs these operations:
 7. Merge values using documented precedence.
 8. Write the merged values into this Python process.
 9. Record provenance for app-owned keys.
+
+`Storage.required` supplies the default runtime policy. A specific
+`CliRuntime` or bootstrap call can pass `storage_required=True` when only that
+boundary needs storage. If storage is optional and no selector exists,
+bootstrap skips the storage layer and continues. Once a selector or registry
+exists, AppRC validates it normally. Optionality never suppresses an invalid
+selector, missing selected root, or unreadable managed file. A malformed
+registry keeps the existing direct-path fallback and otherwise remains an
+error.
 
 | ![AppRC precedence](assets/apprc-abstract-layer-cake.svg) |
 |:--:|
@@ -218,6 +230,9 @@ winning input layer and any TOML selection hidden by that override while valid
 registry entries remain usable. Setup is reserved for files AppRC can
 initialize. **Reconnect** updates the registry after a manual directory move;
 **Move** relocates data only to a new or empty destination.
+
+Missing optional layers are not repair errors. The editor still offers Setup
+so a user can enable them deliberately.
 
 ## Migration model
 

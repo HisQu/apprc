@@ -54,6 +54,7 @@ def mount_config_cli(
     | None = None,
     args_provider: CliArgvProvider | None = None,
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = (None),
+    storage_required: bool | None = None,
     runtime_payload: (
         Callable[[DefaultConfigCliState], Mapping[str, Any]] | None
     ) = None,
@@ -87,6 +88,7 @@ def mount_config_cli(
     state_factory: MountCliRuntimeStateFactory[StateT],
     args_provider: CliArgvProvider | None = None,
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = (None),
+    storage_required: bool | None = None,
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
     active_storage_root_with_context: (
         Callable[[StateT, "ConfigSelectorContext"], Path | None] | None
@@ -112,6 +114,7 @@ def mount_config_cli(
     state_factory: MountCliRuntimeStateFactory[Any] | None = None,
     args_provider: CliArgvProvider | None = None,
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = (None),
+    storage_required: bool | None = None,
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None,
     active_storage_root_with_context: (
         Callable[[Any, "ConfigSelectorContext"], Path | None] | None
@@ -139,6 +142,8 @@ def mount_config_cli(
     :param runtime_policy: Optional runtime skip policy. When omitted, AppRC
         skips runtime setup for generated config setup/inspection and plain
         command help.
+    :param storage_required: Runtime storage policy, or ``None`` to use the
+        declaration's ``Storage.required`` value.
     :param runtime_payload: Optional serializer for ``config show``.
     :param active_storage_root_with_context: Optional storage-root resolver that
         receives explicit env-file selector context.
@@ -189,6 +194,7 @@ def mount_config_cli(
         config_group_name=config_group_name,
         args_provider=args_provider,
         runtime_policy=runtime_policy,
+        storage_required=storage_required,
         runtime_payload=runtime_payload,
         active_storage_root_with_context=active_storage_root_with_context,
         initial_storage_with_context=initial_storage_with_context,

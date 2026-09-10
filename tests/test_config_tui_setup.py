@@ -7,6 +7,9 @@ import pytest
 from rich.text import Text
 from textual.widgets import Button
 
+from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.interfaces.tui._primitives import (
     ConfirmScreen,
     PathInputResult,
@@ -41,6 +44,30 @@ def test_setup_overview_describes_storage_free_user_dotenv() -> None:
 
     assert "empty apprc.user.env" in text
     assert "registers" not in text
+
+
+@pytest.mark.asyncio
+async def test_editor_offers_setup_for_missing_optional_layers(
+    tmp_path: Path,
+) -> None:
+    """Optional persistence is available without being reported as broken."""
+    kit = AppConfigKit(
+        app_id="optional_editor",
+        display_name="Optional Editor",
+        config_package="apprc",
+        user_dotenv=UserDotenv(required=False),
+        storage=Storage(required=False),
+        apprc_dir=tmp_path / "apprc",
+    )
+    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        setup = editor.query_one("#config-setup", Button)
+        assert str(setup.label) == "Set up user dotenv and storage..."
+        assert not editor.query("#selector-status")
+
+    assert not kit.spec.apprc_dir().exists()
 
 
 @pytest.mark.asyncio

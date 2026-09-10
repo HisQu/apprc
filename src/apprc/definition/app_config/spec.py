@@ -192,6 +192,25 @@ class AppConfigSpec:
         """Return whether Python code enables user-dotenv persistence."""
         return self.user_dotenv is not None
 
+    def requires_user_dotenv(self) -> bool:
+        """Return whether diagnostics require the declared user dotenv."""
+        return self.user_dotenv is not None and self.user_dotenv.required
+
+    def requires_storage(self, override: bool | None = None) -> bool:
+        """Return whether one runtime must resolve an active storage.
+
+        :param override: Runtime policy, or ``None`` to use the declaration.
+        :return: Effective storage requirement.
+        :raises ValueError: If an override requires undeclared storage.
+        """
+        if override is True and self.storage is None:
+            raise ValueError(
+                "storage_required=True requires storage=rc.Storage()."
+            )
+        if self.storage is None:
+            return False
+        return self.storage.required if override is None else override
+
     def uses_managed_files(self) -> bool:
         """Return whether the application declares any persistent files."""
         return self.uses_user_dotenv() or self.uses_storage()

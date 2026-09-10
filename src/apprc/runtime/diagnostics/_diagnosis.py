@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 class StorageDiagnosis:
     """Active storage state discovered for one doctor run."""
 
+    required: bool
     selection: StorageSelection | None
     storage_root_exists: bool | None
     storage_dotenv: Path | None
@@ -78,9 +79,16 @@ def diagnose_user_dotenv(
             warnings=warnings,
         )
     if not paths.user_dotenv.is_file():
+        message = f"User dotenv file does not exist: {paths.user_dotenv}"
+        if not kit.spec.requires_user_dotenv():
+            return UserDotenvDiagnosis(
+                active=True,
+                issues=[],
+                warnings=[f"Optional {message.lower()}"],
+            )
         return UserDotenvDiagnosis(
             active=True,
-            issues=[f"User dotenv file does not exist: {paths.user_dotenv}"],
+            issues=[message],
             warnings=[],
         )
     try:
@@ -136,6 +144,7 @@ def diagnose_storage(
             warnings=list(dict.fromkeys(stale_warnings)),
         )
         return StorageDiagnosis(
+            required=False,
             selection=None,
             storage_root_exists=None,
             storage_dotenv=None,
@@ -147,6 +156,7 @@ def diagnose_storage(
         )
 
     issues: list[str] = []
+    storage_required = kit.spec.requires_storage()
     selection: StorageSelection | None = None
     selector_error = False
     registry = registry_inspection.registry
@@ -164,7 +174,11 @@ def diagnose_storage(
     except StorageSelectorError as exc:
         selector_error = True
         issues.append(str(exc))
-    if selection is not None and selection.selector_kind == "path":
+    if (
+        selection is not None
+        and selection.selector_kind == "path"
+        and not registry_inspection.exists
+    ):
         registry_inspection = replace(
             registry_inspection,
             issues=[],
@@ -177,13 +191,39 @@ def diagnose_storage(
         issues = [*registry_inspection.issues, *issues]
     selection_missing = selection is None and not selector_error
     if selection_missing:
-        issues.append(
-            _missing_storage_issue(
-                kit,
-                selector_key=selector_key,
-                config_group_name=config_group_name,
-            )
+        missing_selection_message = _missing_storage_issue(
+            kit,
+            selector_key=selector_key,
+            config_group_name=config_group_name,
         )
+        if storage_required:
+            issues.append(missing_selection_message)
+        else:
+            if not registry_inspection.exists:
+                issues = [
+                    issue
+                    for issue in issues
+                    if issue not in registry_inspection.issues
+                ]
+            registry_warnings = [
+                *registry_inspection.warnings,
+                *(
+                    registry_inspection.issues
+                    if not registry_inspection.exists
+                    else []
+                ),
+                "Optional storage is not selected. Runtime can continue "
+                "without it.",
+            ]
+            registry_inspection = replace(
+                registry_inspection,
+                issues=(
+                    registry_inspection.issues
+                    if registry_inspection.exists
+                    else []
+                ),
+                warnings=list(dict.fromkeys(registry_warnings)),
+            )
 
     root = selection.root if selection is not None else None
     storage_dotenv = kit.spec.storage_dotenv_path(root) if root else None
@@ -196,6 +236,7 @@ def diagnose_storage(
             f"Selected storage dotenv file does not exist: {storage_dotenv}"
         )
     return StorageDiagnosis(
+        required=storage_required,
         selection=selection,
         storage_root_exists=root_exists,
         storage_dotenv=storage_dotenv,
@@ -224,7 +265,7 @@ def doctor_status(
         return ConfigDoctorStatus.USER_DOTENV_NOT_READY
     if registry.issues:
         return ConfigDoctorStatus.STORAGE_REGISTRY_NOT_READY
-    if storage.selection_missing:
+    if storage.required and storage.selection_missing:
         return ConfigDoctorStatus.STORAGE_NOT_SELECTED
     if storage.issues:
         return ConfigDoctorStatus.STORAGE_NOT_READY

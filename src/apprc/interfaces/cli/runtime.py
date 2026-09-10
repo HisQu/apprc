@@ -315,6 +315,8 @@ class CliRuntime(Generic[OptionsT, StateT]):
     :param state_factory: Factory that builds app state after AppRC bootstrap.
     :param config_group_name: Name used for the generated config command group.
     :param runtime_policy: Optional runtime skip policy.
+    :param storage_required: Runtime storage policy, or ``None`` to use the
+        declaration's ``Storage.required`` value.
     :param args_provider: Optional command-token provider for tests/forwarders.
     :param runtime_payload: Optional serializer for generated ``config show``.
     :param active_storage_root_with_context: Optional selector-aware resolver.
@@ -334,6 +336,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
     state_factory: CliRuntimeStateFactory[OptionsT, StateT] | None = None
     config_group_name: str = "config"
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = None
+    storage_required: bool | None = None
     args_provider: CliArgvProvider | None = None
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None
     active_storage_root_with_context: (
@@ -360,6 +363,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
 
     def __post_init__(self) -> None:
         """Validate custom state and direct config policy names."""
+        self.kit.spec.requires_storage(self.storage_required)
         if (
             self.state_factory is None
             and self.state_type is not DefaultConfigCliState
@@ -396,6 +400,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 self.kit,
                 options,
                 skip_runtime_setup=skip_runtime_setup,
+                storage_required=self.storage_required,
                 setup_logging=self.setup_logging,
                 logger=self.logger,
             )
@@ -446,8 +451,12 @@ class CliRuntime(Generic[OptionsT, StateT]):
         """
         storage = self.kit.spec.storage
         if storage is None or not sys.stdin.isatty() or not sys.stdout.isatty():
+            setup_command = (
+                f"{self.kit.spec.config_command_name()} "
+                f"{self.config_group_name} setup --yes"
+            )
             raise typer.BadParameter(
-                str(error),
+                f"{error} Run `{setup_command}`.",
                 param_hint=error.param_hint,
             ) from error
         suggested = self.kit.spec.apprc_dir() / "storage"
@@ -471,6 +480,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             ctx,
             self.kit,
             options,
+            storage_required=self.storage_required,
             setup_logging=self.setup_logging,
             logger=self.logger,
         )
@@ -519,6 +529,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             ctx,
             self.kit,
             options,
+            storage_required=self.storage_required,
             setup_logging=self.setup_logging,
             logger=self.logger,
         )
@@ -579,6 +590,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             ctx,
             self.kit,
             options,
+            storage_required=self.storage_required,
             setup_logging=self.setup_logging,
             logger=self.logger,
         )

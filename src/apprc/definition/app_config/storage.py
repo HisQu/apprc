@@ -12,9 +12,12 @@ class Storage:
 
     :param selector_env_key: Environment key that selects the active storage. AppRC
         derives ``<APP>_STORAGE`` when omitted.
+    :param required: Whether runtime bootstrap requires an active storage by
+        default. Individual runtime boundaries may override this policy.
     """
 
     selector_env_key: str | None = None
+    required: bool = True
 
 
 __all__ = ["Storage"]

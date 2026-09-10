@@ -162,7 +162,7 @@ class AppRC:
 
     @property
     def kit(self) -> AppConfigKit:
-        """Return the lower-level kit used by advanced internal integrations."""
+        """Return the lower-level kit used by advanced integrations."""
         return self._kit
 
     @property
@@ -268,6 +268,7 @@ class AppRC:
         env_file_overrides_os_environ: bool = False,
         load_dotenv_layers: bool = True,
         storage: str | None = None,
+        storage_required: bool | None = None,
         logger: BootstrapLogger | None = None,
     ) -> EnvBootstrapResult:
         """Prepare AppRC runtime layers for non-Typer use.
@@ -278,6 +279,8 @@ class AppRC:
         :param load_dotenv_layers: Whether packaged defaults, app, storage, and
             explicit dotenv layers should be merged into ``os.environ``.
         :param storage: Optional storage selector for apps with storage.
+        :param storage_required: Runtime storage policy, or ``None`` to use
+            the declaration's ``Storage.required`` value.
         :param logger: Optional application logger for bootstrap status.
         :return: Bootstrap summary for diagnostics and tests.
         """
@@ -286,6 +289,7 @@ class AppRC:
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
             storage=storage,
+            storage_required=storage_required,
             logger=logger,
         )
 

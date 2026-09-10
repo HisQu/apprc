@@ -36,18 +36,25 @@ class _TTYProxy:
 
 def _runtime(
     tmp_path: Path,
+    *,
+    declaration_required: bool = True,
+    runtime_required: bool | None = None,
 ) -> CliRuntime[CliRuntimeOptions, DefaultConfigCliState]:
     """Return a storage runtime with the first-run prompt enabled."""
     kit = AppConfigKit(
         app_id="first_run_demo",
         display_name="First Run Demo",
         config_package="storage.config",
-        storage=Storage(selector_env_key="FIRST_RUN_DEMO_STORAGE"),
+        storage=Storage(
+            selector_env_key="FIRST_RUN_DEMO_STORAGE",
+            required=declaration_required,
+        ),
         apprc_dir=tmp_path / "apprc",
     )
     return CliRuntime(
         kit,
         args_provider=lambda: ["run"],
+        storage_required=runtime_required,
     )
 
 
@@ -138,6 +145,25 @@ def test_first_runtime_use_accepts_custom_storage_path(
     assert session.apprc_context.env_bootstrap is not None
     assert session.apprc_context.env_bootstrap.storage_root == custom_root
     assert (custom_root / "apprc.storage.env").is_file()
+
+
+def test_noninteractive_required_runtime_prints_exact_setup_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A strict boundary gives scripts one zero-write recovery command."""
+    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
+    runtime = _runtime(
+        tmp_path,
+        declaration_required=False,
+        runtime_required=True,
+    )
+
+    with pytest.raises(typer.BadParameter) as exc_info:
+        runtime.prepare(_context(), CliRuntimeOptions())
+
+    assert "`first_run_demo config setup --yes`" in str(exc_info.value)
+    assert not runtime.kit.spec.apprc_dir().exists()
 
 
 def test_interactive_direct_path_can_be_registered(

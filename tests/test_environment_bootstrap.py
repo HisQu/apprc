@@ -12,6 +12,9 @@ from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.user_files.env_files import write_env_file
 from apprc.user_files.storage_roots.registry import register_storage
 from apprc.user_files.storage_roots.selector import StorageSelectorError
+from apprc.user_files.storage_roots.selector import (
+    MissingStorageSelectorError,
+)
 from tests.support_config import ApprcExampleAppEnv
 
 
@@ -32,6 +35,22 @@ def _kit(tmp_path: Path) -> AppConfigKit:
         envs=(ApprcExampleAppEnv,),
         user_dotenv=UserDotenv(),
         storage=Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
+        apprc_dir=tmp_path / "apprc",
+    )
+
+
+def _optional_kit(tmp_path: Path) -> AppConfigKit:
+    """Return a declaration whose managed layers are opt-in at runtime."""
+    return AppConfigKit(
+        app_id="apprc_example_app",
+        display_name="Example App",
+        config_package="user_dotenv_with_storage.config",
+        envs=(ApprcExampleAppEnv,),
+        user_dotenv=UserDotenv(required=False),
+        storage=Storage(
+            selector_env_key="APPRC_EXAMPLE_APP_STORAGE",
+            required=False,
+        ),
         apprc_dir=tmp_path / "apprc",
     )
 
@@ -139,6 +158,103 @@ def test_bootstrap_uses_direct_path_when_registry_is_invalid(
 
     assert result.storage_root == root.resolve()
     assert result.storage_name is None
+
+
+def test_optional_managed_layers_can_be_absent_without_writes(
+    tmp_path: Path,
+) -> None:
+    kit = _optional_kit(tmp_path)
+    explicit = tmp_path / "run.env"
+    explicit.write_text(
+        "APPRC_EXAMPLE_APP_PROFILE=explicit\n",
+        encoding="utf-8",
+    )
+
+    result = kit.bootstrap(
+        env_files=(explicit,),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.storage_root is None
+    assert result.storage_dotenv is None
+    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "explicit"
+    assert not kit.spec.apprc_dir().exists()
+
+
+def test_optional_storage_is_loaded_when_selected(tmp_path: Path) -> None:
+    kit = _optional_kit(tmp_path)
+    storage_root = tmp_path / "storage"
+    _register(kit, name="default", root=storage_root)
+    kit.spec.storage_dotenv_path(storage_root).write_text(
+        "APPRC_EXAMPLE_APP_PROFILE=storage\n",
+        encoding="utf-8",
+    )
+
+    result = kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+
+    assert result.storage_name == "default"
+    assert result.storage_root == storage_root.resolve()
+    assert os.environ["APPRC_EXAMPLE_APP_PROFILE"] == "storage"
+
+
+def test_runtime_can_require_optional_storage(tmp_path: Path) -> None:
+    kit = _optional_kit(tmp_path)
+
+    kit.bootstrap(
+        env_files=(),
+        env_file_overrides_os_environ=False,
+        load_dotenv_layers=True,
+        storage=None,
+    )
+    with pytest.raises(MissingStorageSelectorError):
+        kit.bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage=None,
+            storage_required=True,
+        )
+
+
+def test_optional_storage_rejects_invalid_explicit_selector(
+    tmp_path: Path,
+) -> None:
+    kit = _optional_kit(tmp_path)
+    _register(kit, name="default", root=tmp_path / "storage")
+
+    with pytest.raises(StorageSelectorError, match="Unknown storage 'missing'"):
+        kit.bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage="missing",
+        )
+
+
+def test_optional_storage_rejects_missing_selected_root(tmp_path: Path) -> None:
+    kit = _optional_kit(tmp_path)
+    registry = kit.spec.preferred_apprc_toml_path()
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        'selected_storage = "missing"\n\n'
+        '[storages.missing]\nroot = "../missing"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(StorageSelectorError, match="does not exist"):
+        kit.bootstrap(
+            env_files=(),
+            env_file_overrides_os_environ=False,
+            load_dotenv_layers=True,
+            storage=None,
+        )
 
 
 def test_bootstrap_does_not_choose_between_duplicate_root_aliases(

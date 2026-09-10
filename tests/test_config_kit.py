@@ -39,6 +39,11 @@ def test_direct_kit_storage_values_are_preserved() -> None:
     assert kit.spec.require_storage() == storage
 
 
+def test_persistence_declarations_are_required_by_default() -> None:
+    assert UserDotenv().required is True
+    assert Storage().required is True
+
+
 def test_kit_rejects_removed_capability_keywords() -> None:
     with pytest.raises(TypeError):
         AppConfigKit(
@@ -59,6 +64,34 @@ def test_doctor_reports_missing_user_dotenv_without_writing() -> None:
     assert payload.user_dotenv is not None
     assert not Path(payload.user_dotenv).exists()
     assert payload.writes == "none"
+    assert payload.user_dotenv_required is True
+
+
+def test_doctor_treats_missing_optional_layers_as_warnings(
+    tmp_path: Path,
+) -> None:
+    kit = AppConfigKit(
+        app_id="optional_app",
+        display_name="Optional App",
+        config_package="apprc",
+        user_dotenv=UserDotenv(required=False),
+        storage=Storage(required=False),
+        apprc_dir=tmp_path / "apprc",
+    )
+
+    payload = build_config_doctor_payload(kit, storage=None)
+
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
+    assert payload.user_dotenv_required is False
+    assert payload.storage_required is False
+    assert payload.to_payload()["user_dotenv_required"] is False
+    assert payload.to_payload()["storage_required"] is False
+    assert payload.issues == ()
+    assert any(
+        "optional user dotenv" in item.lower() for item in payload.warnings
+    )
+    assert any("optional storage" in item.lower() for item in payload.warnings)
+    assert not kit.spec.apprc_dir().exists()
 
 
 def test_doctor_reports_selected_registered_storage(

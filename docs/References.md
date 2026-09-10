@@ -67,11 +67,18 @@ MyRC = rc.AppRC(
 | `apprc_dir_env_key` | derived `<APP>_APPRC_DIR` | Explicit relocation key; invalid without a persistent capability. |
 | `legacy_app_ids` | `()` | Released 0.19 identities scanned by migration. |
 
-`Storage` has one argument:
+`UserDotenv` arguments:
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `required` | `True` | Whether a missing user dotenv is a doctor issue. The file remains available to setup and editing when false. |
+
+`Storage` arguments:
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
 | `selector_env_key` | derived `<APP>_STORAGE` | Environment key that may select a registered storage name or filesystem path. |
+| `required` | `True` | Whether bootstrap requires a selected storage unless one runtime overrides the policy. |
 
 Managed filenames are fixed. There is no filename or path-abstraction API.
 
@@ -139,8 +146,14 @@ packaged defaults.
 AppRC resolves `MYAPP_APPRC_DIR` first because it determines the base for
 `apprc.toml` and relative storage paths. The variable is optional unless the
 user relocates that directory. `MYAPP_STORAGE` exists only for applications
-that declare `storage=rc.Storage()`; it is optional when `selected_storage` is
-present and otherwise must provide a registered name or initialized path.
+that declare `storage=rc.Storage()`. For required storage, either it or
+`selected_storage` must choose a registered name or initialized path. For
+`Storage(required=False)`, both may be absent.
+
+`AppRC.bootstrap(..., storage_required=None)` and
+`CliRuntime(..., storage_required=None)` use the declaration default. Passing
+`True` requires a storage at that boundary. Passing `False` permits no
+selection. An existing selector or registry is still validated.
 
 ## Runtime precedence
 
@@ -218,15 +231,19 @@ setup commands; `purge` remains available for cleanup of stale files.
 | Status | Meaning |
 | --- | --- |
 | `runnable` | The selected runtime inputs are usable. |
-| `storage_not_selected` | A storage app has no selected name or path. |
+| `storage_not_selected` | A required storage runtime has no selected name or path. |
 | `storage_not_ready` | The selected root or storage dotenv is not ready. |
 | `user_dotenv_not_ready` | A declared user dotenv is missing or unreadable. |
 | `storage_registry_not_ready` | The storage registry is missing, unreadable, or invalid. |
 
 Machine-readable diagnostics use file-specific keys including
-`user_dotenv_enabled`, `storage_enabled`, `apprc_dir`, `user_dotenv`, `apprc_toml`,
+`user_dotenv_enabled`, `user_dotenv_required`, `storage_enabled`,
+`storage_required`, `apprc_dir`, `user_dotenv`, `apprc_toml`,
 `selected_storage`, `selected_storage_selector_kind`,
 `selected_storage_root`, and `selected_storage_dotenv`.
+
+Missing optional layers are warnings and keep the status `runnable`. Invalid
+selectors, registries, selected roots, and readable-file checks remain issues.
 
 Unsupported file paths are `null` in JSON diagnostics. The payload does not
 report `<APP>_STORAGE` as a missing environment key.

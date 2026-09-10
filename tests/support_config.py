@@ -202,15 +202,26 @@ class StorageFreeExampleConfigStateWithoutStorage:
     env_bootstrap: EnvBootstrapResult | None = None
 
 
-def build_apprc_example_app_kit() -> AppConfigKit:
-    """Return a tiny AppConfigKit that behaves like a real application."""
+def build_apprc_example_app_kit(
+    *,
+    storage_required: bool = True,
+) -> AppConfigKit:
+    """Return a tiny storage-capable AppConfigKit.
+
+    :param storage_required: Whether runtime requires an active storage by
+        default.
+    :return: Isolated application config kit for tests.
+    """
     return AppConfigKit(
         app_id="apprc_example_app",
         display_name="Example App",
         config_package="user_dotenv_with_storage.config",
         envs=(ApprcExampleAppEnv,),
         user_dotenv=UserDotenv(),
-        storage=Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
+        storage=Storage(
+            selector_env_key="APPRC_EXAMPLE_APP_STORAGE",
+            required=storage_required,
+        ),
     )
 
 

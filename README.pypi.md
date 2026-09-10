@@ -395,6 +395,8 @@ optional_persistence = rc.AppRC(
 An optional declaration still exposes setup, editing, and storage management.
 Bootstrap loads it when it exists. With no selected storage, runtime continues
 using packaged defaults, explicit dotenv files, and the process environment.
+Generated `config show` also continues when the application's runtime payload
+supports a storage-free view.
 Invalid selectors and broken selected roots remain errors. A malformed
 registry remains an error unless an explicit initialized path uses AppRC's
 existing one-run fallback.

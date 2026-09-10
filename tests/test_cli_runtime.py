@@ -786,6 +786,46 @@ def test_config_cli_runtime_runtime_payload_receives_app_state() -> None:
     assert len(factory_calls) == 1
 
 
+def test_config_show_allows_optional_storage_without_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv(
+        "APPRC_EXAMPLE_APP_APPRC_DIR",
+        str(tmp_path / "apprc"),
+    )
+    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
+    kit = build_apprc_example_app_kit(storage_required=False)
+    args = ["config", "show", "--json"]
+    app = typer.Typer()
+    factory_calls: list[tuple[CliRuntimeContext, HaiuLikeOptions]] = []
+
+    def runtime_payload(state: HaiuLikeState) -> Mapping[str, Any]:
+        bootstrap = state.env_bootstrap
+        return {
+            "storage_root": (
+                str(bootstrap.storage_root)
+                if bootstrap is not None and bootstrap.storage_root is not None
+                else None
+            )
+        }
+
+    _install_haiu_like_runtime(
+        app,
+        kit,
+        args_provider=lambda: args,
+        factory_calls=factory_calls,
+        runtime_payload=runtime_payload,
+    )
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {"storage_root": None}
+    assert len(factory_calls) == 1
+    assert not (tmp_path / "apprc").exists()
+
+
 def test_config_cli_runtime_state_factory_type_mismatch_raises() -> None:
     kit = _build_storage_free_kit_with_shared_env()
     app = typer.Typer()

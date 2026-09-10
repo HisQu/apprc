@@ -87,7 +87,7 @@ class RuntimeConfigCommands(ConfigCommandBase):
             if current_state is not None
             else None
         )
-        if self.kit.spec.uses_storage() and storage_root is None:
+        if self.kit.spec.requires_storage() and storage_root is None:
             typer.echo(self.missing_setup, err=True)
             raise typer.Exit(code=1)
         try:

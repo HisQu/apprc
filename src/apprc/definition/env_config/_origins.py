@@ -1,4 +1,4 @@
-"""Owner-field origin tracking helpers for ``EnvConfig`` instances."""
+"""Owner-field origin tracking helpers for AppRC config instances."""
 
 from __future__ import annotations
 
@@ -21,13 +21,13 @@ def origin_for_field(
     :param owner: Config owner declaring the field.
     :param origins: Recorded origin states by owner field name.
     :param field_name: Owner-local runtime field name.
-    :return: Stored origin state, or the EnvConfig default origin.
+    :return: Stored origin state, or the config default origin.
     """
     owner.field(field_name)
     return origins.get(
         field_name,
         ConfigOriginState(
-            "python_envconfig_default",
+            "python_config_default",
             env_key=owner.env_key(field_name),
         ),
     )

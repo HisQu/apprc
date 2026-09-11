@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, overload
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.storage import Storage
 from apprc.definition.app_config.user_dotenv import UserDotenv
-from apprc.definition.env_config.env import EnvConfig
+from apprc.public.config import Config
 from apprc.runtime._bootstrap_state import BootstrapState
 from apprc.runtime.bootstrap import (
     BootstrapLogger,
@@ -64,7 +64,7 @@ class AppConfigKit:
         app_id: str,
         display_name: str | None,
         config_package: str,
-        envs: tuple[type[EnvConfig], ...] = (),
+        envs: tuple[type[Config], ...] = (),
         user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
         command_name: str | None = None,
@@ -81,7 +81,7 @@ class AppConfigKit:
         app_id: str | None = None,
         display_name: str | None = None,
         config_package: str | None = None,
-        envs: tuple[type[EnvConfig], ...] = (),
+        envs: tuple[type[Config], ...] = (),
         user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
         command_name: str | None = None,

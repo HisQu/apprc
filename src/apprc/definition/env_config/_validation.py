@@ -22,7 +22,7 @@ SUPPORTED_ENV_FIELD_TYPES: tuple[type[Any], ...] = (
 def validate_config_owner(owner: ConfigOwner) -> None:
     """Reject one malformed owner schema.
 
-    :param owner: Normalized owner derived from an ``EnvConfig`` class.
+    :param owner: Normalized owner derived from a registered config class.
     :raises TypeError: If field types are unsupported.
     :raises ValueError: If owner or field identifiers collide or are empty.
     """

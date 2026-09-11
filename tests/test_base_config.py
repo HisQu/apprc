@@ -8,17 +8,11 @@ from typing import Any, ClassVar, cast
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
 
-import apprc.definition.env_config as config_objects_api
+import apprc as rc
 import apprc.definition.env_config.base as base_config
 import apprc.definition.env_config._loading as env_loading
-import apprc.definition.env_config.env as env_config_module
+import apprc.public.config as config_runtime_module
 from apprc.definition.env_config.base import BaseConfig
-from apprc.definition.env_config.env import EnvConfig
-from apprc.definition.env_config.fields import (
-    config_owner_for,
-    env_field,
-    env_owner,
-)
 from apprc.runtime.provenance import (
     ConfigProvenance,
     PythonProvenanceOrigin,
@@ -97,43 +91,41 @@ class _CooperativeAssignmentMixin(BaseConfig):
         super()._after_existing_assignment(key, value, origin=origin)
 
 
-@env_owner(
-    key="cooperative",
+_CONFIG_TEST_RC = rc.AppRC(
+    app_id="config_test",
+    display_name="Config Test",
+    config_package="config_test.config",
+)
+
+
+@_CONFIG_TEST_RC.config(
+    "cooperative",
     title="Cooperative",
-    env_prefix="COOPERATIVE_",
+    prefix="COOPERATIVE_",
     rc_path=("cooperative",),
-    log_lifecycle=False,
 )
-class _CooperativeEnv(EnvConfig, _CooperativeAssignmentMixin):
-    value: str = env_field("VALUE", default="initial")
-
-
-@env_owner(
-    key="demo",
-    title="Demo",
-    env_prefix="DEMO_",
-    rc_path=("demo",),
-)
-class _ChoiceEnv(EnvConfig):
-    mode: str = env_field("MODE", default="AUTO", choices=("AUTO", "MANUAL"))
+class _CooperativeConfig(rc.Config, _CooperativeAssignmentMixin):
+    value: str = rc.field("COOPERATIVE_VALUE", default="initial")
 
 
 @dataclass(slots=True)
-class _OwnerlessEnv(EnvConfig):
+class _UnregisteredConfig(rc.Config):
     value: str = "fallback"
 
 
-@env_owner(
-    key="demo.runtime",
+@_CONFIG_TEST_RC.config(
+    "demo_runtime",
     title="Demo Runtime",
-    env_prefix="DEMO_",
+    prefix="DEMO_",
     rc_path=("demo",),
 )
-class _DemoEnv(EnvConfig):
-    mode: str = env_field("MODE", default="AUTO", choices=("AUTO", "MANUAL"))
-    retries: int = env_field("RETRIES", default=3)
-    enabled: bool = env_field("ENABLED", default=False)
-    token: str = env_field("TOKEN", default="demo-token", secret=True)
+class _DemoConfig(rc.Config):
+    mode: str = rc.field(
+        "DEMO_MODE", default="AUTO", choices=("AUTO", "MANUAL")
+    )
+    retries: int = rc.field("DEMO_RETRIES", default=3)
+    enabled: bool = rc.field("DEMO_ENABLED", default=False)
+    token: str = rc.field("DEMO_TOKEN", default="demo-token", secret=True)
 
 
 _factory_counter = 0
@@ -146,55 +138,26 @@ def _next_factory_path() -> Path:
     return Path(f"factory-{_factory_counter}")
 
 
-@env_owner(
-    key="demo.factory",
+@_CONFIG_TEST_RC.config(
+    "demo_factory",
     title="Demo Factory",
-    env_prefix="FACTORY_",
+    prefix="FACTORY_",
     rc_path=("demo", "factory"),
 )
-class _FactoryEnv(EnvConfig):
-    cache_dir: Path = env_field("CACHE_DIR", default_factory=_next_factory_path)
+class _FactoryConfig(rc.Config):
+    cache_dir: Path = rc.field(
+        "FACTORY_CACHE_DIR", default_factory=_next_factory_path
+    )
 
 
-@env_owner(
-    key="demo.required",
+@_CONFIG_TEST_RC.config(
+    "demo_required",
     title="Demo Required",
-    env_prefix="REQUIRED_",
+    prefix="REQUIRED_",
     rc_path=("demo", "required"),
 )
-class _RequiredEnv(EnvConfig):
-    value: str = env_field("VALUE", title="Required value")
-
-
-@env_owner(
-    key="demo.implicit",
-    title="Demo Implicit",
-    env_prefix="IMPLICIT_",
-    rc_path=("demo", "implicit"),
-)
-class _ImplicitEnv(EnvConfig):
-    auto_named_value: str = env_field(default="fallback")
-
-
-@env_owner(
-    key="demo.logged",
-    title="Logged Demo",
-    env_prefix="LOGGED_",
-    rc_path=("demo", "logged"),
-)
-class _LoggedEnv(EnvConfig):
-    value: str = env_field("VALUE", default="logged")
-
-
-@env_owner(
-    key="demo.quiet",
-    title="Quiet Demo",
-    env_prefix="QUIET_",
-    rc_path=("demo", "quiet"),
-    log_lifecycle=False,
-)
-class _QuietEnv(EnvConfig):
-    value: str = env_field("VALUE", default="quiet")
+class _RequiredConfig(rc.Config):
+    value: str = rc.field("REQUIRED_VALUE", title="Required value")
 
 
 class _LogSink:
@@ -206,7 +169,7 @@ class _LogSink:
 
 
 def _clear_demo_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    owner = config_owner_for(_DemoEnv)
+    owner = rc.schema.owner_for(_DemoConfig)
     for spec in owner.fields:
         monkeypatch.delenv(owner.env_key(spec.name), raising=False)
 
@@ -487,25 +450,10 @@ def test_base_config_deepcopy_logs_once_for_nested_configs(
     ]
 
 
-def test_env_config_facade_hides_internal_helpers() -> None:
-    assert config_objects_api.BaseConfig is BaseConfig
-    assert config_objects_api.EnvConfig is EnvConfig
-    assert config_objects_api.env_field is env_field
-    assert config_objects_api.env_owner is env_owner
-    assert not hasattr(config_objects_api, "env_values_for_binding")
-    assert not hasattr(config_objects_api, "protected_field_names")
-    assert not hasattr(config_objects_api, "validate_owner_field_value")
-    assert not hasattr(config_objects_api, "bind_owner_from_env")
-    assert not hasattr(config_objects_api, "state_transfer")
-    assert not hasattr(config_objects_api, "post_env_overrides")
-    assert not hasattr(config_objects_api, "origin_for_field")
-    assert not hasattr(config_objects_api, "parse_env_field_value")
+def test_app_rc_registration_derives_config_owner() -> None:
+    owner = rc.schema.owner_for(_DemoConfig)
 
-
-def test_env_owner_derives_config_owner_from_env_config_class() -> None:
-    owner = config_owner_for(_DemoEnv)
-
-    assert owner.key == "demo.runtime"
+    assert owner.key == "demo_runtime"
     assert owner.env_key("mode") == "DEMO_MODE"
     assert owner.config_path("retries") == ("demo", "retries")
     assert owner.field("mode").python_type is str
@@ -514,120 +462,86 @@ def test_env_owner_derives_config_owner_from_env_config_class() -> None:
     assert owner.field("token").secret is True
 
 
-def test_env_owner_preserves_post_init_hook_class_identity(
+def test_app_rc_registration_preserves_post_init_hook_class_identity(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """EnvConfig hooks can call super and derive runtime fields."""
+    """Config hooks can call super and derive runtime fields."""
     monkeypatch.setenv("HOOK_STORAGE", str(tmp_path))
+    hook_rc = rc.AppRC(
+        app_id="hook_test",
+        display_name="Hook Test",
+        config_package="hook_test.config",
+    )
 
-    class HookEnv(EnvConfig):
-        storage_root: Path = env_field("STORAGE")
+    class HookConfig(rc.Config):
+        storage_root: Path = rc.field("HOOK_STORAGE")
         cache_dir: Path = field(init=False)
 
         def __post_init__(self) -> None:
-            """Derive paths after EnvConfig binds environment values."""
+            """Derive paths after Config binds environment values."""
             super().__post_init__()
             self.cache_dir = self.storage_root / "cache"
 
-    DecoratedHookEnv = env_owner(
-        key="hook",
+    RegisteredHookConfig = hook_rc.config(
+        "hook",
         title="Hook",
-        env_prefix="HOOK_",
+        prefix="HOOK_",
         rc_path=("hook",),
-        log_lifecycle=False,
-    )(HookEnv)
+    )(HookConfig)
 
-    config = DecoratedHookEnv()
+    config = RegisteredHookConfig()
 
-    assert DecoratedHookEnv is HookEnv
+    assert RegisteredHookConfig is HookConfig
     assert config.storage_root == tmp_path
     assert config.cache_dir == tmp_path / "cache"
 
 
 def test_config_owner_reuses_generated_settings_class() -> None:
-    owner = config_owner_for(_DemoEnv)
+    owner = rc.schema.owner_for(_DemoConfig)
 
     assert owner.settings_class() is owner.settings_class()
 
 
-def test_env_owner_rejects_non_env_config_class() -> None:
-    with pytest.raises(TypeError, match="must inherit EnvConfig"):
-
-        @env_owner(
-            key="bad",
-            title="Bad",
-            env_prefix="BAD_",
-            rc_path=("bad",),
-        )
-        class _BadOwner:
-            value: str = env_field("VALUE", default="bad")
-
-
-def test_env_field_rejects_default_and_default_factory() -> None:
+def test_field_rejects_default_and_default_factory() -> None:
     with pytest.raises(ValueError, match="default and default_factory"):
-        env_field("VALUE", default="x", default_factory=lambda: "y")
+        rc.field("VALUE", default="x", default_factory=lambda: "y")
 
 
-def test_env_field_default_factory_resolves_fresh_envconfig_defaults(
+def test_config_default_factory_resolves_fresh_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("FACTORY_CACHE_DIR", raising=False)
 
-    first = _FactoryEnv()
-    second = _FactoryEnv()
+    first = _FactoryConfig()
+    second = _FactoryConfig()
 
     assert first.cache_dir != second.cache_dir
-    assert first.provenance_of("cache_dir").origin == "python_envconfig_default"
+    assert first.provenance_of("cache_dir").origin == "python_config_default"
 
 
-def test_env_owner_wraps_lifecycle_by_default() -> None:
-    assert getattr(_LoggedEnv.__init__, "__init_lifecycle_wrapped__", False)
-    assert not getattr(_QuietEnv.__init__, "__init_lifecycle_wrapped__", False)
-
-
-def test_env_owner_lifecycle_wrapping_is_idempotent() -> None:
-    wrapped_init = _LoggedEnv.__init__
-
-    decorated = env_owner(
-        key="demo.logged",
-        title="Logged Demo",
-        env_prefix="LOGGED_",
-        rc_path=("demo", "logged"),
-    )(_LoggedEnv)
-
-    assert decorated is _LoggedEnv
-    assert _LoggedEnv.__init__ is wrapped_init
-
-
-def test_env_field_derives_env_var_from_python_field_name() -> None:
-    owner = config_owner_for(_ImplicitEnv)
-
-    assert owner.env_key("auto_named_value") == "IMPLICIT_AUTO_NAMED_VALUE"
-
-
-def test_env_config_rejects_invalid_runtime_choices(
+def test_config_rejects_invalid_runtime_choices(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DEMO_MODE", "BOGUS")
 
     with pytest.raises(ValueError, match="DEMO_MODE='BOGUS' is invalid"):
-        _ChoiceEnv()
+        _DemoConfig()
 
 
-def test_env_config_ownerless_config_requires_owner() -> None:
-    with pytest.raises(RuntimeError, match="decorated with @env_owner"):
-        _OwnerlessEnv(bind_from_env_on_init=False)
+def test_config_requires_app_rc_registration() -> None:
+    with pytest.raises(RuntimeError, match="registered with @MyRC.config"):
+        _UnregisteredConfig(bind_from_env_on_init=False)
 
 
-def test_env_config_python_keyword_argument_overrides_shell_env(
+def test_config_python_keyword_argument_overrides_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
     monkeypatch.setenv("DEMO_MODE", "AUTO")
     monkeypatch.setenv("DEMO_RETRIES", "9")
 
-    cfg = _DemoEnv(mode="MANUAL")
+    cfg = _DemoConfig(mode="MANUAL")
 
     assert cfg.mode == "MANUAL"
     assert cfg.retries == 9
@@ -643,30 +557,30 @@ def test_env_config_python_keyword_argument_overrides_shell_env(
     assert retries_provenance.value == 9
 
 
-def test_env_config_python_constructor_argument_ignores_invalid_shell_env(
+def test_config_python_constructor_argument_ignores_invalid_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
     monkeypatch.setenv("DEMO_RETRIES", "not-an-int")
 
-    cfg = _DemoEnv(retries=4)
+    cfg = _DemoConfig(retries=4)
 
     assert cfg.retries == 4
     assert cfg.provenance_of("retries").origin == "python_constructor_argument"
 
 
-def test_env_config_override_python_values_reads_invalid_shell_env(
+def test_config_override_python_values_reads_invalid_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
-    cfg = _DemoEnv(retries=4)
+    cfg = _DemoConfig(retries=4)
     monkeypatch.setenv("DEMO_RETRIES", "not-an-int")
 
     with pytest.raises(InvalidSettingsError, match="converting"):
         cfg.reload(override_python_values=True)
 
 
-def test_env_config_python_constructor_argument_override_stays_quiet_during_init(
+def test_config_python_constructor_argument_override_stays_quiet_during_init(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
@@ -674,35 +588,35 @@ def test_env_config_python_constructor_argument_override_stays_quiet_during_init
     monkeypatch.setattr(base_config, "LOG", sink)
     monkeypatch.setenv("DEMO_MODE", "AUTO")
 
-    cfg = _DemoEnv(mode="MANUAL")
+    cfg = _DemoConfig(mode="MANUAL")
 
     assert cfg.mode == "MANUAL"
     assert sink.warnings == []
 
 
-def test_env_config_rejects_invalid_python_choice_arg() -> None:
+def test_config_rejects_invalid_python_choice_arg() -> None:
     with pytest.raises(ValueError, match="DEMO_MODE='BOGUS' is invalid"):
-        _ChoiceEnv(mode="BOGUS")
+        _DemoConfig(mode="BOGUS")
 
 
-def test_env_config_rejects_wrong_python_constructor_argument_type() -> None:
+def test_config_rejects_wrong_python_constructor_argument_type() -> None:
     with pytest.raises(TypeError, match="DEMO_RETRIES must be int; got str"):
-        _DemoEnv(retries="4")  # pyright: ignore[reportArgumentType]
+        _DemoConfig(retries="4")  # pyright: ignore[reportArgumentType]
 
 
-def test_env_config_rejects_invalid_python_choice_assignment() -> None:
-    cfg = _ChoiceEnv()
+def test_config_rejects_invalid_python_choice_assignment() -> None:
+    cfg = _DemoConfig()
 
     with pytest.raises(ValueError, match="DEMO_MODE='BOGUS' is invalid"):
         cfg.mode = "BOGUS"
 
     assert cfg.mode == "AUTO"
-    assert cfg.provenance_of("mode").origin == "python_envconfig_default"
+    assert cfg.provenance_of("mode").origin == "python_config_default"
 
 
-def test_env_config_assignment_continues_through_cooperative_mro() -> None:
+def test_config_assignment_continues_through_cooperative_mro() -> None:
     _CooperativeAssignmentMixin.assignment_calls = 0
-    config = _CooperativeEnv()
+    config = _CooperativeConfig()
 
     config.value = "changed"
 
@@ -710,102 +624,93 @@ def test_env_config_assignment_continues_through_cooperative_mro() -> None:
     assert _CooperativeAssignmentMixin.assignment_calls == 1
 
 
-def test_env_config_rejects_wrong_python_assignment_type() -> None:
-    cfg = _DemoEnv()
+def test_config_rejects_wrong_python_assignment_type() -> None:
+    cfg = _DemoConfig()
 
     with pytest.raises(TypeError, match="DEMO_ENABLED must be bool; got str"):
         cfg.enabled = "true"  # pyright: ignore[reportAttributeAccessIssue]
 
     assert cfg.enabled is False
-    assert cfg.provenance_of("enabled").origin == "python_envconfig_default"
+    assert cfg.provenance_of("enabled").origin == "python_config_default"
 
 
-def test_env_owner_rejects_wrong_python_default_type() -> None:
+def test_app_rc_registration_rejects_wrong_python_default_type() -> None:
+    bad_default_rc = rc.AppRC(
+        app_id="bad_default_test",
+        display_name="Bad Default Test",
+        config_package="bad_default_test.config",
+    )
     with pytest.raises(TypeError, match="retries must be int; got str"):
 
-        @env_owner(
-            key="demo.bad_default",
+        @bad_default_rc.config(
+            "bad_default",
             title="Bad Default",
-            env_prefix="BAD_DEFAULT_",
+            prefix="BAD_DEFAULT_",
             rc_path=("demo", "bad_default"),
         )
-        class _BadDefaultEnv(EnvConfig):
-            retries: int = env_field("RETRIES", default="3")
+        class _BadDefaultConfig(rc.Config):
+            retries: int = rc.field("BAD_DEFAULT_RETRIES", default="3")
 
 
-def test_env_owner_rejects_required_python_default() -> None:
-    """Internal declarations enforce the public required-field contract."""
-    with pytest.raises(ValueError, match="required=True"):
-
-        @env_owner(
-            key="demo.required_default",
-            title="Required Default",
-            env_prefix="REQUIRED_DEFAULT_",
-            rc_path=("demo", "required_default"),
-        )
-        class _RequiredDefaultEnv(EnvConfig):
-            value: str = env_field("VALUE", default="fallback", required=True)
-
-
-def test_env_config_python_positional_argument_overrides_shell_env(
+def test_config_python_positional_argument_overrides_shell_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
     monkeypatch.setenv("DEMO_MODE", "AUTO")
 
-    cfg = _DemoEnv("MANUAL")
+    cfg = _DemoConfig("MANUAL")
 
     assert cfg.mode == "MANUAL"
     assert cfg.provenance_of("mode").origin == "python_constructor_argument"
 
 
-def test_env_config_absent_env_fields_report_envconfig_default(
+def test_config_absent_env_fields_report_config_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
 
-    cfg = _DemoEnv()
+    cfg = _DemoConfig()
 
     assert cfg.mode == "AUTO"
     assert cfg.retries == 3
     assert cfg.provenance_of("mode").source == "python"
-    assert cfg.provenance_of("mode").origin == "python_envconfig_default"
-    assert cfg.provenance_of("retries").origin == "python_envconfig_default"
+    assert cfg.provenance_of("mode").origin == "python_config_default"
+    assert cfg.provenance_of("retries").origin == "python_config_default"
 
 
-def test_env_config_envconfig_defaults_resolve_when_env_binding_is_disabled(
+def test_config_defaults_resolve_when_env_binding_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
     monkeypatch.setenv("DEMO_RETRIES", "9")
 
-    cfg = _DemoEnv(bind_from_env_on_init=False)
+    cfg = _DemoConfig(bind_from_env_on_init=False)
 
     assert cfg.retries == 3
-    assert cfg.provenance_of("retries").origin == "python_envconfig_default"
+    assert cfg.provenance_of("retries").origin == "python_config_default"
 
 
-def test_env_config_provenance_returns_all_owner_field_sources(
+def test_config_provenance_returns_all_owner_field_sources(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
     monkeypatch.setenv("DEMO_RETRIES", "6")
 
-    cfg = _DemoEnv(mode="MANUAL")
+    cfg = _DemoConfig(mode="MANUAL")
 
     provenance = cfg.provenance()
     assert set(provenance) == {"mode", "retries", "enabled", "token"}
     assert provenance["mode"].origin == "python_constructor_argument"
     assert provenance["retries"].origin == "shell_export_variable"
-    assert provenance["enabled"].origin == "python_envconfig_default"
+    assert provenance["enabled"].origin == "python_config_default"
 
 
-def test_env_config_secret_source_redacts_repr_and_keeps_raw_value(
+def test_config_secret_source_redacts_repr_and_keeps_raw_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
 
-    source = _DemoEnv().provenance_of("token")
+    source = _DemoConfig().provenance_of("token")
 
     assert source.secret is True
     assert source.value == "demo-token"
@@ -814,27 +719,27 @@ def test_env_config_secret_source_redacts_repr_and_keeps_raw_value(
     assert "<redacted>" in repr(source)
 
 
-def test_env_config_required_field_can_be_supplied_by_env(
+def test_config_required_field_can_be_supplied_by_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("REQUIRED_VALUE", "from-env")
 
-    cfg = _RequiredEnv()
+    cfg = _RequiredConfig()
 
     assert cfg.value == "from-env"
     assert cfg.provenance_of("value").origin == "shell_export_variable"
 
 
-def test_env_config_required_field_raises_when_missing(
+def test_config_required_field_raises_when_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("REQUIRED_VALUE", raising=False)
 
     with pytest.raises(RuntimeError, match="REQUIRED_VALUE"):
-        _RequiredEnv()
+        _RequiredConfig()
 
 
-def test_env_config_synthetic_mapping_loaders_do_not_depend_on_cwd(
+def test_config_synthetic_mapping_loaders_do_not_depend_on_cwd(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _NoCwdPath:
@@ -842,7 +747,7 @@ def test_env_config_synthetic_mapping_loaders_do_not_depend_on_cwd(
         def cwd() -> Path:
             raise AssertionError("synthetic env loaders should not read cwd")
 
-    owner = config_owner_for(_DemoEnv)
+    owner = rc.schema.owner_for(_DemoConfig)
     retries_field = next(
         spec for spec in owner.fields if spec.name == "retries"
     )
@@ -857,13 +762,13 @@ def test_env_config_synthetic_mapping_loaders_do_not_depend_on_cwd(
     assert env_loading.parse_env_field_value(retries_field, "12") == 12
 
 
-def test_env_config_python_assignment_survives_reload(
+def test_config_python_assignment_survives_reload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
     sink = _LogSink()
-    monkeypatch.setattr(env_config_module, "LOG", sink)
-    cfg = _DemoEnv()
+    monkeypatch.setattr(config_runtime_module, "LOG", sink)
+    cfg = _DemoConfig()
     cfg.mode = "MANUAL"
     monkeypatch.setenv("DEMO_MODE", "AUTO")
 
@@ -877,11 +782,11 @@ def test_env_config_python_assignment_survives_reload(
     )
 
 
-def test_env_config_reload_can_override_python_values(
+def test_config_reload_can_override_python_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
-    cfg = _DemoEnv(mode="MANUAL")
+    cfg = _DemoConfig(mode="MANUAL")
     monkeypatch.setenv("DEMO_MODE", "AUTO")
 
     cfg.reload(override_python_values=True)
@@ -890,11 +795,11 @@ def test_env_config_reload_can_override_python_values(
     assert cfg.provenance_of("mode").origin == "shell_export_variable"
 
 
-def test_env_config_bind_can_override_python_values(
+def test_config_bind_can_override_python_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
-    cfg = _DemoEnv(mode="MANUAL")
+    cfg = _DemoConfig(mode="MANUAL")
     monkeypatch.setenv("DEMO_MODE", "AUTO")
 
     cfg.bind_from_env(override_python_values=True)
@@ -903,11 +808,11 @@ def test_env_config_bind_can_override_python_values(
     assert cfg.provenance_of("mode").origin == "shell_export_variable"
 
 
-def test_env_config_scoped_owner_field_records_env_key(
+def test_config_scoped_owner_field_records_env_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
-    cfg = _DemoEnv()
+    cfg = _DemoConfig()
 
     scoped = cfg.scoped(mode="MANUAL")
     provenance = scoped.provenance_of("mode")
@@ -920,11 +825,11 @@ def test_env_config_scoped_owner_field_records_env_key(
     assert provenance.env_key == "DEMO_MODE"
 
 
-def test_env_config_scoped_validates_owner_choices_and_types(
+def test_config_scoped_validates_owner_choices_and_types(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
-    cfg = _DemoEnv()
+    cfg = _DemoConfig()
 
     with pytest.raises(ValueError, match="DEMO_MODE='BOGUS' is invalid"):
         cfg.scoped(mode="BOGUS")
@@ -935,11 +840,11 @@ def test_env_config_scoped_validates_owner_choices_and_types(
     assert cfg.enabled is False
 
 
-def test_env_config_scoped_preserves_owner_default_without_factory_rerun(
+def test_config_scoped_preserves_owner_default_without_factory_rerun(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("FACTORY_CACHE_DIR", raising=False)
-    cfg = _FactoryEnv()
+    cfg = _FactoryConfig()
     factory_count = _factory_counter
 
     scoped = cfg.scoped()
@@ -949,11 +854,11 @@ def test_env_config_scoped_preserves_owner_default_without_factory_rerun(
     assert _factory_counter == factory_count
 
 
-def test_env_config_reload_preserves_scoped_override(
+def test_config_reload_preserves_scoped_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
-    cfg = _DemoEnv().scoped(mode="MANUAL")
+    cfg = _DemoConfig().scoped(mode="MANUAL")
     monkeypatch.setenv("DEMO_MODE", "AUTO")
 
     cfg.reload()
@@ -962,11 +867,11 @@ def test_env_config_reload_preserves_scoped_override(
     assert cfg.provenance_of("mode").origin == "python_scoped_override"
 
 
-def test_env_config_reload_can_replace_scoped_override(
+def test_config_reload_can_replace_scoped_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
-    cfg = _DemoEnv().scoped(mode="MANUAL")
+    cfg = _DemoConfig().scoped(mode="MANUAL")
     monkeypatch.setenv("DEMO_MODE", "AUTO")
 
     cfg.reload(override_python_values=True)
@@ -975,11 +880,11 @@ def test_env_config_reload_can_replace_scoped_override(
     assert cfg.provenance_of("mode").origin == "shell_export_variable"
 
 
-def test_env_config_copy_preserves_provenance(
+def test_config_copy_preserves_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_demo_env(monkeypatch)
-    cfg = _DemoEnv(mode="MANUAL")
+    cfg = _DemoConfig(mode="MANUAL")
 
     shallow = copy(cfg)
     deep = deepcopy(cfg)

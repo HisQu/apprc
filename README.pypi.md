@@ -99,6 +99,9 @@ For installation and first-setup recipes, see
 
 Use one root import and declare the app contract from that handle:
 
+`rc.AppRC`, `rc.Config` or `rc.ConfigBase`, and `rc.field(...)` are the complete
+declaration API. `rc.schema` only inspects the normalized result.
+
 Create this standard package layout by hand, or generate a starter with
 `apprc scaffold config`:
 

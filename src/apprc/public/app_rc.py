@@ -32,8 +32,8 @@ from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.interfaces.cli.mount import mount_config_cli
 from apprc.public.config import Config, ConfigBase
 from apprc.public.field import (
-    PUBLIC_FIELD_METADATA_KEY,
-    PublicFieldSpec,
+    _FIELD_DECLARATION_METADATA_KEY,
+    _FieldDeclaration,
 )
 from apprc.runtime._bootstrap_state import BootstrapState
 from apprc.runtime.result import BootstrapLogger, EnvBootstrapResult
@@ -53,7 +53,7 @@ class RegisteredConfig:
     :param title: Human-readable display title.
     :param rc_path: Runtime config path components.
     :param prefix: Required env prefix for env-backed config classes.
-    :param env_fields: Public field markers declared on this class.
+    :param declared_fields: Field declarations registered on this class.
     """
 
     key: str
@@ -61,7 +61,7 @@ class RegisteredConfig:
     title: str
     rc_path: tuple[str, ...]
     prefix: str | None
-    env_fields: Mapping[str, PublicFieldSpec]
+    declared_fields: Mapping[str, _FieldDeclaration]
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,7 +359,7 @@ class AppRC:
         resolved_type = self._ensure_dataclass(config_type)
         resolved_title = title or _humanize_title(key)
         resolved_rc_path = rc_path or (key,)
-        public_fields = _collect_public_fields(resolved_type)
+        declared_fields = _collect_field_declarations(resolved_type)
 
         if _is_env_config(resolved_type):
             owner = self._build_owner(
@@ -368,15 +368,15 @@ class AppRC:
                 title=resolved_title,
                 prefix=prefix,
                 rc_path=resolved_rc_path,
-                public_fields=public_fields,
+                declared_fields=declared_fields,
             )
-            self._validate_unique_env_keys(resolved_type, public_fields)
+            self._validate_unique_env_keys(resolved_type, declared_fields)
             setattr(resolved_type, "config_owner", owner)
         else:
             self._validate_python_only_registration(
                 resolved_type,
                 prefix=prefix,
-                public_fields=public_fields,
+                declared_fields=declared_fields,
             )
 
         registered = RegisteredConfig(
@@ -385,7 +385,7 @@ class AppRC:
             title=resolved_title,
             rc_path=resolved_rc_path,
             prefix=prefix,
-            env_fields=public_fields,
+            declared_fields=declared_fields,
         )
         if self.bootstrap_result is not None and _is_env_config(resolved_type):
             LOG.warning(
@@ -398,7 +398,7 @@ class AppRC:
             )
         self._registered_by_key[key] = registered
         self._registered_by_type[resolved_type] = registered
-        for field_name, spec in public_fields.items():
+        for field_name, spec in declared_fields.items():
             self._env_key_index[spec.env_key] = (
                 resolved_type.__name__,
                 field_name,
@@ -414,9 +414,9 @@ class AppRC:
         title: str,
         prefix: str | None,
         rc_path: tuple[str, ...],
-        public_fields: Mapping[str, PublicFieldSpec],
+        declared_fields: Mapping[str, _FieldDeclaration],
     ) -> ConfigOwner:
-        """Build an internal owner from public env field markers."""
+        """Build an internal owner from registered field declarations."""
         if prefix is None or not prefix:
             raise ValueError(
                 f"{config_type.__name__} inherits rc.Config, so "
@@ -426,17 +426,17 @@ class AppRC:
             config_type=config_type,
             config_key=key,
             prefix=prefix,
-            fields=public_fields,
+            fields=declared_fields,
         )
         owner = ConfigOwner(
             key=key,
             title=title,
             env_prefix=prefix,
             rc_path=rc_path,
-            fields=_derive_internal_fields(
+            fields=_derive_config_fields(
                 config_type=config_type,
                 prefix=prefix,
-                public_fields=public_fields,
+                declared_fields=declared_fields,
             ),
         )
         validate_config_owner(owner)
@@ -445,10 +445,10 @@ class AppRC:
     def _validate_unique_env_keys(
         self,
         config_type: type[ConfigBase],
-        public_fields: Mapping[str, PublicFieldSpec],
+        declared_fields: Mapping[str, _FieldDeclaration],
     ) -> None:
         """Reject env keys that another registered config already owns."""
-        for field_name, spec in public_fields.items():
+        for field_name, spec in declared_fields.items():
             existing = self._env_key_index.get(spec.env_key)
             current = (config_type.__name__, field_name)
             if existing is not None and existing != current:
@@ -465,7 +465,7 @@ class AppRC:
         config_type: type[ConfigBase],
         *,
         prefix: str | None,
-        public_fields: Mapping[str, PublicFieldSpec],
+        declared_fields: Mapping[str, _FieldDeclaration],
     ) -> None:
         """Validate a ``ConfigBase`` registration."""
         if prefix is not None:
@@ -474,9 +474,9 @@ class AppRC:
                 "Python-only config. Do not pass prefix=... unless the class "
                 "inherits rc.Config."
             )
-        if not public_fields:
+        if not declared_fields:
             return
-        field_name = next(iter(public_fields))
+        field_name = next(iter(declared_fields))
         raise TypeError(
             f"{config_type.__name__}.{field_name} uses rc.field(...), but "
             f"{config_type.__name__} inherits rc.ConfigBase. Use rc.Config "
@@ -677,22 +677,22 @@ def _is_env_config(
     return issubclass(config_type, Config)
 
 
-def _collect_public_fields(
+def _collect_field_declarations(
     config_type: type[ConfigBase],
-) -> dict[str, PublicFieldSpec]:
+) -> dict[str, _FieldDeclaration]:
     """Collect ``rc.field(...)`` markers from one dataclass."""
-    public_fields: dict[str, PublicFieldSpec] = {}
+    declared_fields: dict[str, _FieldDeclaration] = {}
     for item in fields(config_type):
-        spec = item.metadata.get(PUBLIC_FIELD_METADATA_KEY)
+        spec = item.metadata.get(_FIELD_DECLARATION_METADATA_KEY)
         if spec is None:
             continue
-        if not isinstance(spec, PublicFieldSpec):
+        if not isinstance(spec, _FieldDeclaration):
             raise TypeError(
-                f"{PUBLIC_FIELD_METADATA_KEY!r} metadata must contain "
-                f"PublicFieldSpec, got {type(spec).__name__}."
+                f"{_FIELD_DECLARATION_METADATA_KEY!r} metadata must contain "
+                f"an AppRC field declaration, got {type(spec).__name__}."
             )
-        public_fields[item.name] = spec
-    return public_fields
+        declared_fields[item.name] = spec
+    return declared_fields
 
 
 def _validate_prefix(
@@ -700,7 +700,7 @@ def _validate_prefix(
     config_type: type[ConfigBase],
     config_key: str,
     prefix: str,
-    fields: Mapping[str, PublicFieldSpec],
+    fields: Mapping[str, _FieldDeclaration],
 ) -> None:
     """Ensure every public env key starts with the config prefix."""
     for field_name, spec in fields.items():
@@ -714,16 +714,16 @@ def _validate_prefix(
         )
 
 
-def _derive_internal_fields(
+def _derive_config_fields(
     *,
     config_type: type[ConfigBase],
     prefix: str,
-    public_fields: Mapping[str, PublicFieldSpec],
+    declared_fields: Mapping[str, _FieldDeclaration],
 ) -> tuple[ConfigField, ...]:
-    """Convert public field markers into internal owner-local fields."""
+    """Normalize field declarations after class types become available."""
     type_hints = get_type_hints(config_type, include_extras=True)
     derived: list[ConfigField] = []
-    for field_name, spec in public_fields.items():
+    for field_name, spec in declared_fields.items():
         python_type = spec.python_type or type_hints.get(field_name, Any)
         if python_type is Any:
             raise TypeError(

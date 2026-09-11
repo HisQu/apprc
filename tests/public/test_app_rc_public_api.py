@@ -89,7 +89,18 @@ def test_registers_env_backed_config_with_full_env_keys() -> None:
     assert LLMConfig.config_owner is not None
     assert LLMConfig.config_owner.env_prefix == "HAIU_LLM_"
     assert LLMConfig.config_owner.field("provider").env_var == "PROVIDER"
+    assert rc.schema.owner_for(LLMConfig) is LLMConfig.config_owner
     assert MyRC.spec.envs == (LLMConfig,)
+
+
+def test_schema_owner_for_rejects_unregistered_config() -> None:
+    """Schema inspection requires prior AppRC registration."""
+
+    class UnregisteredConfig(rc.Config):
+        value: str = rc.field("UNREGISTERED_VALUE", default="value")
+
+    with pytest.raises(TypeError, match="registered with @AppRC.config"):
+        rc.schema.owner_for(UnregisteredConfig)
 
 
 def test_registers_python_only_config_base() -> None:

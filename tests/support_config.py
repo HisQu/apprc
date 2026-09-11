@@ -14,16 +14,8 @@ from pytest import MonkeyPatch
 from rich.text import Text
 from typer.testing import Result
 
+import apprc as rc
 from apprc.definition.app_config.kit import AppConfigKit
-from apprc.definition.app_config.storage import Storage
-from apprc.definition.app_config.user_dotenv import UserDotenv
-from apprc.definition.env_config.env import EnvConfig
-from apprc.definition.env_config.fields import (
-    config_owner_for,
-    env_field,
-    env_owner,
-)
-from apprc.definition.env_config.sentinels import CONFIG_MISSING
 from apprc.runtime.result import EnvBootstrapResult
 from apprc.user_files.storage_roots.registry import (
     StorageRegistry,
@@ -50,22 +42,31 @@ def compact_cli_output(result: Result) -> str:
     )
 
 
-@env_owner(
-    key="app",
+_APPRC_EXAMPLE_APP_RC = rc.AppRC(
+    app_id="apprc_example_app",
+    display_name="Example App",
+    config_package="user_dotenv_with_storage.config",
+    user_dotenv=rc.UserDotenv(),
+    storage=rc.Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
+)
+
+
+@_APPRC_EXAMPLE_APP_RC.config(
+    "app",
     title="App",
-    env_prefix="APPRC_EXAMPLE_APP_",
+    prefix="APPRC_EXAMPLE_APP_",
     rc_path=("app",),
 )
-class ApprcExampleAppEnv(EnvConfig):
+class ApprcExampleAppEnv(rc.Config):
     """Example App env section used by AppRC integration tests."""
 
-    storage_root: Path = env_field(
-        "STORAGE",
+    storage_root: Path = rc.field(
+        "APPRC_EXAMPLE_APP_STORAGE",
         editable=False,
         required=True,
     )
-    profile: str = env_field(
-        "PROFILE",
+    profile: str = rc.field(
+        "APPRC_EXAMPLE_APP_PROFILE",
         default="default",
         title="Profile",
         explanation_short="Named profile used by the example app.",
@@ -74,34 +75,33 @@ class ApprcExampleAppEnv(EnvConfig):
             "the modal editor."
         ),
     )
-    mode: str = env_field(
-        "MODE",
+    mode: str = rc.field(
+        "APPRC_EXAMPLE_APP_MODE",
         default="AUTO",
         title="Mode",
         explanation_short="Operating mode used by Example App commands.",
         choices=("AUTO", "MANUAL"),
     )
-    enabled: bool = env_field(
-        "ENABLED",
+    enabled: bool = rc.field(
+        "APPRC_EXAMPLE_APP_ENABLED",
         default=True,
         title="Enabled",
         explanation_short="Turns the example app on or off.",
     )
-    retry_count: int = env_field(
-        "RETRY_COUNT",
+    retry_count: int = rc.field(
+        "APPRC_EXAMPLE_APP_RETRY_COUNT",
         default=3,
         title="Retry count",
         explanation_short="Maximum number of retry attempts.",
     )
-    cache_dir: Path = env_field(
-        "CACHE_DIR",
+    cache_dir: Path = rc.field(
+        "APPRC_EXAMPLE_APP_CACHE_DIR",
         default=Path("cache"),
         title="Cache directory",
         explanation_short="Storage-local cache path.",
     )
-    access_token: str = env_field(
-        "ACCESS_TOKEN",
-        default=CONFIG_MISSING,
+    access_token: str = rc.field(
+        "APPRC_EXAMPLE_APP_ACCESS_TOKEN",
         title="Access token",
         explanation_short="Required secret token.",
         explanation_long=(
@@ -113,34 +113,42 @@ class ApprcExampleAppEnv(EnvConfig):
     )
 
 
-APPRC_EXAMPLE_APP_OWNER = config_owner_for(ApprcExampleAppEnv)
+APPRC_EXAMPLE_APP_OWNER = rc.schema.owner_for(ApprcExampleAppEnv)
 APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
 
 
-@env_owner(
-    key="global",
+_STORAGE_FREE_APP_RC = rc.AppRC(
+    app_id="storage_free_app",
+    display_name="Storage-Free App",
+    config_package="user_dotenv.config",
+    user_dotenv=rc.UserDotenv(),
+)
+
+
+@_STORAGE_FREE_APP_RC.config(
+    "global",
     title="Global",
-    env_prefix="STORAGE_FREE_APP_",
+    prefix="STORAGE_FREE_APP_",
     rc_path=("global",),
 )
-class StorageFreeExampleEnv(EnvConfig):
+class StorageFreeExampleEnv(rc.Config):
     """Storage-free env section used by AppRC integration tests."""
 
-    profile: str = env_field(
-        "PROFILE",
+    profile: str = rc.field(
+        "STORAGE_FREE_APP_PROFILE",
         default="default",
         title="Profile",
         explanation_short="Named profile used by the storage-free app.",
     )
-    enabled: bool = env_field(
-        "ENABLED",
+    enabled: bool = rc.field(
+        "STORAGE_FREE_APP_ENABLED",
         default=True,
         title="Enabled",
         explanation_short="Turns the storage-free app on or off.",
     )
 
 
-STORAGE_FREE_EXAMPLE_OWNER = config_owner_for(StorageFreeExampleEnv)
+STORAGE_FREE_EXAMPLE_OWNER = rc.schema.owner_for(StorageFreeExampleEnv)
 
 
 def assert_apprc_dir_cli_error(result: Result) -> None:
@@ -212,28 +220,40 @@ def build_apprc_example_app_kit(
         default.
     :return: Isolated application config kit for tests.
     """
-    return AppConfigKit(
+    app_rc = rc.AppRC(
         app_id="apprc_example_app",
         display_name="Example App",
         config_package="user_dotenv_with_storage.config",
-        envs=(ApprcExampleAppEnv,),
-        user_dotenv=UserDotenv(),
-        storage=Storage(
+        user_dotenv=rc.UserDotenv(),
+        storage=rc.Storage(
             selector_env_key="APPRC_EXAMPLE_APP_STORAGE",
             required=storage_required,
         ),
     )
+    app_rc.config(
+        "app",
+        title="App",
+        prefix="APPRC_EXAMPLE_APP_",
+        rc_path=("app",),
+    )(ApprcExampleAppEnv)
+    return app_rc.kit
 
 
 def build_storage_free_example_kit() -> AppConfigKit:
     """Return a tiny AppConfigKit that does not use storage."""
-    return AppConfigKit(
+    app_rc = rc.AppRC(
         app_id="storage_free_app",
         display_name="Storage-Free App",
         config_package="user_dotenv.config",
-        envs=(StorageFreeExampleEnv,),
-        user_dotenv=UserDotenv(),
+        user_dotenv=rc.UserDotenv(),
     )
+    app_rc.config(
+        "global",
+        title="Global",
+        prefix="STORAGE_FREE_APP_",
+        rc_path=("global",),
+    )(StorageFreeExampleEnv)
+    return app_rc.kit
 
 
 def set_apprc_example_app_apprc_toml(

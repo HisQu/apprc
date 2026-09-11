@@ -161,3 +161,23 @@ class ConfigOwner:
         )
         object.__setattr__(self, "_settings_class_cache", settings_cls)
         return settings_cls
+
+
+def owner_for(config_cls: type[Any]) -> ConfigOwner:
+    """Return the owner schema registered for one config class.
+
+    :param config_cls: Class registered through ``@AppRC.config(...)``.
+    :return: Normalized owner inventory used by AppRC internals.
+    :raises TypeError: If AppRC has not registered the class.
+    """
+    try:
+        owner = config_cls.config_owner
+    except AttributeError as error:
+        raise TypeError(
+            f"{config_cls.__name__} is not registered with @AppRC.config(...)."
+        ) from error
+    if isinstance(owner, ConfigOwner):
+        return owner
+    raise TypeError(
+        f"{config_cls.__name__} is not registered with @AppRC.config(...)."
+    )

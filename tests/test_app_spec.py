@@ -4,55 +4,78 @@ from pathlib import Path
 
 import pytest
 
+import apprc as rc
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.storage import Storage
 from apprc.definition.app_config.user_dotenv import UserDotenv
-from apprc.definition.env_config.env import EnvConfig
-from apprc.definition.env_config.fields import env_field, env_owner
 
 
-@env_owner(
-    key="dup.owner",
+_DUPLICATE_OWNER_A_RC = rc.AppRC(
+    app_id="duplicate_owner_a",
+    display_name="Duplicate Owner A",
+    config_package="duplicate_owner_a.config",
+)
+
+
+@_DUPLICATE_OWNER_A_RC.config(
+    "dup.owner",
     title="Duplicate Owner A",
-    env_prefix="DUP_A_",
+    prefix="DUP_A_",
     rc_path=("dup", "owner_a"),
-    log_lifecycle=False,
 )
-class _DuplicateOwnerA(EnvConfig):
-    value: str = env_field("VALUE", default="a")
+class _DuplicateOwnerA(rc.Config):
+    value: str = rc.field("DUP_A_VALUE", default="a")
 
 
-@env_owner(
-    key="dup.owner",
+_DUPLICATE_OWNER_B_RC = rc.AppRC(
+    app_id="duplicate_owner_b",
+    display_name="Duplicate Owner B",
+    config_package="duplicate_owner_b.config",
+)
+
+
+@_DUPLICATE_OWNER_B_RC.config(
+    "dup.owner",
     title="Duplicate Owner B",
-    env_prefix="DUP_B_",
+    prefix="DUP_B_",
     rc_path=("dup", "owner_b"),
-    log_lifecycle=False,
 )
-class _DuplicateOwnerB(EnvConfig):
-    value: str = env_field("VALUE", default="b")
+class _DuplicateOwnerB(rc.Config):
+    value: str = rc.field("DUP_B_VALUE", default="b")
 
 
-@env_owner(
-    key="dup.env_a",
+_DUPLICATE_ENV_A_RC = rc.AppRC(
+    app_id="duplicate_env_a",
+    display_name="Duplicate Env A",
+    config_package="duplicate_env_a.config",
+)
+
+
+@_DUPLICATE_ENV_A_RC.config(
+    "dup.env_a",
     title="Duplicate Env A",
-    env_prefix="DUP_ENV_",
+    prefix="DUP_ENV_",
     rc_path=("dup", "env_a"),
-    log_lifecycle=False,
 )
-class _DuplicateEnvA(EnvConfig):
-    value: str = env_field("VALUE", default="a")
+class _DuplicateEnvA(rc.Config):
+    value: str = rc.field("DUP_ENV_VALUE", default="a")
 
 
-@env_owner(
-    key="dup.env_b",
+_DUPLICATE_ENV_B_RC = rc.AppRC(
+    app_id="duplicate_env_b",
+    display_name="Duplicate Env B",
+    config_package="duplicate_env_b.config",
+)
+
+
+@_DUPLICATE_ENV_B_RC.config(
+    "dup.env_b",
     title="Duplicate Env B",
-    env_prefix="DUP_ENV_",
+    prefix="DUP_ENV_",
     rc_path=("dup", "env_b"),
-    log_lifecycle=False,
 )
-class _DuplicateEnvB(EnvConfig):
-    value: str = env_field("VALUE", default="b")
+class _DuplicateEnvB(rc.Config):
+    value: str = rc.field("DUP_ENV_VALUE", default="b")
 
 
 def _spec(

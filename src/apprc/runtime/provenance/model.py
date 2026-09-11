@@ -13,7 +13,7 @@ type PythonProvenanceOrigin = Literal[
     "python_runtime_assignment",
     "python_scoped_override",
     "python_baseconfig_default",
-    "python_envconfig_default",
+    "python_config_default",
     "python_process_environment_mutation",
 ]
 type ShellProvenanceOrigin = Literal[
@@ -32,7 +32,7 @@ _PYTHON_ORIGINS: frozenset[PythonProvenanceOrigin] = frozenset(
         "python_runtime_assignment",
         "python_scoped_override",
         "python_baseconfig_default",
-        "python_envconfig_default",
+        "python_config_default",
         "python_process_environment_mutation",
     )
 )

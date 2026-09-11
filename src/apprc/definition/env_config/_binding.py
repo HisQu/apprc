@@ -1,4 +1,4 @@
-"""Current-process env binding helpers for ``EnvConfig`` instances."""
+"""Current-process env binding helpers for AppRC config instances."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ ENV_BINDING_PROTECTED_ORIGINS: frozenset[PythonProvenanceOrigin] = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class EnvBoundField:
-    """Parsed env-backed field ready to apply to an ``EnvConfig`` instance.
+    """Parsed env-backed field ready to apply to a config instance.
 
     :param name: Owner-local runtime field name.
     :param value: Parsed Python value.

@@ -42,7 +42,7 @@ def shell_origin_for_env_value(
     env_key: str,
     value: str,
 ) -> ConfigOriginState:
-    """Return the provenance state for one env value bound by EnvConfig.
+    """Return the provenance state for one env value bound by AppRC config.
 
     :param env_key: Full environment variable name.
     :param value: Raw string value read by the runtime binder.

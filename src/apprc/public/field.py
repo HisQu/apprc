@@ -11,12 +11,12 @@ from apprc.definition.env_config.sentinels import (
     ENV_FIELD_MISSING,
 )
 
-PUBLIC_FIELD_METADATA_KEY: Final = "apprc.public.field"
+_FIELD_DECLARATION_METADATA_KEY: Final = "apprc.field.declaration"
 
 
 @dataclass(frozen=True, slots=True)
-class PublicFieldSpec:
-    """Public metadata for one env-backed config attribute.
+class _FieldDeclaration:
+    """Metadata captured before AppRC registers a config class.
 
     App authors write full environment variable names through
     :func:`apprc.field`. The public registration decorator validates those
@@ -54,11 +54,6 @@ class PublicFieldSpec:
     secret: bool = False
     choices: tuple[str, ...] = ()
     python_type: type[Any] | None = None
-
-    @property
-    def shared_default(self) -> Any:
-        """Return ``packaged_default`` through the deprecated 0.19 name."""
-        return self.packaged_default
 
     def inferred_required(self) -> bool:
         """Return requiredness after applying dataclass-style defaults."""
@@ -170,7 +165,7 @@ def field(
         if explanation_long is not None
         else description or resolved_explanation_short
     )
-    spec = PublicFieldSpec(
+    declaration = _FieldDeclaration(
         env_key=env,
         default=default,
         default_factory=default_factory,
@@ -187,7 +182,7 @@ def field(
     )
     field_kwargs: dict[str, Any] = {
         "repr": not secret,
-        "metadata": {PUBLIC_FIELD_METADATA_KEY: spec},
+        "metadata": {_FIELD_DECLARATION_METADATA_KEY: declaration},
     }
     if default_factory is not CONFIG_MISSING:
         field_kwargs["default_factory"] = cast(

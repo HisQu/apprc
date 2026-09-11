@@ -69,7 +69,8 @@ Put changes where the repo already has an owner:
 
 | Change Type | Owner |
 |---|---|
-| Developer-declared app specs, env config classes, owner metadata, and schema lookup | [src/apprc/definition](../src/apprc/definition) |
+| Public config declarations and registration | [src/apprc/public](../src/apprc/public) |
+| Normalized owner metadata, runtime config behavior, and schema lookup | [src/apprc/definition](../src/apprc/definition) |
 | Process-time dotenv bootstrap, provenance, and read-only diagnostics | [src/apprc/runtime](../src/apprc/runtime) |
 | AppRC-managed config-home files, dotenv editing, setup flows, and storage roots | [src/apprc/user_files](../src/apprc/user_files) |
 | Typer command integration, CLI presentation, and Textual TUI surfaces | [src/apprc/interfaces](../src/apprc/interfaces) |

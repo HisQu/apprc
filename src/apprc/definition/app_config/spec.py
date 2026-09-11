@@ -19,9 +19,8 @@ from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.env_config._validation import (
     validate_config_owner_inventory,
 )
-from apprc.definition.env_config.env import EnvConfig
-from apprc.definition.env_config.fields import config_owner_for
-from apprc.definition.env_config.schema import ConfigOwner
+from apprc.definition.env_config.schema import ConfigOwner, owner_for
+from apprc.public.config import Config
 from apprc.user_files.app_home.locations import (
     AppRCDirectoryPaths,
     apprc_file,
@@ -64,7 +63,7 @@ class AppConfigSpec:
     display_name: str
     config_package: str
     owners: tuple[ConfigOwner, ...]
-    envs: tuple[type[EnvConfig], ...]
+    envs: tuple[type[Config], ...]
     user_dotenv: UserDotenv | None
     storage: Storage | None
     storage_selector_env_key: str | None
@@ -83,7 +82,7 @@ class AppConfigSpec:
         app_id: str,
         display_name: str,
         config_package: str,
-        envs: tuple[type[EnvConfig], ...] = (),
+        envs: tuple[type[Config], ...] = (),
         user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
         command_name: str | None = None,
@@ -105,7 +104,7 @@ class AppConfigSpec:
                     "apprc_dir_env_key requires user_dotenv=rc.UserDotenv() "
                     "or storage=rc.Storage()."
                 )
-        resolved_owners = tuple(config_owner_for(env_cls) for env_cls in envs)
+        resolved_owners = tuple(owner_for(config_cls) for config_cls in envs)
         validate_config_owner_inventory(resolved_owners)
         resolved_selector_key = (
             resolve_storage_selector_env_key(

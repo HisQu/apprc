@@ -38,6 +38,11 @@ Normal integrations use `import apprc as rc`.
 `description`, `editable`, `secret`, `choices`, and `packaged_default`.
 `required=True` cannot be combined with `default` or `default_factory`.
 
+> [!IMPORTANT]
+> Declare config only through `rc.Config`, `rc.ConfigBase`, `rc.field(...)`,
+> and `@MyRC.config(...)`. The `rc.schema` namespace provides read-only
+> metadata for advanced integrations. It is not another declaration API.
+
 ## Application declaration
 
 ```python

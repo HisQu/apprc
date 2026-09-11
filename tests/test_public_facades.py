@@ -7,12 +7,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import apprc
 import apprc.cli as apprc_cli
 import apprc.files as apprc_files
 import apprc.interfaces as apprc_interfaces
 import apprc.provenance as apprc_provenance
 import apprc.storage as apprc_storage
+import apprc.definition.env_config as config_models
 from apprc.interfaces.cli._bootstrap import bootstrap_cli_env
 from apprc.interfaces.cli.config_command import (
     ConfigSelectorContext,
@@ -213,6 +216,20 @@ def test_legacy_aggregate_packages_are_not_public_facades() -> None:
         assert not hasattr(module, "__all__")
         for name in names:
             assert not hasattr(module, name)
+
+
+def test_internal_config_package_does_not_expose_legacy_declarations() -> None:
+    """The internal package must not revive the removed authoring API."""
+    assert not hasattr(config_models, "Config")
+    assert not hasattr(config_models, "EnvConfig")
+    assert not hasattr(config_models, "env_field")
+    assert not hasattr(config_models, "env_owner")
+    assert not hasattr(config_models, "config_owner_for")
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("apprc.definition.env_config.fields")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("apprc.definition.env_config.env")
 
 
 def _stub_import_names(path: Path) -> set[str]:

@@ -107,21 +107,13 @@ Treat this as the parking lot for actionable problems discovered while working b
 - **Context:** Atomic replacement prevents a partially written destination, but it does not make a multi-step edit atomic or detect that another process changed the file after it was read.
 - **Suggested next step:** Use unique same-directory temporary files plus a lock or optimistic revision check around each complete read-modify-write operation, including cleanup after failed replacement.
 
-## P3 / E1 [Code smell] - *Parallel declaration models obscure the supported API*
-- **Area:** `src/apprc/public/field.py`, `src/apprc/public/app_rc.py`, `src/apprc/definition/env_config/fields.py`, `tests/support_config.py`, `tests/test_base_config.py`
-- **Observed while:** Mapping how public config declarations become runtime schema.
-- **Why not fixed now:** Collapsing the models touches config derivation, compatibility helpers, and a large part of the test support layer.
-- **Evidence:** `PublicFieldSpec` plus `rc.field()` duplicate most of `EnvFieldSpec` plus `env_field()`, and `AppRC._derive_internal_fields()` translates between them. The internal authoring path is not exported from the main public facade but still dominates foundational tests and support fixtures.
-- **Context:** Two declaration vocabularies make it unclear which layer defines requiredness, defaults, names, and validation, while tests can pass against machinery normal users never call.
-- **Suggested next step:** Move foundational fixtures to the public `AppRC` API, converge on one field schema and one derivation path, then retire the duplicate authoring helpers. Align the owner of the resulting contract with [Contract objects depend on persistence and interfaces](#p3--e1-code-smell---contract-objects-depend-on-persistence-and-interfaces).
-
 ## P3 / E1 [Code smell] - *Contract objects depend on persistence and interfaces*
 - **Area:** `src/apprc/definition/app_config/spec.py`, `src/apprc/definition/app_config/kit.py`, `src/apprc/public/app_rc.py`
 - **Observed while:** Checking whether the documented package layers match dependency direction.
 - **Why not fixed now:** Moving these responsibilities changes internal ownership boundaries used by setup, diagnostics, the CLI, and tests.
 - **Evidence:** `AppConfigSpec` imports user-file modules and provides file-creation methods, while `AppConfigKit.typer_app()` imports CLI and TUI modules. Public `AppRC.ensure_bootstrapped()` calls the kit's private `_ensure_bootstrapped()` hook and exposes both `.kit` and `.spec`, creating three overlapping facade levels.
 - **Context:** A definition object should describe capabilities and validated values. File writes and interface construction make the contract depend outward on implementation layers and make it hard to identify the supported application entrypoint.
-- **Suggested next step:** Keep `AppConfigSpec` as pure validated data, move setup writes and CLI construction to their owning services, and choose `AppRC` as the single application facade. Coordinate that consolidation with [Parallel declaration models obscure the supported API](#p3--e1-code-smell---parallel-declaration-models-obscure-the-supported-api).
+- **Suggested next step:** Keep `AppConfigSpec` as pure validated data, move setup writes and CLI construction to their owning services, and choose `AppRC` as the single application facade.
 
 ## P3 / E1 [Code smell] - *Advanced file helpers exceed the fixed-layout contract*
 - **Area:** `src/apprc/files/_facade.py`, `src/apprc/storage/_facade.py`, `src/apprc/user_files/storage_roots/_naming.py`

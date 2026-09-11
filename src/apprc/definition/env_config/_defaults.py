@@ -1,4 +1,4 @@
-"""Owner-default helpers for ``EnvConfig`` instances."""
+"""Owner-default helpers for env-backed config instances."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def resolve_owner_defaults(
     field_origins: Mapping[str, ConfigOriginState],
     copy_value: Any,
 ) -> dict[str, ConfigOriginState]:
-    """Apply EnvConfig defaults to fields not supplied by Python callers.
+    """Apply config defaults to fields not supplied by Python callers.
 
     :param instance: Runtime config instance being initialized.
     :param owner: Config owner declaring env-backed fields.
@@ -49,7 +49,7 @@ def resolve_owner_defaults(
             copy_value(spec.resolve_default(), {}),
         )
         next_origins[spec.name] = ConfigOriginState(
-            "python_envconfig_default",
+            "python_config_default",
             env_key=owner.env_key(spec.name),
         )
     return next_origins

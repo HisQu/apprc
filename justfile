@@ -299,7 +299,7 @@ release-prepare level="patch":
 
     cp pyproject.toml uv.lock pylock.toml "$release_root/"
     restore_version_files=true
-    uv version --bump "{{level}}" --no-sync --frozen
+    uv version --bump "{{level}}" --no-sync
     python src/apprc_dev/packaging/terminal_metadata.py
     uv lock
     uv export -o pylock.toml --all-extras --all-groups --quiet

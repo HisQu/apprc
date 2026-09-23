@@ -114,6 +114,7 @@ All notable changes to `AppRC` will be documented in this file.
   - Marked the public `apprc.schema` exports for downstream type checkers.
     Pyright previously reported `ConfigOwner`, `ConfigField`, and
     `CONFIG_MISSING` as private when AppRC was installed from its wheel.
+  - `just release-prepare` no longer passes conflicting options to `uv version`.
 
 <br>
 

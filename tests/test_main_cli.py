@@ -532,7 +532,9 @@ def test_sdist_includes_tests_and_example_app_sources() -> None:
     source_include = pyproject["tool"]["uv"]["build-backend"]["source-include"]
 
     assert "tests/**" in source_include
-    assert "examples/example_apps/**" in source_include
+    assert "examples/**" in source_include
+    assert "docs/**" in source_include
+    assert "README.md" in source_include
 
 
 def test_demo_package_is_dev_dependency_only() -> None:

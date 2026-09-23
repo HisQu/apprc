@@ -32,30 +32,31 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.24.0 - 2026-09-11](#0240---2026-09-11)
-4. [0.23.7 - 2026-09-10](#0237---2026-09-10)
-5. [0.23.6 - 2026-09-10](#0236---2026-09-10)
-6. [0.23.5 - 2026-09-08](#0235---2026-09-08)
-7. [0.22.1 - 2026-09-04](#0221---2026-09-04)
-8. [0.22.0 - 2026-09-04](#0220---2026-09-04)
-9. [0.21.0 - 2026-09-04](#0210---2026-09-04)
-10. [0.20.0 - 2026-09-04](#0200---2026-09-04)
-11. [0.19.9 - 2026-09-02](#0199---2026-09-02)
-12. [0.19.8 - 2026-09-01](#0198---2026-09-01)
-13. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-14. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-15. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-16. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-17. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-18. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-19. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-20. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-21. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-22. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-23. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-24. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-25. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-26. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.25.0 - 2026-09-23](#0250---2026-09-23)
+4. [0.24.0 - 2026-09-11](#0240---2026-09-11)
+5. [0.23.7 - 2026-09-10](#0237---2026-09-10)
+6. [0.23.6 - 2026-09-10](#0236---2026-09-10)
+7. [0.23.5 - 2026-09-08](#0235---2026-09-08)
+8. [0.22.1 - 2026-09-04](#0221---2026-09-04)
+9. [0.22.0 - 2026-09-04](#0220---2026-09-04)
+10. [0.21.0 - 2026-09-04](#0210---2026-09-04)
+11. [0.20.0 - 2026-09-04](#0200---2026-09-04)
+12. [0.19.9 - 2026-09-02](#0199---2026-09-02)
+13. [0.19.8 - 2026-09-01](#0198---2026-09-01)
+14. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+15. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+16. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+17. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+18. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+19. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+20. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+21. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+22. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+23. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+24. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+25. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+26. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+27. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -66,6 +67,44 @@ All notable changes to `AppRC` will be documented in this file.
 <!-- ======================================================== -->
 
 # [Unreleased]
+
+<br>
+
+### 💥 Breaking changes
+
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.25.0 - 2026-09-23
 
 <br>
 
@@ -109,6 +148,8 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+  - Public re-export annotations let downstream type checkers accept the
+    documented `rc.AppRC`, `rc.Config`, and field declarations.
   - Independent immutable source snapshots, explicit environment input, deliberate
     export, atomic validated reloads, and archive-backed resource provenance.
   - Shared noninteractive manager for inspection, preview, setup, editing,
@@ -123,9 +164,12 @@ All notable changes to `AppRC` will be documented in this file.
   - Separated validated declarations, runtime lifecycle, persistence, shared
     operations, and terminal presentation. Package initializers contain imports
     and docstrings only; declaration dependencies are enforced by tests.
-  - Rewrote the README and manual around explicit loading and management; updated
-    examples and generated diagrams. Removed the overlapping kit facade and
-    obsolete managed-file resolver.
+  - Rewrote the README and documentation in learning order, with fixed component
+    names, connected explanation and reference tables, independent runnable
+    guides, and an Examples page covering every supported application setup.
+    Documentation checks execute the examples and validate local links.
+  - Updated the example applications and added a two-section Python example.
+    Removed the overlapping kit facade and obsolete managed-file resolver.
 
 <br>
 

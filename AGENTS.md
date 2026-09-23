@@ -29,6 +29,10 @@
 - Never infer, choose, submit, or continue based on a presumed answer.
 - If my answer is required, do not continue until I explicitly provide it.
 
+## Documentation
+- Read and follow [Documentation rules](docs/README.md#documentation-rules) before editing documentation.
+- Keep component names and document labels fixed; use inline links to exact explanations, guides, references, and examples.
+
 ## Verification
 - Review the diff for duplicate helpers, naming drift, unnecessary abstractions, and regressions.
 - Run the project’s relevant lint, type-check, and test commands before considering the task done.

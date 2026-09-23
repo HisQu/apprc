@@ -45,7 +45,7 @@ wheels = [
 
 [[package]]
 name = "apprc"
-version = "0.24.0"
+version = "0.25.0"
 source = { editable = "src/apprc_dev/packaging/terminal" }
 dependencies = [
     { name = "apprc-core" },
@@ -66,7 +66,7 @@ requires-dist = [
 
 [[package]]
 name = "apprc-core"
-version = "0.24.0"
+version = "0.25.0"
 source = { editable = "." }
 dependencies = [
     { name = "python-dotenv" },
@@ -128,7 +128,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "apprc" }]
+requires-dist = [{ name = "apprc", specifier = ">=0.25.0,<0.26" }]
 
 [[package]]
 name = "argon2-cffi"

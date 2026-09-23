@@ -11,7 +11,7 @@ build-backend = "uv_build"
 
 [project]
 name        = "apprc-core"
-version     = "0.24.0"
+version     = "0.25.0"
 description = "Reusable runtime configuration and config CLI helpers for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
 readme      = { file = "README.pypi.md", content-type = "text/markdown" }
@@ -115,7 +115,12 @@ module-name = "apprc"
 module-root = "src"
 source-exclude = ["src/apprc_dev/packaging/terminal/build/**", "src/apprc_dev/packaging/terminal/*.egg-info/**"]
 source-include = [
-    "examples/example_apps/**",
+    "README.md",
+    "CHANGELOG.md",
+    "AGENTS.md",
+    "TODO.md",
+    "docs/**",
+    "examples/**",
     "src/apprc_dev/packaging/**",
     "tests/**",
 ]

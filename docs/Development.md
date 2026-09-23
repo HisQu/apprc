@@ -1,10 +1,11 @@
-# Developing AppRC
+# Development
 
-[Manual](README.md) · [Architecture](Explanations.md) · [Migration](How-To-User-Guides.md#migrate-existing-applications)
+[Documentation](README.md) · [Explanations](Explanations.md) · [How-to user guides](How-To-User-Guides.md) · [References](References.md) · [Examples](EXAMPLES.md)
 
 - [Environment](#environment)
 - [Source ownership](#source-ownership)
 - [Checks](#checks)
+- [Documentation checks](#documentation-checks)
 - [Generated files](#generated-files)
 - [Build both distributions](#build-both-distributions)
 - [Release procedure](#release-procedure)
@@ -86,6 +87,27 @@ dependencies. `just clean` removes caches and build outputs. Obsolete empty
 namespace directories can survive historical in-place checkouts; the remaining
 cleanup question is tracked in [TODO.md](../TODO.md#todo-list).
 
+## Documentation checks
+
+Follow the [documentation rules](README.md#documentation-rules), including the
+fixed [component names](README.md#component-names). Explanations defines components;
+How-to user guides implements tasks; Examples assembles complete setups;
+References states the exact contracts. Link the relevant words between them.
+
+```shell
+.venv/bin/pytest tests/test_documentation.py
+.venv/bin/python examples/section_bundle.py
+```
+
+The tests check document links and anchors and execute the marked independent
+Python examples in temporary directories. Review prose separately: tests cannot
+determine whether an explanation teaches a component clearly. Verify expected
+values, file effects, and prerequisites whenever changing an example.
+
+Keep complete application sources in `examples`; link to those sources from
+Examples. The HTML `example-file` comments in guides associate code blocks with
+files for execution tests and are hidden in rendered Markdown.
+
 ## Generated files
 
 Edit source documentation and diagram scripts, then regenerate:
@@ -135,8 +157,8 @@ and `uv build --package apprc --no-sources`.
 
 Update the changelog first. Any change requiring consumer code, configuration,
 or installation changes belongs under breaking changes with affected users and
-migration instructions. This refactor remains unreleased and does not bump the
-version automatically.
+migration instructions. Version 0.25.0 is prepared locally with matching core
+and terminal metadata. It has not been tagged or published.
 
 `just publish-check` rehearses Linux Python 3.12–3.14 checks, generated metadata,
 both distributions, pip installation checks, and publication dry runs. It uploads

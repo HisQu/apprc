@@ -72,7 +72,8 @@ managed features can create persistent files at the selected paths. Use
 The advanced examples declare both capabilities. `cli_runtime` also exposes
 app-owned `status`, `--workspace`, `--model`, and `--dry-run` behavior.
 
-All six examples use the backward-compatible required defaults. An application
+Storage examples declare a required storage-path field, so constructing their
+settings requires a selected storage. User dotenv files remain optional. An application
 with storage-backed commands and storage-free core commands can instead
 declare `rc.Storage()`, then set `storage_required=True` only on
 the `CliRuntime` that owns the storage-backed commands. The capability remains
@@ -97,12 +98,13 @@ paths, `CliRuntime` runtime skipping, headless editor launch, and lab cleanup.
 ## Source Layout
 
 Every application owns its declaration, config sections, bundle, and CLI.
-Advanced examples retain the full lazy-facade package layout. Packaged
+Imports use the declaration and bundle modules directly; there are no config catalogs or lazy config facades. Packaged
 `apprc.defaults.env` is optional. `_example_apps_utils` owns only the lab,
 registry, and smoke runner.
 
 ## Docs
 
-- [Development example guide](../../docs/Development.md#checks)
-- [Generated CLI reference](../../docs/References.md#terminal-commands)
-- [System model](../../docs/Explanations.md#declaration-resolution-and-management)
+The [complete setups](../../docs/EXAMPLES.md#choose-a-setup) explain which app to
+choose. Each app uses the same [config CLI](../../docs/Explanations.md#config-cli),
+whose [commands](../../docs/References.md#terminal-commands) are checked by the
+[development checks](../../docs/Development.md#checks).

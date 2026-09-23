@@ -5,9 +5,14 @@
 [![Python](https://img.shields.io/pypi/pyversions/apprc)](https://pypi.org/project/apprc/)
 [![License](https://img.shields.io/pypi/l/apprc)](LICENSE)
 
-AppRC gives Python applications typed settings, source provenance, persistent
-user overrides, and named storage directories. Declare the settings once, resolve
-the inputs for each run, and use the same declaration for setup and editing.
+AppRC gives Python applications typed settings and tools for configuring them.
+Define each setting's type, default, and explanation once. Use the same
+application declaration to load values, show where they came from, and let users
+edit saved overrides.
+
+Applications can also register named data directories outside their source
+checkout. Each directory can have its own settings. A config CLI and terminal
+editor provide setup, inspection, editing, and storage management.
 
 - [Install](#install)
 - [Load settings](#load-settings)
@@ -22,132 +27,110 @@ Python 3.12 or newer is required.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install apprc` | Configuration, Typer commands, prompts, and the Textual editor |
-| `python -m pip install apprc-core` | Configuration and noninteractive management, without terminal dependencies |
+| `python -m pip install "apprc>=0.25.0,<0.26"` | Configuration, Typer commands, prompts, and the Textual editor. |
+| `python -m pip install "apprc-core>=0.25.0,<0.26"` | Configuration and noninteractive management without terminal dependencies. |
 
-Both installations use `import apprc`. The `apprc` distribution depends on the
-exact matching `apprc-core` version and installs the `apprc` command.
+Both distributions use `import apprc`. The `apprc` distribution installs the
+exact matching `apprc-core` version.
+
+> [!IMPORTANT]
+> This checkout prepares version 0.25.0. Until it is published, install from the
+> repository with `python -m pip install -e . -e src/apprc_dev/packaging/terminal`.
+> Preparing the version does not publish it.
 
 > [!WARNING]
-> When upgrading from the previous single-distribution release, use a fresh
-> environment or uninstall the old `apprc` first. See the
-> [migration guide](docs/How-To-User-Guides.md#migrate-existing-applications).
-> The refactor is currently unreleased.
+> When upgrading from the previous single-distribution package, use a fresh
+> environment or uninstall the old `apprc` first. Follow the
+> [migration instructions](docs/How-To-User-Guides.md#migrate-existing-applications)
+> for the changed Python API and package ownership.
 
 ## Load settings
+
+Create one [`AppRC`](docs/Explanations.md#apprc) for the application and register
+its [config sections](docs/Explanations.md#config-sections-and-fields).
+This complete example needs no files:
 
 ```python
 import apprc as rc
 
 MyRC = rc.AppRC(app_id="demo")
 
-@MyRC.config("app", prefix="DEMO_")
-class Settings(rc.Config):
-    retries: int = rc.field("DEMO_RETRIES", default=3)
-    verbose: bool = rc.field("DEMO_VERBOSE", default=False)
+@MyRC.config("client", prefix="DEMO_")
+class ClientSettings(rc.Config):
+    timeout: int = rc.field(
+        "DEMO_TIMEOUT",
+        default=30,
+        title="Request timeout",
+        explanation_short="Seconds to wait for an API response.",
+    )
 
-resolved = MyRC.resolve(environment={"DEMO_RETRIES": "5"})
-settings = resolved.build(Settings)
-assert settings.retries == 5
+resolved = MyRC.resolve(environment={"DEMO_TIMEOUT": "10"})
+settings = resolved.build(ClientSettings)
+assert settings.timeout == 10
+assert settings.provenance_of("timeout").origin == "shell_export_variable"
 ```
 
-Omit `environment` to capture the current process environment. Pass `{}` to
-exclude it. Resolution reads files without creating them and never changes
-`os.environ`. A resolution retains its own values and provenance even when
-another run chooses different inputs.
+`resolve()` reads the chosen inputs and returns a
+[`ResolvedConfig`](docs/Explanations.md#resolvedconfig). `build()` converts those
+inputs into the Python values used by `ClientSettings`. Pass `settings` to your
+application functions. Omit `environment` to use the actual process environment.
 
-Constructor overrides remain ordinary Python values:
-
-```python
-settings = resolved.build(Settings, retries=8)
-assert settings.retries == 8
-```
-
-For explicit dotenv inputs, use
-`MyRC.resolve(rc.ResolveOptions(env_files=(path,)))`, where `path` is a
-`pathlib.Path`. See [source precedence](docs/References.md#source-precedence).
+Add [dotenv files](docs/How-To-User-Guides.md#load-dotenv-files) or
+[packaged defaults](docs/How-To-User-Guides.md#ship-defaults-with-the-application)
+when values should come from files. AppRC applies a defined
+[source precedence](docs/References.md#source-precedence), and
+[provenance](docs/Explanations.md#provenance) records the source of each field.
+Reading configuration creates no files and does not change `os.environ`.
 
 ## Save user settings
 
-Enable the user dotenv when declaring the application:
+Add `user_dotenv=rc.UserDotenv()` to the `AppRC` declaration when users need saved
+preferences. The [user dotenv](docs/Explanations.md#user-dotenv-and-the-apprc-directory)
+is `apprc.user.env` in the AppRC directory, separate from the installed code.
+Its default location for `app_id="demo"` is `~/.local/share/demo`;
+`DEMO_APPRC_DIR` relocates it.
 
-```python
-MyRC = rc.AppRC(app_id="demo", user_dotenv=rc.UserDotenv())
-```
-
-Register your settings on that declaration, then create the file explicitly:
-
-```python
-manager = MyRC.manage()
-manager.setup()
-plan = manager.plan_update("app.retries", "6", scope="user")
-manager.apply_edit(plan)
-settings = manager.resolve().build(Settings)
-```
-
-The fixed filename is `apprc.user.env`. Its default directory is
-`~/.local/share/demo`; `DEMO_APPRC_DIR` relocates it. Missing user overrides are
-allowed. Required fields are checked when constructing settings.
-
-Inspection and edit planning do not write. Applying an edit checks that the
-file has not changed since planning. See
-[editing and conflicts](docs/How-To-User-Guides.md#edit-saved-values).
+[`ConfigManager`](docs/Explanations.md#configmanager), obtained from `MyRC.manage()`,
+initializes files and applies reviewed edits. The
+[saved-preference guide](docs/How-To-User-Guides.md#save-a-user-preference)
+is a complete runnable program. The
+[user preferences example](docs/EXAMPLES.md#persistent-user-preferences)
+provides the same operations through a CLI.
 
 ## Add named storage
 
-Use storage when the application has persistent data directories:
+Add `storage=rc.Storage()` when the application writes persistent data.
+A [storage](docs/Explanations.md#storage) is a registered directory with its own
+`apprc.storage.env`. The application obtains the selected root and writes its
+data there. Users can keep data outside the source checkout, switch between
+named directories, and move or archive them.
 
-```python
-from pathlib import Path
-
-MyRC = rc.AppRC(app_id="demo", storage=rc.Storage())
-manager = MyRC.manage()
-manager.setup(storage_root=Path("./demo-data"), storage_name="local")
-resolved = MyRC.resolve(rc.ResolveOptions(storage="local", storage_required=True))
-```
-
-A storage has an `apprc.storage.env` file. The `apprc.toml` registry records names,
-roots, and the default selection. `UserDotenv()` and `Storage()` are independent
-capabilities; either or both may be enabled.
-
-Storage is optional for a run unless `ResolveOptions(storage_required=True)`
-is passed. A supplied invalid selector still fails. See
-[storage selection](docs/References.md#storage-selection) and
-[storage operations](docs/How-To-User-Guides.md#manage-storage).
+The [data-directory guide](docs/How-To-User-Guides.md#store-data-outside-the-source-checkout)
+writes a report to selected storage. The
+[combined example](docs/EXAMPLES.md#user-settings-and-storage) shows how storage
+settings override user preferences. `UserDotenv()` and `Storage()` are independent;
+enable either or both.
 
 ## Add terminal commands
 
-Install `apprc`, then mount its commands on a Typer app:
+The [config CLI](docs/Explanations.md#config-cli) adds `config setup`, `config doctor`,
+`config set`, `config edit`, and storage commands to a Typer application.
+The [Typer guide](docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
+shows the entire application and command sequence.
 
-```python
-import typer
-
-app = typer.Typer()
-rc.cli.mount_config_cli(app, MyRC)
-
-@app.command()
-def run(ctx: typer.Context) -> None:
-    state = rc.cli.state_from(ctx, rc.cli.DefaultConfigCliState)
-    assert state.resolved is not None
-    settings = state.resolved.build(Settings)
-    typer.echo(settings.retries)
-```
-
-The application gets `config paths`, `config doctor`, `config setup`,
-`config set`, and `config edit`, plus storage commands when declared.
-Use `storage_required=True` on `mount_config_cli` if its runtime commands need
-storage. For an app-owned callback, use `rc.cli.CliRuntime` instead.
-
-Textual classes live under `rc.tui`. The future Toga interface and cx_Freeze
-build tooling are separate planned integrations; neither is implemented here.
+The [config editor](docs/Explanations.md#config-editor) displays configuration
+layers together, explains each setting, and edits user or storage overrides.
+Terminal setup already exists. A Toga GUI and native installer tooling remain
+[planned integrations](docs/Explanations.md#installed-packages-and-future-integrations).
 
 ## Examples and documentation
 
-- [Manual](docs/README.md): choose a task or look up an exact API.
-- [Integration and migration](docs/How-To-User-Guides.md): setup, bundles, terminal
-  state, reloads, and upgrading existing code.
-- [Reference](docs/References.md): supported names, files, precedence, and commands.
-- [Architecture](docs/Explanations.md): ownership and why loading stays explicit.
-- [Development](docs/Development.md): both distributions, checks, and releases.
-- [Runnable examples](examples/example_apps/README.md): six small applications
-  and a manual lab.
+Start with [Documentation](docs/README.md) for the learning order and component names.
+
+| Document | Purpose |
+| --- | --- |
+| [Explanations](docs/Explanations.md) | Understand the components and their connections. |
+| [How-to user guides](docs/How-To-User-Guides.md) | Complete one task using an independent example. |
+| [References](docs/References.md) | Look up exact APIs, files, commands, and behavior. |
+| [Examples](docs/EXAMPLES.md) | Choose and run a complete application setup. |
+| [Development](docs/Development.md) | Change, verify, build, and release AppRC. |

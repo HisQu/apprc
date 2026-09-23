@@ -2,13 +2,14 @@
 
 # ruff: noqa: F401
 
-from apprc.public.app_rc import AppRC
-from apprc.definition.resolution import ResolveOptions
-from apprc.runtime.resolution import ResolvedConfig
-from apprc.public.config import Config, ConfigBase
-from apprc.public.field import field
-from apprc.definition.app_config.storage import Storage
-from apprc.definition.app_config.user_dotenv import UserDotenv
+# > Explicit aliases mark public imports for downstream type checkers.
+from apprc.public.app_rc import AppRC as AppRC
+from apprc.definition.resolution import ResolveOptions as ResolveOptions
+from apprc.runtime.resolution import ResolvedConfig as ResolvedConfig
+from apprc.public.config import Config as Config, ConfigBase as ConfigBase
+from apprc.public.field import field as field
+from apprc.definition.app_config.storage import Storage as Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv as UserDotenv
 
 from . import cli
 from . import tui

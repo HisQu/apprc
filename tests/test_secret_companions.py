@@ -9,6 +9,7 @@ import pytest
 
 import apprc as rc
 from apprc.interfaces.cli.diagnostics.payload import build_config_doctor_payload
+from apprc.user_files.env_files.secrets import repair_secret_file_permissions
 
 
 def _app(tmp_path: Path) -> rc.AppRC:
@@ -115,3 +116,17 @@ def test_shared_storage_disables_secret_saving_without_disabling_storage(
     manager.apply_edit(
         manager.plan_update("DEMO_TOKEN", "private", scope="storage")
     )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows ACL inheritance check")
+def test_repair_keeps_ordinary_storage_file_readable(tmp_path: Path) -> None:
+    """New private parent access must inherit into ordinary layer files."""
+    root = tmp_path / "storage"
+    root.mkdir()
+    ordinary = root / "apprc.storage.env"
+    ordinary.write_text('DEMO_LABEL="readable"\n', encoding="utf-8")
+
+    status = repair_secret_file_permissions(root / "apprc.storage.secret.env")
+
+    assert status.available
+    assert ordinary.read_text(encoding="utf-8") == 'DEMO_LABEL="readable"\n'

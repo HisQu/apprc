@@ -126,14 +126,16 @@ def _windows_acl_is_private(path: Path) -> bool:
             win32security.WinBuiltinAdministratorsSid
         ),
     )
+    user_allowed = False
     for index in range(acl.GetAceCount()):
         ace = acl.GetAce(index)
-        if (
-            ace[0][0] == win32security.ACCESS_ALLOWED_ACE_TYPE
-            and ace[2] not in trusted
-        ):
+        if ace[0][0] != win32security.ACCESS_ALLOWED_ACE_TYPE:
+            continue
+        if ace[2] not in trusted:
             return False
-    return True
+        if ace[2] == user:
+            user_allowed = True
+    return user_allowed
 
 
 def _set_windows_private_acl(path: Path) -> None:
@@ -144,6 +146,11 @@ def _set_windows_private_acl(path: Path) -> None:
 
     user, _, _ = win32security.LookupAccountName(None, win32api.GetUserName())
     acl = win32security.ACL()
+    inheritance = (
+        win32security.CONTAINER_INHERIT_ACE | win32security.OBJECT_INHERIT_ACE
+        if path.is_dir()
+        else 0
+    )
     for sid in (
         user,
         win32security.CreateWellKnownSid(win32security.WinLocalSystemSid),
@@ -151,8 +158,11 @@ def _set_windows_private_acl(path: Path) -> None:
             win32security.WinBuiltinAdministratorsSid
         ),
     ):
-        acl.AddAccessAllowedAce(
-            win32security.ACL_REVISION, ntsecuritycon.FILE_ALL_ACCESS, sid
+        acl.AddAccessAllowedAceEx(
+            win32security.ACL_REVISION,
+            inheritance,
+            ntsecuritycon.FILE_ALL_ACCESS,
+            sid,
         )
     win32security.SetNamedSecurityInfo(
         str(path),

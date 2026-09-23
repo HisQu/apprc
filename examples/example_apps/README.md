@@ -1,9 +1,9 @@
 # AppRC Example Apps
 
-This dev-only package contains six self-contained application examples plus
+This dev-only package contains seven self-contained application examples plus
 two utilities for manual and automated testing. Four examples cover every
-combination of AppRC's user-dotenv and storage capabilities; two cover advanced
-CLI behavior.
+combination of AppRC's user-dotenv and storage capabilities, two cover advanced
+CLI behavior, and one shows an importable client.
 
 ## Install From This Checkout
 
@@ -26,6 +26,7 @@ console scripts. It does not require `uv` or `direnv`.
 | [`user_dotenv_with_storage`](src/user_dotenv_with_storage/README.md) | `apprc-user-dotenv-with-storage` | Yes | Yes | Both persistent capabilities and both write scopes. |
 | [`explicit_env_precedence`](src/explicit_env_precedence/README.md) | `apprc-explicit-env-precedence` | Yes | Yes | Process values versus explicit dotenv files. |
 | [`cli_runtime`](src/cli_runtime/README.md) | `apprc-cli-runtime` | Yes | Yes | App-owned callback and `CliRuntime`. |
+| [`library_client`](src/library_client/README.md) | `apprc-library-client` | Yes | No | An importable client loads its own settings. |
 
 Each application exposes a realistic `run` command and generated AppRC
 configuration commands. The application packages do not import
@@ -42,6 +43,7 @@ apprc-examples-lab storage
 apprc-examples-lab user-dotenv-with-storage
 apprc-examples-lab explicit-env-precedence
 apprc-examples-lab cli-runtime
+apprc-examples-lab library-client
 ```
 
 The lab opens the current user's shell and prints a walkthrough. For apps with
@@ -86,7 +88,7 @@ apprc-examples-run-all
 ```
 
 The runner invokes the installed CLIs as subprocesses. It exercises setup,
-doctor, application runtime, and purge for all six apps. Its precedence
+doctor, application runtime, and purge for all seven apps. Its precedence
 scenario creates distinct shell-selected and explicit-file-selected storage
 roots and values, then verifies both outcomes. Every scenario uses temporary
 state and the command prints one JSON summary.

@@ -4,6 +4,8 @@
 [![PyPI](https://img.shields.io/pypi/v/apprc)](https://pypi.org/project/apprc/)
 [![Python](https://img.shields.io/pypi/pyversions/apprc)](https://pypi.org/project/apprc/)
 [![License](https://img.shields.io/pypi/l/apprc)](LICENSE)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 AppRC gives Python applications typed settings and tools for configuring them.
 Define each setting's type, default, and explanation once. Use the same
@@ -13,6 +15,12 @@ edit saved overrides.
 Applications can also register named data directories outside their source
 checkout. Each directory can have its own settings. A config CLI and terminal
 editor provide setup, inspection, editing, and storage management.
+
+<!-- Graphical Abstract goes here: -->
+
+| ![Graphical abstract](https://raw.githubusercontent.com/HisQu/apprc/main/docs/assets/apprc-abstract-configuration-overview.svg) |
+|:--:|
+| **Fig. 1 - Graphical Abstract:** AppRC resolves typed settings from layered sources, connects selected storage to its settings and data directory, and shares one declaration across application code and configuration tools. |
 
 - [Install](#install)
 - [Load settings](#load-settings)
@@ -32,12 +40,6 @@ Python 3.12 or newer is required.
 
 Both distributions use `import apprc`. The `apprc` distribution installs the
 exact matching `apprc-core` version.
-
-**Important**
-
-This checkout prepares version 0.25.0. Until it is published, install from the
-repository with `python -m pip install -e . -e src/apprc_dev/packaging/terminal`.
-Preparing the version does not publish it.
 
 **Warning**
 
@@ -83,6 +85,10 @@ when values should come from files. AppRC applies a defined
 [source precedence](https://github.com/HisQu/apprc/blob/main/docs/References.md#source-precedence), and
 [provenance](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#provenance) records the source of each field.
 Reading configuration creates no files and does not change `os.environ`.
+An [importable client](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#use-apprc-inside-an-importable-client)
+can resolve these layers when constructed, so its caller only imports the client.
+The [complete client example](https://github.com/HisQu/apprc/blob/main/docs/EXAMPLES.md#importable-client-with-saved-preferences)
+shows the package and its configuration commands.
 
 ## Save user settings
 

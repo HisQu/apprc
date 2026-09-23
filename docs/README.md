@@ -21,6 +21,8 @@ Learn the components in this order:
 3. Add a [user dotenv](Explanations.md#user-dotenv-and-the-apprc-directory) when
    users need saved preferences, or [storage](Explanations.md#storage) when the
    application needs a persistent data directory.
+   An [importable client](How-To-User-Guides.md#use-apprc-inside-an-importable-client)
+   can load those layers inside its own constructor.
 4. Use [`ConfigManager`](Explanations.md#configmanager) to initialize and edit
    those files. Add the [config CLI](Explanations.md#config-cli) and
    [config editor](Explanations.md#config-editor) for interactive use.

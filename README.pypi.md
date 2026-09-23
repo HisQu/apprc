@@ -41,12 +41,6 @@ Python 3.12 or newer is required.
 Both distributions use `import apprc`. The `apprc` distribution installs the
 exact matching `apprc-core` version.
 
-**Important**
-
-This checkout prepares version 0.25.0. Until it is published, install from the
-repository with `python -m pip install -e . -e src/apprc_dev/packaging/terminal`.
-Preparing the version does not publish it.
-
 **Warning**
 
 When upgrading from the previous single-distribution package, use a fresh
@@ -91,6 +85,10 @@ when values should come from files. AppRC applies a defined
 [source precedence](https://github.com/HisQu/apprc/blob/main/docs/References.md#source-precedence), and
 [provenance](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#provenance) records the source of each field.
 Reading configuration creates no files and does not change `os.environ`.
+An [importable client](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#use-apprc-inside-an-importable-client)
+can resolve these layers when constructed, so its caller only imports the client.
+The [complete client example](https://github.com/HisQu/apprc/blob/main/docs/EXAMPLES.md#importable-client-with-saved-preferences)
+shows the package and its configuration commands.
 
 ## Save user settings
 

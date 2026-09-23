@@ -76,7 +76,7 @@ def test_example_apps_do_not_depend_on_runner_support() -> None:
     """Each user-facing CLI remains copyable without the test harness."""
     cli_paths = sorted(EXAMPLE_SOURCE.glob("*/cli.py"))
 
-    assert len(cli_paths) == 6
+    assert len(cli_paths) == 7
     for path in cli_paths:
         assert "_example_apps_utils" not in path.read_text(encoding="utf-8")
 
@@ -92,6 +92,7 @@ def test_run_all_uses_real_installed_clis() -> None:
         "user-dotenv-with-storage",
         "explicit-env-precedence",
         "cli-runtime",
+        "library-client",
     ]
     precedence = results[4]
     assert precedence["shell_wins"] != precedence["explicit_file_wins"]

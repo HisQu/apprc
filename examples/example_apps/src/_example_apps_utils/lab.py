@@ -51,6 +51,14 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
             f"{command} run",
             f"{command} config doctor",
         )
+    if spec.name == "library-client":
+        return (
+            f"{command} run",
+            f"{command} config setup --yes",
+            f"{command} config set request_timeout 15 --scope user",
+            f"{command} run",
+            "python -c 'from library_client import LibraryClient; print(LibraryClient().request_timeout)'",
+        )
     if spec.name == "explicit-env-precedence":
         explicit_root = root / "explicit-storage"
         env_file = root / "explicit.env"

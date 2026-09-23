@@ -69,6 +69,10 @@ environment key must use that prefix. Import sections before resolving.
 `MyRC.schema` contains immutable metadata for the current registrations, including
 `owners`, `envs`, application identity, enabled features, and fixed filenames.
 Reading the schema does not load configuration values or write files.
+`requires_storage=True` marks an environment-backed section whose fields are
+inactive until storage is selected. It requires `storage=rc.Storage()` on the
+declaration. It affects inspection, including `config doctor`, rather than the
+runtime storage requirement in [`ResolveOptions`](#resolution).
 
 ## Config fields
 
@@ -119,6 +123,8 @@ also exercises section overrides and reloads.
 [`ResolvedConfig`](Explanations.md#resolvedconfig). `environment=None` captures
 `os.environ` once; an explicit mapping replaces that input. `{}` excludes the
 process environment. Later changes to the caller's mapping do not change the result.
+An [importable client](How-To-User-Guides.md#use-apprc-inside-an-importable-client)
+can call `resolve().build(ClientSettings)` inside its constructor.
 
 | `ResolveOptions` field | Default | Behavior |
 | --- | --- | --- |
@@ -247,9 +253,11 @@ Explicit user edits can create a missing user dotenv; storage edits require an
 initialized storage. Setup preserves existing files and does not recreate a
 missing registered storage root or repoint an existing name.
 
-`FieldInspection` exposes `owner`, `field`, `value`, `origin`, and `issue`.
-Its `display_value` redacts secrets. Inspection reports field conversion and
-source problems without constructing every runtime object; it does not execute
+`FieldInspection` exposes `owner`, `field`, `value`, `origin`, `issue`, and
+`active`. Its `display_value` redacts secrets. Without selected storage, fields
+in a [storage-dependent section](Explanations.md#storage) have `active=False`,
+`value=None`, `display_value=None`, and `issue=None`. Inspection reports field
+conversion and source problems without constructing every runtime object; it does not execute
 application post-init validation. The [saved-preference guide](How-To-User-Guides.md#save-a-user-preference)
 provides a complete setup and editing sequence.
 

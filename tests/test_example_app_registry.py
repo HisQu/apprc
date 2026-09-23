@@ -10,6 +10,7 @@ def test_example_app_registry_exposes_all_installed_commands() -> None:
 
     assert names == {
         "cli-runtime",
+        "library-client",
         "explicit-env-precedence",
         "process-env",
         "storage",
@@ -18,6 +19,7 @@ def test_example_app_registry_exposes_all_installed_commands() -> None:
     }
     assert {spec.command_name for spec in specs} == {
         "apprc-cli-runtime",
+        "apprc-library-client",
         "apprc-explicit-env-precedence",
         "apprc-process-env",
         "apprc-storage",
@@ -28,6 +30,8 @@ def test_example_app_registry_exposes_all_installed_commands() -> None:
     assert example_app("process-env").uses_storage is False
     assert example_app("user-dotenv").uses_user_dotenv is True
     assert example_app("user-dotenv").uses_storage is False
+    assert example_app("library-client").uses_user_dotenv is True
+    assert example_app("library-client").uses_storage is False
     assert example_app("storage").uses_user_dotenv is False
     assert example_app("storage").uses_storage is True
     assert example_app("user-dotenv-with-storage").uses_user_dotenv is True

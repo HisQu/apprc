@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import apprc as rc
 from cli_runtime.config.app import MyRC as CLI_RUNTIME_RC
 from explicit_env_precedence.config.app import MyRC as PRECEDENCE_RC
+from library_client.config.app import MyRC as LIBRARY_CLIENT_RC
 from process_env.config.app import MyRC as PROCESS_ENV_RC
 from storage.config.app import MyRC as STORAGE_RC
 from user_dotenv.config.app import MyRC as USER_DOTENV_RC
@@ -101,6 +102,12 @@ EXAMPLE_APPS = (
         CLI_RUNTIME_RC,
         env_prefix="APPRC_EXAMPLE_RUNTIME_",
         required_storage_key="api_token",
+    ),
+    _spec(
+        "library-client",
+        "apprc-library-client",
+        LIBRARY_CLIENT_RC,
+        env_prefix="APPRC_EXAMPLE_LIBRARY_",
     ),
 )
 

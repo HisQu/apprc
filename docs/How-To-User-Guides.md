@@ -8,6 +8,7 @@
 - [Ship defaults with the application](#ship-defaults-with-the-application)
 - [Find where a value came from](#find-where-a-value-came-from)
 - [Save a user preference](#save-a-user-preference)
+- [Use AppRC inside an importable client](#use-apprc-inside-an-importable-client)
 - [Edit or remove a saved override](#edit-or-remove-a-saved-override)
 - [Store data outside the source checkout](#store-data-outside-the-source-checkout)
 - [Register and switch data directories](#register-and-switch-data-directories)
@@ -271,6 +272,109 @@ If the declaration also enables storage, `setup()` expects a storage root.
 Use `setup_user_dotenv()` to initialize only user overrides in that case.
 
 <a id="edit-saved-values"></a>
+## Use AppRC inside an importable client
+
+A library can own its [`AppRC`](Explanations.md#apprc) declaration and load
+settings when a client is constructed. Its caller then imports `Client` and does
+not need to declare AppRC or call a setup function. This example uses a
+[config section](Explanations.md#config-sections-and-fields), packaged defaults,
+and a [user dotenv](Explanations.md#user-dotenv-and-the-apprc-directory).
+
+Create these files in one working directory:
+
+```text
+working-directory/
+  demo.py
+  myclient/
+    __init__.py
+    client.py
+    config.py
+    apprc.defaults.env
+```
+
+`myclient/__init__.py`:
+
+<!-- example-file: myclient/__init__.py -->
+```python
+"""Public imports for the example client."""
+
+from myclient.client import Client
+```
+
+`myclient/config.py`:
+
+<!-- example-file: myclient/config.py -->
+```python
+import apprc as rc
+
+MyRC = rc.AppRC(
+    app_id="demo",
+    config_package="myclient",
+    user_dotenv=rc.UserDotenv(),
+)
+
+@MyRC.config("client", prefix="DEMO_")
+class ClientSettings(rc.Config):
+    timeout: int = rc.field("DEMO_TIMEOUT", default=30)
+```
+
+`myclient/apprc.defaults.env`:
+
+<!-- example-file: myclient/apprc.defaults.env -->
+```dotenv
+DEMO_TIMEOUT=20
+```
+
+`myclient/client.py`:
+
+<!-- example-file: myclient/client.py -->
+```python
+from myclient.config import ClientSettings, MyRC
+
+class Client:
+    def __init__(self, settings: ClientSettings | None = None) -> None:
+        self.settings = settings if settings is not None else MyRC.resolve().build(ClientSettings)
+
+    @property
+    def timeout(self) -> int:
+        return self.settings.timeout
+```
+
+`demo.py` creates a disposable user dotenv so the example does not touch your
+normal AppRC directory. The only import needed for ordinary client use is
+`Client`:
+
+<!-- example-file: demo.py -->
+```python
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from myclient import Client
+
+with TemporaryDirectory() as directory:
+    config_dir = Path(directory)
+    os.environ["DEMO_APPRC_DIR"] = directory
+    assert Client().timeout == 20
+
+    (config_dir / "apprc.user.env").write_text("DEMO_TIMEOUT=15\n", encoding="utf-8")
+    assert Client().timeout == 15
+
+    os.environ["DEMO_TIMEOUT"] = "10"
+    assert Client().timeout == 10
+    print("packaged: 20; user: 15; process: 10")
+```
+
+Run `python demo.py`. The demonstration script writes `apprc.user.env`; importing
+or constructing `Client` does not write it. Each construction calls
+[`resolve().build()`](References.md#resolution), so a new client sees a changed
+user dotenv while an existing client keeps its settings. The process value wins
+over the file values. Pass an already built `ClientSettings` to share one
+[`ResolvedConfig`](Explanations.md#resolvedconfig) across clients or to inject
+settings in a test. Include `apprc.defaults.env` as package data when building
+a wheel, as shown in [Ship defaults with the application](#ship-defaults-with-the-application).
+The [complete importable-client example](EXAMPLES.md#importable-client-with-saved-preferences)
+also provides configuration commands for users.
+
 ## Edit or remove a saved override
 
 An edit plan identifies the target file and proposed assignment. A preview

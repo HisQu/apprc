@@ -154,6 +154,10 @@ All notable changes to `AppRC` will be documented in this file.
     export, atomic validated reloads, and archive-backed resource provenance.
   - Shared noninteractive manager for inspection, preview, setup, editing,
     registry operations, archive/restore, migration, and purge.
+  - `@AppRC.config(..., requires_storage=True)` marks sections that are inactive
+    without selected storage. Inspection and doctor skip validation of those
+    fields while continuing to check storage-independent settings. The new
+    importable-client example shows library-owned resolution without caller setup.
   - Matching-distribution generation and isolated pip checks for both wheels and
     source archives, package ownership, wrapper removal, and old-wheel migration.
 

@@ -21,6 +21,7 @@ class FieldInspection:
     :param value: Parsed effective value, excluded from debug output.
     :param origin: Winning source, or the Python fallback.
     :param issue: Validation failure without raw input values.
+    :param active: Whether this field belongs to the selected runtime.
     """
 
     owner: ConfigOwner = dataclass_field(repr=False)
@@ -28,10 +29,13 @@ class FieldInspection:
     value: Any = dataclass_field(repr=False)
     origin: ConfigOriginState
     issue: str | None = None
+    active: bool = True
 
     @property
     def display_value(self) -> Any:
         """Return the effective value with declared secrets redacted."""
+        if not self.active:
+            return None
         return "<redacted>" if self.field.secret else self.value
 
 
@@ -68,6 +72,11 @@ def inspect_resolved(resolved: ResolvedConfig) -> ConfigInspection:
             origin = resolved.source.origins.get(
                 key, ConfigOriginState("python_config_default", env_key=key)
             )
+            if owner.requires_storage and resolved.selection is None:
+                fields.append(
+                    FieldInspection(owner, spec, None, origin, active=False)
+                )
+                continue
             issue = None
             value = None
             try:

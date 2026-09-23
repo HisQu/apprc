@@ -502,6 +502,7 @@ def test_console_scripts_point_to_example_clis() -> None:
         "apprc-user-dotenv-with-storage": ("user_dotenv_with_storage.cli:main"),
         "apprc-explicit-env-precedence": ("explicit_env_precedence.cli:main"),
         "apprc-cli-runtime": "cli_runtime.cli:main",
+        "apprc-library-client": "library_client.cli:main",
         "apprc-examples-lab": "_example_apps_utils.lab:main",
         "apprc-examples-run-all": "_example_apps_utils.run_all:main",
     }
@@ -514,6 +515,7 @@ def test_console_scripts_point_to_example_clis() -> None:
         "storage*",
         "_example_apps_utils",
         "explicit_env_precedence*",
+        "library_client*",
     ]
 
 

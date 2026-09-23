@@ -6,6 +6,7 @@
 - [Run the example applications](#run-the-example-applications)
 - [Settings without managed files](#settings-without-managed-files)
 - [Persistent user preferences](#persistent-user-preferences)
+- [Importable client with saved preferences](#importable-client-with-saved-preferences)
 - [Named storage without user overrides](#named-storage-without-user-overrides)
 - [User settings and storage](#user-settings-and-storage)
 - [Explicit dotenv precedence](#explicit-dotenv-precedence)
@@ -22,6 +23,7 @@ declaration; they are not different application classes.
 | --- | --- | --- | --- |
 | [Settings without managed files](#settings-without-managed-files) | No | No | The process environment and application defaults supply the settings. |
 | [Persistent user preferences](#persistent-user-preferences) | Yes | No | Users need to save preferences, but the application does not manage data directories. |
+| [Importable client with saved preferences](#importable-client-with-saved-preferences) | Yes | No | Callers should construct a library client without declaring or loading AppRC themselves. |
 | [Named storage without user overrides](#named-storage-without-user-overrides) | No | Yes | Settings belong to selected data directories. |
 | [User settings and storage](#user-settings-and-storage) | Yes | Yes | User preferences apply across several data directories, with per-directory overrides. |
 | [Explicit dotenv precedence](#explicit-dotenv-precedence) | Yes | Yes | Invocation files must supplement or override process inputs. |
@@ -129,6 +131,45 @@ apprc-user-dotenv config edit
 AppRC directory. The editor shows that layer and the Python defaults. The
 [Python preference guide](How-To-User-Guides.md#save-a-user-preference)
 performs the same setup and edit through `ConfigManager`.
+
+## Importable client with saved preferences
+
+The [`library_client` package](../examples/example_apps/src/library_client/README.md)
+owns its [AppRC declaration](../examples/example_apps/src/library_client/config/app.py)
+and [config section](../examples/example_apps/src/library_client/config/sections/client.py).
+Its public [`LibraryClient`](../examples/example_apps/src/library_client/client.py)
+loads the current layers when constructed. The caller only imports the client:
+
+```python
+from library_client import LibraryClient
+
+client = LibraryClient()
+print(client.request_timeout)
+```
+
+In a disposable lab, change the saved timeout and construct a fresh client:
+
+```shell
+apprc-examples-lab library-client
+```
+
+Inside the lab:
+
+```shell
+cd "$APPRC_EXAMPLE_LAB_ROOT"
+apprc-library-client run
+apprc-library-client config setup --yes
+apprc-library-client config set request_timeout 15 --scope user
+apprc-library-client run
+python -c 'from library_client import LibraryClient; print(LibraryClient().request_timeout)'
+```
+
+The first `run` reports `20` from packaged defaults. The later commands report
+`15` from `apprc.user.env`. The `run` command passes settings from its CLI
+snapshot into the client, so root CLI options remain authoritative. Ordinary
+Python callers use `LibraryClient()`; the
+[importable-client guide](How-To-User-Guides.md#use-apprc-inside-an-importable-client)
+shows the same pattern in a smaller independent package.
 
 ## Named storage without user overrides
 

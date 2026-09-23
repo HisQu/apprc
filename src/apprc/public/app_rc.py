@@ -200,6 +200,7 @@ class AppRC:
         prefix: str | None = None,
         title: str | None = None,
         rc_path: tuple[str, ...] | None = None,
+        requires_storage: bool = False,
     ) -> Callable[[ConfigClassT], ConfigClassT]:
         """Return the public config registration decorator.
 
@@ -208,6 +209,8 @@ class AppRC:
         :param title: Optional display title. AppRC derives one from ``key``
             when omitted.
         :param rc_path: Optional runtime config path. Defaults to ``(key,)``.
+        :param requires_storage: Skip inspection of this section until storage
+            is selected. Requires a storage declaration and ``rc.Config``.
         :return: Decorator that registers a ``rc.Config`` or ``rc.ConfigBase``
             subclass.
         :raises TypeError: If ``key`` is missing or not a string.
@@ -229,6 +232,7 @@ class AppRC:
                 prefix=prefix,
                 title=title,
                 rc_path=rc_path,
+                requires_storage=requires_storage,
             )
 
         return decorator
@@ -297,6 +301,7 @@ class AppRC:
         prefix: str | None,
         title: str | None,
         rc_path: tuple[str, ...] | None,
+        requires_storage: bool,
     ) -> ConfigClassT:
         """Validate and register one config class."""
         _validate_config_class(config_type)
@@ -310,6 +315,14 @@ class AppRC:
             )
 
         resolved_type = self._ensure_dataclass(config_type)
+        if requires_storage and self.schema.storage is None:
+            raise ValueError(
+                "requires_storage=True requires storage=rc.Storage()."
+            )
+        if requires_storage and not _is_env_config(resolved_type):
+            raise ValueError(
+                "requires_storage=True requires an rc.Config section."
+            )
         resolved_title = title or _humanize_title(key)
         resolved_rc_path = rc_path or (key,)
         declared_fields = _collect_field_declarations(resolved_type)
@@ -322,6 +335,7 @@ class AppRC:
                 prefix=prefix,
                 rc_path=resolved_rc_path,
                 declared_fields=declared_fields,
+                requires_storage=requires_storage,
             )
             self._validate_unique_env_keys(resolved_type, declared_fields)
             setattr(resolved_type, "config_owner", owner)
@@ -359,6 +373,7 @@ class AppRC:
         prefix: str | None,
         rc_path: tuple[str, ...],
         declared_fields: Mapping[str, _FieldDeclaration],
+        requires_storage: bool,
     ) -> ConfigOwner:
         """Build an internal owner from registered field declarations."""
         if prefix is None or not prefix:
@@ -382,6 +397,7 @@ class AppRC:
                 prefix=prefix,
                 declared_fields=declared_fields,
             ),
+            requires_storage=requires_storage,
         )
         validate_config_owner(owner)
         return owner

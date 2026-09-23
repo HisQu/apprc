@@ -114,6 +114,13 @@ For example, the string `"10"` becomes an integer timeout; `"ten"` fails convers
 Application functions can then receive `ClientSettings` and access `settings.timeout`.
 They do not need to read environment variables themselves.
 
+An importable client can keep the `AppRC` declaration inside its package and
+call `resolve().build(ClientSettings)` when the client is constructed. The
+caller then writes `Client()` without importing AppRC. The library still accepts
+an already built section when several clients must use one snapshot. The
+[importable-client guide](How-To-User-Guides.md#use-apprc-inside-an-importable-client)
+shows both sides of this boundary.
+
 There are two separate objects because reading sources and constructing settings
 are different tasks. The same `ResolvedConfig` can build several registered
 sections from the same inputs. A missing required field in one section does not
@@ -228,7 +235,15 @@ Declaring storage support does not force every operation to use it. An applicati
 can show help without a selected storage, then require storage for an export job
 with `ResolveOptions(storage_required=True)`. An explicitly supplied invalid
 storage still fails. The [storage-only example](EXAMPLES.md#named-storage-without-user-overrides)
-demonstrates an application whose runtime commands require a selected directory.
+shows an operation that always needs storage.
+
+Some config sections contain fields that only matter after storage selection.
+Mark such a section with [`requires_storage=True`](References.md#declarations).
+When no storage is selected, [`ConfigManager.inspect()`](References.md#management)
+keeps its fields visible but marks them inactive and does not validate their
+values. Other sections remain active, so `config doctor` can still report a bad
+client setting. A runtime that needs the marked section must select storage
+before building it.
 
 ## Storage registry
 

@@ -157,8 +157,7 @@ and `uv build --package apprc --no-sources`.
 
 Update the changelog first. Any change requiring consumer code, configuration,
 or installation changes belongs under breaking changes with affected users and
-migration instructions. Version 0.25.0 is prepared locally with matching core
-and terminal metadata. It has not been tagged or published.
+migration instructions. Keep the core and terminal distribution versions in sync.
 
 `just publish-check` rehearses Linux Python 3.12–3.14 checks, generated metadata,
 both distributions, pip installation checks, and publication dry runs. It uploads

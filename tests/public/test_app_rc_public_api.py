@@ -70,6 +70,26 @@ def test_registers_env_backed_config_with_full_env_keys() -> None:
     assert MyRC.schema.envs == (LLMConfig,)
 
 
+def test_storage_dependent_section_requires_storage_capability() -> None:
+    app = _process_env_app()
+
+    with pytest.raises(ValueError, match="requires storage=rc.Storage"):
+
+        @app.config("data", prefix="DEMO_", requires_storage=True)
+        class DataSettings(rc.Config):
+            value: str = rc.field("DEMO_VALUE", required=True)
+
+
+def test_storage_dependent_section_must_be_env_backed() -> None:
+    app = rc.AppRC(app_id="demo", storage=rc.Storage())
+
+    with pytest.raises(ValueError, match="requires an rc.Config section"):
+
+        @app.config("data", requires_storage=True)
+        class DataSettings(rc.ConfigBase):
+            value: str = "default"
+
+
 def test_schema_owner_for_rejects_unregistered_config() -> None:
     """Schema inspection requires prior AppRC registration."""
 

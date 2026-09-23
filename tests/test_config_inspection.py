@@ -5,6 +5,7 @@ from apprc.user_files.app_home.application import AppFiles
 from pathlib import Path
 
 import pytest
+import apprc as rc
 
 from tests.support_declaration import app_from_envs
 from apprc.definition.app_config.user_dotenv import UserDotenv
@@ -90,6 +91,75 @@ def test_doctor_treats_missing_optional_layers_as_warnings(
     assert payload.to_payload()["storage_required"] is False
     assert payload.issues == ()
     assert not AppFiles(kit.schema).apprc_dir().exists()
+
+
+def test_optional_storage_skips_only_storage_dependent_fields(
+    tmp_path: Path,
+) -> None:
+    app = rc.AppRC(
+        app_id="optional-storage-fields",
+        storage=rc.Storage(selector_env_key="DEMO_STORAGE"),
+        apprc_dir=tmp_path / "apprc",
+    )
+
+    @app.config("client", prefix="DEMO_CLIENT_")
+    class ClientSettings(rc.Config):
+        timeout: int = rc.field("DEMO_CLIENT_TIMEOUT", default=10)
+
+    @app.config("data", prefix="DEMO_DATA_", requires_storage=True)
+    class DataSettings(rc.Config):
+        token: str = rc.field("DEMO_DATA_TOKEN", required=True, secret=True)
+
+    manager = app.manage(environment={})
+    inspection = manager.inspect()
+    assert inspection.ready
+    assert [field.active for field in inspection.fields] == [True, False]
+    assert inspection.fields[1].value is None
+    assert inspection.fields[1].display_value is None
+    assert inspection.fields[1].issue is None
+    payload = build_config_doctor_payload(app, storage=None, manager=manager)
+    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
+    assert not (tmp_path / "apprc").exists()
+
+    invalid_client = app.manage(environment={"DEMO_CLIENT_TIMEOUT": "bad"})
+    assert any(
+        "DEMO_CLIENT_TIMEOUT" in issue
+        for issue in invalid_client.inspect().issues
+    )
+    assert (
+        build_config_doctor_payload(
+            app, storage=None, manager=invalid_client
+        ).status
+        == ConfigDoctorStatus.CONFIG_INVALID.value
+    )
+
+    invalid_selector = app.manage(environment={"DEMO_STORAGE": "missing"})
+    assert not invalid_selector.inspect().fields[1].active
+    assert (
+        build_config_doctor_payload(
+            app, storage=None, manager=invalid_selector
+        ).status
+        == ConfigDoctorStatus.STORAGE_NOT_READY.value
+    )
+
+    required = app.manage(
+        rc.ResolveOptions(storage_required=True), environment={}
+    )
+    assert (
+        build_config_doctor_payload(app, storage=None, manager=required).status
+        == ConfigDoctorStatus.STORAGE_NOT_SELECTED.value
+    )
+
+    manager.setup(storage_root=tmp_path / "storage")
+    selected = manager.inspect()
+    assert selected.fields[1].active
+    assert (
+        selected.fields[1].issue == "Missing required setting: DEMO_DATA_TOKEN."
+    )
+    assert (
+        build_config_doctor_payload(app, storage=None, manager=manager).status
+        == ConfigDoctorStatus.CONFIG_INVALID.value
+    )
 
 
 def test_doctor_reports_selected_registered_storage(

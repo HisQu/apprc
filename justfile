@@ -224,13 +224,14 @@ _release-artifact-check notes_output:
     rm -rf dist
     uv build --python 3.12 --no-sources --package apprc-core
     uv build --python 3.12 --no-sources --package apprc
+    uv build --python 3.12 --no-sources --package apprc-gui
     uv run --with twine --no-project -- twine check dist/*
     for python_version in 3.12 3.13 3.14; do
         uv run --isolated --no-project --python "$python_version" \
             python src/apprc_dev/packaging/artifact_check.py dist
     done
     echo "PyPI publication dry run: no files will be uploaded."
-    for project in apprc-core apprc; do
+    for project in apprc-core apprc apprc-gui; do
         prefix="${project//-/_}"
         if [[ "$project" == apprc ]]; then prefix=apprc; fi
         uv publish --dry-run --trusted-publishing never \
@@ -401,8 +402,8 @@ publish-pypi tag:
     fi
     wheel_count="$(gh release view "$tag" --json assets --jq '[.assets[].name | select(endswith(".whl"))] | length')"
     sdist_count="$(gh release view "$tag" --json assets --jq '[.assets[].name | select(endswith(".tar.gz"))] | length')"
-    if [[ "$wheel_count" != 2 || "$sdist_count" != 2 ]]; then
-        echo "GitHub Release ${tag} must contain exactly two wheels and two source archives." >&2
+    if [[ "$wheel_count" != 3 || "$sdist_count" != 3 ]]; then
+        echo "GitHub Release ${tag} must contain exactly three wheels and three source archives." >&2
         exit 1
     fi
 

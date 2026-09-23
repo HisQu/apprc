@@ -17,6 +17,7 @@ from apprc.definition.resolution import (
     ResolveOptions,
 )
 from apprc.definition.provenance import ConfigOriginState
+from apprc.definition.env_config.lookup import resolve_config_field_reference
 from apprc.user_files.env_files.layers import read_explicit_env_files
 from apprc.runtime._selection import selection_env
 from apprc.runtime.resolution import (
@@ -27,7 +28,7 @@ from apprc.runtime.resolution import (
 from apprc.services.inspection import ConfigInspection, inspect_resolved
 from apprc.user_files.app_home.application import AppFiles
 from apprc.user_files.app_home.locations import AppRCDirectoryPaths
-from apprc.user_files.app_home.writes import MANAGED_WRITE_LOCK
+from apprc.user_files.app_home.writes import managed_write_lock
 from apprc.user_files.env_files.updates import (
     EnvFileEditPlan,
     EnvFileUpdate,
@@ -35,7 +36,22 @@ from apprc.user_files.env_files.updates import (
     plan_env_file_value_update,
     plan_env_file_value_removal,
 )
-from apprc.user_files.env_files._parsing import parse_dotenv_text
+from apprc.user_files.env_files._parsing import (
+    parse_dotenv_file,
+    parse_dotenv_text,
+)
+from apprc.user_files.env_files.secrets import (
+    SecretFileStatus,
+    ensure_secret_file,
+    inspect_secret_file,
+    repair_secret_file_permissions,
+    secret_companion_path,
+)
+from apprc.user_files.env_files.secret_migration import (
+    SecretMigrationPlan,
+    apply_secret_migration as apply_secret_migration_plan,
+    plan_secret_migration as build_secret_migration_plan,
+)
 from apprc.user_files.migration import (
     ConfigMigrationPlan,
     ConfigMigrationResult,
@@ -62,6 +78,7 @@ from apprc.user_files.storage_roots._loading import (
     inspect_storage_registry,
 )
 from apprc.user_files.storage_roots.move import StorageMoveResult, move_storage
+from apprc.user_files.storage_roots.paths import resolve_storage_root_path
 
 type WriteScope = Literal["user", "storage"]
 
@@ -181,15 +198,13 @@ class ConfigManager:
         flow = ConfigSetupFlow(
             self.schema, environment=self._path_environment()
         )
-        with MANAGED_WRITE_LOCK:
-            if self.schema.uses_storage():
-                if storage_root is None:
-                    raise ValueError(
-                        "storage_root is required for storage setup."
-                    )
-                return flow.run_storage_setup(
-                    storage_root, storage_name=storage_name
-                )
+        if self.schema.uses_storage():
+            if storage_root is None:
+                raise ValueError("storage_root is required for storage setup.")
+            root = resolve_storage_root_path(storage_root, base=self.paths.root)
+            with managed_write_lock(self.paths.root, root):
+                return flow.run_storage_setup(root, storage_name=storage_name)
+        with managed_write_lock(self.paths.root):
             self.schema.require_user_dotenv()
             return flow.run_user_dotenv_setup()
 
@@ -199,13 +214,17 @@ class ConfigManager:
         :return: Created or existing user dotenv path and its managed directory.
         """
         self.schema.require_user_dotenv()
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(self.paths.root):
             return ConfigSetupFlow(
                 self.schema, environment=self._path_environment()
             ).run_user_dotenv_setup()
 
     def writable_path(
-        self, scope: WriteScope, *, storage: str | None = None
+        self,
+        scope: WriteScope,
+        *,
+        storage: str | None = None,
+        secret: bool = False,
     ) -> Path:
         """Resolve a declared edit target independently of required setting values.
 
@@ -215,7 +234,8 @@ class ConfigManager:
         """
         if scope == "user":
             self.schema.require_user_dotenv()
-            return self.paths.user_dotenv
+            path = self.paths.user_dotenv
+            return secret_companion_path(path) if secret else path
         if scope != "storage":
             raise ValueError(f"Unknown write scope: {scope!r}.")
         self.schema.require_storage()
@@ -227,7 +247,46 @@ class ConfigManager:
             )
         if not selection.root.is_dir():
             raise ValueError("The inspected storage directory does not exist.")
-        return AppFiles(self.schema).storage_dotenv_path(selection.root)
+        path = AppFiles(self.schema).storage_dotenv_path(selection.root)
+        return secret_companion_path(path) if secret else path
+
+    def secret_status(
+        self, scope: WriteScope, *, storage: str | None = None
+    ) -> SecretFileStatus:
+        """Report whether a selected layer can save secret fields."""
+        return inspect_secret_file(
+            self.writable_path(scope, storage=storage, secret=True)
+        )
+
+    def repair_secret_permissions(
+        self, scope: WriteScope, *, storage: str | None = None
+    ) -> SecretFileStatus:
+        """Apply an explicitly requested privacy repair to one layer."""
+        path = self.writable_path(scope, storage=storage, secret=True)
+        with managed_write_lock(path.parent):
+            return repair_secret_file_permissions(path)
+
+    def plan_secret_migration(
+        self, scope: WriteScope, *, storage: str | None = None
+    ) -> SecretMigrationPlan:
+        """Inspect legacy secret assignments without changing files."""
+        regular = self.writable_path(scope, storage=storage)
+        secret_keys = {
+            owner.env_key(spec.name)
+            for owner in self.schema.owners
+            for spec in owner.fields
+            if spec.secret
+        }
+        return replace(
+            build_secret_migration_plan(
+                regular, secret_companion_path(regular), secret_keys
+            ),
+            lock_roots=(self.paths.root, regular.parent),
+        )
+
+    def apply_secret_migration(self, plan: SecretMigrationPlan) -> None:
+        """Apply an explicitly reviewed move of legacy secret assignments."""
+        apply_secret_migration_plan(plan)
 
     def writable_scopes(
         self, *, storage: str | None = None, include_storage: bool = True
@@ -286,13 +345,24 @@ class ConfigManager:
         :param storage: Optional storage being edited.
         :return: Source-preserving plan; applying it is a separate operation.
         """
-        path = self.writable_path(scope, storage=storage)
-        return plan_env_file_value_update(
-            path=path,
-            reference=reference,
-            raw_value=raw_value,
-            owners=self.schema.owners,
-            layer_name=path.name,
+        owner, spec = resolve_config_field_reference(
+            self.schema.owners, reference
+        )
+        path = self.writable_path(scope, storage=storage, secret=spec.secret)
+        if spec.secret:
+            self._require_private_secret_edit(
+                scope, owner.env_key(spec.name), storage=storage
+            )
+        return replace(
+            plan_env_file_value_update(
+                path=path,
+                reference=reference,
+                raw_value=raw_value,
+                owners=self.schema.owners,
+                layer_name=path.name,
+                private=spec.secret,
+            ),
+            lock_roots=(self.paths.root, path.parent),
         )
 
     def plan_removal(
@@ -309,13 +379,39 @@ class ConfigManager:
         :param storage: Optional inspected storage.
         :return: Revision-checked plan, or ``None`` when already absent.
         """
-        path = self.writable_path(scope, storage=storage)
-        return plan_env_file_value_removal(
+        owner, spec = resolve_config_field_reference(
+            self.schema.owners, reference
+        )
+        path = self.writable_path(scope, storage=storage, secret=spec.secret)
+        if spec.secret:
+            self._require_private_secret_edit(
+                scope, owner.env_key(spec.name), storage=storage
+            )
+        plan = plan_env_file_value_removal(
             path=path,
             reference=reference,
             owners=self.schema.owners,
             layer_name=path.name,
+            private=spec.secret,
         )
+        return (
+            None
+            if plan is None
+            else replace(plan, lock_roots=(self.paths.root, path.parent))
+        )
+
+    def _require_private_secret_edit(
+        self, scope: WriteScope, env_key: str, *, storage: str | None
+    ) -> None:
+        """Avoid unsafe writes or revealing a legacy ordinary-file value."""
+        regular = self.writable_path(scope, storage=storage)
+        if env_key in parse_dotenv_file(regular, environment=self.environment):
+            raise ValueError(
+                f"{env_key} is still in {regular.name}. Run `config secrets migrate` first."
+            )
+        status = self.secret_status(scope, storage=storage)
+        if not status.available:
+            raise ValueError(status.issue or "Secret file is unavailable.")
 
     def apply_edit(self, plan: EnvFileEditPlan) -> EnvFileUpdate:
         """Apply a planned edit, rejecting changes made since inspection.
@@ -389,10 +485,20 @@ class ConfigManager:
         :param root: Directory to create or register.
         :return: Updated registry.
         """
-        with MANAGED_WRITE_LOCK:
-            return storage_registry.register_storage(
+        root = resolve_storage_root_path(root, base=self.paths.root)
+        with managed_write_lock(self.paths.root, root):
+            root_existed = root.exists()
+            result = storage_registry.register_storage(
                 name=name, root=root, path=self.registry_path
             )
+            secret_path = AppFiles(self.schema).storage_secret_dotenv_path(
+                result.storages[name].root
+            )
+            if root_existed:
+                ensure_secret_file(secret_path)
+            else:
+                repair_secret_file_permissions(secret_path)
+            return result
 
     def select_storage(self, name: str) -> StorageRegistry:
         """Persist the fallback used when an invocation has no selector.
@@ -400,7 +506,7 @@ class ConfigManager:
         :param name: Existing registry name.
         :return: Updated registry; already resolved runtime objects are unchanged.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(self.paths.root):
             return storage_registry.select_storage(
                 name=name, path=self.registry_path
             )
@@ -412,7 +518,7 @@ class ConfigManager:
         :param name: Replacement name.
         :return: Updated registry.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(self.paths.root):
             return storage_registry.rename_storage(
                 current_name=current_name, name=name, path=self.registry_path
             )
@@ -424,7 +530,7 @@ class ConfigManager:
         :param root: Replacement directory; no files are moved.
         :return: Updated registry.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(self.paths.root):
             return storage_registry.repoint_storage(
                 name=name, root=root, path=self.registry_path
             )
@@ -438,7 +544,9 @@ class ConfigManager:
         :param delete_content: Explicit request to delete the directory too.
         :return: Updated registry. A deletion failure raises after unregistering.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(
+            self.paths.root, self.registry().selected(name).root
+        ):
             root = self.registry().selected(name).root
             result = storage_registry.unregister_storage(
                 name=name, path=self.registry_path
@@ -453,7 +561,7 @@ class ConfigManager:
         :param name: Archived registry name.
         :return: Updated registry.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(self.paths.root):
             return storage_registry.remove_archived_storage(
                 name=name, path=self.registry_path
             )
@@ -465,7 +573,9 @@ class ConfigManager:
         :param destination: New or empty directory.
         :return: Completed filesystem and registry changes.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(
+            self.paths.root, self.registry().selected(name).root, destination
+        ):
             return move_storage(
                 name=name, destination=destination, path=self.registry_path
             )
@@ -484,10 +594,22 @@ class ConfigManager:
         :param progress: Optional noninteractive progress callback.
         :return: Written archive path.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(
+            self.paths.root, self.registry().selected(name).root
+        ):
             root = self.registry().selected(name).root
+            legacy = self.plan_secret_migration("storage", storage=name)
+            if legacy.keys:
+                raise ValueError(
+                    "Move legacy storage secrets with `config secrets migrate --scope storage` before archiving."
+                )
             result = archive_directory(
-                source_root=root, archive_path=archive_path, progress=progress
+                source_root=root,
+                archive_path=archive_path,
+                progress=progress,
+                excluded_names=(
+                    AppFiles(self.schema).storage_secret_dotenv_path(root).name,
+                ),
             )
             storage_registry.record_archived_storage(
                 name=name,
@@ -527,14 +649,18 @@ class ConfigManager:
                 archived_name=archived_name,
             )
 
-        with MANAGED_WRITE_LOCK:
-            return extract_archive(
+        with managed_write_lock(self.paths.root, destination):
+            result = extract_archive(
                 archive_path=archive_path,
                 destination_root=destination,
                 replace_existing=replace_existing,
                 progress=progress,
                 after_install=register,
             )
+            ensure_secret_file(
+                AppFiles(self.schema).storage_secret_dotenv_path(result)
+            )
+            return result
 
     def plan_migration(
         self,
@@ -563,7 +689,7 @@ class ConfigManager:
         :param plan: Successful migration preflight.
         :return: Migration changes.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(self.paths.root):
             return apply_config_migration(plan)
 
     def plan_purge(self) -> ConfigPurgePlan:
@@ -581,5 +707,8 @@ class ConfigManager:
         :param plan: Existing purge preflight result.
         :return: Removed and retained paths.
         """
-        with MANAGED_WRITE_LOCK:
+        with managed_write_lock(
+            plan.apprc_dir,
+            *plan.external_storage_roots,
+        ):
             return apply_config_purge(plan)

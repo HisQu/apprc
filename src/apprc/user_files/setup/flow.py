@@ -14,6 +14,10 @@ from pathlib import Path
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.env_files.files import ensure_env_file
+from apprc.user_files.env_files.secrets import (
+    ensure_secret_file,
+    repair_secret_file_permissions,
+)
 from apprc.user_files.app_home._paths import path_entry_exists
 from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
 from apprc.user_files.storage_roots.paths import (
@@ -84,9 +88,10 @@ class ConfigSetupFlow:
         :return: Fixed ``apprc.user.env`` path.
         """
         try:
-            return AppFiles(self.spec).ensure_user_dotenv(
-                self._proc_env_for_apprc_dir(apprc_dir)
-            )
+            proc_env = self._proc_env_for_apprc_dir(apprc_dir)
+            files = AppFiles(self.spec)
+            ensure_secret_file(files.user_secret_dotenv_path(proc_env))
+            return files.ensure_user_dotenv(proc_env)
         except AppRCDirectoryError as exc:
             raise ConfigSetupError(
                 str(exc),
@@ -163,6 +168,7 @@ class ConfigSetupFlow:
                 if spec.uses_user_dotenv()
                 else None
             )
+            root_existed = root.exists()
             registry = load_storage_registry_or_empty(registry_path)
             existing = registry.storages.get(storage_name)
             if existing is None:
@@ -191,6 +197,11 @@ class ConfigSetupFlow:
                 ensure_env_file(AppFiles(spec).storage_dotenv_path(root))
                 if registry.selected_storage is None:
                     select_storage(name=storage_name, path=registry_path)
+            secret_path = AppFiles(spec).storage_secret_dotenv_path(root)
+            if root_existed:
+                ensure_secret_file(secret_path)
+            else:
+                repair_secret_file_permissions(secret_path)
         except ConfigSetupError:
             self._remove_new_user_dotenv(
                 user_dotenv,

@@ -13,7 +13,7 @@ import typer
 from rich import print as rich_print
 
 # == Internal ================================
-from apprc.services.manager import ConfigManager
+from apprc.services.manager import ConfigManager, WriteScope
 from apprc.interfaces.cli.config_command._base import ConfigCommandBase
 from apprc.interfaces.cli.config_command._selector_context import (
     ConfigSelectorContext,
@@ -112,6 +112,75 @@ class RuntimeConfigCommands(ConfigCommandBase):
             print_config_doctor(self.apprc, payload)
         if payload.status != ConfigDoctorStatus.RUNNABLE.value:
             raise typer.Exit(code=1)
+
+    def secrets_migrate(
+        self, ctx: typer.Context, *, scope: str, assume_yes: bool
+    ) -> None:
+        """Show and optionally apply a value-free legacy-secret move."""
+        selected = self._secret_scope(scope)
+        manager = self.manager(ctx)
+        try:
+            plan = manager.plan_secret_migration(selected)
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc), param_hint="--scope") from exc
+        if not plan.keys:
+            typer.echo("No legacy secret assignments need migration.")
+            return
+        typer.echo(
+            f"Move {len(plan.keys)} secret field(s) from {plan.ordinary_path.name} to {plan.secret_path.name}:"
+        )
+        for key in plan.keys:
+            typer.echo(f"  {key}")
+        if not assume_yes and not typer.confirm("Move these assignments?"):
+            typer.echo("No files were changed.")
+            return
+        try:
+            manager.apply_secret_migration(plan)
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc), param_hint="--scope") from exc
+        typer.echo(f"migrated_secret_fields: {len(plan.keys)}")
+
+    def secrets_repair(
+        self, ctx: typer.Context, *, scope: str, assume_yes: bool
+    ) -> None:
+        """Repair a reviewed layer directory and companion permission set."""
+        selected = self._secret_scope(scope)
+        manager = self.manager(ctx)
+        try:
+            status = manager.secret_status(selected)
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc), param_hint="--scope") from exc
+        if status.available and status.path.is_file():
+            typer.echo("Secret file permissions are already private.")
+            return
+        typer.echo(
+            f"Restrict access to {status.path.parent} and {status.path.name}."
+        )
+        if not assume_yes and not typer.confirm(
+            "Apply this permission repair?"
+        ):
+            typer.echo("No files were changed.")
+            return
+        try:
+            result = manager.repair_secret_permissions(selected)
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc), param_hint="--scope") from exc
+        if not result.available:
+            raise typer.BadParameter(
+                result.issue or "Secret file is unavailable.",
+                param_hint="--scope",
+            )
+        typer.echo("Secret file permissions repaired.")
+
+    def _secret_scope(self, scope: str) -> WriteScope:
+        """Require one of the layer names declared by this AppRC."""
+        if scope == "user" and self.apprc.schema.uses_user_dotenv():
+            return "user"
+        if scope == "storage" and self.apprc.schema.uses_storage():
+            return "storage"
+        raise typer.BadParameter(
+            "Choose an enabled user or storage layer.", param_hint="--scope"
+        )
 
     def migrate(
         self,

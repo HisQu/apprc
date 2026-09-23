@@ -15,6 +15,9 @@
 - [Move, reconnect, or archive storage](#move-reconnect-or-archive-storage)
 - [Add configuration commands to Typer](#add-configuration-commands-to-typer)
 - [Inspect and edit settings in the terminal](#inspect-and-edit-settings-in-the-terminal)
+- [Save and migrate secret settings](#save-and-migrate-secret-settings)
+- [Add a native settings window](#add-a-native-settings-window)
+- [Build a Windows installer](#build-a-windows-installer)
 - [Pass several settings sections together](#pass-several-settings-sections-together)
 - [Reload settings or use temporary overrides](#reload-settings-or-use-temporary-overrides)
 - [Supply settings to environment-only code](#supply-settings-to-environment-only-code)
@@ -607,6 +610,147 @@ change the [saved default](Explanations.md#storage-registry).
 
 Opening the editor creates no files. Changes happen through explicit setup and
 save actions. Exit the lab shell to remove its temporary settings and data.
+
+## Save and migrate secret settings
+
+Mark a [config field](Explanations.md#config-sections-and-fields) with
+`secret=True` when AppRC must redact its display value and save it in a
+[secret companion](Explanations.md#secret-companions). This example creates a
+temporary user layer and storage, then shows where each saved value goes:
+
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import apprc as rc
+
+with TemporaryDirectory() as directory:
+    root = Path(directory)
+    MyRC = rc.AppRC(
+        app_id="demo",
+        user_dotenv=rc.UserDotenv(),
+        storage=rc.Storage(),
+        apprc_dir=root / "config",
+    )
+
+    @MyRC.config("client", prefix="DEMO_")
+    class ClientSettings(rc.Config):
+        token: str = rc.field("DEMO_TOKEN", default="", secret=True)
+
+    manager = MyRC.manage(environment={})
+    manager.setup(storage_root=root / "data")
+    manager.apply_edit(manager.plan_update("DEMO_TOKEN", "user-example", scope="user"))
+    manager.apply_edit(manager.plan_update("DEMO_TOKEN", "storage-example", scope="storage"))
+
+    assert manager.writable_path("user", secret=True).name == "apprc.user.secret.env"
+    assert manager.writable_path("storage", secret=True).name == "apprc.storage.secret.env"
+    assert manager.resolve().build(ClientSettings).token == "storage-example"
+```
+
+Run the code with `python demo.py`. The ordinary user and storage dotenv files
+do not contain `DEMO_TOKEN`. The selected storage secret wins over the user
+secret. A process `DEMO_TOKEN` would still win over both.
+
+For an existing application, a secret field may still be in an ordinary
+dotenv. AppRC reads that value for compatibility, but refuses new saves for
+that field until it is moved. If the application mounted the [config CLI](Explanations.md#config-cli),
+review the scope and then run one command for each affected layer:
+
+```shell
+demo config secrets migrate --scope user
+demo config secrets migrate --scope user --yes
+demo config secrets migrate --scope storage
+demo config secrets migrate --scope storage --yes
+```
+
+For storage, first select the intended storage with the application's
+`--storage NAME` root option. Without `--yes`, the command lists field keys
+without showing values. With `--yes`, AppRC copies values to the private
+companion before removing ordinary assignments. If the companion's directory
+or file is shared, `demo config secrets repair --scope storage --yes` restricts
+its permissions; review that storage directory before using this command.
+The same operations are available as `ConfigManager.plan_secret_migration()`,
+`apply_secret_migration()`, `secret_status()`, and
+`repair_secret_permissions()` in the [management reference](References.md#management).
+
+## Add a native settings window
+
+Install `apprc-gui` alongside `apprc-core` and a [Toga backend](https://toga.beeware.org/en/stable/reference/platforms/)
+for the target operating system. On Windows, the `apprc-gui` distribution
+installs `toga-winforms`. The [user dotenv example](../examples/example_apps/src/user_dotenv/desktop.py)
+is a complete application-owned window. Its essential connection is:
+
+```python
+import toga
+from apprc_gui import ConfigView
+
+from my_app.config import MyRC
+
+
+class DesktopApp(toga.App):
+    def startup(self):
+        window = toga.MainWindow(title="My App")
+        self.main_window = window
+        manager = MyRC.manage()
+        view = ConfigView(manager, window)
+        window.content = view.widget
+        window.show()
+
+
+def main():
+    DesktopApp("My App", "org.example.my-app").main_loop()
+```
+
+Define `MyRC` and import its registered config sections before creating this
+window. The view shows missing required settings and can initialize declared
+user and storage layers. It uses `ConfigManager` for every edit, so an
+environment value that overrides a saved value remains visible as the effective
+source. Pass `on_change=callback` to `ConfigView` when the host application
+needs the current `ConfigInspection.ready` value to enable its own Start button.
+The host application starts its own work after configuration; the view does not
+start it. The [GUI view explanation](Explanations.md#gui-view) describes this
+boundary.
+
+## Build a Windows installer
+
+The application owns its [installer build](Explanations.md#installed-packages-and-installer-builds).
+Declare the desktop and CLI entry points in its `pyproject.toml`, and point
+cx_Freeze at small scripts that call those entry points. For example:
+
+```toml
+[project.optional-dependencies]
+desktop = ["apprc-gui>=0.26.0,<0.27"]
+
+[project.gui-scripts]
+my-app-desktop = "my_app.desktop:main"
+
+[project.scripts]
+my-app = "my_app.cli:main"
+
+[[tool.cxfreeze.executables]]
+script = "src/my_app/desktop.py"
+base = "gui"
+target-name = "MyApp"
+shortcut-name = "My App"
+shortcut-dir = "ProgramMenuFolder"
+
+[[tool.cxfreeze.executables]]
+script = "src/my_app/cli.py"
+base = "console"
+target-name = "my-app"
+
+[tool.cxfreeze.bdist_msi]
+all-users = false
+add-to-path = false
+```
+
+On Windows with Python 3.12, install the application's `desktop` extra and
+`cx-Freeze>=8.6,<9`, then run `cxfreeze bdist_msi` from the project root.
+The result is one `.msi` installer containing the desktop executable, CLI
+executable, Python runtime, and application files. It is not one portable
+executable. Include application resource files through the application's
+package data or cx_Freeze `include-files` option, then check that packaged
+defaults still resolve after installation. Test installation, first-run setup,
+launch, and upgrade on a clean Windows account without Python.
 
 <a id="compose-a-bundle"></a>
 ## Pass several settings sections together

@@ -284,7 +284,8 @@ def test_generated_commands_follow_declared_capabilities() -> None:
     }
     assert {group.name for group in process_only.registered_groups} == set()
     assert {group.name for group in storage_only.registered_groups} == {
-        "storage"
+        "storage",
+        "secrets",
     }
 
 

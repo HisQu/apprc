@@ -753,7 +753,7 @@ def test_config_cli_runtime_runtime_independent_set_skips_state_factory(
     assert result.exit_code == 0, result.output
     assert factory_calls == []
     assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-value"\n' in (
-        storage_root / "apprc.storage.env"
+        storage_root / "apprc.storage.secret.env"
     ).read_text(encoding="utf-8")
 
 

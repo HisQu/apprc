@@ -95,6 +95,9 @@ def build_config_typer_app_from_options(
         pretty_exceptions_show_locals=False,
     )
     storage_group = typer.Typer(help="Manage named storages.")
+    secrets_group = typer.Typer(help="Inspect and repair saved secret files.")
+    if apprc.schema.uses_managed_files():
+        app.add_typer(secrets_group, name="secrets")
     if apprc.schema.uses_storage():
         app.add_typer(storage_group, name="storage")
 
@@ -150,6 +153,38 @@ def build_config_typer_app_from_options(
     ) -> None:
         """Check AppRC config readiness and print suggested fixes."""
         handlers.doctor(ctx, json_output=json_output)
+
+    if apprc.schema.uses_managed_files():
+
+        @secrets_group.command("migrate")
+        def config_secrets_migrate_cmd(
+            ctx: typer.Context,
+            scope: Annotated[
+                str,
+                typer.Option("--scope", help="Move user or storage secrets."),
+            ],
+            assume_yes: Annotated[
+                bool,
+                typer.Option("--yes", "-y", help="Apply the shown move."),
+            ] = False,
+        ) -> None:
+            """Move legacy secret assignments into a private companion."""
+            handlers.secrets_migrate(ctx, scope=scope, assume_yes=assume_yes)
+
+        @secrets_group.command("repair")
+        def config_secrets_repair_cmd(
+            ctx: typer.Context,
+            scope: Annotated[
+                str,
+                typer.Option("--scope", help="Repair user or storage secrets."),
+            ],
+            assume_yes: Annotated[
+                bool,
+                typer.Option("--yes", "-y", help="Apply the shown repair."),
+            ] = False,
+        ) -> None:
+            """Restrict a selected layer and its secret companion."""
+            handlers.secrets_repair(ctx, scope=scope, assume_yes=assume_yes)
 
     if apprc.schema.uses_storage():
 

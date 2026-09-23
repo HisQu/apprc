@@ -8,14 +8,16 @@
 - [Configuration layers](#configuration-layers)
 - [Provenance](#provenance)
 - [User dotenv and the AppRC directory](#user-dotenv-and-the-apprc-directory)
+- [Secret companions](#secret-companions)
 - [Storage](#storage)
 - [Storage registry](#storage-registry)
 - [ConfigManager](#configmanager)
 - [Config CLI](#config-cli)
 - [Config editor](#config-editor)
+- [GUI view](#gui-view)
 - [Config bundles](#config-bundles)
 - [Copies, overrides, and reloads](#copies-overrides-and-reloads)
-- [Installed packages and future integrations](#installed-packages-and-future-integrations)
+- [Installed packages and installer builds](#installed-packages-and-installer-builds)
 
 This page explains AppRC's components in the order you need them. A small
 application needs only an `AppRC`, a config section, and a `ResolvedConfig`.
@@ -155,7 +157,9 @@ The usual priority, from lowest to highest, is:
 | Python field default | A fallback written beside the field's type and documentation. |
 | Packaged `apprc.defaults.env` | Defaults shipped as data inside the application package. |
 | [User dotenv](#user-dotenv-and-the-apprc-directory) | Preferences saved for this user. |
+| User [secret companion](#secret-companions) | Secret fields saved for this user; takes priority over the ordinary user dotenv. |
 | Selected [storage dotenv](#storage) | Settings saved with a particular data directory. |
+| Selected storage secret companion | Secret fields saved for that data directory; takes priority over its ordinary dotenv. |
 | Explicit dotenv files | Extra inputs supplied for this invocation. |
 | Process environment | Values inherited by the process, often exported by a shell or deployment system. |
 
@@ -211,6 +215,35 @@ Reading settings does not create the user dotenv. A missing file contributes no
 overrides. The application can explicitly [save a user preference](How-To-User-Guides.md#save-a-user-preference)
 through `ConfigManager`, or expose the [config editor](#config-editor) to users.
 The [user preferences example](EXAMPLES.md#persistent-user-preferences) needs no storage.
+
+## Secret companions
+
+A secret companion is a private dotenv file beside an ordinary managed layer.
+When a [config field](#config-sections-and-fields) has `secret=True`,
+`ConfigManager.plan_update()` targets `apprc.user.secret.env` for the user layer
+or `apprc.storage.secret.env` for a selected storage. Ordinary fields stay in
+`apprc.user.env` and `apprc.storage.env`. The [secret-setting guide](How-To-User-Guides.md#save-and-migrate-secret-settings)
+shows both paths and the explicit migration of old values.
+
+Each companion is read immediately after its ordinary layer. A saved storage
+secret therefore overrides a saved user secret, and a process environment value
+overrides both. The effective [provenance](#provenance) records the companion path.
+Setup creates empty companions, but reading configuration creates no files.
+
+On Linux and macOS, AppRC requires mode `0700` on the companion's parent
+directory and `0600` on the file. On Windows, it checks the file and directory
+ACL for access by ordinary other users. If an existing storage directory is
+shared, ordinary settings remain writable, but secret saving is blocked until
+the user explicitly repairs permissions or chooses another storage. The
+[permission commands](References.md#terminal-commands) provide that repair.
+AppRC does not encrypt the file; it does not protect against a process running
+as the same user or someone with administrator access.
+
+Storage archives omit `apprc.storage.secret.env`. AppRC refuses to archive a
+storage while declared secret assignments remain in its ordinary dotenv;
+otherwise the archive would carry those values. Restoring an archive creates an
+empty companion. A separate deliberate backup of secrets remains the user's
+responsibility.
 
 ## Storage
 
@@ -289,8 +322,10 @@ shows this sequence and how to handle a stale plan.
 
 Editing a file does not change an earlier `ResolvedConfig` or settings object.
 Resolve again to read the new file, then build or reload the settings needed by
-the application. Writes use atomic file replacement, but operations across
-multiple files or processes are not transactions. The
+the application. Writes use atomic file replacement and cross-process file
+locks. A stale edit plan is rejected under that lock. Moving an old secret from
+one file to another writes the private copy first, then removes the old
+assignment; it is not a filesystem transaction. The
 [write guarantees](References.md#errors-and-write-guarantees) state the limits.
 
 ## Config CLI
@@ -326,8 +361,22 @@ explains how to choose an edit target and recognize such an override.
 
 Opening the editor writes nothing. Setup and save actions call `ConfigManager`
 explicitly. The editor can open before all required values are valid so the user
-can fix them. First-run setup is already implemented in the terminal; a desktop
-GUI is [future work](#installed-packages-and-future-integrations).
+can fix them.
+
+## GUI view
+
+The GUI view is `apprc_gui.ConfigView`, installed by the separate `apprc-gui`
+distribution. It renders config fields and their explanations as Toga controls
+inside an application-owned window. The application supplies a `ConfigManager`
+from its existing `AppRC` declaration; the view calls that manager for setup,
+inspection, preview, editing, storage selection, and secret-file repair. The
+[GUI guide](How-To-User-Guides.md#add-a-native-settings-window) shows the window
+and the application callback side by side.
+
+The view opens with missing storage or required settings. It shows the winning
+source for each active field, and password controls do not print saved secret
+values. The application decides what to do after configuration is ready. The
+view does not start a server or own the application's main window.
 
 ## Config bundles
 
@@ -370,21 +419,17 @@ provides an [explicit export operation](How-To-User-Guides.md#supply-settings-to
 It changes the process environment. Normal `resolve()` and `build()` calls do not.
 
 <a id="distribution-ownership"></a>
-## Installed packages and future integrations
+## Installed packages and installer builds
 
 `apprc-core` provides the configuration and noninteractive management code.
 `apprc` installs the matching core plus the dependencies for the CLI and Textual
-editor. Both use `import apprc`. The [installation instructions](../README.md#install)
+editor. Both use `import apprc`. `apprc-gui` owns the Toga view and depends on
+the same `apprc-core` version. The [installation instructions](../README.md#install)
 explain which distribution to choose; maintainers can inspect the
 [package ownership rules](Development.md#source-ownership).
 
-<a id="future-desktop-and-build-integrations"></a>
-A future Toga settings window can use the same `AppRC` field definitions and
-`ConfigManager` operations as the terminal editor. It would provide widgets,
-prompts, and graphical first-run setup. Coordination between simultaneous CLI
-and GUI writes still needs implementation.
-
-Future cx_Freeze tooling can package an application with the resources AppRC
-expects and assemble installers. It belongs in build tooling, separate from the
-code that reads settings while the application runs. Neither a Toga interface nor
-native installer generation is implemented in this release.
+AppRC does not run cx_Freeze. An application declares its desktop and CLI
+entry points, includes its own resources, and runs cx_Freeze to create an
+installer. This keeps the installed app's identity, shortcuts, and resources
+under the application's control. The [Windows installer guide](How-To-User-Guides.md#build-a-windows-installer)
+gives the exact manifest and checks used by the example.

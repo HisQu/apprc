@@ -25,7 +25,8 @@ Learn the components in this order:
    can load those layers inside its own constructor.
 4. Use [`ConfigManager`](Explanations.md#configmanager) to initialize and edit
    those files. Add the [config CLI](Explanations.md#config-cli) and
-   [config editor](Explanations.md#config-editor) for interactive use.
+   [config editor](Explanations.md#config-editor) for terminal use, or the
+   [GUI view](Explanations.md#gui-view) in a desktop application.
 5. Use a [config bundle](Explanations.md#config-bundles) when several parts of
    the application need their own config sections.
 
@@ -59,11 +60,13 @@ the Python name identifies its implementation.
 | [Provenance](Explanations.md#provenance) | `settings.provenance_of(...)` | The record of where a field's current value came from. |
 | [AppRC directory](Explanations.md#user-dotenv-and-the-apprc-directory) | `~/.local/share/<app_id>` by default | Directory containing the user dotenv and storage registry when enabled. |
 | [User dotenv](Explanations.md#user-dotenv-and-the-apprc-directory) | `apprc.user.env` | Saved user overrides enabled by `rc.UserDotenv()`. |
+| [Secret companion](Explanations.md#secret-companions) | `apprc.user.secret.env` or `apprc.storage.secret.env` | Private file for saved `secret=True` fields in the same layer. |
 | [Storage](Explanations.md#storage) | `rc.Storage()` enables it | A persistent data directory with its own `apprc.storage.env`. |
 | [Storage registry](Explanations.md#storage-registry) | `apprc.toml` | Storage names, directory paths, and the saved default storage. |
 | [`ConfigManager`](Explanations.md#configmanager) | Returned by `MyRC.manage()` | Application-specific setup, inspection, editing, and storage operations. |
 | [Config CLI](Explanations.md#config-cli) | `rc.cli.mount_config_cli(...)` | Configuration commands added to a Typer application. |
 | [Config editor](Explanations.md#config-editor) | `rc.tui.ConfigEditorApp` | Terminal interface for inspecting layers and editing saved overrides. |
+| [GUI view](Explanations.md#gui-view) | `apprc_gui.ConfigView` | Toga settings view embedded in an application-owned window. |
 | [Config bundle](Explanations.md#config-bundles) | Dataclass registered with `@MyRC.bundle` | An object containing several config sections. |
 
 ## Documentation rules
@@ -78,6 +81,9 @@ before changing documentation.
   Do not relabel Explanations as Architecture or How-to user guides as Recipes.
 - Use the [component names](#component-names) consistently. Add a definition
   before introducing a new component. Do not invent synonyms for variation.
+- Call the Windows `.msi` file an **installer**. Call cx_Freeze's process of
+  creating that file an **installer build**. Do not call the installed app or
+  its executable a "single file"; the installer contains multiple files.
 - Introduce basic settings before files, optional features, and integrations.
   Explain an unfamiliar term before relying on it in instructions.
 - Start Explanations sections with what the named component is and why the

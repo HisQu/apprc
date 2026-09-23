@@ -73,72 +73,25 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Todo list](#todo-list)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-09-23](#2026-09-23)
-   1. [P2 / E1 \[Question\] - *Add secret companion files to each dotenv layer*](#p2--e1-question---add-secret-companion-files-to-each-dotenv-layer)
-3. [2026-09-04](#2026-09-04)
-   1. [P3 / E1 \[Code smell\] - *Managed-file updates have no cross-process transaction*](#p3--e1-code-smell---managed-file-updates-have-no-cross-process-transaction)
+2. [2026-09-04](#2026-09-04)
+   1. [P3 / E1 \[Code smell\] - *Multi-file updates can stop between replacements*](#p3--e1-code-smell---multi-file-updates-can-stop-between-replacements)
    1. [P3 / E1 \[Code smell\] - *CLI and editor composition remain monolithic*](#p3--e1-code-smell---cli-and-editor-composition-remain-monolithic)
-4. [2026-07-14](#2026-07-14)
+3. [2026-07-14](#2026-07-14)
    1. [P3 / E3 \[Tooling\] - *Stale bytecode recreates removed package namespaces*](#p3--e3-tooling---stale-bytecode-recreates-removed-package-namespaces)
 
-
-<br>
-
-# 2026-09-23
-
-## P2 / E1 [Question] - *Add secret companion files to each dotenv layer*
-- **Area:** `src/apprc/user_files`, `src/apprc/services/manager.py`,
-  `src/apprc/services/inspection.py`
-- **Observed while:** Designing local storage for fields declared with
-  `secret=True`.
-- **Why not fixed now:** This request records the feature for a separate pass.
-  It changes resolution, setup, editing, migration, permission checks, and
-  storage archives together.
-- **Evidence:** `secret=True` currently redacts display values but does not
-  choose a private file. Setup creates `apprc.user.env` and
-  `apprc.storage.env` without secret companions. `archive_directory()` includes
-  every member of a storage root.
-- **Context:** Use `apprc.<layer>.secret.env`: `apprc.user.secret.env` beside
-  the user dotenv and `apprc.storage.secret.env` in each initialized storage
-  root. The chosen layer determines the folder; `secret=True` routes persisted
-  values to its companion file. Read each companion after its regular file.
-  Priority remains Python fallback, packaged defaults, user files, storage
-  files, explicit dotenv files, then process environment, subject to the
-  existing explicit-file override option. Setup creates empty companions for
-  enabled layers and new storages without replacing existing files. Ordinary
-  storage archives exclude `apprc.storage.secret.env`; ordinary configuration
-  exports omit AppRC-managed secret values. A separate explicit export may
-  include secrets for a deliberate backup. Restore creates an empty storage
-  secret companion by default.
-- **Suggested next step:** Specify migration of secret fields already saved in
-  regular dotenv files, then implement routing for manager, CLI, and editor
-  writes. On POSIX, require `0700` parent directories and `0600` secret files.
-  On Windows, check the user directory and each storage root ACL; a relocated
-  AppRC directory may not inherit a private app-data ACL. Reject unsafe
-  locations or offer repair without silently changing an existing storage
-  root. Establish restrictive permissions before writing temporary files for
-  atomic replacement. Make `config doctor` report unsafe permissions and offer
-  repair. Keep managed secret values out of logs, previews, diagnostics, and
-  ordinary exports.
-  Explain local storage in the GUI without promising that a user-selected
-  storage root cannot be synced or backed up by other tools. Document the
-  limits: no keychain or master password by default, and no protection from
-  the same user, administrators, an unlocked session, or an unencrypted copied
-  disk. Coordinate concurrent writes with the
-  [managed-file transaction TODO](#p3--e1-code-smell---managed-file-updates-have-no-cross-process-transaction).
 
 <br>
 
 # 2026-09-04
 
 
-## P3 / E1 [Code smell] - *Managed-file updates have no cross-process transaction*
+## P3 / E1 [Code smell] - *Multi-file updates can stop between replacements*
 - **Area:** `src/apprc/user_files/app_home/writes.py`, `src/apprc/user_files/env_files/updates.py`, `src/apprc/services/manager.py`
 - **Observed while:** Implementing explicit resolution and shared management.
-- **Why not fixed now:** This refactor establishes same-process serialization and stale dotenv-plan rejection; cross-process coordination is a separate design decision.
-- **Evidence:** The shared `RLock` protects only this process. Another process can write after a revision check and before atomic replacement. Registry operations do not carry optimistic revisions.
-- **Context:** Unique temporary files and cleanup now prevent thread collisions. They do not make registry, dotenv, or multi-file edits transactional across processes.
-- **Suggested next step:** Choose one cross-process lock and conflict policy for all managed writes before shipping the Toga GUI. Include the [secret companion files](#p2--e1-question---add-secret-companion-files-to-each-dotenv-layer) in that policy and add CLI/GUI concurrent-writer tests on Linux and Windows.
+- **Why not fixed now:** Cross-process locks and revision checks now serialize managed writes, but a lock cannot make two file replacements atomic after a process crash.
+- **Evidence:** Secret migration writes the private companion before removing its ordinary assignment. A crash between those writes leaves both assignments; a retry remains possible, and resolution favors the private copy within that layer.
+- **Context:** The same lock covers CLI and GUI writes. A two-file migration can still be interrupted; no journal or recovery protocol exists.
+- **Suggested next step:** If interrupted migrations prove common, add a small recovery journal and a crash-injection test. Preserve the current value-first ordering until then.
 
 
 ## P3 / E1 [Code smell] - *CLI and editor composition remain monolithic*

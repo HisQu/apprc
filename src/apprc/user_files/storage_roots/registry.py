@@ -84,7 +84,7 @@ def register_storage(
     storage_dotenv_existed = storage_dotenv.exists()
 
     try:
-        resolved_root.mkdir(parents=True, exist_ok=True)
+        resolved_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         ensure_storage_dotenv_file(
             resolved_root, filename=storage_dotenv_filename
         )

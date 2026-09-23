@@ -448,6 +448,13 @@ sdist = { url = "https://files.pythonhosted.org/packages/20/b5/23b216d9d985a9566
 wheels = [{ url = "https://files.pythonhosted.org/packages/cb/a8/20d0723294217e47de6d9e2e40fd4a9d2f7c4b6ef974babd482a59743694/fastjsonschema-2.21.2-py3-none-any.whl", upload-time = 2025-08-14T18:49:34Z, size = 24024, hashes = { sha256 = "1c797122d0a86c5cace2e54bf4e819c36223b552017172f32c5c024a6b77e463" } }]
 
 [[packages]]
+name = "filelock"
+version = "3.32.7"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/0f/59/e19834834cb01a32febfbb0f8a23a9088088f5d45991824ff2bc3b5e8acb/filelock-3.32.7.tar.gz", upload-time = 2026-09-16T00:24:20Z, size = 225154, hashes = { sha256 = "37b8a3d9811b0f9aef7e5ec5c71bb320de52df51e6ca9bcd6f5ad81187660da7" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/15/df/31098c5aeb4d966b553641472bd55fcf5fdfac953549894b8a765ba44e91/filelock-3.32.7-py3-none-any.whl", upload-time = 2026-09-16T00:24:19Z, size = 100157, hashes = { sha256 = "65ff0d0190ea42038b32bda4b77834fb05be2cad4c5b9b01aa4dfb3614536e52" } }]
+
+[[packages]]
 name = "fonttools"
 version = "4.63.0"
 index = "https://pypi.org/simple"
@@ -1400,6 +1407,26 @@ sdist = { url = "https://files.pythonhosted.org/packages/f7/ff/3cc9165fd44106973
 wheels = [{ url = "https://files.pythonhosted.org/packages/27/be/0631a861af4d1c875f096c07d34e9a63639560a717130e7a87cbc82b7e3f/python_json_logger-4.1.0-py3-none-any.whl", upload-time = 2026-03-29T04:39:55Z, size = 15021, hashes = { sha256 = "132994765cf75bf44554be9aa49b06ef2345d23661a96720262716438141b6b2" } }]
 
 [[packages]]
+name = "pywin32"
+version = "312"
+marker = "sys_platform == 'win32'"
+index = "https://pypi.org/simple"
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/ff/32aa7d2ed0ab12b323aaa64f9b75e6ad4f8fd09f9ccfc28c79414d46838d/pywin32-312-cp312-cp312-win32.whl", upload-time = 2026-06-04T07:49:28Z, size = 6371877, hashes = { sha256 = "dab4f65ac9c4e48400a2a0530c46c3c579cd5905ecd11b80692373915269208b" } },
+    { url = "https://files.pythonhosted.org/packages/03/d9/77040d3b43df3f3be32ea289433d660d2727f5ba327bc73be835127d9d60/pywin32-312-cp312-cp312-win_amd64.whl", upload-time = 2026-06-04T07:49:31Z, size = 6914841, hashes = { sha256 = "b457f6d628a47e8a7346ce22acb7e1a46a4a78b52e1d17e1af56871bd19a93bc" } },
+    { url = "https://files.pythonhosted.org/packages/e3/cc/7b1ec671775756020a0ee7f4feeaf3c568f0ab86bd3900088cf986937a92/pywin32-312-cp312-cp312-win_arm64.whl", upload-time = 2026-06-04T07:49:34Z, size = 6727901, hashes = { sha256 = "6017c58e12f6809fbb0555b75df144c2922a9ffd18e4b9b5afa863b6c1a9d950" } },
+    { url = "https://files.pythonhosted.org/packages/2d/41/12fbfd7f36ed2146d8bc9de96c2741296bf0d490b98508496cff322e274c/pywin32-312-cp313-cp313-win32.whl", upload-time = 2026-06-04T07:49:36Z, size = 6370184, hashes = { sha256 = "7a27df850933d16a8eabfbaeb73d52b273e2da667f80d70b01a89d1f6828d02c" } },
+    { url = "https://files.pythonhosted.org/packages/ba/db/36a78e3403099d31d9746d13fdcde5accc43c1155f375a34d15983a479a7/pywin32-312-cp313-cp313-win_amd64.whl", upload-time = 2026-06-04T07:49:38Z, size = 6914298, hashes = { sha256 = "c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3acbaaf9" } },
+    { url = "https://files.pythonhosted.org/packages/84/37/c1697194092b76de9ed47ca124323f02c57ffc8a45c06f88a3d5acaf01eb/pywin32-312-cp313-cp313-win_arm64.whl", upload-time = 2026-06-04T07:49:41Z, size = 6727640, hashes = { sha256 = "59aba5d5940842075343a5ddc6b11f1cdf0d1567fe745290359dfbcc7c2eb831" } },
+    { url = "https://files.pythonhosted.org/packages/fc/2b/1f3cded5822fd49c02f40544cbb5f58c7cfd6b1694869fd476cb6170ee97/pywin32-312-cp314-cp314-win32.whl", upload-time = 2026-06-04T07:49:43Z, size = 6468928, hashes = { sha256 = "a77a90fbb6881238d2ca9c6fd797b25817f3768fe78d214a90137ff055a75f5b" } },
+    { url = "https://files.pythonhosted.org/packages/21/82/3bf86d2e2808902013132e1ce905a7da0da53790f3836c64bf44d55e24f3/pywin32-312-cp314-cp314-win_amd64.whl", upload-time = 2026-06-04T07:49:45Z, size = 7024157, hashes = { sha256 = "a4dd3a848290ef724347b19f301045831d8e802fa4464f491b98b1e0a081432e" } },
+    { url = "https://files.pythonhosted.org/packages/a4/0e/73f6d6800b4f27655abd9e9f6aaeaefcddb2b946e4674efa2bab184a7f7b/pywin32-312-cp314-cp314-win_arm64.whl", upload-time = 2026-06-04T07:49:47Z, size = 6839598, hashes = { sha256 = "9fce94568364e0155e6dfb781ac5d95903be8baf28670632beab1b523f300daa" } },
+    { url = "https://files.pythonhosted.org/packages/eb/61/caa39686032d2ebdd04ff0ab5cbe163126c0066d98e00c9018646e42393b/pywin32-312-cp315-cp315-win32.whl", upload-time = 2026-06-04T07:49:50Z, size = 6471159, hashes = { sha256 = "5c1fbe4a937a73ae9297384a3da38518cbc694c68ad8a809b2e19acd350f03ed" } },
+    { url = "https://files.pythonhosted.org/packages/0f/cd/7e1de64a4a6f69c04214169657ccab0d93a670ea50e35eb8f489d7378249/pywin32-312-cp315-cp315-win_amd64.whl", upload-time = 2026-06-04T07:49:54Z, size = 7025293, hashes = { sha256 = "c2f03a0f73f804a13c2735b99392b0cd426bb4f2c4d0178e5ac966a0f21618d5" } },
+    { url = "https://files.pythonhosted.org/packages/23/ed/4532e9388e65fa16b46776ef47ad631a64eda1631884488af707666350ed/pywin32-312-cp315-cp315-win_arm64.whl", upload-time = 2026-06-04T07:49:57Z, size = 6840337, hashes = { sha256 = "a8597d28f267b39074aef51fa593530082b39cbe5a074226096857b1fed2dfb9" } },
+]
+
+[[packages]]
 name = "pywin32-ctypes"
 version = "0.2.3"
 marker = "platform_machine != 'ppc64le' and platform_machine != 's390x' and sys_platform == 'win32'"
@@ -1782,6 +1809,20 @@ sdist = { url = "https://files.pythonhosted.org/packages/7a/fd/7a5ee21fd08ff70d3
 wheels = [{ url = "https://files.pythonhosted.org/packages/e6/34/ebdc18bae6aa14fbee1a08b63c015c72b64868ff7dae68808ab500c492e2/tinycss2-1.4.0-py3-none-any.whl", upload-time = 2024-10-24T14:58:28Z, size = 26610, hashes = { sha256 = "3a49cf47b7675da0b15d0c6e1df8df4ebd96e9394bb905a5775adb0d884c5289" } }]
 
 [[packages]]
+name = "toga-core"
+version = "0.5.6"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/c9/48/01031bb2b7bff7e01581918a98525343f3eb115b5ee2e85ab6dfd2b92801/toga_core-0.5.6.tar.gz", upload-time = 2026-07-08T01:05:58Z, size = 1063611, hashes = { sha256 = "356ac36e4eb2943adcc26f47b4417cdd325e029c7551bfea4db5e7a14f171967" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/b7/a0/29905009ef7ab296d49183741ab3f5ceff8f713d0798de5746c605ffa5b8/toga_core-0.5.6-py3-none-any.whl", upload-time = 2026-07-08T01:05:56Z, size = 170382, hashes = { sha256 = "889e80e65825c1b4b13258737abeed9faebdf69ca1ae3898876b4f675815372e" } }]
+
+[[packages]]
+name = "toga-dummy"
+version = "0.5.6"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/24/bb/e0e989a8255e352fb4d2720baafc74e48ffba2530c0988c549bc797b2b33/toga_dummy-0.5.6.tar.gz", upload-time = 2026-07-08T01:05:55Z, size = 75377, hashes = { sha256 = "7d6f43c5cca7300767850ba57d9e808ead58763012ffeb753ba5d05beefe2ef9" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/a2/45/2f0603b3f7b8e24ba49b261df6e4b7f23d7ad325bb4675c2a278f93ee750/toga_dummy-0.5.6-py3-none-any.whl", upload-time = 2026-07-08T01:05:53Z, size = 84284, hashes = { sha256 = "5f34d8620bfcc6569aa9f3abbfebe9b5fc3d5d6b410e63fd91290ef88b5bac76" } }]
+
+[[packages]]
 name = "tornado"
 version = "6.5.6"
 index = "https://pypi.org/simple"
@@ -1804,6 +1845,13 @@ version = "5.15.0"
 index = "https://pypi.org/simple"
 sdist = { url = "https://files.pythonhosted.org/packages/1b/22/40f55b26baeab80c2d7b3f1db0682f8954e4617fee7d90ce634022ef05c6/traitlets-5.15.0.tar.gz", upload-time = 2026-05-06T08:05:58Z, size = 163197, hashes = { sha256 = "4fead733f81cf1c4c938e06f8ca4633896833c9d89eff878159457f4d4392971" } }
 wheels = [{ url = "https://files.pythonhosted.org/packages/da/98/a9937a969d018a23badfea0b381f66783649d48e0ea6c41923265c3cbeb3/traitlets-5.15.0-py3-none-any.whl", upload-time = 2026-05-06T08:05:55Z, size = 85877, hashes = { sha256 = "fb36a18867a6803deab09f3c5e0fa81bb7b26a5c9e82501c9933f759166eff40" } }]
+
+[[packages]]
+name = "travertino"
+version = "0.5.6"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/df/36/64d9b7281ccb1ca4620749da5a39552c8d11e36d4736b003fad69cfa337b/travertino-0.5.6.tar.gz", upload-time = 2026-07-08T01:05:56Z, size = 49971, hashes = { sha256 = "9eafb6f7db785f7fde8a10054418288e67299094fe3dd4cb09ed9c7a96572791" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/2b/9d/6f71574c31073ae884c78158eb9d476d8325c376b1ed3e87489e73ea9229/travertino-0.5.6-py3-none-any.whl", upload-time = 2026-07-08T01:05:54Z, size = 27526, hashes = { sha256 = "ebe7d196398bd48bea9a2acc8c095f5ecff1f1dc081d33b8040810ef9f93b0d9" } }]
 
 [[packages]]
 name = "twine"

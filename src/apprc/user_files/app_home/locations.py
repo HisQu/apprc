@@ -171,7 +171,7 @@ def require_readable_text_file(path: Path) -> Path:
     return resolved
 
 
-def write_text_atomic(path: Path, text: str) -> Path:
+def write_text_atomic(path: Path, text: str, *, private: bool = False) -> Path:
     """Replace a text file with one same-directory atomic move.
 
     :param path: Destination file path.
@@ -179,8 +179,18 @@ def write_text_atomic(path: Path, text: str) -> Path:
     :return: Resolved destination path.
     :raises AppRCDirectoryError: If the target or parent is incompatible.
     """
-    resolved = Path(path).expanduser().resolve()
+    resolved = (
+        Path(path).expanduser().absolute()
+        if private
+        else Path(path).expanduser().resolve()
+    )
     _ensure_parent_dir(resolved)
+    if private:
+        from apprc.user_files.env_files.secrets import inspect_secret_file
+
+        status = inspect_secret_file(resolved)
+        if not status.available:
+            raise AppRCDirectoryError(status.issue or "Unsafe secret file.")
     if resolved.exists() and not resolved.is_file():
         raise AppRCDirectoryError(
             f"AppRC-managed file path exists but is not a file: {resolved}"
@@ -221,7 +231,7 @@ def _ensure_parent_dir(path: Path) -> None:
             f"AppRC-managed file parent exists but is not a directory: {parent}"
         )
     try:
-        parent.mkdir(parents=True, exist_ok=True)
+        parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     except OSError as exc:
         raise AppRCDirectoryError(
             f"AppRC-managed file parent could not be created: {parent}: {exc}"

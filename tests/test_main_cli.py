@@ -678,7 +678,7 @@ def test_release_workflow_creates_github_release_before_optional_pypi() -> None:
     assert "--trusted-publishing always" in pypi_publish
     assert "if: github.event_name == 'workflow_dispatch'" in publish_existing
     assert "gh release download" in publish_existing
-    assert "exactly two wheels and two source archives" in publish_existing
+    assert "exactly three wheels and three source archives" in publish_existing
     assert "${project}-${version}-py3-none-any.whl" in publish_existing
     assert "${project}-${version}.tar.gz" in publish_existing
     assert "twine check" in publish_existing
@@ -807,7 +807,7 @@ def test_release_recipe_pushes_prepared_tag_atomically() -> None:
     assert "just --evaluate RELEASE_PYPI" in release_push
     assert "gh workflow run release.yml" in publish_pypi
     assert "isDraft" in publish_pypi
-    assert "exactly two wheels and two source archives" in publish_pypi
+    assert "exactly three wheels and three source archives" in publish_pypi
 
 
 def test_release_prepare_keeps_existing_result_banner() -> None:

@@ -28,6 +28,20 @@ def test_terminal_wrapper_owns_no_packages_and_pins_matching_core() -> None:
     assert wrapper["project"]["scripts"] == {"apprc": "apprc.__main__:main"}
 
 
+def test_gui_distribution_owns_only_its_view_and_pins_matching_core() -> None:
+    core = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    gui = tomllib.loads(
+        (ROOT / "src/apprc_dev/packaging/gui/pyproject.toml").read_text()
+    )
+    assert gui["project"]["name"] == "apprc-gui"
+    assert gui["project"]["version"] == core["project"]["version"]
+    assert (
+        f"apprc-core=={core['project']['version']}"
+        in gui["project"]["dependencies"]
+    )
+    assert gui["tool"]["setuptools"]["package-dir"] == {"": "src"}
+
+
 def test_distribution_generation_follows_root_version(
     tmp_path: Path, monkeypatch
 ) -> None:

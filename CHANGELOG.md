@@ -32,32 +32,33 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.25.1 - 2026-09-23](#0251---2026-09-23)
-4. [0.25.0 - 2026-09-23](#0250---2026-09-23)
-5. [0.24.0 - 2026-09-11](#0240---2026-09-11)
-6. [0.23.7 - 2026-09-10](#0237---2026-09-10)
-7. [0.23.6 - 2026-09-10](#0236---2026-09-10)
-8. [0.23.5 - 2026-09-08](#0235---2026-09-08)
-9. [0.22.1 - 2026-09-04](#0221---2026-09-04)
-10. [0.22.0 - 2026-09-04](#0220---2026-09-04)
-11. [0.21.0 - 2026-09-04](#0210---2026-09-04)
-12. [0.20.0 - 2026-09-04](#0200---2026-09-04)
-13. [0.19.9 - 2026-09-02](#0199---2026-09-02)
-14. [0.19.8 - 2026-09-01](#0198---2026-09-01)
-15. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-16. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-17. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-18. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-19. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-20. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-21. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-22. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-23. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-24. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-25. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-26. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-27. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-28. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.26.0 - 2026-09-23](#0260---2026-09-23)
+4. [0.25.1 - 2026-09-23](#0251---2026-09-23)
+5. [0.25.0 - 2026-09-23](#0250---2026-09-23)
+6. [0.24.0 - 2026-09-11](#0240---2026-09-11)
+7. [0.23.7 - 2026-09-10](#0237---2026-09-10)
+8. [0.23.6 - 2026-09-10](#0236---2026-09-10)
+9. [0.23.5 - 2026-09-08](#0235---2026-09-08)
+10. [0.22.1 - 2026-09-04](#0221---2026-09-04)
+11. [0.22.0 - 2026-09-04](#0220---2026-09-04)
+12. [0.21.0 - 2026-09-04](#0210---2026-09-04)
+13. [0.20.0 - 2026-09-04](#0200---2026-09-04)
+14. [0.19.9 - 2026-09-02](#0199---2026-09-02)
+15. [0.19.8 - 2026-09-01](#0198---2026-09-01)
+16. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+17. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+18. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+19. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+20. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+21. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+22. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+23. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+24. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+25. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+26. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+27. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+28. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+29. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -96,6 +97,49 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.26.0 - 2026-09-23
+
+<br>
+
+### 💥 Breaking changes
+
+  - Breaking: Saved `secret=True` fields now use the user or storage layer's
+    `.secret.env` companion, and AppRC blocks secret saves in shared directories.
+    Affected: Applications or scripts that read secret assignments directly
+    from `apprc.user.env` or `apprc.storage.env`, or save them in a shared
+    storage root.
+    Migration: Read fields through `AppRC.resolve()`; run
+    `config secrets migrate --scope user|storage` for old assignments, then
+    choose a private root or run `config secrets repair` after reviewing its
+    permission change.
+
+<br>
+
+### ➕ Added
+
+  - Added `apprc-gui`, a separate Toga settings view that applications can
+    embed in their own desktop window for setup and editing.
+  - Added private user and storage secret companions, explicit migration and
+    permission repair commands, and doctor guidance for unsafe files.
+  - Added cross-process locks for managed edits and a Windows MSI installer
+    guide for applications using AppRC.
+
+<br>
+
+### 💔 Changed
+
+  - Storage archives exclude `apprc.storage.secret.env` and refuse legacy
+    secret assignments in `apprc.storage.env`; restore creates an empty
+    companion. Purge removes secret companions with other managed files.
 
 <br>
 

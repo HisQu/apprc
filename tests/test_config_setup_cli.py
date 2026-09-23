@@ -241,6 +241,7 @@ def test_setup_does_not_recreate_missing_registered_root(
         ["storage", "add", "ontology", str(storage_root), "--yes"],
     )
     AppFiles(kit.schema).storage_dotenv_path(storage_root).unlink()
+    AppFiles(kit.schema).storage_secret_dotenv_path(storage_root).unlink()
     storage_root.rmdir()
 
     result = CliRunner().invoke(app, ["setup", "--yes"])

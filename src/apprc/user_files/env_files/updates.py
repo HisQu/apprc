@@ -26,9 +26,9 @@ from apprc.user_files.env_files._document import (
 from apprc.user_files.env_files.values import normalize_env_value
 from apprc.user_files.storage_roots.paths import StorageRootPathError
 from apprc.user_files.app_home.writes import (
-    MANAGED_WRITE_LOCK,
     StaleEditError,
     file_revision,
+    managed_write_lock,
 )
 
 
@@ -70,6 +70,8 @@ class EnvFileEditPlan:
     value: str = field(repr=False)
     text: str = field(repr=False)
     revision: str | None
+    private: bool = False
+    lock_roots: tuple[Path, ...] = ()
     warnings: tuple[str, ...] = ()
     duplicate_lines: tuple[int, ...] = ()
 
@@ -170,6 +172,7 @@ def plan_env_file_value_update(
     raw_value: str,
     owners: Iterable[ConfigOwner],
     layer_name: str,
+    private: bool = False,
 ) -> EnvFileEditPlan:
     """Prepare one source-preserving dotenv edit without writing it.
 
@@ -206,6 +209,7 @@ def plan_env_file_value_update(
         value=value,
         text=edit.text,
         revision=sha256(original).hexdigest() if original is not None else None,
+        private=private,
         warnings=warnings,
         duplicate_lines=edit.disabled_duplicate_lines,
     )
@@ -217,11 +221,13 @@ def apply_env_file_edit(plan: EnvFileEditPlan) -> EnvFileUpdate:
     :param plan: Complete edit created by an AppRC planning helper.
     :return: Written file, key, value, and warnings.
     """
-    with MANAGED_WRITE_LOCK:
+    with managed_write_lock(*(plan.lock_roots or (plan.path.parent,))):
         revision = file_revision(plan.path)
         if revision != plan.revision:
             raise StaleEditError(plan.path, plan.revision, revision)
-        written_path = write_text_atomic(plan.path, plan.text)
+        written_path = write_text_atomic(
+            plan.path, plan.text, private=plan.private
+        )
     return EnvFileUpdate(
         path=written_path,
         env_key=plan.env_key,
@@ -288,6 +294,7 @@ def plan_env_file_value_removal(
     reference: str,
     owners: Iterable[ConfigOwner],
     layer_name: str,
+    private: bool = False,
 ) -> EnvFileEditPlan | None:
     """Prepare removal without creating or changing the target file.
 
@@ -316,6 +323,7 @@ def plan_env_file_value_removal(
         value="",
         text=edit.text,
         revision=sha256(text.encode("utf-8")).hexdigest(),
+        private=private,
     )
 
 

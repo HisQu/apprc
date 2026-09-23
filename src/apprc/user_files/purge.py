@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from apprc.user_files.app_home.application import AppFiles
+from apprc.user_files.app_home.writes import managed_lock_path
 
 # == Standard Library ===========================================
 import os
@@ -11,6 +12,7 @@ from pathlib import Path
 
 # == Internal ===================================================
 from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.user_files.env_files.secrets import secret_companion_path
 from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
 
 
@@ -91,15 +93,23 @@ def build_config_purge_plan(
                 f"is invalid: {exc}"
             ) from exc
 
-    managed_files = [paths.user_dotenv, paths.apprc_toml]
+    managed_files = [
+        paths.user_dotenv,
+        secret_companion_path(paths.user_dotenv),
+        paths.apprc_toml,
+    ]
     internal_roots: list[Path] = []
     external_roots: list[Path] = []
     if registry is not None:
         for record in registry.storages.values():
             root = record.root.expanduser().absolute()
-            managed_files.append(root / spec.storage_dotenv_filename)
+            storage_dotenv = root / spec.storage_dotenv_filename
+            managed_files.extend(
+                (storage_dotenv, secret_companion_path(storage_dotenv))
+            )
             if _is_strict_descendant(root, paths.root):
                 internal_roots.append(root)
+                managed_files.append(managed_lock_path(root))
             else:
                 external_roots.append(root)
 

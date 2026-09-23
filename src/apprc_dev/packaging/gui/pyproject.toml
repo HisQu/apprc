@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=82"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apprc-gui"
+version = "0.26.0"
+description = "Toga configuration view for AppRC applications."
+requires-python = ">=3.12"
+readme = "README.md"
+license = "MIT"
+dependencies = [
+    "apprc-core==0.26.0",
+    "toga-core>=0.5.4,<0.6",
+    "toga-winforms>=0.5.4,<0.6; sys_platform == 'win32'",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

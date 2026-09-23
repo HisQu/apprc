@@ -7,7 +7,7 @@
 - [Checks](#checks)
 - [Documentation checks](#documentation-checks)
 - [Generated files](#generated-files)
-- [Build both distributions](#build-both-distributions)
+- [Build the three distributions](#build-the-three-distributions)
 - [Release procedure](#release-procedure)
 
 ## Environment
@@ -21,7 +21,7 @@ Ordinary pip setup from the repository root:
 ```shell
 python -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -e . -e src/apprc_dev/packaging/terminal -e examples/example_apps --group dev
+.venv/bin/python -m pip install -e . -e src/apprc_dev/packaging/terminal -e src/apprc_dev/packaging/gui -e examples/example_apps --group dev
 ```
 
 On Windows use `.venv\Scripts\python.exe`. The `dev` dependency group includes
@@ -36,8 +36,8 @@ For the locked development environment:
 uv sync --locked --all-groups
 ```
 
-The root uv workspace includes the metadata-only terminal project. Root source
-mappings select both local distributions and the editable examples. Do not change
+The root uv workspace includes the terminal and GUI projects. Root source
+mappings select all three local distributions and the editable examples. Do not change
 shell startup files or `PATH` to locate project tools; use `.venv/bin/<tool>`.
 
 ## Source ownership
@@ -52,6 +52,7 @@ shell startup files or `PATH` to locate project tools; use `.venv/bin/<tool>`.
 | `src/apprc/public` | Application declaration facade |
 | `src/apprc/scaffold` | Small generated application layout |
 | `src/apprc_dev/packaging` | Metadata generation, install checks, release helpers |
+| `src/apprc_dev/packaging/gui/src/apprc_gui` | Toga presentation; no copy of the core's `apprc` modules |
 | `tests` | Behavior, architecture, and integration checks |
 | `examples/example_apps` | Curated CLIs, automated runner, manual lab |
 | `docs/assets` | Diagram sources and generated SVGs |
@@ -60,10 +61,12 @@ The root project builds `apprc-core` and owns all `apprc` Python files. The
 `src/apprc_dev/packaging/terminal` project builds `apprc`, owns no Python package,
 and supplies dependencies plus the console entrypoint. Never add a second copy
 of an `apprc` module to that wrapper.
+`src/apprc_dev/packaging/gui` builds `apprc-gui`, which owns only `apprc_gui`.
+Its `ConfigView` calls `ConfigManager`; it does not implement file writes.
 
 Production `__init__.py` files contain imports and module docstrings only.
-Architecture tests enforce declaration dependency direction. Put future GUI
-presentation in interfaces and future build tooling outside runtime.
+Architecture tests enforce declaration dependency direction. Keep installer
+manifests in consuming applications, outside AppRC runtime code.
 
 ## Checks
 
@@ -72,6 +75,7 @@ presentation in interfaces and future build tooling outside runtime.
 .venv/bin/ruff check .
 .venv/bin/pyright
 .venv/bin/pytest
+.venv/bin/pytest src/apprc_dev/packaging/gui/tests
 .venv/bin/apprc-examples-run-all
 .venv/bin/python src/apprc_dev/packaging/terminal_metadata.py --check
 git diff --check
@@ -123,23 +127,24 @@ The terminal generator copies shared metadata, description, and license from
 the root and pins `apprc-core` to its exact version. Its `--check` mode rejects
 stale generated files. Commit generated files with their source changes.
 
-## Build both distributions
+## Build the three distributions
 
 Ordinary PEP 517 builds:
 
 ```shell
 .venv/bin/python -m build --outdir dist
 .venv/bin/python -m build src/apprc_dev/packaging/terminal --outdir dist
+.venv/bin/python -m build src/apprc_dev/packaging/gui --outdir dist
 .venv/bin/python -m twine check dist/*
 .venv/bin/python src/apprc_dev/packaging/artifact_check.py dist
 ```
 
-Start with an empty `dist` directory. Expect two wheels and two source archives
+Start with an empty `dist` directory. Expect three wheels and three source archives
 with matching versions. `python -m build` builds a wheel from each sdist, checking
 that it is self-contained. `artifact_check.py` uses fresh ordinary pip virtual
-environments for core and terminal installs and wrapper removal. It checks wheel
-file ownership for overlap and confirms the core can construct and manage config
-without terminal imports or an `apprc` console entrypoint.
+environments for core, terminal, and GUI installs and wrapper removal. It checks
+wheel file ownership for overlap and confirms the core can construct and manage
+config without terminal imports or an `apprc` console entrypoint.
 
 To check migration from a previously built single-distribution wheel:
 
@@ -150,8 +155,8 @@ To check migration from a previously built single-distribution wheel:
 This exercises the documented uninstall-old-then-install-new procedure. It does
 not promise safe transfer of overlapping ownership during a plain pip upgrade.
 
-The equivalent uv build commands are `uv build --package apprc-core --no-sources`
-and `uv build --package apprc --no-sources`.
+The equivalent uv build commands use `uv build --no-sources --package` with
+`apprc-core`, `apprc`, and `apprc-gui` in that order.
 
 ## Release procedure
 
@@ -166,16 +171,18 @@ regenerates the wrapper and locks, checks the release, and prepares a local comm
 and tag. `just release-push TAG` is the separate remote action.
 
 Tag CI keeps Linux/Windows and Python 3.12–3.14 coverage. The release workflow
-attaches all four artifacts to GitHub, then publishes `apprc-core` before `apprc`.
+attaches all six artifacts to GitHub, then publishes `apprc-core` before `apprc`
+and `apprc-gui`.
 Each project uses its own PyPI check URL so retries can skip already uploaded
 artifacts. `just publish-pypi TAG` requests publication of an existing validated
 release, rather than rebuilding it.
 
 > [!IMPORTANT]
-> Trusted publishing must be configured for both PyPI projects before release.
+> Trusted publishing must be configured for all three PyPI projects before release.
 > Preparing this repository does not create the `apprc-core` project or change
 > external PyPI settings. Do not publish a wrapper until its matching core is
 > available.
 
-Toga, cx_Freeze, and platform installer verification are future work. Cross-process
-write coordination must precede shipping concurrent GUI editing.
+The [GUI view](Explanations.md#gui-view) has a separate source package and
+dummy-backend test job. A consuming application owns its cx_Freeze manifest and
+must test its MSI on Windows. AppRC itself does not publish an installer.

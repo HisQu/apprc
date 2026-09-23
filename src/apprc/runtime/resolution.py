@@ -317,6 +317,27 @@ def resolve_config(
             values = {}
         add_layer(values, origin, path=path)
 
+    def read_secret_layer(path: Path, origin: ShellProvenanceOrigin) -> None:
+        """Read only declared secret fields from a companion file."""
+        try:
+            parsed = parse_dotenv_file(path, environment=original)
+        except (OSError, ValueError) as exc:
+            if not allow_unready:
+                raise
+            issues.append(f"Could not read {path}: {exc}")
+            parsed = {}
+        secret_keys = {
+            owner.env_key(spec.name)
+            for owner in schema.owners
+            for spec in owner.fields
+            if spec.secret
+        }
+        add_layer(
+            {key: value for key, value in parsed.items() if key in secret_keys},
+            origin,
+            path=path,
+        )
+
     if options.load_dotenv_layers:
         try:
             defaults = defaults_dotenv_resource(schema)
@@ -342,9 +363,17 @@ def resolve_config(
             )
         if paths is not None and schema.uses_user_dotenv():
             read_layer(paths.user_dotenv, "shell_dotenv_user")
+            read_secret_layer(
+                AppFiles(schema).user_secret_dotenv_path(selector_env),
+                "shell_dotenv_user",
+            )
         if selection is not None:
             read_layer(
                 AppFiles(schema).storage_dotenv_path(selection.root),
+                "shell_dotenv_storage",
+            )
+            read_secret_layer(
+                AppFiles(schema).storage_secret_dotenv_path(selection.root),
                 "shell_dotenv_storage",
             )
     if options.env_file_overrides_os_environ:

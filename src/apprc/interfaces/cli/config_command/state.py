@@ -80,6 +80,7 @@ DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS = frozenset(
         "migrate",
         "paths",
         "set",
+        "secrets",
         "setup",
         "storage",
     }

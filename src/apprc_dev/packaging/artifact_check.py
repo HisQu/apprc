@@ -1,4 +1,4 @@
-"""Validate both distributions with ordinary pip, including wrapper removal."""
+"""Validate core, terminal, and GUI distributions with ordinary pip."""
 
 from __future__ import annotations
 
@@ -28,15 +28,16 @@ def verify_artifacts(
 ) -> None:
     """Install wheels and source archives in fresh environments.
 
-    :param directory: Directory with exactly two wheels and two source archives.
+    :param directory: Directory with three wheels and three source archives.
     :param previous_wheel: Optional pre-refactor wheel for ownership migration.
     """
     wheels = sorted(directory.glob("*.whl"))
     sdists = sorted(directory.glob("*.tar.gz"))
-    if len(wheels) != 2 or len(sdists) != 2:
-        raise ValueError("Expected two wheels and two source archives.")
+    if len(wheels) != 3 or len(sdists) != 3:
+        raise ValueError("Expected three wheels and three source archives.")
     core = next(path for path in wheels if path.name.startswith("apprc_core-"))
     terminal = next(path for path in wheels if path.name.startswith("apprc-"))
+    gui = next(path for path in wheels if path.name.startswith("apprc_gui-"))
     with zipfile.ZipFile(core) as archive:
         core_files = set(archive.namelist())
         core_metadata = Parser().parsestr(
@@ -59,23 +60,41 @@ def verify_artifacts(
                 )
             ).decode()
         )
+    with zipfile.ZipFile(gui) as archive:
+        gui_files = set(archive.namelist())
+        gui_metadata = Parser().parsestr(
+            archive.read(
+                next(
+                    name
+                    for name in gui_files
+                    if name.endswith(".dist-info/METADATA")
+                )
+            ).decode()
+        )
     version = core_metadata["Version"]
     assert terminal_metadata["Version"] == version
+    assert gui_metadata["Version"] == version
     assert core_metadata["Name"] == "apprc-core"
     assert terminal_metadata["Name"] == "apprc"
+    assert gui_metadata["Name"] == "apprc-gui"
     assert f"apprc-core=={version}" in terminal_metadata.get_all(
         "Requires-Dist", []
     )
+    assert f"apprc-core=={version}" in gui_metadata.get_all("Requires-Dist", [])
     assert {path.name for path in sdists} == {
         f"apprc-{version}.tar.gz",
         f"apprc_core-{version}.tar.gz",
+        f"apprc_gui-{version}.tar.gz",
     }
     assert not core_files.intersection(terminal_files)
+    assert not core_files.intersection(gui_files)
+    assert not terminal_files.intersection(gui_files)
     assert all(".dist-info/" in name for name in terminal_files)
+    assert any(name.startswith("apprc_gui/") for name in gui_files)
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         for label, artifacts in (
-            ("wheel", [core, terminal]),
+            ("wheel", [core, terminal, gui]),
             ("sdist", sdists),
         ):
             environment = root / label
@@ -92,6 +111,9 @@ def verify_artifacts(
             )
             selected_terminal = next(
                 path for path in artifacts if path.name.startswith("apprc-")
+            )
+            selected_gui = next(
+                path for path in artifacts if path.name.startswith("apprc_gui-")
             )
             if previous_wheel is not None and label == "wheel":
                 run(
@@ -130,6 +152,10 @@ def verify_artifacts(
                 cwd=root,
             )
             run(str(python), str(SMOKE), cwd=root)
+            run(
+                str(python), "-m", "pip", "install", str(selected_gui), cwd=root
+            )
+            run(str(python), str(SMOKE), "--gui", cwd=root)
             run(str(python), "-m", "pip", "uninstall", "-y", "apprc", cwd=root)
             run(
                 str(python),

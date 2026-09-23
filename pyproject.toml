@@ -11,7 +11,7 @@ build-backend = "uv_build"
 
 [project]
 name        = "apprc-core"
-version     = "0.25.1"
+version     = "0.26.0"
 description = "Reusable runtime configuration and config CLI helpers for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
 readme      = { file = "README.pypi.md", content-type = "text/markdown" }
@@ -37,17 +37,23 @@ classifiers = [
 ]
 dependencies = [
     # > Core imports used by ordinary pip installations of this root project.
+    "filelock>=3.20,<4",
     "python-dotenv",
+    "pywin32>=311; sys_platform == 'win32'",
     "typed-settings[dotenv]",
 ]
 
 # Local-only dependency sources used by uv. These are not published as package
 # requirements in AppRC wheel metadata.
 [tool.uv.workspace]
-members = ["src/apprc_dev/packaging/terminal"]
+members = [
+    "src/apprc_dev/packaging/terminal",
+    "src/apprc_dev/packaging/gui",
+]
 
 [tool.uv.sources]
 "apprc" = { workspace = true }
+"apprc-gui" = { workspace = true }
 "apprc-core" = { workspace = true }
 "apprc-example-apps" = { path = "examples/example_apps", editable = true }
 # "graphigs" = { path = "../graphigs", editable = true }
@@ -84,6 +90,8 @@ dev = [
     "jupyterlab",    # < Brings notebook, widgets, ipykernel, etc.
     "ipywidgets",    # < Needed for interactive widgets; also installs/configures widget frontend support.
     "textual",       # < Terminal config editor tests and manual runs.
+    "toga-core>=0.5.4,<0.6",  # < GUI type checks without a platform backend.
+    "toga-dummy>=0.5.4,<0.6",  # < Headless GUI behavior checks.
     # "jupytext",    # < Needed for paired text notebooks / .py notebook workflows.
     # --- Testing ----------------------
     "pytest>=8.2",
@@ -138,7 +146,12 @@ pythonPlatform = "All"
 venvPath = "."
 venv = ".venv"
 include = ["src", "tests", "examples/example_apps/src"]
-extraPaths = ["src", "tests", "examples/example_apps/src"]
+extraPaths = [
+    "src",
+    "tests",
+    "examples/example_apps/src",
+    "src/apprc_dev/packaging/gui/src",
+]
 exclude = [
     "**/example_data",
     "**/old",

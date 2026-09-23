@@ -70,3 +70,34 @@ jobs:
 
       - name: Compile sources
         run: uv run --locked python -m compileall -q src tests examples/example_apps/src
+
+  gui:
+    name: GUI / ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: auto
+
+      - name: Install core and test dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Install GUI distribution
+        run: uv pip install -e src/apprc_dev/packaging/gui
+
+      - name: Test native view with dummy backend
+        env:
+          TOGA_BACKEND: toga_dummy
+        run: uv run --no-sync pytest src/apprc_dev/packaging/gui/tests

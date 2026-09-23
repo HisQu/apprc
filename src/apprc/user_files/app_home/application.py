@@ -15,6 +15,7 @@ from apprc.user_files.app_home.locations import (
     resolve_apprc_directory_paths,
 )
 from apprc.user_files.env_files.files import storage_dotenv_path
+from apprc.user_files.env_files.secrets import secret_companion_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +77,17 @@ class AppFiles:
             storage_root,
             filename=self.spec.storage_dotenv_filename,
         )
+
+    def user_secret_dotenv_path(
+        self, proc_env: Mapping[str, str] | None = None
+    ) -> Path:
+        """Return the private companion of the declared user dotenv."""
+        self.spec.require_user_dotenv()
+        return secret_companion_path(self.user_dotenv_path(proc_env))
+
+    def storage_secret_dotenv_path(self, storage_root: Path) -> Path:
+        """Return the private companion of one storage dotenv."""
+        return secret_companion_path(self.storage_dotenv_path(storage_root))
 
     def paths(
         self,

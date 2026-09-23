@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from apprc.user_files.app_home.application import AppFiles
+from apprc.user_files.env_files._parsing import parse_dotenv_file
+from apprc.user_files.env_files.secrets import (
+    inspect_secret_file,
+    secret_companion_path,
+)
 
 # == Standard Library ===========================================
 from dataclasses import asdict, dataclass
@@ -125,6 +130,49 @@ def build_config_doctor_payload(
             ]
         )
     )
+    secret_steps: list[str] = []
+    secret_keys = {
+        owner.env_key(spec.name)
+        for owner in apprc.schema.owners
+        for spec in owner.fields
+        if spec.secret
+    }
+    managed_layers = []
+    if apprc.schema.uses_user_dotenv():
+        managed_layers.append(("user", paths.user_dotenv))
+    if selected_root is not None:
+        managed_layers.append(
+            (
+                "storage",
+                AppFiles(apprc.schema).storage_dotenv_path(selected_root),
+            )
+        )
+    for scope, ordinary_path in managed_layers:
+        secret_path = secret_companion_path(ordinary_path)
+        if ordinary_path.is_file():
+            old_keys = secret_keys.intersection(
+                parse_dotenv_file(
+                    ordinary_path, environment=manager.environment
+                )
+            )
+            if old_keys:
+                warnings.append(
+                    f"{len(old_keys)} secret field(s) remain in {ordinary_path.name}."
+                )
+                secret_steps.append(
+                    f"{apprc.schema.config_command_name()} {config_group_name} secrets migrate --scope {scope}"
+                )
+        if ordinary_path.parent.exists():
+            secret_status = inspect_secret_file(secret_path)
+            if not secret_status.available:
+                message = f"{secret_path}: {secret_status.issue}"
+                if secret_path.is_file():
+                    issues.append(message)
+                else:
+                    warnings.append(message)
+                secret_steps.append(
+                    f"{apprc.schema.config_command_name()} {config_group_name} secrets repair --scope {scope}"
+                )
     status = doctor_status(
         user_dotenv=user_dotenv,
         registry=registry,
@@ -205,16 +253,21 @@ def build_config_doctor_payload(
         issues=tuple(issues),
         warnings=tuple(warnings),
         next_steps=tuple(
-            _doctor_next_steps(
-                apprc,
-                status,
-                config_group_name=config_group_name,
-                storage_count=registry.storage_count,
-                selector_error=storage_diagnosis.selector_error,
-                selected_storage=(
-                    selection.storage_name if selection is not None else None
+            [
+                *_doctor_next_steps(
+                    apprc,
+                    status,
+                    config_group_name=config_group_name,
+                    storage_count=registry.storage_count,
+                    selector_error=storage_diagnosis.selector_error,
+                    selected_storage=(
+                        selection.storage_name
+                        if selection is not None
+                        else None
+                    ),
+                    storage_root_exists=storage_diagnosis.storage_root_exists,
                 ),
-                storage_root_exists=storage_diagnosis.storage_root_exists,
-            )
+                *secret_steps,
+            ]
         ),
     )

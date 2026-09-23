@@ -33,12 +33,13 @@ Examples use `import apprc as rc`. These names belong to the public API:
 | `rc.storage` | Read registry and selection records; mutations go through [ConfigManager](Explanations.md#configmanager). |
 | [`rc.cli`](Explanations.md#config-cli) | Add Typer commands, CLI state, and diagnostic output. |
 | [`rc.tui`](Explanations.md#config-editor) | `ConfigEditorApp` and `ConfigSetupApp` terminal interfaces. |
+| [`apprc_gui.ConfigView`](Explanations.md#gui-view) | Optional Toga view for [native settings windows](How-To-User-Guides.md#add-a-native-settings-window). |
 | `apprc.scaffold` | `ConfigScaffoldRequest` and `scaffold_config_package()` for [generating a config package](How-To-User-Guides.md#generate-a-config-package). |
 
 `apprc-core` owns the Python modules, including lazily imported terminal modules.
 Using terminal implementations requires the `apprc` distribution's dependencies.
 `apprc.interfaces` remains a compatibility import; new code should use `rc.cli`
-or `rc.tui`. The [package explanation](Explanations.md#installed-packages-and-future-integrations)
+or `rc.tui`. The [package explanation](Explanations.md#installed-packages-and-installer-builds)
 describes why both distributions use the same import name.
 
 ## Declarations
@@ -90,7 +91,7 @@ runtime storage requirement in [`ResolveOptions`](#resolution).
 | `explanation_short` | Compact explanation used in tables. |
 | `explanation_long` | Longer explanation used in the editor; falls back to `description`, then the short explanation. |
 | `editable` | Whether the standard editor permits direct edits; defaults to `True`. |
-| `secret` | Redact display values; defaults to `False`. Does not encrypt persisted values. |
+| `secret` | Redact display values and route managed writes to a [secret companion](Explanations.md#secret-companions); defaults to `False`. Does not encrypt persisted values. |
 | `packaged_default` | Metadata describing an expected packaged default; does not supply the runtime value. |
 
 The [typed-settings guide](How-To-User-Guides.md#read-typed-settings) demonstrates
@@ -163,9 +164,11 @@ priority, with later values replacing earlier assignments:
 1. Python field fallback, when no source supplies the key.
 2. Packaged `apprc.defaults.env`, if `config_package` is declared.
 3. `apprc.user.env`, if user overrides are declared.
-4. Selected storage's `apprc.storage.env`.
-5. Explicit `env_files`, in argument order.
-6. Captured process environment.
+4. `apprc.user.secret.env` for declared secret fields.
+5. Selected storage's `apprc.storage.env`.
+6. Selected storage's `apprc.storage.secret.env` for declared secret fields.
+7. Explicit `env_files`, in argument order.
+8. Captured process environment.
 
 `env_file_overrides_os_environ=True` swaps the last two priorities. Constructor
 arguments override source values for that object. AppRC records the selected
@@ -210,8 +213,10 @@ demonstrates the distinction with assertions.
 | --- | --- |
 | `apprc.defaults.env` | Inside `config_package`; [ship application defaults](How-To-User-Guides.md#ship-defaults-with-the-application). |
 | `apprc.user.env` | In the [AppRC directory](Explanations.md#user-dotenv-and-the-apprc-directory); [save user preferences](How-To-User-Guides.md#save-a-user-preference). |
+| `apprc.user.secret.env` | In the AppRC directory; [save declared secret fields](How-To-User-Guides.md#save-and-migrate-secret-settings) for this user. |
 | `apprc.toml` | In the AppRC directory; [storage registry](Explanations.md#storage-registry). |
 | `apprc.storage.env` | In each [storage](Explanations.md#storage); overrides and initialization marker. |
+| `apprc.storage.secret.env` | In each storage; private companion omitted from ordinary storage archives. |
 
 The default AppRC directory is `~/.local/share/<app_id>` on supported platforms.
 Priority is invocation `apprc_dir`, then the directory environment key in captured
@@ -236,7 +241,10 @@ reads current files; previous `ResolvedConfig` objects remain unchanged.
 | `resolve()` | Strict configuration resolution using the manager's options and environment. |
 | `inspect(storage=None, include_storage=True)` | `ConfigInspection` with `fields`, `issues`, and `ready`; [diagnose incomplete settings](How-To-User-Guides.md#troubleshoot-configuration). |
 | `registry()` / `inspect_registry()` | Current registry or its readiness report. |
-| `writable_path(scope, storage=None)` | Target path for a declared write scope. |
+| `writable_path(scope, storage=None, secret=False)` | Ordinary or secret-companion target path for a declared write scope. |
+| `secret_status(scope, storage=None)` | Report whether a layer can safely save declared secret fields. |
+| `repair_secret_permissions(scope, storage=None)` | Explicitly restrict the layer's parent and companion permissions. |
+| `plan_secret_migration(scope, storage=None)` / `apply_secret_migration(plan)` | [Move legacy secret assignments](How-To-User-Guides.md#save-and-migrate-secret-settings) out of an ordinary layer. |
 | `writable_scopes()` / `resolve_write_scope(requested=None)` | Initialized scopes; reject an ambiguous automatic choice. |
 | `plan_update(reference, raw_value, scope=..., storage=None)` | Validated `EnvFileEditPlan` with target revision. |
 | `plan_removal(reference, scope=..., storage=None)` | Removal plan, or `None` if the assignment is absent. |
@@ -261,7 +269,7 @@ conversion and source problems without constructing every runtime object; it doe
 application post-init validation. The [saved-preference guide](How-To-User-Guides.md#save-a-user-preference)
 provides a complete setup and editing sequence.
 
-Purge removes fixed AppRC files and registered data directories strictly inside
+Purge removes fixed AppRC files, including secret companions, and registered data directories strictly inside
 the AppRC directory. For external storages it removes the marker dotenv and
 retains application data. It does not follow symlinks. Review the purge plan
 before applying it.
@@ -275,15 +283,15 @@ provide independent runnable examples.
 
 | Method | Data effect |
 | --- | --- |
-| `register_storage(name, root)` | Create or register a root and its storage dotenv. |
+| `register_storage(name, root)` | Create or register a root and its storage dotenv and secret companion. |
 | `select_storage(name)` | Change the registry's saved default for future runs. |
 | `rename_storage(current_name, name)` | Change the registered name. |
 | `repoint_storage(name, root)` | Record an existing initialized directory; move no data. |
 | `move_storage(name, destination)` | Move data to a new or empty destination with preflight checks and rollback. |
 | `remove_storage(name)` | Unregister and retain the directory contents. |
 | `remove_storage(name, delete_content=True)` | Unregister and then delete the directory contents. |
-| `archive_storage(name, archive_path)` | Create and record an archive; retain the live directory. |
-| `restore_storage(name, archive_path, destination)` | Extract and register; roll back extraction if registration fails. |
+| `archive_storage(name, archive_path)` | Create and record an archive without the storage secret companion; refuse legacy secrets in the ordinary file. |
+| `restore_storage(name, archive_path, destination)` | Extract and register; create an empty secret companion and roll back extraction if registration fails. |
 | `remove_archive_record(name)` | Forget the record; retain the archive file. |
 
 Archive filenames must end in `.apprc.tar.xz`.
@@ -338,6 +346,8 @@ The standalone `apprc` executable provides `scaffold config`.
 | `config show [--json]` | Show runtime configuration; an application serializer can read `state.resolved`. |
 | `config setup` | Declared persistence; [initialize files](How-To-User-Guides.md#save-a-user-preference) interactively or with `--yes`. |
 | `config set KEY VALUE [--scope user\|storage]` | Edit a declared writable layer. |
+| `config secrets migrate --scope user\|storage [--yes]` | [Move old secret values](How-To-User-Guides.md#save-and-migrate-secret-settings) from an ordinary layer into its private companion. |
+| `config secrets repair --scope user\|storage [--yes]` | Restrict a layer's directory and secret file permissions after review. |
 | `config edit` | Open the [config editor](Explanations.md#config-editor) for declared persistence. |
 | `config migrate [--dry-run] [--yes]` | Migrate supported legacy files explicitly. |
 | `config purge [--dry-run] [--yes]` | Review or apply managed-file cleanup. |
@@ -368,8 +378,11 @@ paths. `user_dotenv_required` remains a report field with value `False`.
 `StaleEditError` exposes `path`, `expected_revision`, and `actual_revision`.
 Absence is a revision too: a file created after planning is a conflict.
 Writes use unique same-directory temporary files and atomic replacement, with
-cleanup after failure. A shared lock serializes managed writes within one process.
-Cross-process transactions and transactional directory deletion are not provided.
+cleanup after failure. File locks serialize managed writes across processes that
+use AppRC's manager. Edit plans reject changed files after acquiring the lock.
+Moving a secret between two files writes the private copy first; a failure
+before removing the old assignment leaves the old file for a retry. Directory
+deletion and multi-file writes are not filesystem transactions.
 
 A failed resolution or field conversion does not change files or process state.
 Application factories and post-init hooks are application code and can have their

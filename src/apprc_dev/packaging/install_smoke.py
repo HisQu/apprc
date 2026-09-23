@@ -10,10 +10,11 @@ import sys
 import tempfile
 
 
-def verify_install(*, core_only: bool) -> None:
+def verify_install(*, core_only: bool, gui: bool = False) -> None:
     """Exercise real construction and management under the selected dependency set.
 
     :param core_only: Whether terminal libraries and entrypoints must be absent.
+    :param gui: Whether the separate native view distribution must import.
     """
     import apprc
 
@@ -63,6 +64,11 @@ def verify_install(*, core_only: bool) -> None:
 
         assert CliRunner().invoke(terminal_app, ["--help"]).exit_code == 0
         assert apprc.tui.ConfigEditorApp is not None
+    if gui:
+        from apprc_gui import ConfigView
+
+        assert metadata.distribution("apprc-gui").version == core.version
+        assert isinstance(ConfigView, type)
     print(
         "apprc core install passed"
         if core_only
@@ -74,8 +80,9 @@ def main() -> None:
     """Select and run one installation check."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--core-only", action="store_true")
+    parser.add_argument("--gui", action="store_true")
     args = parser.parse_args()
-    verify_install(core_only=args.core_only)
+    verify_install(core_only=args.core_only, gui=args.gui)
 
 
 if __name__ == "__main__":

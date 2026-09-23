@@ -138,6 +138,10 @@ jobs:
             --trusted-publishing always \
             --check-url https://pypi.org/simple/apprc/ \
             dist/apprc-*
+          uv publish \
+            --trusted-publishing always \
+            --check-url https://pypi.org/simple/apprc-gui/ \
+            dist/apprc_gui-*
 
   publish-existing-release:
     name: Publish existing GitHub Release to PyPI
@@ -184,11 +188,11 @@ jobs:
           wheels=(dist/*.whl)
           sdists=(dist/*.tar.gz)
           version="${RELEASE_TAG#v}"
-          if [[ "${#wheels[@]}" -ne 2 || "${#sdists[@]}" -ne 2 ]]; then
-            echo "Expected exactly two wheels and two source archives on ${RELEASE_TAG}." >&2
+          if [[ "${#wheels[@]}" -ne 3 || "${#sdists[@]}" -ne 3 ]]; then
+            echo "Expected exactly three wheels and three source archives on ${RELEASE_TAG}." >&2
             exit 1
           fi
-          for project in apprc apprc_core; do
+          for project in apprc apprc_core apprc_gui; do
             if [[ ! -f "dist/${project}-${version}-py3-none-any.whl" || ! -f "dist/${project}-${version}.tar.gz" ]]; then
               echo "Missing ${project} artifacts for ${RELEASE_TAG}." >&2
               exit 1
@@ -206,3 +210,7 @@ jobs:
             --trusted-publishing always \
             --check-url https://pypi.org/simple/apprc/ \
             dist/apprc-*
+          uv publish \
+            --trusted-publishing always \
+            --check-url https://pypi.org/simple/apprc-gui/ \
+            dist/apprc_gui-*

@@ -59,6 +59,7 @@ def archive_directory(
     source_root: Path,
     archive_path: Path,
     progress: ProgressCallback | None = None,
+    excluded_names: tuple[str, ...] = ("apprc.storage.secret.env",),
 ) -> Path:
     """Compress a live storage directory into ``*.apprc.tar.xz``.
 
@@ -84,7 +85,11 @@ def archive_directory(
     if temp_archive.exists():
         temp_archive.unlink()
 
-    members = _validated_storage_members(root)
+    members = [
+        member
+        for member in _validated_storage_members(root)
+        if not (member.parent == root and member.name in excluded_names)
+    ]
     archive.parent.mkdir(parents=True, exist_ok=True)
     total = len(members)
     try:

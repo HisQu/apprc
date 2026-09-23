@@ -485,7 +485,7 @@ def test_mount_config_cli_runtime_independent_set_uses_context_not_app_hooks(
     assert factory_calls == []
     assert hook_calls == []
     assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-value"\n' in (
-        storage_root / "apprc.storage.env"
+        storage_root / "apprc.storage.secret.env"
     ).read_text(encoding="utf-8")
 
 
@@ -760,7 +760,7 @@ def test_generated_config_set_uses_context_without_ctx_obj(
 
     assert result.exit_code == 0, result.output
     assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-value"\n' in (
-        storage_root / "apprc.storage.env"
+        storage_root / "apprc.storage.secret.env"
     ).read_text(encoding="utf-8")
 
 

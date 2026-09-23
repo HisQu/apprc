@@ -7,6 +7,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
+from tempfile import NamedTemporaryFile
 
 
 class AppRCDirectoryError(ValueError):
@@ -184,14 +185,27 @@ def write_text_atomic(path: Path, text: str) -> Path:
         raise AppRCDirectoryError(
             f"AppRC-managed file path exists but is not a file: {resolved}"
         )
-    temp_path = resolved.with_name(f".{resolved.name}.{os.getpid()}.tmp")
+    temp_path: Path | None = None
     try:
-        temp_path.write_text(text, encoding="utf-8", newline="")
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=resolved.parent,
+            prefix=f".{resolved.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temp_path = Path(stream.name)
+            stream.write(text)
         temp_path.replace(resolved)
     except OSError as exc:
         raise AppRCDirectoryError(
             f"AppRC-managed file could not be written: {resolved}: {exc}"
         ) from exc
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
     return resolved
 
 

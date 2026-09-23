@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 # == Standard Library ===========================================
 import os
 from collections.abc import Mapping
@@ -63,7 +65,7 @@ def apprc_toml_path_for_create(
     :return: ``<apprc-dir>/apprc.toml``.
     """
     spec.require_storage()
-    return spec.preferred_apprc_toml_path(proc_env)
+    return AppFiles(spec).preferred_apprc_toml_path(proc_env)
 
 
 def load_create_or_empty_storage_registry(path: Path) -> StorageRegistry:
@@ -93,7 +95,7 @@ def load_existing_storage_registry(
     :raises MissingStorageRegistryError: If the registry is missing.
     """
     spec.require_storage()
-    path = spec.preferred_apprc_toml_path(proc_env)
+    path = AppFiles(spec).preferred_apprc_toml_path(proc_env)
     if not path.is_file():
         raise MissingStorageRegistryError(
             f"Storage registry does not exist: {path}. Create it with `"
@@ -117,7 +119,7 @@ def load_optional_runtime_storage_registry(
     """
     if not spec.uses_storage():
         return None
-    path = spec.preferred_apprc_toml_path(proc_env)
+    path = AppFiles(spec).preferred_apprc_toml_path(proc_env)
     if not path.is_file():
         return None
     return load_create_or_empty_storage_registry(path)
@@ -155,7 +157,7 @@ def inspect_storage_registry(
     """
     del raw_selector
     env = os.environ if proc_env is None else proc_env
-    path = spec.preferred_apprc_toml_path(proc_env)
+    path = AppFiles(spec).preferred_apprc_toml_path(proc_env)
     exists = path.is_file()
     directory_override = env.get(spec.apprc_dir_env_key, "").strip() or None
 

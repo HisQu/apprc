@@ -11,12 +11,13 @@ import pytest
 
 import apprc
 import apprc.cli as apprc_cli
+import apprc.tui as apprc_tui
 import apprc.files as apprc_files
 import apprc.interfaces as apprc_interfaces
 import apprc.provenance as apprc_provenance
 import apprc.storage as apprc_storage
 import apprc.definition.env_config as config_models
-from apprc.interfaces.cli._bootstrap import bootstrap_cli_env
+from apprc.interfaces.cli._resolution import resolve_cli_config
 from apprc.interfaces.cli.config_command import (
     ConfigSelectorContext,
     DefaultConfigCliState,
@@ -41,10 +42,7 @@ from apprc.public.config import Config, ConfigBase
 from apprc.public.field import field
 from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.runtime.provenance import ConfigProvenance, provenance_of
-from apprc.user_files.app_home._package_resources import resolve_package_root
-from apprc.user_files.env_files.updates import set_env_file_value
 from apprc.user_files.storage_roots.model import StorageRegistry
-from apprc.user_files.storage_roots.registry import register_storage
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_FACADE_SNAPSHOT = ROOT / "tests" / "snapshots" / "apprc_root_facade.txt"
@@ -80,7 +78,7 @@ def test_root_facade_exports_clean_public_api() -> None:
 
 def test_cli_namespace_exports_advanced_cli_symbols() -> None:
     """Advanced CLI APIs live under ``apprc.cli``."""
-    assert apprc_cli.bootstrap_cli_env is bootstrap_cli_env
+    assert apprc_cli.resolve_cli_config is resolve_cli_config
     assert apprc_cli.CliRuntimeOptions is CliRuntimeOptions
     assert apprc_cli.cli_options_from is cli_options_from
     assert apprc_cli.CliArgvProvider is CliArgvProvider
@@ -109,8 +107,8 @@ def test_cli_namespace_exports_advanced_cli_symbols() -> None:
     assert "prepare_cli_runtime_context" in apprc_cli.__all__
     assert "state_from" in apprc_cli.__all__
     assert "exit_missing_action" in apprc_cli.__all__
-    assert "ConfigEditorApp" in apprc_cli.__all__
-    assert "ConfigSetupApp" in apprc_cli.__all__
+    assert "ConfigEditorApp" in apprc_tui.__all__
+    assert "ConfigSetupApp" in apprc_tui.__all__
     assert "COMMON_ROOT_FLAG_OPTIONS" not in apprc_cli.__all__
     assert "COMMON_ROOT_VALUE_OPTIONS" not in apprc_cli.__all__
     assert "CliStateFactory" not in apprc_cli.__all__
@@ -151,11 +149,8 @@ def test_lazy_facade_stubs_match_runtime_exports() -> None:
         ROOT / "src" / "apprc" / "interfaces" / "__init__.pyi"
     ) == set(apprc_interfaces.__all__)
     assert _stub_import_names(
-        ROOT / "src" / "apprc" / "files" / "__init__.pyi"
-    ) == set(apprc_files.__all__)
-    assert _stub_import_names(
-        ROOT / "src" / "apprc" / "storage" / "__init__.pyi"
-    ) == set(apprc_storage.__all__)
+        ROOT / "src" / "apprc" / "tui" / "__init__.pyi"
+    ) == set(apprc_tui.__all__)
 
 
 def test_lazy_facade_runtime_inits_do_not_duplicate_type_exports() -> None:
@@ -172,9 +167,9 @@ def test_lazy_facade_runtime_inits_do_not_duplicate_type_exports() -> None:
 def test_storage_files_and_provenance_namespaces_export_helpers() -> None:
     """Advanced non-CLI helpers live under explicit namespaces."""
     assert apprc_storage.StorageRegistry is StorageRegistry
-    assert apprc_storage.register_storage is register_storage
-    assert apprc_files.resolve_package_root is resolve_package_root
-    assert apprc_files.set_env_file_value is set_env_file_value
+    assert not hasattr(apprc_storage, "register_storage")
+    assert not hasattr(apprc_files, "resolve_package_root")
+    assert not hasattr(apprc_files, "set_env_file_value")
     assert apprc_provenance.ConfigProvenance is ConfigProvenance
     assert apprc_provenance.provenance_of is provenance_of
 
@@ -183,7 +178,7 @@ def test_legacy_aggregate_packages_are_not_public_facades() -> None:
     """Lower-level aggregate packages stay importable but export no API."""
     legacy_exports = {
         "apprc.definition": {
-            "AppConfigKit",
+            "AppRC",
             "AppConfigSpec",
             "ConfigField",
             "ConfigOwner",
@@ -193,7 +188,7 @@ def test_legacy_aggregate_packages_are_not_public_facades() -> None:
         },
         "apprc.runtime": {
             "ConfigProvenance",
-            "EnvBootstrapResult",
+            "ResolvedConfig",
             "bootstrap_env",
             "provenance_of",
         },

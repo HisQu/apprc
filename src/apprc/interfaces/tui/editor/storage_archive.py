@@ -9,8 +9,6 @@ from pathlib import Path
 # == Internal ================================
 from apprc.user_files.storage_roots.archive import (
     StorageArchiveProgress,
-    archive_directory,
-    extract_archive,
 )
 from apprc.interfaces.tui.editor.storage_base import StorageWorkflowBase
 from apprc.interfaces.tui.modals import ProgressScreen
@@ -22,19 +20,19 @@ class StorageArchiveWorkflows(StorageWorkflowBase):
     async def run_archive_progress(
         self,
         *,
-        source_root: Path,
+        name: str,
         archive_path: Path,
     ) -> Path:
         """Run archive compression with a progress modal.
 
-        :param source_root: Storage root to compress.
+        :param name: Registered storage to compress.
         :param archive_path: Archive path to write.
         :return: Written archive path.
         """
         return await self.run_storage_progress(
             title="Compressing storage",
-            operation=lambda progress: archive_directory(
-                source_root=source_root,
+            operation=lambda progress: self.editor.manager.archive_storage(
+                name=name,
                 archive_path=archive_path,
                 progress=progress,
             ),
@@ -46,7 +44,8 @@ class StorageArchiveWorkflows(StorageWorkflowBase):
         archive_path: Path,
         destination_root: Path,
         replace_existing: bool = False,
-        after_install: Callable[[Path], None] | None = None,
+        name: str,
+        archived_name: str | None = None,
     ) -> Path:
         """Run archive extraction with a progress modal.
 
@@ -54,17 +53,19 @@ class StorageArchiveWorkflows(StorageWorkflowBase):
         :param destination_root: Directory that receives archive contents.
         :param replace_existing: Whether a non-empty destination may be
             replaced.
-        :param after_install: Optional registry commit callback.
+        :param name: Restored storage name.
+        :param archived_name: Archive record to consume.
         :return: Destination directory.
         """
         return await self.run_storage_progress(
             title="Decompressing storage",
-            operation=lambda progress: extract_archive(
+            operation=lambda progress: self.editor.manager.restore_storage(
+                name=name,
+                archived_name=archived_name,
                 archive_path=archive_path,
-                destination_root=destination_root,
+                destination=destination_root,
                 progress=progress,
                 replace_existing=replace_existing,
-                after_install=after_install,
             ),
         )
 

@@ -1,4 +1,8 @@
 from __future__ import annotations
+from apprc.interfaces.cli.config_command.app import build_config_typer_app
+
+
+from apprc.user_files.app_home.application import AppFiles
 
 from pathlib import Path
 
@@ -19,20 +23,20 @@ from apprc.user_files.storage_roots.selector import (
     StorageSelectorIssue,
 )
 from tests.support_config import (
-    build_apprc_example_app_kit,
-    build_storage_free_example_kit,
+    build_apprc_example_app,
+    build_storage_free_example_app,
 )
 
 
 def test_editor_uses_fixed_dotenv_and_registry_labels() -> None:
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=None,
         active_storage_root=Path("/tmp/storage"),
     )
 
-    assert editor.kit.spec.storage_dotenv_filename == "apprc.storage.env"
+    assert editor.apprc.schema.storage_dotenv_filename == "apprc.storage.env"
     assert editor.apprc_toml_label == "apprc.toml"
     assert editor.init_command.endswith("config storage add NAME PATH")
 
@@ -40,7 +44,7 @@ def test_editor_uses_fixed_dotenv_and_registry_labels() -> None:
 @pytest.mark.asyncio
 async def test_editor_hides_storage_controls_for_storage_free_app() -> None:
     editor = ConfigEditorApp(
-        kit=build_storage_free_example_kit(),
+        apprc=build_storage_free_example_app(),
         storage_registry=None,
     )
 
@@ -66,9 +70,9 @@ async def test_editor_hides_storage_controls_for_storage_free_app() -> None:
 
 @pytest.mark.asyncio
 async def test_editor_hides_setup_after_user_dotenv_is_initialized() -> None:
-    kit = build_storage_free_example_kit()
-    kit.spec.ensure_user_dotenv()
-    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+    kit = build_storage_free_example_app()
+    AppFiles(kit.schema).ensure_user_dotenv()
+    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
 
     async with editor.run_test() as pilot:
         await pilot.pause()
@@ -76,15 +80,15 @@ async def test_editor_hides_setup_after_user_dotenv_is_initialized() -> None:
         assert list(editor.query("#config-setup")) == []
         scope_text = str(editor.query_one("#scope-title", Static).content)
         assert "User dotenv:" in scope_text
-        assert str(kit.spec.user_dotenv_path()) in scope_text
+        assert str(AppFiles(kit.schema).user_dotenv_path()) in scope_text
 
 
 @pytest.mark.asyncio
 async def test_editor_exposes_every_user_registered_storage(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
-    registry_path = kit.spec.preferred_apprc_toml_path()
+    kit = build_apprc_example_app()
+    registry_path = AppFiles(kit.schema).preferred_apprc_toml_path()
     registry = register_storage(
         name="alpha",
         root=tmp_path / "alpha",
@@ -96,7 +100,7 @@ async def test_editor_exposes_every_user_registered_storage(
         path=registry_path,
     )
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=registry,
         initial_storage="alpha",
         active_storage_root=tmp_path / "alpha",
@@ -111,13 +115,13 @@ async def test_editor_exposes_every_user_registered_storage(
 
 @pytest.mark.asyncio
 async def test_editor_saving_user_value_creates_only_user_dotenv() -> None:
-    kit = build_storage_free_example_kit()
-    kit.spec.ensure_user_dotenv()
-    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+    kit = build_storage_free_example_app()
+    AppFiles(kit.schema).ensure_user_dotenv()
+    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
 
     async with editor.run_test() as pilot:
         await pilot.pause()
-        user_dotenv = kit.spec.user_dotenv_path()
+        user_dotenv = AppFiles(kit.schema).user_dotenv_path()
         await editor._save_env_key(
             "STORAGE_FREE_APP_PROFILE",
             "user-profile",
@@ -127,18 +131,18 @@ async def test_editor_saving_user_value_creates_only_user_dotenv() -> None:
         assert user_dotenv.read_text(encoding="utf-8") == (
             'STORAGE_FREE_APP_PROFILE="user-profile"\n'
         )
-        assert not kit.spec.preferred_apprc_toml_path().exists()
+        assert not AppFiles(kit.schema).preferred_apprc_toml_path().exists()
 
 
 @pytest.mark.asyncio
 async def test_editor_saving_storage_value_creates_only_storage_dotenv(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=None,
         active_storage_root=storage_root,
     )
@@ -152,21 +156,21 @@ async def test_editor_saving_storage_value_creates_only_storage_dotenv(
         )
 
         assert (
-            kit.spec.storage_dotenv_path(storage_root).read_text(
-                encoding="utf-8"
-            )
+            AppFiles(kit.schema)
+            .storage_dotenv_path(storage_root)
+            .read_text(encoding="utf-8")
             == 'APPRC_EXAMPLE_APP_PROFILE="storage-profile"\n'
         )
-        assert not kit.spec.user_dotenv_path().exists()
+        assert not AppFiles(kit.schema).user_dotenv_path().exists()
 
 
 @pytest.mark.asyncio
 async def test_editor_duplicate_warning_cancels_before_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    kit = build_storage_free_example_kit()
-    user_dotenv = kit.spec.ensure_user_dotenv()
-    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+    kit = build_storage_free_example_app()
+    user_dotenv = AppFiles(kit.schema).ensure_user_dotenv()
+    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
     original = (
         "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n"
     )
@@ -201,11 +205,11 @@ async def test_editor_disables_storage_fields_until_marker_exists(
 
     :param tmp_path: Isolated uninitialized storage directory.
     """
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=None,
         active_storage_root=storage_root,
     )
@@ -223,10 +227,10 @@ async def test_editor_disables_storage_fields_until_marker_exists(
 @pytest.mark.asyncio
 async def test_editor_keeps_selector_failure_separate_from_setup() -> None:
     """A selector error does not claim that managed files need setup."""
-    kit = build_apprc_example_app_kit()
-    kit.spec.ensure_user_dotenv()
+    kit = build_apprc_example_app()
+    AppFiles(kit.schema).ensure_user_dotenv()
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=None,
         storage_registry_error="apprc.toml is malformed",
         storage_selector_issue=StorageSelectorIssue(
@@ -256,15 +260,15 @@ async def test_editor_keeps_registered_storages_usable_with_bad_override(
 
     :param tmp_path: Isolated storage parent.
     """
-    kit = build_apprc_example_app_kit()
-    kit.spec.ensure_user_dotenv()
+    kit = build_apprc_example_app()
+    AppFiles(kit.schema).ensure_user_dotenv()
     registry = register_storage(
         name="opa",
         root=tmp_path / "opa",
-        path=kit.spec.preferred_apprc_toml_path(),
+        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
     )
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=registry,
         initial_storage="opa",
         storage_selector_issue=StorageSelectorIssue(
@@ -300,18 +304,18 @@ async def test_editor_offers_reconnect_for_missing_registered_root(
 
     :param tmp_path: Isolated storage parent.
     """
-    kit = build_apprc_example_app_kit()
-    kit.spec.ensure_user_dotenv()
+    kit = build_apprc_example_app()
+    AppFiles(kit.schema).ensure_user_dotenv()
     root = tmp_path / "manually-moved"
     registry = StorageRegistry(
-        path=kit.spec.preferred_apprc_toml_path(),
+        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
         storages={"opa": StorageRecord(name="opa", root=root)},
         selected_storage="opa",
         archived_storages={},
     )
     write_storage_registry(registry)
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=registry,
         initial_storage="opa",
     )
@@ -336,20 +340,20 @@ def test_config_edit_opens_when_storage_selector_is_invalid(
     :param monkeypatch: Process environment mutation fixture.
     :param tmp_path: Isolated AppRC directory.
     """
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     monkeypatch.setenv(
-        kit.spec.apprc_dir_env_key,
+        kit.schema.apprc_dir_env_key,
         str(tmp_path / "apprc"),
     )
     monkeypatch.setenv(
-        kit.spec.require_storage_selector_env_key(),
+        kit.schema.require_storage_selector_env_key(),
         "unknown",
     )
-    kit.spec.ensure_user_dotenv()
+    AppFiles(kit.schema).ensure_user_dotenv()
     register_storage(
         name="opa",
         root=tmp_path / "opa",
-        path=kit.spec.preferred_apprc_toml_path(),
+        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
     )
     launched: list[tuple[StorageSelectorIssue | None, tuple[str, ...]]] = []
 
@@ -371,7 +375,7 @@ def test_config_edit_opens_when_storage_selector_is_invalid(
                 )
             )
 
-    app = kit.typer_app(editor_app_cls=HeadlessEditor)
+    app = build_config_typer_app(kit, editor_app_cls=HeadlessEditor)
 
     result = CliRunner().invoke(app, ["edit"])
 

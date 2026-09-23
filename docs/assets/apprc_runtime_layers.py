@@ -43,8 +43,8 @@ def build_graph() -> Digraph:
         border_color=gg.GREEN,
     )
     figure.fixed_text_box(
-        "bootstrap",
-        "Bootstrap",
+        "resolution",
+        "Resolve inputs",
         3.10,
         1.65,
         "select storage",
@@ -54,10 +54,10 @@ def build_graph() -> Digraph:
     )
     figure.fixed_text_box(
         "environment",
-        "Process Environment",
+        "Captured environment",
         5.55,
         1.65,
-        "os.environ",
+        "mapping or os.environ copy",
         border_color=gg.GREEN,
     )
     figure.fixed_text_box(
@@ -71,10 +71,10 @@ def build_graph() -> Digraph:
     )
     figure.fixed_text_box(
         "construction",
-        "Config()",
+        "resolved.build(Settings)",
         3.10,
         -0.60,
-        "bind current values",
+        "bind captured values",
         border_color=gg.GREEN,
     )
     figure.fixed_text_box(
@@ -87,9 +87,9 @@ def build_graph() -> Digraph:
         border_color=gg.PURPLE,
     )
 
-    figure.fixed_arrow("files", "bootstrap")
-    figure.fixed_arrow("bootstrap", "environment")
-    figure.fixed_arrow("environment", "construction")
+    figure.fixed_arrow("files", "resolution")
+    figure.fixed_arrow("environment", "resolution")
+    figure.fixed_arrow("resolution", "construction")
     figure.fixed_arrow("contract", "construction")
     figure.fixed_arrow("construction", "runtime")
     return figure.graph

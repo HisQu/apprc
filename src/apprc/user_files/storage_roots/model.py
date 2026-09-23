@@ -24,7 +24,7 @@ class StorageRecord:
 class ArchivedStorageRecord:
     """Last known archive for one storage selector.
 
-    Archive records are restore conveniences only. Runtime bootstrap still
+    Archive records are restore conveniences only. Runtime resolution still
     selects live :class:`StorageRecord` entries from ``storages``.
 
     :param name: Storage selector the archive was last associated with.

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import Path
 from typing import Iterable
 
@@ -24,6 +25,11 @@ from apprc.user_files.env_files._document import (
 )
 from apprc.user_files.env_files.values import normalize_env_value
 from apprc.user_files.storage_roots.paths import StorageRootPathError
+from apprc.user_files.app_home.writes import (
+    MANAGED_WRITE_LOCK,
+    StaleEditError,
+    file_revision,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +44,7 @@ class EnvFileUpdate:
 
     path: Path
     env_key: str
-    value: str
+    value: str = field(repr=False)
     warnings: tuple[str, ...] = ()
 
 
@@ -56,12 +62,14 @@ class EnvFileEditPlan:
     :param text: Complete file text after the edit.
     :param warnings: User-facing warnings about the planned edit.
     :param duplicate_lines: Later active assignments that will be disabled.
+    :param revision: Original content digest, or ``None`` for an absent file.
     """
 
     path: Path
     env_key: str
-    value: str
-    text: str
+    value: str = field(repr=False)
+    text: str = field(repr=False)
+    revision: str | None
     warnings: tuple[str, ...] = ()
     duplicate_lines: tuple[int, ...] = ()
 
@@ -179,10 +187,12 @@ def plan_env_file_value_update(
         )
     value = normalize_env_value(spec, raw_value)
     env_key = owner.env_key(spec.name)
-    env_path = Path(path).expanduser()
-    text = (
-        _read_text_preserving_newlines(env_path) if env_path.is_file() else ""
-    )
+    env_path = Path(path).expanduser().resolve()
+    try:
+        original = env_path.read_bytes()
+    except FileNotFoundError:
+        original = None
+    text = original.decode("utf-8") if original is not None else ""
     edit = set_dotenv_document_value(text, env_key=env_key, value=value)
     warnings = _duplicate_warnings(
         path=env_path,
@@ -195,6 +205,7 @@ def plan_env_file_value_update(
         env_key=env_key,
         value=value,
         text=edit.text,
+        revision=sha256(original).hexdigest() if original is not None else None,
         warnings=warnings,
         duplicate_lines=edit.disabled_duplicate_lines,
     )
@@ -206,7 +217,11 @@ def apply_env_file_edit(plan: EnvFileEditPlan) -> EnvFileUpdate:
     :param plan: Complete edit created by an AppRC planning helper.
     :return: Written file, key, value, and warnings.
     """
-    written_path = write_text_atomic(plan.path, plan.text)
+    with MANAGED_WRITE_LOCK:
+        revision = file_revision(plan.path)
+        if revision != plan.revision:
+            raise StaleEditError(plan.path, plan.revision, revision)
+        written_path = write_text_atomic(plan.path, plan.text)
     return EnvFileUpdate(
         path=written_path,
         env_key=plan.env_key,
@@ -261,21 +276,47 @@ def clear_env_file_value(
     :return: Written file and removed key, or ``None`` when the key was absent.
     :raises ValueError: If the key is unknown or read-only.
     """
+    plan = plan_env_file_value_removal(
+        path=path, reference=reference, owners=owners, layer_name=layer_name
+    )
+    return apply_env_file_edit(plan) if plan is not None else None
+
+
+def plan_env_file_value_removal(
+    *,
+    path: Path,
+    reference: str,
+    owners: Iterable[ConfigOwner],
+    layer_name: str,
+) -> EnvFileEditPlan | None:
+    """Prepare removal without creating or changing the target file.
+
+    :param path: Managed dotenv file.
+    :param reference: Registered field reference.
+    :param owners: Application field declarations.
+    :param layer_name: Writable layer label.
+    :return: Revision-checked plan, or ``None`` if no assignment exists.
+    """
     owner, spec = resolve_config_field_reference(owners, reference)
     if not spec.editable:
         raise ValueError(
             f"{owner.env_key(spec.name)} is managed outside {layer_name}."
         )
     env_key = owner.env_key(spec.name)
-    path = Path(path).expanduser()
+    path = Path(path).expanduser().resolve()
     if not path.is_file():
         return None
     text = _read_text_preserving_newlines(path)
     edit = clear_dotenv_document_value(text, env_key=env_key)
     if not edit.matched_lines:
         return None
-    written_path = write_text_atomic(path, edit.text)
-    return EnvFileUpdate(path=written_path, env_key=env_key, value="")
+    return EnvFileEditPlan(
+        path=path,
+        env_key=env_key,
+        value="",
+        text=edit.text,
+        revision=sha256(text.encode("utf-8")).hexdigest(),
+    )
 
 
 def _duplicate_warnings(

@@ -7,7 +7,10 @@ TUI behavior can be exercised without depending on a downstream app.
 
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 from dataclasses import dataclass
+from collections.abc import Mapping
 from pathlib import Path
 
 from pytest import MonkeyPatch
@@ -15,8 +18,11 @@ from rich.text import Text
 from typer.testing import Result
 
 import apprc as rc
-from apprc.definition.app_config.kit import AppConfigKit
-from apprc.runtime.result import EnvBootstrapResult
+from apprc import AppRC
+from apprc.runtime.resolution import ResolvedConfig
+from apprc.runtime.resolution import ResolvedLayer, merge_layers
+from apprc.definition.resolution import ConfigSource
+from apprc.definition.provenance import ConfigOriginState, ShellProvenanceOrigin
 from apprc.user_files.storage_roots.registry import (
     StorageRegistry,
     record_archived_storage,
@@ -117,6 +123,50 @@ APPRC_EXAMPLE_APP_OWNER = rc.schema.owner_for(ApprcExampleAppEnv)
 APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
 
 
+def example_resolution(
+    *,
+    user_dotenv_values: Mapping[str, str],
+    storage_values: Mapping[str, str],
+    shell_env: Mapping[str, str],
+    defaults_values: Mapping[str, str] | None,
+) -> ResolvedConfig:
+    """Build source records for presentation-only unit tests.
+
+    :param user_dotenv_values: Saved user assignments.
+    :param storage_values: Inspected storage assignments.
+    :param shell_env: Captured process inputs.
+    :param defaults_values: Packaged defaults, if present.
+    :return: Snapshot merged by the production resolver without filesystem setup.
+    """
+    inputs: tuple[tuple[ShellProvenanceOrigin, Mapping[str, str]], ...] = (
+        ("shell_dotenv_defaults", defaults_values or {}),
+        ("shell_dotenv_user", user_dotenv_values),
+        ("shell_dotenv_storage", storage_values),
+        ("shell_export_variable", shell_env),
+    )
+    layers = tuple(
+        ResolvedLayer(
+            origin,
+            ConfigSource(
+                values,
+                {key: ConfigOriginState(origin, env_key=key) for key in values},
+            ),
+        )
+        for origin, values in inputs
+    )
+    return ResolvedConfig(
+        schema=_APPRC_EXAMPLE_APP_RC.schema,
+        options=rc.ResolveOptions(),
+        source=merge_layers(layers),
+        layers=layers,
+        paths=None,
+        selection=None,
+        storage_count=0,
+        registered_types=(ApprcExampleAppEnv,),
+        bundles={},
+    )
+
+
 _STORAGE_FREE_APP_RC = rc.AppRC(
     app_id="storage_free_app",
     display_name="Storage-Free App",
@@ -175,13 +225,13 @@ def assert_apprc_dir_cli_error(result: Result) -> None:
     assert "Invalid value for '--name'" not in result.output
 
 
-def block_apprc_dir_with_file(kit: AppConfigKit) -> Path:
+def block_apprc_dir_with_file(kit: AppRC) -> Path:
     """Replace the AppRC directory with a blocking file.
 
     :param kit: App config facade under test.
     :return: Path that now blocks config-home creation.
     """
-    apprc_dir = kit.spec.apprc_dir()
+    apprc_dir = AppFiles(kit.schema).apprc_dir()
     apprc_dir.parent.mkdir(parents=True, exist_ok=True)
     apprc_dir.write_text("not a directory", encoding="utf-8")
     return apprc_dir
@@ -191,7 +241,7 @@ def block_apprc_dir_with_file(kit: AppConfigKit) -> Path:
 class ApprcExampleAppConfigState:
     """Host CLI state used by generated config app tests."""
 
-    env_bootstrap: EnvBootstrapResult | None
+    resolved: ResolvedConfig | None
     storage: str | None = None
 
 
@@ -199,7 +249,7 @@ class ApprcExampleAppConfigState:
 class StorageFreeExampleConfigState:
     """Host CLI state used by storage-free generated config tests."""
 
-    env_bootstrap: EnvBootstrapResult | None = None
+    resolved: ResolvedConfig | None = None
     storage: str | None = None
 
 
@@ -207,18 +257,13 @@ class StorageFreeExampleConfigState:
 class StorageFreeExampleConfigStateWithoutStorage:
     """Storage-free host CLI state that has no storage selector field."""
 
-    env_bootstrap: EnvBootstrapResult | None = None
+    resolved: ResolvedConfig | None = None
 
 
-def build_apprc_example_app_kit(
-    *,
-    storage_required: bool = True,
-) -> AppConfigKit:
-    """Return a tiny storage-capable AppConfigKit.
+def build_apprc_example_app() -> AppRC:
+    """Return a tiny storage-capable AppRC.
 
-    :param storage_required: Whether runtime requires an active storage by
-        default.
-    :return: Isolated application config kit for tests.
+    :return: Isolated application declaration for tests.
     """
     app_rc = rc.AppRC(
         app_id="apprc_example_app",
@@ -227,7 +272,6 @@ def build_apprc_example_app_kit(
         user_dotenv=rc.UserDotenv(),
         storage=rc.Storage(
             selector_env_key="APPRC_EXAMPLE_APP_STORAGE",
-            required=storage_required,
         ),
     )
     app_rc.config(
@@ -236,11 +280,11 @@ def build_apprc_example_app_kit(
         prefix="APPRC_EXAMPLE_APP_",
         rc_path=("app",),
     )(ApprcExampleAppEnv)
-    return app_rc.kit
+    return app_rc
 
 
-def build_storage_free_example_kit() -> AppConfigKit:
-    """Return a tiny AppConfigKit that does not use storage."""
+def build_storage_free_example_app() -> AppRC:
+    """Return a tiny AppRC that does not use storage."""
     app_rc = rc.AppRC(
         app_id="storage_free_app",
         display_name="Storage-Free App",
@@ -253,7 +297,7 @@ def build_storage_free_example_kit() -> AppConfigKit:
         prefix="STORAGE_FREE_APP_",
         rc_path=("global",),
     )(StorageFreeExampleEnv)
-    return app_rc.kit
+    return app_rc
 
 
 def set_apprc_example_app_apprc_toml(
@@ -310,28 +354,18 @@ def set_apprc_example_app_bootstrap(
 
 
 def apprc_example_app_state(
-    kit: AppConfigKit,
+    kit: AppRC,
     storage_root: Path,
 ) -> ApprcExampleAppConfigState:
     """Return generic CLI state with one active storage root."""
     return ApprcExampleAppConfigState(
-        env_bootstrap=EnvBootstrapResult(
-            defaults_dotenv=None,
-            storage_dotenv=storage_root / kit.spec.storage_dotenv_filename,
-            env_files=(),
-            apprc_toml=kit.spec.preferred_apprc_toml_path(),
-            storage_selector_source="--storage",
-            storage_selector_value="alpha",
-            storage_name="alpha",
-            storage_root=storage_root,
-            storage_count=1,
-        ),
+        resolved=kit.resolve(rc.ResolveOptions(storage=str(storage_root))),
         storage="alpha",
     )
 
 
-def register_storage_for_kit(
-    kit: AppConfigKit,
+def register_storage_for_app(
+    kit: AppRC,
     *,
     name: str,
     root: Path,
@@ -346,13 +380,13 @@ def register_storage_for_kit(
     return register_storage(
         name=name,
         root=root,
-        path=kit.spec.preferred_apprc_toml_path(),
-        storage_dotenv_filename=kit.spec.storage_dotenv_filename,
+        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
+        storage_dotenv_filename=kit.schema.storage_dotenv_filename,
     )
 
 
 def record_archived_storage_for_kit(
-    kit: AppConfigKit,
+    kit: AppRC,
     *,
     name: str,
     archive: Path,
@@ -370,5 +404,5 @@ def record_archived_storage_for_kit(
         name=name,
         archive=archive,
         source_root=source_root,
-        path=kit.spec.preferred_apprc_toml_path(),
+        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
     )

@@ -37,7 +37,7 @@ from apprc.user_files.storage_roots.paths import (
 from apprc.user_files.storage_roots.selector import (
     select_storage_selector_input,
 )
-from tests.support_config import build_apprc_example_app_kit
+from tests.support_config import build_apprc_example_app
 
 
 def test_storage_suggestion_uses_predictable_apprc_directory() -> None:
@@ -86,13 +86,13 @@ def test_selector_input_reports_winning_environment_layer(
 def test_missing_existing_storage_registry_uses_custom_config_group_name(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     missing_index = tmp_path / "missing.apprc.toml"
 
     with pytest.raises(MissingStorageRegistryError) as exc_info:
         load_existing_storage_registry(
-            kit.spec,
-            proc_env={kit.spec.apprc_dir_env_key: str(missing_index.parent)},
+            kit.schema,
+            proc_env={kit.schema.apprc_dir_env_key: str(missing_index.parent)},
             config_group_name="settings",
         )
 
@@ -103,11 +103,11 @@ def test_missing_existing_storage_registry_uses_custom_config_group_name(
 def test_missing_registry_guidance_uses_custom_config_group_name(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     with pytest.raises(MissingStorageRegistryError) as exc_info:
         load_existing_storage_registry(
-            kit.spec,
-            proc_env={kit.spec.apprc_dir_env_key: str(tmp_path)},
+            kit.schema,
+            proc_env={kit.schema.apprc_dir_env_key: str(tmp_path)},
             config_group_name="settings",
         )
 
@@ -190,7 +190,7 @@ def test_registry_inspection_warns_about_existing_root_aliases(
 
     :param tmp_path: Isolated registry and storage parent.
     """
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     registry_path = tmp_path / "apprc" / "apprc.toml"
     root = tmp_path / "storage"
     registry_path.parent.mkdir(parents=True)
@@ -202,9 +202,9 @@ def test_registry_inspection_warns_about_existing_root_aliases(
     )
 
     inspection = inspect_storage_registry(
-        kit.spec,
+        kit.schema,
         proc_env={
-            kit.spec.apprc_dir_env_key: str(registry_path.parent),
+            kit.schema.apprc_dir_env_key: str(registry_path.parent),
         },
     )
 

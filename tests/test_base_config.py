@@ -8,11 +8,12 @@ from typing import Any, ClassVar, cast
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
 
+from apprc.definition.env_config import conversion
 import apprc as rc
-import apprc.definition.env_config.base as base_config
-import apprc.definition.env_config._loading as env_loading
-import apprc.public.config as config_runtime_module
-from apprc.definition.env_config.base import BaseConfig
+import apprc.runtime.config.base as base_config
+import apprc.runtime.config._loading as env_loading
+import apprc.runtime.config.config as config_runtime_module
+from apprc.runtime.config.base import BaseConfig
 from apprc.runtime.provenance import (
     ConfigProvenance,
     PythonProvenanceOrigin,
@@ -751,7 +752,7 @@ def test_config_synthetic_mapping_loaders_do_not_depend_on_cwd(
     retries_field = next(
         spec for spec in owner.fields if spec.name == "retries"
     )
-    monkeypatch.setattr(env_loading, "Path", _NoCwdPath)
+    monkeypatch.setattr(conversion, "Path", _NoCwdPath)
 
     loaded = env_loading.load_owner_from_env(
         owner,
@@ -759,7 +760,7 @@ def test_config_synthetic_mapping_loaders_do_not_depend_on_cwd(
     )
 
     assert loaded.retries == 11
-    assert env_loading.parse_env_field_value(retries_field, "12") == 12
+    assert conversion.parse_env_field_value(retries_field, "12") == 12
 
 
 def test_config_python_assignment_survives_reload(

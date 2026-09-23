@@ -6,7 +6,7 @@ from __future__ import annotations
 from typed_settings.exceptions import InvalidSettingsError
 
 # == Internal ================================
-from apprc.definition.env_config._loading import parse_env_field_value
+from apprc.definition.env_config.conversion import parse_env_field_value
 from apprc.definition.env_config._validation import validate_python_field_value
 from apprc.definition.env_config.schema import ConfigField
 

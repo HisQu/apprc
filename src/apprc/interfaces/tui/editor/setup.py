@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+
 # == Standard Library ===========================================
 import asyncio
-import os
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,13 +13,12 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 
 # == Internal ===================================================
-from apprc.user_files.env_files.files import read_env_file
 from apprc.user_files.app_home.locations import (
     AppRCDirectoryError,
     normalize_apprc_dir,
 )
-from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupFlow
-from apprc.user_files.setup.text import (
+from apprc.user_files.setup.flow import ConfigSetupError
+from apprc.interfaces._setup_text import (
     setup_finish_text,
     storage_root_reuse_text,
 )
@@ -61,7 +61,7 @@ class ConfigEditorSetupWorkflow:
             if confirmed_root is None:
                 return
             await self._run_storage_setup(
-                apprc_dir=self.editor.kit.spec.apprc_dir(),
+                apprc_dir=self.editor.manager.paths.root,
                 storage_root=confirmed_root,
                 storage_name=storage_name,
             )
@@ -69,7 +69,7 @@ class ConfigEditorSetupWorkflow:
         apprc_dir = await self._choose_apprc_dir()
         if apprc_dir is None:
             return
-        self._previous_apprc_dir = self.editor.kit.spec.apprc_dir()
+        self._previous_apprc_dir = self.editor.manager.paths.root
         if self.editor.storage_enabled and (
             apprc_dir != self._previous_apprc_dir
             or self.editor._storage_setup_needed()
@@ -80,7 +80,7 @@ class ConfigEditorSetupWorkflow:
 
     async def _choose_apprc_dir(self) -> Path | None:
         """Ask where AppRC should keep this application's managed files."""
-        suggested = self.editor.kit.spec.apprc_dir()
+        suggested = self.editor.manager.paths.root
         result = await self.editor.push_screen_wait(
             PathInputScreen(
                 title="Choose AppRC directory",
@@ -106,12 +106,12 @@ class ConfigEditorSetupWorkflow:
         :param apprc_dir: AppRC directory selected in the first setup step.
         """
         proc_env = {
-            **os.environ,
-            self.editor.kit.spec.apprc_dir_env_key: str(apprc_dir),
+            **self.editor.manager.environment,
+            self.editor.apprc.schema.apprc_dir_env_key: str(apprc_dir),
         }
         try:
             target_registry = load_optional_runtime_storage_registry(
-                self.editor.kit.spec,
+                self.editor.apprc.schema,
                 proc_env=proc_env,
             )
         except (OSError, ValueError) as exc:
@@ -164,12 +164,15 @@ class ConfigEditorSetupWorkflow:
         :param storage_root: Existing or new storage directory.
         :param storage_name: Registry name to initialize.
         """
+        manager = self.editor.apprc.manage(
+            replace(self.editor.manager.options, apprc_dir=apprc_dir),
+            environment=self.editor.manager.environment,
+        )
         try:
             result = await asyncio.to_thread(
-                ConfigSetupFlow(self.editor.kit).run_storage_setup,
-                storage_root,
+                manager.setup,
+                storage_root=storage_root,
                 storage_name=storage_name,
-                apprc_dir=apprc_dir,
             )
         except (ConfigSetupError, OSError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -181,19 +184,10 @@ class ConfigEditorSetupWorkflow:
             )
             return
 
-        os.environ[self.editor.kit.spec.apprc_dir_env_key] = str(
-            result.apprc_dir
-        )
+        self.editor.manager = manager
         self.editor.active_storage_root = result.active_storage_root
-        self.editor.storage_registry = load_optional_runtime_storage_registry(
-            self.editor.kit.spec
-        )
+        self.editor.storage_registry = manager.registry()
         self.editor.storage_registry_error = None
-        self.editor.user_dotenv_values = (
-            read_env_file(result.user_dotenv)
-            if result.user_dotenv is not None
-            else self.editor.user_dotenv_values
-        )
         self.editor.user_dotenv_active = (
             result.user_dotenv is not None or self.editor.user_dotenv_active
         )
@@ -257,7 +251,7 @@ class ConfigEditorSetupWorkflow:
             )
             return None
         if root_is_not_empty:
-            message = Text(storage_root_reuse_text(self.editor.kit, root))
+            message = Text(storage_root_reuse_text(self.editor.apprc, root))
             title = "Reuse storage directory?"
         else:
             message = lines_text(
@@ -294,7 +288,7 @@ class ConfigEditorSetupWorkflow:
                 title="Storage setup complete",
                 message=Text(
                     setup_finish_text(
-                        self.editor.kit,
+                        self.editor.apprc,
                         apprc_dir=apprc_dir,
                         storage_root=storage_root,
                         storage_dotenv=storage_dotenv,
@@ -313,20 +307,18 @@ class ConfigEditorSetupWorkflow:
 
         :param apprc_dir: AppRC directory selected in the first setup step.
         """
+        manager = self.editor.apprc.manage(
+            replace(self.editor.manager.options, apprc_dir=apprc_dir),
+            environment=self.editor.manager.environment,
+        )
         try:
-            result = await asyncio.to_thread(
-                ConfigSetupFlow(self.editor.kit).run_user_dotenv_setup,
-                apprc_dir=apprc_dir,
-            )
+            result = await asyncio.to_thread(manager.setup_user_dotenv)
         except (ConfigSetupError, OSError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        os.environ[self.editor.kit.spec.apprc_dir_env_key] = str(
-            result.apprc_dir
-        )
+        self.editor.manager = manager
         if result.user_dotenv is not None:
             self.editor.user_dotenv_active = True
-            self.editor.user_dotenv_values = read_env_file(result.user_dotenv)
         await self.editor.clear_setup_status()
         await self.editor._refresh_storage_list()
         await self.editor.push_screen_wait(
@@ -334,7 +326,7 @@ class ConfigEditorSetupWorkflow:
                 title="Setup complete",
                 message=Text(
                     setup_finish_text(
-                        self.editor.kit,
+                        self.editor.apprc,
                         apprc_dir=result.apprc_dir,
                         user_dotenv=result.user_dotenv,
                         config_group_name=self.editor.config_group_name,

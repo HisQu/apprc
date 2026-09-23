@@ -8,6 +8,7 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from tests.support_config import compact_cli_output
 from typing import ClassVar
 
 import pytest
@@ -16,25 +17,25 @@ from packaging.requirements import Requirement
 from typer.testing import CliRunner, Result
 
 from cli_runtime import cli as cli_runtime
-from cli_runtime.config import KIT as RUNTIME_KIT
+from cli_runtime.config.app import MyRC as RUNTIME_KIT
 from explicit_env_precedence import (
     cli as explicit_env_precedence,
 )
-from explicit_env_precedence.config import (
-    KIT as EXPLICIT_ENV_PRECEDENCE_KIT,
+from explicit_env_precedence.config.app import (
+    MyRC as EXPLICIT_ENV_PRECEDENCE_KIT,
 )
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc import AppRC
 from apprc.interfaces.tui.editor import ConfigEditorApp
-from apprc.runtime.diagnostics.messages import config_command_text
+from apprc.interfaces.cli.diagnostics.messages import config_command_text
 from process_env import cli as process_env
-from process_env.config import MyRC as PROCESS_ENV_RC
+from process_env.config.app import MyRC as PROCESS_ENV_RC
 from storage import cli as storage
-from storage.config import MyRC as STORAGE_RC
+from storage.config.app import MyRC as STORAGE_RC
 from user_dotenv import cli as user_dotenv
-from user_dotenv.config import MyRC as USER_DOTENV_RC
+from user_dotenv.config.app import MyRC as USER_DOTENV_RC
 from user_dotenv_with_storage import cli as user_dotenv_with_storage
-from user_dotenv_with_storage.config import MyRC as BOTH_RC
-from tests.support_config import build_apprc_example_app_kit
+from user_dotenv_with_storage.config.app import MyRC as BOTH_RC
+from tests.support_config import build_apprc_example_app
 
 ROOT = Path(__file__).parents[1]
 
@@ -60,7 +61,7 @@ class ExampleCliDefinition:
 
     scenario: str
     command_name: str
-    kit: AppConfigKit
+    kit: AppRC
     build_app: Callable[..., typer.Typer]
     app_key: str
     app_value: str
@@ -71,19 +72,19 @@ class ExampleCliDefinition:
     @property
     def uses_storage(self) -> bool:
         """Return whether this example mounts storage commands."""
-        return self.kit.spec.uses_storage()
+        return self.kit.schema.uses_storage()
 
     @property
     def uses_user_dotenv(self) -> bool:
         """Return whether this example mounts user-dotenv commands."""
-        return self.kit.spec.uses_user_dotenv()
+        return self.kit.schema.uses_user_dotenv()
 
 
 EXAMPLE_CLIS = (
     ExampleCliDefinition(
         scenario="process_env",
         command_name="apprc-process-env",
-        kit=PROCESS_ENV_RC.kit,
+        kit=PROCESS_ENV_RC,
         build_app=process_env.build_app,
         app_key="profile",
         app_value="process-env-profile",
@@ -91,7 +92,7 @@ EXAMPLE_CLIS = (
     ExampleCliDefinition(
         scenario="user_dotenv",
         command_name="apprc-user-dotenv",
-        kit=USER_DOTENV_RC.kit,
+        kit=USER_DOTENV_RC,
         build_app=user_dotenv.build_app,
         app_key="profile",
         app_value="user-dotenv-profile",
@@ -99,7 +100,7 @@ EXAMPLE_CLIS = (
     ExampleCliDefinition(
         scenario="storage",
         command_name="apprc-storage",
-        kit=STORAGE_RC.kit,
+        kit=STORAGE_RC,
         build_app=storage.build_app,
         app_key="profile",
         app_value="storage-profile",
@@ -109,7 +110,7 @@ EXAMPLE_CLIS = (
     ExampleCliDefinition(
         scenario="user_dotenv_with_storage",
         command_name="apprc-user-dotenv-with-storage",
-        kit=BOTH_RC.kit,
+        kit=BOTH_RC,
         build_app=user_dotenv_with_storage.build_app,
         app_key="profile",
         app_value="combined-profile",
@@ -201,7 +202,9 @@ def test_example_cli_runs_every_supported_config_command(
         harness.invoke(["--log-level", "INFO", "config", "paths", "--json"])
     )
     if definition.uses_user_dotenv or definition.uses_storage:
-        assert str(paths_json["apprc_dir"]).endswith(definition.kit.spec.app_id)
+        assert str(paths_json["apprc_dir"]).endswith(
+            definition.kit.schema.app_id
+        )
     else:
         assert paths_json["apprc_dir"] is None
 
@@ -299,7 +302,7 @@ def test_example_cli_runs_every_supported_config_command(
     show_json = _assert_json_success(
         harness.invoke([*runtime_prefix, "config", "show", "--json"])
     )
-    assert show_json["app_id"] == definition.kit.spec.app_id
+    assert show_json["app_id"] == definition.kit.schema.app_id
 
     if definition.uses_user_dotenv or definition.uses_storage:
         HeadlessConfigEditorApp.reset()
@@ -320,7 +323,7 @@ def test_example_cli_runs_every_supported_config_command(
             ]
         )
     run_payload = _assert_json_success(harness.invoke([*run_args, "run"]))
-    assert run_payload["app_id"] == definition.kit.spec.app_id
+    assert run_payload["app_id"] == definition.kit.schema.app_id
 
 
 def test_cli_runtime_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
@@ -347,8 +350,8 @@ def test_process_env_help_describes_dotenv_skip_without_storage() -> None:
 
     result = _assert_success(harness.invoke(["--help"]))
 
-    assert "Do not merge AppRC dotenv" in result.output
-    assert "layers or explicit dotenv" in result.output
+    assert "Excludedotenvvaluesfromsettings" in compact_cli_output(result)
+    assert "Explicitfilesstill" in compact_cli_output(result)
     assert "Select storage" not in result.output
 
 
@@ -458,7 +461,7 @@ def test_example_cli_env_file_options_control_apprc_directory(
     explicit_apprc_dir = tmp_path / "explicit"
     env_file = tmp_path / ".env"
     env_file.write_text(
-        f"{definition.kit.spec.apprc_dir_env_key}={explicit_apprc_dir}\n",
+        f"{definition.kit.schema.apprc_dir_env_key}={explicit_apprc_dir}\n",
         encoding="utf-8",
     )
 
@@ -491,9 +494,7 @@ def test_console_scripts_point_to_example_clis() -> None:
         )
     )
 
-    assert root_pyproject["project"]["scripts"] == {
-        "apprc": "apprc.__main__:main",
-    }
+    assert "scripts" not in root_pyproject["project"]
     assert demo_pyproject["project"]["scripts"] == {
         "apprc-process-env": "process_env.cli:main",
         "apprc-user-dotenv": "user_dotenv.cli:main",
@@ -547,7 +548,7 @@ def test_demo_package_is_dev_dependency_only() -> None:
     }
 
 
-def test_textual_is_tui_extra_not_core_runtime_dependency() -> None:
+def test_terminal_dependencies_belong_to_wrapper() -> None:
     """The Textual editor is opt-in while dev installs keep test coverage."""
     pyproject = tomllib.loads(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -556,7 +557,10 @@ def test_textual_is_tui_extra_not_core_runtime_dependency() -> None:
     assert "textual" not in _dependency_names(
         pyproject["project"]["dependencies"]
     )
-    assert pyproject["project"]["optional-dependencies"]["tui"] == ["textual"]
+    wrapper = tomllib.loads(
+        (ROOT / "src/apprc_dev/packaging/terminal/pyproject.toml").read_text()
+    )
+    assert "textual" in wrapper["project"]["dependencies"]
     assert "textual" in _dependency_names(pyproject["dependency-groups"]["dev"])
 
 
@@ -573,9 +577,8 @@ def test_verify_pypi_recipe_checks_current_base_install_surface() -> None:
     assert "apprc.Config" in helper
     assert "apprc.ConfigBase" in helper
     assert "apprc.field" in helper
-    assert "Provides-Extra" in helper
-    assert 'find_spec("textual") is not None' in helper
-    assert 'startswith("textual")' in helper
+    assert "core-only" in helper
+    assert "apprc-core" in helper
 
 
 def test_clean_recipe_removes_nested_egg_info_without_touching_envs() -> None:
@@ -671,9 +674,9 @@ def test_release_workflow_creates_github_release_before_optional_pypi() -> None:
     assert "--trusted-publishing always" in pypi_publish
     assert "if: github.event_name == 'workflow_dispatch'" in publish_existing
     assert "gh release download" in publish_existing
-    assert "exactly one wheel and one source archive" in publish_existing
-    assert "apprc-${version}-*.whl" in publish_existing
-    assert '"apprc-${version}.tar.gz"' in publish_existing
+    assert "exactly two wheels and two source archives" in publish_existing
+    assert "${project}-${version}-py3-none-any.whl" in publish_existing
+    assert "${project}-${version}.tar.gz" in publish_existing
     assert "twine check" in publish_existing
     assert "uv build" not in publish_existing
     assert "actions/checkout" not in publish_existing
@@ -720,11 +723,11 @@ def test_publish_check_rehearses_ci_and_release_artifacts() -> None:
     assert "twine check" in artifact_check
     assert "for python_version in 3.12 3.13 3.14" in artifact_check
     assert "--python 3.12" in artifact_check
-    assert 'with "$sdist"' in artifact_check
+    assert "artifact_check.py dist" in artifact_check
     assert "--dry-run" in artifact_check
     assert "--trusted-publishing never" in artifact_check
     assert "--token unused-local-dry-run-token" in artifact_check
-    assert "--check-url https://pypi.org/simple/apprc/" in artifact_check
+    assert "https://pypi.org/simple/${project}/" in artifact_check
     assert "no files will be uploaded" in artifact_check
     assert "nothing was uploaded" in artifact_check
     assert "run just release <patch|minor|major>" in publish_check
@@ -800,7 +803,7 @@ def test_release_recipe_pushes_prepared_tag_atomically() -> None:
     assert "just --evaluate RELEASE_PYPI" in release_push
     assert "gh workflow run release.yml" in publish_pypi
     assert "isDraft" in publish_pypi
-    assert "exactly one wheel and one source archive" in publish_pypi
+    assert "exactly two wheels and two source archives" in publish_pypi
 
 
 def test_release_prepare_keeps_existing_result_banner() -> None:
@@ -894,12 +897,11 @@ def test_storage_modules_do_not_import_bootstrap_layer() -> None:
 
 
 def test_command_name_falls_back_or_uses_declared_command() -> None:
-    assert config_command_text(build_apprc_example_app_kit(), "show") == (
+    assert config_command_text(build_apprc_example_app(), "show") == (
         "apprc_example_app config show"
     )
     assert (
-        config_command_text(STORAGE_RC.kit, "show")
-        == "apprc-storage config show"
+        config_command_text(STORAGE_RC, "show") == "apprc-storage config show"
     )
 
 

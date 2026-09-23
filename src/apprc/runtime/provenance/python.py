@@ -7,7 +7,7 @@ from dataclasses import Field, fields, is_dataclass
 from typing import Any, Mapping
 
 # == Internal ================================
-from apprc.runtime.provenance.model import (
+from apprc.definition.provenance import (
     ConfigOriginState,
     ConfigProvenance,
     source_for_origin,

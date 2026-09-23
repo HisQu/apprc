@@ -12,8 +12,10 @@ persistence.
 
 from __future__ import annotations
 
+from apprc.services.manager import ConfigManager
+from apprc.runtime.resolution import ResolvedConfig
+
 # == Standard Library ========================
-import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -33,15 +35,8 @@ from textual.widgets import (
 )
 
 # == Internal ================================
-from apprc.user_files.env_files.files import read_env_file
-from apprc.runtime._dotenv_layers import read_defaults_dotenv_values
 from apprc.user_files.env_files.updates import (
     EnvFileEditPlan,
-    apply_env_file_edit,
-    clear_env_file_value,
-    clear_storage_dotenv_value,
-    plan_env_file_value_update,
-    plan_storage_dotenv_value_update,
 )
 from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.storage_roots.paths import StorageRootPathError
@@ -92,7 +87,7 @@ from apprc.interfaces.tui.editor.workflows import (
 from apprc.interfaces.tui.editor.setup import ConfigEditorSetupWorkflow
 
 if TYPE_CHECKING:
-    from apprc.definition.app_config.kit import AppConfigKit
+    from apprc.public.app_rc import AppRC
 
 
 class ConfigEditorApp(App[None]):
@@ -136,8 +131,9 @@ class ConfigEditorApp(App[None]):
     def __init__(
         self,
         *,
-        kit: AppConfigKit,
-        storage_registry: StorageRegistry | None,
+        apprc: AppRC,
+        storage_registry: StorageRegistry | None = None,
+        manager: ConfigManager | None = None,
         storage_registry_error: str | None = None,
         storage_selector_issue: StorageSelectorIssue | None = None,
         initial_storage: str | None = None,
@@ -146,7 +142,8 @@ class ConfigEditorApp(App[None]):
     ) -> None:
         """Keep storage table and field metadata while editing dotenv state.
 
-        :param kit: Application config facade.
+        :param apprc: Application config facade.
+        :param manager: Captured invocation inputs, including explicit dotenv files.
         :param storage_registry: Optional AppRC TOML registry shown by the
             editor.
         :param storage_registry_error: Read failure that prevents named-storage
@@ -160,23 +157,24 @@ class ConfigEditorApp(App[None]):
             guidance.
         """
         super().__init__()
-        self.kit = kit
+        self.apprc = apprc
+        self.manager = manager or apprc.manage()
         self.storage_registry = storage_registry
         self.storage_registry_error = storage_registry_error
         self.storage_selector_issue = storage_selector_issue
-        self.owners = kit.spec.owners
+        self.owners = apprc.schema.owners
         self.initial_storage = initial_storage
         self.config_group_name = config_group_name
-        self.storage_enabled = kit.spec.uses_storage()
-        self.user_dotenv_enabled = kit.spec.uses_user_dotenv()
+        self.storage_enabled = apprc.schema.uses_storage()
+        self.user_dotenv_enabled = apprc.schema.uses_user_dotenv()
         self.init_command = (
-            f"{kit.spec.config_command_name()} "
+            f"{apprc.schema.config_command_name()} "
             f"{config_group_name} storage add NAME PATH"
         )
-        self.apprc_toml_label = kit.spec.apprc_toml_filename
+        self.apprc_toml_label = apprc.schema.apprc_toml_filename
         self.hidden_env_keys = (
-            frozenset({kit.spec.storage_selector_env_key})
-            if kit.spec.storage_selector_env_key is not None
+            frozenset({apprc.schema.storage_selector_env_key})
+            if apprc.schema.storage_selector_env_key is not None
             else frozenset()
         )
         if active_storage_root is not None and self.storage_enabled:
@@ -186,19 +184,12 @@ class ConfigEditorApp(App[None]):
         else:
             self.active_storage_root = None
         self.user_dotenv_active = self._user_dotenv_is_active()
-        self.user_dotenv_values = (
-            read_env_file(kit.spec.user_dotenv_path())
-            if self.user_dotenv_active
-            else {}
-        )
-        self.defaults_values = _read_packaged_defaults_values(kit)
         self.storage_entries = (
             ordered_storage_entries(storage_registry)
             if storage_registry is not None
             else []
         )
         self.selection: EditorStorageSelection = NoStorageSelection()
-        self.storage_values: dict[str, str] = {}
         self.row_env_keys: list[str | None] = []
         self._config_action_in_progress = False
         self.storage_workflows = ConfigEditorStorageWorkflows(self)
@@ -331,10 +322,7 @@ class ConfigEditorApp(App[None]):
                 value_sources=config_value_sources(
                     spec=selected.spec,
                     env_key=env_key,
-                    user_dotenv_values=self.user_dotenv_values,
-                    storage_values=self.storage_values,
-                    shell_env=os.environ,
-                    defaults_values=self.defaults_values,
+                    resolved=self._inspected_resolution(),
                     include_user_dotenv=self.user_dotenv_active,
                     include_storage=self._storage_scope_is_active(),
                 ),
@@ -489,22 +477,12 @@ class ConfigEditorApp(App[None]):
             )
             return
         try:
-            if scope == "user":
-                plan = plan_env_file_value_update(
-                    path=self.kit.spec.user_dotenv_path(),
-                    reference=env_key,
-                    raw_value=raw_value,
-                    owners=self.owners,
-                    layer_name=self.kit.spec.user_dotenv_filename,
-                )
-            else:
-                plan = plan_storage_dotenv_value_update(
-                    storage_root=self._current_storage_root(),
-                    reference=env_key,
-                    raw_value=raw_value,
-                    owners=self.owners,
-                    storage_dotenv_filename=self.kit.spec.storage_dotenv_filename,
-                )
+            plan = self.manager.plan_update(
+                env_key,
+                raw_value,
+                scope=scope,
+                storage=self._inspected_storage_selector(),
+            )
         except (
             AppRCDirectoryError,
             OSError,
@@ -517,11 +495,11 @@ class ConfigEditorApp(App[None]):
         if not await self._confirm_env_file_edit(plan):
             return
         try:
-            update = apply_env_file_edit(plan)
-        except (AppRCDirectoryError, OSError) as exc:
+            update = self.manager.apply_edit(plan)
+        except (AppRCDirectoryError, OSError, ValueError) as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
-        self._refresh_values_after_write(scope=scope, path=update.path)
+        self.user_dotenv_active = self._user_dotenv_is_active()
         self._populate_field_table()
         self.notify(f"Saved {update.env_key}")
 
@@ -556,20 +534,12 @@ class ConfigEditorApp(App[None]):
             )
             return
         try:
-            if scope == "user":
-                update = clear_env_file_value(
-                    path=self.kit.spec.user_dotenv_path(),
-                    reference=env_key,
-                    owners=self.owners,
-                    layer_name=self.kit.spec.user_dotenv_filename,
-                )
-            else:
-                update = clear_storage_dotenv_value(
-                    storage_root=self._current_storage_root(),
-                    reference=env_key,
-                    owners=self.owners,
-                    storage_dotenv_filename=self.kit.spec.storage_dotenv_filename,
-                )
+            plan = self.manager.plan_removal(
+                env_key,
+                scope=scope,
+                storage=self._inspected_storage_selector(),
+            )
+            update = self.manager.apply_edit(plan) if plan is not None else None
         except (
             AppRCDirectoryError,
             OSError,
@@ -580,7 +550,7 @@ class ConfigEditorApp(App[None]):
             return
         if update is None:
             return
-        self._refresh_values_after_write(scope=scope, path=update.path)
+        self.user_dotenv_active = self._user_dotenv_is_active()
         self._populate_field_table()
         self.notify(f"Cleared {update.env_key}")
 
@@ -641,7 +611,6 @@ class ConfigEditorApp(App[None]):
         self.selection = ActivePathStorageSelection(root=root)
         path = self._env_file_path_for_root(root)
         if not path.is_file():
-            self.storage_values = {}
             self.query_one("#scope-title", Static).update(
                 f"Storage path: {root}\nMissing AppRC marker: {path}. "
                 "Initialize storage config before editing storage values."
@@ -657,7 +626,6 @@ class ConfigEditorApp(App[None]):
                 archive=False,
             )
             return
-        self.storage_values = read_env_file(path)
         self.query_one("#scope-title", Static).update(
             active_storage_title(root, path)
         )
@@ -681,7 +649,6 @@ class ConfigEditorApp(App[None]):
         self.selection = LiveStorageSelection(record=record)
         path = self._env_file_path_for_root(record.root)
         if not path.is_file():
-            self.storage_values = {}
             self.query_one("#scope-title", Static).update(
                 f"Storage {name!r}: {record.root}\n"
                 f"Missing AppRC marker: {path}. Initialize storage config "
@@ -698,7 +665,6 @@ class ConfigEditorApp(App[None]):
                 archive=False,
             )
             return
-        self.storage_values = read_env_file(path)
         self.query_one("#scope-title", Static).update(
             live_storage_title(record, path)
         )
@@ -762,7 +728,6 @@ class ConfigEditorApp(App[None]):
             return
         record = registry.selected(name)
         self.selection = MissingStorageSelection(record=record)
-        self.storage_values = {}
         self.query_one("#scope-title", Static).update(
             missing_storage_title(record)
         )
@@ -784,7 +749,6 @@ class ConfigEditorApp(App[None]):
             return
         record = registry.archived_storages[name]
         self.selection = ArchivedStorageSelection(record=record)
-        self.storage_values = {}
         self.query_one("#scope-title", Static).update(
             archived_storage_title(record)
         )
@@ -817,18 +781,15 @@ class ConfigEditorApp(App[None]):
             *field_table_columns(
                 include_user_dotenv=self.user_dotenv_enabled,
                 include_storage=self.storage_enabled,
+                include_explicit=bool(self.manager.options.env_files),
             )
         )
         self.row_env_keys = []
         for row in build_field_table_rows(
-            owners=self.owners,
-            user_dotenv_values=self.user_dotenv_values,
-            storage_values=self.storage_values,
-            defaults_values=self.defaults_values,
+            resolved=self._inspected_resolution(),
             include_user_dotenv=self.user_dotenv_enabled,
             include_storage=self.storage_enabled,
             hidden_env_keys=self.hidden_env_keys,
-            shell_env=os.environ,
         ):
             if row.height is None:
                 table.add_row(*row.cells)
@@ -851,6 +812,21 @@ class ConfigEditorApp(App[None]):
             row_index=table.cursor_row,
         )
 
+    def _inspected_storage_selector(self) -> str | None:
+        """Return the browsed root independently of the runtime selection."""
+        if isinstance(self.selection, ActivePathStorageSelection):
+            return str(self.selection.root)
+        if isinstance(self.selection, LiveStorageSelection):
+            return str(self.selection.record.root)
+        return None
+
+    def _inspected_resolution(self) -> ResolvedConfig:
+        """Read current sources through shared management inspection."""
+        storage = self._inspected_storage_selector()
+        return self.manager.inspect(
+            storage=storage, include_storage=storage is not None
+        ).resolved
+
     def _current_storage_root(self) -> Path:
         """Return the selected editable storage root."""
         selection = self.selection
@@ -864,7 +840,7 @@ class ConfigEditorApp(App[None]):
         """Return the editable dotenv path below one current root."""
         return (
             Path(root).expanduser().resolve()
-            / self.kit.spec.storage_dotenv_filename
+            / self.apprc.schema.storage_dotenv_filename
         )
 
     def _set_controls_enabled(self, enabled: bool) -> None:
@@ -939,7 +915,6 @@ class ConfigEditorApp(App[None]):
     def _clear_selection(self) -> None:
         """Clear storage selection and storage values."""
         self.selection = NoStorageSelection()
-        self.storage_values = {}
 
     def _selected_storage_name(self) -> str | None:
         """Return the current named row for control-state restoration."""
@@ -953,24 +928,11 @@ class ConfigEditorApp(App[None]):
             return selection.record.name
         return None
 
-    def _refresh_values_after_write(
-        self,
-        *,
-        scope: ConfigWriteScope,
-        path: Path,
-    ) -> None:
-        """Refresh cached source values after a scoped save."""
-        if scope == "user":
-            self.user_dotenv_active = True
-            self.user_dotenv_values = read_env_file(path)
-            return
-        self.storage_values = read_env_file(path)
-
     def _user_dotenv_is_active(self) -> bool:
         """Return whether the user dotenv source should be visible."""
         return (
             self.user_dotenv_enabled
-            and self.kit.spec.user_dotenv_path().is_file()
+            and self.manager.paths.user_dotenv.is_file()
         )
 
     def _storage_scope_is_active(self) -> bool:
@@ -982,12 +944,10 @@ class ConfigEditorApp(App[None]):
 
     def _writable_scopes(self) -> tuple[ConfigWriteScope, ...]:
         """Return write scopes currently available for the selected field."""
-        scopes: list[ConfigWriteScope] = []
-        if self.user_dotenv_active:
-            scopes.append("user")
-        if self._storage_scope_is_active():
-            scopes.append("storage")
-        return tuple(scopes)
+        return self.manager.writable_scopes(
+            storage=self._inspected_storage_selector(),
+            include_storage=self._storage_scope_is_active(),
+        )
 
     def _registered_active_storage_name(self) -> str | None:
         """Return the named storage that matches the active path, if any."""
@@ -1009,7 +969,7 @@ class ConfigEditorApp(App[None]):
 
     def _fallback_storage_name(self) -> str:
         """Return a storage selector when no path name is available."""
-        return suggested_storage_name(self.kit.spec.app_id)
+        return suggested_storage_name(self.apprc.schema.app_id)
 
     def _no_storage_message(self) -> str:
         """Return guidance when no storage row or path is selected."""
@@ -1018,7 +978,7 @@ class ConfigEditorApp(App[None]):
         if self.user_dotenv_active and self.active_storage_root is None:
             return f"{self._user_dotenv_message()}\n\nNo storage is selected."
         storage_selector_env_key = (
-            self.kit.spec.require_storage_selector_env_key()
+            self.apprc.schema.require_storage_selector_env_key()
         )
         if self.storage_registry is not None:
             return (
@@ -1036,12 +996,12 @@ class ConfigEditorApp(App[None]):
     def _user_dotenv_message(self) -> str:
         """Return source guidance for the per-user dotenv."""
         if self.user_dotenv_active:
-            return f"User dotenv:\n{self.kit.spec.user_dotenv_path()}"
+            return f"User dotenv:\n{self.manager.paths.user_dotenv}"
         if self.user_dotenv_enabled:
             return (
                 "The user dotenv is not set up.\n"
-                f"Proposed path: {self.kit.spec.user_dotenv_path()}\n"
-                f"Run {self.kit.spec.config_command_name()} "
+                f"Proposed path: {self.manager.paths.user_dotenv}\n"
+                f"Run {self.apprc.schema.config_command_name()} "
                 f"{self.config_group_name} setup or choose Set up user "
                 "dotenv."
             )
@@ -1139,13 +1099,3 @@ class ConfigEditorApp(App[None]):
             "selector at its source. Setup is not a selector repair."
         )
         return "\n".join(lines)
-
-
-def _read_packaged_defaults_values(kit: AppConfigKit) -> dict[str, str]:
-    """Return packaged defaults dotenv values for a kit-backed editor.
-
-    :param kit: Application facade that owns the defaults dotenv resource.
-    :return: Parsed defaults values.
-    """
-    _, values = read_defaults_dotenv_values(kit.spec)
-    return values

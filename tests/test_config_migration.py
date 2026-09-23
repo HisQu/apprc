@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 from pathlib import Path
 
 import pytest
@@ -74,8 +76,13 @@ def test_migration_converts_released_path_selector_to_default_storage(
 
     assert not plan.conflicts
     assert result.written
-    assert spec.user_dotenv_path().read_text(encoding="utf-8") == "KEEP=1\n"
-    registry = load_storage_registry_or_empty(spec.preferred_apprc_toml_path())
+    assert (
+        AppFiles(spec).user_dotenv_path().read_text(encoding="utf-8")
+        == "KEEP=1\n"
+    )
+    registry = load_storage_registry_or_empty(
+        AppFiles(spec).preferred_apprc_toml_path()
+    )
     assert registry.selected_storage == "default"
     assert registry.selected("default").root == storage_root.resolve()
     assert (storage_root / "apprc.storage.env").read_text(encoding="utf-8") == (
@@ -109,10 +116,12 @@ def test_storage_only_migration_converts_selector_without_creating_user_dotenv(
 
     apply_config_migration(build_config_migration_plan(spec, proc_env=proc_env))
 
-    registry = load_storage_registry_or_empty(spec.preferred_apprc_toml_path())
+    registry = load_storage_registry_or_empty(
+        AppFiles(spec).preferred_apprc_toml_path()
+    )
     assert registry.selected_storage == "default"
     assert registry.selected("default").root == storage_root
-    assert not spec.user_dotenv_path().exists()
+    assert not AppFiles(spec).user_dotenv_path().exists()
 
 
 def test_migration_resolves_relative_path_selector_from_new_apprc_toml(
@@ -126,10 +135,12 @@ def test_migration_resolves_relative_path_selector_from_new_apprc_toml(
     )
     apply_config_migration(plan)
 
-    registry = load_storage_registry_or_empty(spec.preferred_apprc_toml_path())
+    registry = load_storage_registry_or_empty(
+        AppFiles(spec).preferred_apprc_toml_path()
+    )
     assert registry.selected_storage == "default"
     assert registry.selected("default").root == (
-        spec.preferred_apprc_toml_path().parent / "relative-storage"
+        AppFiles(spec).preferred_apprc_toml_path().parent / "relative-storage"
     )
 
 
@@ -153,7 +164,9 @@ def test_migration_reads_custom_legacy_toml_and_resolves_relative_roots(
     )
     apply_config_migration(plan)
 
-    registry = load_storage_registry_or_empty(spec.preferred_apprc_toml_path())
+    registry = load_storage_registry_or_empty(
+        AppFiles(spec).preferred_apprc_toml_path()
+    )
     assert registry.selected_storage == "alpha"
     assert registry.selected("alpha").root == (tmp_path / "alpha").resolve()
     assert any("MIGRATION_DEMO_APPRC_TOML" in item for item in plan.warnings)
@@ -169,7 +182,7 @@ def test_migration_conflict_preflight_makes_no_changes(tmp_path: Path) -> None:
     legacy_dir.mkdir(parents=True)
     legacy = legacy_dir / ".env.apprc-app"
     legacy.write_text("OLD=1\n", encoding="utf-8")
-    spec.ensure_user_dotenv().write_text("NEW=1\n", encoding="utf-8")
+    AppFiles(spec).ensure_user_dotenv().write_text("NEW=1\n", encoding="utf-8")
 
     plan = build_config_migration_plan(spec, proc_env=proc_env)
 
@@ -177,7 +190,10 @@ def test_migration_conflict_preflight_makes_no_changes(tmp_path: Path) -> None:
     with pytest.raises(ConfigMigrationError, match="No files were changed"):
         apply_config_migration(plan)
     assert legacy.read_text(encoding="utf-8") == "OLD=1\n"
-    assert spec.user_dotenv_path().read_text(encoding="utf-8") == "NEW=1\n"
+    assert (
+        AppFiles(spec).user_dotenv_path().read_text(encoding="utf-8")
+        == "NEW=1\n"
+    )
 
 
 def test_migration_does_not_replace_late_destination(tmp_path: Path) -> None:
@@ -209,7 +225,7 @@ def test_migration_ignores_unreleased_apprc_app_env(tmp_path: Path) -> None:
         user_dotenv=UserDotenv(),
         apprc_dir=tmp_path / "apprc",
     )
-    unreleased = spec.apprc_dir() / "apprc.app.env"
+    unreleased = AppFiles(spec).apprc_dir() / "apprc.app.env"
     unreleased.parent.mkdir(parents=True)
     unreleased.write_text("IGNORE=1\n", encoding="utf-8")
 
@@ -230,7 +246,10 @@ def test_migration_scans_declared_legacy_app_ids(tmp_path: Path) -> None:
     plan = build_config_migration_plan(spec, proc_env=proc_env)
     apply_config_migration(plan)
 
-    assert spec.user_dotenv_path().read_text(encoding="utf-8") == "KEEP=1\n"
+    assert (
+        AppFiles(spec).user_dotenv_path().read_text(encoding="utf-8")
+        == "KEEP=1\n"
+    )
 
 
 def test_migration_requires_mapping_for_unregistered_bare_selector(
@@ -244,7 +263,7 @@ def test_migration_requires_mapping_for_unregistered_bare_selector(
     register_storage(
         name="opa",
         root=tmp_path / "opa",
-        path=spec.preferred_apprc_toml_path(),
+        path=AppFiles(spec).preferred_apprc_toml_path(),
     )
 
     with pytest.raises(UnresolvedStorageMigrationError) as caught:
@@ -269,7 +288,7 @@ def test_migration_registers_explicit_root_for_bare_selector(
     register_storage(
         name="opa",
         root=old_root,
-        path=spec.preferred_apprc_toml_path(),
+        path=AppFiles(spec).preferred_apprc_toml_path(),
     )
     ontology_root = tmp_path / "ontology"
     ontology_root.mkdir()
@@ -285,7 +304,9 @@ def test_migration_registers_explicit_root_for_bare_selector(
     assert plan.storage_mapping.selector_name == "ontology"
     assert plan.storage_mapping.replaced_storage is None
     assert result.written
-    registry = load_storage_registry_or_empty(spec.preferred_apprc_toml_path())
+    registry = load_storage_registry_or_empty(
+        AppFiles(spec).preferred_apprc_toml_path()
+    )
     assert set(registry.storages) == {"opa", "ontology"}
     assert registry.selected_storage == "ontology"
     assert registry.selected("ontology").root == ontology_root.resolve()
@@ -305,7 +326,7 @@ def test_migration_replaces_stale_entry_after_manual_directory_move(
     register_storage(
         name="opa",
         root=old_root,
-        path=spec.preferred_apprc_toml_path(),
+        path=AppFiles(spec).preferred_apprc_toml_path(),
     )
     payload = old_root / "payload.txt"
     payload.write_text("keep", encoding="utf-8")
@@ -324,7 +345,9 @@ def test_migration_replaces_stale_entry_after_manual_directory_move(
 
     assert plan.storage_mapping is not None
     assert plan.storage_mapping.replaced_storage == "opa"
-    registry = load_storage_registry_or_empty(spec.preferred_apprc_toml_path())
+    registry = load_storage_registry_or_empty(
+        AppFiles(spec).preferred_apprc_toml_path()
+    )
     assert tuple(registry.storages) == ("ontology",)
     assert registry.selected_storage == "ontology"
     assert registry.selected("ontology").root == ontology_root.resolve()
@@ -345,7 +368,7 @@ def test_migration_rejects_duplicate_root_without_explicit_replacement(
     register_storage(
         name="opa",
         root=root,
-        path=spec.preferred_apprc_toml_path(),
+        path=AppFiles(spec).preferred_apprc_toml_path(),
     )
 
     with pytest.raises(ConfigMigrationError, match="--replace-storage opa"):

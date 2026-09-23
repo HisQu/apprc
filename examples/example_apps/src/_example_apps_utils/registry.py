@@ -7,12 +7,12 @@ from dataclasses import dataclass
 
 # == Internal ===================================================
 import apprc as rc
-from cli_runtime.config import MyRC as CLI_RUNTIME_RC
-from explicit_env_precedence.config import MyRC as PRECEDENCE_RC
-from process_env.config import MyRC as PROCESS_ENV_RC
-from storage.config import MyRC as STORAGE_RC
-from user_dotenv.config import MyRC as USER_DOTENV_RC
-from user_dotenv_with_storage.config import MyRC as BOTH_RC
+from cli_runtime.config.app import MyRC as CLI_RUNTIME_RC
+from explicit_env_precedence.config.app import MyRC as PRECEDENCE_RC
+from process_env.config.app import MyRC as PROCESS_ENV_RC
+from storage.config.app import MyRC as STORAGE_RC
+from user_dotenv.config.app import MyRC as USER_DOTENV_RC
+from user_dotenv_with_storage.config.app import MyRC as BOTH_RC
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +49,7 @@ def _spec(
     required_storage_key: str | None = None,
 ) -> ExampleAppSpec:
     """Build a registry row from one public AppRC facade."""
-    spec = app_rc.spec
+    spec = app_rc.schema
     return ExampleAppSpec(
         name=name,
         command_name=command_name,

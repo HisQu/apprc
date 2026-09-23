@@ -4,10 +4,8 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import asyncio
-import shutil
 
 # == Internal ================================
-from apprc.user_files.storage_roots.registry import unregister_storage
 from apprc.interfaces.tui._primitives import ButtonVariant, ConfirmScreen
 from apprc.interfaces.tui._styles import (
     label_value_text,
@@ -92,30 +90,22 @@ class StorageRemovalWorkflows(StorageWorkflowBase):
         if registry is None:
             return False
         try:
-            record = registry.selected(name)
+            registry.selected(name)
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return False
         try:
             self.editor.storage_registry = await asyncio.to_thread(
-                unregister_storage,
+                self.editor.manager.remove_storage,
                 name=name,
-                path=registry.path,
+                delete_content=delete_content,
             )
         except (OSError, ValueError) as exc:
+            self.editor.storage_registry = self.editor.manager.registry()
+            await self.editor._refresh_storage_list()
             self.editor.notify(str(exc), severity="error", markup=False)
             return False
         select_name = self.editor._registered_active_storage_name()
         await self.editor._refresh_storage_list(select_name=select_name)
-        if delete_content and record.root.exists():
-            try:
-                await asyncio.to_thread(shutil.rmtree, record.root)
-            except OSError as exc:
-                self.editor.notify(
-                    f"Removed storage {name!r}; directory deletion failed: {exc}",
-                    severity="warning",
-                    markup=False,
-                )
-                return True
         self.editor.notify(f"Removed storage {name!r}")
         return True

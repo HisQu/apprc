@@ -1,269 +1,258 @@
-# AppRC Reference
+# AppRC reference
 
-## Table of contents
+[Manual](README.md) · [Recipes](How-To-User-Guides.md) · [Architecture](Explanations.md)
 
-1. [Public interfaces](#public-interfaces)
-2. [Application declaration](#application-declaration)
-3. [Configuration files](#configuration-files)
-4. [Environment variables](#environment-variables)
-5. [Runtime precedence](#runtime-precedence)
-6. [Storage registry behavior](#storage-registry-behavior)
-7. [Generated CLI commands](#generated-cli-commands)
-8. [Doctor statuses](#doctor-statuses)
-9. [Dependency surfaces](#dependency-surfaces)
-10. [Documentation assets](#documentation-assets)
+- [Public namespaces](#public-namespaces)
+- [Declarations](#declarations)
+- [Resolution](#resolution)
+- [Source precedence](#source-precedence)
+- [Storage selection](#storage-selection)
+- [Managed files](#managed-files)
+- [Management](#management)
+- [Provenance and lifecycle](#provenance-and-lifecycle)
+- [Terminal commands](#terminal-commands)
+- [Errors and write guarantees](#errors-and-write-guarantees)
 
-Use [How-To User Guides](How-To-User-Guides.md) for procedures and
-[Explanations](Explanations.md) for design rationale.
+## Public namespaces
 
-## Public interfaces
-
-Normal integrations use `import apprc as rc`.
-
-| Name | Purpose |
+| Import | Purpose |
 | --- | --- |
-| `rc.AppRC` | Declares one application, registers config, bootstraps runtime state, and mounts generated commands. |
-| `rc.UserDotenv` | Enables one managed `apprc.user.env`. |
-| `rc.Storage` | Enables storage and optionally declares its selector environment key. |
-| `rc.Config` | Base for env-backed typed config. |
-| `rc.ConfigBase` | Base for Python-only config. |
-| `rc.field` | Declares one env-backed field with a full environment key. |
-| `rc.cli` | Advanced Typer runtime and mount helpers. |
-| `rc.files` | Dotenv and managed-file helpers. |
-| `rc.storage` | Storage registry, selector, and archive helpers. |
-| `rc.provenance` | Runtime value-origin helpers. |
-| `rc.schema` | Read-only config metadata. |
+| `rc.AppRC`, `rc.Config`, `rc.ConfigBase`, `rc.field` | Declaration and typed settings |
+| `rc.UserDotenv`, `rc.Storage` | Independent persistence capabilities |
+| `rc.ResolveOptions`, `rc.ResolvedConfig` | Invocation choices and captured inputs |
+| `rc.schema` | Registered field and owner metadata, including `owner_for()` |
+| `rc.provenance` | Field origin records and inspection helpers |
+| `rc.files` | File result/error types and dotenv reads |
+| `rc.storage` | Registry/selection types and read-only inspection helpers |
+| `rc.cli` | Typer integration, CLI state, and diagnostic rendering |
+| `rc.tui` | `ConfigEditorApp`, `ConfigSetupApp` |
+| `apprc.scaffold` | `ConfigScaffoldRequest`, `scaffold_config_package()` |
 
-`rc.field(...)` accepts `default`, `default_factory`, `required`, `title`,
-`description`, `editable`, `secret`, `choices`, and `packaged_default`.
-`required=True` cannot be combined with `default` or `default_factory`.
+Raw managed mutations are not exported from `rc.files` or `rc.storage`. Obtain
+an application-bound manager with `MyRC.manage()`.
 
-> [!IMPORTANT]
-> Declare config only through `rc.Config`, `rc.ConfigBase`, `rc.field(...)`,
-> and `@MyRC.config(...)`. The `rc.schema` namespace provides read-only
-> metadata for advanced integrations. It is not another declaration API.
+The core distribution owns all `apprc` Python modules, including lazily loaded
+interface modules. Importing the core APIs does not import terminal libraries.
+Using `rc.cli` operations or Textual classes requires the terminal distribution.
+`apprc.interfaces` remains a compatibility namespace for interface exports; prefer
+the explicit CLI or TUI namespace in new code.
 
-## Application declaration
+## Declarations
 
-```python
-MyRC = rc.AppRC(
-    app_id="myapp",
-    config_package="myapp.config",
-    display_name="My App",
-    command_name="myapp",
-    user_dotenv=rc.UserDotenv(),
-    storage=rc.Storage(selector_env_key="MYAPP_STORAGE"),
-    apprc_dir_env_key="MYAPP_APPRC_DIR",
-    legacy_app_ids=("old-myapp",),
-)
-```
-
-`AppRC` arguments:
+`AppRC` takes keyword arguments:
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
-| `app_id` | required | Stable identity used for the default directory and derived keys. |
-| `config_package` | required | Import package that may contain `apprc.defaults.env`. |
-| `display_name` | `app_id` | Label shown to users. |
-| `command_name` | `None`, rendered as `app_id` | Executable shown in generated instructions. |
-| `user_dotenv` | `None` | `rc.UserDotenv()` when the app supports user-wide dotenv overrides. |
-| `storage` | `None` | `rc.Storage(...)` when the app supports named storage roots. |
-| `apprc_dir` | `None` | Application-declared AppRC directory override; invalid without a persistent capability. |
-| `apprc_dir_env_key` | derived `<APP>_APPRC_DIR` | Explicit relocation key; invalid without a persistent capability. |
-| `legacy_app_ids` | `()` | Released 0.19 identities scanned by migration. |
+| `app_id` | Required | Stable identity for paths and derived environment keys |
+| `display_name` | `app_id` | Human-facing application name |
+| `command_name` | `app_id` | Executable name in terminal instructions |
+| `config_package` | `None` | Import package containing optional packaged defaults |
+| `user_dotenv` | `None` | `UserDotenv()` enables user overrides |
+| `storage` | `None` | `Storage()` enables named data roots |
+| `apprc_dir` | `None` | Application-declared managed directory |
+| `apprc_dir_env_key` | Derived | Override for the directory environment key |
+| `legacy_app_ids` | `()` | Released identities accepted by migration |
 
-`UserDotenv` arguments:
+`Storage(selector_env_key="DEMO_STORAGE")` overrides the derived storage key.
+Neither capability has a `required` argument. Directory overrides require at
+least one managed-file capability.
 
-| Argument | Default | Meaning |
-| --- | --- | --- |
-| `required` | `True` | Whether a missing user dotenv is a doctor issue. The file remains available to setup and editing when false. |
+`@MyRC.config("app", prefix="DEMO_", title="App", rc_path=("app",))` registers a
+section. The prefix is required for environment-backed sections. `rc.field()`
+takes the complete environment key, with optional `default`, `default_factory`,
+`required`, `secret`, `editable`, `choices`, `title`, `explanation_short`, and
+`explanation_long`. Python types determine conversion and validation.
 
-`Storage` arguments:
+`@MyRC.bundle` registers a dataclass aggregate of registered section types.
+`MyRC.schema` is immutable metadata for current registrations, including
+`owners`, `envs`, identity, capabilities, and fixed filenames. It performs no
+file writes and creates no interfaces.
 
-| Argument | Default | Meaning |
-| --- | --- | --- |
-| `selector_env_key` | derived `<APP>_STORAGE` | Environment key that may select a registered storage name or filesystem path. |
-| `required` | `True` | Whether bootstrap requires a selected storage unless one runtime overrides the policy. |
+## Resolution
 
-Managed filenames are fixed. There is no filename or path-abstraction API.
+`MyRC.resolve(options=None, *, environment=None)` returns `ResolvedConfig`.
+`environment=None` captures `os.environ` once. An explicit mapping replaces that
+input, including an empty mapping. Caller changes to the original mapping do not
+change the resolution.
 
-`rc.field(...)` accepts only its documented keyword arguments. Misspelled
-options raise `TypeError`; AppRC does not retain arbitrary extension metadata.
-The deprecated `shared_default` argument remains an explicit alias for
-`packaged_default`.
-
-Bundles use a standard keyword-only dataclass so Python and static type
-checkers see the same constructor as AppRC:
-
-```python
-from dataclasses import dataclass, field
-
-
-@MyRC.bundle
-@dataclass(kw_only=True)
-class MyAppConfig:
-    app: AppSettings = field(default_factory=AppSettings)
-```
-
-Every eager child requires `default_factory`. Fields populated in
-`__post_init__` may use `field(init=False)`.
-
-## Configuration files
-
-For `app_id="myapp"`:
-
-| File | Location | Role |
-| --- | --- | --- |
-| `apprc.defaults.env` | `config_package` | Optional non-secret defaults shipped by the app. |
-| `apprc.user.env` | `~/.local/share/myapp/` | Present only with `rc.UserDotenv()`; setup creates it empty. |
-| `apprc.toml` | `~/.local/share/myapp/` | Present only with `rc.Storage()`; stores names, roots, and selection. |
-| `apprc.storage.env` | Each registered storage root | Present only with `rc.Storage()`; storage-specific overrides. |
-
-`MYAPP_APPRC_DIR=/some/path` changes the location of whichever central files
-the application declared. It does not alter storage roots recorded in TOML.
-
-The default first storage is:
-
-```toml
-selected_storage = "default"
-
-[storages.default]
-root = "/home/user/.local/share/myapp/storage"
-```
-
-Relative `root` values resolve against the directory containing `apprc.toml`.
-
-## Environment variables
-
-For `app_id="myapp"`:
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `MYAPP_APPRC_DIR` | No; unavailable without persistent capabilities | Relocate the complete AppRC directory. |
-| `MYAPP_STORAGE` | No when `selected_storage` exists; storage apps only | Override the selected storage with a registered name or initialized filesystem path. |
-| App-declared keys | Defined by each field | Typed runtime settings such as `MYAPP_PROFILE`. |
-
-`MYAPP_STORAGE` is structural input during selection. After bootstrap resolves
-the name, an app config field using that same key receives the concrete root.
-Do not put storage selectors in `apprc.user.env`, `apprc.storage.env`, or
-packaged defaults.
-
-AppRC resolves `MYAPP_APPRC_DIR` first because it determines the base for
-`apprc.toml` and relative storage paths. The variable is optional unless the
-user relocates that directory. `MYAPP_STORAGE` exists only for applications
-that declare `storage=rc.Storage()`. For required storage, either it or
-`selected_storage` must choose a registered name or initialized path. For
-`Storage(required=False)`, both may be absent.
-
-`AppRC.bootstrap(..., storage_required=None)` and
-`CliRuntime(..., storage_required=None)` use the declaration default. Passing
-`True` requires a storage at that boundary. Passing `False` permits no
-selection. An existing selector or registry is still validated.
-
-## Runtime precedence
-
-Later rows win unless noted:
-
-| Order | Dotenv value source |
+| `ResolveOptions` field | Default |
 | --- | --- |
-| 1 | Optional packaged `apprc.defaults.env` |
-| 2 | Declared per-user `apprc.user.env`, if any |
-| 3 | Selected storage `apprc.storage.env` |
-| 4 | Explicit `--env-file` values, in argument order |
-| 5 | Existing `os.environ` |
+| `storage` | `None` |
+| `storage_required` | `False` |
+| `env_files` | `()` |
+| `env_file_overrides_os_environ` | `False` |
+| `load_dotenv_layers` | `True` |
+| `apprc_dir` | `None` |
 
-`--env-file-overrides-os-environ` swaps the final two positions.
+The frozen options copy `env_files` into a tuple of `Path` objects.
 
-Storage selection has a separate, narrower order:
+`ResolvedConfig` exposes `schema`, `options`, `values`, `source`, `layers`,
+`paths`, `selection`, and `storage_count`. Raw values are immutable mappings.
+`selection` is absent when no storage is selected. Its `root`, `storage_name`,
+`raw_value`, `selector_kind`, and `source` describe the choice.
 
-1. `--storage NAME_OR_PATH`
-2. process or explicit-dotenv `<APP>_STORAGE=NAME_OR_PATH`, using the same conditional
-   precedence option
-3. `selected_storage` in `apprc.toml`
+`resolved.build(Settings, **overrides)` constructs a registered section or bundle.
+Required-field validation occurs here. Unknown types or types registered after
+this resolution are rejected. Each call builds a fresh object.
+`resolved.export_environment()` applies the deliberate overlay described in
+[the export recipe](How-To-User-Guides.md#reload-and-export).
 
-Provenance emitted for dotenv values uses `shell_dotenv_defaults`,
-`shell_dotenv_user`, `shell_dotenv_storage`, and `shell_dotenv_explicit`.
+## Source precedence
 
-## Storage registry behavior
+Increasing priority, with later sources replacing earlier assignments:
 
-| Operation | Registry effect | Filesystem effect |
-| --- | --- | --- |
-| `add NAME ROOT` | Adds a unique name; the first entry becomes selected. | Creates the root and empty `apprc.storage.env`. |
-| `select NAME` | Sets `selected_storage`. | None. |
-| `rename NAME NEW_NAME` | Renames the record and updates selection when needed. | None. |
-| `repoint NAME ROOT` | Changes only the recorded root. | None. |
-| `move NAME DESTINATION` | Updates the root after a transactional move. | Moves the complete directory; never merges into non-empty data. |
-| `remove NAME` | Removes the record; clears selection and warns when selected. | Leaves the root and its files in place. |
+1. Python field fallback, used when no source supplies the key.
+2. Packaged `apprc.defaults.env`, if `config_package` is declared.
+3. `apprc.user.env`, if user overrides are declared.
+4. Selected storage's `apprc.storage.env`, if storage is selected.
+5. Explicit `env_files`, in argument order.
+6. Captured environment.
 
-Individual storage names are user-maintained data. Python code declares only
-whether storage is supported.
+`env_file_overrides_os_environ=True` swaps the last two priorities. Constructor
+arguments override source values for that object. Storage selection writes the
+resolved root into the source snapshot's storage selector key after merging.
 
-`add` and `repoint` reject duplicate resolved roots. Existing registries with
-aliases remain readable and produce a doctor warning. A direct path resolves
-relative to `apprc.toml`, requires a readable `apprc.storage.env`, and is
-associated with a name only when exactly one registry entry matches.
+Each dotenv file interpolates against its earlier assignments and the captured
+environment. Duplicate ordering, quoted values, bare keys, and `${NAME}` /
+`${NAME:-fallback}` follow the supported dotenv parser behavior. A bare key does
+not contribute a value; `KEY=` contributes an empty string. Parsing never swaps
+`os.environ`.
 
-## Generated CLI commands
+`load_dotenv_layers=False` skips dotenv values for settings, but explicit files
+still supply structural directory and storage inputs. Missing explicit files
+are errors. Missing optional user/default files are empty layers.
 
-| Command | Availability | Writes | Purpose |
-| --- | --- | --- | --- |
-| `config paths [--json]` | All apps | No | Show declared paths. |
-| `config doctor [--json]` | All apps | No | Diagnose readiness and give next steps. |
-| `config show [--json]` | All apps | No | Show resolved runtime config. |
-| `config setup [--apprc-dir PATH] [-y]` | Apps with a persistent capability | Yes | Initialize the declared user dotenv and/or storage registry. |
-| `config setup [--apprc-dir PATH] [--storage-root PATH] [-y]` | Storage apps | Yes | Register and select the initial storage; create a user dotenv only if declared. |
-| `config migrate [--dry-run] [-y]` | Apps with a persistent capability | Unless dry-run or cancelled | Migrate released 0.19 files after full preflight. |
-| `config migrate --storage-root ROOT [--replace-storage NAME] [-y]` | Storage apps with an unregistered bare selector | Unless dry-run or cancelled | Map the selector to an existing root; optionally rename and repoint one old entry. |
-| `config purge [--apprc-dir PATH] [--dry-run] [-y]` | All apps | Unless dry-run or cancelled | Remove fixed AppRC files and registered internal roots; cleanup-only for process-env apps. |
-| `config set KEY VALUE --scope user` | User-dotenv apps | Yes | Validate and save one user dotenv override after setup. |
-| `config set KEY VALUE --scope storage` | Storage apps | Yes | Validate and save one storage dotenv override. |
-| `config edit` | Apps with a persistent capability | Opening: no | Open the Textual editor; confirmed actions may write. |
-| `config storage add NAME ROOT` | Storage apps | Yes | Register a unique storage and initialize its dotenv. |
-| `config storage list [--json]` | Storage apps | No | List registered roots. |
-| `config storage select NAME` | Storage apps | Yes | Persist the selected name. |
-| `config storage rename NAME NEW_NAME` | Storage apps | Yes | Rename registry metadata only. |
-| `config storage repoint NAME ROOT` | Storage apps | Yes | Change registry metadata only. |
-| `config storage move NAME DESTINATION` | Storage apps | Yes | Move data and then update the registry. |
-| `config storage remove NAME` | Storage apps | Yes | Remove one registry entry without deleting data. |
+![Runtime inputs and construction](assets/apprc-runtime-layers.svg)
 
-A declaration without storage does not mount `--storage`, storage commands, or
-the storage scope. A declaration without `rc.UserDotenv()` does not expose the
-user scope. A process-environment-only declaration mounts no normal write or
-setup commands; `purge` remains available for cleanup of stale files.
+## Storage selection
 
-## Doctor statuses
+Increasing precedence is not used to discover storage from every dotenv layer.
+The selector must be known before reading storage-local values.
 
-| Status | Meaning |
+Selection priority is:
+
+1. `ResolveOptions.storage`, or CLI `--storage`.
+2. Captured storage environment key, such as `DEMO_STORAGE`.
+3. That key in explicit dotenv files.
+4. `selected_storage` in `apprc.toml`.
+
+The explicit-file override option swaps items 2 and 3. Packaged defaults, user
+dotenv, and storage dotenv never choose storage. An invocation selector may be a
+registered name or a directory path. Runtime requires a selected root to exist
+with its fixed storage dotenv. A direct path can work without a valid registry.
+
+No selection is allowed by default. `storage_required=True` rejects its absence;
+it does not change the declaration. A supplied invalid selector always fails.
+A required field representing a storage path can independently prevent object
+construction even when invocation storage is optional.
+
+Editor browsing, invocation selection, and the registry's saved default are
+separate choices.
+
+## Managed files
+
+| File | Location and purpose |
 | --- | --- |
-| `runnable` | The selected runtime inputs are usable. |
-| `storage_not_selected` | A required storage runtime has no selected name or path. |
-| `storage_not_ready` | The selected root or storage dotenv is not ready. |
-| `user_dotenv_not_ready` | A declared user dotenv is missing or unreadable. |
-| `storage_registry_not_ready` | The storage registry is missing, unreadable, or invalid. |
+| `apprc.defaults.env` | Packaged defaults inside `config_package` |
+| `apprc.user.env` | Saved user overrides in the managed directory |
+| `apprc.toml` | Storage registry in the managed directory |
+| `apprc.storage.env` | Overrides and initialization marker in each storage root |
 
-Machine-readable diagnostics use file-specific keys including
-`user_dotenv_enabled`, `user_dotenv_required`, `storage_enabled`,
-`storage_required`, `apprc_dir`, `user_dotenv`, `apprc_toml`,
-`selected_storage`, `selected_storage_selector_kind`,
-`selected_storage_root`, and `selected_storage_dotenv`.
+The managed-directory default is `~/.local/share/<app_id>` on supported platforms.
+Priority is invocation `apprc_dir`, then the directory key in captured
+inputs, then declaration `apprc_dir`, then the default. Explicit-file/environment
+priority follows `env_file_overrides_os_environ`. For `app_id="demo-app"`, derived
+keys are `DEMO_APP_APPRC_DIR` and `DEMO_APP_STORAGE`.
 
-Missing optional layers are warnings and keep the status `runnable`. Invalid
-selectors, registries, selected roots, and readable-file checks remain issues.
+An existing file cannot enable an undeclared capability. Managed filenames are
+fixed. The registry retains its existing `selected_storage`, `[storages.NAME]`
+with `root`, and archive records. API migration does not rewrite it.
 
-Unsupported file paths are `null` in JSON diagnostics. The payload does not
-report `<APP>_STORAGE` as a missing environment key.
-That variable is an optional override when `selected_storage` exists.
+![Managed file locations](assets/apprc-storage-config-locations.svg)
 
-## Dependency surfaces
+## Management
 
-The base package includes `python-dotenv`, `prompt-toolkit`, `typed-settings`,
-`rich`, and `typer`. `prompt-toolkit` provides cross-platform path completion
-during setup. AppRC does not depend on `platformdirs`. Install `apprc[tui]`
-for Textual. Development tools are in the `dev` dependency group; the package
-works without `uv`.
+`MyRC.manage(options=None, *, environment=None)` captures declaration and input
+choices without writing. Each operation reads current files; it does not mutate
+previous resolutions.
 
-## Documentation assets
+| Read or plan operation | Result |
+| --- | --- |
+| `paths` | Fixed managed paths, no directory creation |
+| `resolve()` | Strict runtime source resolution |
+| `inspect(storage=None, include_storage=True)` | `ConfigInspection` with fields, issues, and `ready` |
+| `registry()` / `inspect_registry()` | Current registry or its readiness report |
+| `writable_path(scope, storage=None)` | Declared edit target, independent of required field values |
+| `writable_scopes()` / `resolve_write_scope(requested=None)` | Initialized scopes and ambiguity checking |
+| `plan_update(reference, raw_value, scope=..., storage=None)` | Revision-bearing `EnvFileEditPlan` |
+| `plan_removal(reference, scope=..., storage=None)` | Edit plan, or `None` when absent |
+| `preview_edit(plan, storage=None)` | Effective candidate inspection without writing |
+| `plan_migration(...)` / `plan_purge()` | Filesystem inventory for review |
 
-Diagram source scripts and generated SVG files live together in
-[`docs/assets`](assets). Edit the Python source and regenerate the matching SVG
-instead of editing SVG output by hand.
+`FieldInspection` carries `owner`, `field`, `value`, `origin`, and `issue`.
+`display_value` redacts a declared secret. Inspection collects missing/invalid
+fields and source readiness failures rather than constructing every runtime
+object. It does not run application post-init validation.
+
+Writing methods include `setup`, `setup_user_dotenv`, `apply_edit`, registry
+mutations, directory/archive operations, `apply_migration`, and `apply_purge`.
+See [operation effects](How-To-User-Guides.md#manage-storage).
+
+## Provenance and lifecycle
+
+`settings.provenance_of("retries")` returns a `ConfigProvenance` record. Shell
+origins distinguish exported variables, packaged defaults, user/storage/explicit
+dotenv, and `shell_storage_selector`. Python origins distinguish defaults,
+constructor arguments, assignments, and scoped overrides.
+
+File provenance retains its durable path. Packaged defaults also retain
+`resource=(package_name, "apprc.defaults.env")`; archive resources have no extracted
+temporary path. A direct constructor after environment export sees environment
+provenance, not the original file.
+
+`reload_from(resolved, override_python_values=False)` validates before committing.
+`reload()` and `bind_from_env()` remain direct live-environment operations.
+Copies and scoped overrides retain per-object provenance. Use `settings.scoped(retries=9)` for a cloned configuration with scoped overrides.
+
+## Terminal commands
+
+The `apprc` executable provides `scaffold config`. Application commands come from
+`rc.cli.mount_config_cli(app, MyRC)` or `CliRuntime.mount_config_group(app)`.
+
+| Application command | Availability and behavior |
+| --- | --- |
+| `config paths [--json]` | Always; read-only locations |
+| `config doctor [--json]` | Always; readiness and suggested repairs |
+| `config show [--json]` | Runtime payload; app serializer can use the snapshot |
+| `config setup` | Declared persistence; prompts or `--yes` |
+| `config set KEY VALUE [--scope user\|storage]` | Declared writable layers |
+| `config edit` | Textual editor for declared persistence |
+| `config migrate [--dry-run] [--yes]` | Explicit legacy migration |
+| `config purge [--dry-run] [--yes]` | Reviewed managed-file cleanup |
+| `config storage list/add/select/rename/repoint/move/remove` | Storage capability only |
+
+Use application `--help` and subcommand help for exact option signatures.
+`ConfigDoctorStatus` values are `runnable`, `config_invalid`,
+`storage_not_selected`, `storage_not_ready`, `user_dotenv_not_ready`, and
+`storage_registry_not_ready`. Doctor's JSON includes `writes="none"` and source
+paths. `user_dotenv_required` remains a report field with value `False`.
+
+## Errors and write guarantees
+
+| Error | Meaning |
+| --- | --- |
+| `StorageSelectorError` | Supplied selector cannot resolve |
+| `MissingStorageSelectorError` | Invocation requires storage but none is selected |
+| `StorageNotInitializedError` | Chosen root lacks initialization |
+| `StaleEditError` | Planned file revision differs from the current revision |
+| `ConfigSetupError`, `ConfigMigrationError`, `ConfigPurgeError` | Operation-specific preflight or execution failure |
+
+`StaleEditError` exposes `path`, `expected_revision`, and `actual_revision`.
+Absence is a revision too, so a file created after planning is a conflict.
+Atomic writes use unique same-directory temporary files and clean them after
+failure. A shared lock serializes managed writes in one process. Cross-process
+transactions and transactional directory deletion remain outside this guarantee.
+
+An invalid field or failed resolution does not change files or process state.
+Inspection can report incomplete configuration for repair. Application factories
+and post-init hooks remain application code and can have their own effects.

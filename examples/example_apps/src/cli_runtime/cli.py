@@ -14,10 +14,8 @@ import typer
 
 # == Internal ================================
 import apprc as rc
-from cli_runtime.config import (
-    CliRuntimeExampleConfig,
-    KIT,
-)
+from cli_runtime.config.bundle import CliRuntimeExampleConfig
+from cli_runtime.config.app import MyRC
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +60,7 @@ class RuntimeState(rc.cli.DefaultConfigCliState):
 def build_app(
     *,
     args_provider: rc.cli.CliArgvProvider | None = None,
-    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
+    editor_app_cls: type[rc.tui.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the CLI runtime example app.
 
@@ -76,7 +74,7 @@ def build_app(
         pretty_exceptions_show_locals=False,
     )
     runtime = rc.cli.CliRuntime[RuntimeOptions, RuntimeState](
-        KIT,
+        MyRC,
         state_type=RuntimeState,
         state_factory=_build_state,
         runtime_policy=rc.cli.CliRuntimePolicy(
@@ -160,7 +158,7 @@ def _build_state(
     :return: Runtime example runtime state.
     """
     return RuntimeState(
-        env_bootstrap=context.env_bootstrap,
+        resolved=context.resolved,
         storage=options.storage,
         workspace=options.workspace,
         model=options.model,
@@ -172,22 +170,23 @@ def _runtime_payload(state: RuntimeState) -> dict[str, object]:
     """Return JSON-friendly app runtime state.
 
     :param state: Runtime state created by the runtime callback.
-    :return: Payload with app options, bootstrap paths, and redacted config.
+    :return: Payload with app options, resolved paths, and redacted config.
     """
-    config = CliRuntimeExampleConfig()
-    bootstrap = state.env_bootstrap
+    assert state.resolved is not None
+    config = state.resolved.build(CliRuntimeExampleConfig)
+    selection = state.resolved.selection if state.resolved is not None else None
     return {
-        "app_id": KIT.spec.app_id,
-        "command_name": KIT.spec.config_command_name(),
-        "display_name": KIT.spec.display_name,
+        "app_id": MyRC.schema.app_id,
+        "command_name": MyRC.schema.config_command_name(),
+        "display_name": MyRC.schema.display_name,
         "bundle": type(config).__name__,
         "cli_options": {
             "workspace": str(state.workspace) if state.workspace else None,
             "model": state.model,
             "dry_run": state.dry_run,
         },
-        "storage_name": bootstrap.storage_name if bootstrap else None,
-        "storage_root": str(bootstrap.storage_root) if bootstrap else None,
+        "storage_name": selection.storage_name if selection else None,
+        "storage_root": str(selection.root) if selection else None,
         "config": {
             "profile": config.runtime.profile,
             "api_token": "<redacted>",

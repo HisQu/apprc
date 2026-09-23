@@ -37,7 +37,7 @@ def normalize_storage_root_path(path: str | Path) -> Path:
 
     AppRC registries may be initialized from Windows path text while running
     under WSL. This helper translates drive paths before normal ``Path``
-    expansion so registry writes and env bootstrap use the same local spelling.
+    expansion so registry writes and env resolution use the same local spelling.
 
     :param path: User-provided storage root path.
     :return: Expanded local path without requiring the directory to exist.

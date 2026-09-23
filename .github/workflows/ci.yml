@@ -50,6 +50,9 @@ jobs:
       - name: Install project
         run: uv sync --locked --all-extras --all-groups
 
+      - name: Check generated terminal metadata
+        run: uv run --locked python src/apprc_dev/packaging/terminal_metadata.py --check
+
       - name: Check lockfile
         run: uv lock --check
 

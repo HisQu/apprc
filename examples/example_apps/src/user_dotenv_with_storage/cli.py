@@ -7,8 +7,8 @@ import json
 import typer
 
 import apprc as rc
-from user_dotenv_with_storage.config import (
-    MyRC,
+from user_dotenv_with_storage.config.app import MyRC
+from user_dotenv_with_storage.config.bundle import (
     UserDotenvWithStorageExampleConfig,
 )
 
@@ -16,7 +16,7 @@ from user_dotenv_with_storage.config import (
 def build_app(
     *,
     args_provider: rc.cli.CliArgvProvider | None = None,
-    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
+    editor_app_cls: type[rc.tui.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the combined-capability example CLI.
 
@@ -29,8 +29,9 @@ def build_app(
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
     )
-    MyRC.mount_cli(
+    rc.cli.mount_config_cli(
         app,
+        MyRC,
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
         runtime_payload=_runtime_payload,
@@ -48,12 +49,13 @@ def _runtime_payload(
     state: rc.cli.DefaultConfigCliState,
 ) -> dict[str, object]:
     """Return values that this example application would use."""
-    config = UserDotenvWithStorageExampleConfig().app
-    bootstrap = state.env_bootstrap
+    assert state.resolved is not None
+    config = state.resolved.build(UserDotenvWithStorageExampleConfig).app
+    selection = state.resolved.selection if state.resolved is not None else None
     return {
-        "app_id": MyRC.spec.app_id,
-        "storage_name": bootstrap.storage_name if bootstrap else None,
-        "storage_root": str(bootstrap.storage_root) if bootstrap else None,
+        "app_id": MyRC.schema.app_id,
+        "storage_name": selection.storage_name if selection else None,
+        "storage_root": str(selection.root) if selection else None,
         "config": {
             "profile": config.profile,
             "api_token": "<redacted>",

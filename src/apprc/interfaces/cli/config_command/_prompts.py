@@ -13,7 +13,7 @@ from rich.text import Text
 import typer
 
 # == Internal ================================
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.public.app_rc import AppRC
 from apprc.user_files.storage_roots._loading import apprc_toml_path_for_create
 from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
@@ -42,7 +42,7 @@ def print_directory_listing(storage_root: Path) -> None:
 
 
 def confirm_existing_storage_root(
-    kit: AppConfigKit,
+    apprc: AppRC,
     storage_root: Path,
     *,
     storage_name: str,
@@ -50,7 +50,7 @@ def confirm_existing_storage_root(
 ) -> None:
     """Ask whether a non-empty existing storage root may be reused.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param storage_root: Existing non-empty storage directory.
     :param storage_name: Registry selector that will point at the directory.
     :param apprc_toml_path: AppRC TOML path selected for this write.
@@ -62,11 +62,11 @@ def confirm_existing_storage_root(
     managed_files.add_column(style="cyan")
     managed_files.add_row(
         "storage env",
-        str(storage_root / kit.spec.storage_dotenv_filename),
+        str(storage_root / apprc.schema.storage_dotenv_filename),
     )
     managed_files.add_row(
         "AppRC TOML",
-        str(apprc_toml_path or apprc_toml_path_for_create(kit.spec)),
+        str(apprc_toml_path or apprc_toml_path_for_create(apprc.schema)),
     )
 
     panel_lines: list[RenderableType] = [
@@ -76,9 +76,9 @@ def confirm_existing_storage_root(
         Text(str(storage_root), style="cyan"),
         Text(""),
         Text.assemble(
-            kit.spec.display_name,
+            apprc.schema.display_name,
             " will reuse this directory for ",
-            kit.spec.display_name,
+            apprc.schema.display_name,
             " storage ",
             (repr(storage_name), "bold"),
             ".",
@@ -141,7 +141,7 @@ def confirm_existing_storage_root(
 
 
 def guard_storage_root_init(
-    kit: AppConfigKit,
+    apprc: AppRC,
     storage_root: Path,
     *,
     storage_name: str,
@@ -150,7 +150,7 @@ def guard_storage_root_init(
 ) -> Path:
     """Return a safe storage root path before registration writes.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param storage_root: User-provided storage root path.
     :param storage_name: Registry selector that will point at the directory.
     :param assume_yes: Whether to skip the non-empty directory confirmation.
@@ -177,7 +177,7 @@ def guard_storage_root_init(
         return root
     if any(root.iterdir()):
         confirm_existing_storage_root(
-            kit,
+            apprc,
             root,
             storage_name=storage_name,
             apprc_toml_path=apprc_toml_path,

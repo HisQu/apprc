@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from typing import Literal
 
 # == Internal ================================
-from apprc.user_files.env_files.values import normalize_env_value
+from apprc.user_files.env_files.values import stringify_env_value
+from apprc.runtime.resolution import ResolvedConfig
 from apprc.definition.env_config.lookup import find_field_by_env_key
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
-from apprc.definition.env_config.sentinels import CONFIG_MISSING
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,9 +23,11 @@ class SelectedField:
 
 
 type EditableConfigValueSourceKey = Literal[
-    "effective", "shell", "user", "storage", "defaults"
+    "effective", "shell", "explicit", "user", "storage", "defaults"
 ]
-type ConfigResolvedSourceKey = Literal["shell", "user", "storage", "defaults"]
+type ConfigResolvedSourceKey = Literal[
+    "shell", "explicit", "user", "storage", "defaults"
+]
 type ConfigWriteScope = Literal["user", "storage"]
 
 
@@ -42,7 +44,7 @@ class EditableConfigValueSource:
     """
 
     key: EditableConfigValueSourceKey
-    raw_value: str | None
+    raw_value: str | None = field(repr=False)
     origin_key: ConfigResolvedSourceKey | None = None
 
     @property
@@ -82,95 +84,56 @@ def config_value_sources(
     *,
     spec: ConfigField,
     env_key: str,
-    user_dotenv_values: Mapping[str, str],
-    storage_values: Mapping[str, str],
-    shell_env: Mapping[str, str],
-    defaults_values: Mapping[str, str] | None,
+    resolved: ResolvedConfig,
     include_user_dotenv: bool,
     include_storage: bool,
 ) -> tuple[EditableConfigValueSource, ...]:
-    """Return copyable values for one config field in precedence order.
+    """Present captured sources without implementing precedence in the UI.
 
-    The effective source mirrors AppRC runtime precedence for layers the
-    editor can inspect without running full CLI bootstrap: shell, storage,
-    user dotenv, then packaged or declared defaults.
-
-    :param spec: Field declaration that owns defaults and type metadata.
-    :param env_key: Full env key for the selected row.
-    :param user_dotenv_values: Parsed per-user dotenv values.
-    :param storage_values: Parsed storage dotenv values.
-    :param shell_env: Current process environment.
-    :param defaults_values: Parsed packaged defaults, when known.
-    :param include_user_dotenv: Whether the user dotenv is active.
-    :param include_storage: Whether a storage layer is selected in the editor.
-    :return: Effective, shell, persistence layers, and defaults source rows.
+    :param spec: Selected field declaration.
+    :param env_key: Full field environment key.
+    :param resolved: Shared runtime resolution for the inspected storage.
+    :param include_user_dotenv: Whether to show the user layer.
+    :param include_storage: Whether to show the storage layer.
+    :return: Copyable effective value and individual source rows.
     """
-    shell_value = shell_env[env_key] if env_key in shell_env else None
-    user_dotenv_value = (
-        user_dotenv_values[env_key] if env_key in user_dotenv_values else None
-    )
-    storage_value = (
-        storage_values[env_key] if env_key in storage_values else None
-    )
-    default_value = _defaults_source_value(
-        spec=spec,
-        env_key=env_key,
-        defaults_values=defaults_values,
-    )
-    effective_value, origin_key = _first_available_source(
-        ("shell", shell_value),
-        ("storage", storage_value if include_storage else None),
-        ("user", user_dotenv_value if include_user_dotenv else None),
-        ("defaults", default_value),
-    )
-    sources: list[EditableConfigValueSource] = [
+    source_keys: dict[str, ConfigResolvedSourceKey] = {
+        "shell_export_variable": "shell",
+        "shell_dotenv_explicit": "explicit",
+        "shell_dotenv_user": "user",
+        "shell_dotenv_storage": "storage",
+        "shell_dotenv_defaults": "defaults",
+        "shell_storage_selector": "shell",
+    }
+    values: dict[ConfigResolvedSourceKey, str | None] = {
+        "shell": None,
+        "explicit": None,
+        "user": None,
+        "storage": None,
+        "defaults": stringify_env_value(spec.resolve_default())
+        if spec.has_default()
+        else None,
+    }
+    for layer in resolved.layers:
+        if env_key in layer.source.values:
+            values[source_keys[layer.origin]] = layer.source.values[env_key]
+    origin = resolved.source.origins.get(env_key)
+    effective = resolved.values.get(env_key, values["defaults"])
+    sources = [
         EditableConfigValueSource(
-            key="effective",
-            raw_value=effective_value,
-            origin_key=origin_key,
+            "effective",
+            effective,
+            source_keys[origin.origin] if origin is not None else "defaults",
         ),
-        EditableConfigValueSource(key="shell", raw_value=shell_value),
+        EditableConfigValueSource("shell", values["shell"]),
     ]
+    if resolved.options.env_files:
+        sources.append(
+            EditableConfigValueSource("explicit", values["explicit"])
+        )
     if include_user_dotenv:
-        sources.append(
-            EditableConfigValueSource(key="user", raw_value=user_dotenv_value)
-        )
+        sources.append(EditableConfigValueSource("user", values["user"]))
     if include_storage:
-        sources.append(
-            EditableConfigValueSource(key="storage", raw_value=storage_value)
-        )
-    sources.append(
-        EditableConfigValueSource(
-            key="defaults",
-            raw_value=default_value,
-        )
-    )
+        sources.append(EditableConfigValueSource("storage", values["storage"]))
+    sources.append(EditableConfigValueSource("defaults", values["defaults"]))
     return tuple(sources)
-
-
-def _defaults_source_value(
-    *,
-    spec: ConfigField,
-    env_key: str,
-    defaults_values: Mapping[str, str] | None,
-) -> str | None:
-    """Return a packaged or declared default value."""
-    if defaults_values is not None and env_key in defaults_values:
-        return defaults_values[env_key]
-    value = spec.packaged_env_value()
-    if value is CONFIG_MISSING:
-        return None
-    try:
-        return normalize_env_value(spec, str(value))
-    except (TypeError, ValueError):
-        return str(value)
-
-
-def _first_available_source(
-    *sources: tuple[ConfigResolvedSourceKey, str | None],
-) -> tuple[str | None, ConfigResolvedSourceKey | None]:
-    """Return the first present source while preserving empty strings."""
-    for key, value in sources:
-        if value is not None:
-            return value, key
-    return None, None

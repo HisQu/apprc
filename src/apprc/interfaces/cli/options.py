@@ -42,7 +42,7 @@ EnvFileOverridesOption: TypeAlias = Annotated[
         "-o",
         help=(
             "Let --env-file values override existing process env values "
-            "inside this process."
+            "in the resolved configuration."
         ),
     ),
 ]
@@ -52,8 +52,8 @@ SkipDotenvLayersOption: TypeAlias = Annotated[
         "--skip-dotenv-layers",
         "-s",
         help=(
-            "Do not merge AppRC dotenv layers or explicit dotenv files "
-            "into the process environment."
+            "Exclude dotenv values from settings. Explicit files still "
+            "participate in storage and directory selection."
         ),
     ),
 ]
@@ -68,6 +68,6 @@ LogLevelOption: TypeAlias = Annotated[
     str | None,
     typer.Option(
         "--log-level",
-        help="Configure logging before runtime bootstrap.",
+        help="Configure logging before runtime resolution.",
     ),
 ]

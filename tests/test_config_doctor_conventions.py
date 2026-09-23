@@ -1,107 +1,54 @@
-from __future__ import annotations
+"""Doctor reports readiness, independent of application module layout."""
 
 from pathlib import Path
 
 import pytest
 
-from apprc.definition.app_config.kit import AppConfigKit
-from apprc.definition.app_config.storage import Storage
-from apprc.definition.app_config.user_dotenv import UserDotenv
-from apprc.runtime.diagnostics._diagnosis import (
-    config_package_convention_warnings,
-)
-from apprc.runtime.diagnostics.payload import build_config_doctor_payload
-from apprc.runtime.diagnostics.status import ConfigDoctorStatus
-from tests.support_config import (
-    ApprcExampleAppEnv,
-    build_apprc_example_app_kit,
-)
+import apprc as rc
+from apprc.interfaces.cli.diagnostics.payload import build_config_doctor_payload
 
 
-@pytest.mark.allow_missing_apprc_env
-def test_config_doctor_reports_config_package_convention_warnings(
-    monkeypatch: pytest.MonkeyPatch,
+def test_doctor_accepts_arbitrary_section_module_layout() -> None:
+    app = rc.AppRC(app_id="doctor_test", display_name="Doctor test")
+
+    @app.config("settings", prefix="DOCTOR_")
+    class Settings(rc.Config):
+        count: int = rc.field("DOCTOR_COUNT", default=1)
+
+    payload = build_config_doctor_payload(app, storage=None)
+    assert payload.status == "runnable"
+    assert not payload.warnings
+
+
+def test_doctor_reports_missing_resource_package_without_writes(
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    storage_root = tmp_path / "alpha"
-    storage_root.mkdir()
-    kit = build_apprc_example_app_kit()
-    kit.spec.ensure_user_dotenv()
-    from apprc.user_files.storage_roots.registry import register_storage
-
-    register_storage(
-        name="alpha",
-        root=storage_root,
-        path=kit.spec.preferred_apprc_toml_path(),
+    app = rc.AppRC(
+        app_id="doctor_test",
+        display_name="Doctor test",
+        config_package="nonexistent_apprc_test_package",
+        user_dotenv=rc.UserDotenv(),
+        apprc_dir=tmp_path / "absent",
     )
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "alpha")
+    payload = build_config_doctor_payload(app, storage=None)
+    assert any("packaged defaults" in issue for issue in payload.issues)
+    assert payload.status == "config_invalid"
+    assert not (tmp_path / "absent").exists()
+    with pytest.raises(ModuleNotFoundError):
+        app.resolve(environment={})
 
-    payload = build_config_doctor_payload(kit, storage=None)
 
-    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert payload.issues == ()
-    assert any(
-        "ApprcExampleAppEnv lives" in warning for warning in payload.warnings
+def test_doctor_reports_missing_required_values_without_echoing_secrets() -> (
+    None
+):
+    app = rc.AppRC(app_id="doctor_fields", display_name="Doctor fields")
+
+    @app.config("settings", prefix="DOCTOR_")
+    class Settings(rc.Config):
+        token: str = rc.field("DOCTOR_TOKEN", required=True, secret=True)
+
+    payload = build_config_doctor_payload(
+        app, storage=None, manager=app.manage(environment={})
     )
-
-
-def test_config_package_convention_warns_when_package_is_not_config() -> None:
-    kit = AppConfigKit(
-        app_id="apprc_example_app",
-        display_name="Example App",
-        config_package="config_with_storage",
-        envs=(),
-        storage=Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
-    )
-
-    warnings = config_package_convention_warnings(kit)
-
-    assert any("prefer '<app>.config'" in warning for warning in warnings)
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_config_doctor_reports_missing_user_dotenv_as_issue(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    kit = AppConfigKit(
-        app_id="apprc_example_app",
-        display_name="Example App",
-        config_package="missing_app.config",
-        envs=(ApprcExampleAppEnv,),
-        user_dotenv=UserDotenv(),
-    )
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.status == ConfigDoctorStatus.USER_DOTENV_NOT_READY.value
-    assert any(
-        "User dotenv file does not exist" in issue for issue in payload.issues
-    )
-
-
-@pytest.mark.allow_missing_apprc_env
-def test_config_doctor_reports_a_missing_registry_once(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Avoid repeating one missing registry through two diagnostic layers.
-
-    :param monkeypatch: Process environment mutation fixture.
-    :param tmp_path: Isolated absent AppRC directory.
-    """
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app_kit()
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    matching_issues = [
-        issue
-        for issue in payload.issues
-        if issue.startswith("Storage registry does not exist:")
-    ]
-    assert len(matching_issues) == 1
+    assert payload.status == "config_invalid"
+    assert payload.issues

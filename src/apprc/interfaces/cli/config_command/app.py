@@ -17,8 +17,8 @@ from apprc.interfaces.cli.config_command._selector_context import (
 )
 from apprc.interfaces.cli.config_command.group_options import ConfigGroupOptions
 from apprc.interfaces.cli.config_command.state import DefaultConfigCliState
-from apprc.runtime.diagnostics.messages import config_setup_message
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.interfaces.cli.diagnostics.messages import config_setup_message
+from apprc.public.app_rc import AppRC
 
 if TYPE_CHECKING:
     from apprc.interfaces.tui import ConfigEditorApp
@@ -27,7 +27,7 @@ StateT = TypeVar("StateT")
 
 
 def build_config_typer_app(
-    kit: AppConfigKit,
+    apprc: AppRC,
     *,
     state_type: type[StateT] | None = None,
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
@@ -45,7 +45,7 @@ def build_config_typer_app(
 ) -> typer.Typer:
     """Build the reusable ``config`` command group.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param state_type: Application CLI state type stored on ``ctx.obj``.
         When omitted, AppRC uses its default config state.
     :param runtime_payload: Optional serializer for ``config show``.
@@ -73,37 +73,37 @@ def build_config_typer_app(
         runtime_error_param_hint=runtime_error_param_hint,
         config_group_name=config_group_name,
     )
-    return build_config_typer_app_from_options(kit, options=options)
+    return build_config_typer_app_from_options(apprc, options=options)
 
 
 def build_config_typer_app_from_options(
-    kit: AppConfigKit,
+    apprc: AppRC,
     *,
     options: ConfigGroupOptions,
 ) -> typer.Typer:
     """Build the reusable ``config`` command group from internal options.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param options: Internal generated config command option bundle.
     :return: Configured Typer app.
     """
     app = typer.Typer(
         help=options.help
-        or f"Inspect and initialize {kit.spec.display_name} configuration.",
+        or f"Inspect and initialize {apprc.schema.display_name} configuration.",
         invoke_without_command=True,
         no_args_is_help=False,
         pretty_exceptions_show_locals=False,
     )
     storage_group = typer.Typer(help="Manage named storages.")
-    if kit.spec.uses_storage():
+    if apprc.schema.uses_storage():
         app.add_typer(storage_group, name="storage")
 
     handlers = ConfigCommandHandlers(
-        kit,
+        apprc,
         options=options,
         missing_setup=options.setup_message
         or config_setup_message(
-            kit,
+            apprc,
             config_group_name=options.config_group_name,
         ),
     )
@@ -151,10 +151,11 @@ def build_config_typer_app_from_options(
         """Check AppRC config readiness and print suggested fixes."""
         handlers.doctor(ctx, json_output=json_output)
 
-    if kit.spec.uses_storage():
+    if apprc.schema.uses_storage():
 
         @app.command("setup")
         def config_storage_setup_cmd(
+            ctx: typer.Context,
             assume_yes: Annotated[
                 bool,
                 typer.Option(
@@ -183,15 +184,17 @@ def build_config_typer_app_from_options(
         ) -> None:
             """Choose managed-file paths and initialize named storage."""
             handlers.setup(
+                ctx,
                 assume_yes=assume_yes,
                 apprc_dir=apprc_dir,
                 storage_root=storage_root,
             )
 
-    elif kit.spec.uses_user_dotenv():
+    elif apprc.schema.uses_user_dotenv():
 
         @app.command("setup")
         def config_user_setup_cmd(
+            ctx: typer.Context,
             assume_yes: Annotated[
                 bool,
                 typer.Option(
@@ -213,12 +216,13 @@ def build_config_typer_app_from_options(
         ) -> None:
             """Create the empty per-user dotenv file."""
             handlers.setup(
+                ctx,
                 assume_yes=assume_yes,
                 apprc_dir=apprc_dir,
                 storage_root=None,
             )
 
-    if kit.spec.uses_storage():
+    if apprc.schema.uses_storage():
 
         @app.command("migrate")
         def config_storage_migrate_cmd(
@@ -268,7 +272,7 @@ def build_config_typer_app_from_options(
                 replace_storage=replace_storage,
             )
 
-    elif kit.spec.uses_managed_files():
+    elif apprc.schema.uses_managed_files():
 
         @app.command("migrate")
         def config_user_migrate_cmd(
@@ -298,6 +302,7 @@ def build_config_typer_app_from_options(
 
     @app.command("purge")
     def config_purge_cmd(
+        ctx: typer.Context,
         apprc_dir: Annotated[
             Path | None,
             typer.Option(
@@ -323,12 +328,13 @@ def build_config_typer_app_from_options(
     ) -> None:
         """Remove AppRC files that package uninstall leaves behind."""
         handlers.purge(
+            ctx,
             apprc_dir=apprc_dir,
             dry_run=dry_run,
             assume_yes=assume_yes,
         )
 
-    if kit.spec.uses_managed_files():
+    if apprc.schema.uses_managed_files():
 
         @app.command("set")
         def config_set_cmd(

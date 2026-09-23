@@ -7,9 +7,9 @@ from rich.console import Console
 from rich.text import Text
 
 # == Internal ================================
-from apprc.runtime.diagnostics.payload import ConfigDoctorPayload
-from apprc.runtime.diagnostics.status import ConfigDoctorStatus
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.interfaces.cli.diagnostics.payload import ConfigDoctorPayload
+from apprc.interfaces.cli.diagnostics.status import ConfigDoctorStatus
+from apprc.public.app_rc import AppRC
 from apprc.interfaces._terminal_styles import (
     DEFAULT_STYLE,
     ENV_KEY_STYLE,
@@ -25,12 +25,12 @@ from apprc.interfaces._terminal_styles import (
 
 
 def print_config_doctor(
-    kit: AppConfigKit,
+    apprc: AppRC,
     payload: ConfigDoctorPayload,
 ) -> None:
     """Print a human-readable ``config doctor`` report."""
     console = Console(soft_wrap=True)
-    console.print(_doctor_status_text(kit, payload))
+    console.print(_doctor_status_text(apprc, payload))
     console.print("")
     for label, value in (
         ("user_dotenv_enabled", _bool_text(payload.user_dotenv_enabled)),
@@ -106,14 +106,14 @@ def print_config_doctor(
         console.print("")
         console.print(Text("Issues:", style="bold"))
         for issue in issues:
-            console.print(_styled_issue_text(kit, payload, issue))
+            console.print(_styled_issue_text(apprc, payload, issue))
 
     warnings = payload.warnings
     if warnings:
         console.print("")
         console.print(Text("Warnings:", style="bold"))
         for warning in warnings:
-            console.print(_styled_issue_text(kit, payload, warning))
+            console.print(_styled_issue_text(apprc, payload, warning))
 
     next_steps = payload.next_steps
     if next_steps:
@@ -124,12 +124,14 @@ def print_config_doctor(
 
 
 def print_config_paths(
-    kit: AppConfigKit,
+    apprc: AppRC,
     payload: ConfigDoctorPayload,
 ) -> None:
     """Print the zero-write ``config paths`` report."""
     console = Console(soft_wrap=True)
-    console.print(Text(f"{kit.spec.display_name} config paths", style="bold"))
+    console.print(
+        Text(f"{apprc.schema.display_name} config paths", style="bold")
+    )
     console.print("")
     for label, value in (
         ("user_dotenv_enabled", _bool_text(payload.user_dotenv_enabled)),
@@ -202,12 +204,12 @@ def print_config_paths(
 
 
 def _doctor_status_text(
-    kit: AppConfigKit,
+    apprc: AppRC,
     payload: ConfigDoctorPayload,
 ) -> Text:
     """Return the styled headline for one doctor payload.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param payload: Doctor payload to summarize.
     :return: Rich text status line.
     """
@@ -228,6 +230,10 @@ def _doctor_status_text(
             "storage registry not ready",
             MISSING_STYLE,
         ),
+        ConfigDoctorStatus.CONFIG_INVALID.value: (
+            "Configuration values are invalid",
+            ERROR_STYLE,
+        ),
         ConfigDoctorStatus.RUNNABLE.value: (
             "runnable",
             DEFAULT_STYLE,
@@ -235,7 +241,7 @@ def _doctor_status_text(
     }
     label, style = status_labels[str(payload.status)]
     return Text.assemble(
-        (f"{kit.spec.display_name} config doctor", "bold"),
+        (f"{apprc.schema.display_name} config doctor", "bold"),
         ": ",
         (label, style),
     )
@@ -291,25 +297,25 @@ def _bool_or_none_text(value: bool | None) -> Text:
 
 
 def _styled_issue_text(
-    kit: AppConfigKit,
+    apprc: AppRC,
     payload: ConfigDoctorPayload,
     issue: str,
 ) -> Text:
     """Return one issue line with known env keys and paths styled.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param payload: Doctor payload containing known literals.
     :param issue: Plain issue text.
     :return: Rich issue text.
     """
     styles = {
-        kit.spec.apprc_dir_env_key: ENV_KEY_STYLE,
+        apprc.schema.apprc_dir_env_key: ENV_KEY_STYLE,
         "storage_not_selected": MISSING_STYLE,
         "user_dotenv_not_ready": ERROR_STYLE,
         "storage_registry_not_ready": MISSING_STYLE,
     }
-    if kit.spec.storage_selector_env_key is not None:
-        styles[kit.spec.storage_selector_env_key] = ENV_KEY_STYLE
+    if apprc.schema.storage_selector_env_key is not None:
+        styles[apprc.schema.storage_selector_env_key] = ENV_KEY_STYLE
     styles.update(
         {
             str(value): PATH_STYLE

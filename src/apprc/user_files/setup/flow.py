@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 # == Standard Library ===========================================
+from collections.abc import Mapping
 from dataclasses import dataclass
 import os
 from pathlib import Path
 
 # == Internal ===================================================
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.env_files.files import ensure_env_file
-from apprc.user_files.managed_files import path_entry_exists
+from apprc.user_files.app_home._paths import path_entry_exists
 from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
 from apprc.user_files.storage_roots.paths import (
     StorageRootPathError,
@@ -61,11 +64,19 @@ class ConfigSetupResult:
 
 
 class ConfigSetupFlow:
-    """Reusable non-interactive setup operations for one AppRC kit."""
+    """Reusable noninteractive setup operations for one application."""
 
-    def __init__(self, kit: AppConfigKit) -> None:
+    def __init__(
+        self,
+        spec: AppConfigSpec,
+        *,
+        environment: Mapping[str, str] | None = None,
+    ) -> None:
         """Store the application whose managed files will be initialized."""
-        self.kit = kit
+        self.spec = spec
+        self.environment = dict(
+            os.environ if environment is None else environment
+        )
 
     def ensure_user_dotenv(self, *, apprc_dir: Path | None = None) -> Path:
         """Create the per-user dotenv file.
@@ -73,7 +84,7 @@ class ConfigSetupFlow:
         :return: Fixed ``apprc.user.env`` path.
         """
         try:
-            return self.kit.spec.ensure_user_dotenv(
+            return AppFiles(self.spec).ensure_user_dotenv(
                 self._proc_env_for_apprc_dir(apprc_dir)
             )
         except AppRCDirectoryError as exc:
@@ -94,7 +105,7 @@ class ConfigSetupFlow:
         """
         proc_env = self._proc_env_for_apprc_dir(apprc_dir)
         return ConfigSetupResult(
-            apprc_dir=self.kit.spec.apprc_dir(proc_env),
+            apprc_dir=AppFiles(self.spec).apprc_dir(proc_env),
             active_storage_root=None,
             storage_dotenv=None,
             user_dotenv=self.ensure_user_dotenv(apprc_dir=apprc_dir),
@@ -118,10 +129,10 @@ class ConfigSetupFlow:
         :param apprc_dir: Optional directory override for this setup run.
         :return: Initialized file paths.
         """
-        spec = self.kit.spec
+        spec = self.spec
         spec.require_storage()
         proc_env = self._proc_env_for_apprc_dir(apprc_dir)
-        registry_path = spec.preferred_apprc_toml_path(proc_env)
+        registry_path = AppFiles(spec).preferred_apprc_toml_path(proc_env)
         try:
             root = resolve_storage_root_path(
                 storage_root,
@@ -139,7 +150,9 @@ class ConfigSetupFlow:
             )
 
         user_dotenv = (
-            spec.user_dotenv_path(proc_env) if spec.uses_user_dotenv() else None
+            AppFiles(spec).user_dotenv_path(proc_env)
+            if spec.uses_user_dotenv()
+            else None
         )
         user_dotenv_existed = (
             path_entry_exists(user_dotenv) if user_dotenv is not None else False
@@ -169,8 +182,13 @@ class ConfigSetupFlow:
                     param_hint="--storage-root",
                 )
             else:
+                if not root.is_dir():
+                    raise ConfigSetupError(
+                        f"Registered storage root does not exist: {root}. Repoint the registration to its current location.",
+                        param_hint="--storage-root",
+                    )
                 root.mkdir(parents=True, exist_ok=True)
-                ensure_env_file(spec.storage_dotenv_path(root))
+                ensure_env_file(AppFiles(spec).storage_dotenv_path(root))
                 if registry.selected_storage is None:
                     select_storage(name=storage_name, path=registry_path)
         except ConfigSetupError:
@@ -189,7 +207,7 @@ class ConfigSetupFlow:
         return ConfigSetupResult(
             apprc_dir=registry_path.parent,
             active_storage_root=root,
-            storage_dotenv=spec.storage_dotenv_path(root),
+            storage_dotenv=AppFiles(spec).storage_dotenv_path(root),
             user_dotenv=ensured_user_dotenv,
         )
 
@@ -223,8 +241,8 @@ class ConfigSetupFlow:
         :return: Process environment copy with the selection, or ``None``.
         """
         if apprc_dir is None:
-            return None
+            return dict(self.environment)
         return {
-            **os.environ,
-            self.kit.spec.apprc_dir_env_key: str(apprc_dir),
+            **self.environment,
+            self.spec.apprc_dir_env_key: str(apprc_dir),
         }

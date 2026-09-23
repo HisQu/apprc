@@ -12,7 +12,6 @@ from rich.text import Text
 # == Internal ================================
 from apprc.user_files.env_files.files import read_env_file
 from apprc.user_files.storage_roots.paths import normalize_storage_root_path
-from apprc.user_files.storage_roots.registry import register_storage
 from apprc.interfaces.tui._primitives import ConfirmScreen, StorageNameScreen
 from apprc.interfaces.tui._styles import (
     lines_text,
@@ -87,11 +86,9 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
             return
         try:
             self.editor.storage_registry = await asyncio.to_thread(
-                register_storage,
+                self.editor.manager.register_storage,
                 name=name,
                 root=guarded_root,
-                path=registry.path,
-                storage_dotenv_filename=self.editor.kit.spec.storage_dotenv_filename,
             )
         except (TypeError, ValueError, OSError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -144,7 +141,9 @@ class StorageRegistrationWorkflows(StorageWorkflowBase):
         if not any(resolved_root.iterdir()):
             return resolved_root
 
-        storage_dotenv_filename = self.editor.kit.spec.storage_dotenv_filename
+        storage_dotenv_filename = (
+            self.editor.apprc.schema.storage_dotenv_filename
+        )
         env_path = resolved_root / storage_dotenv_filename
         if env_path.is_file():
             keys = list(read_env_file(env_path))[:10]

@@ -55,7 +55,7 @@ def build_graph() -> Digraph:
         developer,
         "shipped_app",
         "Shipped config UX",
-        ("rc.AppRC", "bootstrap", "config CLI"),
+        ("rc.AppRC", "resolution", "config CLI"),
         pos=gv.fixed_position(2.35, 0.0),
         border_color=gg.BLUE,
     )

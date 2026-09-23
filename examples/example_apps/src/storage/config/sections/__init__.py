@@ -1,5 +1,1 @@
-"""Config sections for the storage example."""
-
-from storage.config.sections.app import AppSettings
-
-__all__ = ["AppSettings"]
+"""Application configuration namespace. Import sections directly."""

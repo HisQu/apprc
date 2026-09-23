@@ -7,12 +7,15 @@ def test_root_exports_clean_public_api() -> None:
     """Root exports only the clean public facade and namespaces."""
     assert rc.__all__ == [
         "AppRC",
+        "ResolveOptions",
+        "ResolvedConfig",
         "Storage",
         "UserDotenv",
         "Config",
         "ConfigBase",
         "field",
         "cli",
+        "tui",
         "files",
         "provenance",
         "schema",
@@ -44,7 +47,7 @@ def test_schema_namespace_exports_metadata_helpers() -> None:
 def test_storage_namespace_uses_fixed_layout_helpers() -> None:
     """The storage namespace does not expose an alternate app directory."""
     assert not hasattr(rc.storage, "app_data_dir")
-    assert callable(rc.storage.suggested_storage_root)
+    assert not hasattr(rc.storage, "suggested_storage_root")
 
 
 def test_root_does_not_export_legacy_symbols() -> None:

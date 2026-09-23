@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 import sys
 from pathlib import Path
 from typing import Any
@@ -9,7 +11,7 @@ import typer
 from typer.core import TyperCommand
 
 import apprc.interfaces.cli.runtime as runtime_module
-from apprc.definition.app_config.kit import AppConfigKit
+from tests.support_declaration import app_from_envs
 from apprc.definition.app_config.storage import Storage
 from apprc.interfaces.cli.context import CliRuntimeOptions
 from apprc.interfaces.cli.runtime import CliRuntime, DefaultConfigCliState
@@ -37,17 +39,15 @@ class _TTYProxy:
 def _runtime(
     tmp_path: Path,
     *,
-    declaration_required: bool = True,
-    runtime_required: bool | None = None,
+    runtime_required: bool = True,
 ) -> CliRuntime[CliRuntimeOptions, DefaultConfigCliState]:
     """Return a storage runtime with the first-run prompt enabled."""
-    kit = AppConfigKit(
+    kit = app_from_envs(
         app_id="first_run_demo",
         display_name="First Run Demo",
         config_package="storage.config",
         storage=Storage(
             selector_env_key="FIRST_RUN_DEMO_STORAGE",
-            required=declaration_required,
         ),
         apprc_dir=tmp_path / "apprc",
     )
@@ -89,11 +89,12 @@ def test_first_runtime_use_accepts_suggested_storage(
     session = runtime.prepare(_context(), CliRuntimeOptions())
 
     assert session.state is not None
-    assert session.apprc_context.env_bootstrap is not None
-    assert session.apprc_context.env_bootstrap.storage_root == suggested
+    assert session.apprc_context.resolved is not None
+    assert session.apprc_context.resolved.selection is not None
+    assert session.apprc_context.resolved.selection.root == suggested
     assert (suggested / "apprc.storage.env").is_file()
-    assert not runtime.kit.spec.user_dotenv_path().exists()
-    assert runtime.kit.spec.preferred_apprc_toml_path().is_file()
+    assert not AppFiles(runtime.apprc.schema).user_dotenv_path().exists()
+    assert AppFiles(runtime.apprc.schema).preferred_apprc_toml_path().is_file()
 
 
 def test_first_runtime_use_decline_leaves_no_files(
@@ -118,7 +119,7 @@ def test_first_runtime_use_decline_leaves_no_files(
     assert "No files were changed." in captured.err
     assert "setup --storage-root PATH" in captured.err
     assert not (tmp_path / "data-home" / "first_run_demo").exists()
-    assert not runtime.kit.spec.user_dotenv_path().exists()
+    assert not AppFiles(runtime.apprc.schema).user_dotenv_path().exists()
 
 
 def test_first_runtime_use_accepts_custom_storage_path(
@@ -142,8 +143,9 @@ def test_first_runtime_use_accepts_custom_storage_path(
 
     session = runtime.prepare(_context(), CliRuntimeOptions())
 
-    assert session.apprc_context.env_bootstrap is not None
-    assert session.apprc_context.env_bootstrap.storage_root == custom_root
+    assert session.apprc_context.resolved is not None
+    assert session.apprc_context.resolved.selection is not None
+    assert session.apprc_context.resolved.selection.root == custom_root
     assert (custom_root / "apprc.storage.env").is_file()
 
 
@@ -155,7 +157,6 @@ def test_noninteractive_required_runtime_prints_exact_setup_command(
     monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
     runtime = _runtime(
         tmp_path,
-        declaration_required=False,
         runtime_required=True,
     )
 
@@ -163,7 +164,7 @@ def test_noninteractive_required_runtime_prints_exact_setup_command(
         runtime.prepare(_context(), CliRuntimeOptions())
 
     assert "`first_run_demo config setup --yes`" in str(exc_info.value)
-    assert not runtime.kit.spec.apprc_dir().exists()
+    assert not AppFiles(runtime.apprc.schema).apprc_dir().exists()
 
 
 def test_interactive_direct_path_can_be_registered(
@@ -193,10 +194,11 @@ def test_interactive_direct_path_can_be_registered(
         CliRuntimeOptions(storage=str(root)),
     )
 
-    assert session.apprc_context.env_bootstrap is not None
-    assert session.apprc_context.env_bootstrap.storage_name == "work"
+    assert session.apprc_context.resolved is not None
+    assert session.apprc_context.resolved.selection is not None
+    assert session.apprc_context.resolved.selection.storage_name == "work"
     registry = load_storage_registry_or_empty(
-        runtime.kit.spec.preferred_apprc_toml_path()
+        AppFiles(runtime.apprc.schema).preferred_apprc_toml_path()
     )
     assert registry.selected("work").root == root
 
@@ -221,6 +223,9 @@ def test_noninteractive_direct_path_is_used_without_registry_writes(
         CliRuntimeOptions(storage=str(root)),
     )
 
-    assert session.apprc_context.env_bootstrap is not None
-    assert session.apprc_context.env_bootstrap.storage_name is None
-    assert not runtime.kit.spec.preferred_apprc_toml_path().exists()
+    assert session.apprc_context.resolved is not None
+    assert session.apprc_context.resolved.selection is not None
+    assert session.apprc_context.resolved.selection.storage_name is None
+    assert (
+        not AppFiles(runtime.apprc.schema).preferred_apprc_toml_path().exists()
+    )

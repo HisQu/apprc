@@ -18,11 +18,11 @@ apprc-cli-runtime --workspace PATH --model demo --dry-run run
 ```
 
 `status` is declared runtime-independent and works before storage setup. `run`
-requires AppRC bootstrap and receives `workspace`, `model`, and `dry_run` in
+requires AppRC resolution and receives `workspace`, `model`, and `dry_run` in
 the app-owned `RuntimeState`.
 
-Copy [`cli.py`](cli.py) only when the simpler `MyRC.mount_cli(app)` pattern is
+Copy [`cli.py`](cli.py) only when the simpler `rc.cli.mount_config_cli(app, MyRC)` pattern is
 not enough. The other five examples use that shorter integration.
 
 See the [example inventory](../../README.md#example-inventory) and
-[public CLI interfaces](../../../../docs/References.md#public-interfaces).
+[public CLI interfaces](../../../../docs/References.md#public-namespaces).

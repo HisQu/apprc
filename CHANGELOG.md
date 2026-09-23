@@ -71,29 +71,72 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+  - Breaking: Replaced global bootstrap and cached environment mutation with
+    `AppRC.resolve()`, `ResolveOptions`, and `ResolvedConfig.build()`.
+    Affected: Applications using bootstrap, cache/result helpers, or constructing
+    settings after implicit environment loading.
+    Migration: Resolve per invocation, build registered sections or bundles from
+    the snapshot, and use `reload_from()` for managed-source reloads. Use explicit
+    `export_environment()` only for environment-only dependencies. Custom bundle
+    factories need explicitly resolved child injection.
+  - Breaking: Removed `.kit`, `.spec`, declaration-owned CLI mounting, capability
+    `required` flags, and public raw managed-write helpers.
+    Affected: Existing AppRC integrations and advanced file/storage callers.
+    Migration: Use `.schema`, `.manage()`, `rc.cli.mount_config_cli(app, MyRC)`,
+    and invocation `storage_required=True`. Missing user dotenv files are allowed;
+    required field values determine readiness. Textual exports moved to `rc.tui`.
+  - Breaking: CLI state now holds `.resolved`; doctor validates required fields
+    and accepts arbitrary application module layouts. Selector provenance is
+    `shell_storage_selector`.
+    Affected: State factories, diagnostic consumers, and provenance comparisons.
+    Migration: Replace `.env_bootstrap`, inspect `.resolved.selection`, handle
+    `config_invalid`, and update the selector origin literal.
+  - Breaking: Split packaging into `apprc-core`, which owns all Python modules,
+    and a metadata-only `apprc` requiring the exact core version and terminal
+    libraries, including Textual.
+    Affected: Upgrades from the old wheel, minimal installs, and source installs.
+    Migration: Uninstall old `apprc` before installing the new release, or use a
+    fresh environment. Use `apprc-core` for no terminal dependencies, plain
+    `apprc` instead of `apprc[tui]`, and install the local terminal wrapper for
+    terminal development. No managed filenames or registry formats changed.
+  - Breaking: Generated config packages no longer provide catalogs, lazy facade
+    exports, or facade stubs.
+    Affected: Consumers adopting regenerated application scaffolds.
+    Migration: Import sections and bundles from their leaf modules, then inspect
+    `MyRC.schema.owners`. See the [migration guide](docs/How-To-User-Guides.md#migrate-existing-applications).
+
 <br>
 
 ### ➕ Added
+
+  - Independent immutable source snapshots, explicit environment input, deliberate
+    export, atomic validated reloads, and archive-backed resource provenance.
+  - Shared noninteractive manager for inspection, preview, setup, editing,
+    registry operations, archive/restore, migration, and purge.
+  - Matching-distribution generation and isolated pip checks for both wheels and
+    source archives, package ownership, wrapper removal, and old-wheel migration.
 
 <br>
 
 ### 💔 Changed
 
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
+  - Separated validated declarations, runtime lifecycle, persistence, shared
+    operations, and terminal presentation. Package initializers contain imports
+    and docstrings only; declaration dependencies are enforced by tests.
+  - Rewrote the README and manual around explicit loading and management; updated
+    examples and generated diagrams. Removed the overlapping kit facade and
+    obsolete managed-file resolver.
 
 <br>
 
 ### 🔨 Fixed
 
-<br>
-
-### 🔒 Security
+  - Managed dotenv plans reject stale revisions, including a file created since
+    planning. Writes use unique temporary files, clean up failed replacements,
+    and serialize same-process management operations. Cross-process transactions
+    remain a separate TODO.
+  - Independent resolutions no longer share process-global provenance or loading
+    state. Editor setup relocation no longer mutates the process environment.
 
 <br>
 

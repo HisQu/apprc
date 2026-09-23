@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+
 # == Standard Library ========================
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,11 +17,11 @@ import typer
 from apprc.interfaces.cli.config_command.state import DefaultConfigCliState
 from apprc.interfaces.cli.context import cli_runtime_context_from
 from apprc.interfaces.cli._typer_utils import state_from
-from apprc.runtime._dotenv_layers import (
+from apprc.user_files.env_files.layers import (
     ExplicitEnvFileError,
     read_explicit_env_files,
 )
-from apprc.runtime._process_env import selection_env
+from apprc.runtime._selection import selection_env
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +31,11 @@ class ConfigSelectorContext:
     explicit_values: Mapping[str, str]
     env_file_overrides_os_environ: bool
     proc_env: Mapping[str, str]
+    env_files: tuple[Path, ...] = ()
+    environment: Mapping[str, str] = field(
+        default_factory=lambda: dict(os.environ), repr=False
+    )
+    load_dotenv_layers: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +44,7 @@ class ResolvedConfigState:
 
     :param state: State object used by generated config logic.
     :param app_owned: Whether ``state`` came from the application's
-        runtime bootstrap path.
+        runtime resolution path.
     """
 
     state: Any
@@ -81,7 +87,7 @@ class ConfigStateResolver:
         if context is not None:
             raise RuntimeError(
                 "CLI state is not initialized. Runtime config commands require "
-                f"{self.state_type.__name__} on ctx.obj when runtime bootstrap "
+                f"{self.state_type.__name__} on ctx.obj when runtime resolution "
                 "was not skipped."
             )
         context_state = self.context_state(ctx)
@@ -141,8 +147,11 @@ class SelectorContextReader:
         overrides = bool(
             self.cli_context_param(ctx, "env_file_overrides_os_environ")
         )
+        environment = dict(os.environ)
         try:
-            _, _, explicit_values = read_explicit_env_files(env_files)
+            _, _, explicit_values = read_explicit_env_files(
+                env_files, environment=environment
+            )
         except FileNotFoundError as exc:
             raise typer.BadParameter(
                 str(exc),
@@ -156,6 +165,10 @@ class SelectorContextReader:
         return _selector_context(
             explicit_values=explicit_values,
             env_file_overrides_os_environ=overrides,
+            env_files=env_files,
+            environment=environment,
+            load_dotenv_layers=self.cli_context_param(ctx, "load_dotenv_layers")
+            is not False,
         )
 
 
@@ -177,14 +190,21 @@ def _selector_context(
     *,
     explicit_values: Mapping[str, str],
     env_file_overrides_os_environ: bool,
+    env_files: tuple[Path, ...] = (),
+    environment: Mapping[str, str] | None = None,
+    load_dotenv_layers: bool = True,
 ) -> ConfigSelectorContext:
     """Return selector-only context for explicit env-file values."""
+    environment = dict(os.environ if environment is None else environment)
     copied_values = dict(explicit_values)
     return ConfigSelectorContext(
+        env_files=env_files,
+        environment=environment,
+        load_dotenv_layers=load_dotenv_layers,
         explicit_values=copied_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         proc_env=selection_env(
-            original_env=os.environ,
+            original_env=environment,
             explicit_values=copied_values,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
         ),

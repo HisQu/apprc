@@ -13,7 +13,7 @@ these helpers to turn that metadata into Rich renderables.
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +21,9 @@ from pathlib import Path
 from rich.text import Text
 
 # == Internal ================================
-from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.definition.env_config.schema import ConfigField
+from apprc.runtime.resolution import ResolvedConfig
+from apprc.interfaces.tui._field_state import config_value_sources
 from apprc.definition.env_config.sentinels import CONFIG_MISSING
 from apprc.user_files.storage_roots.registry import (
     ArchivedStorageRecord,
@@ -70,6 +72,7 @@ def field_table_columns(
     *,
     include_user_dotenv: bool,
     include_storage: bool,
+    include_explicit: bool = False,
 ) -> tuple[str, ...]:
     """Return source columns supported by the application declaration.
 
@@ -78,6 +81,8 @@ def field_table_columns(
     :return: Table headings in runtime precedence order.
     """
     columns = ["#", "Section", "Setting", "Effective", "Process environment"]
+    if include_explicit:
+        columns.append("Explicit dotenv")
     if include_storage:
         columns.append("Storage dotenv")
     if include_user_dotenv:
@@ -88,104 +93,78 @@ def field_table_columns(
 
 def build_field_table_rows(
     *,
-    owners: Iterable[ConfigOwner],
-    user_dotenv_values: Mapping[str, str],
-    storage_values: Mapping[str, str],
-    defaults_values: Mapping[str, str] | None,
+    resolved: ResolvedConfig,
     include_user_dotenv: bool,
     include_storage: bool,
     hidden_env_keys: set[str] | frozenset[str],
-    shell_env: Mapping[str, str],
 ) -> tuple[FieldTableRow, ...]:
-    """Return all editor table rows in declaration order.
+    """Render sources already selected by the shared resolver.
 
-    The function owns table-only decisions: row numbering, section separators,
-    source cells, effective values, defaults, and compact explanations.
-    The Textual app owns widget lifecycle and persistence.
-
-    :param owners: Declared config sections to show.
-    :param user_dotenv_values: Parsed per-user dotenv values.
-    :param storage_values: Parsed storage dotenv values.
-    :param defaults_values: Parsed packaged defaults, when known.
-    :param include_user_dotenv: Whether to show the user dotenv source.
-    :param include_storage: Whether to show the storage source column as active.
-    :param hidden_env_keys: Full env keys omitted from the editable key list.
-    :param shell_env: Current shell/process environment mapping.
-    :return: Rows ready for ``DataTable.add_row``.
+    :param resolved: Inspected application inputs.
+    :param include_user_dotenv: Whether to show user overrides.
+    :param include_storage: Whether to show storage overrides.
+    :param hidden_env_keys: Structural keys omitted from editable rows.
+    :return: Rich cells, row keys, and section separators.
     """
     rows: list[FieldTableRow] = []
     row_number = 1
-    rendered_section = False
-    for owner in owners:
-        visible_specs = [
+    for owner in resolved.schema.owners:
+        specs = [
             spec
             for spec in owner.fields
             if owner.env_key(spec.name) not in hidden_env_keys
         ]
-        if not visible_specs:
+        if not specs:
             continue
-        if rendered_section:
+        if rows:
             rows.append(
                 section_separator_row(
                     column_count=len(
                         field_table_columns(
                             include_user_dotenv=include_user_dotenv,
                             include_storage=include_storage,
+                            include_explicit=bool(resolved.options.env_files),
                         )
                     )
                 )
             )
-        rendered_section = True
-        for spec in visible_specs:
+        for spec in specs:
             env_key = owner.env_key(spec.name)
-            user_dotenv_value = (
-                user_dotenv_values.get(env_key) if include_user_dotenv else None
-            )
-            storage_value = (
-                storage_values.get(env_key) if include_storage else None
-            )
-            shell_value = shell_env.get(env_key)
-            default_value = defaults_source_value(
-                spec=spec,
-                env_key=env_key,
-                defaults_values=defaults_values,
-            )
-            env_is_set = env_key in shell_env
-            effective_value = first_effective_value(
-                shell_value=shell_value,
-                storage_value=storage_value,
-                user_dotenv_value=user_dotenv_value,
-                default_value=default_value,
-            )
+            sources = {
+                source.key: source.raw_value
+                for source in config_value_sources(
+                    spec=spec,
+                    env_key=env_key,
+                    resolved=resolved,
+                    include_user_dotenv=include_user_dotenv,
+                    include_storage=include_storage,
+                )
+            }
             cells: list[FieldTableCell] = [
                 str(row_number),
                 Text(owner.title, style="bold"),
                 setting_cell(spec, env_key),
-                source_value_cell(spec, effective_value),
-                shell_status_cell(env_is_set),
+                source_value_cell(spec, sources["effective"]),
+                shell_status_cell(sources["shell"] is not None),
             ]
+            if resolved.options.env_files:
+                cells.append(source_value_cell(spec, sources.get("explicit")))
             if include_storage:
-                cells.append(source_value_cell(spec, storage_value))
+                cells.append(source_value_cell(spec, sources.get("storage")))
             if include_user_dotenv:
-                cells.append(source_value_cell(spec, user_dotenv_value))
+                cells.append(source_value_cell(spec, sources.get("user")))
             cells.extend(
                 (
-                    default_value_cell(
-                        spec,
-                        user_dotenv_value=user_dotenv_value,
-                        storage_value=storage_value,
-                        env_is_set=env_is_set,
-                        default_value=default_value,
-                    ),
+                    source_value_cell(spec, sources["defaults"])
+                    if sources["defaults"] is not None
+                    else Text("<required>", style=REQUIRED_STYLE)
+                    if sources["effective"] is None
+                    else "",
                     Text(short_explanation(spec), style=LABEL_STYLE),
                 )
             )
             rows.append(
-                FieldTableRow(
-                    env_key=env_key,
-                    cells=tuple(cells),
-                    height=2,
-                )
+                FieldTableRow(env_key=env_key, cells=tuple(cells), height=2)
             )
             row_number += 1
     return tuple(rows)

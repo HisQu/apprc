@@ -1,17 +1,13 @@
 """Public AppRC facade behavior tests."""
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
-from time import sleep
 
 import pytest
 import typer
-from typer.testing import CliRunner
 
 import apprc as rc
-from apprc.runtime.result import EnvBootstrapResult
 
 
 def _process_env_app() -> rc.AppRC:
@@ -20,25 +16,6 @@ def _process_env_app() -> rc.AppRC:
         app_id="public-demo",
         display_name="Public Demo",
         config_package="apprc",
-    )
-
-
-def _bootstrap_result(*, storage_count: int = 0) -> EnvBootstrapResult:
-    """Return small bootstrap metadata for state-management tests.
-
-    :param storage_count: Distinguishing value for repeated bootstrap results.
-    :return: Bootstrap result without filesystem paths.
-    """
-    return EnvBootstrapResult(
-        defaults_dotenv=None,
-        storage_dotenv=None,
-        env_files=(),
-        apprc_toml=None,
-        storage_selector_source=None,
-        storage_selector_value=None,
-        storage_name=None,
-        storage_root=None,
-        storage_count=storage_count,
     )
 
 
@@ -51,13 +28,13 @@ def test_direct_declaration_accepts_optional_storage() -> None:
         storage=rc.Storage(selector_env_key="HAIU_STORAGE"),
     )
 
-    assert MyRC.spec.app_id == "haiu"
-    assert MyRC.spec.display_name == "HAIU"
-    assert MyRC.spec.storage_selector_env_key == "HAIU_STORAGE"
-    assert MyRC.spec.defaults_dotenv_filename == "apprc.defaults.env"
-    assert MyRC.spec.user_dotenv_filename == "apprc.user.env"
-    assert MyRC.spec.storage_dotenv_filename == "apprc.storage.env"
-    assert MyRC.spec.apprc_toml_filename == "apprc.toml"
+    assert MyRC.schema.app_id == "haiu"
+    assert MyRC.schema.display_name == "HAIU"
+    assert MyRC.schema.storage_selector_env_key == "HAIU_STORAGE"
+    assert MyRC.schema.defaults_dotenv_filename == "apprc.defaults.env"
+    assert MyRC.schema.user_dotenv_filename == "apprc.user.env"
+    assert MyRC.schema.storage_dotenv_filename == "apprc.storage.env"
+    assert MyRC.schema.apprc_toml_filename == "apprc.toml"
 
 
 def test_direct_declaration_accepts_independent_user_dotenv() -> None:
@@ -67,8 +44,8 @@ def test_direct_declaration_accepts_independent_user_dotenv() -> None:
         user_dotenv=rc.UserDotenv(),
     )
 
-    assert MyRC.spec.uses_user_dotenv() is True
-    assert MyRC.spec.uses_storage() is False
+    assert MyRC.schema.uses_user_dotenv() is True
+    assert MyRC.schema.uses_storage() is False
 
 
 def test_legacy_mode_constructors_are_removed() -> None:
@@ -90,7 +67,7 @@ def test_registers_env_backed_config_with_full_env_keys() -> None:
     assert LLMConfig.config_owner.env_prefix == "HAIU_LLM_"
     assert LLMConfig.config_owner.field("provider").env_var == "PROVIDER"
     assert rc.schema.owner_for(LLMConfig) is LLMConfig.config_owner
-    assert MyRC.spec.envs == (LLMConfig,)
+    assert MyRC.schema.envs == (LLMConfig,)
 
 
 def test_schema_owner_for_rejects_unregistered_config() -> None:
@@ -115,7 +92,7 @@ def test_registers_python_only_config_base() -> None:
     resources = PackageResources()
     assert resources.package == "haiu.resources"
     assert resources.templates == "templates"
-    assert MyRC.spec.envs == ()
+    assert MyRC.schema.envs == ()
 
 
 def test_rejects_missing_key_decorator_forms() -> None:
@@ -529,17 +506,17 @@ def test_mount_cli_accepts_only_typer() -> None:
     MyRC = _process_env_app()
     app = typer.Typer()
 
-    mounted = MyRC.mount_cli(app)
+    mounted = rc.cli.mount_config_cli(app, MyRC)
     assert isinstance(mounted, typer.Typer)
 
     with pytest.raises(TypeError, match="typer.Typer instances only"):
-        MyRC.mount_cli(object())  # type: ignore[arg-type]
+        rc.cli.mount_config_cli(object(), MyRC)  # type: ignore[arg-type]
 
 
-def test_manual_bootstrap_allows_later_config_construction(
+def test_explicit_resolution_constructs_registered_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Manual bootstrap prepares env state for direct config construction."""
+    """Manual resolution supplies captured values to config construction."""
     MyRC = _process_env_app()
     monkeypatch.setenv("PUBLIC_BOOTSTRAP_VALUE", "from-env")
 
@@ -547,150 +524,17 @@ def test_manual_bootstrap_allows_later_config_construction(
     class DemoConfig(rc.Config):
         value: str = rc.field("PUBLIC_BOOTSTRAP_VALUE")
 
-    result = MyRC.bootstrap(load_dotenv_layers=False)
-    config = DemoConfig()
+    result = MyRC.resolve(rc.ResolveOptions(load_dotenv_layers=False))
+    config = result.build(DemoConfig)
 
     assert config.value == "from-env"
-    assert MyRC.bootstrap_result is result
-
-
-def test_ensure_bootstrapped_runs_once_and_reuses_result(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """On-demand setup never reloads an already bootstrapped declaration."""
-    MyRC = _process_env_app()
-    expected = _bootstrap_result()
-    calls = 0
-
-    def fake_bootstrap_env(**_: object) -> EnvBootstrapResult:
-        """Record one low-level bootstrap call."""
-        nonlocal calls
-        calls += 1
-        return expected
-
-    monkeypatch.setattr(
-        "apprc.definition.app_config.kit.bootstrap_env",
-        fake_bootstrap_env,
-    )
-
-    first = MyRC.ensure_bootstrapped()
-    second = MyRC.ensure_bootstrapped()
-
-    assert first is expected
-    assert second is expected
-    assert MyRC.bootstrap_result is expected
-    assert calls == 1
-
-
-def test_ensure_bootstrapped_serializes_concurrent_first_use(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Concurrent convenience callers share one initial bootstrap."""
-    MyRC = _process_env_app()
-    expected = _bootstrap_result()
-    calls = 0
-
-    def fake_bootstrap_env(**_: object) -> EnvBootstrapResult:
-        """Leave enough time for competing callers to reach the state lock."""
-        nonlocal calls
-        calls += 1
-        sleep(0.01)
-        return expected
-
-    monkeypatch.setattr(
-        "apprc.definition.app_config.kit.bootstrap_env",
-        fake_bootstrap_env,
-    )
-
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        results = tuple(
-            executor.map(lambda _: MyRC.ensure_bootstrapped(), range(8))
-        )
-
-    assert all(result is expected for result in results)
-    assert calls == 1
-
-
-def test_explicit_rebootstrap_warns_and_keeps_latest_success(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Explicit reloads stay allowed and failed reloads retain good metadata."""
-    MyRC = _process_env_app()
-    first = _bootstrap_result(storage_count=1)
-    second = _bootstrap_result(storage_count=2)
-    results = iter((first, second))
-
-    def fake_bootstrap_env(**_: object) -> EnvBootstrapResult:
-        """Return two successes and then fail the next explicit reload."""
-        try:
-            return next(results)
-        except StopIteration as exc:
-            raise RuntimeError("reload failed") from exc
-
-    monkeypatch.setattr(
-        "apprc.definition.app_config.kit.bootstrap_env",
-        fake_bootstrap_env,
-    )
-
-    assert MyRC.bootstrap(load_dotenv_layers=False) is first
-    assert MyRC.bootstrap(load_dotenv_layers=False) is second
-    with pytest.raises(RuntimeError, match="reload failed"):
-        MyRC.bootstrap(load_dotenv_layers=False)
-
-    assert MyRC.bootstrap_result is second
-    assert caplog.text.count("AppRC bootstrap is running again") == 2
-
-
-def test_late_config_registration_warns_and_preserves_bootstrap_state(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Late schema additions remain possible but report incomplete provenance."""
-    MyRC = _process_env_app()
-    expected = _bootstrap_result()
-    monkeypatch.setattr(
-        "apprc.definition.app_config.kit.bootstrap_env",
-        lambda **_: expected,
-    )
-    MyRC.bootstrap(load_dotenv_layers=False)
-
-    @MyRC.config("late", prefix="LATE_")
-    class LateConfig(rc.Config):
-        value: str = rc.field("LATE_VALUE", default="fallback")
-
-    assert LateConfig().value == "fallback"
-    assert MyRC.bootstrap_result is expected
-    assert "Registering config LateConfig after AppRC bootstrap" in caplog.text
-
-
-def test_mounted_cli_bootstrap_updates_public_app_state(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Typer bootstrap and direct Python calls share one result."""
-    MyRC = _process_env_app()
-    expected = _bootstrap_result()
-    monkeypatch.setattr(
-        "apprc.definition.app_config.kit.bootstrap_env",
-        lambda **_: expected,
-    )
-    app = typer.Typer()
-    MyRC.mount_cli(app)
-
-    @app.command()
-    def run() -> None:
-        """Exercise the mounted runtime callback."""
-
-    result = CliRunner().invoke(app, ["run"])
-
-    assert result.exit_code == 0
-    assert MyRC.bootstrap_result is expected
+    assert not hasattr(MyRC, "bootstrap_result")
 
 
 def test_public_config_runtime_assignment_updates_provenance() -> None:
     """Public ``rc.Config`` subclasses stay slotted like the internal engine."""
     MyRC = _process_env_app()
-    assert MyRC.bootstrap_result is None
+    assert not hasattr(MyRC, "bootstrap_result")
 
     @MyRC.config("llm", prefix="HAIU_LLM_")
     class LLMConfig(rc.Config):

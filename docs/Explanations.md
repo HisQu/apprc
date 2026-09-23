@@ -1,263 +1,131 @@
-# AppRC Explanations
+# AppRC architecture
 
-## Table of contents
+[Manual](README.md) · [Recipes](How-To-User-Guides.md) · [Reference](References.md)
 
-1. [System model](#system-model)
-2. [Integration flow](#integration-flow)
-3. [Runtime config model](#runtime-config-model)
-4. [AppRC directory and storage](#apprc-directory-and-storage)
-5. [Runtime bootstrap](#runtime-bootstrap)
-6. [Storage selection](#storage-selection)
-7. [Zero-write and purge policy](#zero-write-and-purge-policy)
-8. [Generated interfaces](#generated-interfaces)
-9. [Migration model](#migration-model)
+- [Declaration, resolution, and management](#declaration-resolution-and-management)
+- [Capabilities and runtime requirements](#capabilities-and-runtime-requirements)
+- [Why explicit snapshots](#why-explicit-snapshots)
+- [Interfaces and shared operations](#interfaces-and-shared-operations)
+- [Distribution ownership](#distribution-ownership)
+- [Future desktop and build integrations](#future-desktop-and-build-integrations)
 
-Use [How-To User Guides](How-To-User-Guides.md) for procedures and
-[References](References.md) for exact names.
+## Declaration, resolution, and management
 
-## System model
+`AppRC` is the application entrypoint. Its schema says which settings and
+persistence capabilities exist. Runtime resolves inputs and constructs typed
+objects. Management reads and writes the declared fixed layout. Interfaces
+handle prompts, command arguments, and presentation.
 
-An application declares typed settings once. AppRC reuses that declaration for
-runtime binding, dotenv precedence, validation, diagnostics, generated Typer
-commands, the Textual editor, and provenance.
-
-| ![AppRC runtime layers](assets/apprc-runtime-layers.svg) |
-|:--:|
-| **Fig. 1 — Runtime binding:** Bootstrap optionally adds managed dotenv values to the process environment; `Config()` binds that environment and Python values into a mutable object. |
-
-The main objects have narrow jobs:
-
-- `rc.AppRC` owns application identity and independent persistent features.
-- `rc.UserDotenv` enables one user-wide dotenv.
-- `rc.Storage` enables the named-storage registry and storage dotenv files.
-- `rc.Config` holds env-backed typed settings.
-- `rc.ConfigBase` holds Python-only settings.
-- `@MyRC.config(...)` registers a config section.
-- `rc.field(...)` records the full env key and editing metadata.
-- `@MyRC.bundle` validates one explicit keyword-only dataclass and builds its
-  child configs from declared default factories.
-
-The two persistent capabilities are independent:
-
-| Declaration | User dotenv | Storage |
-| --- | ---: | ---: |
-| `rc.AppRC(...)` | No | No |
-| `rc.AppRC(..., user_dotenv=rc.UserDotenv())` | Yes | No |
-| `rc.AppRC(..., storage=rc.Storage())` | No | Yes |
-| Both arguments | Yes | Yes |
-
-Files on disk never enable a capability that Python code did not declare.
-Each capability is required by default. `required=False` keeps its setup and
-management interfaces available while allowing runtime and doctor to continue
-when that layer is absent.
-
-## Integration flow
-
-The normal order is:
-
-1. Create `rc.AppRC(...)`, adding only the persistent capabilities the app
-   needs.
-2. Register `rc.Config` and `rc.ConfigBase` classes.
-3. Optionally ship non-secret defaults in `apprc.defaults.env`.
-4. Mount the generated CLI or call bootstrap at the application entrypoint.
-5. For required persistent capabilities, run `config setup` during
-   installation or first use. Optional capabilities can remain absent.
-6. Construct config from Python values and the current process environment.
-
-Importing AppRC or a config class does not read files and does not modify
-`os.environ`. Bootstrap is the explicit boundary where dotenv values enter the
-current Python process. Constructing `Config()` then reads that environment.
-
-## Runtime config model
-
-Every registered env-backed section has an env prefix and ordered fields.
-Every field has a Python type, full env key, required/default behavior,
-editability, secrecy, choices, and explanatory text. The CLI and TUI use the
-same metadata as runtime binding.
-
-`rc.field("KEY")` is required when it has no default. `required=True` cannot be
-combined with a Python `default` or `default_factory`. A required field may use
-`packaged_default` to describe the corresponding value shipped in
-`apprc.defaults.env`, or it may receive a constructor value. `secret=True`
-controls display redaction only; it is not encryption.
-
-Use exact file vocabulary in code and documentation. `apprc.user.env` and
-`apprc.storage.env` are dotenv files, not generic “config files.”
-`apprc.toml` is a storage registry. The directory containing whichever central
-files the application declares is the AppRC directory.
-
-Single-key edits preserve unrelated dotenv source text. When a key appears
-more than once, AppRC keeps the first assignment active and comments out later
-assignments after an interactive confirmation. This prevents a later duplicate
-from silently overriding the value the user just set.
-
-## AppRC directory and storage
-
-AppRC uses one predictable default on every operating system:
-
-```text
-~/.local/share/<app-id>/
+```mermaid
+flowchart TD
+    App[Application declaration] --> Schema[Validated schema]
+    App --> Resolution[resolve: captured inputs]
+    App --> Manager[manage: shared operations]
+    Resolution --> Config[build: typed settings]
+    Manager --> Resolution
+    Manager --> Files[Managed files and storage]
+    CLI[Typer CLI] --> Manager
+    TUI[Textual editor] --> Manager
+    CLI --> Resolution
 ```
 
-The optional `<APP>_APPRC_DIR` variable relocates that complete directory for
-apps that declare a user dotenv, storage, or both. A process-environment-only
-app has no AppRC directory. A user-dotenv app may contain `apprc.user.env`; a
-storage app contains `apprc.toml` and uses
-`~/.local/share/<app-id>/storage/` as its suggested initial root.
+Internal ownership follows those responsibilities:
 
-```text
-~/.local/share/myapp/
-├── apprc.user.env  # only when rc.UserDotenv() is declared
-├── apprc.toml      # only when rc.Storage() is declared
-└── storage/
-    └── apprc.storage.env
-```
+| Area | Owns |
+| --- | --- |
+| `definition` | Metadata, validation rules, immutable source/origin records |
+| `runtime/config` | Binding, constructors, copies, overrides, reloads |
+| `runtime/resolution.py` | Source capture, precedence, and explicit construction |
+| `user_files` | Dotenv/registry parsing, paths, writes, data-directory operations |
+| `services` | Application-bound management and inspection |
+| `interfaces` | Terminal input and output |
+| `public` | The small application facade |
 
-The initial storage is normally named `default`, but its directory is not
-nested below another `default/` component. If an empty registry is opened with
-a bare `<APP>_STORAGE` selector, setup adopts that requested name. Later
-storage names are user-owned entries in `apprc.toml`. Each may point anywhere.
-There is no separate “external storage” feature; internal and external
-describe only where a registered root happens to be, which matters during
-purge.
+Declarations do not import persistence or interface implementations. Package
+initializers contain imports and docstrings only. A section can be imported
+directly without importing every other section or optional application package.
 
-## Runtime bootstrap
+## Capabilities and runtime requirements
 
-Bootstrap performs these operations:
+A user dotenv means "this app supports saved user overrides." Storage means
+"this app supports named persistent data roots." They are independent. Existing
+files cannot switch either capability on.
 
-1. Capture the original process environment.
-2. Read explicit `--env-file` values.
-3. Resolve the AppRC directory when a persistent feature requires it.
-4. Read optional packaged defaults and the declared `apprc.user.env`, if any.
-5. Load `apprc.toml` when present, resolve a storage name or path, and validate
-   its root and `apprc.storage.env` marker.
-6. Read the selected `apprc.storage.env`.
-7. Merge values using documented precedence.
-8. Write the merged values into this Python process.
-9. Record provenance for app-owned keys.
+A run may need storage while another run of the same app does not. That belongs
+in `ResolveOptions(storage_required=True)` or CLI runtime policy. Required field
+values are a separate check. An application that declares a required storage-path
+field must still provide it before constructing that section.
 
-`Storage.required` supplies the default runtime policy. A specific
-`CliRuntime` or bootstrap call can pass `storage_required=True` when only that
-boundary needs storage. If storage is optional and no selector exists,
-bootstrap skips the storage layer and continues. Once a selector or registry
-exists, AppRC validates it normally. Optionality never suppresses an invalid
-selector, missing selected root, or unreadable managed file. A malformed
-registry keeps the existing direct-path fallback and otherwise remains an
-error.
+This avoids maintaining four application modes. The same loading and management
+operations operate on whichever capabilities the declaration enables.
 
-| ![AppRC precedence](assets/apprc-abstract-layer-cake.svg) |
-|:--:|
-| **Fig. 2 — Precedence:** Broad defaults sit below user, storage, invocation, and process-specific values. |
+## Why explicit snapshots
 
-The parent shell is never modified. With normal precedence, existing
-`os.environ` wins over explicit files. `--env-file-overrides-os-environ` makes
-explicit files win instead.
+Using `os.environ` as the intermediate result makes two applications or two
+selected storages share mutable state. It also makes provenance depend on what
+was loaded earlier in the process.
 
-`Config()` may also bind only constructor values, Python defaults, and the
-current environment. Applications call `bootstrap(...)` when they own file and
-storage policy. Libraries should accept an already constructed config object.
-`ensure_bootstrapped()` is available only for high-level convenience
-boundaries where default bootstrap policy is always correct.
+Each resolution now captures its own environment, layers, selection, and
+registrations. `resolved.build()` passes that source directly into construction.
+There is no environment swap, context-variable source, global origin registry,
+or bootstrap cache. Concurrent resolutions retain separate values and origins.
 
-## Storage selection
+A snapshot is immutable source data; constructed settings remain mutable Python
+objects with explicit assignment and override behavior. The snapshot does not
+freeze user code or filesystem state. A manager rereads files for each operation,
+while existing runtime objects remain unchanged.
 
-A selector is a registered name or filesystem path. Selection precedence is:
+Environment export is useful for dependencies that demand it. It remains a
+process-wide overlay, serialized only against other AppRC exports. It cannot
+coordinate unrelated code writing `os.environ` or make environment-only consumers
+retain file provenance.
 
-1. `--storage NAME_OR_PATH`
-2. `<APP>_STORAGE=NAME_OR_PATH` from the process or an explicit dotenv; the existing
-   `--env-file-overrides-os-environ` option decides which of those wins
-3. `selected_storage` in `apprc.toml`
+## Interfaces and shared operations
 
-Managed user, storage, and packaged dotenv files do not select storage. Direct
-paths are invocation inputs, not persistent AppRC dotenv values. Relative paths
-resolve against the directory containing `apprc.toml`, not the current working
-directory. A direct path is usable only when it is an existing directory with
-a readable `apprc.storage.env`, which proves that AppRC initialized the root;
-it does not prove that application-specific data is complete.
+The CLI and Textual editor use the same manager for setup, edits, storage
+operations, migration, and purge. Inspection validates fields individually so
+one invalid setting does not hide the rest. The editor presents captured sources
+and explicit-file precedence from the resolver.
 
-If one registry entry has the same resolved root, AppRC reports the associated
-name. No match means an unregistered one-run selection. Interactive CLIs offer
-to register it under a user-approved name; non-interactive callers do not
-write. Several matching aliases are ambiguous, so AppRC logs every match and
-does not choose a name.
+Three selections have different effects: browsing storage in the editor,
+choosing storage for this invocation, and saving the registry default. Only a
+selection operation changes the saved default.
 
-Registry lifecycle rules are shared by the CLI, editor, bootstrap, and doctor:
+Edit plans separate review from mutation. Revision checks reject a plan whose
+file has changed. Unique temporary names prevent same-process collisions, and
+atomic replacement avoids partial file contents. Neither mechanism makes a
+multi-file or cross-process transaction. That limitation remains explicit in
+[the TODO list](../TODO.md#todo-list).
 
-- the first added storage becomes selected;
-- later additions preserve the selection;
-- renaming the selected storage updates `selected_storage`;
-- removing the selected storage clears selection and warns;
-- duplicate names are rejected.
-- duplicate resolved roots are rejected for new additions and repoints.
+## Distribution ownership
 
-`repoint` changes only a registry path. `move` relocates the actual directory
-transactionally and then updates the registry. These operations are separate
-because combining them would hide whether user data moved.
+`apprc-core` owns the complete `apprc` Python tree and only the dependencies needed
+for configuration and noninteractive management. `apprc` owns metadata and the
+console entrypoint, and requires the matching core plus terminal dependencies.
+Their wheels have no overlapping package files.
 
-## Zero-write and purge policy
+Both distributions use one version. Wrapper metadata is generated from the root
+manifest and checked before building. Ordinary pip can build either source
+archive without a workspace checkout or the uv command. The core uses the
+[uv build backend](https://docs.astral.sh/uv/concepts/build-backend/); the wrapper
+uses [explicit empty setuptools package discovery](https://setuptools.pypa.io/en/latest/userguide/package_discovery.html).
 
-Bootstrap, `config paths`, `config doctor`, opening `config edit`, and listing
-storages are read-only. Setup, migration, purge, editor saves, and storage
-registry commands write only after explicit user action.
+Keeping interface source in the core avoids two distributions owning the same
+package namespace. Minimal installations must not import terminal implementations.
+The public lazy namespaces defer those imports until the integration is used.
 
-Python package uninstallers do not own user files, so they leave the AppRC
-directory and storage roots behind. `config purge --dry-run` shows what AppRC
-can remove before the application is uninstalled.
+## Future desktop and build integrations
 
-Purge does not recursively delete `--apprc-dir`. It deletes only the fixed
-AppRC files and registered storage roots strictly inside that directory.
-External registered roots retain all data except their fixed
-`apprc.storage.env`. Directories are removed only when empty, malformed TOML
-stops the operation before deletion, and symlinks are never followed.
+A Toga settings interface can reuse the declaration and manager. It should own
+windows, widgets, prompts, and progress display. Cross-process coordination must
+be completed before concurrent CLI/GUI editing is an expected supported workflow.
 
-## Generated interfaces
+Centralized cx_Freeze tooling can know AppRC's resource and layout conventions.
+It should own build configuration, resource inclusion, frozen smoke tests, and
+installer assembly. Runtime and persistence should not import it or decide
+installer behavior. The application owns its entrypoint and platform deployment
+choices.
 
-The generated CLI and Textual editor are two views of the same contract. Every
-app gets read-only `paths`, `show`, and `doctor`, plus cleanup-only `purge`.
-`setup`, `set`, `edit`, and `migrate` exist only when a persistent feature is
-declared. A declaration without storage has no `--storage`,
-`config storage ...`, storage scope, or storage editor section. A declaration
-without a user dotenv has no user write scope or user-dotenv column. Stale
-files do not change those capabilities; doctor warns and purge can remove them.
-
-A storage declaration exposes every registry entry. Storage names are not
-declared in Python. The user adds, selects, renames, repoints, moves, and
-removes them through the registry commands or editor.
-
-The editor is also a repair interface. It distinguishes a missing declared
-user dotenv from an app that never declared one. Selector errors identify the
-winning input layer and any TOML selection hidden by that override while valid
-registry entries remain usable. Setup is reserved for files AppRC can
-initialize. **Reconnect** updates the registry after a manual directory move;
-**Move** relocates data only to a new or empty destination.
-
-Missing optional layers are not repair errors. The editor still offers Setup
-so a user can enable them deliberately.
-
-## Migration model
-
-AppRC migrates only layouts released by 0.19. It scans the former
-platform-specific config directory, declared legacy app IDs, custom
-`<APP>_APPRC_TOML` locations, `.env.apprc-app`, `.env.apprc-storage`, and the
-former `<app>.apprc.toml` filename.
-
-A path-valued 0.19 `<APP>_STORAGE` becomes the root of a named `default`
-storage. Structural path and TOML selectors are removed from the migrated user
-dotenv. Exported process variables cannot be edited, so migration warns the
-user to unset them. The unreleased `apprc.app.env` name is not a migration
-source.
-
-An unregistered bare selector has no implied directory. Interactive migration
-asks for an existing directory and whether the mapping adds a new entry or
-renames and repoints an old one. Non-interactive callers provide
-`--storage-root` and, only for replacement, `--replace-storage`. `--yes` does
-not infer replacement intent. These operations change registry metadata and a
-missing AppRC marker only; they do not move or delete application data.
-
-`config migrate` preflights every source and destination. A conflict stops the
-whole operation. Moves never replace an existing destination and cross-device
-fallback copies clean up partial destinations on failure.
-
-Packaged defaults are source code owned by the host application. App authors
-rename `.env.shared` to `apprc.defaults.env` in their repository; the runtime
-command does not edit an installed package.
+These are architectural boundaries for future work. This release adds no Toga
+or cx_Freeze implementation, dependency, placeholder extra, or frozen-app
+compatibility claim.

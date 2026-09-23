@@ -15,7 +15,7 @@ FIGURE_NAME = "apprc-abstract-layer-cake"
 
 
 def build_graph() -> Digraph:
-    """Build the dotenv precedence and bootstrap figure.
+    """Build the dotenv precedence and resolution figure.
 
     :return: Configured Graphviz diagram.
     """
@@ -42,7 +42,7 @@ def build_graph() -> Digraph:
             "Selected layers",
             "apprc.storage.env",
             "--env-file",
-            "os.environ",
+            "captured environment",
             "higher precedence",
             border_color=gg.GREEN,
         )
@@ -57,7 +57,7 @@ def build_graph() -> Digraph:
             "selector_sources",
             "Selector sources",
             "--storage",
-            "MYAPP_STORAGE",
+            "MYAPP_STORAGE / explicit file",
             "apprc.toml",
             border_color=gg.ORANGE,
         )
@@ -66,7 +66,7 @@ def build_graph() -> Digraph:
             "Selected storage",
             "name or path",
             "resolved root",
-            "runtime owner",
+            "invocation choice",
             border_color=gg.ORANGE,
         )
 

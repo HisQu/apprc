@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 # == Standard Library ===========================================
 import os
 import re
@@ -12,9 +14,11 @@ from pathlib import Path
 
 # == Internal ===================================================
 from apprc.definition.app_config.spec import AppConfigSpec
-from apprc.runtime._dotenv_layers import read_dotenv_file
+from apprc.user_files.env_files._parsing import (
+    parse_dotenv_file as read_dotenv_file,
+)
 from apprc.user_files.app_home.locations import write_text_atomic
-from apprc.user_files.managed_files import path_entry_exists
+from apprc.user_files.app_home._paths import path_entry_exists
 from apprc.user_files.storage_roots._io import (
     load_storage_registry_or_empty,
     render_storage_registry,
@@ -194,7 +198,7 @@ def build_config_migration_plan(
     """
     env = os.environ if proc_env is None else proc_env
     app_ids = (spec.app_id, *spec.legacy_app_ids)
-    paths = spec.paths(proc_env=env)
+    paths = AppFiles(spec).paths(proc_env=env)
     legacy_dirs = _unique_paths(
         [
             paths.root,

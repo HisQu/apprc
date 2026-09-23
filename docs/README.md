@@ -1,95 +1,32 @@
-<!-- ======================================================== -->
+# AppRC manual
 
-<br>
+- [Choose a document](#choose-a-document)
+- [Start with one declaration](#start-with-one-declaration)
 
-## Table Of Contents
-<!-- ======================================================== -->
+## Choose a document
 
-1. [Using These Docs](#1-using-these-docs)
-   1. [What Lives Here](#what-lives-here)
-   2. [Reading Map](#reading-map)
-   3. [Repository Terms](#repository-terms)
+| Need | Read |
+| --- | --- |
+| First working example | [Root README](../README.md#load-settings) |
+| Integrate, set up, or upgrade an application | [How-to guides](How-To-User-Guides.md) |
+| Exact APIs, filenames, precedence, and commands | [Reference](References.md) |
+| Understand responsibility boundaries | [Explanations](Explanations.md) |
+| Develop, test, build, or release AppRC | [Development](Development.md) |
+| Run real CLIs | [Examples](../examples/example_apps/README.md) |
 
-<br>
+![Documentation map](assets/docs-reading-map.svg)
 
-# 1. Using These Docs
+## Start with one declaration
 
-<!-- ======================================================== -->
+`AppRC` owns the application identity and registered settings. Its `schema`
+contains metadata. `resolve()` captures source values; the returned snapshot
+builds runtime settings. `manage()` provides setup, inspection, editing, and
+storage operations. Terminal interfaces call those same operations.
 
-<br>
+Persistence is optional. Add `UserDotenv()` for saved user overrides and
+`Storage()` for named data directories. Require storage per invocation, not on
+the declaration. Choose `apprc-core` or `apprc` according to whether terminal
+libraries are needed.
 
-## What Lives Here
-<!-- ======================================================== -->
-
-This directory is the long-form manual for AppRC. The root
-[README](../README.md) stays short enough for package discovery and first
-integration. These files hold task recipes, exact reference names, system
-explanations, and maintainer workflow.
-
-| ![AppRC documentation reading map](assets/docs-reading-map.svg) |
-|:--:|
-| **Fig. 1 - Documentation Reading Map:** Start at the root README, then move into the docs file that matches the job: recipe, maintainer workflow, exact names, or system model. |
-
-> [!NOTE]
-> Related: use [How-To User Guides](How-To-User-Guides.md) for commands in
-> order, [References](References.md) for exact names, and
-> [Explanations](Explanations.md) for why AppRC behaves as it does.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Reading Map
-<!-- ======================================================== -->
-
-- **[How-To User Guides](How-To-User-Guides.md):** recipes for integrating
-  AppRC into an app, setting up storage, editing values, and diagnosing setup.
-- **[Explanations](Explanations.md):** the system model behind config sections,
-  optional storage, bootstrap, selection, provenance, CLI, and TUI.
-- **[References](References.md):** exact public imports, declarations,
-  CLI commands, env vars, filenames, precedence rules, and status names.
-- **[Development](Development.md):** maintainer workflow, documentation
-  generation, local verification, and repo-specific documentation rules.
-
-Recommended reading paths:
-
-| Goal | Start Here | Then Read |
-|---|---|---|
-| Add AppRC to an app | [README](../README.md) | [How-To User Guides](How-To-User-Guides.md) |
-| Understand the design | [Explanations](Explanations.md) | [References](References.md) |
-| Debug a user's setup | [How-To User Guides](How-To-User-Guides.md#troubleshoot-config-doctor) | [Doctor Statuses](References.md#doctor-statuses) |
-| Check an exact API name | [References](References.md) | Source files linked from that section |
-| Change this repo | [Development](Development.md) | [AGENTS.md](../AGENTS.md) |
-
-> [!NOTE]
-> Related links:
-> - Use [Development: documentation rules](Development.md#documentation-rules)
->   before changing docs structure or callout/link conventions.
-> - Use [References: documentation assets](References.md#documentation-assets)
->   before changing documentation figures.
-
-<br>
-
-<!-- ======================================================== -->
-
-<br>
-
-## Repository Terms
-<!-- ======================================================== -->
-
-Use these terms consistently in every docs file:
-
-| Term | Meaning | Main Reference |
-|---|---|---|
-| AppRC | This package, `apprc`, which supplies runtime config, generated config CLI, and Textual editor helpers. | [System Model](Explanations.md#system-model) |
-| application | The downstream Python app that integrates AppRC. | [Integration Flow](Explanations.md#integration-flow) |
-| config contract | The `rc.Config` and `rc.ConfigBase` classes registered on one `rc.AppRC` facade. | [Runtime config model](Explanations.md#runtime-config-model) |
-| registered config | A related group of settings declared with `@MyRC.config(...)`. | [Public Interfaces](References.md#public-interfaces) |
-| config field | One typed setting declared with `rc.field("FULL_ENV_KEY", ...)`. | [Public Interfaces](References.md#public-interfaces) |
-| AppRC directory | The predictable `~/.local/share/<app-id>/` directory containing the fixed user dotenv and optional storage registry. | [AppRC directory and storage](Explanations.md#apprc-directory-and-storage) |
-| user dotenv | The per-user `apprc.user.env` override file. | [Configuration Files](References.md#configuration-files) |
-| storage dotenv | The `apprc.storage.env` file inside one selected storage root. | [Configuration Files](References.md#configuration-files) |
-| AppRC TOML | The `apprc.toml` storage registry used only by storage-capable apps. | [Storage selection](Explanations.md#storage-selection) |
-| zero-write read | A command or runtime operation that inspects config without creating files. | [Zero-write and purge policy](Explanations.md#zero-write-and-purge-policy) |
+Existing users should begin with the
+[migration table](How-To-User-Guides.md#migrate-existing-applications).

@@ -27,4 +27,4 @@ Copy [`cli.py`](cli.py) when an app needs to expose and test explicit dotenv
 precedence directly.
 
 See the [example inventory](../../README.md#example-inventory) and
-[runtime precedence explanation](../../../../docs/Explanations.md#runtime-bootstrap).
+[runtime precedence explanation](../../../../docs/References.md#source-precedence).

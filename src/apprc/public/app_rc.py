@@ -1,9 +1,11 @@
 """Public AppRC application facade."""
 
+from __future__ import annotations
+
 # == Standard Library ========================
 import dataclasses
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import (
@@ -19,24 +21,25 @@ from typing import (
 )
 
 # == 3rd Party ===============================
-import typer
 
 # == Internal ================================
 import apprc.utils as ut
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.services.manager import ConfigManager
 from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.resolution import (
+    BundleFieldSpec as _BundleFieldSpec,
+    ResolveOptions,
+)
+from apprc.runtime.resolution import ResolvedConfig, resolve_config
 from apprc.definition.app_config.storage import Storage
 from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.env_config._validation import validate_config_owner
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
-from apprc.interfaces.cli.mount import mount_config_cli
 from apprc.public.config import Config, ConfigBase
 from apprc.public.field import (
     _FIELD_DECLARATION_METADATA_KEY,
     _FieldDeclaration,
 )
-from apprc.runtime._bootstrap_state import BootstrapState
-from apprc.runtime.result import BootstrapLogger, EnvBootstrapResult
 
 ConfigClassT = TypeVar("ConfigClassT", bound=type[ConfigBase])
 BundleClassT = TypeVar("BundleClassT", bound=type[object])
@@ -65,22 +68,6 @@ class RegisteredConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class _BundleFieldSpec:
-    """Normalized bundle field registration.
-
-    :param name: Attribute name on the bundle class.
-    :param config_type: Registered config type expected for the field.
-    :param init: Whether constructor injection and eager construction apply.
-    :param default_factory: Factory used when no child is injected.
-    """
-
-    name: str
-    config_type: type[ConfigBase]
-    init: bool
-    default_factory: Callable[[], object] | None
-
-
-@dataclass(frozen=True, slots=True)
 class _AppRCDeclaration:
     """Typed values shared by every rebuild of one public facade.
 
@@ -97,7 +84,7 @@ class _AppRCDeclaration:
 
     app_id: str
     display_name: str
-    config_package: str
+    config_package: str | None
     command_name: str | None
     user_dotenv: UserDotenv | None
     storage: Storage | None
@@ -112,15 +99,15 @@ class AppRC:
     App authors create one ``AppRC`` object, add :class:`UserDotenv` when the
     app needs persistent user overrides, add :class:`Storage` when the app
     writes persistent data, register config classes through
-    ``@MyRC.config(...)``, and mount runtime behavior with :meth:`mount_cli` or
-    :meth:`bootstrap`.
+    ``@MyRC.config(...)``, and load inputs with :meth:`resolve`.
+    :meth:`manage` provides noninteractive setup and editing.
     """
 
     def __init__(
         self,
         *,
         app_id: str,
-        config_package: str,
+        config_package: str | None = None,
         display_name: str | None = None,
         command_name: str | None = None,
         user_dotenv: UserDotenv | None = None,
@@ -156,19 +143,54 @@ class AppRC:
         )
         self._registered_by_key: dict[str, RegisteredConfig] = {}
         self._registered_by_type: dict[type[ConfigBase], RegisteredConfig] = {}
+        self._bundles: dict[type[object], tuple[_BundleFieldSpec, ...]] = {}
         self._env_key_index: dict[str, tuple[str, str]] = {}
-        self._bootstrap_state = BootstrapState()
-        self._kit = self._build_kit()
+        self._schema = self._build_schema()
 
     @property
-    def kit(self) -> AppConfigKit:
-        """Return the lower-level kit used by advanced integrations."""
-        return self._kit
+    def schema(self) -> AppConfigSpec:
+        """Return immutable declaration metadata for current registrations."""
+        return self._schema
 
-    @property
-    def spec(self) -> AppConfigSpec:
-        """Return the current lower-level application spec."""
-        return self._kit.spec
+    def resolve(
+        self,
+        options: ResolveOptions | None = None,
+        *,
+        environment: Mapping[str, str] | None = None,
+    ) -> ResolvedConfig:
+        """Capture configuration inputs without changing process state.
+
+        :param options: Source selection and runtime requirements.
+        :param environment: Interpolation and binding inputs, or the process environment.
+        :return: Independent snapshot used to build registered configs.
+        """
+        return resolve_config(
+            self.schema,
+            registered_types=tuple(self._registered_by_type),
+            bundles=self._bundles,
+            options=options,
+            environment=environment,
+        )
+
+    def manage(
+        self,
+        options: ResolveOptions | None = None,
+        *,
+        environment: Mapping[str, str] | None = None,
+    ) -> ConfigManager:
+        """Capture inputs for setup, inspection, and managed-file operations.
+
+        :param options: Invocation-local selection and path choices.
+        :param environment: Explicit inputs, or a copy of the process environment.
+        :return: Application-bound manager without prompts or writes.
+        """
+        return ConfigManager(
+            self.schema,
+            registered_types=tuple(self._registered_by_type),
+            bundles=self._bundles,
+            options=options,
+            environment=environment,
+        )
 
     @dataclass_transform()
     def config(
@@ -243,86 +265,18 @@ class AppRC:
             "__repr__",
             self._build_bundle_repr(resolved_bundle, bundle_fields),
         )
+        self._bundles[resolved_bundle] = tuple(bundle_fields.values())
         return cast(BundleClassT, resolved_bundle)
 
-    def mount_cli(self, cli: typer.Typer, **kwargs: Any) -> typer.Typer:
-        """Mount AppRC's generated CLI commands on a Typer app.
-
-        :param cli: Typer application that receives the AppRC config command
-            group.
-        :param kwargs: Advanced options forwarded to the lower-level Typer
-            mounting helper.
-        :return: Mounted generated config Typer application.
-        :raises TypeError: If ``cli`` is not a Typer application.
-        """
-        if not isinstance(cli, typer.Typer):
-            raise TypeError(
-                "AppRC.mount_cli currently supports typer.Typer instances only."
-            )
-        return mount_config_cli(cli, self._kit, **kwargs)
-
-    def bootstrap(
-        self,
-        *,
-        env_files: Sequence[Path] | None = None,
-        env_file_overrides_os_environ: bool = False,
-        load_dotenv_layers: bool = True,
-        storage: str | None = None,
-        storage_required: bool | None = None,
-        logger: BootstrapLogger | None = None,
-    ) -> EnvBootstrapResult:
-        """Prepare AppRC runtime layers for non-Typer use.
-
-        :param env_files: Optional run-local dotenv files.
-        :param env_file_overrides_os_environ: Whether explicit dotenv values
-            beat existing process env values inside this process.
-        :param load_dotenv_layers: Whether packaged defaults, app, storage, and
-            explicit dotenv layers should be merged into ``os.environ``.
-        :param storage: Optional storage selector for apps with storage.
-        :param storage_required: Runtime storage policy, or ``None`` to use
-            the declaration's ``Storage.required`` value.
-        :param logger: Optional application logger for bootstrap status.
-        :return: Bootstrap summary for diagnostics and tests.
-        """
-        return self._kit.bootstrap(
-            env_files=tuple(env_files or ()),
-            env_file_overrides_os_environ=env_file_overrides_os_environ,
-            load_dotenv_layers=load_dotenv_layers,
-            storage=storage,
-            storage_required=storage_required,
-            logger=logger,
-        )
-
-    @property
-    def bootstrap_result(self) -> EnvBootstrapResult | None:
-        """Return the latest successful process bootstrap, when available.
-
-        :return: Bootstrap summary shared by Python and mounted CLI paths, or
-            ``None`` before the first successful bootstrap.
-        """
-        return self._bootstrap_state.result
-
-    def ensure_bootstrapped(self) -> EnvBootstrapResult:
-        """Load default AppRC layers only when bootstrap has not run.
-
-        High-level convenience functions may call this method before direct
-        config construction. Application entrypoints that need custom env
-        files, precedence, or an explicit storage selector should call
-        :meth:`bootstrap` themselves.
-
-        :return: Existing or newly created bootstrap summary.
-        """
-        return self._kit._ensure_bootstrapped()
-
-    def _build_kit(self) -> AppConfigKit:
-        """Build a lower-level kit from the current registrations."""
+    def _build_schema(self) -> AppConfigSpec:
+        """Build validated schema metadata from current registrations."""
         envs = tuple(
             item.config_type
             for item in self._registered_by_key.values()
             if _is_env_config(item.config_type)
         )
         declaration = self._declaration
-        return AppConfigKit(
+        return AppConfigSpec(
             app_id=declaration.app_id,
             display_name=declaration.display_name,
             config_package=declaration.config_package,
@@ -333,7 +287,6 @@ class AppRC:
             apprc_dir=declaration.apprc_dir,
             apprc_dir_env_key=declaration.apprc_dir_env_key,
             legacy_app_ids=declaration.legacy_app_ids,
-            _bootstrap_state=self._bootstrap_state,
         )
 
     def _register_config(
@@ -387,15 +340,6 @@ class AppRC:
             prefix=prefix,
             declared_fields=declared_fields,
         )
-        if self.bootstrap_result is not None and _is_env_config(resolved_type):
-            LOG.warning(
-                "Registering config %s after AppRC bootstrap for %s. Values "
-                "still bind from the current process environment, but "
-                "bootstrap provenance for this late registration is "
-                "incomplete. Import the root config bundle before bootstrap.",
-                resolved_type.__name__,
-                self._declaration.app_id,
-            )
         self._registered_by_key[key] = registered
         self._registered_by_type[resolved_type] = registered
         for field_name, spec in declared_fields.items():
@@ -403,7 +347,7 @@ class AppRC:
                 resolved_type.__name__,
                 field_name,
             )
-        self._kit = self._build_kit()
+        self._schema = self._build_schema()
         return cast(ConfigClassT, resolved_type)
 
     def _build_owner(
@@ -599,6 +543,7 @@ class AppRC:
                             f"{type(value).__name__}."
                         )
                 else:
+                    assert issubclass(expected_type, ConfigBase)
                     registered = self_app._registered_by_type[expected_type]
                     LOG.debug(
                         'Constructing config "%s" using %s.',

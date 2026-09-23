@@ -95,7 +95,7 @@ reset-venv:
 # Key rule: CI and teammates should *not* relock by accident.
 # We therefore install with `--locked` which errors if uv.lock is stale.
 # If it errors, you intentionally run `just lock` or `just upgrade`.
-# > --all-extras: Install all published extras from [project.optional-dependencies], such as tui.
+# > --all-extras: Install any declared extras. The terminal wrapper is a dev dependency.
 # > --all-groups: Install all local groups from [dependency-groups], such as dev.
 # > --no-default-groups: Skip uv's default groups, including dev, for runtime-only installs.
 # > --frozen: Sync from uv.lock while ignoring pyproject.toml
@@ -202,9 +202,6 @@ _release-artifact-check notes_output:
     notes_output="{{notes_output}}"
     artifact_root="$(mktemp -d)"
     readme_candidate="$artifact_root/README.pypi.md"
-    smoke_root="$artifact_root/smoke"
-    smoke_script="$(realpath src/apprc_dev/packaging/install_smoke.py)"
-    mkdir -p "$smoke_root"
     trap 'rm -rf "$artifact_root"' EXIT
 
     mkdir -p "$(dirname "$notes_output")"
@@ -223,57 +220,25 @@ _release-artifact-check notes_output:
         exit 1
     fi
 
+    python src/apprc_dev/packaging/terminal_metadata.py --check
     rm -rf dist
-    uv build --python 3.12 --no-sources
-
-    shopt -s nullglob
-    wheels=(dist/*.whl)
-    sdists=(dist/*.tar.gz)
-    if [[ "${#wheels[@]}" -ne 1 || "${#sdists[@]}" -ne 1 ]]; then
-        echo "Expected exactly one wheel and one sdist in dist/." >&2
-        exit 1
-    fi
-
-    expected_wheel="apprc-${version}-py3-none-any.whl"
-    expected_sdist="apprc-${version}.tar.gz"
-    if [[ "$(basename "${wheels[0]}")" != "$expected_wheel" ]]; then
-        echo "Expected wheel ${expected_wheel}, found ${wheels[0]}." >&2
-        exit 1
-    fi
-    if [[ "$(basename "${sdists[0]}")" != "$expected_sdist" ]]; then
-        echo "Expected sdist ${expected_sdist}, found ${sdists[0]}." >&2
-        exit 1
-    fi
-
-    wheel="$(realpath "${wheels[0]}")"
-    sdist="$(realpath "${sdists[0]}")"
-    uv run --with twine --no-project -- twine check "$wheel" "$sdist"
-
-    (
-        cd "$smoke_root"
-        for python_version in 3.12 3.13 3.14; do
-            uv run \
-                --isolated \
-                --python "$python_version" \
-                --with "$wheel" \
-                python "$smoke_script"
-        done
-        uv run \
-            --isolated \
-            --python 3.12 \
-            --with "$sdist" \
-            python "$smoke_script"
-    )
-
-    echo "🧪 PyPI publication dry run: no files will be uploaded."
-    uv publish \
-        --dry-run \
-        --trusted-publishing never \
-        --token unused-local-dry-run-token \
-        --check-url https://pypi.org/simple/apprc/ \
-        "$wheel" \
-        "$sdist"
-    echo "✅ PyPI publication dry run passed; nothing was uploaded."
+    uv build --python 3.12 --no-sources --package apprc-core
+    uv build --python 3.12 --no-sources --package apprc
+    uv run --with twine --no-project -- twine check dist/*
+    for python_version in 3.12 3.13 3.14; do
+        uv run --isolated --no-project --python "$python_version" \
+            python src/apprc_dev/packaging/artifact_check.py dist
+    done
+    echo "PyPI publication dry run: no files will be uploaded."
+    for project in apprc-core apprc; do
+        prefix="${project//-/_}"
+        if [[ "$project" == apprc ]]; then prefix=apprc; fi
+        uv publish --dry-run --trusted-publishing never \
+            --token unused-local-dry-run-token \
+            --check-url "https://pypi.org/simple/${project}/" \
+            dist/"${prefix}"-*.whl dist/"${prefix}"-*.tar.gz
+    done
+    echo "PyPI publication dry run passed; nothing was uploaded."
 
 # Rehearse the complete local release gate without publishing
 publish-check:
@@ -321,6 +286,7 @@ release-prepare level="patch":
             cp "$release_root/pyproject.toml" pyproject.toml
             cp "$release_root/uv.lock" uv.lock
             cp "$release_root/pylock.toml" pylock.toml
+            python src/apprc_dev/packaging/terminal_metadata.py
         fi
         rm -rf "$release_root"
         exit "$exit_code"
@@ -333,12 +299,14 @@ release-prepare level="patch":
 
     cp pyproject.toml uv.lock pylock.toml "$release_root/"
     restore_version_files=true
-    uv version --bump "{{level}}" --no-sync
+    uv version --bump "{{level}}" --no-sync --frozen
+    python src/apprc_dev/packaging/terminal_metadata.py
+    uv lock
     uv export -o pylock.toml --all-extras --all-groups --quiet
     APPRC_RELEASE_IN_PROGRESS=1 just publish-check
 
     git commit \
-        --only pyproject.toml uv.lock pylock.toml \
+        --only pyproject.toml uv.lock pylock.toml src/apprc_dev/packaging/terminal/pyproject.toml \
         -m "Bump version to ${next_version}"
     restore_version_files=false
     if ! git tag -a "${tag}" -m "Release ${tag}"; then
@@ -433,8 +401,8 @@ publish-pypi tag:
     fi
     wheel_count="$(gh release view "$tag" --json assets --jq '[.assets[].name | select(endswith(".whl"))] | length')"
     sdist_count="$(gh release view "$tag" --json assets --jq '[.assets[].name | select(endswith(".tar.gz"))] | length')"
-    if [[ "$wheel_count" != 1 || "$sdist_count" != 1 ]]; then
-        echo "GitHub Release ${tag} must contain exactly one wheel and one source archive." >&2
+    if [[ "$wheel_count" != 2 || "$sdist_count" != 2 ]]; then
+        echo "GitHub Release ${tag} must contain exactly two wheels and two source archives." >&2
         exit 1
     fi
 

@@ -45,8 +45,8 @@ from apprc.interfaces.tui._value_modal_rendering import (
     source_value_text,
 )
 from tests.support_config import (
+    example_resolution,
     APPRC_EXAMPLE_APP_OWNER,
-    APPRC_EXAMPLE_APP_OWNERS,
 )
 from tests.support_tui import text_has_span
 
@@ -65,18 +65,19 @@ def _text_cell(row: FieldTableRow, index: int) -> Text:
 
 def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     rows = build_field_table_rows(
-        owners=APPRC_EXAMPLE_APP_OWNERS,
-        user_dotenv_values={
-            "APPRC_EXAMPLE_APP_ACCESS_TOKEN": "secret",
-        },
-        storage_values={
-            "APPRC_EXAMPLE_APP_RETRY_COUNT": "9",
-        },
-        defaults_values=None,
         include_user_dotenv=True,
         include_storage=True,
         hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_STORAGE"}),
-        shell_env={"APPRC_EXAMPLE_APP_MODE": "MANUAL"},
+        resolved=example_resolution(
+            user_dotenv_values={
+                "APPRC_EXAMPLE_APP_ACCESS_TOKEN": "secret",
+            },
+            storage_values={
+                "APPRC_EXAMPLE_APP_RETRY_COUNT": "9",
+            },
+            defaults_values=None,
+            shell_env={"APPRC_EXAMPLE_APP_MODE": "MANUAL"},
+        ),
     )
     rows_by_key = {row.env_key: row for row in rows if row.env_key is not None}
 

@@ -1,1 +1,1 @@
-"""Internal process-time bootstrap, provenance, and diagnostics packages."""
+"""Internal source resolution, configuration lifecycle, and provenance."""

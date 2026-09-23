@@ -143,7 +143,7 @@ def args_after_command(
     """Return tokens after one top-level command group.
 
     Click's root callback does not expose child command arguments, so callers
-    can inspect ``sys.argv`` before bootstrap produces runtime side effects for
+    can inspect ``sys.argv`` before resolution validates runtime inputs for
     help-only usage errors.
 
     :param command_name: Top-level command name to locate.

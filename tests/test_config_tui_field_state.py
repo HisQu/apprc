@@ -5,6 +5,7 @@ from apprc.interfaces.tui._field_state import (
     selected_field_for_row,
 )
 from tests.support_config import (
+    example_resolution,
     APPRC_EXAMPLE_APP_OWNER,
     APPRC_EXAMPLE_APP_OWNERS,
 )
@@ -58,12 +59,14 @@ def test_config_value_sources_prefer_shell_over_storage_user_and_defaults() -> (
     sources = config_value_sources(
         spec=profile,
         env_key=env_key,
-        user_dotenv_values={env_key: "user-profile"},
-        storage_values={env_key: "storage-profile"},
-        shell_env={env_key: "shell-profile"},
-        defaults_values={env_key: "shared-profile"},
         include_user_dotenv=True,
         include_storage=True,
+        resolved=example_resolution(
+            user_dotenv_values={env_key: "user-profile"},
+            storage_values={env_key: "storage-profile"},
+            shell_env={env_key: "shell-profile"},
+            defaults_values={env_key: "shared-profile"},
+        ),
     )
     sources_by_key = {source.key: source for source in sources}
 
@@ -82,12 +85,14 @@ def test_config_value_sources_keep_empty_storage_values_copyable() -> None:
     sources = config_value_sources(
         spec=profile,
         env_key=env_key,
-        user_dotenv_values={},
-        storage_values={env_key: ""},
-        shell_env={},
-        defaults_values={env_key: "shared-profile"},
         include_user_dotenv=False,
         include_storage=True,
+        resolved=example_resolution(
+            user_dotenv_values={},
+            storage_values={env_key: ""},
+            shell_env={},
+            defaults_values={env_key: "shared-profile"},
+        ),
     )
     sources_by_key = {source.key: source for source in sources}
 
@@ -104,12 +109,14 @@ def test_config_value_sources_disable_missing_required_values() -> None:
     sources = config_value_sources(
         spec=access_token,
         env_key=env_key,
-        user_dotenv_values={},
-        storage_values={},
-        shell_env={},
-        defaults_values={},
         include_user_dotenv=True,
         include_storage=True,
+        resolved=example_resolution(
+            user_dotenv_values={},
+            storage_values={},
+            shell_env={},
+            defaults_values={},
+        ),
     )
 
     assert all(not source.is_available for source in sources)
@@ -122,12 +129,14 @@ def test_config_value_sources_fall_back_to_declared_default() -> None:
     sources = config_value_sources(
         spec=enabled,
         env_key=env_key,
-        user_dotenv_values={},
-        storage_values={},
-        shell_env={},
-        defaults_values=None,
         include_user_dotenv=False,
         include_storage=False,
+        resolved=example_resolution(
+            user_dotenv_values={},
+            storage_values={},
+            shell_env={},
+            defaults_values=None,
+        ),
     )
     sources_by_key = {source.key: source for source in sources}
 

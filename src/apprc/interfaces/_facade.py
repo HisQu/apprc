@@ -19,7 +19,7 @@ _CLI_EXPORTS = [
     "DefaultConfigCliState",
     "CliRuntimePolicy",
     "MountCliRuntimeStateFactory",
-    "bootstrap_cli_env",
+    "resolve_cli_config",
     "cli_options_from",
     "mount_config_cli",
     "parse_log_level",

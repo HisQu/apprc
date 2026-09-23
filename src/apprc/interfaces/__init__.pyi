@@ -17,7 +17,7 @@ from apprc.interfaces.cli import (
     DefaultConfigCliState as DefaultConfigCliState,
     CliRuntimePolicy as CliRuntimePolicy,
     MountCliRuntimeStateFactory as MountCliRuntimeStateFactory,
-    bootstrap_cli_env as bootstrap_cli_env,
+    resolve_cli_config as resolve_cli_config,
     cli_options_from as cli_options_from,
     mount_config_cli as mount_config_cli,
     parse_log_level as parse_log_level,

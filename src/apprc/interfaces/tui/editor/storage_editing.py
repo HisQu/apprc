@@ -28,14 +28,9 @@ from apprc.interfaces.tui.storage.selection import (
 )
 from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
 from apprc.user_files.storage_roots.model import StorageRecord
-from apprc.user_files.storage_roots.move import move_storage
 from apprc.user_files.storage_roots.paths import (
     normalize_storage_root_path,
     resolve_storage_root_path,
-)
-from apprc.user_files.storage_roots.registry import (
-    rename_storage,
-    repoint_storage,
 )
 
 
@@ -98,10 +93,9 @@ class StorageEditingWorkflows(StorageWorkflowBase):
             return
         try:
             self.editor.storage_registry = await asyncio.to_thread(
-                rename_storage,
+                self.editor.manager.rename_storage,
                 current_name=record.name,
                 name=name,
-                path=registry.path,
             )
         except (OSError, TypeError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -155,10 +149,7 @@ class StorageEditingWorkflows(StorageWorkflowBase):
             return
         try:
             self.editor.storage_registry = await asyncio.to_thread(
-                repoint_storage,
-                name=record.name,
-                root=root,
-                path=registry.path,
+                self.editor.manager.repoint_storage, name=record.name, root=root
             )
         except (OSError, TypeError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
@@ -212,10 +203,9 @@ class StorageEditingWorkflows(StorageWorkflowBase):
             return
         try:
             move_result = await asyncio.to_thread(
-                move_storage,
+                self.editor.manager.move_storage,
                 name=record.name,
                 destination=destination,
-                path=registry.path,
             )
         except (OSError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)

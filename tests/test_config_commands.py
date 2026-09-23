@@ -1,4 +1,8 @@
 from __future__ import annotations
+from apprc.interfaces.cli.config_command.app import build_config_typer_app
+
+
+from apprc.user_files.app_home.application import AppFiles
 
 import json
 from pathlib import Path
@@ -6,7 +10,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 import apprc.interfaces.cli.config_command._runtime_commands as runtime_commands
-from apprc.definition.app_config.kit import AppConfigKit
+from tests.support_declaration import app_from_envs
 from apprc.definition.app_config.storage import Storage
 from apprc.interfaces.cli.setup_command import run_config_setup
 from apprc.user_files.storage_roots.registry import (
@@ -16,16 +20,16 @@ from tests.support_config import (
     ApprcExampleAppConfigState,
     ApprcExampleAppEnv,
     StorageFreeExampleConfigState,
-    build_apprc_example_app_kit,
-    build_storage_free_example_kit,
+    build_apprc_example_app,
+    build_storage_free_example_app,
     compact_cli_output,
-    register_storage_for_kit,
+    register_storage_for_app,
 )
 
 
 def test_config_paths_is_zero_write_and_uses_file_specific_names() -> None:
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    kit = build_apprc_example_app()
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
 
     result = CliRunner().invoke(app, ["paths", "--json"])
 
@@ -45,36 +49,39 @@ def test_setup_default_storage_follows_relocated_apprc_directory(
     """The default root remains beside AppRC files after relocation."""
     apprc_dir = tmp_path / "relocated"
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(apprc_dir))
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
 
     run_config_setup(kit, assume_yes=True)
 
     registry = load_storage_registry_or_empty(
-        kit.spec.preferred_apprc_toml_path()
+        AppFiles(kit.schema).preferred_apprc_toml_path()
     )
     assert registry.selected("default").root == apprc_dir / "storage"
     assert (apprc_dir / "storage" / "apprc.storage.env").is_file()
 
 
-def test_config_doctor_explains_missing_storage_selection(monkeypatch) -> None:
+def test_config_doctor_reports_required_field_without_runtime_policy(
+    monkeypatch,
+) -> None:
     monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app_kit()
-    kit.spec.ensure_user_dotenv()
-    kit.spec.preferred_apprc_toml_path().write_text("", encoding="utf-8")
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    kit = build_apprc_example_app()
+    AppFiles(kit.schema).ensure_user_dotenv()
+    AppFiles(kit.schema).preferred_apprc_toml_path().write_text(
+        "", encoding="utf-8"
+    )
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
 
     result = CliRunner().invoke(app, ["doctor"])
     output = compact_cli_output(result)
 
     assert result.exit_code == 1
-    assert "storagenotselected" in output
-    assert "--storageNAME_OR_PATH" in output
-    assert "APPRC_EXAMPLE_APP_STORAGE=NAME_OR_PATH" in output
+    assert "Configurationvaluesareinvalid" in output
+    assert "APPRC_EXAMPLE_APP_STORAGE" in output
 
 
 def test_storage_free_app_hides_storage_commands() -> None:
-    kit = build_storage_free_example_kit()
-    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    kit = build_storage_free_example_app()
+    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
     runner = CliRunner()
 
     help_result = runner.invoke(app, ["--help"])
@@ -92,8 +99,8 @@ def test_storage_free_app_hides_storage_commands() -> None:
 
 
 def test_storage_cli_enforces_selection_lifecycle(tmp_path: Path) -> None:
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    kit = build_apprc_example_app()
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
     alpha = tmp_path / "alpha"
     beta = tmp_path / "beta"
@@ -117,15 +124,15 @@ def test_storage_cli_enforces_selection_lifecycle(tmp_path: Path) -> None:
     assert removed.exit_code == 0, removed.output
     assert "no storage is selected" in removed.output
     registry = load_storage_registry_or_empty(
-        kit.spec.preferred_apprc_toml_path()
+        AppFiles(kit.schema).preferred_apprc_toml_path()
     )
     assert list(registry.storages) == ["primary"]
     assert registry.selected_storage is None
 
 
 def test_storage_repoint_changes_only_registry_path(tmp_path: Path) -> None:
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    kit = build_apprc_example_app()
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
     source = tmp_path / "source"
     target = tmp_path / "target"
@@ -140,7 +147,7 @@ def test_storage_repoint_changes_only_registry_path(tmp_path: Path) -> None:
     assert source.is_dir()
     assert target.is_dir()
     registry = load_storage_registry_or_empty(
-        kit.spec.preferred_apprc_toml_path()
+        AppFiles(kit.schema).preferred_apprc_toml_path()
     )
     assert registry.selected("alpha").root == target.resolve()
 
@@ -148,8 +155,8 @@ def test_storage_repoint_changes_only_registry_path(tmp_path: Path) -> None:
 def test_storage_move_moves_directory_and_updates_registry(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    kit = build_apprc_example_app()
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
     runner = CliRunner()
     source = tmp_path / "source"
     destination = tmp_path / "destination"
@@ -165,7 +172,7 @@ def test_storage_move_moves_directory_and_updates_registry(
     assert not source.exists()
     assert (destination / "payload.txt").read_text(encoding="utf-8") == "keep"
     registry = load_storage_registry_or_empty(
-        kit.spec.preferred_apprc_toml_path()
+        AppFiles(kit.schema).preferred_apprc_toml_path()
     )
     assert registry.selected("alpha").root == destination.resolve()
 
@@ -174,8 +181,8 @@ def test_relative_storage_roots_resolve_from_apprc_toml(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    kit = build_apprc_example_app()
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
     unrelated_cwd = tmp_path / "cwd"
     unrelated_cwd.mkdir()
     monkeypatch.chdir(unrelated_cwd)
@@ -186,17 +193,17 @@ def test_relative_storage_roots_resolve_from_apprc_toml(
 
     assert result.exit_code == 0, result.output
     registry = load_storage_registry_or_empty(
-        kit.spec.preferred_apprc_toml_path()
+        AppFiles(kit.schema).preferred_apprc_toml_path()
     )
     assert (
         registry.selected("alpha").root
-        == (kit.spec.apprc_dir() / "relative-root").resolve()
+        == (AppFiles(kit.schema).apprc_dir() / "relative-root").resolve()
     )
 
 
 def test_config_set_writes_user_dotenv_for_storage_free_app() -> None:
-    kit = build_storage_free_example_kit()
-    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    kit = build_storage_free_example_app()
+    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
     setup = CliRunner().invoke(app, ["setup", "--yes"])
 
     result = CliRunner().invoke(
@@ -206,14 +213,14 @@ def test_config_set_writes_user_dotenv_for_storage_free_app() -> None:
 
     assert setup.exit_code == 0, setup.output
     assert result.exit_code == 0, result.output
-    assert kit.spec.user_dotenv_path().read_text(encoding="utf-8") == (
-        'STORAGE_FREE_APP_PROFILE="local"\n'
-    )
+    assert AppFiles(kit.schema).user_dotenv_path().read_text(
+        encoding="utf-8"
+    ) == ('STORAGE_FREE_APP_PROFILE="local"\n')
 
 
 def test_config_set_requires_user_dotenv_setup() -> None:
-    kit = build_storage_free_example_kit()
-    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
+    kit = build_storage_free_example_app()
+    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
 
     result = CliRunner().invoke(
         app,
@@ -221,16 +228,16 @@ def test_config_set_requires_user_dotenv_setup() -> None:
     )
 
     assert result.exit_code != 0
-    assert "user dotenv is not set up" in result.output
-    assert "config setup" in result.output
-    assert not kit.spec.user_dotenv_path().exists()
+    assert "unavailable" in result.output
+    assert "Initializeuseroverrides" in compact_cli_output(result)
+    assert not AppFiles(kit.schema).user_dotenv_path().exists()
 
 
 def test_config_purge_reports_unmanaged_data_that_remains() -> None:
-    kit = build_storage_free_example_kit()
-    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
-    kit.spec.ensure_user_dotenv()
-    unrelated = kit.spec.apprc_dir() / "keep.txt"
+    kit = build_storage_free_example_app()
+    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
+    AppFiles(kit.schema).ensure_user_dotenv()
+    unrelated = AppFiles(kit.schema).apprc_dir() / "keep.txt"
     unrelated.write_text("keep", encoding="utf-8")
 
     result = CliRunner().invoke(app, ["purge", "--yes"])
@@ -241,19 +248,23 @@ def test_config_purge_reports_unmanaged_data_that_remains() -> None:
 
 
 def test_generated_commands_follow_declared_capabilities() -> None:
-    process_only = AppConfigKit(
-        app_id="process_only",
-        display_name="Process Only",
-        config_package="process_env.config",
-        envs=(ApprcExampleAppEnv,),
-    ).typer_app()
-    storage_only = AppConfigKit(
-        app_id="storage_only",
-        display_name="Storage Only",
-        config_package="storage.config",
-        envs=(ApprcExampleAppEnv,),
-        storage=Storage(),
-    ).typer_app()
+    process_only = build_config_typer_app(
+        app_from_envs(
+            app_id="process_only",
+            display_name="Process Only",
+            config_package="process_env.config",
+            envs=(ApprcExampleAppEnv,),
+        ),
+    )
+    storage_only = build_config_typer_app(
+        app_from_envs(
+            app_id="storage_only",
+            display_name="Storage Only",
+            config_package="storage.config",
+            envs=(ApprcExampleAppEnv,),
+            storage=Storage(),
+        ),
+    )
 
     assert {command.name for command in process_only.registered_commands} == {
         "paths",
@@ -279,8 +290,12 @@ def test_generated_commands_follow_declared_capabilities() -> None:
 
 def test_migrate_storage_mapping_options_follow_storage_capability() -> None:
     """Only storage declarations expose selector migration options."""
-    storage_app = build_apprc_example_app_kit().typer_app()
-    user_dotenv_app = build_storage_free_example_kit().typer_app()
+    storage_app = build_config_typer_app(
+        build_apprc_example_app(),
+    )
+    user_dotenv_app = build_config_typer_app(
+        build_storage_free_example_app(),
+    )
     runner = CliRunner()
 
     storage_help = runner.invoke(storage_app, ["migrate", "--help"])
@@ -301,12 +316,12 @@ def test_migrate_unknown_selector_requires_explicit_root_noninteractively(
     tmp_path: Path,
 ) -> None:
     """A bare unknown selector produces one copyable recovery command."""
-    kit = build_apprc_example_app_kit()
-    kit.spec.ensure_user_dotenv()
-    register_storage_for_kit(kit, name="opa", root=tmp_path / "opa")
+    kit = build_apprc_example_app()
+    AppFiles(kit.schema).ensure_user_dotenv()
+    register_storage_for_app(kit, name="opa", root=tmp_path / "opa")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "ontology")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "legacy-config"))
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
 
     result = CliRunner().invoke(app, ["migrate", "--dry-run"])
 
@@ -326,14 +341,14 @@ def test_migrate_unknown_selector_registers_explicit_root(
     tmp_path: Path,
 ) -> None:
     """The non-interactive option maps a name without replacing entries."""
-    kit = build_apprc_example_app_kit()
-    kit.spec.ensure_user_dotenv()
-    register_storage_for_kit(kit, name="opa", root=tmp_path / "opa")
+    kit = build_apprc_example_app()
+    AppFiles(kit.schema).ensure_user_dotenv()
+    register_storage_for_app(kit, name="opa", root=tmp_path / "opa")
     ontology_root = tmp_path / "ontology"
     ontology_root.mkdir()
     monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "ontology")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "legacy-config"))
-    app = kit.typer_app(state_type=ApprcExampleAppConfigState)
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
 
     result = CliRunner().invoke(
         app,
@@ -348,20 +363,20 @@ def test_migrate_unknown_selector_registers_explicit_root(
     assert result.exit_code == 0, result.output
     assert f"register: ontology -> {ontology_root.resolve()}" in result.output
     registry = load_storage_registry_or_empty(
-        kit.spec.preferred_apprc_toml_path()
+        AppFiles(kit.schema).preferred_apprc_toml_path()
     )
     assert set(registry.storages) == {"opa", "ontology"}
     assert registry.selected_storage == "ontology"
     assert registry.selected("ontology").root == ontology_root.resolve()
-    assert kit.spec.storage_dotenv_path(ontology_root).is_file()
+    assert AppFiles(kit.schema).storage_dotenv_path(ontology_root).is_file()
 
 
 def test_config_set_confirms_duplicate_cleanup_before_writing(
     monkeypatch,
 ) -> None:
-    kit = build_storage_free_example_kit()
-    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
-    dotenv = kit.spec.ensure_user_dotenv()
+    kit = build_storage_free_example_app()
+    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
+    dotenv = AppFiles(kit.schema).ensure_user_dotenv()
     original = (
         "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n"
     )
@@ -385,9 +400,9 @@ def test_config_set_confirms_duplicate_cleanup_before_writing(
 
 
 def test_config_set_warns_after_noninteractive_duplicate_cleanup() -> None:
-    kit = build_storage_free_example_kit()
-    app = kit.typer_app(state_type=StorageFreeExampleConfigState)
-    dotenv = kit.spec.ensure_user_dotenv()
+    kit = build_storage_free_example_app()
+    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
+    dotenv = AppFiles(kit.schema).ensure_user_dotenv()
     dotenv.write_text(
         "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n",
         encoding="utf-8",
@@ -403,3 +418,30 @@ def test_config_set_warns_after_noninteractive_duplicate_cleanup() -> None:
         result.output.index("Warning:")
     )
     assert "comment out duplicate line 2" in result.output
+
+
+def test_setup_show_and_purge_honor_explicit_directory_inputs(
+    tmp_path: Path,
+) -> None:
+    """All command kinds use the same invocation-selected managed directory."""
+    import apprc as rc
+    import typer
+
+    declaration = rc.AppRC(app_id="input-routing", user_dotenv=rc.UserDotenv())
+    app = typer.Typer()
+    rc.cli.mount_config_cli(app, declaration)
+    directory = tmp_path / "selected"
+    explicit = tmp_path / "deployment.env"
+    explicit.write_text(f'INPUT_ROUTING_APPRC_DIR="{directory.as_posix()}"\n')
+    runner = CliRunner()
+    options = ["--env-file", str(explicit)]
+    setup = runner.invoke(app, [*options, "config", "setup", "--yes"])
+    assert setup.exit_code == 0, setup.output
+    assert (directory / "apprc.user.env").is_file()
+    show = runner.invoke(app, [*options, "config", "show", "--json"])
+    assert show.exit_code == 0, show.output
+    assert json.loads(show.output)["apprc_dir"] == str(directory)
+    purge = runner.invoke(app, [*options, "config", "purge", "--yes"])
+    assert purge.exit_code == 0, purge.output
+    assert not (directory / "apprc.user.env").exists()
+    assert explicit.is_file()

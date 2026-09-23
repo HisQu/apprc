@@ -28,6 +28,10 @@ wheels = [{ url = "https://files.pythonhosted.org/packages/81/29/5ecc3a15d5a33e3
 
 [[packages]]
 name = "apprc"
+directory = { path = "src/apprc_dev/packaging/terminal", editable = true }
+
+[[packages]]
+name = "apprc-core"
 directory = { path = ".", editable = true }
 
 [[packages]]
@@ -117,6 +121,13 @@ version = "6.3.0"
 index = "https://pypi.org/simple"
 sdist = { url = "https://files.pythonhosted.org/packages/07/18/3c8523962314be6bf4c8989c79ad9531c825210dd13a8669f6b84336e8bd/bleach-6.3.0.tar.gz", upload-time = 2025-10-27T17:57:39Z, size = 203533, hashes = { sha256 = "6f3b91b1c0a02bb9a78b5a454c92506aa0fdf197e1d5e114d2e00c6f64306d22" } }
 wheels = [{ url = "https://files.pythonhosted.org/packages/cd/3a/577b549de0cc09d95f11087ee63c739bba856cd3952697eec4c4bb91350a/bleach-6.3.0-py3-none-any.whl", upload-time = 2025-10-27T17:57:37Z, size = 164437, hashes = { sha256 = "fe10ec77c93ddf3d13a73b035abaac7a9f5e436513864ccdad516693213c65d6" } }]
+
+[[packages]]
+name = "build"
+version = "1.6.1"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/bd/67/4898a44ea4f3f8e213b0954ec0aa0a16971d62a6212d6ea3931e97115b99/build-1.6.1.tar.gz", upload-time = 2026-09-10T07:56:00Z, size = 113427, hashes = { sha256 = "51cc11666391ab6f092070437ac747002ff46f3e4113a3622177ee6b488bfc53" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/ad/9b/9fb3585dabcd73a1b2a6267f63f62649347c9e6d072c9fde365b105abb2c/build-1.6.1-py3-none-any.whl", upload-time = 2026-09-10T07:55:59Z, size = 31179, hashes = { sha256 = "ecd351a4be9d35a9eaaba244a7687143c9c7d4aea6ac964e7e7ddab20cbcf4e7" } }]
 
 [[packages]]
 name = "certifi"
@@ -255,7 +266,7 @@ wheels = [
 [[packages]]
 name = "colorama"
 version = "0.4.6"
-marker = "sys_platform == 'win32'"
+marker = "os_name == 'nt' or sys_platform == 'win32'"
 index = "https://pypi.org/simple"
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", upload-time = 2022-10-25T02:36:22Z, size = 27697, hashes = { sha256 = "08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44" } }
 wheels = [{ url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", upload-time = 2022-10-25T02:36:20Z, size = 25335, hashes = { sha256 = "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6" } }]
@@ -1331,6 +1342,13 @@ version = "3.3.2"
 index = "https://pypi.org/simple"
 sdist = { url = "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz", upload-time = 2026-01-21T03:57:59Z, size = 6851574, hashes = { sha256 = "c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc" } }
 wheels = [{ url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", upload-time = 2026-01-21T03:57:55Z, size = 122781, hashes = { sha256 = "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d" } }]
+
+[[packages]]
+name = "pyproject-hooks"
+version = "1.3.3"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/6d/5d/f2ddeef4a855a102aaae5e97826a0260007522ab504421b75addfdb1517c/pyproject_hooks-1.3.3.tar.gz", upload-time = 2026-09-16T08:58:03Z, size = 21013, hashes = { sha256 = "defda19b854fa0d3bd4f76ea4ddcba8abd7dcfcdd585a6690ade050744fc5f43" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/85/11/044d1ae1b4ec0d7af88ee5bc91e081be1022533032b906a7bdabdbb60977/pyproject_hooks-1.3.3-py3-none-any.whl", upload-time = 2026-09-16T08:58:02Z, size = 10724, hashes = { sha256 = "5fc53fdac9f7bd63fbcdc868fb5f90b4784d78a53a3d3388cd738b807441a20b" } }]
 
 [[packages]]
 name = "pyright"

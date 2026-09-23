@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 # == Standard Library ========================
 import os
 from collections.abc import Collection, Mapping, Sequence
@@ -20,9 +22,9 @@ from apprc.interfaces.cli._typer_utils import (
     help_requested_before_separator,
     parse_leading_options,
 )
-from apprc.runtime.result import EnvBootstrapResult
-from apprc.runtime._process_env import selection_env
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.runtime.resolution import ResolvedConfig
+from apprc.runtime._selection import selection_env
+from apprc.public.app_rc import AppRC
 from apprc.user_files.storage_roots._loading import (
     load_optional_runtime_storage_registry,
 )
@@ -35,7 +37,7 @@ from apprc.user_files.storage_roots.selector import (
 class ConfigCliState(Protocol):
     """Host CLI state fields understood by the generic config app."""
 
-    env_bootstrap: EnvBootstrapResult | None
+    resolved: ResolvedConfig | None
 
 
 class StorageConfigCliState(ConfigCliState, Protocol):
@@ -48,11 +50,11 @@ class StorageConfigCliState(ConfigCliState, Protocol):
 class DefaultConfigCliState:
     """Default CLI state understood by generated AppRC config commands.
 
-    :param env_bootstrap: Runtime bootstrap result, when bootstrap ran.
+    :param resolved: Runtime resolution result, when resolution ran.
     :param storage: Optional CLI ``--storage`` selector.
     """
 
-    env_bootstrap: EnvBootstrapResult | None = None
+    resolved: ResolvedConfig | None = None
     storage: str | None = None
 
     @classmethod
@@ -60,13 +62,13 @@ class DefaultConfigCliState:
         cls,
         context: CliRuntimeContext,
     ) -> DefaultConfigCliState:
-        """Build generic config state from stored AppRC bootstrap metadata.
+        """Build generic config state from stored AppRC resolution metadata.
 
-        :param context: AppRC bootstrap context stored on Typer metadata.
+        :param context: AppRC resolution context stored on Typer metadata.
         :return: Generic state for generated config commands.
         """
         return cls(
-            env_bootstrap=context.env_bootstrap,
+            resolved=context.resolved,
             storage=context.runtime_options.storage,
         )
 
@@ -95,7 +97,7 @@ class ConfigRuntimePolicy:
     :param root_value_options: CLI options that consume one following
         value before the config command.
     :param skip_invalid_options: Whether unknown leading options under the
-        config group should avoid runtime bootstrap so Typer can report the
+        config group should avoid runtime resolution so Typer can report the
         parse error without user-dotenv or runtime failures.
     """
 
@@ -112,10 +114,10 @@ class ConfigRuntimePolicy:
         *,
         tokens: Sequence[str] | None = None,
     ) -> bool:
-        """Return whether one CLI run can skip runtime bootstrap.
+        """Return whether one CLI run can skip runtime resolution.
 
         :param tokens: Optional command tokens without the program name.
-        :return: Whether runtime bootstrap should be avoided.
+        :return: Whether runtime resolution should be avoided.
         """
         return config_request_skips_runtime(
             self.config_group_name,
@@ -138,7 +140,7 @@ def config_request_skips_runtime(
     ),
     skip_invalid_options: bool = True,
 ) -> bool:
-    """Return whether one config CLI run avoids runtime bootstrap.
+    """Return whether one config CLI run avoids runtime resolution.
 
     :param command_name: Top-level config command name to inspect.
     :param tokens: Optional command tokens without the program name.
@@ -149,7 +151,7 @@ def config_request_skips_runtime(
     :param runtime_independent_actions: Config actions that can run before
         runtime setup.
     :param skip_invalid_options: Whether unknown leading options under the
-        config group should skip runtime bootstrap so Typer can report the
+        config group should skip runtime resolution so Typer can report the
         parse error directly.
     :return: Whether the config command can run without runtime state.
     """
@@ -181,7 +183,7 @@ def config_request_skips_runtime(
 
 
 def active_storage_root_from_state(
-    kit: AppConfigKit,
+    apprc: AppRC,
     state: ConfigCliState,
     *,
     explicit_values: Mapping[str, str] | None = None,
@@ -189,7 +191,7 @@ def active_storage_root_from_state(
 ) -> Path | None:
     """Return the active storage root from generic CLI state.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param state: Host CLI state object.
     :param explicit_values: Parsed values from CLI ``--env-file``
         options.
@@ -197,28 +199,28 @@ def active_storage_root_from_state(
         process env values during selector resolution.
     :return: Resolved storage root, or ``None`` when no selector is active.
     """
-    if not kit.spec.uses_storage():
+    if not apprc.schema.uses_storage():
         return None
     storage_state = cast(StorageConfigCliState, state)
-    if (
-        storage_state.env_bootstrap is not None
-        and storage_state.env_bootstrap.storage_root is not None
-    ):
-        return storage_state.env_bootstrap.storage_root
+    if storage_state.resolved is not None:
+        selection = storage_state.resolved.selection
+        return selection.root if selection is not None else None
     selector_env = selection_env(
         original_env=os.environ,
         explicit_values=explicit_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
     registry = load_optional_runtime_storage_registry(
-        kit.spec,
+        apprc.schema,
         proc_env=selector_env,
     )
     selection = resolve_active_storage_selection(
         registry=registry,
-        apprc_toml_path=kit.spec.preferred_apprc_toml_path(selector_env),
+        apprc_toml_path=AppFiles(apprc.schema).preferred_apprc_toml_path(
+            selector_env
+        ),
         storage=storage_state.storage,
-        storage_selector_env_key=kit.spec.require_storage_selector_env_key(),
+        storage_selector_env_key=apprc.schema.require_storage_selector_env_key(),
         original_env=os.environ,
         explicit_values=explicit_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
@@ -227,7 +229,7 @@ def active_storage_root_from_state(
 
 
 def active_storage_root_from_env(
-    kit: AppConfigKit,
+    apprc: AppRC,
     *,
     registry: StorageRegistry | None = None,
     explicit_values: Mapping[str, str] | None = None,
@@ -235,7 +237,7 @@ def active_storage_root_from_env(
 ) -> Path | None:
     """Return the active storage root selected by the current environment.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param registry: Parsed storage registry, if already loaded.
     :param explicit_values: Parsed values from CLI ``--env-file``
         options.
@@ -244,9 +246,9 @@ def active_storage_root_from_env(
     :return: Resolved storage root, or ``None`` when no env selector is set.
     :raises StorageSelectorError: If the env selector cannot be resolved.
     """
-    if not kit.spec.uses_storage():
+    if not apprc.schema.uses_storage():
         return None
-    storage_selector_env_key = kit.spec.require_storage_selector_env_key()
+    storage_selector_env_key = apprc.schema.require_storage_selector_env_key()
     explicit_selector_values = explicit_values or {}
     selector_env = selection_env(
         original_env=os.environ,
@@ -256,12 +258,14 @@ def active_storage_root_from_env(
     selected_registry = registry
     if selected_registry is None:
         selected_registry = load_optional_runtime_storage_registry(
-            kit.spec,
+            apprc.schema,
             proc_env=selector_env,
         )
     selection = resolve_active_storage_selection(
         registry=selected_registry,
-        apprc_toml_path=kit.spec.preferred_apprc_toml_path(selector_env),
+        apprc_toml_path=AppFiles(apprc.schema).preferred_apprc_toml_path(
+            selector_env
+        ),
         storage=None,
         storage_selector_env_key=storage_selector_env_key,
         original_env=os.environ,
@@ -272,7 +276,7 @@ def active_storage_root_from_env(
 
 
 def initial_storage_from_state(
-    kit: AppConfigKit,
+    apprc: AppRC,
     state: ConfigCliState,
     registry: StorageRegistry | None = None,
     *,
@@ -281,7 +285,7 @@ def initial_storage_from_state(
 ) -> str | None:
     """Return the storage that should be selected first in editors.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param state: Host CLI state object.
     :param registry: Optional already-loaded storage table.
     :param explicit_values: Parsed values from CLI ``--env-file``
@@ -290,9 +294,13 @@ def initial_storage_from_state(
         process env values during selector resolution.
     :return: Storage selector to preselect, or ``None``.
     """
-    if state.env_bootstrap is not None:
-        return state.env_bootstrap.storage_name
-    if not kit.spec.uses_storage():
+    if state.resolved is not None:
+        return (
+            state.resolved.selection.storage_name
+            if state.resolved.selection is not None
+            else None
+        )
+    if not apprc.schema.uses_storage():
         return None
     storage_state = cast(StorageConfigCliState, state)
     selector_env = selection_env(
@@ -303,14 +311,16 @@ def initial_storage_from_state(
     selected_registry = registry
     if selected_registry is None:
         selected_registry = load_optional_runtime_storage_registry(
-            kit.spec,
+            apprc.schema,
             proc_env=selector_env,
         )
     selection = resolve_active_storage_selection(
         registry=selected_registry,
-        apprc_toml_path=kit.spec.preferred_apprc_toml_path(selector_env),
+        apprc_toml_path=AppFiles(apprc.schema).preferred_apprc_toml_path(
+            selector_env
+        ),
         storage=storage_state.storage,
-        storage_selector_env_key=kit.spec.require_storage_selector_env_key(),
+        storage_selector_env_key=apprc.schema.require_storage_selector_env_key(),
         original_env=os.environ,
         explicit_values=explicit_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,

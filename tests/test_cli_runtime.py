@@ -10,7 +10,8 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc import AppRC
+from tests.support_declaration import app_from_envs
 from apprc.interfaces.cli import (
     RuntimeIndependentCommand,
     CliArgvProvider,
@@ -32,9 +33,9 @@ from apprc.interfaces.cli import (
 )
 from tests.support_config import (
     StorageFreeExampleEnv,
-    build_apprc_example_app_kit,
-    build_storage_free_example_kit,
-    register_storage_for_kit,
+    build_apprc_example_app,
+    build_storage_free_example_app,
+    register_storage_for_app,
 )
 
 
@@ -368,7 +369,7 @@ def test_config_cli_runtime_builds_state_for_host_command(
             json.dumps(
                 {
                     "base_url": state.base_url,
-                    "bootstrapped": state.env_bootstrap is not None,
+                    "bootstrapped": state.resolved is not None,
                     "ignore_cache": state.ignore_haiu_cache,
                     "model_embed": state.model_embed,
                     "model_llm": state.model_llm,
@@ -423,7 +424,7 @@ def test_config_cli_runtime_default_state_for_host_command() -> None:
         typer.echo(
             json.dumps(
                 {
-                    "bootstrapped": state.env_bootstrap is not None,
+                    "bootstrapped": state.resolved is not None,
                     "storage": state.storage,
                 },
                 sort_keys=True,
@@ -609,7 +610,7 @@ def test_cli_runtime_run_forwarded_uses_child_args_for_runtime_policy() -> None:
 
 
 def test_config_cli_runtime_runtime_command_help_skips_state_factory() -> None:
-    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app_kit()
+    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app()
 
     args = ["run", "--help"]
     app = typer.Typer()
@@ -635,7 +636,7 @@ def test_config_cli_runtime_runtime_command_help_skips_state_factory() -> None:
 def test_config_cli_runtime_runtime_independent_paths_uses_context_only(
     tmp_path: Path,
 ) -> None:
-    kit = build_storage_free_example_kit()
+    kit = build_storage_free_example_app()
     first_env = tmp_path / "first.env"
     second_env = tmp_path / "second.env"
     first_env.write_text("STORAGE_FREE_APP_PROFILE=first\n", encoding="utf-8")
@@ -725,9 +726,9 @@ def test_config_cli_runtime_is_frozen() -> None:
 def test_config_cli_runtime_runtime_independent_set_skips_state_factory(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     storage_root = tmp_path / "storage"
-    register_storage_for_kit(kit, name="alpha", root=storage_root)
+    register_storage_for_app(kit, name="alpha", root=storage_root)
     args = [
         "--storage",
         "alpha",
@@ -764,7 +765,7 @@ def test_config_cli_runtime_runtime_payload_receives_app_state() -> None:
 
     def runtime_payload(state: HaiuLikeState) -> Mapping[str, Any]:
         return {
-            "bootstrapped": state.env_bootstrap is not None,
+            "bootstrapped": state.resolved is not None,
             "model_llm": state.model_llm,
         }
 
@@ -795,18 +796,18 @@ def test_config_show_allows_optional_storage_without_selection(
         str(tmp_path / "apprc"),
     )
     monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app_kit(storage_required=False)
+    kit = build_apprc_example_app()
     args = ["config", "show", "--json"]
     app = typer.Typer()
     factory_calls: list[tuple[CliRuntimeContext, HaiuLikeOptions]] = []
 
     def runtime_payload(state: HaiuLikeState) -> Mapping[str, Any]:
-        bootstrap = state.env_bootstrap
+        selection = (
+            state.resolved.selection if state.resolved is not None else None
+        )
         return {
             "storage_root": (
-                str(bootstrap.storage_root)
-                if bootstrap is not None and bootstrap.storage_root is not None
-                else None
+                str(selection.root) if selection is not None else None
             )
         }
 
@@ -836,7 +837,7 @@ def test_config_cli_runtime_state_factory_type_mismatch_raises() -> None:
         context: CliRuntimeContext,
         options: HaiuLikeOptions,
     ) -> Any:
-        return DefaultConfigCliState(env_bootstrap=context.env_bootstrap)
+        return DefaultConfigCliState(resolved=context.resolved)
 
     _install_haiu_like_runtime(
         app,
@@ -855,7 +856,7 @@ def test_config_cli_runtime_state_factory_type_mismatch_raises() -> None:
 
 
 def test_config_cli_runtime_mount_config_group_custom_name() -> None:
-    kit = build_storage_free_example_kit()
+    kit = build_storage_free_example_app()
     app = typer.Typer()
     args = ["settings", "paths", "--json"]
     factory_calls: list[tuple[CliRuntimeContext, HaiuLikeOptions]] = []
@@ -909,8 +910,8 @@ def _ctx(command_name: str | None) -> typer.Context:
     return cast(typer.Context, _FakeContext(command_name))
 
 
-def _build_storage_free_kit_with_shared_env() -> AppConfigKit:
-    return AppConfigKit(
+def _build_storage_free_kit_with_shared_env() -> AppRC:
+    return app_from_envs(
         app_id="storage_free_app",
         display_name="Storage-Free App",
         config_package="user_dotenv_with_storage.config",
@@ -953,12 +954,12 @@ def _empty_state_factory(
     context: CliRuntimeContext,
     options: HaiuLikeOptions,
 ) -> HaiuLikeState:
-    return HaiuLikeState(env_bootstrap=context.env_bootstrap)
+    return HaiuLikeState(resolved=context.resolved)
 
 
 def _install_haiu_like_runtime(
     app: typer.Typer,
-    kit: AppConfigKit,
+    kit: AppRC,
     *,
     args_provider: CliArgvProvider,
     factory_calls: list[tuple[CliRuntimeContext, HaiuLikeOptions]],
@@ -975,7 +976,7 @@ def _install_haiu_like_runtime(
     ) -> HaiuLikeState:
         factory_calls.append((context, options))
         return HaiuLikeState(
-            env_bootstrap=context.env_bootstrap,
+            resolved=context.resolved,
             storage=options.storage,
             workdir_base=options.workdir_base,
             model_llm=options.model_llm,

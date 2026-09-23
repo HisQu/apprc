@@ -33,8 +33,8 @@ from apprc.interfaces.cli.options import (
     SkipDotenvLayersOption,
     StorageOption,
 )
-from apprc.runtime.result import BootstrapLogger
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.runtime.logging import ResolutionLogger
+from apprc.public.app_rc import AppRC
 
 if TYPE_CHECKING:
     from apprc.interfaces.cli.config_command import ConfigSelectorContext
@@ -46,7 +46,7 @@ StateT = TypeVar("StateT")
 @overload
 def mount_config_cli(
     app: typer.Typer,
-    kit: AppConfigKit,
+    apprc: AppRC,
     *,
     config_group_name: str = "config",
     state_type: type[DefaultConfigCliState] = DefaultConfigCliState,
@@ -54,7 +54,7 @@ def mount_config_cli(
     | None = None,
     args_provider: CliArgvProvider | None = None,
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = (None),
-    storage_required: bool | None = None,
+    storage_required: bool = False,
     runtime_payload: (
         Callable[[DefaultConfigCliState], Mapping[str, Any]] | None
     ) = None,
@@ -74,21 +74,21 @@ def mount_config_cli(
     setup_message: str | None = None,
     runtime_error_param_hint: str = "CONFIG",
     setup_logging: Callable[..., Any] | None = None,
-    logger: BootstrapLogger | None = None,
+    logger: ResolutionLogger | None = None,
 ) -> typer.Typer: ...
 
 
 @overload
 def mount_config_cli(
     app: typer.Typer,
-    kit: AppConfigKit,
+    apprc: AppRC,
     *,
     config_group_name: str = "config",
     state_type: type[StateT],
     state_factory: MountCliRuntimeStateFactory[StateT],
     args_provider: CliArgvProvider | None = None,
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = (None),
-    storage_required: bool | None = None,
+    storage_required: bool = False,
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
     active_storage_root_with_context: (
         Callable[[StateT, "ConfigSelectorContext"], Path | None] | None
@@ -101,20 +101,20 @@ def mount_config_cli(
     setup_message: str | None = None,
     runtime_error_param_hint: str = "CONFIG",
     setup_logging: Callable[..., Any] | None = None,
-    logger: BootstrapLogger | None = None,
+    logger: ResolutionLogger | None = None,
 ) -> typer.Typer: ...
 
 
 def mount_config_cli(
     app: typer.Typer,
-    kit: AppConfigKit,
+    apprc: AppRC,
     *,
     config_group_name: str = "config",
     state_type: type[Any] = DefaultConfigCliState,
     state_factory: MountCliRuntimeStateFactory[Any] | None = None,
     args_provider: CliArgvProvider | None = None,
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = (None),
-    storage_required: bool | None = None,
+    storage_required: bool = False,
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None,
     active_storage_root_with_context: (
         Callable[[Any, "ConfigSelectorContext"], Path | None] | None
@@ -127,12 +127,12 @@ def mount_config_cli(
     setup_message: str | None = None,
     runtime_error_param_hint: str = "CONFIG",
     setup_logging: Callable[..., Any] | None = None,
-    logger: BootstrapLogger | None = None,
+    logger: ResolutionLogger | None = None,
 ) -> typer.Typer:
     """Mount AppRC CLI runtime options and the generated config group.
 
     :param app: Typer application.
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param config_group_name: Name used for the mounted config command group.
     :param state_type: State type created by the standard callback.
     :param state_factory: Optional app-owned state factory used after runtime
@@ -142,8 +142,7 @@ def mount_config_cli(
     :param runtime_policy: Optional runtime skip policy. When omitted, AppRC
         skips runtime setup for generated config setup/inspection and plain
         command help.
-    :param storage_required: Runtime storage policy, or ``None`` to use the
-        declaration's ``Storage.required`` value.
+    :param storage_required: Runtime storage policy, independent of the declaration.
     :param runtime_payload: Optional serializer for ``config show``.
     :param active_storage_root_with_context: Optional storage-root resolver that
         receives explicit env-file selector context.
@@ -154,16 +153,18 @@ def mount_config_cli(
     :param setup_message: Optional setup text for missing storage.
     :param runtime_error_param_hint: Parameter hint for runtime-payload errors.
     :param setup_logging: Optional application logging setup callable.
-    :param logger: Optional application logger for bootstrap status.
+    :param logger: Optional application logger for resolution status.
     :return: Mounted generated config Typer application.
     """
+    if not isinstance(app, typer.Typer):
+        raise TypeError("mount_config_cli supports typer.Typer instances only.")
     if app.registered_callback is not None:
         raise RuntimeError(
             "mount_config_cli() cannot register AppRC CLI runtime options "
             "because this Typer app already has a callback. Use "
             "CliRuntime for app-owned callbacks, or use "
             "CliRuntimeOptions, prepare_cli_runtime_context(), and "
-            "kit.typer_app(...) directly."
+            "rc.cli.build_config_typer_app(apprc, ...) directly."
         )
     if state_factory is None and state_type is not DefaultConfigCliState:
         raise TypeError(
@@ -188,7 +189,7 @@ def mount_config_cli(
         resolved_state_factory = adapt_mount_state_factory
 
     runtime = CliRuntime(
-        kit,
+        apprc,
         state_type=state_type,
         state_factory=resolved_state_factory,
         config_group_name=config_group_name,
@@ -206,7 +207,7 @@ def mount_config_cli(
         logger=logger,
     )
 
-    if kit.spec.uses_storage():
+    if apprc.schema.uses_storage():
 
         @app.callback()
         def apprc_storage_host_callback(

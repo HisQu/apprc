@@ -6,8 +6,3 @@ from apprc.interfaces.tui.editor.app import ConfigEditorApp
 from apprc.interfaces.tui.editor.workflows import (
     ConfigEditorStorageWorkflows,
 )
-
-__all__ = [
-    "ConfigEditorApp",
-    "ConfigEditorStorageWorkflows",
-]

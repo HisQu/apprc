@@ -49,7 +49,7 @@ def build_graph() -> Digraph:
         startup,
         "explicit_env_file",
         "external dotenv",
-        ("--env-file", "one or more files", "all kits"),
+        ("--env-file", "one or more files", "all declarations"),
         pos=gv.fixed_position(4.65, 2.65),
         border_color=gg.PURPLE,
     )
@@ -318,7 +318,7 @@ def _dotenv_card(
     :param graph: Graph or cluster receiving the card.
     :param node_id: DOT identifier for the card.
     :param title: Dotenv filename.
-    :param members: Body rows describing role and kit use.
+    :param members: Body rows describing role and capability use.
     :param pos: Fixed Graphviz position.
     :param color: Border color matching the owning location group.
     :return: None.
@@ -378,7 +378,7 @@ def _toml_card(
     :param graph: Graph or cluster receiving the card.
     :param node_id: DOT identifier for the card.
     :param title: TOML filename.
-    :param members: Body rows describing role and kit use.
+    :param members: Body rows describing role and capability use.
     :param pos: Fixed Graphviz position.
     :return: None.
     """

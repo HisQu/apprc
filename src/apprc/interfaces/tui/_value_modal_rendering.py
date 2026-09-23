@@ -35,12 +35,14 @@ EDIT_TARGET_INPUT_CLASS = "edit-target-input"
 SOURCE_LABELS: dict[EditableConfigValueSourceKey, str] = {
     "effective": "Effective",
     "shell": "Shell",
+    "explicit": "Explicit dotenv",
     "user": "User dotenv",
     "storage": "Storage",
     "defaults": "Defaults",
 }
 SOURCE_ORIGIN_LABELS: dict[ConfigResolvedSourceKey, str] = {
     "shell": SOURCE_LABELS["shell"],
+    "explicit": SOURCE_LABELS["explicit"],
     "user": SOURCE_LABELS["user"],
     "storage": SOURCE_LABELS["storage"],
     "defaults": SOURCE_LABELS["defaults"],
@@ -54,7 +56,9 @@ def config_value_source_key(value: str) -> EditableConfigValueSourceKey | None:
     :return: Known source key, or ``None`` for unknown text.
     """
     match value:
-        case "effective" | "shell" | "user" | "storage" | "defaults":
+        case (
+            "effective" | "shell" | "explicit" | "user" | "storage" | "defaults"
+        ):
             return value
         case _:
             return None

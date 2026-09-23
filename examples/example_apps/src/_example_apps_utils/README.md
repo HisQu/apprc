@@ -12,4 +12,4 @@ The user-facing application packages do not import this package. Copy one of
 those packages instead.
 
 See the [example overview](../../README.md) and
-[development guide](../../../../docs/Development.md#example-apps).
+[development guide](../../../../docs/Development.md#checks).

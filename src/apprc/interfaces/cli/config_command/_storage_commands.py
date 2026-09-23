@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 # == Standard Library ========================
 from pathlib import Path
 
@@ -19,14 +21,7 @@ from apprc.interfaces.cli._typer_utils import dump_json
 from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.storage_roots._loading import apprc_toml_path_for_create
 from apprc.user_files.storage_roots.paths import StorageRootPathError
-from apprc.user_files.storage_roots.move import StorageMoveError, move_storage
-from apprc.user_files.storage_roots.registry import (
-    register_storage,
-    rename_storage,
-    repoint_storage,
-    select_storage,
-    unregister_storage,
-)
+from apprc.user_files.storage_roots.move import StorageMoveError
 
 
 class StorageConfigCommands(ConfigCommandBase):
@@ -40,7 +35,7 @@ class StorageConfigCommands(ConfigCommandBase):
         )
         payload = storage_list_payload(
             registry,
-            storage_dotenv_filename=self.kit.spec.storage_dotenv_filename,
+            storage_dotenv_filename=self.apprc.schema.storage_dotenv_filename,
             active_storage_root=self.best_effort_active_storage_root_from_env(
                 storage_registry=registry,
                 selector_context=selector_context,
@@ -63,22 +58,19 @@ class StorageConfigCommands(ConfigCommandBase):
         self.require_storage_registry_support()
         selector_context = self.cli_selector_context(ctx)
         apprc_toml_path = apprc_toml_path_for_create(
-            self.kit.spec,
+            self.apprc.schema,
             proc_env=selector_context.proc_env,
         )
         normalized_root = guard_storage_root_init(
-            self.kit,
+            self.apprc,
             path,
             storage_name=name,
             assume_yes=assume_yes,
             apprc_toml_path=apprc_toml_path,
         )
         try:
-            registry = register_storage(
-                name=name,
-                root=normalized_root,
-                path=apprc_toml_path,
-                storage_dotenv_filename=self.kit.spec.storage_dotenv_filename,
+            registry = self.manager(ctx).register_storage(
+                name=name, root=normalized_root
             )
         except StorageRootPathError as exc:
             raise typer.BadParameter(
@@ -94,15 +86,15 @@ class StorageConfigCommands(ConfigCommandBase):
         typer.echo(f"storage: {record.name}")
         typer.echo(f"storage_root: {record.root}")
         typer.echo(
-            f"storage_dotenv: {self.kit.spec.storage_dotenv_path(record.root)}"
+            f"storage_dotenv: {AppFiles(self.apprc.schema).storage_dotenv_path(record.root)}"
         )
         typer.echo(f"apprc_toml: {registry.path}")
 
     def storage_select(self, ctx: typer.Context, *, name: str) -> None:
         """Persist the selected storage name."""
-        path = self._registry_path(ctx)
+        self._registry_path(ctx)
         try:
-            registry = select_storage(name=name, path=path)
+            registry = self.manager(ctx).select_storage(name=name)
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc), param_hint="NAME") from exc
         typer.echo(f"selected_storage: {registry.selected_storage}")
@@ -116,12 +108,10 @@ class StorageConfigCommands(ConfigCommandBase):
         new_name: str,
     ) -> None:
         """Rename a registered storage without moving data."""
-        path = self._registry_path(ctx)
+        self._registry_path(ctx)
         try:
-            registry = rename_storage(
-                current_name=name,
-                name=new_name,
-                path=path,
+            registry = self.manager(ctx).rename_storage(
+                current_name=name, name=new_name
             )
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc), param_hint="NAME") from exc
@@ -136,9 +126,9 @@ class StorageConfigCommands(ConfigCommandBase):
         root: Path,
     ) -> None:
         """Change only one registered root path."""
-        path = self._registry_path(ctx)
+        self._registry_path(ctx)
         try:
-            registry = repoint_storage(name=name, root=root, path=path)
+            registry = self.manager(ctx).repoint_storage(name=name, root=root)
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc), param_hint="ROOT") from exc
         record = registry.selected(name)
@@ -155,17 +145,15 @@ class StorageConfigCommands(ConfigCommandBase):
         assume_yes: bool,
     ) -> None:
         """Move a complete storage directory and update its registry root."""
-        path = self._registry_path(ctx)
+        self._registry_path(ctx)
         if not assume_yes and not typer.confirm(
             f"Move storage {name!r} to {destination}?"
         ):
             typer.echo("No files were changed.")
             raise typer.Exit(code=1)
         try:
-            result = move_storage(
-                name=name,
-                destination=destination,
-                path=path,
+            result = self.manager(ctx).move_storage(
+                name=name, destination=destination
             )
         except (OSError, StorageMoveError, ValueError) as exc:
             raise typer.BadParameter(
@@ -179,16 +167,13 @@ class StorageConfigCommands(ConfigCommandBase):
     def storage_remove(self, ctx: typer.Context, *, name: str) -> None:
         """Remove one named storage entry from the index."""
         self.require_storage_registry_support()
-        path = self._registry_path(ctx)
+        self._registry_path(ctx)
         try:
             current = self.load_storage_registry_or_empty(
                 selector_context=self.cli_selector_context(ctx)
             )
             removed_selected = current.selected_storage == name
-            registry = unregister_storage(
-                name=name,
-                path=path,
-            )
+            registry = self.manager(ctx).remove_storage(name=name)
         except AppRCDirectoryError as exc:
             raise self.apprc_dir_bad_parameter(exc) from exc
         except ValueError as exc:
@@ -211,6 +196,6 @@ class StorageConfigCommands(ConfigCommandBase):
         self.require_storage_support()
         selector_context = self.cli_selector_context(ctx)
         return apprc_toml_path_for_create(
-            self.kit.spec,
+            self.apprc.schema,
             proc_env=selector_context.proc_env,
         )

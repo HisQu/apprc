@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 # == Standard Library ========================
 import sys
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
@@ -36,14 +37,15 @@ from apprc.interfaces.cli._typer_utils import (
     run_typer_app,
     structural_help_requested,
 )
-from apprc.runtime.result import BootstrapLogger
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.runtime.logging import ResolutionLogger
+from apprc.public.app_rc import AppRC
+from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli.setup_command import run_config_setup
 from apprc.interfaces.cli._interactive_setup import (
     prompt_storage_registration_name,
     prompt_storage_setup_root,
 )
-from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupFlow
+from apprc.user_files.setup.flow import ConfigSetupError
 from apprc.user_files.storage_roots._loading import (
     load_optional_runtime_storage_registry,
 )
@@ -78,8 +80,8 @@ _HELP_OPTIONS = frozenset(("--help", "-h"))
 class CliRuntimeSession(Generic[StateT]):
     """Prepared AppRC CLI context plus app-owned runtime state.
 
-    :param apprc_context: AppRC bootstrap context stored on Typer metadata.
-    :param state: Application runtime state, or ``None`` when bootstrap was
+    :param apprc_context: AppRC resolution context stored on Typer metadata.
+    :param state: Application runtime state, or ``None`` when resolution was
         intentionally skipped.
     """
 
@@ -310,13 +312,12 @@ class CliRuntimePolicy:
 class CliRuntime(Generic[OptionsT, StateT]):
     """Compose AppRC config CLI behavior into an app-owned Typer callback.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param state_type: Runtime state type expected on ``ctx.obj``.
-    :param state_factory: Factory that builds app state after AppRC bootstrap.
+    :param state_factory: Factory that builds app state after AppRC resolution.
     :param config_group_name: Name used for the generated config command group.
     :param runtime_policy: Optional runtime skip policy.
-    :param storage_required: Runtime storage policy, or ``None`` to use the
-        declaration's ``Storage.required`` value.
+    :param storage_required: Runtime storage policy, independent of the declaration.
     :param args_provider: Optional command-token provider for tests/forwarders.
     :param runtime_payload: Optional serializer for generated ``config show``.
     :param active_storage_root_with_context: Optional selector-aware resolver.
@@ -326,17 +327,17 @@ class CliRuntime(Generic[OptionsT, StateT]):
     :param setup_message: Optional setup text for missing storage.
     :param runtime_error_param_hint: Parameter hint for runtime-payload errors.
     :param setup_logging: Optional application logging setup callable.
-    :param logger: Optional application logger for bootstrap status.
+    :param logger: Optional application logger for resolution status.
     """
 
-    kit: AppConfigKit
+    apprc: AppRC
     state_type: type[StateT] = field(
         default=cast(type[StateT], DefaultConfigCliState)
     )
     state_factory: CliRuntimeStateFactory[OptionsT, StateT] | None = None
     config_group_name: str = "config"
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = None
-    storage_required: bool | None = None
+    storage_required: bool = False
     args_provider: CliArgvProvider | None = None
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None
     active_storage_root_with_context: (
@@ -350,7 +351,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
     setup_message: str | None = None
     runtime_error_param_hint: str = "CONFIG"
     setup_logging: Callable[..., Any] | None = None
-    logger: BootstrapLogger | None = None
+    logger: ResolutionLogger | None = None
     _forwarded_args: ContextVar[tuple[str, ...] | None] = field(
         default_factory=lambda: ContextVar(
             "apprc_cli_runtime_forwarded_args",
@@ -363,7 +364,10 @@ class CliRuntime(Generic[OptionsT, StateT]):
 
     def __post_init__(self) -> None:
         """Validate custom state and direct config policy names."""
-        self.kit.spec.requires_storage(self.storage_required)
+        if self.storage_required and not self.apprc.schema.uses_storage():
+            raise ValueError(
+                "storage_required=True requires storage=rc.Storage()."
+            )
         if (
             self.state_factory is None
             and self.state_type is not DefaultConfigCliState
@@ -397,7 +401,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
         try:
             apprc_context = prepare_cli_runtime_context(
                 ctx,
-                self.kit,
+                self.apprc,
                 options,
                 skip_runtime_setup=skip_runtime_setup,
                 storage_required=self.storage_required,
@@ -449,36 +453,43 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :raises typer.BadParameter: If prompting is disabled or unavailable.
         :raises typer.Exit: If the user declines setup.
         """
-        storage = self.kit.spec.storage
+        storage = self.apprc.schema.storage
         if storage is None or not sys.stdin.isatty() or not sys.stdout.isatty():
             setup_command = (
-                f"{self.kit.spec.config_command_name()} "
+                f"{self.apprc.schema.config_command_name()} "
                 f"{self.config_group_name} setup --yes"
             )
             raise typer.BadParameter(
                 f"{error} Run `{setup_command}`.",
                 param_hint=error.param_hint,
             ) from error
-        suggested = self.kit.spec.apprc_dir() / "storage"
+        manager = self.apprc.manage(
+            ResolveOptions(
+                env_files=tuple(options.env_files or ()),
+                env_file_overrides_os_environ=options.env_file_overrides_os_environ,
+            )
+        )
+        suggested = manager.paths.root / "storage"
         selected_root = prompt_storage_setup_root(suggested=suggested)
         if selected_root is None:
             typer.echo("No files were changed.", err=True)
             typer.echo(
                 "Choose another path with "
-                f"`{self.kit.spec.config_command_name()} "
+                f"`{self.apprc.schema.config_command_name()} "
                 f"{self.config_group_name} setup --storage-root PATH`.",
                 err=True,
             )
             raise typer.Exit(code=1)
         run_config_setup(
-            self.kit,
+            self.apprc,
             assume_yes=True,
             storage_root=selected_root,
+            apprc_dir=manager.paths.root,
             config_group_name=self.config_group_name,
         )
         return prepare_cli_runtime_context(
             ctx,
-            self.kit,
+            self.apprc,
             options,
             storage_required=self.storage_required,
             setup_logging=self.setup_logging,
@@ -516,8 +527,13 @@ class CliRuntime(Generic[OptionsT, StateT]):
             error.storage_root
         )
         try:
-            ConfigSetupFlow(self.kit).run_storage_setup(
-                error.storage_root,
+            self.apprc.manage(
+                ResolveOptions(
+                    env_files=tuple(options.env_files or ()),
+                    env_file_overrides_os_environ=options.env_file_overrides_os_environ,
+                )
+            ).setup(
+                storage_root=error.storage_root,
                 storage_name=storage_name,
             )
         except ConfigSetupError as exc:
@@ -527,7 +543,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             ) from exc
         return prepare_cli_runtime_context(
             ctx,
-            self.kit,
+            self.apprc,
             options,
             storage_required=self.storage_required,
             setup_logging=self.setup_logging,
@@ -548,34 +564,40 @@ class CliRuntime(Generic[OptionsT, StateT]):
 
         :param ctx: Active Typer context.
         :param options: Parsed host CLI options.
-        :param apprc_context: Successful direct-path bootstrap context.
+        :param apprc_context: Successful direct-path resolution context.
         :return: Original context or a refreshed named-storage context.
         """
-        result = apprc_context.env_bootstrap
+        result = apprc_context.resolved
+        selection = result.selection if result is not None else None
         if (
-            result is None
-            or result.storage_selector_kind != "path"
-            or result.storage_name is not None
-            or result.storage_root is None
+            selection is None
+            or selection.selector_kind != "path"
+            or selection.storage_name is not None
+            or selection.root is None
             or not sys.stdin.isatty()
             or not sys.stdout.isatty()
         ):
             return apprc_context
         typer.echo(
-            f"Storage path {result.storage_root} is initialized but not "
+            f"Storage path {selection.root} is initialized but not "
             "registered in apprc.toml."
         )
         if not typer.confirm("Register this path for future use?"):
             typer.echo("Using the unregistered path for this process only.")
             return apprc_context
-        suggestion = self._suggest_registration_name(result.storage_root)
+        suggestion = self._suggest_registration_name(selection.root)
         name = prompt_storage_registration_name(suggested=suggestion)
         if name is None:
             typer.echo("Registration canceled; using the path once.", err=True)
             return apprc_context
         try:
-            ConfigSetupFlow(self.kit).run_storage_setup(
-                result.storage_root,
+            self.apprc.manage(
+                ResolveOptions(
+                    env_files=tuple(options.env_files or ()),
+                    env_file_overrides_os_environ=options.env_file_overrides_os_environ,
+                )
+            ).setup(
+                storage_root=selection.root,
                 storage_name=name,
             )
         except ConfigSetupError as exc:
@@ -585,10 +607,10 @@ class CliRuntime(Generic[OptionsT, StateT]):
             )
             typer.echo("Using the unregistered path for this process only.")
             return apprc_context
-        typer.echo(f"Registered storage {name!r} at {result.storage_root}.")
+        typer.echo(f"Registered storage {name!r} at {selection.root}.")
         return prepare_cli_runtime_context(
             ctx,
-            self.kit,
+            self.apprc,
             options,
             storage_required=self.storage_required,
             setup_logging=self.setup_logging,
@@ -602,7 +624,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :return: Suggested registry name.
         """
         try:
-            registry = load_optional_runtime_storage_registry(self.kit.spec)
+            registry = load_optional_runtime_storage_registry(self.apprc.schema)
         except (OSError, ValueError):
             return "default"
         if registry is None or not registry.storages:
@@ -614,7 +636,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
         apprc_context: CliRuntimeContext[OptionsT],
         options: OptionsT,
     ) -> StateT:
-        """Build app-owned state after runtime bootstrap has completed."""
+        """Build app-owned state after runtime resolution has completed."""
         if self.state_factory is not None:
             return self.state_factory(apprc_context, options)
         return cast(
@@ -629,7 +651,12 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :return: Mounted config Typer application.
         """
         ensure_config_group_name_available(app, self.config_group_name)
-        config_app = self.kit.typer_app(
+        from apprc.interfaces.cli.config_command.app import (
+            build_config_typer_app,
+        )
+
+        config_app = build_config_typer_app(
+            self.apprc,
             state_type=self.state_type,
             runtime_payload=self.runtime_payload,
             active_storage_root_with_context=(

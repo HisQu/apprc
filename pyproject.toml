@@ -10,7 +10,7 @@ build-backend = "uv_build"
 # =====================================================================
 
 [project]
-name        = "apprc"
+name        = "apprc-core"
 version     = "0.24.0"
 description = "Reusable runtime configuration and config CLI helpers for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
@@ -36,31 +36,19 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # Core runtime packages only: imports needed when somebody installs and
-    # uses this package with `python -m pip install -e "."`.
-    "python-dotenv",       # < Loads .env files
-    "prompt-toolkit>=3.0,<4", # < Cross-platform interactive path completion
-    "typed-settings[dotenv]", # < Typed env/config binding
-    "rich",                # < Exception rendering
-    "typer",               # < Reusable config CLI builder
-    # "environs",     # < Higher-level .env parsing
-    # "tyro",         # < CLI from dataclasses
-    # "rich",         # < Rich terminal output
-    # "tqdm",         # < Progress bars
-    # "numpy",        # < Numeric arrays
-    # "openpyxl",     # < Excel files
+    # > Core imports used by ordinary pip installations of this root project.
+    "python-dotenv",
+    "typed-settings[dotenv]",
 ]
-
-
-[project.optional-dependencies]
-tui = [
-    "textual",             # < Terminal config editor
-]
-
 
 # Local-only dependency sources used by uv. These are not published as package
 # requirements in AppRC wheel metadata.
+[tool.uv.workspace]
+members = ["src/apprc_dev/packaging/terminal"]
+
 [tool.uv.sources]
+"apprc" = { workspace = true }
+"apprc-core" = { workspace = true }
 "apprc-example-apps" = { path = "examples/example_apps", editable = true }
 # "graphigs" = { path = "../graphigs", editable = true }
 
@@ -72,10 +60,6 @@ Documentation = "https://github.com/HisQu/apprc/tree/main/docs"
 Changelog = "https://github.com/HisQu/apprc/blob/main/CHANGELOG.md"
 Issues = "https://github.com/HisQu/apprc/issues"
 
-[project.scripts]
-apprc = "apprc.__main__:main"
-
-
 # =====================================================================
 # === Local Dependency Groups
 # =====================================================================
@@ -85,13 +69,15 @@ apprc = "apprc.__main__:main"
 # ruff, pyright, notebooks, profiling, and docs helpers.
 #
 # Install commands:
-#   python -m pip install -e "." --group dev
+#   python -m pip install -e . -e src/apprc_dev/packaging/terminal -e examples/example_apps --group dev
 #   uv sync --locked --all-groups
 [dependency-groups]
 demo = [
     "apprc-example-apps",
 ]
 dev = [
+    "apprc",
+    "build>=1.2",
     { include-group = "demo" },
     # === Install from PyPI ===================================
     # --- Interactive development -------
@@ -127,6 +113,7 @@ dev = [
 [tool.uv.build-backend]
 module-name = "apprc"
 module-root = "src"
+source-exclude = ["src/apprc_dev/packaging/terminal/build/**", "src/apprc_dev/packaging/terminal/*.egg-info/**"]
 source-include = [
     "examples/example_apps/**",
     "src/apprc_dev/packaging/**",

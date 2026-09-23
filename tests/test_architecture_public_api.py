@@ -18,10 +18,53 @@ from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.public.app_rc import AppRC
 from apprc.public.config import Config, ConfigBase
-from apprc.runtime.result import EnvBootstrapResult
+from apprc.runtime.resolution import ResolvedConfig
 from apprc.user_files.env_files.updates import EnvFileUpdate
 from apprc.user_files.storage_roots.model import StorageRegistry
 from apprc.interfaces.tui.editor.storage_base import StorageWorkflowBase
+
+
+def test_definitions_do_not_depend_on_operations() -> None:
+    """Declarations remain usable without runtime, persistence, or UI code."""
+    root = Path(__file__).resolve().parents[1] / "src" / "apprc"
+    forbidden = (
+        "apprc.public",
+        "apprc.runtime",
+        "apprc.user_files",
+        "apprc.services",
+        "apprc.interfaces",
+        "typer",
+        "textual",
+        "rich",
+    )
+    for path in (root / "definition").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            elif isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            else:
+                continue
+            assert not any(
+                name == prefix or name.startswith(prefix + ".")
+                for name in names
+                for prefix in forbidden
+            ), path.relative_to(root)
+
+
+def test_package_initializers_only_import_and_document() -> None:
+    """Facade imports must not hide implementation or mutable module state."""
+    root = Path(__file__).resolve().parents[1] / "src" / "apprc"
+    for path in root.rglob("__init__.py"):
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            is_docstring = (
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            )
+            assert is_docstring or isinstance(
+                node, (ast.Import, ast.ImportFrom)
+            ), path.relative_to(root)
 
 
 def test_root_facade_exports_public_config_api() -> None:
@@ -32,7 +75,7 @@ def test_root_facade_exports_public_config_api() -> None:
     assert not hasattr(apprc, "EnvConfig")
     assert not hasattr(apprc, "AppConfigSpec")
     assert AppConfigSpec.__name__ == "AppConfigSpec"
-    assert EnvBootstrapResult.__name__ == "EnvBootstrapResult"
+    assert ResolvedConfig.__name__ == "ResolvedConfig"
     assert not hasattr(apprc, "BaseEnv")
     assert not hasattr(definition_api, "BaseEnv")
 
@@ -49,19 +92,19 @@ def test_top_level_facade_exports_stable_config_interfaces() -> None:
     assert schema_api.ConfigField is ConfigField
     assert files_api.EnvFileUpdate is EnvFileUpdate
     assert storage_api.StorageRegistry is StorageRegistry
-    assert callable(files_api.resolve_package_root)
-    assert callable(storage_api.register_storage)
-    assert callable(files_api.set_storage_dotenv_value)
+    assert not hasattr(files_api, "resolve_package_root")
+    assert not hasattr(storage_api, "register_storage")
+    assert not hasattr(files_api, "set_storage_dotenv_value")
     assert callable(provenance_api.provenance_of)
 
 
 def test_definition_and_runtime_facades_stay_owned() -> None:
     assert not hasattr(definition_api, "ConfigOwner")
     assert not hasattr(definition_api, "ConfigField")
-    assert not hasattr(definition_api, "AppConfigKit")
+    assert not hasattr(definition_api, "AppRC")
     assert not hasattr(runtime_api, "StorageRegistry")
     assert not hasattr(runtime_api, "EnvFileUpdate")
-    assert not hasattr(runtime_api, "EnvBootstrapResult")
+    assert not hasattr(runtime_api, "ResolvedConfig")
     assert not hasattr(contract_api, "AppConfigSpec")
 
 
@@ -140,3 +183,32 @@ def test_env_config_modules_do_not_import_app_config_layer() -> None:
             assert not node.module.startswith("apprc.definition.app_config"), (
                 f"{path} imports {node.module}"
             )
+
+
+def test_runtime_management_and_files_do_not_import_interfaces() -> None:
+    """Noninteractive workflows must remain installable without terminal dependencies."""
+    root = Path(__file__).resolve().parents[1] / "src" / "apprc"
+    forbidden = (
+        "apprc.interfaces",
+        "apprc.cli",
+        "apprc.tui",
+        "typer",
+        "textual",
+        "rich",
+        "prompt_toolkit",
+    )
+    for area in ("runtime", "services", "user_files"):
+        for path in (root / area).rglob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text())):
+                names = (
+                    [node.module or ""]
+                    if isinstance(node, ast.ImportFrom)
+                    else [alias.name for alias in node.names]
+                    if isinstance(node, ast.Import)
+                    else []
+                )
+                assert not any(
+                    name == prefix or name.startswith(prefix + ".")
+                    for name in names
+                    for prefix in forbidden
+                ), path.relative_to(root)

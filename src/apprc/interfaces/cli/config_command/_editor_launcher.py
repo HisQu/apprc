@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 # == Standard Library ========================
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,7 +13,8 @@ from typing import Any, TYPE_CHECKING, cast
 import typer
 
 # == Internal ================================
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.public.app_rc import AppRC
+from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli.config_command._selector_context import (
     ConfigSelectorContext,
     ResolvedConfigState,
@@ -31,8 +33,8 @@ if TYPE_CHECKING:
     from apprc.interfaces.tui import ConfigEditorApp
 
 MISSING_TUI_EXTRA_MESSAGE = (
-    "The Textual config editor requires the optional TUI dependency. "
-    'Install it with: python -m pip install "apprc[tui]"'
+    "The Textual editor requires the terminal distribution. "
+    "Install it with: python -m pip install apprc"
 )
 
 
@@ -40,14 +42,14 @@ MISSING_TUI_EXTRA_MESSAGE = (
 class ConfigEditorLauncher:
     """Resolve editor startup state and launch the Textual editor.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param editor_app_cls: Optional app-provided editor subclass.
     :param config_group_name: Generated config command group name.
     :param initial_storage_with_context_hook: Optional selector-aware initial
         selection.
     """
 
-    kit: AppConfigKit
+    apprc: AppRC
     editor_app_cls: type["ConfigEditorApp"] | None
     config_group_name: str
     initial_storage_with_context_hook: (
@@ -106,8 +108,18 @@ class ConfigEditorLauncher:
                 raise
             editor_app_cls = ConfigEditorApp
 
+        source_context = selector_context or _empty_selector_context()
+        manager = self.apprc.manage(
+            ResolveOptions(
+                env_files=source_context.env_files,
+                env_file_overrides_os_environ=source_context.env_file_overrides_os_environ,
+                load_dotenv_layers=source_context.load_dotenv_layers,
+            ),
+            environment=source_context.environment,
+        )
         editor_app = editor_app_cls(
-            kit=self.kit,
+            manager=manager,
+            apprc=self.apprc,
             storage_registry=storage_registry,
             storage_registry_error=storage_registry_error,
             initial_storage=selected_storage,
@@ -133,7 +145,7 @@ class ConfigEditorLauncher:
         ):
             return self.initial_storage_with_context_hook(state, context)
         return initial_storage_from_state(
-            self.kit,
+            self.apprc,
             cast(ConfigCliState, state),
             registry=storage_registry,
             explicit_values=context.explicit_values,

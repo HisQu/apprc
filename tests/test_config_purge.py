@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 from pathlib import Path
 
 import pytest
 
-from apprc.definition.app_config.kit import AppConfigKit
+from tests.support_declaration import app_from_envs
 from apprc.user_files.purge import (
     ConfigPurgeError,
     apply_config_purge,
@@ -16,32 +18,32 @@ from apprc.user_files.storage_roots.registry import (
     write_storage_registry,
 )
 from tests.support_config import (
-    build_apprc_example_app_kit,
-    build_storage_free_example_kit,
+    build_apprc_example_app,
+    build_storage_free_example_app,
 )
 
 
 def test_purge_removes_only_managed_files_and_registered_internal_roots(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
-    spec = kit.spec
-    spec.ensure_user_dotenv()
-    internal_root = spec.apprc_dir() / "storage"
+    kit = build_apprc_example_app()
+    spec = kit.schema
+    AppFiles(spec).ensure_user_dotenv()
+    internal_root = AppFiles(spec).apprc_dir() / "storage"
     external_root = tmp_path / "external"
     register_storage(
         name="default",
         root=internal_root,
-        path=spec.preferred_apprc_toml_path(),
+        path=AppFiles(spec).preferred_apprc_toml_path(),
     )
     register_storage(
         name="external",
         root=external_root,
-        path=spec.preferred_apprc_toml_path(),
+        path=AppFiles(spec).preferred_apprc_toml_path(),
     )
     (internal_root / "payload.txt").write_text("internal", encoding="utf-8")
     (external_root / "payload.txt").write_text("external", encoding="utf-8")
-    unrelated = spec.apprc_dir() / "user-owned.txt"
+    unrelated = AppFiles(spec).apprc_dir() / "user-owned.txt"
     unrelated.write_text("keep", encoding="utf-8")
 
     plan = build_config_purge_plan(spec)
@@ -50,25 +52,27 @@ def test_purge_removes_only_managed_files_and_registered_internal_roots(
     assert internal_root in plan.internal_storage_roots
     assert external_root in plan.external_storage_roots
     assert not internal_root.exists()
-    assert not spec.user_dotenv_path().exists()
-    assert not spec.preferred_apprc_toml_path().exists()
+    assert not AppFiles(spec).user_dotenv_path().exists()
+    assert not AppFiles(spec).preferred_apprc_toml_path().exists()
     assert not (external_root / "apprc.storage.env").exists()
     assert (external_root / "payload.txt").read_text(encoding="utf-8") == (
         "external"
     )
     assert unrelated.read_text(encoding="utf-8") == "keep"
-    assert spec.apprc_dir().is_dir()
+    assert AppFiles(spec).apprc_dir().is_dir()
     assert result.skipped == ()
 
 
 def test_purge_preflight_rejects_malformed_registry_without_deleting(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
-    spec = kit.spec
-    user_dotenv = spec.ensure_user_dotenv()
+    kit = build_apprc_example_app()
+    spec = kit.schema
+    user_dotenv = AppFiles(spec).ensure_user_dotenv()
     user_dotenv.write_text("KEEP=1\n", encoding="utf-8")
-    spec.preferred_apprc_toml_path().write_text("[invalid", encoding="utf-8")
+    AppFiles(spec).preferred_apprc_toml_path().write_text(
+        "[invalid", encoding="utf-8"
+    )
 
     with pytest.raises(ConfigPurgeError, match="before deleting"):
         build_config_purge_plan(spec)
@@ -79,16 +83,16 @@ def test_purge_preflight_rejects_malformed_registry_without_deleting(
 def test_purge_does_not_follow_registered_storage_symlink(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app_kit()
-    spec = kit.spec
-    spec.ensure_user_dotenv()
+    kit = build_apprc_example_app()
+    spec = kit.schema
+    AppFiles(spec).ensure_user_dotenv()
     target = tmp_path / "target"
     target.mkdir()
     payload = target / "payload.txt"
     payload.write_text("keep", encoding="utf-8")
-    link = spec.apprc_dir() / "storage"
+    link = AppFiles(spec).apprc_dir() / "storage"
     link.symlink_to(target, target_is_directory=True)
-    registry_path = spec.preferred_apprc_toml_path()
+    registry_path = AppFiles(spec).preferred_apprc_toml_path()
     write_storage_registry(
         StorageRegistry(
             path=registry_path,
@@ -111,23 +115,23 @@ def test_purge_rejects_apprc_directory_below_symlink(tmp_path: Path) -> None:
     target.mkdir()
     link = tmp_path / "link"
     link.symlink_to(target, target_is_directory=True)
-    kit = AppConfigKit(
+    kit = app_from_envs(
         app_id="symlinked",
         display_name="Symlinked",
         config_package="config_only.config",
     )
 
     with pytest.raises(ConfigPurgeError, match="symbolic-link component"):
-        build_config_purge_plan(kit.spec, apprc_dir=link / "apprc")
+        build_config_purge_plan(kit.schema, apprc_dir=link / "apprc")
 
 
 def test_storage_free_purge_marks_stale_registry_as_removable() -> None:
-    kit = build_storage_free_example_kit()
-    spec = kit.spec
-    spec.ensure_user_dotenv()
-    root = spec.apprc_dir() / "storage"
+    kit = build_storage_free_example_app()
+    spec = kit.schema
+    AppFiles(spec).ensure_user_dotenv()
+    root = AppFiles(spec).apprc_dir() / "storage"
     root.mkdir()
-    registry_path = spec.preferred_apprc_toml_path()
+    registry_path = AppFiles(spec).preferred_apprc_toml_path()
     write_storage_registry(
         StorageRegistry(
             path=registry_path,

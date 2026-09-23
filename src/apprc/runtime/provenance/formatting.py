@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # == Internal ================================
-from apprc.runtime.provenance.model import ConfigProvenanceOrigin
+from apprc.definition.provenance import ConfigProvenanceOrigin
 
 
 def provenance_origin_label(origin: ConfigProvenanceOrigin) -> str:

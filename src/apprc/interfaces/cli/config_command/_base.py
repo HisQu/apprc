@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+
+from apprc.user_files.app_home.application import AppFiles
+
 # == Standard Library ========================
 import os
 from pathlib import Path
@@ -11,7 +14,11 @@ from typing import Any, cast
 import typer
 
 # == Internal ================================
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.public.app_rc import AppRC
+from apprc.runtime.resolution import ResolvedConfig
+from apprc.interfaces.cli.context import cli_runtime_context_from
+from apprc.definition.resolution import ResolveOptions
+from apprc.services.manager import ConfigManager
 from apprc.interfaces.cli.config_command.group_options import ConfigGroupOptions
 from apprc.interfaces.cli.config_command._selector_context import (
     ConfigSelectorContext,
@@ -53,18 +60,18 @@ class ConfigCommandBase:
 
     def __init__(
         self,
-        kit: AppConfigKit,
+        apprc: AppRC,
         *,
         options: ConfigGroupOptions,
         missing_setup: str,
     ) -> None:
         """Store config command dependencies and extension hooks.
 
-        :param kit: Application config facade.
+        :param apprc: Application config facade.
         :param options: Generated config command hook bundle.
         :param missing_setup: Message shown when runtime storage is absent.
         """
-        self.kit = kit
+        self.apprc = apprc
         self.state_type = options.state_type
         self.runtime_payload = options.runtime_payload
         self.active_storage_root_with_context_hook = (
@@ -76,7 +83,7 @@ class ConfigCommandBase:
         self.state_resolver = ConfigStateResolver(options.state_type)
         self.selector_context_reader = SelectorContextReader()
         self.editor_launcher = ConfigEditorLauncher(
-            kit=kit,
+            apprc=apprc,
             editor_app_cls=options.editor_app_cls,
             config_group_name=options.config_group_name,
             initial_storage_with_context_hook=(
@@ -87,6 +94,28 @@ class ConfigCommandBase:
     def state(self, ctx: typer.Context) -> Any:
         """Return the application CLI state stored by the parent CLI."""
         return self.state_resolver.state(ctx)
+
+    def manager(self, ctx: typer.Context) -> ConfigManager:
+        """Capture management inputs from the active CLI invocation.
+
+        :param ctx: Generated command context.
+        :return: Shared operations with explicit files and selector precedence.
+        """
+        source = self.cli_selector_context(ctx)
+        context = cli_runtime_context_from(ctx)
+        storage = self.cli_context_param(ctx, "storage")
+        return self.apprc.manage(
+            ResolveOptions(
+                storage_required=context.storage_required
+                if context is not None
+                else False,
+                env_files=source.env_files,
+                env_file_overrides_os_environ=source.env_file_overrides_os_environ,
+                load_dotenv_layers=source.load_dotenv_layers,
+                storage=storage if isinstance(storage, str) else None,
+            ),
+            environment=source.environment,
+        )
 
     def context_state(self, ctx: typer.Context) -> DefaultConfigCliState | None:
         """Return AppRC context as generic config state when available."""
@@ -109,7 +138,7 @@ class ConfigCommandBase:
     def config_command_text(self, action: str) -> str:
         """Return one CLI command line for generated CLI guidance."""
         return (
-            f"{self.kit.spec.config_command_name()} "
+            f"{self.apprc.schema.config_command_name()} "
             f"{self.config_group_name} {action}"
         )
 
@@ -142,14 +171,14 @@ class ConfigCommandBase:
     ) -> typer.BadParameter:
         """Return Typer's error type for AppRC TOML failures."""
         return typer.BadParameter(
-            str(exc), param_hint=self.kit.spec.apprc_dir_env_key
+            str(exc), param_hint=self.apprc.schema.apprc_dir_env_key
         )
 
     def require_storage_support(self) -> None:
         """Raise a CLI error when a storage command is unavailable."""
-        if not self.kit.spec.uses_storage():
+        if not self.apprc.schema.uses_storage():
             raise typer.BadParameter(
-                f"{self.kit.spec.display_name} does not use AppRC storage.",
+                f"{self.apprc.schema.display_name} does not use AppRC storage.",
                 param_hint="storage",
             )
 
@@ -166,7 +195,7 @@ class ConfigCommandBase:
         context = selector_context or _empty_selector_context()
         try:
             return load_optional_runtime_storage_registry(
-                self.kit.spec,
+                self.apprc.schema,
                 proc_env=context.proc_env,
             )
         except AppRCDirectoryError as exc:
@@ -184,7 +213,9 @@ class ConfigCommandBase:
         context = selector_context or _empty_selector_context()
         try:
             return load_create_or_empty_storage_registry(
-                self.kit.spec.preferred_apprc_toml_path(context.proc_env)
+                AppFiles(self.apprc.schema).preferred_apprc_toml_path(
+                    context.proc_env
+                )
             )
         except AppRCDirectoryError as exc:
             raise self.apprc_dir_bad_parameter(exc) from exc
@@ -210,7 +241,7 @@ class ConfigCommandBase:
                     context,
                 )
             return active_storage_root_from_state(
-                self.kit,
+                self.apprc,
                 cast(ConfigCliState, state),
                 explicit_values=context.explicit_values,
                 env_file_overrides_os_environ=(
@@ -240,7 +271,7 @@ class ConfigCommandBase:
         )
         if storage_root is None:
             raise typer.BadParameter(
-                f"No active {self.kit.spec.display_name} storage root. Run "
+                f"No active {self.apprc.schema.display_name} storage root. Run "
                 f"`{self.config_command_text('setup --yes --storage-root /absolute/path/to/storage')}` "
                 "or pass --storage NAME_OR_PATH.",
                 param_hint="--storage",
@@ -267,7 +298,7 @@ class ConfigCommandBase:
         context = selector_context or _empty_selector_context()
         try:
             storage_root = active_storage_root_from_env(
-                self.kit,
+                self.apprc,
                 registry=storage_registry,
                 explicit_values=context.explicit_values,
                 env_file_overrides_os_environ=(
@@ -278,7 +309,7 @@ class ConfigCommandBase:
         except AppRCDirectoryError as exc:
             raise self.apprc_dir_bad_parameter(exc) from exc
         except (StorageSelectorError, ValueError):
-            selector_key = self.kit.spec.require_storage_selector_env_key()
+            selector_key = self.apprc.schema.require_storage_selector_env_key()
             selected = select_storage_selector(
                 storage=None,
                 original_env=os.environ,
@@ -295,9 +326,9 @@ class ConfigCommandBase:
                 return None
             selection = resolve_storage_selector_value(
                 registry=None,
-                apprc_toml_path=self.kit.spec.preferred_apprc_toml_path(
-                    context.proc_env
-                ),
+                apprc_toml_path=AppFiles(
+                    self.apprc.schema
+                ).preferred_apprc_toml_path(context.proc_env),
                 raw_value=selected[1],
                 storage_selector_env_key=selector_key,
                 source=selected[0],
@@ -311,7 +342,7 @@ class ConfigCommandBase:
         selector_context: ConfigSelectorContext | None = None,
     ) -> Path | None:
         """Return the storage root selected for zero-write editor reads."""
-        if not self.kit.spec.uses_storage():
+        if not self.apprc.schema.uses_storage():
             return None
         context = selector_context or _empty_selector_context()
         try:
@@ -321,7 +352,7 @@ class ConfigCommandBase:
                     selector_context=context,
                 )
             return active_storage_root_from_env(
-                self.kit,
+                self.apprc,
                 explicit_values=context.explicit_values,
                 env_file_overrides_os_environ=(
                     context.env_file_overrides_os_environ
@@ -341,9 +372,12 @@ class ConfigCommandBase:
         self,
         *,
         storage_root: Path | None,
+        resolved: ResolvedConfig,
     ) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
-        return default_runtime_payload(self.kit, storage_root=storage_root)
+        return default_runtime_payload(
+            self.apprc, storage_root=storage_root, resolved=resolved
+        )
 
     def launch_config_editor(
         self,

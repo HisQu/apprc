@@ -10,7 +10,7 @@ CLI behavior.
 Run this at the AppRC repository root:
 
 ```bash
-python -m pip install -e ".[tui]" -e examples/example_apps --no-build-isolation
+python -m pip install -e . -e src/apprc_dev/packaging/terminal -e examples/example_apps
 ```
 
 This installs the local AppRC source, its Textual editor, and the example
@@ -74,7 +74,7 @@ app-owned `status`, `--workspace`, `--model`, and `--dry-run` behavior.
 
 All six examples use the backward-compatible required defaults. An application
 with storage-backed commands and storage-free core commands can instead
-declare `rc.Storage(required=False)`, then set `storage_required=True` only on
+declare `rc.Storage()`, then set `storage_required=True` only on
 the `CliRuntime` that owns the storage-backed commands. The capability remains
 visible in the same generated config interface.
 
@@ -103,6 +103,6 @@ registry, and smoke runner.
 
 ## Docs
 
-- [Development example guide](../../docs/Development.md#example-apps)
-- [Generated CLI reference](../../docs/References.md#generated-cli-commands)
-- [System model](../../docs/Explanations.md#system-model)
+- [Development example guide](../../docs/Development.md#checks)
+- [Generated CLI reference](../../docs/References.md#terminal-commands)
+- [System model](../../docs/Explanations.md#declaration-resolution-and-management)

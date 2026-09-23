@@ -9,10 +9,10 @@ from textual.app import App, ComposeResult
 from textual.widgets import Footer, Header, Static
 
 # == Internal ================================
-from apprc.user_files.setup.text import setup_overview_text
+from apprc.interfaces._setup_text import setup_overview_text
 
 if TYPE_CHECKING:
-    from apprc.definition.app_config.kit import AppConfigKit
+    from apprc.public.app_rc import AppRC
 
 
 class ConfigSetupApp(App[None]):
@@ -20,13 +20,13 @@ class ConfigSetupApp(App[None]):
 
     BINDINGS = [("q", "quit", "Quit")]
 
-    def __init__(self, *, kit: AppConfigKit) -> None:
-        """Store the kit whose setup route should be described."""
+    def __init__(self, *, apprc: AppRC) -> None:
+        """Store the apprc whose setup route should be described."""
         super().__init__()
-        self.kit = kit
+        self.apprc = apprc
 
     def compose(self) -> ComposeResult:
         """Compose a read-only setup guidance screen."""
         yield Header()
-        yield Static(setup_overview_text(self.kit))
+        yield Static(setup_overview_text(self.apprc))
         yield Footer()

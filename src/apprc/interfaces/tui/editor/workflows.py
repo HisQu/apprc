@@ -13,13 +13,7 @@ from apprc.user_files.storage_roots.archive import (
     storage_root_name_from_archive,
 )
 from apprc.user_files.storage_roots.paths import normalize_storage_root_path
-from apprc.user_files.storage_roots.registry import (
-    record_archived_storage,
-    register_restored_storage,
-    remove_archived_storage,
-)
 from apprc.user_files.storage_roots._naming import validate_storage_name
-from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
 from apprc.interfaces.tui._primitives import (
     ConfirmScreen,
     PathInputScreen,
@@ -159,35 +153,18 @@ class ConfigEditorStorageWorkflows(
                 return
             replace_existing = True
 
-        def register_installed_storage(installed_root: Path) -> None:
-            """Commit registry state while extraction can still roll back.
-
-            :param installed_root: Newly installed archive destination.
-            :return: None.
-            """
-            register_restored_storage(
-                name=name,
-                root=installed_root,
-                path=registry.path,
-                archived_name=default_name,
-                storage_dotenv_filename=(
-                    self.editor.kit.spec.storage_dotenv_filename
-                ),
-            )
-
         try:
             await self.run_extract_progress(
                 archive_path=archive,
                 destination_root=normalized_destination,
                 replace_existing=replace_existing,
-                after_install=register_installed_storage,
+                name=name,
+                archived_name=default_name,
             )
         except (OSError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        self.editor.storage_registry = load_storage_registry_or_empty(
-            registry.path
-        )
+        self.editor.storage_registry = self.editor.manager.registry()
         await self.editor._refresh_storage_list(select_name=name)
         self.editor.notify(f"Restored storage {name!r}")
 
@@ -204,9 +181,8 @@ class ConfigEditorStorageWorkflows(
             return
         if not record.archive.is_file():
             self.editor.storage_registry = await asyncio.to_thread(
-                remove_archived_storage,
+                self.editor.manager.remove_archive_record,
                 name=name,
-                path=registry.path,
             )
             await self.editor._refresh_storage_list()
             self.editor.notify(
@@ -238,19 +214,13 @@ class ConfigEditorStorageWorkflows(
             return
         try:
             archive_path = await self.run_archive_progress(
-                source_root=record.root,
+                name=record.name,
                 archive_path=options.archive_path,
             )
-        except ValueError as exc:
+        except (OSError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        self.editor.storage_registry = await asyncio.to_thread(
-            record_archived_storage,
-            name=record.name,
-            archive=archive_path,
-            source_root=record.root,
-            path=registry.path,
-        )
+        self.editor.storage_registry = self.editor.manager.registry()
         if options.delete_source:
             removed = await self.remove_live_storage(
                 record.name,

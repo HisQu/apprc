@@ -32,7 +32,7 @@ class EditorConfigCommands(ConfigCommandBase):
                     self.load_storage_registry_or_empty(
                         selector_context=selector_context,
                     )
-                    if self.kit.spec.uses_storage()
+                    if self.apprc.schema.uses_storage()
                     else None
                 )
             except typer.BadParameter as exc:
@@ -83,7 +83,7 @@ class EditorConfigCommands(ConfigCommandBase):
         :return: Structured issue for the Textual editor.
         """
         selector_context = self.cli_selector_context(ctx)
-        selector_key = self.kit.spec.require_storage_selector_env_key()
+        selector_key = self.apprc.schema.require_storage_selector_env_key()
         raw_storage = self.cli_context_param(ctx, "storage")
         selector = select_storage_selector_input(
             storage=raw_storage if isinstance(raw_storage, str) else None,

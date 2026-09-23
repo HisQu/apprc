@@ -1,113 +1,82 @@
-"""Verify an installed AppRC distribution's base public surface."""
+"""Verify core or terminal installation in an otherwise fresh pip environment."""
 
 from __future__ import annotations
 
+import argparse
 import importlib.metadata as metadata
 import importlib.util
+from pathlib import Path
 import sys
-from dataclasses import dataclass
+import tempfile
 
 
-@dataclass(frozen=True, slots=True)
-class InstallSnapshot:
-    """Record the installed state needed by the distribution smoke test.
+def verify_install(*, core_only: bool) -> None:
+    """Exercise real construction and management under the selected dependency set.
 
-    :param app_rc_name: Runtime name of the public ``AppRC`` class.
-    :param config_name: Runtime name of the public ``Config`` class.
-    :param config_base_is_type: Whether ``ConfigBase`` is a class.
-    :param field_is_callable: Whether the public field factory is callable.
-    :param public_names: Names declared by the package facade.
-    :param requirements: Installed distribution requirement declarations.
-    :param extras: Extras declared by the installed distribution.
-    :param textual_available: Whether the optional Textual package is installed.
-    :param loaded_modules: Module names loaded before validation.
-    """
-
-    app_rc_name: str
-    config_name: str
-    config_base_is_type: bool
-    field_is_callable: bool
-    public_names: frozenset[str]
-    requirements: tuple[str, ...]
-    extras: frozenset[str]
-    textual_available: bool
-    loaded_modules: frozenset[str]
-
-
-def capture_install_snapshot() -> InstallSnapshot:
-    """Inspect the installed base package without importing optional Textual.
-
-    :return: Installed facade, metadata, and optional-dependency state.
+    :param core_only: Whether terminal libraries and entrypoints must be absent.
     """
     import apprc
 
-    distribution_metadata = metadata.metadata("apprc")
-    return InstallSnapshot(
-        app_rc_name=apprc.AppRC.__name__,
-        config_name=apprc.Config.__name__,
-        config_base_is_type=isinstance(apprc.ConfigBase, type),
-        field_is_callable=callable(apprc.field),
-        public_names=frozenset(apprc.__all__),
-        requirements=tuple(metadata.requires("apprc") or ()),
-        extras=frozenset(distribution_metadata.get_all("Provides-Extra") or ()),
-        textual_available=importlib.util.find_spec("textual") is not None,
-        loaded_modules=frozenset(sys.modules),
+    assert isinstance(apprc.ConfigBase, type)
+    assert callable(apprc.field)
+    terminal_modules = ("typer", "rich", "prompt_toolkit", "textual")
+    assert not any(name in sys.modules for name in terminal_modules)
+    assert all(
+        (importlib.util.find_spec(name) is None) == core_only
+        for name in terminal_modules
+    )
+    core = metadata.distribution("apprc-core")
+    assert not core.entry_points
+    with tempfile.TemporaryDirectory() as directory:
+        app = apprc.AppRC(
+            app_id="install_test",
+            display_name="Install test",
+            user_dotenv=apprc.UserDotenv(),
+            apprc_dir=Path(directory),
+        )
+
+        @app.config("settings", prefix="INSTALL_")
+        class Settings(apprc.Config):
+            count: int = apprc.field("INSTALL_COUNT", default=2)
+
+        manager = app.manage(environment={})
+        assert manager.inspect().ready
+        manager.setup()
+        manager.apply_edit(
+            manager.plan_update("settings.count", "7", scope="user")
+        )
+        assert manager.resolve().build(Settings).count == 7
+    if core_only:
+        assert not any(
+            ep.name == "apprc"
+            for ep in metadata.entry_points(group="console_scripts")
+        )
+    else:
+        wrapper = metadata.distribution("apprc")
+        assert wrapper.version == core.version
+        assert any(ep.name == "apprc" for ep in wrapper.entry_points)
+        assert not any(
+            str(path).startswith("apprc/") for path in wrapper.files or ()
+        )
+        from apprc._cli_app import app as terminal_app
+        from typer.testing import CliRunner
+
+        assert CliRunner().invoke(terminal_app, ["--help"]).exit_code == 0
+        assert apprc.tui.ConfigEditorApp is not None
+    print(
+        "apprc core install passed"
+        if core_only
+        else "apprc terminal install passed"
     )
 
 
-def validate_install_snapshot(snapshot: InstallSnapshot) -> None:
-    """Reject an installed package that violates the clean base contract.
-
-    :param snapshot: Installed state captured after importing the root facade.
-    """
-    assert snapshot.app_rc_name == "AppRC"
-    assert snapshot.config_name == "Config"
-    assert snapshot.config_base_is_type
-    assert snapshot.field_is_callable
-    assert {"AppRC", "Config", "ConfigBase", "field"}.issubset(
-        snapshot.public_names
-    )
-
-    core_requirements = [
-        requirement
-        for requirement in snapshot.requirements
-        if "extra ==" not in requirement
-    ]
-    assert not any(
-        requirement.lower()
-        .split(";", maxsplit=1)[0]
-        .strip()
-        .startswith("textual")
-        for requirement in core_requirements
-    )
-    assert not any(
-        requirement.lower()
-        .split(";", maxsplit=1)[0]
-        .strip()
-        .startswith("platformdirs")
-        for requirement in core_requirements
-    )
-    assert "tui" in snapshot.extras
-    assert any(
-        requirement.lower().startswith("textual") and "tui" in requirement
-        for requirement in snapshot.requirements
-    )
-    assert not snapshot.textual_available
-    assert not any(
-        module_name == "textual" or module_name.startswith("textual.")
-        for module_name in snapshot.loaded_modules
-    )
-
-
-def main() -> int:
-    """Run the installed-distribution smoke test.
-
-    :return: Process exit code.
-    """
-    validate_install_snapshot(capture_install_snapshot())
-    print("apprc base install smoke passed")
-    return 0
+def main() -> None:
+    """Select and run one installation check."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--core-only", action="store_true")
+    args = parser.parse_args()
+    verify_install(core_only=args.core_only)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

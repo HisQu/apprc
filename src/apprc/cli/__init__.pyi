@@ -28,8 +28,8 @@ from apprc.interfaces.cli import (
     StorageOption as StorageOption,
     active_storage_root_from_state as active_storage_root_from_state,
     args_after_command as args_after_command,
-    bootstrap_cli_env as bootstrap_cli_env,
-    bootstrap_cli_options as bootstrap_cli_options,
+    resolve_cli_config as resolve_cli_config,
+    resolve_cli_options as resolve_cli_options,
     build_config_doctor_payload as build_config_doctor_payload,
     build_config_typer_app as build_config_typer_app,
     cli_options_from as cli_options_from,
@@ -51,17 +51,12 @@ from apprc.interfaces.cli import (
     state_from as state_from,
     strip_leading_options as strip_leading_options,
 )
-from apprc.interfaces.tui import (
-    ConfigEditorApp as ConfigEditorApp,
-    ConfigSetupApp as ConfigSetupApp,
-)
-from apprc.runtime.diagnostics import (
+from apprc.interfaces.cli.diagnostics import (
     ConfigDoctorPayload as ConfigDoctorPayload,
     ConfigDoctorStatus as ConfigDoctorStatus,
 )
-from apprc.runtime.result import (
-    BootstrapLogger as BootstrapLogger,
-    EnvBootstrapResult as EnvBootstrapResult,
+from apprc.runtime.logging import (
+    ResolutionLogger as ResolutionLogger,
 )
 
 __all__: list[str]

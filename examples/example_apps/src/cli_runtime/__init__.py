@@ -5,7 +5,8 @@ from cli_runtime.cli import (
     RuntimeState,
     build_app,
 )
-from cli_runtime.config import CliRuntimeConfig, KIT
+from cli_runtime.config.sections.runtime.settings import CliRuntimeConfig
+from cli_runtime.config.app import MyRC as KIT
 
 __all__ = [
     "CliRuntimeConfig",

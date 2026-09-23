@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from apprc.runtime.resolution import ResolvedConfig
+
 # == Standard Library ========================
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -12,12 +14,11 @@ from typing import Any, Generic, Protocol, TypeVar
 import typer
 
 # == Internal ================================
-from apprc.interfaces.cli._bootstrap import bootstrap_cli_env
-from apprc.runtime.result import (
-    BootstrapLogger,
-    EnvBootstrapResult,
+from apprc.interfaces.cli._resolution import resolve_cli_config
+from apprc.runtime.logging import (
+    ResolutionLogger,
 )
-from apprc.definition.app_config.kit import AppConfigKit
+from apprc.public.app_rc import AppRC
 
 APPRC_CONTEXT_META_KEY = "apprc.interfaces.cli.runtime_context"
 OptionsT = TypeVar("OptionsT", bound="CliRuntimeOptionsProtocol")
@@ -128,38 +129,38 @@ class CliRuntimeContext(Generic[OptionsT]):
 
     :param runtime_options: Normalized AppRC runtime options.
     :param cli_options: Original app CLI options passed to the runtime.
-    :param env_bootstrap: Bootstrap result when runtime setup ran.
+    :param resolved: Resolved snapshot when runtime setup ran.
     :param runtime_setup_skipped: Whether this CLI run intentionally
         avoided runtime setup.
     """
 
     runtime_options: CliRuntimeOptions
     cli_options: OptionsT
-    env_bootstrap: EnvBootstrapResult | None = None
+    resolved: ResolvedConfig | None = None
     runtime_setup_skipped: bool = False
+    storage_required: bool = False
 
 
-def bootstrap_cli_options(
-    kit: AppConfigKit,
+def resolve_cli_options(
+    apprc: AppRC,
     options: CliRuntimeOptionsProtocol,
     *,
-    storage_required: bool | None = None,
+    storage_required: bool = False,
     setup_logging: Callable[..., Any] | None = None,
-    logger: BootstrapLogger | None = None,
-) -> EnvBootstrapResult:
-    """Run AppRC bootstrap from a parsed options object.
+    logger: ResolutionLogger | None = None,
+) -> ResolvedConfig:
+    """Run AppRC resolution from a parsed options object.
 
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param options: Parsed AppRC runtime options.
-    :param storage_required: Runtime storage policy, or ``None`` to use the
-        declaration's ``Storage.required`` value.
+    :param storage_required: Runtime storage policy, independent of the declaration.
     :param setup_logging: Optional application logging setup callable.
-    :param logger: Optional application logger for bootstrap status.
-    :return: Bootstrap summary for diagnostics and command state.
+    :param logger: Optional application logger for resolution status.
+    :return: Resolved snapshot for diagnostics and command state.
     """
     parsed = CliRuntimeOptions.from_options(options)
-    return bootstrap_cli_env(
-        kit,
+    return resolve_cli_config(
+        apprc,
         env_files=parsed.env_files,
         env_file_overrides_os_environ=(parsed.env_file_overrides_os_environ),
         load_dotenv_layers=parsed.load_dotenv_layers,
@@ -173,31 +174,30 @@ def bootstrap_cli_options(
 
 def prepare_cli_runtime_context(
     ctx: typer.Context,
-    kit: AppConfigKit,
+    apprc: AppRC,
     options: OptionsT,
     *,
     skip_runtime_setup: bool = False,
-    storage_required: bool | None = None,
+    storage_required: bool = False,
     setup_logging: Callable[..., Any] | None = None,
-    logger: BootstrapLogger | None = None,
+    logger: ResolutionLogger | None = None,
 ) -> CliRuntimeContext[OptionsT]:
-    """Store AppRC bootstrap context for a Typer CLI run.
+    """Store AppRC resolution context for a Typer CLI run.
 
     :param ctx: Active Typer context.
-    :param kit: Application config facade.
+    :param apprc: Application config facade.
     :param options: Parsed AppRC runtime options.
     :param skip_runtime_setup: Whether runtime setup should be skipped.
-    :param storage_required: Runtime storage policy, or ``None`` to use the
-        declaration's ``Storage.required`` value.
+    :param storage_required: Runtime storage policy, independent of the declaration.
     :param setup_logging: Optional application logging setup callable.
-    :param logger: Optional application logger for bootstrap status.
+    :param logger: Optional application logger for resolution status.
     :return: Context stored on ``ctx.meta`` for child commands.
     """
     parsed = CliRuntimeOptions.from_options(options)
-    env_bootstrap = None
+    resolved = None
     if not skip_runtime_setup:
-        env_bootstrap = bootstrap_cli_options(
-            kit,
+        resolved = resolve_cli_options(
+            apprc,
             parsed,
             storage_required=storage_required,
             setup_logging=setup_logging,
@@ -206,8 +206,9 @@ def prepare_cli_runtime_context(
     context = CliRuntimeContext(
         runtime_options=parsed,
         cli_options=options,
-        env_bootstrap=env_bootstrap,
+        resolved=resolved,
         runtime_setup_skipped=skip_runtime_setup,
+        storage_required=storage_required,
     )
     _store_apprc_context(ctx, context)
     return context
@@ -216,7 +217,7 @@ def prepare_cli_runtime_context(
 def cli_runtime_context_from(
     ctx: typer.Context,
 ) -> CliRuntimeContext[Any] | None:
-    """Return the nearest AppRC bootstrap context for a Typer command.
+    """Return the nearest AppRC resolution context for a Typer command.
 
     :param ctx: Active Typer context.
     :return: Stored runtime context, or ``None`` when the app did not prepare

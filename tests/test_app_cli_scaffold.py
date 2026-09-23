@@ -28,28 +28,26 @@ def test_scaffold_config_package_generates_importable_standard_layout(
 
     expected_files = {
         source_root / "demo_app" / "config" / "__init__.py",
-        source_root / "demo_app" / "config" / "__init__.pyi",
-        source_root / "demo_app" / "config" / "_facade.py",
         source_root / "demo_app" / "config" / "app.py",
         source_root / "demo_app" / "config" / "sections" / "__init__.py",
-        source_root / "demo_app" / "config" / "sections" / "__init__.pyi",
-        source_root / "demo_app" / "config" / "sections" / "_facade.py",
         source_root / "demo_app" / "config" / "sections" / "app.py",
         source_root / "demo_app" / "config" / "bundle.py",
-        source_root / "demo_app" / "config" / "catalog.py",
     }
     assert set(result.written_files) == expected_files
     assert result.config_package_dir == source_root / "demo_app" / "config"
 
     monkeypatch.syspath_prepend(str(source_root))
     monkeypatch.setenv("DEMO_APP_STORAGE", str(tmp_path / "storage"))
-    config_module = importlib.import_module("demo_app.config")
+    config_module = importlib.import_module("demo_app.config.app")
+    bundle_module = importlib.import_module("demo_app.config.bundle")
 
-    assert config_module.MyRC.kit.spec.uses_storage() is True
-    assert config_module.MyRC.kit.spec.uses_user_dotenv() is False
-    assert config_module.CONFIG_SPEC.owners[0].key == "app"
-    assert "app" in config_module.SECTION_BY_KEY
-    generated_bundle = config_module.DemoAppConfig()
+    assert config_module.MyRC.schema.uses_storage() is True
+    assert config_module.MyRC.schema.uses_user_dotenv() is False
+    assert config_module.MyRC.schema.owners[0].key == "app"
+    config_module.MyRC.manage().setup(storage_root=tmp_path / "storage")
+    generated_bundle = config_module.MyRC.resolve().build(
+        bundle_module.DemoAppConfig
+    )
     assert generated_bundle.app.profile == "default"
 
 
@@ -68,14 +66,16 @@ def test_scaffold_config_package_keeps_leaf_imports_lightweight(
     )
 
     monkeypatch.syspath_prepend(str(source_root))
-    sections_pkg = importlib.import_module("leaf_demo.config.sections")
+    importlib.import_module("leaf_demo.config.sections")
 
     assert "leaf_demo.config.app" not in sys.modules
     assert "leaf_demo.config.sections.app" not in sys.modules
     assert "leaf_demo.config.bundle" not in sys.modules
     assert "leaf_demo.config.catalog" not in sys.modules
 
-    section_cls = sections_pkg.AppSection
+    section_cls = importlib.import_module(
+        "leaf_demo.config.sections.app"
+    ).AppSection
 
     assert section_cls.__name__ == "AppSection"
     assert "leaf_demo.config.app" in sys.modules
@@ -83,12 +83,16 @@ def test_scaffold_config_package_keeps_leaf_imports_lightweight(
     assert "leaf_demo.config.bundle" not in sys.modules
     assert "leaf_demo.config.catalog" not in sys.modules
 
-    config_pkg = importlib.import_module("leaf_demo.config")
-    assert config_pkg.MyRC.kit.spec.app_id == "leaf-demo"
+    config_pkg = importlib.import_module("leaf_demo.config.app")
+    assert config_pkg.MyRC.schema.app_id == "leaf-demo"
     assert "leaf_demo.config.bundle" not in sys.modules
     assert "leaf_demo.config.catalog" not in sys.modules
 
-    assert config_pkg.LeafDemoConfig().app.profile == "default"
+    bundle = importlib.import_module("leaf_demo.config.bundle").LeafDemoConfig
+    assert (
+        config_pkg.MyRC.resolve(environment={}).build(bundle).app.profile
+        == "default"
+    )
     assert "leaf_demo.config.bundle" in sys.modules
 
 
@@ -152,9 +156,9 @@ def test_scaffold_config_package_escapes_generated_python_literals(
     )
 
     monkeypatch.syspath_prepend(str(source_root))
-    config_module = importlib.import_module("quoted_demo.config")
+    config_module = importlib.import_module("quoted_demo.config.app")
 
-    assert config_module.MyRC.kit.spec.display_name == "Demo's App"
+    assert config_module.MyRC.schema.display_name == "Demo's App"
 
 
 def test_scaffold_config_package_refuses_overwrite_without_force(

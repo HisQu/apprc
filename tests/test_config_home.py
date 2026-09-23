@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 from pathlib import Path
 
 import pytest
@@ -57,7 +59,7 @@ def test_ensure_user_dotenv_rejects_apprc_directory_file(
     )
 
     with pytest.raises(AppRCDirectoryError, match="parent exists"):
-        spec.ensure_user_dotenv()
+        AppFiles(spec).ensure_user_dotenv()
 
 
 def test_ensure_user_dotenv_rejects_directory_target(tmp_path: Path) -> None:
@@ -72,7 +74,7 @@ def test_ensure_user_dotenv_rejects_directory_target(tmp_path: Path) -> None:
     )
 
     with pytest.raises(AppRCDirectoryError, match="not a file"):
-        spec.ensure_user_dotenv()
+        AppFiles(spec).ensure_user_dotenv()
 
 
 def test_ensure_apprc_toml_rejects_directory(tmp_path: Path) -> None:
@@ -87,7 +89,7 @@ def test_ensure_apprc_toml_rejects_directory(tmp_path: Path) -> None:
     )
 
     with pytest.raises(AppRCDirectoryError, match="not a file"):
-        spec.ensure_apprc_toml()
+        AppFiles(spec).ensure_apprc_toml()
 
 
 def test_write_text_atomic_rejects_directory_target(tmp_path: Path) -> None:

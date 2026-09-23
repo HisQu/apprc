@@ -1,7 +1,6 @@
 """Generate AppRC's recommended config package layout."""
 
 # == Standard Library ========================
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -180,19 +179,11 @@ def _render_files(
     module_prefix = f"{request.package}.config"
     return {
         config_dir / "__init__.py": _render_config_init(),
-        config_dir / "__init__.pyi": _render_config_stub(
-            bundle_name=bundle_name,
-        ),
-        config_dir / "_facade.py": _render_config_facade(
-            bundle_name=bundle_name,
-        ),
         config_dir / "app.py": _render_app_module(
             request=request,
             module_prefix=module_prefix,
         ),
         config_dir / "sections" / "__init__.py": _render_sections_init(),
-        config_dir / "sections" / "__init__.pyi": _render_sections_stub(),
-        config_dir / "sections" / "_facade.py": _render_sections_facade(),
         config_dir / "sections" / "app.py": _render_section_module(
             request=request,
             env_prefix=env_prefix,
@@ -201,55 +192,12 @@ def _render_files(
             module_prefix=module_prefix,
             bundle_name=bundle_name,
         ),
-        config_dir / "catalog.py": _render_catalog_module(
-            module_prefix=module_prefix,
-        ),
     }
 
 
 def _render_config_init() -> str:
-    """Render ``config/__init__.py``."""
-    return '''"""Application AppRC config package."""
-
-# ruff: noqa: F401
-
-from ._facade import __all__, __dir__, __getattr__
-'''
-
-
-def _render_config_stub(*, bundle_name: str) -> str:
-    """Render ``config/__init__.pyi``."""
-    return f'''"""Typed surface for the AppRC config package."""
-
-# ruff: noqa: F401
-
-from .app import MyRC as MyRC
-from .bundle import {bundle_name} as {bundle_name}
-from .catalog import (
-    CONFIG_SECTIONS as CONFIG_SECTIONS,
-    CONFIG_SPEC as CONFIG_SPEC,
-    SECTION_BY_KEY as SECTION_BY_KEY,
-)
-
-__all__: list[str]
-
-def __getattr__(name: str) -> object: ...
-def __dir__() -> list[str]: ...
-'''
-
-
-def _render_config_facade(*, bundle_name: str) -> str:
-    """Render ``config/_facade.py``."""
-    return _render_lazy_facade(
-        docstring="Application AppRC config package.",
-        export_modules={
-            "CONFIG_SECTIONS": ".catalog",
-            "CONFIG_SPEC": ".catalog",
-            "MyRC": ".app",
-            "SECTION_BY_KEY": ".catalog",
-            bundle_name: ".bundle",
-        },
-    )
+    """Render a package initializer that imports no application sections."""
+    return '"""Application configuration. Import chosen sections before resolving."""\n'
 
 
 def _render_app_module(
@@ -286,38 +234,8 @@ MyRC = rc.AppRC(
 
 
 def _render_sections_init() -> str:
-    """Render ``config/sections/__init__.py``."""
-    return '''"""AppRC config section namespace."""
-
-# ruff: noqa: F401
-
-from ._facade import __all__, __dir__, __getattr__
-'''
-
-
-def _render_sections_stub() -> str:
-    """Render ``config/sections/__init__.pyi``."""
-    return '''"""Typed surface for the AppRC config section namespace."""
-
-# ruff: noqa: F401
-
-from .app import AppSection as AppSection
-
-__all__: list[str]
-
-def __getattr__(name: str) -> object: ...
-def __dir__() -> list[str]: ...
-'''
-
-
-def _render_sections_facade() -> str:
-    """Render ``config/sections/_facade.py``."""
-    return _render_lazy_facade(
-        docstring="AppRC config section namespace.",
-        export_modules={
-            "AppSection": ".app",
-        },
-    )
+    """Render the lightweight section namespace."""
+    return '"""Application configuration sections."""\n'
 
 
 def _render_section_module(
@@ -326,7 +244,11 @@ def _render_section_module(
     env_prefix: str,
 ) -> str:
     """Render ``config/sections/app.py``."""
-    imports = "from pathlib import Path\n\n" if request.storage else ""
+    imports = (
+        "from pathlib import Path\n\n"
+        if request.storage_selector_env_key
+        else ""
+    )
     storage_field = ""
     if request.storage_selector_env_key is not None:
         _validate_env_key_prefix(
@@ -381,91 +303,4 @@ class {bundle_name}:
     """Aggregate all registered AppRC config sections."""
 
     app: AppSection = field(default_factory=AppSection)
-'''
-
-
-def _render_lazy_facade(
-    *,
-    docstring: str,
-    export_modules: Mapping[str, str],
-) -> str:
-    """Render a lightweight package facade.
-
-    :param docstring: Module docstring for the generated package file.
-    :param export_modules: Public names mapped to relative module imports.
-    :return: Python source for a lazy facade module.
-    """
-    export_lines = "\n".join(
-        f'    "{export_name}",' for export_name in export_modules
-    )
-    mapping_lines = "\n".join(
-        f'    "{export_name}": "{module_name}",'
-        for export_name, module_name in export_modules.items()
-    )
-    return f'''"""{docstring}"""
-
-# pyright: reportUnsupportedDunderAll=false
-
-from importlib import import_module
-
-
-_ALL_EXPORTS = (
-{export_lines}
-)
-
-_EXPORT_MODULES = {{
-{mapping_lines}
-}}
-
-__all__ = list(_ALL_EXPORTS)
-
-
-def __getattr__(name: str) -> object:
-    """Load one public config export on first use.
-
-    :param name: Export requested through attribute access or import machinery.
-    :return: Exported object resolved from its owner module.
-    """
-    try:
-        module_name = _EXPORT_MODULES[name]
-    except KeyError as exc:
-        raise AttributeError(
-            f"module {{__name__!r}} has no attribute {{name!r}}"
-        ) from exc
-    module = import_module(module_name, __package__)
-    value = getattr(module, name)
-    globals()[name] = value
-    return value
-
-
-def __dir__() -> list[str]:
-    """List normal module attributes and lazy public exports.
-
-    :return: Sorted module attribute names.
-    """
-    return sorted({{*globals(), *__all__}})
-'''
-
-
-def _render_catalog_module(*, module_prefix: str) -> str:
-    """Render ``config/catalog.py``."""
-    return f'''"""AppRC config section catalog."""
-
-import importlib
-
-from {module_prefix}.app import MyRC
-
-importlib.import_module({f"{module_prefix}.bundle"!r})
-
-KIT = MyRC.kit
-CONFIG_SPEC = KIT.spec
-CONFIG_SECTIONS = CONFIG_SPEC.owners
-SECTION_BY_KEY = {{section.key: section for section in CONFIG_SECTIONS}}
-
-__all__ = [
-    "CONFIG_SECTIONS",
-    "CONFIG_SPEC",
-    "KIT",
-    "SECTION_BY_KEY",
-]
 '''

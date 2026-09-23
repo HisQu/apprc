@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 from pathlib import Path
 
 import pytest
@@ -191,8 +193,11 @@ def test_app_config_spec_apprc_dir_uses_env_override(
 
     monkeypatch.setenv("DEMO_APPRC_DIR", str(custom_apprc_dir))
 
-    assert spec.apprc_dir() == custom_apprc_dir
-    assert spec.preferred_apprc_toml_path() == custom_apprc_dir / "apprc.toml"
+    assert AppFiles(spec).apprc_dir() == custom_apprc_dir
+    assert (
+        AppFiles(spec).preferred_apprc_toml_path()
+        == custom_apprc_dir / "apprc.toml"
+    )
 
 
 def test_app_config_spec_rejects_manual_owner_argument() -> None:

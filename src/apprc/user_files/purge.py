@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 # == Standard Library ===========================================
 import os
 from dataclasses import dataclass
@@ -69,7 +71,7 @@ def build_config_purge_plan(
         if apprc_dir is not None
         else None
     )
-    paths = spec.paths(proc_env)
+    paths = AppFiles(spec).paths(proc_env)
     if _has_symlink_at_or_above(paths.root):
         raise ConfigPurgeError(
             "Refusing to purge through a symbolic-link component in the "

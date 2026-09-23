@@ -30,8 +30,8 @@ _CLI_EXPORTS = [
     "StorageOption",
     "active_storage_root_from_state",
     "args_after_command",
-    "bootstrap_cli_env",
-    "bootstrap_cli_options",
+    "resolve_cli_config",
+    "resolve_cli_options",
     "build_config_doctor_payload",
     "build_config_typer_app",
     "cli_options_from",
@@ -58,19 +58,15 @@ _DIAGNOSTIC_EXPORTS = [
     "ConfigDoctorStatus",
 ]
 _RESULT_EXPORTS = [
-    "BootstrapLogger",
-    "EnvBootstrapResult",
-]
-_TUI_EXPORTS = [
-    "ConfigEditorApp",
-    "ConfigSetupApp",
+    "ResolutionLogger",
 ]
 
 _SYMBOL_EXPORTS = {
     **{name: "apprc.interfaces.cli" for name in _CLI_EXPORTS},
-    **{name: "apprc.runtime.diagnostics" for name in _DIAGNOSTIC_EXPORTS},
-    **{name: "apprc.runtime.result" for name in _RESULT_EXPORTS},
-    **{name: "apprc.interfaces.tui" for name in _TUI_EXPORTS},
+    **{
+        name: "apprc.interfaces.cli.diagnostics" for name in _DIAGNOSTIC_EXPORTS
+    },
+    **{name: "apprc.runtime.logging" for name in _RESULT_EXPORTS},
 }
 
 __all__, __getattr__, __dir__ = build_lazy_facade(
@@ -79,7 +75,6 @@ __all__, __getattr__, __dir__ = build_lazy_facade(
         *_CLI_EXPORTS,
         *_DIAGNOSTIC_EXPORTS,
         *_RESULT_EXPORTS,
-        *_TUI_EXPORTS,
     ],
     module_exports={},
     symbol_exports=_SYMBOL_EXPORTS,

@@ -7,13 +7,14 @@ import json
 import typer
 
 import apprc as rc
-from process_env.config import MyRC, ProcessEnvExampleConfig
+from process_env.config.app import MyRC
+from process_env.config.bundle import ProcessEnvExampleConfig
 
 
 def build_app(
     *,
     args_provider: rc.cli.CliArgvProvider | None = None,
-    editor_app_cls: type[rc.cli.ConfigEditorApp] | None = None,
+    editor_app_cls: type[rc.tui.ConfigEditorApp] | None = None,
 ) -> typer.Typer:
     """Return the process-environment example CLI.
 
@@ -26,8 +27,9 @@ def build_app(
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
     )
-    MyRC.mount_cli(
+    rc.cli.mount_config_cli(
         app,
+        MyRC,
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
         runtime_payload=_runtime_payload,
@@ -42,12 +44,13 @@ def build_app(
 
 
 def _runtime_payload(
-    _state: rc.cli.DefaultConfigCliState,
+    state: rc.cli.DefaultConfigCliState,
 ) -> dict[str, object]:
     """Return values that this example application would use."""
-    config = ProcessEnvExampleConfig().app
+    assert state.resolved is not None
+    config = state.resolved.build(ProcessEnvExampleConfig).app
     return {
-        "app_id": MyRC.spec.app_id,
+        "app_id": MyRC.schema.app_id,
         "config": {"profile": config.profile, "debug": config.debug},
     }
 

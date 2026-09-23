@@ -37,6 +37,7 @@ class ConfigCommandHandlers(
 
     def setup(
         self,
+        ctx: typer.Context,
         *,
         assume_yes: bool,
         apprc_dir: str | Path | None,
@@ -44,9 +45,11 @@ class ConfigCommandHandlers(
     ) -> None:
         """Configure the files required by this AppRC declaration."""
         run_config_setup(
-            self.kit,
+            self.apprc,
             assume_yes=assume_yes,
-            apprc_dir=apprc_dir,
+            apprc_dir=apprc_dir
+            if apprc_dir is not None
+            else self.manager(ctx).paths.root,
             storage_root=storage_root,
             config_group_name=self.config_group_name,
         )

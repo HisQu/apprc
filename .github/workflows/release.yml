@@ -132,8 +132,12 @@ jobs:
         run: |
           uv publish \
             --trusted-publishing always \
+            --check-url https://pypi.org/simple/apprc-core/ \
+            dist/apprc_core-*
+          uv publish \
+            --trusted-publishing always \
             --check-url https://pypi.org/simple/apprc/ \
-            dist/*
+            dist/apprc-*
 
   publish-existing-release:
     name: Publish existing GitHub Release to PyPI
@@ -180,23 +184,25 @@ jobs:
           wheels=(dist/*.whl)
           sdists=(dist/*.tar.gz)
           version="${RELEASE_TAG#v}"
-          if [[ "${#wheels[@]}" -ne 1 || "${#sdists[@]}" -ne 1 ]]; then
-            echo "Expected exactly one wheel and one source archive on ${RELEASE_TAG}." >&2
+          if [[ "${#wheels[@]}" -ne 2 || "${#sdists[@]}" -ne 2 ]]; then
+            echo "Expected exactly two wheels and two source archives on ${RELEASE_TAG}." >&2
             exit 1
           fi
-          if [[ "$(basename "${wheels[0]}")" != apprc-${version}-*.whl ]]; then
-            echo "The wheel filename does not match ${RELEASE_TAG}: ${wheels[0]}." >&2
-            exit 1
-          fi
-          if [[ "$(basename "${sdists[0]}")" != "apprc-${version}.tar.gz" ]]; then
-            echo "The source archive filename does not match ${RELEASE_TAG}: ${sdists[0]}." >&2
-            exit 1
-          fi
-          uv run --with twine --no-project -- twine check "${wheels[0]}" "${sdists[0]}"
+          for project in apprc apprc_core; do
+            if [[ ! -f "dist/${project}-${version}-py3-none-any.whl" || ! -f "dist/${project}-${version}.tar.gz" ]]; then
+              echo "Missing ${project} artifacts for ${RELEASE_TAG}." >&2
+              exit 1
+            fi
+          done
+          uv run --with twine --no-project -- twine check dist/*
 
       - name: Publish existing artifacts to PyPI
         run: |
           uv publish \
             --trusted-publishing always \
+            --check-url https://pypi.org/simple/apprc-core/ \
+            dist/apprc_core-*
+          uv publish \
+            --trusted-publishing always \
             --check-url https://pypi.org/simple/apprc/ \
-            dist/*
+            dist/apprc-*

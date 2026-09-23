@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from apprc.user_files.app_home.application import AppFiles
+
 import os
 from pathlib import Path
 
@@ -7,7 +9,7 @@ import pytest
 from rich.text import Text
 from textual.widgets import Button
 
-from apprc.definition.app_config.kit import AppConfigKit
+from tests.support_declaration import app_from_envs
 from apprc.definition.app_config.storage import Storage
 from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.interfaces.tui._primitives import (
@@ -17,7 +19,7 @@ from apprc.interfaces.tui._primitives import (
     PathSuggester,
 )
 from apprc.interfaces.tui.editor import ConfigEditorApp
-from apprc.user_files.setup.text import setup_overview_text
+from apprc.interfaces._setup_text import setup_overview_text
 from apprc.user_files.storage_roots.registry import (
     StorageRecord,
     StorageRegistry,
@@ -26,13 +28,13 @@ from apprc.user_files.storage_roots.registry import (
     write_storage_registry,
 )
 from tests.support_config import (
-    build_apprc_example_app_kit,
-    build_storage_free_example_kit,
+    build_apprc_example_app,
+    build_storage_free_example_app,
 )
 
 
 def test_setup_overview_describes_fixed_storage_files() -> None:
-    text = setup_overview_text(build_apprc_example_app_kit())
+    text = setup_overview_text(build_apprc_example_app())
 
     assert "apprc.user.env" in text
     assert "storage named default" in text
@@ -40,7 +42,7 @@ def test_setup_overview_describes_fixed_storage_files() -> None:
 
 
 def test_setup_overview_describes_storage_free_user_dotenv() -> None:
-    text = setup_overview_text(build_storage_free_example_kit())
+    text = setup_overview_text(build_storage_free_example_app())
 
     assert "empty apprc.user.env" in text
     assert "registers" not in text
@@ -51,15 +53,15 @@ async def test_editor_offers_setup_for_missing_optional_layers(
     tmp_path: Path,
 ) -> None:
     """Optional persistence is available without being reported as broken."""
-    kit = AppConfigKit(
+    kit = app_from_envs(
         app_id="optional_editor",
         display_name="Optional Editor",
         config_package="apprc",
-        user_dotenv=UserDotenv(required=False),
-        storage=Storage(required=False),
+        user_dotenv=UserDotenv(),
+        storage=Storage(),
         apprc_dir=tmp_path / "apprc",
     )
-    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
 
     async with editor.run_test() as pilot:
         await pilot.pause()
@@ -67,7 +69,7 @@ async def test_editor_offers_setup_for_missing_optional_layers(
         assert str(setup.label) == "Set up user dotenv and storage..."
         assert not editor.query("#selector-status")
 
-    assert not kit.spec.apprc_dir().exists()
+    assert not AppFiles(kit.schema).apprc_dir().exists()
 
 
 @pytest.mark.asyncio
@@ -95,9 +97,9 @@ async def test_editor_setup_registers_default_storage(
         "APPRC_EXAMPLE_APP_APPRC_DIR",
         str(previous_apprc_dir),
     )
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     storage_root = tmp_path / "storage"
-    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
     responses: list[object | None] = [
         PathInputResult(path=apprc_dir),
         PathInputResult(path=storage_root),
@@ -116,13 +118,11 @@ async def test_editor_setup_registers_default_storage(
         await pilot.pause()
         await editor.setup_workflow.open_setup_flow()
 
-    registry = load_storage_registry_or_empty(
-        kit.spec.preferred_apprc_toml_path()
-    )
+    registry = editor.manager.registry()
     assert registry.selected_storage == "default"
     assert registry.selected("default").root == storage_root.resolve()
-    assert kit.spec.user_dotenv_path().is_file()
-    assert kit.spec.storage_dotenv_path(storage_root).is_file()
+    assert editor.manager.paths.user_dotenv.is_file()
+    assert AppFiles(kit.schema).storage_dotenv_path(storage_root).is_file()
     apprc_prompt = screens[0]
     assert isinstance(apprc_prompt, PathInputScreen)
     assert apprc_prompt.value == str(previous_apprc_dir)
@@ -134,21 +134,21 @@ async def test_editor_setup_registers_default_storage(
     assert isinstance(summary.message, Text)
     assert "user_dotenv:" in summary.message.plain
     assert "cannot remember this custom directory" in summary.message.plain
-    assert os.environ["APPRC_EXAMPLE_APP_APPRC_DIR"] == str(apprc_dir)
+    assert os.environ["APPRC_EXAMPLE_APP_APPRC_DIR"] == str(previous_apprc_dir)
 
 
 @pytest.mark.asyncio
 async def test_storage_free_editor_setup_creates_user_dotenv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    kit = build_storage_free_example_kit()
+    kit = build_storage_free_example_app()
     monkeypatch.setenv(
-        kit.spec.apprc_dir_env_key,
-        str(kit.spec.apprc_dir()),
+        kit.schema.apprc_dir_env_key,
+        str(AppFiles(kit.schema).apprc_dir()),
     )
-    editor = ConfigEditorApp(kit=kit, storage_registry=None)
+    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
     responses: list[object | None] = [
-        PathInputResult(path=kit.spec.apprc_dir()),
+        PathInputResult(path=AppFiles(kit.schema).apprc_dir()),
         "done",
     ]
 
@@ -161,8 +161,11 @@ async def test_storage_free_editor_setup_creates_user_dotenv(
         await pilot.pause()
         await editor.setup_workflow.open_setup_flow()
 
-    assert kit.spec.user_dotenv_path().read_text(encoding="utf-8") == ""
-    assert not kit.spec.preferred_apprc_toml_path().exists()
+    assert (
+        AppFiles(kit.schema).user_dotenv_path().read_text(encoding="utf-8")
+        == ""
+    )
+    assert not AppFiles(kit.schema).preferred_apprc_toml_path().exists()
 
 
 @pytest.mark.asyncio
@@ -175,16 +178,16 @@ async def test_editor_initializes_marker_for_existing_named_storage(
     :param monkeypatch: TUI response replacement fixture.
     :param tmp_path: Isolated storage parent.
     """
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     monkeypatch.setenv(
-        kit.spec.apprc_dir_env_key,
-        str(kit.spec.apprc_dir()),
+        kit.schema.apprc_dir_env_key,
+        str(AppFiles(kit.schema).apprc_dir()),
     )
-    kit.spec.ensure_user_dotenv()
+    AppFiles(kit.schema).ensure_user_dotenv()
     storage_root = tmp_path / "ontology"
     storage_root.mkdir()
     registry = StorageRegistry(
-        path=kit.spec.preferred_apprc_toml_path(),
+        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
         storages={
             "ontology": StorageRecord(
                 name="ontology",
@@ -196,7 +199,7 @@ async def test_editor_initializes_marker_for_existing_named_storage(
     )
     write_storage_registry(registry)
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=registry,
         initial_storage="ontology",
     )
@@ -218,7 +221,7 @@ async def test_editor_initializes_marker_for_existing_named_storage(
     updated = load_storage_registry_or_empty(registry.path)
     assert updated.selected_storage == "ontology"
     assert updated.selected("ontology").root == storage_root
-    assert kit.spec.storage_dotenv_path(storage_root).is_file()
+    assert AppFiles(kit.schema).storage_dotenv_path(storage_root).is_file()
     assert len(screens) == 2
     assert all(isinstance(screen, ConfirmScreen) for screen in screens)
 
@@ -235,7 +238,7 @@ async def test_canceling_storage_setup_does_not_change_process_environment(
         str(previous_apprc_dir),
     )
     editor = ConfigEditorApp(
-        kit=build_apprc_example_app_kit(),
+        apprc=build_apprc_example_app(),
         storage_registry=None,
     )
     responses: list[object | None] = [
@@ -264,14 +267,14 @@ async def test_combined_editor_sets_up_only_missing_user_dotenv(
     apprc_dir = tmp_path / "apprc"
     storage_root = tmp_path / "storage"
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(apprc_dir))
-    kit = build_apprc_example_app_kit()
+    kit = build_apprc_example_app()
     registry = register_storage(
         name="default",
         root=storage_root,
-        path=kit.spec.preferred_apprc_toml_path(),
+        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
     )
     editor = ConfigEditorApp(
-        kit=kit,
+        apprc=kit,
         storage_registry=registry,
         active_storage_root=storage_root,
     )
@@ -292,5 +295,5 @@ async def test_combined_editor_sets_up_only_missing_user_dotenv(
         await editor.setup_workflow.open_setup_flow()
 
     assert responses == []
-    assert kit.spec.user_dotenv_path().is_file()
-    assert kit.spec.storage_dotenv_path(storage_root).is_file()
+    assert AppFiles(kit.schema).user_dotenv_path().is_file()
+    assert AppFiles(kit.schema).storage_dotenv_path(storage_root).is_file()

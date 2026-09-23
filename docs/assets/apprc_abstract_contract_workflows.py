@@ -40,11 +40,11 @@ def build_graph() -> Digraph:
             border_color=gg.BLUE,
         )
         contract.classifier(
-            "kit",
+            "declaration",
             "rc.AppRC",
             "optional rc.UserDotenv",
             "optional rc.Storage",
-            stereotype="app spec",
+            stereotype="declaration",
             kind="interface",
             border_color=gg.BLUE,
         )
@@ -134,7 +134,9 @@ def build_graph() -> Digraph:
 
     figure.edge("contract_schema", "owner_metadata", "derive", color=gg.BLUE)
     figure.edge("contract_schema", "field_metadata", "derive", color=gg.BLUE)
-    figure.edge("kit", "capability_declaration", "declare", color=gg.BLUE)
+    figure.edge(
+        "declaration", "capability_declaration", "declare", color=gg.BLUE
+    )
     figure.edge("owner_metadata", "resolution", "resolve", color=gg.GREEN)
     figure.edge(
         "capability_declaration", "resolution", "enable", color=gg.GREEN

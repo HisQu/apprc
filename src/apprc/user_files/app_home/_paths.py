@@ -13,3 +13,12 @@ def normalize_apprc_toml_path(path: str | Path) -> Path:
     :return: Absolute path spelling.
     """
     return Path(path).expanduser().resolve()
+
+
+def path_entry_exists(path: Path) -> bool:
+    """Return whether a path is occupied, including by a dangling symlink.
+
+    :param path: Filesystem entry to inspect.
+    :return: Whether the path is occupied.
+    """
+    return path.exists() or path.is_symlink()

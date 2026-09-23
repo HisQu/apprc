@@ -45,7 +45,7 @@ wheels = [
 
 [[package]]
 name = "apprc"
-version = "0.25.0"
+version = "0.25.1"
 source = { editable = "src/apprc_dev/packaging/terminal" }
 dependencies = [
     { name = "apprc-core" },
@@ -66,7 +66,7 @@ requires-dist = [
 
 [[package]]
 name = "apprc-core"
-version = "0.25.0"
+version = "0.25.1"
 source = { editable = "." }
 dependencies = [
     { name = "python-dotenv" },

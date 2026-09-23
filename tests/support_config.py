@@ -8,6 +8,7 @@ TUI behavior can be exercised without depending on a downstream app.
 from __future__ import annotations
 
 from apprc.user_files.app_home.application import AppFiles
+from apprc.user_files.env_files.secrets import repair_secret_file_permissions
 
 from dataclasses import dataclass
 from collections.abc import Mapping
@@ -377,12 +378,16 @@ def register_storage_for_app(
     :param root: Storage root directory.
     :return: Updated storage registry.
     """
-    return register_storage(
+    registry = register_storage(
         name=name,
         root=root,
         path=AppFiles(kit.schema).preferred_apprc_toml_path(),
         storage_dotenv_filename=kit.schema.storage_dotenv_filename,
     )
+    repair_secret_file_permissions(
+        AppFiles(kit.schema).storage_secret_dotenv_path(root)
+    )
+    return registry
 
 
 def record_archived_storage_for_kit(

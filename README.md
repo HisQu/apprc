@@ -4,6 +4,8 @@
 [![PyPI](https://img.shields.io/pypi/v/apprc)](https://pypi.org/project/apprc/)
 [![Python](https://img.shields.io/pypi/pyversions/apprc)](https://pypi.org/project/apprc/)
 [![License](https://img.shields.io/pypi/l/apprc)](LICENSE)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 AppRC gives Python applications typed settings and tools for configuring them.
 Define each setting's type, default, and explanation once. Use the same
@@ -13,6 +15,12 @@ edit saved overrides.
 Applications can also register named data directories outside their source
 checkout. Each directory can have its own settings. A config CLI and terminal
 editor provide setup, inspection, editing, and storage management.
+
+<!-- Graphical Abstract goes here: -->
+
+| ![Graphical abstract](docs/assets/apprc-abstract-configuration-overview.svg) |
+|:--:|
+| **Fig. 1 - Graphical Abstract:** AppRC resolves typed settings from layered sources, connects selected storage to its settings and data directory, and shares one declaration across application code and configuration tools. |
 
 - [Install](#install)
 - [Load settings](#load-settings)

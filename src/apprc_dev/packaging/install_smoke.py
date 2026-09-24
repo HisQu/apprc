@@ -14,7 +14,7 @@ def verify_install(*, core_only: bool, gui: bool = False) -> None:
     """Exercise real construction and management under the selected dependency set.
 
     :param core_only: Whether terminal libraries and entrypoints must be absent.
-    :param gui: Whether the separate native view distribution must import.
+    :param gui: Whether the separate Gradio editor distribution must import.
     """
     import apprc
 
@@ -65,10 +65,10 @@ def verify_install(*, core_only: bool, gui: bool = False) -> None:
         assert CliRunner().invoke(terminal_app, ["--help"]).exit_code == 0
         assert apprc.tui.ConfigEditorApp is not None
     if gui:
-        from apprc_gui import ConfigView
+        from apprc_gui import ConfigEditor
 
         assert metadata.distribution("apprc-gui").version == core.version
-        assert isinstance(ConfigView, type)
+        assert isinstance(ConfigEditor, type)
     print(
         "apprc core install passed"
         if core_only

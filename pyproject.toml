@@ -11,7 +11,7 @@ build-backend = "uv_build"
 
 [project]
 name        = "apprc-core"
-version     = "0.26.0"
+version     = "0.27.0"
 description = "Reusable runtime configuration and config CLI helpers for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
 readme      = { file = "README.pypi.md", content-type = "text/markdown" }
@@ -90,8 +90,7 @@ dev = [
     "jupyterlab",    # < Brings notebook, widgets, ipykernel, etc.
     "ipywidgets",    # < Needed for interactive widgets; also installs/configures widget frontend support.
     "textual",       # < Terminal config editor tests and manual runs.
-    "toga-core>=0.5.4,<0.6",  # < GUI type checks without a platform backend.
-    "toga-dummy>=0.5.4,<0.6",  # < Headless GUI behavior checks.
+    "gradio>=6.26,<7",  # < Browser configuration editor checks.
     # "jupytext",    # < Needed for paired text notebooks / .py notebook workflows.
     # --- Testing ----------------------
     "pytest>=8.2",

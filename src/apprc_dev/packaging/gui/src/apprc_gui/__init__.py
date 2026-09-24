@@ -1,5 +1,5 @@
-"""Toga views built on AppRC's noninteractive configuration manager."""
+"""Gradio controls built on AppRC's noninteractive configuration manager."""
 
-from apprc_gui.view import ConfigView
+from apprc_gui.view import ConfigEditor
 
-__all__ = ["ConfigView"]
+__all__ = ["ConfigEditor"]

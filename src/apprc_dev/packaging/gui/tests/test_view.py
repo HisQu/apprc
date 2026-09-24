@@ -1,18 +1,15 @@
-"""Headless checks for the public native configuration view."""
+"""Checks for the reusable Gradio configuration editor."""
 
 from pathlib import Path
 
 import apprc as rc
-import toga
+import gradio as gr
 
-from apprc_gui import ConfigView
+from apprc_gui import ConfigEditor
 
 
-def test_view_handles_first_run_and_secret_edit(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """Keep setup usable before storage exists and route secret edits privately."""
-    monkeypatch.setenv("TOGA_BACKEND", "toga_dummy")
+def test_editor_configures_storage_and_saves_secret(tmp_path: Path) -> None:
+    """Show first-run controls and route secret values to the private layer."""
     app = rc.AppRC(
         app_id="gui-check",
         user_dotenv=rc.UserDotenv(),
@@ -27,26 +24,25 @@ def test_view_handles_first_run_and_secret_edit(
     manager = app.manage(
         rc.ResolveOptions(storage_required=True), environment={}
     )
-    desktop = toga.App("GUI check", "org.example.gui-check")
-    window = toga.MainWindow()
-    view = ConfigView(manager, window)
-    assert not view.inspection.ready
+    editor = ConfigEditor(manager)
+    with gr.Blocks() as blocks:
+        editor.render()
+    assert not manager.inspect().ready
+    assert blocks.fns
+    with gr.Blocks() as first_run_controls:
+        editor._render_storage(gr.Textbox(), gr.State(0))
+    assert "Create and select storage" in str(first_run_controls.config)
 
-    manager.setup(storage_root=tmp_path / "storage")
-    view.refresh()
-    assert view.inspection.ready
-    assert view._scope_select is not None
-    view._scope_select.value = "storage"
-    view._save("GUI_CHECK_TOKEN", toga.PasswordInput(value="private-value"))
-    assert view._error == ""
-    assert view._scope_select is not None
-    assert view._scope_select.value == "storage"
+    status, revision = editor._create_storage(
+        "default", str(tmp_path / "storage"), 0
+    )
+    assert status == "Selected storage default."
+    assert manager.inspect().ready
+    status, revision = editor._save(
+        "GUI_CHECK_TOKEN", True, "private-value", "storage", revision
+    )
+    assert status == "Saved GUI_CHECK_TOKEN in the storage layer."
     assert manager.resolve().build(Client).token == "private-value"
     assert "private-value" not in manager.writable_path("storage").read_text()
-    assert "private-value" not in str(view.widget.content)
-
-    manager.registry_path.write_text("invalid = [", encoding="utf-8")
-    view.refresh()
-    assert not view.inspection.ready
-    assert view.widget.content is not None
-    desktop.exit()
+    assert "private-value" not in str(blocks.config)
+    assert revision == 2

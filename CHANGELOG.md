@@ -20,7 +20,6 @@ All notable changes to `AppRC` will be documented in this file.
 
 
 
-
 <br>
 
 ---
@@ -32,33 +31,34 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.26.0 - 2026-09-23](#0260---2026-09-23)
-4. [0.25.1 - 2026-09-23](#0251---2026-09-23)
-5. [0.25.0 - 2026-09-23](#0250---2026-09-23)
-6. [0.24.0 - 2026-09-11](#0240---2026-09-11)
-7. [0.23.7 - 2026-09-10](#0237---2026-09-10)
-8. [0.23.6 - 2026-09-10](#0236---2026-09-10)
-9. [0.23.5 - 2026-09-08](#0235---2026-09-08)
-10. [0.22.1 - 2026-09-04](#0221---2026-09-04)
-11. [0.22.0 - 2026-09-04](#0220---2026-09-04)
-12. [0.21.0 - 2026-09-04](#0210---2026-09-04)
-13. [0.20.0 - 2026-09-04](#0200---2026-09-04)
-14. [0.19.9 - 2026-09-02](#0199---2026-09-02)
-15. [0.19.8 - 2026-09-01](#0198---2026-09-01)
-16. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-17. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-18. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-19. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-20. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-21. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-22. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-23. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-24. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-25. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-26. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-27. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-28. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-29. [0.1.0 - 2026-06-02](#010---2026-06-02)
+3. [0.27.0 - 2026-09-24](#0270---2026-09-24)
+4. [0.26.0 - 2026-09-23](#0260---2026-09-23)
+5. [0.25.1 - 2026-09-23](#0251---2026-09-23)
+6. [0.25.0 - 2026-09-23](#0250---2026-09-23)
+7. [0.24.0 - 2026-09-11](#0240---2026-09-11)
+8. [0.23.7 - 2026-09-10](#0237---2026-09-10)
+9. [0.23.6 - 2026-09-10](#0236---2026-09-10)
+10. [0.23.5 - 2026-09-08](#0235---2026-09-08)
+11. [0.22.1 - 2026-09-04](#0221---2026-09-04)
+12. [0.22.0 - 2026-09-04](#0220---2026-09-04)
+13. [0.21.0 - 2026-09-04](#0210---2026-09-04)
+14. [0.20.0 - 2026-09-04](#0200---2026-09-04)
+15. [0.19.9 - 2026-09-02](#0199---2026-09-02)
+16. [0.19.8 - 2026-09-01](#0198---2026-09-01)
+17. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+18. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+19. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+20. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+21. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+22. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+23. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+24. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+25. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+26. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+27. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+28. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+29. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+30. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -82,10 +82,6 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
-- Grouped the six documentation pages under topical H1 headings, with nested
-  tables of contents and spacing between major sections. Removed an outdated
-  warning that said managed edits had no cross-process coordination.
-
 <br>
 
 ### ⚠️ Deprecated
@@ -101,6 +97,42 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.27.0 - 2026-09-24
+
+<br>
+
+### 💥 Breaking changes
+
+- Breaking: `apprc-gui` now exports `ConfigEditor` for Gradio instead of
+  `ConfigView` for Toga. Affected: applications embedding the old native view.
+  Migration: replace the Toga window with application-owned Gradio `Blocks`
+  and call `ConfigEditor(MyRC.manage()).render()` inside them.
+
+<br>
+
+### ➕ Added
+
+- Added a reusable Gradio settings editor that can initialize declared files,
+  choose storage, show effective sources, and save ordinary or secret values.
+- Added suggested directory values and completion to interactive setup prompts;
+  setup also asks for missing required editable fields.
+
+<br>
+
+### 💔 Changed
+
+- Grouped the six documentation pages under topical H1 headings, with nested
+  tables of contents and spacing between major sections. Removed an outdated
+  warning that said managed edits had no cross-process coordination.
 
 <br>
 

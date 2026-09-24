@@ -1,42 +1,32 @@
-"""Small application-owned Toga window using the reusable AppRC view."""
+"""Browser settings page using the reusable AppRC editor."""
 
-import toga
-from apprc_gui import ConfigView
+import gradio as gr
+from apprc_gui import ConfigEditor
 
 from user_dotenv.config.app import MyRC
 from user_dotenv.config.sections.app import AppSettings
 
 
-class UserDotenvDesktop(toga.App):
-    """Show how one AppRC declaration serves an app and a settings window."""
+def build_page() -> gr.Blocks:
+    """Show AppRC settings next to a small application action."""
+    manager = MyRC.manage()
+    with gr.Blocks(title="User dotenv example") as page:
+        gr.Markdown("# User dotenv example")
+        profile = gr.Textbox(label="Active profile", interactive=False)
 
-    def startup(self) -> None:
-        """Offer setup and editing before reading the current profile."""
-        self.manager = MyRC.manage()
-        self.profile = toga.Label("Read the active profile after setup.")
-        window = toga.MainWindow(title="User dotenv example")
-        self.main_window = window
-        self.settings = ConfigView(self.manager, window)
-        window.content = toga.Column(
-            children=[
-                self.profile,
-                toga.Button("Read active profile", on_press=self._read_profile),
-                self.settings.widget,
-            ]
-        )
-        window.show()
+        def read_profile() -> str:
+            """Read current files after the editor saves a setting."""
+            return manager.resolve().build(AppSettings).profile
 
-    def _read_profile(self, _widget: toga.Widget) -> None:
-        """Build application settings from the declaration edited above."""
-        settings = self.manager.resolve().build(AppSettings)
-        self.profile.text = f"Active profile: {settings.profile}"
+        gr.Button("Read active profile").click(read_profile, outputs=profile)
+        with gr.Accordion("Settings", open=True):
+            ConfigEditor(manager).render()
+    return page
 
 
 def main() -> None:
-    """Run the example with the installed native backend."""
-    UserDotenvDesktop(
-        "User dotenv example", "org.example.apprc-user-dotenv"
-    ).main_loop()
+    """Open the local settings page without requiring a native backend."""
+    build_page().launch(server_name="127.0.0.1", inbrowser=True, share=False)
 
 
 if __name__ == "__main__":

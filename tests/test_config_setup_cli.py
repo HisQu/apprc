@@ -24,6 +24,29 @@ from tests.support_config import (
 )
 
 
+def test_interactive_storage_prompt_prefills_suggested_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Accepting the prefilled path should use the visible storage location."""
+    from apprc.interfaces.cli import _interactive_setup
+
+    suggested = tmp_path / "storage"
+    captured: dict[str, object] = {}
+
+    def prompt_stub(message: str, **kwargs: object) -> str:
+        captured["message"] = message
+        captured.update(kwargs)
+        return str(suggested)
+
+    monkeypatch.setattr(_interactive_setup, "prompt", prompt_stub)
+    assert (
+        _interactive_setup.prompt_storage_setup_root(suggested=suggested)
+        == suggested
+    )
+    assert captured["default"] == str(suggested)
+    assert captured["message"] == "Storage directory: "
+
+
 def test_storage_free_setup_creates_empty_user_dotenv() -> None:
     kit = build_storage_free_example_app()
     app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)

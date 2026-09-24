@@ -20,7 +20,7 @@
   - [Add configuration commands to Typer](#add-configuration-commands-to-typer)
   - [Inspect and edit settings in the terminal](#inspect-and-edit-settings-in-the-terminal)
   - [Save and migrate secret settings](#save-and-migrate-secret-settings)
-  - [Add a native settings window](#add-a-native-settings-window)
+  - [Add a Gradio settings page](#add-a-gradio-settings-page)
   - [Build a Windows installer](#build-a-windows-installer)
 - [Use settings across application code](#use-settings-across-application-code)
   - [Pass several settings sections together](#pass-several-settings-sections-together)
@@ -689,53 +689,42 @@ The same operations are available as `ConfigManager.plan_secret_migration()`,
 `apply_secret_migration()`, `secret_status()`, and
 `repair_secret_permissions()` in the [management reference](References.md#management).
 
-## Add a native settings window
+## Add a Gradio settings page
 
-Install `apprc-gui` alongside `apprc-core` and a [Toga backend](https://toga.beeware.org/en/stable/reference/platforms/)
-for the target operating system. On Windows, the `apprc-gui` distribution
-installs `toga-winforms`. The [user dotenv example](../examples/example_apps/src/user_dotenv/desktop.py)
-is a complete application-owned window. Its essential connection is:
+Install `apprc-gui` alongside your application. Define `MyRC` and import its
+registered config sections before creating the page. The [user dotenv example](../examples/example_apps/src/user_dotenv/desktop.py)
+contains a complete application-owned Gradio page. Its essential connection is:
 
 ```python
-import toga
-from apprc_gui import ConfigView
+import gradio as gr
+from apprc_gui import ConfigEditor
 
 from my_app.config import MyRC
 
+manager = MyRC.manage()
+with gr.Blocks() as page:
+    gr.Markdown("# My App")
+    with gr.Tab("Settings"):
+        ConfigEditor(manager).render()
 
-class DesktopApp(toga.App):
-    def startup(self):
-        window = toga.MainWindow(title="My App")
-        self.main_window = window
-        manager = MyRC.manage()
-        view = ConfigView(manager, window)
-        window.content = view.widget
-        window.show()
-
-
-def main():
-    DesktopApp("My App", "org.example.my-app").main_loop()
+page.launch(server_name="127.0.0.1", share=False)
 ```
 
-Define `MyRC` and import its registered config sections before creating this
-window. The view shows missing required settings and can initialize declared
-user and storage layers. It uses `ConfigManager` for every edit, so an
-environment value that overrides a saved value remains visible as the effective
-source. Pass `on_change=callback` to `ConfigView` when the host application
-needs the current `ConfigInspection.ready` value to enable its own Start button.
-The host application starts its own work after configuration; the view does not
-start it. The [GUI view explanation](Explanations.md#gui-view) describes this
-boundary.
+The editor shows missing required settings and can initialize declared user
+and storage layers. Each saved field goes through `ConfigManager`; the page
+shows when a process environment variable still overrides that value. Check
+`manager.inspect().ready` in your own Start button callback before building
+your application runtime. The [Gradio editor explanation](Explanations.md#gradio-editor)
+describes why the application owns that callback and the server.
 
 ## Build a Windows installer
 
 The application owns its [installer build](Explanations.md#installed-packages-and-installer-builds).
-Declare the desktop and CLI entry points in its `pyproject.toml`, and point
-cx_Freeze at small scripts that call those entry points. For example:
+Declare the browser launcher and CLI entry points in `pyproject.toml`:
 
 ```toml
-[project.optional-dependencies]
-desktop = ["apprc-gui>=0.26.0,<0.27"]
+[project]
+dependencies = ["apprc-gui>=0.27.0,<0.28", "gradio>=6.26,<7"]
 
 [project.gui-scripts]
 my-app-desktop = "my_app.desktop:main"
@@ -743,31 +732,20 @@ my-app-desktop = "my_app.desktop:main"
 [project.scripts]
 my-app = "my_app.cli:main"
 
-[[tool.cxfreeze.executables]]
-script = "src/my_app/desktop.py"
-base = "gui"
-target-name = "MyApp"
-shortcut-name = "My App"
-shortcut-dir = "ProgramMenuFolder"
-
-[[tool.cxfreeze.executables]]
-script = "src/my_app/cli.py"
-base = "console"
-target-name = "my-app"
-
-[tool.cxfreeze.bdist_msi]
-all-users = false
-add-to-path = false
 ```
 
-On Windows with Python 3.12, install the application's `desktop` extra and
-`cx-Freeze>=8.6,<9`, then run `cxfreeze bdist_msi` from the project root.
-The result is one `.msi` installer containing the desktop executable, CLI
-executable, Python runtime, and application files. It is not one portable
-executable. Include application resource files through the application's
-package data or cx_Freeze `include-files` option, then check that packaged
-defaults still resolve after installation. Test installation, first-run setup,
-launch, and upgrade on a clean Windows account without Python.
+For a one-file offline Windows installer, build wheels for the locked
+application and its dependencies on Windows. `uv export --locked
+--no-emit-project --no-dev --no-hashes -o requirements.txt` produces a pinned
+input for `python -m pip wheel --no-deps -r requirements.txt -w wheelhouse`;
+build the application wheel into the same directory. Include those wheels, a
+Python runtime, and `uv.exe` in an [Inno Setup](https://jrsoftware.org/isinfo.php)
+payload. During setup, create an application-owned environment and install
+the wheels with `uv pip install --offline --no-index --no-deps`. Point the
+Start menu shortcut at `pythonw.exe -m my_app.desktop`. Test packaged
+resources, first-run setup, browser launch, and upgrade on a Windows account
+without Python or network access. AppRC supplies the editor and file rules;
+the application owns its installer and entry points.
 
 <br>
 

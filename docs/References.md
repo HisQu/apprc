@@ -41,7 +41,7 @@ Examples use `import apprc as rc`. These names belong to the public API:
 | `rc.storage` | Read registry and selection records; mutations go through [ConfigManager](Explanations.md#configmanager). |
 | [`rc.cli`](Explanations.md#config-cli) | Add Typer commands, CLI state, and diagnostic output. |
 | [`rc.tui`](Explanations.md#config-editor) | `ConfigEditorApp` and `ConfigSetupApp` terminal interfaces. |
-| [`apprc_gui.ConfigView`](Explanations.md#gui-view) | Optional Toga view for [native settings windows](How-To-User-Guides.md#add-a-native-settings-window). |
+| [`apprc_gui.ConfigEditor`](Explanations.md#gradio-editor) | Optional Gradio editor for [browser settings pages](How-To-User-Guides.md#add-a-gradio-settings-page). |
 | `apprc.scaffold` | `ConfigScaffoldRequest` and `scaffold_config_package()` for [generating a config package](How-To-User-Guides.md#generate-a-config-package). |
 
 `apprc-core` owns the Python modules, including lazily imported terminal modules.

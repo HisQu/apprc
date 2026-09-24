@@ -32,7 +32,7 @@ Learn the components in this order:
 4. Use [`ConfigManager`](Explanations.md#configmanager) to initialize and edit
    those files. Add the [config CLI](Explanations.md#config-cli) and
    [config editor](Explanations.md#config-editor) for terminal use, or the
-   [GUI view](Explanations.md#gui-view) in a desktop application.
+   [Gradio editor](Explanations.md#gradio-editor) in a browser application.
 5. Use a [config bundle](Explanations.md#config-bundles) when several parts of
    the application need their own config sections.
 
@@ -76,7 +76,7 @@ the Python name identifies its implementation.
 | [`ConfigManager`](Explanations.md#configmanager) | Returned by `MyRC.manage()` | Application-specific setup, inspection, editing, and storage operations. |
 | [Config CLI](Explanations.md#config-cli) | `rc.cli.mount_config_cli(...)` | Configuration commands added to a Typer application. |
 | [Config editor](Explanations.md#config-editor) | `rc.tui.ConfigEditorApp` | Terminal interface for inspecting layers and editing saved overrides. |
-| [GUI view](Explanations.md#gui-view) | `apprc_gui.ConfigView` | Toga settings view embedded in an application-owned window. |
+| [Gradio editor](Explanations.md#gradio-editor) | `apprc_gui.ConfigEditor` | Settings controls embedded in application-owned Gradio `Blocks`. |
 | [Config bundle](Explanations.md#config-bundles) | Dataclass registered with `@MyRC.bundle` | An object containing several config sections. |
 
 ## Documentation rules
@@ -91,9 +91,9 @@ before changing documentation.
   Do not relabel Explanations as Architecture or How-to user guides as Recipes.
 - Use the [component names](#component-names) consistently. Add a definition
   before introducing a new component. Do not invent synonyms for variation.
-- Call the Windows `.msi` file an **installer**. Call cx_Freeze's process of
-  creating that file an **installer build**. Do not call the installed app or
-  its executable a "single file"; the installer contains multiple files.
+- Call the Windows `Setup.exe` an **installer** and the process of creating it
+  an **installer build**. The installer is one file; the installed application
+  contains Python, packages, and shortcuts in a directory.
 - Introduce basic settings before files, optional features, and integrations.
   Explain an unfamiliar term before relying on it in instructions.
 - Start Explanations sections with what the named component is and why the

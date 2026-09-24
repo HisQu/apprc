@@ -10,10 +10,12 @@ from pathlib import Path
 
 # == 3rd Party ===============================
 import typer
+from prompt_toolkit import prompt
 from rich.console import Console
 
 # == Internal ================================
 from apprc.public.app_rc import AppRC
+from apprc.services.manager import ConfigManager, WriteScope
 from apprc.interfaces.cli._interactive_setup import (
     prompt_apprc_setup_dir,
     prompt_storage_setup_root,
@@ -86,6 +88,10 @@ def run_config_setup(
             user_dotenv=result.user_dotenv,
             config_group_name=config_group_name,
         )
+        if not assume_yes:
+            _prompt_required_fields(
+                apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
+            )
         return
 
     root, storage_name = _select_storage_root(
@@ -115,6 +121,63 @@ def run_config_setup(
         app_path=result.user_dotenv,
         config_group_name=config_group_name,
     )
+    if not assume_yes:
+        _prompt_required_fields(
+            apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
+        )
+
+
+def _prompt_required_fields(manager: ConfigManager) -> None:
+    """Save active missing values through the same manager as other editors.
+
+    :param manager: Manager bound to the location initialized by setup.
+    """
+    for item in manager.inspect().fields:
+        if (
+            not item.active
+            or item.issue is None
+            or not item.issue.startswith("Missing required setting:")
+            or not item.field.editable
+        ):
+            continue
+        key = item.owner.env_key(item.field.name)
+        scopes = manager.writable_scopes()
+        scope: WriteScope = (
+            "storage"
+            if item.owner.requires_storage and "storage" in scopes
+            else "user"
+            if "user" in scopes
+            else "storage"
+        )
+        typer.echo(item.issue)
+        while True:
+            try:
+                value = prompt(
+                    f"{item.field.title or key}: ",
+                    is_password=item.field.secret,
+                )
+            except (EOFError, KeyboardInterrupt) as exc:
+                raise typer.Exit(code=1) from exc
+            try:
+                plan = manager.plan_update(key, value, scope=scope)
+                preview = manager.preview_edit(plan)
+                current = next(
+                    field
+                    for field in preview.fields
+                    if field.owner.env_key(field.field.name) == key
+                )
+                if current.issue is not None:
+                    typer.echo(current.issue, err=True)
+                    continue
+                manager.apply_edit(plan)
+                break
+            except (OSError, ValueError) as exc:
+                typer.echo(
+                    f"Could not save {key}. Check its value and private file permissions."
+                    if item.field.secret
+                    else str(exc),
+                    err=True,
+                )
 
 
 def _select_apprc_dir(

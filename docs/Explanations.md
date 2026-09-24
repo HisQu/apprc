@@ -17,7 +17,7 @@
   - [ConfigManager](#configmanager)
   - [Config CLI](#config-cli)
   - [Config editor](#config-editor)
-  - [GUI view](#gui-view)
+  - [Gradio editor](#gradio-editor)
 - [Compose and ship applications](#compose-and-ship-applications)
   - [Config bundles](#config-bundles)
   - [Copies, overrides, and reloads](#copies-overrides-and-reloads)
@@ -379,20 +379,20 @@ Opening the editor writes nothing. Setup and save actions call `ConfigManager`
 explicitly. The editor can open before all required values are valid so the user
 can fix them.
 
-## GUI view
+## Gradio editor
 
-The GUI view is `apprc_gui.ConfigView`, installed by the separate `apprc-gui`
-distribution. It renders config fields and their explanations as Toga controls
-inside an application-owned window. The application supplies a `ConfigManager`
-from its existing `AppRC` declaration; the view calls that manager for setup,
-inspection, preview, editing, storage selection, and secret-file repair. The
-[GUI guide](How-To-User-Guides.md#add-a-native-settings-window) shows the window
-and the application callback side by side.
+The Gradio editor is `apprc_gui.ConfigEditor`, installed by the separate
+`apprc-gui` distribution. It renders registered fields inside an application-
+owned Gradio `Blocks`. The application supplies a `ConfigManager` from its
+`AppRC` declaration. The editor uses that manager for setup, inspection,
+editing, storage selection, secret migration, and permission repair. The
+[Gradio settings guide](How-To-User-Guides.md#add-a-gradio-settings-page) shows
+how to place it next to an application action.
 
-The view opens with missing storage or required settings. It shows the winning
-source for each active field, and password controls do not print saved secret
-values. The application decides what to do after configuration is ready. The
-view does not start a server or own the application's main window.
+The editor opens with missing storage or required settings. It shows the
+effective source for each active field; password inputs do not display saved
+secret values. The application decides when it is ready to start its own work.
+The editor does not launch Gradio or build the application's runtime.
 
 <br>
 
@@ -443,13 +443,13 @@ It changes the process environment. Normal `resolve()` and `build()` calls do no
 
 `apprc-core` provides the configuration and noninteractive management code.
 `apprc` installs the matching core plus the dependencies for the CLI and Textual
-editor. Both use `import apprc`. `apprc-gui` owns the Toga view and depends on
+editor. Both use `import apprc`. `apprc-gui` owns the Gradio editor and depends on
 the same `apprc-core` version. The [installation instructions](../README.md#install)
 explain which distribution to choose; maintainers can inspect the
 [package ownership rules](Development.md#source-ownership).
 
-AppRC does not run cx_Freeze. An application declares its desktop and CLI
-entry points, includes its own resources, and runs cx_Freeze to create an
-installer. This keeps the installed app's identity, shortcuts, and resources
-under the application's control. The [Windows installer guide](How-To-User-Guides.md#build-a-windows-installer)
-gives the exact manifest and checks used by the example.
+AppRC does not build installers. An application declares its browser launcher
+and CLI entry points and packages its own resources. It can build a Windows
+`Setup.exe` containing Python and locked wheels, as described in the
+[Windows installer guide](How-To-User-Guides.md#build-a-windows-installer).
+The application controls its identity, shortcuts, and installed files.

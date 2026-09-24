@@ -14,7 +14,6 @@ from prompt_toolkit.completion import PathCompleter, WordCompleter
 # == Internal ===================================================
 from apprc.user_files.storage_roots.registry import StorageRegistry
 
-type SetupDirectoryChoice = Literal["default", "custom", "cancel"]
 type MigrationStorageChoice = tuple[Literal["add", "replace"], str | None]
 
 
@@ -29,10 +28,7 @@ def prompt_apprc_setup_dir(*, suggested: Path) -> Path | None:
 
 
 def prompt_storage_setup_root(*, suggested: Path) -> Path | None:
-    """Ask whether to use the suggested root, enter another, or cancel.
-
-    Empty input cancels. Custom path input completes directories on every
-    supported platform through prompt-toolkit.
+    """Offer an editable suggested root with directory completion.
 
     :param suggested: Predictable default storage root.
     :return: Chosen path, or ``None`` when canceled.
@@ -45,32 +41,16 @@ def _prompt_setup_directory(
     subject: str,
     suggested: Path,
 ) -> Path | None:
-    """Prompt for one directory using the shared three-way choice.
+    """Prompt for one directory with the suggested path already in the input.
 
     :param subject: Human-facing directory owner.
     :param suggested: Predictable path accepted by the default choice.
     :return: Selected path, or ``None`` when canceled.
     """
-    typer.echo(f"Suggested {subject} directory: {suggested}")
-    typer.echo("Choose [d]efault, [p]ath, or [c]ancel.")
-    try:
-        raw_choice = prompt(
-            f"{subject} setup [c]: ",
-            completer=WordCompleter(
-                ["default", "path", "cancel"],
-                ignore_case=True,
-            ),
-        )
-    except (EOFError, KeyboardInterrupt):
-        return None
-    choice = _parse_setup_directory_choice(raw_choice)
-    if choice == "cancel":
-        return None
-    if choice == "default":
-        return suggested
     try:
         raw_path = prompt(
-            f"{subject} path: ",
+            f"{subject} directory: ",
+            default=str(suggested),
             completer=PathCompleter(
                 only_directories=True,
                 expanduser=True,
@@ -191,17 +171,3 @@ def prompt_storage_migration_choice(
     ):
         return None
     return "replace", replace_name
-
-
-def _parse_setup_directory_choice(value: str) -> SetupDirectoryChoice:
-    """Normalize one short or full setup choice.
-
-    :param value: Interactive input.
-    :return: Supported choice, defaulting to cancellation.
-    """
-    normalized = value.strip().lower()
-    if normalized in {"d", "default"}:
-        return "default"
-    if normalized in {"p", "path"}:
-        return "custom"
-    return "cancel"

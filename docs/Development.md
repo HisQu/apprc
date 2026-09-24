@@ -59,7 +59,7 @@ shell startup files or `PATH` to locate project tools; use `.venv/bin/<tool>`.
 | `src/apprc/public` | Application declaration facade |
 | `src/apprc/scaffold` | Small generated application layout |
 | `src/apprc_dev/packaging` | Metadata generation, install checks, release helpers |
-| `src/apprc_dev/packaging/gui/src/apprc_gui` | Toga presentation; no copy of the core's `apprc` modules |
+| `src/apprc_dev/packaging/gui/src/apprc_gui` | Gradio presentation; no copy of the core's `apprc` modules |
 | `tests` | Behavior, architecture, and integration checks |
 | `examples/example_apps` | Curated CLIs, automated runner, manual lab |
 | `docs/assets` | Diagram sources and generated SVGs |
@@ -69,7 +69,7 @@ The root project builds `apprc-core` and owns all `apprc` Python files. The
 and supplies dependencies plus the console entrypoint. Never add a second copy
 of an `apprc` module to that wrapper.
 `src/apprc_dev/packaging/gui` builds `apprc-gui`, which owns only `apprc_gui`.
-Its `ConfigView` calls `ConfigManager`; it does not implement file writes.
+Its `ConfigEditor` calls `ConfigManager`; it does not implement file writes.
 
 Production `__init__.py` files contain imports and module docstrings only.
 Architecture tests enforce declaration dependency direction. Keep installer
@@ -199,6 +199,6 @@ release, rather than rebuilding it.
 > external PyPI settings. Do not publish a wrapper until its matching core is
 > available.
 
-The [GUI view](Explanations.md#gui-view) has a separate source package and
-dummy-backend test job. A consuming application owns its cx_Freeze manifest and
-must test its MSI on Windows. AppRC itself does not publish an installer.
+The [Gradio editor](Explanations.md#gradio-editor) has a separate source package.
+A consuming application owns its installer and tests it on Windows. AppRC
+itself does not publish an installer.

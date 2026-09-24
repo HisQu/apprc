@@ -27,7 +27,7 @@ editor provide setup, inspection, editing, and storage management.
 - [Save user settings](#save-user-settings)
 - [Add named storage](#add-named-storage)
 - [Add terminal commands](#add-terminal-commands)
-- [Add a desktop settings window](#add-a-desktop-settings-window)
+- [Add a Gradio settings page](#add-a-gradio-settings-page)
 - [Examples and documentation](#examples-and-documentation)
 
 ## Install
@@ -36,12 +36,12 @@ Python 3.12 or newer is required.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install "apprc>=0.26.0,<0.27"` | Configuration, Typer commands, prompts, and the Textual editor. |
-| `python -m pip install "apprc-core>=0.26.0,<0.27"` | Configuration and noninteractive management without terminal dependencies. |
-| `python -m pip install "apprc-gui>=0.26.0,<0.27"` | Configuration and a Toga settings view; on Windows, the WinForms backend. |
+| `python -m pip install "apprc>=0.27.0,<0.28"` | Configuration, Typer commands, prompts, and the Textual editor. |
+| `python -m pip install "apprc-core>=0.27.0,<0.28"` | Configuration and noninteractive management without terminal dependencies. |
+| `python -m pip install "apprc-gui>=0.27.0,<0.28"` | Configuration and a Gradio settings editor. |
 
 `apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
-`from apprc_gui import ConfigView`. The terminal and GUI distributions each
+`from apprc_gui import ConfigEditor`. The terminal and GUI distributions each
 install the exact matching `apprc-core` version.
 
 > [!WARNING]
@@ -133,19 +133,19 @@ layers together, explains each setting, and edits user or storage overrides.
 The same [config fields](docs/Explanations.md#config-sections-and-fields)
 also drive the desktop settings view.
 
-## Add a desktop settings window
+## Add a Gradio settings page
 
-Embed `apprc_gui.ConfigView` in an application-owned Toga window. Pass it
-`MyRC.manage()` so the window can set up declared files, show where effective
+Embed `apprc_gui.ConfigEditor` in an application-owned Gradio `Blocks`. Pass it
+`MyRC.manage()` so the page can set up declared files, show where effective
 values came from, and save user or storage overrides. It opens before required
 settings are complete, which makes it suitable for first-run setup. The
-[native window guide](docs/How-To-User-Guides.md#add-a-native-settings-window)
+[Gradio settings guide](docs/How-To-User-Guides.md#add-a-gradio-settings-page)
 shows the connection, and the [secret companion explanation](docs/Explanations.md#secret-companions)
 explains where saved `secret=True` fields go.
 
 AppRC does not create installers. The [Windows installer guide](docs/How-To-User-Guides.md#build-a-windows-installer)
-shows how an application can include this window and its own executable in one
-MSI installer.
+shows how an application can package its own launcher and dependencies in one
+Setup.exe.
 
 ## Examples and documentation
 

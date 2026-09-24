@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "apprc"
-version = "0.26.0"
+version = "0.27.0"
 description = "Reusable runtime configuration and config CLI helpers for Python applications."
 requires-python = ">=3.12"
 license = "MIT"
@@ -14,7 +14,7 @@ classifiers = ["Development Status :: 3 - Alpha", "Intended Audience :: Develope
 readme = {file = "README.md", content-type = "text/markdown"}
 license-files = ["LICENSE"]
 authors = [{name = "markur4", email = "noreply@hisqu.de"}]
-dependencies = ["apprc-core==0.26.0", "typer", "rich", "prompt-toolkit>=3.0,<4", "textual"]
+dependencies = ["apprc-core==0.27.0", "typer", "rich", "prompt-toolkit>=3.0,<4", "textual"]
 
 [project.urls]
 Homepage = "https://github.com/HisQu/apprc"

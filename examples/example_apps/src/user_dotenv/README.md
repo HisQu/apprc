@@ -8,8 +8,8 @@ This app declares `user_dotenv=rc.UserDotenv()` and no storage. Setup creates
 apprc-examples-lab user-dotenv
 ```
 
-The optional [desktop entry point](desktop.py) uses the same `MyRC` declaration
-and the reusable `apprc-gui` view. Install a Toga backend for your platform and
-`apprc-gui`, then run `apprc-user-dotenv-desktop`. The window creates the user
-files, edits the profile and debug fields, and reads the resulting profile into
-the example application.
+The optional [browser entry point](desktop.py) uses the same `MyRC` declaration
+and the reusable `apprc-gui` editor. Install the example's `desktop` extra,
+then run `apprc-user-dotenv-desktop`. Its Gradio page creates the user files,
+edits the profile and debug fields, and reads the resulting profile into the
+example application.

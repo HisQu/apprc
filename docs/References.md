@@ -2,19 +2,27 @@
 
 [Documentation](README.md) · [Explanations](Explanations.md) · [How-to user guides](How-To-User-Guides.md) · [Examples](EXAMPLES.md) · [Development](Development.md)
 
-- [Public namespaces](#public-namespaces)
-- [Declarations](#declarations)
-- [Config fields](#config-fields)
-- [Config bundles](#config-bundles)
-- [Resolution](#resolution)
-- [Source precedence](#source-precedence)
-- [Storage selection](#storage-selection)
-- [Managed files](#managed-files)
-- [Management](#management)
-- [Storage operations](#storage-operations)
-- [Provenance and lifecycle](#provenance-and-lifecycle)
-- [Terminal commands](#terminal-commands)
-- [Errors and write guarantees](#errors-and-write-guarantees)
+- [Python API](#python-api)
+  - [Public namespaces](#public-namespaces)
+  - [Declarations](#declarations)
+  - [Config fields](#config-fields)
+  - [Config bundles](#config-bundles)
+  - [Resolution](#resolution)
+- [Value sources and files](#value-sources-and-files)
+  - [Source precedence](#source-precedence)
+  - [Storage selection](#storage-selection)
+  - [Managed files](#managed-files)
+- [Management and lifecycle](#management-and-lifecycle)
+  - [Management](#management)
+  - [Storage operations](#storage-operations)
+  - [Provenance and lifecycle](#provenance-and-lifecycle)
+- [Commands and errors](#commands-and-errors)
+  - [Terminal commands](#terminal-commands)
+  - [Errors and write guarantees](#errors-and-write-guarantees)
+
+<br>
+
+# Python API
 
 ## Public namespaces
 
@@ -156,6 +164,10 @@ resolution. It does not reread files. Constructor overrides affect that object
 only. The [basic example](EXAMPLES.md#settings-without-managed-files) demonstrates
 independent results.
 
+<br>
+
+# Value sources and files
+
 ## Source precedence
 
 [Configuration layers](Explanations.md#configuration-layers) apply in increasing
@@ -228,6 +240,10 @@ Managed filenames are fixed. The registry uses `selected_storage`,
 `[storages.NAME]` entries with `root`, and archive records. An existing file cannot
 enable an undeclared feature. The [combined example](EXAMPLES.md#user-settings-and-storage)
 shows how user and storage files coexist.
+
+<br>
+
+# Management and lifecycle
 
 ## Management
 
@@ -332,6 +348,10 @@ the object. By default, constructor arguments, assignments, and scoped overrides
 remain authoritative. `reload()` and `bind_from_env()` read the live process
 environment. Copies and [`scoped()` overrides](How-To-User-Guides.md#reload-settings-or-use-temporary-overrides)
 retain per-object provenance.
+
+<br>
+
+# Commands and errors
 
 ## Terminal commands
 

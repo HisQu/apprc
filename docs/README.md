@@ -1,9 +1,15 @@
 # Documentation
 
-- [Start here](#start-here)
-- [Choose a document](#choose-a-document)
-- [Component names](#component-names)
-- [Documentation rules](#documentation-rules)
+- [Find the right page](#find-the-right-page)
+  - [Start here](#start-here)
+  - [Choose a document](#choose-a-document)
+- [Documentation conventions](#documentation-conventions)
+  - [Component names](#component-names)
+  - [Documentation rules](#documentation-rules)
+
+<br>
+
+# Find the right page
 
 ## Start here
 
@@ -44,6 +50,10 @@ have to run every earlier guide. Existing applications can use the
 | [References](References.md) | What is the exact API, command, filename, priority, or failure behavior? |
 | [Examples](EXAMPLES.md) | Which complete setup fits my application, and how can I run it? |
 | [Development](Development.md) | Where does implementation belong, and how do I test, build, and release changes? |
+
+<br>
+
+# Documentation conventions
 
 ## Component names
 
@@ -114,7 +124,14 @@ before changing documentation.
 
 ### Review and maintenance
 
-- Keep a table of contents at the top of each major document.
+- In the six pages in `docs/`, keep the document-title H1 above the table of
+  contents. Add topical H1 sections below it and put every H2 under one of them.
+  The table of contents lists each topical H1 at the top level and every H2
+  exactly once beneath its H1, in document order. The title does not need a
+  table-of-contents link; H3 headings may stay out of the compact list.
+- Put a standalone `<br>` before the first topical H1 and between later H1
+  sections. Do not add spacers between H2 sections. The root README, changelog,
+  and TODO keep their own heading layouts.
 - Check links and anchors after renaming headings. Preserve existing published
   anchors when practical, while updating internal links to current headings.
 - Check prose manually for undefined terms, synonym drift, vague claims, and

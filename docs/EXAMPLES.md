@@ -2,16 +2,24 @@
 
 [Documentation](README.md) · [Explanations](Explanations.md) · [How-to user guides](How-To-User-Guides.md) · [References](References.md) · [Development](Development.md)
 
-- [Choose a setup](#choose-a-setup)
-- [Run the example applications](#run-the-example-applications)
-- [Settings without managed files](#settings-without-managed-files)
-- [Persistent user preferences](#persistent-user-preferences)
-- [Importable client with saved preferences](#importable-client-with-saved-preferences)
-- [Named storage without user overrides](#named-storage-without-user-overrides)
-- [User settings and storage](#user-settings-and-storage)
-- [Explicit dotenv precedence](#explicit-dotenv-precedence)
-- [An application-owned CLI callback](#an-application-owned-cli-callback)
-- [Several sections and temporary overrides](#several-sections-and-temporary-overrides)
+- [Choose and run an example](#choose-and-run-an-example)
+  - [Choose a setup](#choose-a-setup)
+  - [Run the example applications](#run-the-example-applications)
+- [Settings without storage](#settings-without-storage)
+  - [Settings without managed files](#settings-without-managed-files)
+  - [Persistent user preferences](#persistent-user-preferences)
+  - [Importable client with saved preferences](#importable-client-with-saved-preferences)
+- [Settings with storage](#settings-with-storage)
+  - [Named storage without user overrides](#named-storage-without-user-overrides)
+  - [User settings and storage](#user-settings-and-storage)
+- [Other application patterns](#other-application-patterns)
+  - [Explicit dotenv precedence](#explicit-dotenv-precedence)
+  - [An application-owned CLI callback](#an-application-owned-cli-callback)
+  - [Several sections and temporary overrides](#several-sections-and-temporary-overrides)
+
+<br>
+
+# Choose and run an example
 
 ## Choose a setup
 
@@ -57,6 +65,10 @@ lab and smoke runner. Each application has its own declaration, section, bundle,
 and CLI. Those files can be copied without the lab utilities. The
 [How-to user guides](How-To-User-Guides.md) provide smaller independent Python
 programs when you do not need a CLI application.
+
+<br>
+
+# Settings without storage
 
 ## Settings without managed files
 
@@ -171,6 +183,10 @@ Python callers use `LibraryClient()`; the
 [importable-client guide](How-To-User-Guides.md#use-apprc-inside-an-importable-client)
 shows the same pattern in a smaller independent package.
 
+<br>
+
+# Settings with storage
+
 ## Named storage without user overrides
 
 The [storage declaration](../examples/example_apps/src/storage/config/app.py)
@@ -231,6 +247,10 @@ shows how removing an override reveals the lower-priority value again.
 This setup is useful when different datasets need different endpoints or options
 while sharing user preferences. [Storage selection](References.md#storage-selection)
 chooses which directory's overrides participate.
+
+<br>
+
+# Other application patterns
 
 ## Explicit dotenv precedence
 

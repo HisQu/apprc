@@ -2,26 +2,34 @@
 
 [Documentation](README.md) · [How-to user guides](How-To-User-Guides.md) · [References](References.md) · [Examples](EXAMPLES.md) · [Development](Development.md)
 
-- [AppRC](#apprc)
-- [Config sections and fields](#config-sections-and-fields)
-- [ResolvedConfig](#resolvedconfig)
-- [Configuration layers](#configuration-layers)
-- [Provenance](#provenance)
-- [User dotenv and the AppRC directory](#user-dotenv-and-the-apprc-directory)
-- [Secret companions](#secret-companions)
-- [Storage](#storage)
-- [Storage registry](#storage-registry)
-- [ConfigManager](#configmanager)
-- [Config CLI](#config-cli)
-- [Config editor](#config-editor)
-- [GUI view](#gui-view)
-- [Config bundles](#config-bundles)
-- [Copies, overrides, and reloads](#copies-overrides-and-reloads)
-- [Installed packages and installer builds](#installed-packages-and-installer-builds)
+- [Define and resolve settings](#define-and-resolve-settings)
+  - [AppRC](#apprc)
+  - [Config sections and fields](#config-sections-and-fields)
+  - [ResolvedConfig](#resolvedconfig)
+  - [Configuration layers](#configuration-layers)
+  - [Provenance](#provenance)
+- [Save settings and application data](#save-settings-and-application-data)
+  - [User dotenv and the AppRC directory](#user-dotenv-and-the-apprc-directory)
+  - [Secret companions](#secret-companions)
+  - [Storage](#storage)
+  - [Storage registry](#storage-registry)
+- [Inspect and edit configuration](#inspect-and-edit-configuration)
+  - [ConfigManager](#configmanager)
+  - [Config CLI](#config-cli)
+  - [Config editor](#config-editor)
+  - [GUI view](#gui-view)
+- [Compose and ship applications](#compose-and-ship-applications)
+  - [Config bundles](#config-bundles)
+  - [Copies, overrides, and reloads](#copies-overrides-and-reloads)
+  - [Installed packages and installer builds](#installed-packages-and-installer-builds)
 
 This page explains AppRC's components in the order you need them. A small
 application needs only an `AppRC`, a config section, and a `ResolvedConfig`.
 Files, storage, and interactive tools can be added as the application grows.
+
+<br>
+
+# Define and resolve settings
 
 <a id="declaration-resolution-and-management"></a>
 ## AppRC
@@ -197,6 +205,10 @@ can see that an override was saved successfully while a higher-priority environm
 value still wins. Provenance explains the effective value; the layer display
 helps the user compare the alternatives.
 
+<br>
+
+# Save settings and application data
+
 <a id="capabilities-and-runtime-requirements"></a>
 ## User dotenv and the AppRC directory
 
@@ -301,6 +313,10 @@ The registry also supports [moving or reconnecting a directory](How-To-User-Guid
 Moving tells AppRC to move the data. Reconnecting updates the recorded path after
 the directory was moved elsewhere. Unregistering normally keeps the data.
 
+<br>
+
+# Inspect and edit configuration
+
 <a id="interfaces-and-shared-operations"></a>
 ## ConfigManager
 
@@ -377,6 +393,10 @@ The view opens with missing storage or required settings. It shows the winning
 source for each active field, and password controls do not print saved secret
 values. The application decides what to do after configuration is ready. The
 view does not start a server or own the application's main window.
+
+<br>
+
+# Compose and ship applications
 
 ## Config bundles
 

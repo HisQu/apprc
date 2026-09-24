@@ -2,13 +2,20 @@
 
 [Documentation](README.md) · [Explanations](Explanations.md) · [How-to user guides](How-To-User-Guides.md) · [References](References.md) · [Examples](EXAMPLES.md)
 
-- [Environment](#environment)
-- [Source ownership](#source-ownership)
-- [Checks](#checks)
-- [Documentation checks](#documentation-checks)
-- [Generated files](#generated-files)
-- [Build the three distributions](#build-the-three-distributions)
-- [Release procedure](#release-procedure)
+- [Work in the repository](#work-in-the-repository)
+  - [Environment](#environment)
+  - [Source ownership](#source-ownership)
+- [Verify and update changes](#verify-and-update-changes)
+  - [Checks](#checks)
+  - [Documentation checks](#documentation-checks)
+  - [Generated files](#generated-files)
+- [Build and release AppRC](#build-and-release-apprc)
+  - [Build the three distributions](#build-the-three-distributions)
+  - [Release procedure](#release-procedure)
+
+<br>
+
+# Work in the repository
 
 ## Environment
 
@@ -68,6 +75,10 @@ Production `__init__.py` files contain imports and module docstrings only.
 Architecture tests enforce declaration dependency direction. Keep installer
 manifests in consuming applications, outside AppRC runtime code.
 
+<br>
+
+# Verify and update changes
+
 ## Checks
 
 ```shell
@@ -103,7 +114,8 @@ References states the exact contracts. Link the relevant words between them.
 .venv/bin/python examples/section_bundle.py
 ```
 
-The tests check document links and anchors and execute the marked independent
+The tests check document links, heading hierarchy, table-of-contents order,
+major-section spacing, and anchors. They also execute the marked independent
 Python examples in temporary directories. Review prose separately: tests cannot
 determine whether an explanation teaches a component clearly. Verify expected
 values, file effects, and prerequisites whenever changing an example.
@@ -126,6 +138,10 @@ The PyPI README generator rewrites repository links and GitHub callouts.
 The terminal generator copies shared metadata, description, and license from
 the root and pins `apprc-core` to its exact version. Its `--check` mode rejects
 stale generated files. Commit generated files with their source changes.
+
+<br>
+
+# Build and release AppRC
 
 ## Build the three distributions
 

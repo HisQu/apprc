@@ -2,33 +2,43 @@
 
 [Documentation](README.md) · [Explanations](Explanations.md) · [References](References.md) · [Examples](EXAMPLES.md) · [Development](Development.md)
 
-- [Read typed settings](#read-typed-settings)
-- [Declare an API key](#declare-an-api-key)
-- [Load dotenv files](#load-dotenv-files)
-- [Ship defaults with the application](#ship-defaults-with-the-application)
-- [Find where a value came from](#find-where-a-value-came-from)
-- [Save a user preference](#save-a-user-preference)
-- [Use AppRC inside an importable client](#use-apprc-inside-an-importable-client)
-- [Edit or remove a saved override](#edit-or-remove-a-saved-override)
-- [Store data outside the source checkout](#store-data-outside-the-source-checkout)
-- [Register and switch data directories](#register-and-switch-data-directories)
-- [Move, reconnect, or archive storage](#move-reconnect-or-archive-storage)
-- [Add configuration commands to Typer](#add-configuration-commands-to-typer)
-- [Inspect and edit settings in the terminal](#inspect-and-edit-settings-in-the-terminal)
-- [Save and migrate secret settings](#save-and-migrate-secret-settings)
-- [Add a native settings window](#add-a-native-settings-window)
-- [Build a Windows installer](#build-a-windows-installer)
-- [Pass several settings sections together](#pass-several-settings-sections-together)
-- [Reload settings or use temporary overrides](#reload-settings-or-use-temporary-overrides)
-- [Supply settings to environment-only code](#supply-settings-to-environment-only-code)
-- [Generate a config package](#generate-a-config-package)
-- [Troubleshoot configuration](#troubleshoot-configuration)
-- [Migrate existing applications](#migrate-existing-applications)
+- [Define and load settings](#define-and-load-settings)
+  - [Read typed settings](#read-typed-settings)
+  - [Declare an API key](#declare-an-api-key)
+  - [Load dotenv files](#load-dotenv-files)
+  - [Ship defaults with the application](#ship-defaults-with-the-application)
+  - [Find where a value came from](#find-where-a-value-came-from)
+- [Save preferences](#save-preferences)
+  - [Save a user preference](#save-a-user-preference)
+  - [Use AppRC inside an importable client](#use-apprc-inside-an-importable-client)
+  - [Edit or remove a saved override](#edit-or-remove-a-saved-override)
+- [Manage storage](#manage-storage)
+  - [Store data outside the source checkout](#store-data-outside-the-source-checkout)
+  - [Register and switch data directories](#register-and-switch-data-directories)
+  - [Move, reconnect, or archive storage](#move-reconnect-or-archive-storage)
+- [Give users configuration tools](#give-users-configuration-tools)
+  - [Add configuration commands to Typer](#add-configuration-commands-to-typer)
+  - [Inspect and edit settings in the terminal](#inspect-and-edit-settings-in-the-terminal)
+  - [Save and migrate secret settings](#save-and-migrate-secret-settings)
+  - [Add a native settings window](#add-a-native-settings-window)
+  - [Build a Windows installer](#build-a-windows-installer)
+- [Use settings across application code](#use-settings-across-application-code)
+  - [Pass several settings sections together](#pass-several-settings-sections-together)
+  - [Reload settings or use temporary overrides](#reload-settings-or-use-temporary-overrides)
+  - [Supply settings to environment-only code](#supply-settings-to-environment-only-code)
+  - [Generate a config package](#generate-a-config-package)
+- [Diagnose and migrate](#diagnose-and-migrate)
+  - [Troubleshoot configuration](#troubleshoot-configuration)
+  - [Migrate existing applications](#migrate-existing-applications)
 
 Each guide is independent. Install AppRC using the [installation instructions](../README.md#install).
 The Python examples run on Python 3.12 or newer. Examples using temporary
 directories remove their files when they finish. CLI guides explicitly identify
 the files they keep in the working directory.
+
+<br>
+
+# Define and load settings
 
 <a id="integrate-typed-settings"></a>
 ## Read typed settings
@@ -234,6 +244,10 @@ It prints `shell_dotenv_explicit`. [Provenance](Explanations.md#provenance) also
 records Python defaults and overrides. The [config editor](Explanations.md#config-editor)
 lets users compare source values without writing Python inspection code.
 
+<br>
+
+# Save preferences
+
 <a id="set-up-persistence"></a>
 ## Save a user preference
 
@@ -421,10 +435,9 @@ do not retry the old one. Explicit `scope="user"` can create a missing user
 dotenv. Storage edits require an initialized storage. The
 [combined setup](EXAMPLES.md#user-settings-and-storage) demonstrates both scopes.
 
-> [!WARNING]
-> Revision checks and same-process locking do not make edits transactional
-> across processes. Another process can write between a revision check and
-> replacement. Cross-process coordination remains planned work.
+<br>
+
+# Manage storage
 
 ## Store data outside the source checkout
 
@@ -528,6 +541,10 @@ Archive creation retains the original directory.
 > [!CAUTION]
 > `remove_storage(name, delete_content=True)` deletes that directory's contents.
 > Use the ordinary `remove_storage(name)` when only removing a registration.
+
+<br>
+
+# Give users configuration tools
 
 <a id="integrate-a-terminal-application"></a>
 ## Add configuration commands to Typer
@@ -752,6 +769,10 @@ package data or cx_Freeze `include-files` option, then check that packaged
 defaults still resolve after installation. Test installation, first-run setup,
 launch, and upgrade on a clean Windows account without Python.
 
+<br>
+
+# Use settings across application code
+
 <a id="compose-a-bundle"></a>
 ## Pass several settings sections together
 
@@ -895,6 +916,10 @@ its sections and registers them. Import a section directly when that is all the
 application needs. Package initializers remain lightweight; the generated
 package needs no catalog or lazy config facade. For a complete application
 layout, examine the [example source files](EXAMPLES.md#choose-a-setup).
+
+<br>
+
+# Diagnose and migrate
 
 ## Troubleshoot configuration
 

@@ -82,6 +82,10 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
+- Grouped the six documentation pages under topical H1 headings, with nested
+  tables of contents and spacing between major sections. Removed an outdated
+  warning that said managed edits had no cross-process coordination.
+
 <br>
 
 ### ⚠️ Deprecated

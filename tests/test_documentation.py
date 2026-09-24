@@ -19,6 +19,19 @@ EXAMPLE_FILE = re.compile(
     r"<!-- example-file: ([^\n]+) -->\s*```[^\n]*\n(.*?)^```",
     re.MULTILINE | re.DOTALL,
 )
+HEADING = re.compile(r"^(#{1,6}) (.+)$", re.MULTILINE)
+TOC_ENTRY = re.compile(r"^( *)- \[([^\]]+)\]\(#([^)]+)\)$", re.MULTILINE)
+
+
+def _heading_slug(heading: str) -> str:
+    """Return GitHub's anchor stem for one Markdown heading.
+
+    :param heading: Heading text, including any inline link or HTML markup.
+    :return: Anchor stem before duplicate-heading suffixes.
+    """
+    heading = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", heading)
+    heading = re.sub(r"<[^>]+>", "", heading).strip().lower()
+    return re.sub(r"[^\w\- ]", "", heading).replace(" ", "-")
 
 
 def _anchors(text: str) -> set[str]:
@@ -30,14 +43,54 @@ def _anchors(text: str) -> set[str]:
     text = FENCE.sub("", text)
     result = set(re.findall(r'<a\s+id="([^"]+)"', text))
     counts: dict[str, int] = {}
-    for heading in re.findall(r"^#{1,6}\s+(.+)$", text, re.MULTILINE):
-        heading = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", heading)
-        heading = re.sub(r"<[^>]+>", "", heading).strip().lower()
-        slug = re.sub(r"[^\w\- ]", "", heading).replace(" ", "-")
+    for _, heading in HEADING.findall(text):
+        slug = _heading_slug(heading)
         count = counts.get(slug, 0)
         result.add(f"{slug}-{count}" if count else slug)
         counts[slug] = count + 1
     return result
+
+
+def test_documentation_outline() -> None:
+    """Require grouped TOCs and spacing on the six main documentation pages."""
+    for path in sorted(DOCS.glob("*.md")):
+        text = FENCE.sub("", path.read_text())
+        headings = list(HEADING.finditer(text))
+        assert headings and headings[0].group(1) == "#", path
+        groups = [match for match in headings[1:] if match.group(1) == "#"]
+        assert groups, path
+        toc = TOC_ENTRY.findall(text[: groups[0].start()])
+
+        expected: list[tuple[str, str, str]] = []
+        counts: dict[str, int] = {}
+        active_group = False
+        group_has_section = False
+        for index, match in enumerate(headings):
+            level, title = match.groups()
+            stem = _heading_slug(title)
+            count = counts.get(stem, 0)
+            anchor = f"{stem}-{count}" if count else stem
+            counts[stem] = count + 1
+            if index == 0:
+                continue
+            if level == "#":
+                if active_group:
+                    assert group_has_section, (path, title)
+                assert (
+                    text[: match.start()].rstrip().splitlines()[-1] == "<br>"
+                ), (
+                    path,
+                    title,
+                )
+                expected.append(("", title, anchor))
+                active_group = True
+                group_has_section = False
+            elif level == "##":
+                assert active_group, (path, title)
+                expected.append(("  ", title, anchor))
+                group_has_section = True
+        assert group_has_section, path
+        assert toc == expected, (path, toc, expected)
 
 
 def test_documentation_links() -> None:

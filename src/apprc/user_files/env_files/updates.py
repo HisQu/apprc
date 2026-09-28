@@ -63,6 +63,8 @@ class EnvFileEditPlan:
     :param warnings: User-facing warnings about the planned edit.
     :param duplicate_lines: Later active assignments that will be disabled.
     :param revision: Original content digest, or ``None`` for an absent file.
+    :param lock_roots: Managed roots to lock while applying the edit.
+    :param private_directories: Directories to create privately before locking.
     """
 
     path: Path
@@ -74,6 +76,7 @@ class EnvFileEditPlan:
     lock_roots: tuple[Path, ...] = ()
     warnings: tuple[str, ...] = ()
     duplicate_lines: tuple[int, ...] = ()
+    private_directories: tuple[Path, ...] = ()
 
 
 def set_storage_dotenv_value(
@@ -221,7 +224,10 @@ def apply_env_file_edit(plan: EnvFileEditPlan) -> EnvFileUpdate:
     :param plan: Complete edit created by an AppRC planning helper.
     :return: Written file, key, value, and warnings.
     """
-    with managed_write_lock(*(plan.lock_roots or (plan.path.parent,))):
+    with managed_write_lock(
+        *(plan.lock_roots or (plan.path.parent,)),
+        private_directories=plan.private_directories,
+    ):
         revision = file_revision(plan.path)
         if revision != plan.revision:
             raise StaleEditError(plan.path, plan.revision, revision)

@@ -484,6 +484,9 @@ def test_setup_repairs_marker_for_selected_named_storage(
     assert repaired.exit_code == 0, repaired.output
     assert marker.is_file()
     assert "selected_storage: ontology" in repaired.output
+    user_secret = AppFiles(kit.schema).user_secret_dotenv_path()
+    assert user_secret.is_file()
+    assert inspect_secret_file(user_secret).available
 
 
 def test_setup_does_not_recreate_missing_registered_root(

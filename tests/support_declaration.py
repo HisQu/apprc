@@ -16,6 +16,7 @@ def app_from_envs(
     envs: tuple[type[Config], ...] = (),
     user_dotenv: UserDotenv | None = None,
     storage: Storage | None = None,
+    setup_next_step: str | None = None,
     command_name: str | None = None,
     apprc_dir: Path | None = None,
     apprc_dir_env_key: str | None = None,
@@ -30,6 +31,7 @@ def app_from_envs(
     :param envs: Reusable registered test sections.
     :param user_dotenv: Optional saved user overrides.
     :param storage: Optional named-storage capability.
+    :param setup_next_step: Optional instruction printed after CLI setup.
     :param command_name: Command name used in rendered guidance.
     :param apprc_dir: Isolated managed-file directory.
     :param apprc_dir_env_key: Explicit directory selector key.
@@ -43,6 +45,7 @@ def app_from_envs(
             section for section in spec.envs if issubclass(section, Config)
         )
         user_dotenv, storage = spec.user_dotenv, spec.storage
+        setup_next_step = spec.setup_next_step
         command_name = spec.command_name
         apprc_dir = spec.declared_apprc_dir
         apprc_dir_env_key = (
@@ -55,6 +58,7 @@ def app_from_envs(
         config_package=config_package,
         user_dotenv=user_dotenv,
         storage=storage,
+        setup_next_step=setup_next_step,
         command_name=command_name,
         apprc_dir=apprc_dir,
         apprc_dir_env_key=apprc_dir_env_key,

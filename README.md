@@ -125,7 +125,9 @@ enable either or both.
 
 The [config CLI](docs/Explanations.md#config-cli) adds `config setup`, `config doctor`,
 `config set`, `config edit`, and storage commands to a Typer application.
-The [Typer guide](docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
+Set [`setup_next_step`](docs/References.md#declarations) on `AppRC` to print
+app-supplied next-step text after successful `config setup`. The
+[Typer guide](docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
 shows the entire application and command sequence.
 
 The [config editor](docs/Explanations.md#config-editor) displays configuration

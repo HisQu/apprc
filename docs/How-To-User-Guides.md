@@ -557,7 +557,11 @@ this complete application as `demo.py` in a new working directory:
 import apprc as rc
 import typer
 
-MyRC = rc.AppRC(app_id="demo", user_dotenv=rc.UserDotenv())
+MyRC = rc.AppRC(
+    app_id="demo",
+    user_dotenv=rc.UserDotenv(),
+    setup_next_step="python demo.py run",
+)
 
 @MyRC.config("client", prefix="DEMO_")
 class ClientSettings(rc.Config):
@@ -594,6 +598,10 @@ With `DEMO_TIMEOUT` unset, the first run prints `30` and the second prints `20`.
 The edit persists in `demo-config/apprc.user.env`. Root options such as
 `--env-file deployment.env` go before the command. The
 [command reference](References.md#terminal-commands) explains command availability.
+After `config setup` succeeds, AppRC prints the declaration's
+[`setup_next_step`](References.md#declarations) after the doctor command. It
+prints this block after required-field prompts, or directly when you pass
+`--yes`.
 The [custom-callback example](EXAMPLES.md#an-application-owned-cli-callback)
 shows how to keep an application-owned Typer callback.
 

@@ -48,6 +48,16 @@ def test_direct_declaration_accepts_independent_user_dotenv() -> None:
     assert MyRC.schema.uses_storage() is False
 
 
+def test_direct_declaration_carries_setup_next_step_into_schema() -> None:
+    MyRC = rc.AppRC(
+        app_id="demo",
+        user_dotenv=rc.UserDotenv(),
+        setup_next_step="demo run",
+    )
+
+    assert MyRC.schema.setup_next_step == "demo run"
+
+
 def test_legacy_mode_constructors_are_removed() -> None:
     assert not hasattr(rc.AppRC, "env_only")
     assert not hasattr(rc.AppRC, "storage_only")

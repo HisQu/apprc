@@ -43,6 +43,8 @@ class AppConfigSpec:
     :param envs: Environment-backed config classes registered by the facade.
     :param user_dotenv: User dotenv declaration, or ``None`` when disabled.
     :param storage: Storage declaration, or ``None`` for a storage-free app.
+    :param setup_next_step: Optional command or instruction shown after CLI
+        setup.
     :param command_name: Executable name shown in generated instructions.
     :param apprc_dir: Optional application-declared AppRC directory.
     :param apprc_dir_env_key: Explicit directory override key.
@@ -56,6 +58,7 @@ class AppConfigSpec:
     envs: tuple[type[object], ...]
     user_dotenv: UserDotenv | None
     storage: Storage | None
+    setup_next_step: str | None
     storage_selector_env_key: str | None
     command_name: str | None
     declared_apprc_dir: Path | None
@@ -75,12 +78,28 @@ class AppConfigSpec:
         envs: tuple[type[object], ...] = (),
         user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
+        setup_next_step: str | None = None,
         command_name: str | None = None,
         apprc_dir: Path | None = None,
         apprc_dir_env_key: str | None = None,
         legacy_app_ids: tuple[str, ...] = (),
     ) -> None:
-        """Normalize one direct AppRC declaration."""
+        """Normalize one direct AppRC declaration.
+
+        :param app_id: Stable application identity.
+        :param display_name: Human-readable application name.
+        :param config_package: Package that may contain managed defaults.
+        :param envs: Registered environment-backed config classes.
+        :param user_dotenv: Optional user dotenv declaration.
+        :param storage: Optional persistent-storage declaration.
+        :param setup_next_step: Optional command or instruction shown after CLI
+            setup.
+        :param command_name: Executable name used in generated instructions.
+        :param apprc_dir: Optional application-declared AppRC directory.
+        :param apprc_dir_env_key: Explicit directory override key.
+        :param legacy_app_ids: Released application identities accepted by
+            migration.
+        """
         if not app_id.strip():
             raise ValueError("app_id must not be empty.")
         if user_dotenv is None and storage is None:
@@ -115,6 +134,7 @@ class AppConfigSpec:
         object.__setattr__(self, "envs", tuple(envs))
         object.__setattr__(self, "user_dotenv", user_dotenv)
         object.__setattr__(self, "storage", storage)
+        object.__setattr__(self, "setup_next_step", setup_next_step)
         object.__setattr__(
             self,
             "storage_selector_env_key",

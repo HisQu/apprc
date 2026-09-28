@@ -24,7 +24,14 @@ def prompt_apprc_setup_dir(*, suggested: Path) -> Path | None:
         cross-platform AppRC default.
     :return: Chosen path, or ``None`` when canceled.
     """
-    return _prompt_setup_directory(subject="AppRC", suggested=suggested)
+    return _prompt_setup_directory(
+        subject="AppRC",
+        explanation=(
+            "The AppRC directory stores configuration files, including the "
+            "storage registry when storage is enabled."
+        ),
+        suggested=suggested,
+    )
 
 
 def prompt_storage_setup_root(*, suggested: Path) -> Path | None:
@@ -33,23 +40,31 @@ def prompt_storage_setup_root(*, suggested: Path) -> Path | None:
     :param suggested: Predictable default storage root.
     :return: Chosen path, or ``None`` when canceled.
     """
-    return _prompt_setup_directory(subject="Storage", suggested=suggested)
+    return _prompt_setup_directory(
+        subject="Storage",
+        explanation=(
+            "Storage holds persistent application data and storage settings."
+        ),
+        suggested=suggested,
+    )
 
 
 def _prompt_setup_directory(
     *,
     subject: str,
+    explanation: str,
     suggested: Path,
 ) -> Path | None:
     """Prompt for one directory with the suggested path already in the input.
 
     :param subject: Human-facing directory owner.
+    :param explanation: Purpose of the selected directory.
     :param suggested: Predictable path accepted by the default choice.
     :return: Selected path, or ``None`` when canceled.
     """
     try:
         raw_path = prompt(
-            f"{subject} directory: ",
+            f"{explanation}\n{subject} directory:\n",
             default=str(suggested),
             completer=PathCompleter(
                 only_directories=True,

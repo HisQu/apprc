@@ -6,8 +6,10 @@ from apprc.user_files.app_home.application import AppFiles
 
 from pathlib import Path
 
+from prompt_toolkit.completion import PathCompleter
 from typer.testing import CliRunner
 
+import apprc as rc
 from tests.support_declaration import app_from_envs
 from apprc.definition.app_config.storage import Storage
 from apprc.user_files.storage_roots.registry import (
@@ -22,6 +24,7 @@ from tests.support_config import (
     build_storage_free_example_app,
     compact_cli_output,
 )
+from apprc.public.app_rc import AppRC
 
 
 def test_interactive_storage_prompt_prefills_suggested_path(
@@ -44,7 +47,238 @@ def test_interactive_storage_prompt_prefills_suggested_path(
         == suggested
     )
     assert captured["default"] == str(suggested)
-    assert captured["message"] == "Storage directory: "
+    assert captured["message"] == (
+        "Storage holds persistent application data and storage settings.\n"
+        "Storage directory:\n"
+    )
+    assert isinstance(captured["completer"], PathCompleter)
+
+
+def test_interactive_apprc_prompt_puts_suggested_path_on_own_line(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from apprc.interfaces.cli import _interactive_setup
+
+    suggested = tmp_path / "apprc"
+    captured: dict[str, object] = {}
+
+    def prompt_stub(message: str, **kwargs: object) -> str:
+        captured["message"] = message
+        captured.update(kwargs)
+        return str(suggested)
+
+    monkeypatch.setattr(_interactive_setup, "prompt", prompt_stub)
+    assert _interactive_setup.prompt_apprc_setup_dir(suggested=suggested) == (
+        suggested
+    )
+
+    assert captured["default"] == str(suggested)
+    assert captured["message"] == (
+        "The AppRC directory stores configuration files, including the "
+        "storage registry when storage is enabled.\n"
+        "AppRC directory:\n"
+    )
+    assert isinstance(captured["completer"], PathCompleter)
+
+
+def test_yes_setup_prints_next_step_for_storage_and_user_dotenv(
+    tmp_path: Path,
+) -> None:
+    cases = (
+        (
+            build_storage_free_example_app(
+                setup_next_step="demo run [--debug]"
+            ),
+            ["setup", "--yes", "--apprc-dir", str(tmp_path / "user-config")],
+        ),
+        (
+            build_apprc_example_app(setup_next_step="demo run [--debug]"),
+            [
+                "setup",
+                "--yes",
+                "--apprc-dir",
+                str(tmp_path / "storage-config"),
+                "--storage-root",
+                str(tmp_path / "storage"),
+            ],
+        ),
+    )
+
+    for kit, arguments in cases:
+        result = CliRunner().invoke(build_config_typer_app(kit), arguments)
+
+        assert result.exit_code == 0, result.output
+        assert result.output.count("Next step:") == 1
+        assert result.output.count("demo run [--debug]") == 1
+        assert "Then verify:" in result.output
+        assert "config doctor" in result.output
+
+
+def test_setup_without_next_step_keeps_doctor_guidance(
+    tmp_path: Path,
+) -> None:
+    kit = build_storage_free_example_app()
+    app = build_config_typer_app(kit)
+
+    result = CliRunner().invoke(
+        app,
+        ["setup", "--yes", "--apprc-dir", str(tmp_path / "config")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Then verify:" in result.output
+    assert "config doctor" in result.output
+    assert "Next step:" not in result.output
+
+
+def test_required_field_prompt_finishes_before_setup_completion(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from apprc.interfaces.cli import setup_command
+
+    kit = build_apprc_example_app(setup_next_step="demo run")
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
+    events: list[str] = []
+    print_storage_setup = setup_command._print_storage_setup
+    print_setup_next_step = setup_command._print_setup_next_step
+
+    def prompt_stub(message: str, **kwargs: object) -> str:
+        events.append("required field")
+        return "example-token"
+
+    def print_storage_setup_spy(
+        apprc: AppRC,
+        *,
+        apprc_dir: Path,
+        storage_name: str,
+        storage_root: Path | None,
+        storage_dotenv: Path | None,
+        app_path: Path | None,
+        config_group_name: str,
+    ) -> None:
+        events.append("completion")
+        print_storage_setup(
+            apprc,
+            apprc_dir=apprc_dir,
+            storage_name=storage_name,
+            storage_root=storage_root,
+            storage_dotenv=storage_dotenv,
+            app_path=app_path,
+            config_group_name=config_group_name,
+        )
+
+    def print_next_step_spy(apprc: AppRC) -> None:
+        events.append("next step")
+        print_setup_next_step(apprc)
+
+    monkeypatch.setattr(setup_command, "prompt", prompt_stub)
+    monkeypatch.setattr(
+        setup_command, "_print_storage_setup", print_storage_setup_spy
+    )
+    monkeypatch.setattr(
+        setup_command, "_print_setup_next_step", print_next_step_spy
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "--apprc-dir",
+            str(tmp_path / "config"),
+            "--storage-root",
+            str(tmp_path / "storage"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert events == ["required field", "completion", "next step"]
+
+
+def test_storage_free_required_prompt_finishes_before_setup_completion(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from apprc.interfaces.cli import setup_command
+
+    kit = rc.AppRC(
+        app_id="setup_order_app",
+        user_dotenv=rc.UserDotenv(),
+        setup_next_step="demo run",
+    )
+
+    @kit.config("required", prefix="SETUP_ORDER_")
+    class RequiredSettings(rc.Config):
+        token: str = rc.field("SETUP_ORDER_TOKEN", required=True)
+
+    events: list[str] = []
+    print_app_setup = setup_command._print_app_setup
+    print_setup_next_step = setup_command._print_setup_next_step
+
+    def prompt_stub(message: str, **kwargs: object) -> str:
+        events.append("required field")
+        return "example-token"
+
+    def print_app_setup_spy(
+        apprc: AppRC,
+        *,
+        apprc_dir: Path,
+        user_dotenv: Path | None,
+        config_group_name: str,
+    ) -> None:
+        events.append("completion")
+        print_app_setup(
+            apprc,
+            apprc_dir=apprc_dir,
+            user_dotenv=user_dotenv,
+            config_group_name=config_group_name,
+        )
+
+    def print_next_step_spy(apprc: AppRC) -> None:
+        events.append("next step")
+        print_setup_next_step(apprc)
+
+    monkeypatch.setattr(setup_command, "prompt", prompt_stub)
+    monkeypatch.setattr(setup_command, "_print_app_setup", print_app_setup_spy)
+    monkeypatch.setattr(
+        setup_command, "_print_setup_next_step", print_next_step_spy
+    )
+    result = CliRunner().invoke(
+        build_config_typer_app(kit),
+        ["setup", "--apprc-dir", str(tmp_path / "config")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert events == ["required field", "completion", "next step"]
+
+
+def test_canceling_required_field_prompt_prints_no_completion(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from apprc.interfaces.cli import setup_command
+
+    kit = build_apprc_example_app(setup_next_step="demo run")
+    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
+
+    def cancel_prompt(message: str, **kwargs: object) -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(setup_command, "prompt", cancel_prompt)
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "--apprc-dir",
+            str(tmp_path / "config"),
+            "--storage-root",
+            str(tmp_path / "storage"),
+        ],
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "AppRC files are ready." not in result.output
+    assert "Next step:" not in result.output
+    assert "demo run" not in result.output
 
 
 def test_storage_free_setup_creates_empty_user_dotenv() -> None:
@@ -280,7 +514,7 @@ def test_setup_does_not_recreate_missing_registered_root(
 def test_setup_reports_blocking_apprc_directory_without_touching_storage(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app()
+    kit = build_apprc_example_app(setup_next_step="demo run")
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
     storage_dotenv = storage_root / "apprc.storage.env"
@@ -295,3 +529,6 @@ def test_setup_reports_blocking_apprc_directory_without_touching_storage(
 
     assert_apprc_dir_cli_error(result)
     assert storage_dotenv.read_text(encoding="utf-8") == "KEEP=1\n"
+    assert "AppRC files are ready." not in result.output
+    assert "Next step:" not in result.output
+    assert "demo run" not in result.output

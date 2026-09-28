@@ -123,6 +123,8 @@ All notable changes to `AppRC` will be documented in this file.
 
 - Added a reusable Gradio settings editor that can initialize declared files,
   choose storage, show effective sources, and save ordinary or secret values.
+- Added `AppRC.setup_next_step` for an application-specific command or
+  instruction after successful CLI setup.
 - Added suggested directory values and completion to interactive setup prompts;
   setup also asks for missing required editable fields.
 
@@ -130,6 +132,9 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
+- Storage setup now explains that its path holds persistent application data
+  and storage settings, and prints the suggested path on its own input line.
+- Setup completion guidance now appears after required-field prompts finish.
 - Grouped the six documentation pages under topical H1 headings, with nested
   tables of contents and spacing between major sections. Removed an outdated
   warning that said managed edits had no cross-process coordination.

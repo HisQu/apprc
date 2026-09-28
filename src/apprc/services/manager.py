@@ -224,8 +224,12 @@ class ConfigManager:
                         param_hint="--apprc-dir",
                     ) from exc
                 raise
-        with managed_write_lock(self.paths.root):
-            self.schema.require_user_dotenv()
+        self.schema.require_user_dotenv()
+        apprc_root = self.paths.root
+        with managed_write_lock(
+            apprc_root,
+            private_directories=(apprc_root,),
+        ):
             return flow.run_user_dotenv_setup()
 
     def setup_user_dotenv(self) -> ConfigSetupResult:
@@ -234,7 +238,11 @@ class ConfigManager:
         :return: Created or existing user dotenv path and its managed directory.
         """
         self.schema.require_user_dotenv()
-        with managed_write_lock(self.paths.root):
+        apprc_root = self.paths.root
+        with managed_write_lock(
+            apprc_root,
+            private_directories=(apprc_root,),
+        ):
             return ConfigSetupFlow(
                 self.schema, environment=self._path_environment()
             ).run_user_dotenv_setup()

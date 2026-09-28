@@ -52,4 +52,5 @@ class ConfigCommandHandlers(
             else self.manager(ctx).paths.root,
             storage_root=storage_root,
             config_group_name=self.config_group_name,
+            show_next_step=True,
         )

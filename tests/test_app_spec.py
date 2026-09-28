@@ -105,6 +105,16 @@ def test_app_config_spec_derives_apprc_dir_env_key() -> None:
     assert _spec().apprc_dir_env_key == "DEMO_APPRC_DIR"
 
 
+def test_app_config_spec_keeps_setup_next_step() -> None:
+    spec = AppConfigSpec(
+        app_id="demo",
+        display_name="Demo",
+        setup_next_step="demo run",
+    )
+
+    assert spec.setup_next_step == "demo run"
+
+
 def test_app_config_spec_defaults_to_config_without_storage() -> None:
     spec = _spec()
 

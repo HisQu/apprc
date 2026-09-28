@@ -62,6 +62,7 @@ describes why both distributions use the same import name.
 | `config_package` | `None` | Import package containing optional [packaged defaults](How-To-User-Guides.md#ship-defaults-with-the-application). |
 | `user_dotenv` | `None` | `UserDotenv()` enables the [user dotenv](Explanations.md#user-dotenv-and-the-apprc-directory). |
 | `storage` | `None` | `Storage()` enables [storage](Explanations.md#storage). |
+| `setup_next_step` | `None` | Text printed after successful explicit CLI setup, following doctor guidance. |
 | `apprc_dir` | `None` | Explicit application default for the [AppRC directory](#managed-files). |
 | `apprc_dir_env_key` | Derived | Override the environment key used to relocate the AppRC directory. |
 | `legacy_app_ids` | `()` | Previous application identities accepted by [migration](How-To-User-Guides.md#migrate-existing-applications). |
@@ -82,6 +83,12 @@ Reading the schema does not load configuration values or write files.
 inactive until storage is selected. It requires `storage=rc.Storage()` on the
 declaration. It affects inspection, including `config doctor`, rather than the
 runtime storage requirement in [`ResolveOptions`](#resolution).
+
+The explicit `config setup` command prints `setup_next_step` once after
+required-field prompts finish. With `--yes`, it prints the same next-step block
+after the existing doctor guidance. Runtime first-run setup omits the block and
+retries the command that triggered setup. Omitting `setup_next_step` keeps the
+default output.
 
 ## Config fields
 
@@ -364,7 +371,7 @@ The standalone `apprc` executable provides `scaffold config`.
 | `config paths [--json]` | Always; report locations without writing. |
 | `config doctor [--json]` | Always; report readiness and [repair guidance](How-To-User-Guides.md#troubleshoot-configuration). |
 | `config show [--json]` | Show runtime configuration; an application serializer can read `state.resolved`. |
-| `config setup` | Declared persistence; [initialize files](How-To-User-Guides.md#save-a-user-preference) interactively or with `--yes`. |
+| `config setup` | Declared persistence; [initialize files](How-To-User-Guides.md#save-a-user-preference) interactively or with `--yes`, then print optional [`setup_next_step`](#declarations) guidance. |
 | `config set KEY VALUE [--scope user\|storage]` | Edit a declared writable layer. |
 | `config secrets migrate --scope user\|storage [--yes]` | [Move old secret values](How-To-User-Guides.md#save-and-migrate-secret-settings) from an ordinary layer into its private companion. |
 | `config secrets repair --scope user\|storage [--yes]` | Restrict a layer's directory and secret file permissions after review. |

@@ -77,6 +77,8 @@ class _AppRCDeclaration:
     :param command_name: Executable name used in guidance.
     :param user_dotenv: Optional user-wide dotenv declaration.
     :param storage: Optional persistent-storage declaration.
+    :param setup_next_step: Optional command or instruction printed after
+        explicit CLI setup.
     :param apprc_dir: Optional application-declared AppRC directory.
     :param apprc_dir_env_key: Explicit directory override key.
     :param legacy_app_ids: Released 0.19 identities accepted by migration.
@@ -88,6 +90,7 @@ class _AppRCDeclaration:
     command_name: str | None
     user_dotenv: UserDotenv | None
     storage: Storage | None
+    setup_next_step: str | None
     apprc_dir: Path | None
     apprc_dir_env_key: str | None
     legacy_app_ids: tuple[str, ...]
@@ -112,6 +115,7 @@ class AppRC:
         command_name: str | None = None,
         user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
+        setup_next_step: str | None = None,
         apprc_dir: Path | None = None,
         apprc_dir_env_key: str | None = None,
         legacy_app_ids: tuple[str, ...] = (),
@@ -126,6 +130,8 @@ class AppRC:
         :param user_dotenv: User dotenv declaration, or ``None`` to avoid that
             persistent layer.
         :param storage: Storage declaration, or ``None`` for storage-free apps.
+        :param setup_next_step: Optional command or instruction shown after
+            successful explicit CLI setup.
         :param apprc_dir: Optional application-declared AppRC directory.
         :param apprc_dir_env_key: Explicit directory override key.
         :param legacy_app_ids: Released 0.19 identities accepted by migration.
@@ -137,6 +143,7 @@ class AppRC:
             command_name=command_name,
             user_dotenv=user_dotenv,
             storage=storage,
+            setup_next_step=setup_next_step,
             apprc_dir=apprc_dir,
             apprc_dir_env_key=apprc_dir_env_key,
             legacy_app_ids=legacy_app_ids,
@@ -287,6 +294,7 @@ class AppRC:
             envs=envs,
             user_dotenv=declaration.user_dotenv,
             storage=declaration.storage,
+            setup_next_step=declaration.setup_next_step,
             command_name=declaration.command_name,
             apprc_dir=declaration.apprc_dir,
             apprc_dir_env_key=declaration.apprc_dir_env_key,

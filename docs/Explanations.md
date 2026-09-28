@@ -43,6 +43,10 @@ The declaration records the application's identity. For example,
 application later enables saved settings, AppRC uses that identity to derive
 the directory and environment-variable names.
 
+An application can also set [`setup_next_step`](References.md#declarations) to
+show an app-supplied next-step message after a user finishes explicit CLI
+setup.
+
 Register a [config section](#config-sections-and-fields) on this object with
 `@MyRC.config(...)`. Registration tells AppRC which fields belong to the
 application. It makes the same field definitions available to configuration

@@ -45,6 +45,7 @@ def run_config_setup(
     apprc_dir: str | Path | None = None,
     storage_root: str | Path | None = None,
     config_group_name: str = "config",
+    show_next_step: bool = False,
 ) -> None:
     """Configure files required by the AppRC declaration.
 
@@ -54,6 +55,8 @@ def run_config_setup(
     :param storage_root: Optional active storage root.
     :param config_group_name: Config command group name used in generated
         guidance.
+    :param show_next_step: Whether to print the declaration's next step after
+        explicit setup.
     :raises typer.Exit: If the user cancels.
     :raises typer.BadParameter: If setup inputs are invalid.
     """
@@ -82,16 +85,18 @@ def run_config_setup(
                 str(exc),
                 param_hint=exc.param_hint,
             ) from exc
+        if not assume_yes:
+            _prompt_required_fields(
+                apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
+            )
         _print_app_setup(
             apprc,
             apprc_dir=result.apprc_dir,
             user_dotenv=result.user_dotenv,
             config_group_name=config_group_name,
         )
-        if not assume_yes:
-            _prompt_required_fields(
-                apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
-            )
+        if show_next_step:
+            _print_setup_next_step(apprc)
         return
 
     root, storage_name = _select_storage_root(
@@ -112,6 +117,10 @@ def run_config_setup(
             str(exc),
             param_hint=exc.param_hint or "--storage-root",
         ) from exc
+    if not assume_yes:
+        _prompt_required_fields(
+            apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
+        )
     _print_storage_setup(
         apprc,
         apprc_dir=result.apprc_dir,
@@ -121,10 +130,18 @@ def run_config_setup(
         app_path=result.user_dotenv,
         config_group_name=config_group_name,
     )
-    if not assume_yes:
-        _prompt_required_fields(
-            apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
-        )
+    if show_next_step:
+        _print_setup_next_step(apprc)
+
+
+def _print_setup_next_step(apprc: AppRC) -> None:
+    """Print the app-supplied step that follows explicit setup.
+
+    :param apprc: Application declaration that may provide a next step.
+    """
+    next_step = apprc.schema.setup_next_step
+    if next_step:
+        typer.echo(f"\nNext step:\n  {next_step}")
 
 
 def _prompt_required_fields(manager: ConfigManager) -> None:

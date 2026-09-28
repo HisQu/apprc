@@ -261,9 +261,10 @@ class StorageFreeExampleConfigStateWithoutStorage:
     resolved: ResolvedConfig | None = None
 
 
-def build_apprc_example_app() -> AppRC:
+def build_apprc_example_app(*, setup_next_step: str | None = None) -> AppRC:
     """Return a tiny storage-capable AppRC.
 
+    :param setup_next_step: Optional instruction printed after CLI setup.
     :return: Isolated application declaration for tests.
     """
     app_rc = rc.AppRC(
@@ -274,6 +275,7 @@ def build_apprc_example_app() -> AppRC:
         storage=rc.Storage(
             selector_env_key="APPRC_EXAMPLE_APP_STORAGE",
         ),
+        setup_next_step=setup_next_step,
     )
     app_rc.config(
         "app",
@@ -284,13 +286,20 @@ def build_apprc_example_app() -> AppRC:
     return app_rc
 
 
-def build_storage_free_example_app() -> AppRC:
-    """Return a tiny AppRC that does not use storage."""
+def build_storage_free_example_app(
+    *, setup_next_step: str | None = None
+) -> AppRC:
+    """Return a tiny AppRC that does not use storage.
+
+    :param setup_next_step: Optional instruction printed after CLI setup.
+    :return: Storage-free application declaration for tests.
+    """
     app_rc = rc.AppRC(
         app_id="storage_free_app",
         display_name="Storage-Free App",
         config_package="user_dotenv.config",
         user_dotenv=rc.UserDotenv(),
+        setup_next_step=setup_next_step,
     )
     app_rc.config(
         "global",

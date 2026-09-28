@@ -40,6 +40,7 @@ def _runtime(
     tmp_path: Path,
     *,
     runtime_required: bool = True,
+    setup_next_step: str | None = None,
 ) -> CliRuntime[CliRuntimeOptions, DefaultConfigCliState]:
     """Return a storage runtime with the first-run prompt enabled."""
     kit = app_from_envs(
@@ -49,6 +50,7 @@ def _runtime(
         storage=Storage(
             selector_env_key="FIRST_RUN_DEMO_STORAGE",
         ),
+        setup_next_step=setup_next_step,
         apprc_dir=tmp_path / "apprc",
     )
     return CliRuntime(
@@ -95,6 +97,29 @@ def test_first_runtime_use_accepts_suggested_storage(
     assert (suggested / "apprc.storage.env").is_file()
     assert not AppFiles(runtime.apprc.schema).user_dotenv_path().exists()
     assert AppFiles(runtime.apprc.schema).preferred_apprc_toml_path().is_file()
+
+
+def test_implicit_first_run_keeps_doctor_guidance_without_app_next_step(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
+    _enable_tty(monkeypatch)
+    runtime = _runtime(tmp_path, setup_next_step="pdb serve")
+    monkeypatch.setattr(
+        runtime_module,
+        "prompt_storage_setup_root",
+        lambda *, suggested: suggested,
+    )
+
+    runtime.prepare(_context(), CliRuntimeOptions())
+
+    output = capsys.readouterr().out
+    assert "Then verify:" in output
+    assert "config doctor" in output
+    assert "Next step:" not in output
+    assert "pdb serve" not in output
 
 
 def test_first_runtime_use_decline_leaves_no_files(

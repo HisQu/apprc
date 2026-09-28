@@ -212,6 +212,29 @@ class ConfigEditor:
                 "Enter a replacement secret, or clear its saved value.",
                 revision,
             )
+        if secret:
+            try:
+                secret_status = self.manager.secret_status(scope)
+            except (OSError, ValueError):
+                return (
+                    f"Could not inspect the private file for {key}. Review its "
+                    f"directory permissions, then run `config secrets repair "
+                    f"--scope {scope}`.",
+                    revision,
+                )
+            if not secret_status.available:
+                issue = secret_status.issue or "The secret file is unavailable."
+                next_step = (
+                    "Move or remove the file blocking the layer directory, "
+                    "then run setup again."
+                    if issue == "The parent path exists but is not a directory."
+                    else f"Review the directory permissions, then run `config "
+                    f"secrets repair --scope {scope}`."
+                )
+                return (
+                    f"Cannot save {key}: {issue} {next_step}",
+                    revision,
+                )
         try:
             plan = self.manager.plan_update(key, value or "", scope=scope)
             preview = self.manager.preview_edit(plan)
@@ -224,7 +247,9 @@ class ConfigEditor:
             self.manager.apply_edit(plan)
         except (OSError, ValueError) as exc:
             message = (
-                f"Could not save {key}. Check its value and private file permissions."
+                f"Could not save {key}. Check its value. If the secret file is "
+                f"unavailable, review its directory permissions and run "
+                f"`config secrets repair --scope {scope}`."
                 if secret
                 else str(exc)
             )
@@ -298,7 +323,20 @@ class ConfigEditor:
     ) -> tuple[str, int]:
         """Repair a secret companion after an explicit button press."""
         try:
-            self.manager.repair_secret_permissions(scope)
+            secret_status = self.manager.repair_secret_permissions(scope)
         except (OSError, ValueError) as exc:
             return str(exc), revision
+        if not secret_status.available:
+            issue = (
+                secret_status.issue or "The secret file remains unavailable."
+            )
+            next_step = (
+                "Remove or move the existing non-file secret path, then try again."
+                if issue == "The secret path is not a file."
+                else "Review the reported directory or file permissions, then try again."
+            )
+            return (
+                f"Could not repair {scope} secret file: {issue} {next_step}",
+                revision,
+            )
         return f"Repaired {scope} secret file permissions.", revision + 1

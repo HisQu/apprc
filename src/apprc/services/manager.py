@@ -65,7 +65,11 @@ from apprc.user_files.purge import (
     apply_config_purge,
     build_config_purge_plan,
 )
-from apprc.user_files.setup.flow import ConfigSetupFlow, ConfigSetupResult
+from apprc.user_files.setup.flow import (
+    ConfigSetupError,
+    ConfigSetupFlow,
+    ConfigSetupResult,
+)
 from apprc.user_files.storage_roots import registry as storage_registry
 from apprc.user_files.storage_roots.archive import (
     StorageArchiveProgress,
@@ -201,9 +205,25 @@ class ConfigManager:
         if self.schema.uses_storage():
             if storage_root is None:
                 raise ValueError("storage_root is required for storage setup.")
-            root = resolve_storage_root_path(storage_root, base=self.paths.root)
-            with managed_write_lock(self.paths.root, root):
-                return flow.run_storage_setup(root, storage_name=storage_name)
+            apprc_root = self.paths.root
+            root = resolve_storage_root_path(storage_root, base=apprc_root)
+            try:
+                with managed_write_lock(
+                    apprc_root,
+                    root,
+                    private_directories=(apprc_root,),
+                ):
+                    return flow.run_storage_setup(
+                        root, storage_name=storage_name
+                    )
+            except OSError as exc:
+                if apprc_root.exists() and not apprc_root.is_dir():
+                    raise ConfigSetupError(
+                        "The selected AppRC directory path exists but is not "
+                        "a directory.",
+                        param_hint="--apprc-dir",
+                    ) from exc
+                raise
         with managed_write_lock(self.paths.root):
             self.schema.require_user_dotenv()
             return flow.run_user_dotenv_setup()

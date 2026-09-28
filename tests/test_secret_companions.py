@@ -52,6 +52,48 @@ def test_secret_companions_follow_layer_precedence(tmp_path: Path) -> None:
     )
 
 
+def test_storage_setup_supports_a_nested_root_under_the_apprc_directory(
+    tmp_path: Path,
+) -> None:
+    """Keep a new nested data root usable for secret settings."""
+    app = _app(tmp_path)
+    manager = app.manage(environment={})
+    storage_root = tmp_path / "config" / "nested" / "data"
+
+    manager.setup(storage_root=storage_root)
+
+    assert manager.writable_path("storage").is_file()
+    assert manager.secret_status("storage").available
+    assert manager.writable_path("storage", secret=True).is_file()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
+def test_user_setup_reports_shared_app_directory_and_keeps_repair_explicit(
+    tmp_path: Path,
+) -> None:
+    """Do not report setup success when the user secret file cannot be created."""
+    app = _app(tmp_path)
+    apprc_dir = tmp_path / "config"
+    apprc_dir.mkdir()
+    apprc_dir.chmod(0o755)
+    manager = app.manage(environment={})
+
+    with pytest.raises(ValueError) as exc_info:
+        manager.setup_user_dotenv()
+
+    message = str(exc_info.value)
+    assert "parent directory is readable by other users" in message
+    assert "config secrets repair --scope user" in message
+    assert apprc_dir.stat().st_mode & 0o777 == 0o755
+    assert not manager.writable_path("user").exists()
+    assert not manager.writable_path("user", secret=True).exists()
+
+    status = manager.repair_secret_permissions("user")
+    assert status.available
+    assert manager.writable_path("user", secret=True).is_file()
+    assert apprc_dir.stat().st_mode & 0o777 == 0o700
+
+
 def test_legacy_secret_migration_is_explicit_and_archive_excludes_secret(
     tmp_path: Path,
 ) -> None:
@@ -103,10 +145,15 @@ def test_shared_storage_disables_secret_saving_without_disabling_storage(
 ) -> None:
     app = _app(tmp_path)
     manager = app.manage(environment={})
-    manager.setup(storage_root=tmp_path / "data")
-    (tmp_path / "data").chmod(0o755)
+    storage_root = tmp_path / "data"
+    storage_root.mkdir()
+    storage_root.chmod(0o755)
+    manager.setup(storage_root=storage_root)
 
     assert not manager.secret_status("storage").available
+    assert manager.writable_path("storage").is_file()
+    assert not manager.writable_path("storage", secret=True).exists()
+    assert storage_root.stat().st_mode & 0o777 == 0o755
     manager.apply_edit(
         manager.plan_update("DEMO_LABEL", "ordinary", scope="storage")
     )

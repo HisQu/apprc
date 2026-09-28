@@ -3,6 +3,7 @@ from apprc.interfaces.cli.config_command.app import build_config_typer_app
 
 
 from apprc.user_files.app_home.application import AppFiles
+from apprc.user_files.env_files.secrets import inspect_secret_file
 
 from pathlib import Path
 
@@ -397,25 +398,27 @@ def test_storage_only_setup_does_not_create_user_dotenv(
     assert "user_dotenv:" not in result.output
 
 
-def test_storage_setup_uses_default_storage_root_without_extra_nesting() -> (
-    None
-):
+def test_storage_setup_uses_default_storage_root_without_extra_nesting(
+    tmp_path: Path,
+) -> None:
     kit = build_apprc_example_app()
     app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
+    apprc_dir = tmp_path / "nested" / "config"
 
-    result = CliRunner().invoke(app, ["setup", "--yes"])
+    result = CliRunner().invoke(
+        app, ["setup", "--yes", "--apprc-dir", str(apprc_dir)]
+    )
 
     assert result.exit_code == 0, result.output
+    proc_env = {kit.schema.apprc_dir_env_key: str(apprc_dir)}
     registry = load_storage_registry_or_empty(
-        AppFiles(kit.schema).preferred_apprc_toml_path()
+        AppFiles(kit.schema).preferred_apprc_toml_path(proc_env)
     )
-    assert (
-        registry.selected("default").root
-        == AppFiles(kit.schema).apprc_dir() / "storage"
-    )
-    assert not (
-        AppFiles(kit.schema).apprc_dir() / "storage" / "default"
-    ).exists()
+    user_secret = AppFiles(kit.schema).user_secret_dotenv_path(proc_env)
+    assert user_secret.is_file()
+    assert inspect_secret_file(user_secret).available
+    assert registry.selected("default").root == apprc_dir / "storage"
+    assert not (apprc_dir / "storage" / "default").exists()
 
 
 def test_storage_setup_rejects_blank_storage_root(tmp_path: Path) -> None:

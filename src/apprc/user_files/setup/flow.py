@@ -90,7 +90,31 @@ class ConfigSetupFlow:
         try:
             proc_env = self._proc_env_for_apprc_dir(apprc_dir)
             files = AppFiles(self.spec)
-            ensure_secret_file(files.user_secret_dotenv_path(proc_env))
+            try:
+                status = ensure_secret_file(
+                    files.user_secret_dotenv_path(proc_env)
+                )
+            except OSError as exc:
+                raise ConfigSetupError(
+                    "Could not create the user secret file: "
+                    f"{exc}. Review the AppRC directory permissions, then run "
+                    "`config secrets repair --scope user`.",
+                    param_hint="--apprc-dir",
+                ) from exc
+            if not status.available:
+                issue = status.issue or "The secret file is unavailable."
+                next_step = (
+                    "Move or remove the file blocking the AppRC directory, "
+                    "then run setup again."
+                    if issue == "The parent path exists but is not a directory."
+                    else "Review the AppRC directory permissions, then run "
+                    "`config secrets repair --scope user`."
+                )
+                raise ConfigSetupError(
+                    f"Could not prepare the user secret file: {issue} "
+                    f"{next_step}",
+                    param_hint="--apprc-dir",
+                )
             return files.ensure_user_dotenv(proc_env)
         except AppRCDirectoryError as exc:
             raise ConfigSetupError(

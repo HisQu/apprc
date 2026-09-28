@@ -8,6 +8,10 @@ from typing import Iterator
 
 from filelock import FileLock
 
+from apprc.user_files.app_home.permissions import (
+    create_private_directory_if_missing,
+)
+
 MANAGED_WRITE_LOCK = RLock()
 
 
@@ -18,16 +22,23 @@ def managed_lock_path(root: Path) -> Path:
 
 
 @contextmanager
-def managed_write_lock(*roots: Path) -> Iterator[None]:
+def managed_write_lock(
+    *roots: Path,
+    private_directories: tuple[Path, ...] = (),
+) -> Iterator[None]:
     """Hold stable locks for the directories changed by one operation.
 
     The lock files sit beside their directories so moving or deleting a storage
     root cannot remove a lock while another process waits for it.
 
     :param roots: AppRC directory or storage roots that may be changed.
+    :param private_directories: Directories to create privately before locking.
+        Existing directories are never changed.
     :return: Context that serializes local and cross-process writes.
     """
     lock_paths = sorted({managed_lock_path(root) for root in roots})
+    for directory in private_directories:
+        create_private_directory_if_missing(directory.expanduser().absolute())
     with MANAGED_WRITE_LOCK, ExitStack() as stack:
         for path in lock_paths:
             path.parent.mkdir(parents=True, exist_ok=True)

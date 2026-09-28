@@ -31,7 +31,7 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.27.1 - 2026-09-28](#0271---2026-09-28)
+3. [0.27.2 - 2026-09-28](#0272---2026-09-28)
 4. [0.27.0 - 2026-09-24](#0270---2026-09-24)
 5. [0.26.0 - 2026-09-23](#0260---2026-09-23)
 6. [0.25.1 - 2026-09-23](#0251---2026-09-23)
@@ -107,7 +107,7 @@ All notable changes to `AppRC` will be documented in this file.
 
 <!-- ======================================================== -->
 
-# 0.27.1 - 2026-09-28
+# 0.27.2 - 2026-09-28
 
 <br>
 
@@ -130,9 +130,10 @@ All notable changes to `AppRC` will be documented in this file.
 
 - Fixed release preparation so `apprc-gui` gets the matching core version and
   exact `apprc-core` pin.
-- User setup now reports an explicit repair command when an existing AppRC
-  directory prevents creation of its secret companion. The Gradio editor shows
-  why a secret save or repair failed without displaying the submitted value.
+- User setup creates a private AppRC directory when it is missing and reports
+  an explicit repair command when an existing directory prevents creation of
+  its secret companion. The Gradio editor explains secret save and repair
+  failures without displaying the submitted value.
 
 <br>
 

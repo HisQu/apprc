@@ -40,6 +40,7 @@ def _user_only_app(tmp_path: Path) -> rc.AppRC:
     @app.config("client", prefix="DEMO_")
     class Client(rc.Config):
         token: str = rc.field("DEMO_TOKEN", default="", secret=True)
+        label: str = rc.field("DEMO_LABEL", default="default")
 
     return app
 
@@ -97,6 +98,78 @@ def test_fresh_user_only_setup_creates_secret_companion(
     assert manager.writable_path("user").is_file()
     assert manager.writable_path("user", secret=True).is_file()
     assert manager.secret_status("user").available
+
+
+def test_register_storage_before_setup_keeps_user_home_private(
+    tmp_path: Path,
+) -> None:
+    """Create a private AppRC home when storage is registered first.
+
+    :param tmp_path: Isolated test directory.
+    """
+    manager = _app(tmp_path).manage(environment={})
+    storage_root = tmp_path / "data"
+
+    manager.register_storage("default", storage_root)
+    assert manager.secret_status("user").available
+    manager.setup(storage_root=storage_root)
+
+    assert manager.writable_path("user", secret=True).is_file()
+    assert manager.secret_status("user").available
+
+
+def test_user_edit_before_setup_keeps_user_home_private(
+    tmp_path: Path,
+) -> None:
+    """A pre-setup ordinary edit must leave room for private secrets.
+
+    :param tmp_path: Isolated test directory.
+    """
+    manager = _user_only_app(tmp_path).manage(environment={})
+
+    plan = manager.plan_update("DEMO_LABEL", "edited", scope="user")
+    manager.apply_edit(plan)
+
+    assert manager.writable_path("user").is_file()
+    assert manager.secret_status("user").available
+    manager.setup_user_dotenv()
+    assert manager.writable_path("user", secret=True).is_file()
+    assert manager.secret_status("user").available
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
+@pytest.mark.parametrize("operation", ["user_edit", "storage_registration"])
+def test_operations_do_not_change_existing_shared_home(
+    tmp_path: Path, operation: str
+) -> None:
+    """Keep shared homes unchanged until the user requests secret repair.
+
+    :param tmp_path: Isolated test directory.
+    :param operation: Managed operation that encounters the shared home.
+    """
+    apprc_dir = tmp_path / "config"
+    apprc_dir.mkdir()
+    apprc_dir.chmod(0o755)
+    manager = _app(tmp_path).manage(environment={})
+    storage_root = tmp_path / "data"
+
+    if operation == "user_edit":
+        manager.apply_edit(
+            manager.plan_update("DEMO_LABEL", "edited", scope="user")
+        )
+    else:
+        manager.register_storage("default", storage_root)
+
+    assert apprc_dir.stat().st_mode & 0o777 == 0o755
+    assert not manager.secret_status("user").available
+    if operation == "user_edit":
+        assert manager.writable_path("user").is_file()
+        with pytest.raises(ValueError, match="readable by other users"):
+            manager.setup_user_dotenv()
+    else:
+        with pytest.raises(ValueError, match="readable by other users"):
+            manager.setup(storage_root=storage_root)
+    assert apprc_dir.stat().st_mode & 0o777 == 0o755
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")

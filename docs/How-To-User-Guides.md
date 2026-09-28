@@ -263,7 +263,8 @@ from tempfile import TemporaryDirectory
 import apprc as rc
 
 with TemporaryDirectory() as directory:
-    MyRC = rc.AppRC(app_id="demo", user_dotenv=rc.UserDotenv(), apprc_dir=Path(directory))
+    apprc_dir = Path(directory) / "demo-config"
+    MyRC = rc.AppRC(app_id="demo", user_dotenv=rc.UserDotenv(), apprc_dir=apprc_dir)
 
     @MyRC.config("client", prefix="DEMO_")
     class ClientSettings(rc.Config):
@@ -273,7 +274,7 @@ with TemporaryDirectory() as directory:
     manager.setup()
     plan = manager.plan_update("client.timeout", "20", scope="user")
     manager.apply_edit(plan)
-    assert (Path(directory) / "apprc.user.env").is_file()
+    assert (apprc_dir / "apprc.user.env").is_file()
     assert manager.resolve().build(ClientSettings).timeout == 20
     print("saved timeout: 20")
 ```
@@ -405,7 +406,8 @@ from tempfile import TemporaryDirectory
 import apprc as rc
 
 with TemporaryDirectory() as directory:
-    MyRC = rc.AppRC(app_id="demo", user_dotenv=rc.UserDotenv(), apprc_dir=Path(directory))
+    apprc_dir = Path(directory) / "demo-config"
+    MyRC = rc.AppRC(app_id="demo", user_dotenv=rc.UserDotenv(), apprc_dir=apprc_dir)
 
     @MyRC.config("client", prefix="DEMO_")
     class ClientSettings(rc.Config):

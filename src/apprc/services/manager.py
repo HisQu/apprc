@@ -381,6 +381,7 @@ class ConfigManager:
             self._require_private_secret_edit(
                 scope, owner.env_key(spec.name), storage=storage
             )
+        apprc_root = self.paths.root
         return replace(
             plan_env_file_value_update(
                 path=path,
@@ -390,7 +391,8 @@ class ConfigManager:
                 layer_name=path.name,
                 private=spec.secret,
             ),
-            lock_roots=(self.paths.root, path.parent),
+            lock_roots=(apprc_root, path.parent),
+            private_directories=(apprc_root,) if scope == "user" else (),
         )
 
     def plan_removal(
@@ -422,10 +424,15 @@ class ConfigManager:
             layer_name=path.name,
             private=spec.secret,
         )
+        apprc_root = self.paths.root
         return (
             None
             if plan is None
-            else replace(plan, lock_roots=(self.paths.root, path.parent))
+            else replace(
+                plan,
+                lock_roots=(apprc_root, path.parent),
+                private_directories=(apprc_root,) if scope == "user" else (),
+            )
         )
 
     def _require_private_secret_edit(
@@ -513,8 +520,13 @@ class ConfigManager:
         :param root: Directory to create or register.
         :return: Updated registry.
         """
-        root = resolve_storage_root_path(root, base=self.paths.root)
-        with managed_write_lock(self.paths.root, root):
+        apprc_root = self.paths.root
+        root = resolve_storage_root_path(root, base=apprc_root)
+        with managed_write_lock(
+            apprc_root,
+            root,
+            private_directories=(apprc_root,),
+        ):
             root_existed = root.exists()
             result = storage_registry.register_storage(
                 name=name, root=root, path=self.registry_path

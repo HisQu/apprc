@@ -245,13 +245,18 @@ Each companion is read immediately after its ordinary layer. A saved storage
 secret therefore overrides a saved user secret, and a process environment value
 overrides both. The effective [provenance](#provenance) records the companion path.
 Setup creates empty companions, but reading configuration creates no files.
+If an existing AppRC directory is shared, user-layer setup stops and reports
+the `config secrets repair --scope user` command. Setup leaves that directory
+unchanged. An existing shared storage directory can still hold ordinary
+settings, but secret saving stays blocked until the user explicitly repairs
+permissions or chooses another storage. The Gradio editor shows the reason and
+offers a repair action. The [permission commands](References.md#terminal-commands)
+provide the same repair through the CLI.
 
 On Linux and macOS, AppRC requires mode `0700` on the companion's parent
 directory and `0600` on the file. On Windows, it checks the file and directory
-ACL for access by ordinary other users. If an existing storage directory is
-shared, ordinary settings remain writable, but secret saving is blocked until
-the user explicitly repairs permissions or chooses another storage. The
-[permission commands](References.md#terminal-commands) provide that repair.
+ACL for access by ordinary other users. The repair command changes permissions
+only after the user requests it.
 AppRC does not encrypt the file; it does not protect against a process running
 as the same user or someone with administrator access.
 

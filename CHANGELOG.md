@@ -130,6 +130,9 @@ All notable changes to `AppRC` will be documented in this file.
 
 - Fixed release preparation so `apprc-gui` gets the matching core version and
   exact `apprc-core` pin.
+- User setup now reports an explicit repair command when an existing AppRC
+  directory prevents creation of its secret companion. The Gradio editor shows
+  why a secret save or repair failed without displaying the submitted value.
 
 <br>
 

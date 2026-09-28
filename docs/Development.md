@@ -178,13 +178,16 @@ The equivalent uv build commands use `uv build --no-sources --package` with
 
 Update the changelog first. Any change requiring consumer code, configuration,
 or installation changes belongs under breaking changes with affected users and
-migration instructions. Keep the core and terminal distribution versions in sync.
+migration instructions. Keep the core, terminal, and GUI distribution versions
+in sync. Release preparation syncs the GUI version and its exact `apprc-core`
+pin automatically.
 
 `just publish-check` rehearses Linux Python 3.12–3.14 checks, generated metadata,
-both distributions, pip installation checks, and publication dry runs. It uploads
-nothing. `just release-prepare <patch|minor|major>` changes the root version,
-regenerates the wrapper and locks, checks the release, and prepares a local commit
-and tag. `just release-push TAG` is the separate remote action.
+all three distributions, pip installation checks, and publication dry runs. It
+uploads nothing. `just release-prepare <patch|minor|major>` changes the root
+version, regenerates terminal metadata, syncs the GUI version and core pin,
+refreshes the locks, checks the release, and prepares a local commit and tag.
+`just release-push TAG` is the separate remote action.
 
 Tag CI keeps Linux/Windows and Python 3.12–3.14 coverage. The release workflow
 attaches all six artifacts to GitHub, then publishes `apprc-core` before `apprc`

@@ -94,6 +94,9 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
+- Fixed release preparation so `apprc-gui` gets the matching core version and
+  exact `apprc-core` pin.
+
 <br>
 
 ### 🔒 Security

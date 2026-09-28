@@ -221,6 +221,7 @@ _release-artifact-check notes_output:
     fi
 
     python src/apprc_dev/packaging/terminal_metadata.py --check
+    python src/apprc_dev/packaging/gui_metadata.py --check
     rm -rf dist
     uv build --python 3.12 --no-sources --package apprc-core
     uv build --python 3.12 --no-sources --package apprc
@@ -287,6 +288,8 @@ release-prepare level="patch":
             cp "$release_root/pyproject.toml" pyproject.toml
             cp "$release_root/uv.lock" uv.lock
             cp "$release_root/pylock.toml" pylock.toml
+            cp "$release_root/gui-pyproject.toml" \
+                src/apprc_dev/packaging/gui/pyproject.toml
             python src/apprc_dev/packaging/terminal_metadata.py
         fi
         rm -rf "$release_root"
@@ -299,15 +302,21 @@ release-prepare level="patch":
         --output "$notes_file"
 
     cp pyproject.toml uv.lock pylock.toml "$release_root/"
+    cp src/apprc_dev/packaging/gui/pyproject.toml \
+        "$release_root/gui-pyproject.toml"
     restore_version_files=true
     uv version --bump "{{level}}" --no-sync
     python src/apprc_dev/packaging/terminal_metadata.py
+    python src/apprc_dev/packaging/gui_metadata.py
     uv lock
     uv export -o pylock.toml --all-extras --all-groups --quiet
     APPRC_RELEASE_IN_PROGRESS=1 just publish-check
 
     git commit \
-        --only pyproject.toml uv.lock pylock.toml src/apprc_dev/packaging/terminal/pyproject.toml \
+        --only \
+        pyproject.toml uv.lock pylock.toml \
+        src/apprc_dev/packaging/terminal/pyproject.toml \
+        src/apprc_dev/packaging/gui/pyproject.toml \
         -m "Bump version to ${next_version}"
     restore_version_files=false
     if ! git tag -a "${tag}" -m "Release ${tag}"; then

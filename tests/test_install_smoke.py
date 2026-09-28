@@ -42,6 +42,38 @@ def test_gui_distribution_owns_only_its_view_and_pins_matching_core() -> None:
     assert gui["tool"]["setuptools"]["package-dir"] == {"": "src"}
 
 
+def test_gui_metadata_sync_handles_current_and_simulated_versions(
+    tmp_path: Path,
+) -> None:
+    from apprc_dev.packaging.gui_metadata import (
+        render_gui_pyproject,
+        sync_gui_metadata,
+    )
+
+    gui_path = ROOT / "src/apprc_dev/packaging/gui/pyproject.toml"
+    gui_source = gui_path.read_text(encoding="utf-8")
+    core_version = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["version"]
+    sync_gui_metadata(core_version, path=gui_path, check=True)
+
+    simulated_path = tmp_path / "gui-pyproject.toml"
+    simulated_path.write_text(gui_source, encoding="utf-8")
+    sync_gui_metadata("0.27.1", path=simulated_path)
+    sync_gui_metadata("0.27.1", path=simulated_path, check=True)
+
+    simulated_project = tomllib.loads(
+        simulated_path.read_text(encoding="utf-8")
+    )["project"]
+    assert simulated_project["version"] == "0.27.1"
+    assert "apprc-core==0.27.1" in simulated_project["dependencies"]
+    assert "gradio>=6.26,<7" in simulated_project["dependencies"]
+    assert simulated_path.read_text(encoding="utf-8") == render_gui_pyproject(
+        gui_source,
+        "0.27.1",
+    )
+
+
 def test_distribution_generation_follows_root_version(
     tmp_path: Path, monkeypatch
 ) -> None:

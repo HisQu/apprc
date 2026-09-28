@@ -130,10 +130,11 @@ All notable changes to `AppRC` will be documented in this file.
 
 - Fixed release preparation so `apprc-gui` gets the matching core version and
   exact `apprc-core` pin.
-- User setup creates a private AppRC directory when it is missing and reports
-  an explicit repair command when an existing directory prevents creation of
-  its secret companion. The Gradio editor explains secret save and repair
-  failures without displaying the submitted value.
+- Setup, storage registration, and ordinary user edits create a private AppRC
+  directory when it is missing. Existing directories remain unchanged; user
+  secret setup reports the explicit repair command when privacy checks fail.
+  The Gradio editor explains secret save and repair failures without displaying
+  the submitted value.
 
 <br>
 

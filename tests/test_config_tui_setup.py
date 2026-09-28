@@ -24,7 +24,6 @@ from apprc.user_files.storage_roots.registry import (
     StorageRecord,
     StorageRegistry,
     load_storage_registry_or_empty,
-    register_storage,
     write_storage_registry,
 )
 from tests.support_config import (
@@ -183,7 +182,7 @@ async def test_editor_initializes_marker_for_existing_named_storage(
         kit.schema.apprc_dir_env_key,
         str(AppFiles(kit.schema).apprc_dir()),
     )
-    AppFiles(kit.schema).ensure_user_dotenv()
+    kit.manage().setup_user_dotenv()
     storage_root = tmp_path / "ontology"
     storage_root.mkdir()
     registry = StorageRegistry(
@@ -268,11 +267,7 @@ async def test_combined_editor_sets_up_only_missing_user_dotenv(
     storage_root = tmp_path / "storage"
     monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(apprc_dir))
     kit = build_apprc_example_app()
-    registry = register_storage(
-        name="default",
-        root=storage_root,
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
-    )
+    registry = kit.manage().register_storage("default", storage_root)
     editor = ConfigEditorApp(
         apprc=kit,
         storage_registry=registry,

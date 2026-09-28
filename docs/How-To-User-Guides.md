@@ -560,7 +560,7 @@ import typer
 MyRC = rc.AppRC(
     app_id="demo",
     user_dotenv=rc.UserDotenv(),
-    setup_next_step="demo run",
+    setup_next_step="python demo.py run",
 )
 
 @MyRC.config("client", prefix="DEMO_")

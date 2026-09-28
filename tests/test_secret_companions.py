@@ -29,6 +29,21 @@ def _app(tmp_path: Path) -> rc.AppRC:
     return app
 
 
+def _user_only_app(tmp_path: Path) -> rc.AppRC:
+    """Declare one user dotenv secret without storage setup."""
+    app = rc.AppRC(
+        app_id="secret-user-only",
+        user_dotenv=rc.UserDotenv(),
+        apprc_dir=tmp_path / "config",
+    )
+
+    @app.config("client", prefix="DEMO_")
+    class Client(rc.Config):
+        token: str = rc.field("DEMO_TOKEN", default="", secret=True)
+
+    return app
+
+
 def test_secret_companions_follow_layer_precedence(tmp_path: Path) -> None:
     app = _app(tmp_path)
     manager = app.manage(environment={})
@@ -67,19 +82,40 @@ def test_storage_setup_supports_a_nested_root_under_the_apprc_directory(
     assert manager.writable_path("storage", secret=True).is_file()
 
 
+@pytest.mark.parametrize("setup_method", ["setup", "setup_user_dotenv"])
+def test_fresh_user_only_setup_creates_secret_companion(
+    tmp_path: Path, setup_method: str
+) -> None:
+    """Initialize private user files when setup creates the AppRC directory."""
+    manager = _user_only_app(tmp_path).manage(environment={})
+
+    if setup_method == "setup":
+        manager.setup()
+    else:
+        manager.setup_user_dotenv()
+
+    assert manager.writable_path("user").is_file()
+    assert manager.writable_path("user", secret=True).is_file()
+    assert manager.secret_status("user").available
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
-def test_user_setup_reports_shared_app_directory_and_keeps_repair_explicit(
-    tmp_path: Path,
+@pytest.mark.parametrize("setup_method", ["setup", "setup_user_dotenv"])
+def test_user_only_setup_reports_shared_directory_and_keeps_repair_explicit(
+    tmp_path: Path, setup_method: str
 ) -> None:
     """Do not report setup success when the user secret file cannot be created."""
-    app = _app(tmp_path)
+    app = _user_only_app(tmp_path)
     apprc_dir = tmp_path / "config"
     apprc_dir.mkdir()
     apprc_dir.chmod(0o755)
     manager = app.manage(environment={})
 
     with pytest.raises(ValueError) as exc_info:
-        manager.setup_user_dotenv()
+        if setup_method == "setup":
+            manager.setup()
+        else:
+            manager.setup_user_dotenv()
 
     message = str(exc_info.value)
     assert "parent directory is readable by other users" in message

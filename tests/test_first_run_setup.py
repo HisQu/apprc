@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from apprc.user_files.app_home.application import AppFiles
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from typer.core import TyperCommand
 import apprc.interfaces.cli.runtime as runtime_module
 from tests.support_declaration import app_from_envs
 from apprc.definition.app_config.storage import Storage
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.interfaces.cli.context import CliRuntimeOptions
 from apprc.interfaces.cli.runtime import CliRuntime, DefaultConfigCliState
 from apprc.user_files.storage_roots.registry import (
@@ -41,12 +43,14 @@ def _runtime(
     *,
     runtime_required: bool = True,
     setup_next_step: str | None = None,
+    user_dotenv: bool = False,
 ) -> CliRuntime[CliRuntimeOptions, DefaultConfigCliState]:
     """Return a storage runtime with the first-run prompt enabled."""
     kit = app_from_envs(
         app_id="first_run_demo",
         display_name="First Run Demo",
         config_package="storage.config",
+        user_dotenv=UserDotenv() if user_dotenv else None,
         storage=Storage(
             selector_env_key="FIRST_RUN_DEMO_STORAGE",
         ),
@@ -172,6 +176,37 @@ def test_first_runtime_use_accepts_custom_storage_path(
     assert session.apprc_context.resolved.selection is not None
     assert session.apprc_context.resolved.selection.root == custom_root
     assert (custom_root / "apprc.storage.env").is_file()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
+def test_interactive_runtime_setup_offers_user_secret_repair(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """First-run setup may repair permissions after selecting storage."""
+    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
+    monkeypatch.setenv("APPRC_EXAMPLE_STORAGE_API_TOKEN", "test-token")
+    _enable_tty(monkeypatch)
+    runtime = _runtime(tmp_path, user_dotenv=True)
+    apprc_dir = tmp_path / "apprc"
+    apprc_dir.mkdir()
+    apprc_dir.chmod(0o755)
+    selected_root = tmp_path / "selected-storage"
+    monkeypatch.setattr(
+        runtime_module,
+        "prompt_storage_setup_root",
+        lambda *, suggested: selected_root,
+    )
+    monkeypatch.setattr(typer, "confirm", lambda _: True)
+
+    session = runtime.prepare(_context(), CliRuntimeOptions())
+
+    assert session.apprc_context.resolved is not None
+    assert session.apprc_context.resolved.selection is not None
+    assert session.apprc_context.resolved.selection.root == selected_root
+    assert apprc_dir.stat().st_mode & 0o777 == 0o700
+    assert (apprc_dir / "apprc.user.secret.env").is_file()
+    assert (selected_root / "apprc.storage.env").is_file()
 
 
 def test_noninteractive_required_runtime_prints_exact_setup_command(

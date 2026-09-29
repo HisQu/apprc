@@ -79,6 +79,10 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+- Interactive `config setup` and first-run setup now offer a confirmed repair
+  when the selected user secret directory is not private, then retry with the
+  same paths. Declining or passing `--yes` keeps the fail-closed behavior.
+
 <br>
 
 ### 💔 Changed

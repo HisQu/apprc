@@ -6,6 +6,7 @@ from apprc.user_files.app_home.application import AppFiles
 
 # == Standard Library ========================
 import os
+import sys
 from pathlib import Path
 
 # == 3rd Party ===============================
@@ -21,7 +22,7 @@ from apprc.interfaces.cli._interactive_setup import (
     prompt_storage_setup_root,
 )
 from apprc.user_files.app_home.locations import normalize_apprc_dir
-from apprc.user_files.setup.flow import ConfigSetupError
+from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupResult
 from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces._setup_text import shell_export_commands
 from apprc.user_files.storage_roots.paths import (
@@ -44,6 +45,7 @@ def run_config_setup(
     assume_yes: bool = False,
     apprc_dir: str | Path | None = None,
     storage_root: str | Path | None = None,
+    allow_interactive_secret_repair: bool = False,
     config_group_name: str = "config",
     show_next_step: bool = False,
 ) -> None:
@@ -53,6 +55,8 @@ def run_config_setup(
     :param assume_yes: Whether to run without prompts.
     :param apprc_dir: Optional AppRC directory for this setup run.
     :param storage_root: Optional active storage root.
+    :param allow_interactive_secret_repair: Whether a caller that already
+        collected interactive setup choices may still offer permission repair.
     :param config_group_name: Config command group name used in generated
         guidance.
     :param show_next_step: Whether to print the declaration's next step after
@@ -70,6 +74,7 @@ def run_config_setup(
         apprc_dir=apprc_dir,
         assume_yes=assume_yes,
     )
+    manager = apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
     if not apprc.schema.uses_storage():
         if storage_root is not None:
             raise typer.BadParameter(
@@ -77,18 +82,18 @@ def run_config_setup(
                 param_hint="--storage-root",
             )
         try:
-            result = apprc.manage(
-                ResolveOptions(apprc_dir=selected_apprc_dir)
-            ).setup()
+            result = _run_setup_with_user_secret_repair(
+                manager,
+                assume_yes=assume_yes,
+                allow_interactive_secret_repair=allow_interactive_secret_repair,
+            )
         except ConfigSetupError as exc:
             raise typer.BadParameter(
                 str(exc),
                 param_hint=exc.param_hint,
             ) from exc
         if not assume_yes:
-            _prompt_required_fields(
-                apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
-            )
+            _prompt_required_fields(manager)
         _print_app_setup(
             apprc,
             apprc_dir=result.apprc_dir,
@@ -106,9 +111,10 @@ def run_config_setup(
         assume_yes=assume_yes,
     )
     try:
-        result = apprc.manage(
-            ResolveOptions(apprc_dir=selected_apprc_dir)
-        ).setup(
+        result = _run_setup_with_user_secret_repair(
+            manager,
+            assume_yes=assume_yes,
+            allow_interactive_secret_repair=allow_interactive_secret_repair,
             storage_root=root,
             storage_name=storage_name,
         )
@@ -118,9 +124,7 @@ def run_config_setup(
             param_hint=exc.param_hint or "--storage-root",
         ) from exc
     if not assume_yes:
-        _prompt_required_fields(
-            apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
-        )
+        _prompt_required_fields(manager)
     _print_storage_setup(
         apprc,
         apprc_dir=result.apprc_dir,
@@ -132,6 +136,72 @@ def run_config_setup(
     )
     if show_next_step:
         _print_setup_next_step(apprc)
+
+
+def _run_setup_with_user_secret_repair(
+    manager: ConfigManager,
+    *,
+    assume_yes: bool,
+    allow_interactive_secret_repair: bool,
+    storage_root: Path | None = None,
+    storage_name: str = "default",
+) -> ConfigSetupResult:
+    """Offer one confirmed repair for an unsafe user secret directory.
+
+    :param manager: Manager bound to the selected AppRC directory.
+    :param assume_yes: Whether setup should skip its own prompts.
+    :param allow_interactive_secret_repair: Whether an interactive caller
+        selected setup inputs before invoking this operation.
+    :param storage_root: Selected storage root, when storage is enabled.
+    :param storage_name: Selected storage registry name.
+    :return: Paths initialized by setup.
+    """
+    try:
+        return manager.setup(
+            storage_root=storage_root,
+            storage_name=storage_name,
+        )
+    except ConfigSetupError as setup_error:
+        if (
+            setup_error.param_hint != "--apprc-dir"
+            or (assume_yes and not allow_interactive_secret_repair)
+            or not sys.stdin.isatty()
+            or not sys.stdout.isatty()
+            or not manager.schema.uses_user_dotenv()
+        ):
+            raise
+        status = manager.secret_status("user")
+        if status.issue != "The parent directory is readable by other users.":
+            raise
+        access_change = (
+            "Restrict access to this user, SYSTEM, and Administrators"
+            if os.name == "nt"
+            else "Make the directory accessible only to its owner"
+        )
+        if not typer.confirm(
+            f"The user secret directory at {status.path.parent} is not "
+            f"private. {access_change} and continue setup?"
+        ):
+            raise
+        try:
+            repaired = manager.repair_secret_permissions("user")
+        except (OSError, ValueError) as exc:
+            raise ConfigSetupError(
+                f"Could not repair user secret permissions: {exc}",
+                param_hint="--apprc-dir",
+            ) from exc
+        if not repaired.available:
+            issue = (
+                repaired.issue or "The user secret directory is unavailable."
+            )
+            raise ConfigSetupError(
+                f"Could not repair user secret permissions: {issue}",
+                param_hint="--apprc-dir",
+            )
+        return manager.setup(
+            storage_root=storage_root,
+            storage_name=storage_name,
+        )
 
 
 def _print_setup_next_step(apprc: AppRC) -> None:

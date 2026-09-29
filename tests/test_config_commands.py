@@ -1,21 +1,25 @@
 from __future__ import annotations
-from apprc.interfaces.cli.config_command.app import build_config_typer_app
-
-
-from apprc.user_files.app_home.application import AppFiles
 
 import json
+import os
+import sys
 from pathlib import Path
+from typing import Any
 
+import pytest
+import typer
 from typer.testing import CliRunner
 
 import apprc.interfaces.cli.config_command._runtime_commands as runtime_commands
-from tests.support_declaration import app_from_envs
 from apprc.definition.app_config.storage import Storage
+from apprc.interfaces.cli.config_command.app import build_config_typer_app
 from apprc.interfaces.cli.setup_command import run_config_setup
+from apprc.services.manager import ConfigManager, WriteScope
+from apprc.user_files.app_home.application import AppFiles
 from apprc.user_files.storage_roots.registry import (
     load_storage_registry_or_empty,
 )
+from tests.support_declaration import app_from_envs
 from tests.support_config import (
     ApprcExampleAppConfigState,
     ApprcExampleAppEnv,
@@ -58,6 +62,226 @@ def test_setup_default_storage_follows_relocated_apprc_directory(
     )
     assert registry.selected("default").root == apprc_dir / "storage"
     assert (apprc_dir / "storage" / "apprc.storage.env").is_file()
+
+
+def _make_shared_apprc_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    apprc_dir: Path,
+) -> set[Path]:
+    """Make one existing test directory fail the private-secret check."""
+    from apprc.user_files.env_files import secrets
+
+    apprc_dir.mkdir()
+    private_paths: set[Path] = set()
+    if os.name == "nt":
+
+        def acl_is_private(path: Path) -> bool:
+            return path in private_paths
+
+        def set_private_acl(path: Path) -> None:
+            private_paths.add(path)
+
+        monkeypatch.setattr(secrets, "windows_acl_is_private", acl_is_private)
+        monkeypatch.setattr(secrets, "set_windows_private_acl", set_private_acl)
+    else:
+        apprc_dir.chmod(0o755)
+    return private_paths
+
+
+def test_interactive_setup_repairs_selected_user_directory_and_retries_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Repair the selected AppRC directory and retry the same storage setup."""
+    apprc_dir = tmp_path / "selected-config"
+    private_paths = _make_shared_apprc_directory(monkeypatch, apprc_dir)
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        _StreamProxy(sys.stdin, interactive=True),
+    )
+    monkeypatch.setattr(
+        sys,
+        "stdout",
+        _StreamProxy(sys.stdout, interactive=True),
+    )
+    setup_calls: list[tuple[ConfigManager, Path | None, str]] = []
+    repair_calls: list[tuple[ConfigManager, str]] = []
+    original_setup = ConfigManager.setup
+    original_repair = ConfigManager.repair_secret_permissions
+
+    def record_setup(
+        manager: ConfigManager,
+        *,
+        storage_root: Path | None = None,
+        storage_name: str = "default",
+    ):
+        setup_calls.append((manager, storage_root, storage_name))
+        return original_setup(
+            manager,
+            storage_root=storage_root,
+            storage_name=storage_name,
+        )
+
+    def record_repair(
+        manager: ConfigManager,
+        scope: WriteScope,
+        *,
+        storage: str | None = None,
+    ):
+        repair_calls.append((manager, scope))
+        return original_repair(manager, scope, storage=storage)
+
+    monkeypatch.setattr(ConfigManager, "setup", record_setup)
+    monkeypatch.setattr(
+        ConfigManager,
+        "repair_secret_permissions",
+        record_repair,
+    )
+    prompts: list[str] = []
+    monkeypatch.setattr(
+        typer,
+        "confirm",
+        lambda message: prompts.append(message) or True,
+    )
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "work")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_ACCESS_TOKEN", "test-token")
+    kit = build_apprc_example_app()
+    storage_root = tmp_path / "selected-storage"
+
+    run_config_setup(
+        kit,
+        apprc_dir=apprc_dir,
+        storage_root=storage_root,
+    )
+
+    assert len(prompts) == 1
+    assert str(apprc_dir) in prompts[0]
+    assert len(setup_calls) == 2
+    assert setup_calls[0][0] is setup_calls[1][0]
+    assert setup_calls[0][1:] == (storage_root, "work")
+    assert setup_calls[1][1:] == (storage_root, "work")
+    assert repair_calls == [(setup_calls[0][0], "user")]
+    assert (apprc_dir / "apprc.user.secret.env").is_file()
+    assert (storage_root / "apprc.storage.env").is_file()
+    registry = load_storage_registry_or_empty(apprc_dir / "apprc.toml")
+    assert registry.selected("work").root == storage_root
+    if os.name == "nt":
+        assert apprc_dir in private_paths
+    else:
+        assert apprc_dir.stat().st_mode & 0o777 == 0o700
+
+
+def test_declined_setup_repair_leaves_directory_and_files_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Declining setup repair does not change permissions or create files."""
+    apprc_dir = tmp_path / "selected-config"
+    private_paths = _make_shared_apprc_directory(monkeypatch, apprc_dir)
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        _StreamProxy(sys.stdin, interactive=True),
+    )
+    monkeypatch.setattr(
+        sys,
+        "stdout",
+        _StreamProxy(sys.stdout, interactive=True),
+    )
+    prompts: list[str] = []
+    monkeypatch.setattr(
+        typer,
+        "confirm",
+        lambda message: prompts.append(message) or False,
+    )
+    kit = build_apprc_example_app()
+
+    with pytest.raises(typer.BadParameter) as exc_info:
+        run_config_setup(
+            kit,
+            apprc_dir=apprc_dir,
+            storage_root=tmp_path / "selected-storage",
+        )
+
+    assert "config secrets repair --scope user" in str(exc_info.value)
+    assert len(prompts) == 1
+    assert str(apprc_dir) in prompts[0]
+    assert list(apprc_dir.iterdir()) == []
+    if os.name == "nt":
+        assert not private_paths
+    else:
+        assert apprc_dir.stat().st_mode & 0o777 == 0o755
+
+
+class _StreamProxy:
+    """Delegate a captured stream while controlling its TTY status."""
+
+    def __init__(self, stream: Any, *, interactive: bool) -> None:
+        self._stream = stream
+        self._interactive = interactive
+
+    def isatty(self) -> bool:
+        return self._interactive
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._stream, name)
+
+
+@pytest.mark.parametrize("assume_yes", [False, True])
+def test_noninteractive_setup_keeps_user_secret_repair_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    assume_yes: bool,
+) -> None:
+    """No TTY or --yes keeps the existing repair guidance without changes."""
+    apprc_dir = tmp_path / "selected-config"
+    private_paths = _make_shared_apprc_directory(monkeypatch, apprc_dir)
+    if not assume_yes:
+        monkeypatch.setattr(
+            sys,
+            "stdin",
+            _StreamProxy(sys.stdin, interactive=False),
+        )
+        monkeypatch.setattr(
+            sys,
+            "stdout",
+            _StreamProxy(sys.stdout, interactive=False),
+        )
+    else:
+        monkeypatch.setattr(
+            sys,
+            "stdin",
+            _StreamProxy(sys.stdin, interactive=True),
+        )
+        monkeypatch.setattr(
+            sys,
+            "stdout",
+            _StreamProxy(sys.stdout, interactive=True),
+        )
+    monkeypatch.setattr(
+        typer,
+        "confirm",
+        lambda _: pytest.fail("Noninteractive setup must not prompt."),
+    )
+    kit = build_apprc_example_app()
+
+    with pytest.raises(typer.BadParameter) as exc_info:
+        run_config_setup(
+            kit,
+            assume_yes=assume_yes,
+            apprc_dir=apprc_dir,
+            storage_root=tmp_path / "selected-storage",
+        )
+
+    assert "config secrets repair --scope user" in str(exc_info.value)
+    assert not (apprc_dir / "apprc.user.env").exists()
+    assert not (apprc_dir / "apprc.user.secret.env").exists()
+    assert not (apprc_dir / "apprc.toml").exists()
+    if os.name == "nt":
+        assert not private_paths
+    else:
+        assert apprc_dir.stat().st_mode & 0o777 == 0o755
 
 
 def test_config_doctor_reports_required_field_without_runtime_policy(

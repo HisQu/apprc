@@ -604,6 +604,11 @@ After `config setup` succeeds, AppRC prints the declaration's
 [`setup_next_step`](References.md#declarations) after the doctor command. It
 prints this block after required-field prompts, or directly when you pass
 `--yes`.
+If an existing AppRC directory is not private, interactive setup asks before
+changing its permissions and retries after confirmation. Declining the prompt
+or using `--yes` leaves permissions unchanged; use the reported
+`config secrets repair --scope user` command when you want to repair them
+separately.
 The [custom-callback example](EXAMPLES.md#an-application-owned-cli-callback)
 shows how to keep an application-owned Typer callback.
 

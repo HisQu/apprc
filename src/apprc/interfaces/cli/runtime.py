@@ -483,6 +483,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
         run_config_setup(
             self.apprc,
             assume_yes=True,
+            allow_interactive_secret_repair=True,
             storage_root=selected_root,
             apprc_dir=manager.paths.root,
             config_group_name=self.config_group_name,

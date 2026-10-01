@@ -1,6 +1,8 @@
 """Parent-owned dependency config imports stay within one resolution."""
 
 import importlib
+import logging
+from copy import deepcopy
 from dataclasses import FrozenInstanceError, dataclass, field as dc_field
 from pathlib import Path
 from typing import Any, cast
@@ -151,6 +153,299 @@ def test_parent_apps_import_one_dependency_without_changing_its_owner(
     assert first_config.base_url == "https://first.example"
 
 
+def test_parent_secret_metadata_redacts_logs_and_nested_serialization(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Parent secret metadata applies to every AppRC display path."""
+    dependency = rc.AppRC(app_id="dependency")
+
+    @dependency.config("client", prefix="DEP_CLIENT_")
+    class ClientRC(rc.Config):
+        endpoint: str = rc.field(
+            "DEP_CLIENT_ENDPOINT", default="dependency-endpoint"
+        )
+
+    host = rc.AppRC(app_id="host")
+    binding = host.import_dependency_config(
+        dependency,
+        ClientRC,
+        key="client",
+        prefix="HOST_CLIENT_",
+        fields={"endpoint": rc.field("HOST_CLIENT_ENDPOINT", secret=True)},
+        field_targets={"endpoint": "endpoint"},
+    )
+
+    @host.bundle
+    @dataclass(kw_only=True)
+    class HostSettings(rc.ConfigBase):
+        client: ClientRC = dc_field(default_factory=ClientRC)  # pyright: ignore[reportInvalidTypeForm]
+
+    resolved = host.resolve(
+        environment={"HOST_CLIENT_ENDPOINT": "parent-secret-value"}
+    )
+    client = cast(Any, resolved.build(binding))
+    bundle = resolved.build(HostSettings)
+
+    assert client.to_dict()["endpoint"] == "<redacted>"
+    assert bundle.to_dict()["client"]["endpoint"] == "<redacted>"
+    assert ClientRC.__dataclass_fields__["endpoint"].repr is True
+    assert binding.runtime_config_type is not ClientRC
+
+    caplog.set_level(logging.WARNING, logger="apprc.runtime.config.base")
+    client.endpoint = "mutated-parent-secret"
+    assert "mutated-parent-secret" not in caplog.text
+    assert "<redacted>" in caplog.text
+
+
+def test_import_binding_identity_survives_deepcopy_and_scoped_reload(
+    tmp_path: Path,
+) -> None:
+    """Runtime copies reload only from the binding that created them."""
+    dependency, ClientRC = _dependency(tmp_path)
+    host = rc.AppRC(app_id="host")
+    binding = _host_import(host, dependency, ClientRC, prefix="HOST_CLIENT_")
+    resolved = host.resolve(
+        environment={
+            "HOST_CLIENT_API_KEY": "test-secret",
+            "HOST_CLIENT_CHAT_MODEL": "source-model",
+        }
+    )
+    client = cast(
+        Any,
+        resolved.build(binding, model_llm="constructor-model"),
+    )
+    copied = deepcopy(client)
+    scoped = client.scoped(model_llm="scoped-model")
+
+    copied.reload_from(resolved)
+    assert copied.model_llm == "constructor-model"
+    assert copied.model_fast == "source-model"
+    copied.reload_from(resolved, override_python_values=True)
+    assert copied.model_llm == copied.model_fast == "source-model"
+    scoped.reload_from(resolved)
+    assert scoped.model_llm == "scoped-model"
+    assert scoped.model_fast == "source-model"
+    scoped.reload_from(resolved, override_python_values=True)
+    assert scoped.model_llm == scoped.model_fast == "source-model"
+
+    other = rc.AppRC(app_id="other-host")
+    other_binding = _host_import(
+        other, dependency, ClientRC, prefix="OTHER_CLIENT_"
+    )
+    other_resolved = other.resolve(
+        environment={"OTHER_CLIENT_CHAT_MODEL": "other-model"}
+    )
+    assert other_binding is not binding
+    with pytest.raises(ValueError, match="exact ImportedConfig binding"):
+        copied.reload_from(other_resolved)
+
+
+def test_parent_can_import_two_maps_of_the_same_dependency_section(
+    tmp_path: Path,
+) -> None:
+    """Distinct parent namespaces can reuse one dependency's source schema."""
+    dependency, ClientRC = _dependency(tmp_path)
+    host = rc.AppRC(app_id="host")
+
+    def add_client(name: str, prefix: str) -> rc.ImportedConfig[Any]:
+        return host.import_dependency_config(
+            dependency,
+            ClientRC,
+            key=f"{name}.client",
+            prefix=prefix,
+            fields={
+                "api_key": rc.field(f"{prefix}API_KEY", secret=True),
+                "endpoint": rc.field(
+                    f"{prefix}ENDPOINT", default=f"{name}-endpoint"
+                ),
+                "model": rc.field(f"{prefix}MODEL", default=f"{name}-model"),
+            },
+            field_targets={
+                "api_key": "api_key",
+                "base_url": "endpoint",
+                "model_llm": "model",
+                "model_fast": "model",
+            },
+        )
+
+    first_binding = add_client("first", "FIRST_CLIENT_")
+    second_binding = add_client("second", "SECOND_CLIENT_")
+    resolved = host.resolve(
+        environment={
+            "FIRST_CLIENT_API_KEY": "first-secret",
+            "FIRST_CLIENT_ENDPOINT": "https://first.example",
+            "SECOND_CLIENT_API_KEY": "second-secret",
+            "SECOND_CLIENT_ENDPOINT": "https://second.example",
+        }
+    )
+
+    first = resolved.build(first_binding)
+    second = resolved.build(second_binding)
+    assert first.api_key == "first-secret"
+    assert first.base_url == "https://first.example"
+    assert second.api_key == "second-secret"
+    assert second.base_url == "https://second.example"
+    with pytest.raises(ValueError, match="multiple imported bindings"):
+        resolved.build(ClientRC)
+
+
+def test_alias_source_binds_siblings_when_one_field_is_overridden(
+    tmp_path: Path,
+) -> None:
+    """A Python override protects only its alias field, not the shared key."""
+    dependency, ClientRC = _dependency(tmp_path)
+    host = rc.AppRC(app_id="host")
+    binding = _host_import(host, dependency, ClientRC, prefix="HOST_CLIENT_")
+    resolved = host.resolve(
+        environment={
+            "HOST_CLIENT_API_KEY": "test-secret",
+            "HOST_CLIENT_CHAT_MODEL": "source-model",
+        }
+    )
+
+    client = cast(
+        Any,
+        resolved.build(binding, model_llm="constructor-model"),
+    )
+    assert client.model_llm == "constructor-model"
+    assert client.model_fast == "source-model"
+    assert client.provenance_of("model_fast").env_key == (
+        "HOST_CLIENT_CHAT_MODEL"
+    )
+    assert client.provenance_of("model_fast").origin == (
+        "shell_export_variable"
+    )
+
+    client.model_llm = "assigned-model"
+    client.reload_from(resolved)
+    assert client.model_llm == "assigned-model"
+    assert client.model_fast == "source-model"
+    assert client.provenance_of("model_fast").origin == (
+        "shell_export_variable"
+    )
+    client.reload_from(resolved, override_python_values=True)
+    assert client.model_llm == client.model_fast == "source-model"
+
+
+def test_storage_import_requires_valid_parent_selection(
+    tmp_path: Path,
+) -> None:
+    """Storage-bound dependency sections use only selected parent storage."""
+    dependency_home = tmp_path / "dependency-home"
+    dependency_storage = tmp_path / "dependency-storage"
+    dependency_home.mkdir()
+    dependency_storage.mkdir()
+    (dependency_home / "apprc.user.env").write_text(
+        "PROVIDER_RAG_SOURCE=dependency-user\n", encoding="utf-8"
+    )
+    (dependency_storage / "apprc.storage.env").write_text(
+        "PROVIDER_RAG_SOURCE=dependency-storage\n", encoding="utf-8"
+    )
+    dependency = rc.AppRC(
+        app_id="provider",
+        user_dotenv=rc.UserDotenv(),
+        storage=rc.Storage(selector_env_key="PROVIDER_STORAGE"),
+        apprc_dir=dependency_home,
+        apprc_dir_env_key="PROVIDER_APPRC_DIR",
+    )
+
+    @dependency.config("rag", prefix="PROVIDER_RAG_", requires_storage=True)
+    class RagRC(rc.Config):
+        source: str = rc.field("PROVIDER_RAG_SOURCE", default="dep-default")
+
+    storage_free_parent = rc.AppRC(app_id="storage-free")
+    with pytest.raises(ValueError, match="parent AppRC must declare storage"):
+        storage_free_parent.import_dependency_config(
+            dependency,
+            RagRC,
+            key="rag",
+            prefix="FREE_RAG_",
+            fields={"source": rc.field("FREE_RAG_SOURCE", default="parent")},
+            field_targets={"source": "source"},
+        )
+
+    parent_home = tmp_path / "parent-home"
+    parent_storage = tmp_path / "parent-storage"
+    parent_storage.mkdir()
+    (parent_storage / "apprc.storage.env").write_text(
+        "HOST_RAG_SOURCE=parent-storage\n", encoding="utf-8"
+    )
+    host = rc.AppRC(
+        app_id="host",
+        user_dotenv=rc.UserDotenv(),
+        storage=rc.Storage(selector_env_key="HOST_STORAGE"),
+        apprc_dir=parent_home,
+        apprc_dir_env_key="HOST_APPRC_DIR",
+    )
+    binding = host.import_dependency_config(
+        dependency,
+        RagRC,
+        key="rag",
+        prefix="HOST_RAG_",
+        fields={"source": rc.field("HOST_RAG_SOURCE")},
+        field_targets={"source": "source"},
+    )
+    assert binding.parent_owner.requires_storage is True
+
+    dependency_environment = {
+        "PROVIDER_STORAGE": str(dependency_storage),
+        "PROVIDER_APPRC_DIR": str(dependency_home),
+        "PROVIDER_RAG_SOURCE": "dependency-environment",
+    }
+
+    same_namespace_parent = rc.AppRC(
+        app_id="provider",
+        storage=rc.Storage(selector_env_key="PROVIDER_STORAGE"),
+    )
+    with pytest.raises(ValueError, match="Dependency environment keys"):
+        same_namespace_parent.import_dependency_config(
+            dependency,
+            RagRC,
+            key="same-namespace-rag",
+            prefix="HOST_RAG_",
+            fields={"source": rc.field("HOST_RAG_SOURCE")},
+            field_targets={"source": "source"},
+        )
+
+    absent = host.resolve(environment=dependency_environment)
+    with pytest.raises(ValueError, match="valid storage selection"):
+        absent.build(binding)
+    absent_inspection = host.manage(
+        environment=dependency_environment
+    ).inspect()
+    assert absent_inspection.fields[0].active is False
+
+    invalid_inspection = host.manage(
+        environment=dependency_environment
+    ).inspect(storage="missing-storage")
+    assert invalid_inspection.fields[0].active is False
+    with pytest.raises(ValueError, match="valid storage selection"):
+        invalid_inspection.resolved.build(binding)
+
+    selected = host.resolve(
+        rc.ResolveOptions(storage=str(parent_storage)),
+        environment=dependency_environment,
+    )
+    assert selected.selection is not None
+    config = cast(Any, selected.build(binding))
+    assert config.source == "parent-storage"
+    assert "PROVIDER_STORAGE" not in selected.values
+    assert "PROVIDER_APPRC_DIR" not in selected.values
+    assert "PROVIDER_RAG_SOURCE" not in selected.values
+    assert all(
+        layer.path
+        not in (
+            dependency_home / "apprc.user.env",
+            dependency_storage / "apprc.storage.env",
+        )
+        for layer in selected.layers
+    )
+    config.reload_from(selected)
+    with pytest.raises(ValueError, match="valid storage selection"):
+        config.reload_from(absent)
+
+
 def test_import_can_select_fields_and_keep_defaulted_dependency_fields(
     tmp_path: Path,
 ) -> None:
@@ -196,6 +491,54 @@ def test_import_can_select_fields_and_keep_defaulted_dependency_fields(
         "api_key",
         "endpoint",
     }
+
+
+def test_required_parent_fields_do_not_fall_back_to_dependency_defaults() -> (
+    None
+):
+    """Parent-required fields stay missing despite dependency defaults."""
+    dependency = rc.AppRC(app_id="dependency")
+
+    @dependency.config("client", prefix="DEP_CLIENT_")
+    class ClientRC(rc.Config):
+        endpoint: str = rc.field(
+            "DEP_CLIENT_ENDPOINT", default="dependency-endpoint"
+        )
+        token: str = rc.field(
+            "DEP_CLIENT_TOKEN",
+            default_factory=lambda: "dependency-factory-token",
+        )
+
+    host = rc.AppRC(app_id="host")
+    binding = host.import_dependency_config(
+        dependency,
+        ClientRC,
+        key="client",
+        prefix="HOST_CLIENT_",
+        fields={
+            "endpoint": rc.field("HOST_CLIENT_ENDPOINT"),
+            "token": rc.field("HOST_CLIENT_TOKEN"),
+        },
+        field_targets={"endpoint": "endpoint", "token": "token"},
+    )
+
+    empty = host.resolve(environment={})
+    with pytest.raises(RuntimeError, match="Missing required config value"):
+        empty.build(binding)
+
+    supplied = host.resolve(
+        environment={
+            "HOST_CLIENT_ENDPOINT": "parent-endpoint",
+            "HOST_CLIENT_TOKEN": "parent-token",
+        }
+    )
+    config = supplied.build(binding)
+    assert config.endpoint == "parent-endpoint"
+    assert config.token == "parent-token"
+    with pytest.raises(RuntimeError, match="Missing required config value"):
+        config.reload_from(empty)
+    assert config.endpoint == "parent-endpoint"
+    assert config.token == "parent-token"
 
 
 def test_omitted_secret_default_stays_redacted_on_imported_config() -> None:
@@ -300,6 +643,42 @@ def test_parent_resolution_ignores_dependency_user_storage_and_environment(
     )
     assert standalone.api_key == "standalone-secret"
     assert standalone.base_url == "https://standalone.example"
+
+
+def test_manager_paths_and_edit_preview_filter_dependency_environment(
+    tmp_path: Path,
+) -> None:
+    """Management paths and edit previews use the runtime input boundary."""
+    dependency, ClientRC = _dependency(tmp_path)
+    parent_home = tmp_path / "parent-home"
+    dependency_home = tmp_path / "dependency-home"
+    host = rc.AppRC(
+        app_id="host",
+        user_dotenv=rc.UserDotenv(),
+        apprc_dir=parent_home,
+        apprc_dir_env_key="HOST_APPRC_DIR",
+    )
+    _host_import(host, dependency, ClientRC, prefix="HOST_CLIENT_")
+    explicit = tmp_path / "host-inputs.env"
+    explicit.write_text("HOST_APPRC_DIR=${DEP_LOCATION}\n", encoding="utf-8")
+    manager = host.manage(
+        rc.ResolveOptions(env_files=(explicit,)),
+        environment={"DEP_LOCATION": str(dependency_home)},
+    )
+
+    runtime = manager.resolve()
+    assert runtime.paths is not None
+    assert manager.paths == runtime.paths
+    assert manager.paths.root == parent_home.resolve()
+    manager.setup_user_dotenv()
+
+    plan = manager.plan_update("timeout", "12", scope="user")
+    assert plan.path == manager.paths.user_dotenv
+    preview = manager.preview_edit(plan)
+    timeout = next(
+        item for item in preview.fields if item.field.name == "timeout"
+    )
+    assert timeout.value == 12
 
 
 def test_dependency_packaged_defaults_are_opt_in_and_below_parent_defaults(

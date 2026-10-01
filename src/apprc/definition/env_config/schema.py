@@ -102,6 +102,15 @@ class ConfigOwner:
         compare=False,
     )
 
+    def __deepcopy__(self, memo: dict[int, object]) -> ConfigOwner:
+        """Keep frozen owner identity shared across runtime config copies.
+
+        :param memo: Deepcopy's memo table.
+        :return: This immutable owner declaration.
+        """
+        memo[id(self)] = self
+        return self
+
     def field(self, name: str) -> ConfigField:
         """Return one owner-local field spec."""
         for spec in self.fields:

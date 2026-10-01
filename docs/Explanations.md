@@ -458,6 +458,14 @@ parent opts in; selected values then sit below the parent's packaged defaults.
 The parent's [field metadata and provenance](#provenance) describe the value
 that the dependency receives.
 
+When an imported section requires storage, the parent must declare
+`storage=rc.Storage()` and choose a valid parent storage before building that
+section. Inspection leaves its fields inactive until the parent selects
+storage. The parent's selected storage layer can supply mapped settings; the
+dependency's storage selector, registry, user files, and storage files remain
+outside the import. The host passes any storage paths the dependency needs
+through its normal integration API.
+
 `ResolvedConfig.build(binding)` constructs the dependency section from that
 parent snapshot. A parent config bundle can also declare the dependency class as
 a child; AppRC injects that child from the same snapshot. Calling the bundle's

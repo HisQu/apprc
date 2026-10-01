@@ -887,6 +887,13 @@ secret field cannot weaken a secret declared by the dependency. The
 [API reference](References.md#dependency-config-imports) documents field-map
 validation, packaged-default opt-in, and snapshot behavior.
 
+If the imported dependency section uses `requires_storage=True`, declare
+`storage=rc.Storage()` on `HostRC` and select a valid parent storage before
+building it. The parent's selected storage layer can provide mapped settings;
+the dependency's storage selector, registry, and files remain excluded. The
+host supplies any storage paths required by the dependency through its normal
+integration API.
+
 <a id="reload-and-export"></a>
 ## Reload settings or use temporary overrides
 

@@ -28,6 +28,8 @@ class ImportedConfig(Generic[ConfigTypeT]):
     :param dependency_owner: Dependency schema captured at import time.
     :param runtime_owner: Instance owner used when building the dependency.
     :param field_targets: Dependency field name to parent field name mapping.
+    :param dependency_control_env_keys: Dependency storage and directory keys
+        excluded from parent input.
     :param config_package: Optional dependency package for opted-in defaults.
     :param dependency_env_prefixes: Declared dependency field prefixes excluded
         from parent inputs.
@@ -44,6 +46,7 @@ class ImportedConfig(Generic[ConfigTypeT]):
     runtime_owner: ConfigOwner
     field_targets: Mapping[str, str]
     dependency_env_prefixes: tuple[str, ...] = ()
+    dependency_control_env_keys: tuple[str, ...] = ()
     config_package: str | None = None
     include_packaged_defaults: bool = False
     runtime_config_type: type[ConfigTypeT] | None = None
@@ -58,16 +61,57 @@ class ImportedConfig(Generic[ConfigTypeT]):
             "dependency_env_prefixes",
             tuple(dict.fromkeys(self.dependency_env_prefixes)),
         )
+        object.__setattr__(
+            self,
+            "dependency_control_env_keys",
+            tuple(dict.fromkeys(self.dependency_control_env_keys)),
+        )
         if self.runtime_config_type is None:
             object.__setattr__(self, "runtime_config_type", self.config_type)
+
+    def __deepcopy__(self, memo: dict[int, object]) -> Self:
+        """Keep this immutable binding's identity across runtime copies."""
+        memo[id(self)] = self
+        return self
 
     @property
     def dependency_env_keys(self) -> frozenset[str]:
         """Return dependency field keys that must stay out of parent inputs."""
         return frozenset(
-            self.dependency_owner.env_key(field_name)
-            for field_name in self.field_targets
+            {
+                self.dependency_owner.env_key(field_name)
+                for field_name in self.field_targets
+            }
+            | set(self.dependency_control_env_keys)
         )
+
+
+def filter_dependency_environment(
+    environment: Mapping[str, str],
+    imported_configs: tuple[ImportedConfig[object], ...],
+) -> dict[str, str]:
+    """Remove imported dependency keys before parent input processing.
+
+    :param environment: Captured process or file-derived environment values.
+    :param imported_configs: Parent-owned imports that define dependency keys.
+    :return: A new mapping without dependency-owned keys.
+    """
+    excluded_keys = frozenset(
+        key for item in imported_configs for key in item.dependency_env_keys
+    )
+    excluded_prefixes = tuple(
+        dict.fromkeys(
+            prefix
+            for item in imported_configs
+            for prefix in item.dependency_env_prefixes
+        )
+    )
+    return {
+        key: value
+        for key, value in environment.items()
+        if key not in excluded_keys
+        and not any(key.startswith(prefix) for prefix in excluded_prefixes)
+    }
 
 
 @dataclass(frozen=True, slots=True)

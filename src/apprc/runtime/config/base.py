@@ -187,10 +187,16 @@ class BaseConfig:
 
     def _format_field_value_for_log(self, key: str, value: Any) -> str:
         """Return ``repr(value)`` unless the dataclass field is redacted."""
-        field_def = next((f for f in fields(self) if f.name == key), None)
-        if field_def is not None and not field_def.repr:
+        if self._is_field_secret(key):
             return "<redacted>"
         return repr(value)
+
+    def _is_field_secret(self, field_name: str) -> bool:
+        """Return whether the effective config field must be redacted."""
+        field_def = next(
+            (item for item in fields(self) if item.name == field_name), None
+        )
+        return field_def is not None and not field_def.repr
 
     # ===========================================================
     # -- Copying
@@ -339,6 +345,8 @@ class BaseConfig:
         value: Any,
     ) -> Any:
         """Turn dataclass fields into JSON-friendly public data."""
+        if isinstance(value, BaseConfig):
+            return value.to_dict()
         if is_dataclass(value):
             return {
                 f.name: cls._serialize_public_value(
@@ -366,7 +374,9 @@ class BaseConfig:
         """Serialize this config object into a JSON-friendly public mapping."""
         return {
             f.name: self._serialize_public_value(
-                "<redacted>" if not f.repr else getattr(self, f.name)
+                "<redacted>"
+                if self._is_field_secret(f.name)
+                else getattr(self, f.name)
             )
             for f in fields(self)
             if not f.name.startswith("_") and not f.metadata.get("internal")

@@ -83,8 +83,13 @@ All notable changes to `AppRC` will be documented in this file.
 
 - Added `AppRC.import_dependency_config()` so a parent can explicitly map a
   dependency's leaf config section to parent-owned fields and build it from the
-  parent's `ResolvedConfig`. Dependency environment, user, and storage values
-  are excluded; dependency packaged defaults remain opt-in.
+  parent's `ResolvedConfig`. Parent fields own mapped defaults, validation,
+  secrets, and provenance; aliases are supported, and one dependency section
+  can have separate bindings in different parent namespaces. Dependency
+  environment, selectors, registries, user files, and storage files are
+  excluded. A storage-required section uses the parent's selected storage
+  after the parent enables and selects storage. Dependency packaged defaults
+  remain opt-in.
 
 <br>
 

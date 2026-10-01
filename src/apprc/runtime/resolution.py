@@ -18,6 +18,7 @@ from apprc.definition.resolution import (
     ConfigSource,
     ImportedConfig,
     ResolveOptions,
+    filter_dependency_environment,
 )
 from apprc.user_files.env_files.layers import (
     defaults_dotenv_resource,
@@ -157,6 +158,14 @@ class ResolvedConfig:
         if isinstance(config_type, ImportedConfig):
             imported = self._require_imported_config(config_type)
             if (
+                imported.parent_owner.requires_storage
+                and self.selection is None
+            ):
+                raise ValueError(
+                    f"{imported.parent_owner.title} requires a valid storage "
+                    "selection in the parent resolution."
+                )
+            if (
                 "_apprc_source" in overrides
                 or "_apprc_owner_override" in overrides
             ):
@@ -174,6 +183,7 @@ class ResolvedConfig:
                 "_apprc_imported_field_names",
                 frozenset(imported.field_targets),
             )
+            object.__setattr__(instance, "_apprc_imported_binding", imported)
             return cast(T, instance)
         self.require_registered(config_type)
         imported = self._imported_for_type(config_type)
@@ -289,30 +299,10 @@ def resolve_config(
     :return: Immutable resolved inputs ready to build runtime objects.
     """
     options = options or ResolveOptions()
-    excluded_dependency_keys = frozenset(
-        key for item in imported_configs for key in item.dependency_env_keys
+    original = filter_dependency_environment(
+        dict(os.environ if environment is None else environment),
+        imported_configs,
     )
-    excluded_dependency_prefixes = tuple(
-        dict.fromkeys(
-            prefix
-            for item in imported_configs
-            for prefix in item.dependency_env_prefixes
-        )
-    )
-
-    def is_dependency_env_key(key: str) -> bool:
-        """Return whether a key belongs to an imported dependency namespace."""
-        return key in excluded_dependency_keys or any(
-            key.startswith(prefix) for prefix in excluded_dependency_prefixes
-        )
-
-    original = {
-        key: value
-        for key, value in dict(
-            os.environ if environment is None else environment
-        ).items()
-        if not is_dependency_env_key(key)
-    }
     if (
         options.storage is not None or options.storage_required
     ) and not schema.uses_storage():
@@ -331,11 +321,9 @@ def resolve_config(
             raise
         issues.append(str(exc))
         explicit_layers, explicit_values = (), {}
-    explicit_values = {
-        key: value
-        for key, value in explicit_values.items()
-        if not is_dependency_env_key(key)
-    }
+    explicit_values = filter_dependency_environment(
+        explicit_values, imported_configs
+    )
     selector_env = selection_env(
         original_env=original,
         explicit_values=explicit_values,
@@ -405,11 +393,7 @@ def resolve_config(
         resource: tuple[str, str] | None = None,
     ) -> None:
         """Record each input layer once for both inspection and binding."""
-        parent_values = {
-            key: value
-            for key, value in values.items()
-            if not is_dependency_env_key(key)
-        }
+        parent_values = filter_dependency_environment(values, imported_configs)
         layers.append(
             ResolvedLayer(
                 origin,

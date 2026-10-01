@@ -146,7 +146,7 @@ binding scoped to this parent declaration.
 | Argument | Meaning |
 | --- | --- |
 | `dependency` | The `AppRC` that registered the dependency section. |
-| `ConfigType` | One leaf subclass of `rc.Config` registered on `dependency`. Sections requiring dependency storage cannot be imported. |
+| `ConfigType` | One leaf subclass of `rc.Config` registered on `dependency`. If its section requires storage, the parent must declare `storage=rc.Storage()`. |
 | `key`, `prefix` | Parent-owned schema key and required parent environment prefix. |
 | `fields` | Non-empty mapping of parent field names to `rc.field(...)` declarations. These fields own defaults, validation metadata, documentation, and secrets. |
 | `field_targets` | Mapping of selected dependency field names to parent field names. When omitted, names must match and every dependency field is selected. Repeated parent names explicitly alias compatible fields. |
@@ -155,18 +155,26 @@ binding scoped to this parent declaration.
 
 Every parent field must be used by at least one mapping. A dependency field may
 be omitted only when it has a Python default; omitted fields keep those defaults
-and are not included in the parent schema. Aliased dependency fields must have
-the same Python type and their selected packaged defaults must agree when both
-are present. A parent field must match the dependency field type. A dependency
+and are not included in the parent schema. Mapped fields use only parent
+defaults, parent sources, and explicit Python overrides. A required parent field
+does not inherit a dependency default. Aliased dependency fields must have the
+same Python type and their selected packaged defaults must agree when both are
+present. A parent field must match the dependency field type. A dependency
 secret must remain secret in the parent declaration. Prefix, owner-key, and
 environment-key collisions raise an error when the import is declared.
 
 The imported section uses only parent-resolved settings. AppRC excludes
 dependency namespace environment variables, explicit dotenv keys, dependency
-user dotenv files, and dependency storage files. It never imports dependency
-bundles or lifecycle. Dependency packaged defaults are ignored unless opted in;
-when enabled, only mapped keys participate and the parent package has higher
-priority. Parent field metadata and the resulting provenance use parent names.
+user dotenv files, and dependency storage files. If the dependency section
+requires storage, the parent must enable storage and select a valid parent
+storage before building the section; inspection marks its fields inactive until
+then. The parent's selected storage layer may supply mapped values. Dependency
+storage selectors, registries, user files, and storage files remain excluded.
+The dependency still receives storage paths separately from its host. AppRC
+never imports dependency bundles or lifecycle. Dependency packaged defaults are
+ignored unless opted in; when enabled, only mapped keys participate and the
+parent package has higher priority. Parent field metadata and the resulting
+provenance use parent names.
 
 Build with `resolved.build(binding)` to use the binding captured by that exact
 snapshot. Building with `resolved.build(ConfigType)` also works when that

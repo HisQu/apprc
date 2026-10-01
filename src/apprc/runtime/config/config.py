@@ -21,7 +21,7 @@ from apprc.runtime.config._binding import (
     bind_owner_from_env,
     protected_field_names,
 )
-from apprc.definition.resolution import ConfigSource
+from apprc.definition.resolution import ConfigSource, ImportedConfig
 from apprc.definition.env_config.sentinels import ENV_FIELD_MISSING
 from apprc.runtime.config._defaults import (
     resolve_instance_owner_defaults,
@@ -78,6 +78,13 @@ class Config(ConfigBase):
         metadata={"internal": True},
     )
     _apprc_imported_field_names: frozenset[str] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+        metadata={"internal": True},
+    )
+    _apprc_imported_binding: ImportedConfig[Any] | None = field(
         default=None,
         init=False,
         repr=False,
@@ -214,14 +221,23 @@ class Config(ConfigBase):
         :param override_python_values: Whether to replace Python-owned values.
         :return: None.
         """
-        if self._apprc_owner_override is not None and not any(
-            item.runtime_owner is self._apprc_owner_override
-            for item in resolved.imported_configs
-        ):
-            raise ValueError(
-                "This imported config can only reload from a resolution that "
-                "contains its exact ImportedConfig binding."
-            )
+        imported_binding = self._apprc_imported_binding
+        if self._apprc_owner_override is not None:
+            if imported_binding is None or not any(
+                item is imported_binding for item in resolved.imported_configs
+            ):
+                raise ValueError(
+                    "This imported config can only reload from a resolution "
+                    "that contains its exact ImportedConfig binding."
+                )
+            if (
+                imported_binding.parent_owner.requires_storage
+                and resolved.selection is None
+            ):
+                raise ValueError(
+                    f"{imported_binding.parent_owner.title} requires a valid "
+                    "storage selection in the parent resolution."
+                )
         resolved.require_registered(type(self))
         candidate = state_transfer.shallow_clone(self)
         owner = self._config_owner()
@@ -309,6 +325,14 @@ class Config(ConfigBase):
             resource=state.resource,
         )
 
+    def _is_field_secret(self, field_name: str) -> bool:
+        """Apply this instance's owner metadata to display redaction."""
+        try:
+            secret = self._config_owner().field(field_name).secret
+        except (KeyError, RuntimeError):
+            secret = False
+        return secret or super(Config, self)._is_field_secret(field_name)
+
     # ===============================================================
     # == Implementation
     # ===============================================================
@@ -357,6 +381,14 @@ class Config(ConfigBase):
     def _resolve_owner_defaults(self) -> None:
         """Resolve omitted owner-backed fields from derived owner defaults."""
         owner = self._config_owner()
+        if self._apprc_owner_override is not None:
+            for spec in owner.fields:
+                if (
+                    not spec.has_default()
+                    and self._field_origin(spec.name).origin
+                    != "python_constructor_argument"
+                ):
+                    object.__setattr__(self, spec.name, ENV_FIELD_MISSING)
         object.__setattr__(
             self,
             "_apprc_field_origins",

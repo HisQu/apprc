@@ -161,6 +161,8 @@ class AppRC:
         self._imported_configs: list[ImportedConfig[Any]] = []
         self._env_key_index: dict[str, tuple[str, str]] = {}
         self._dependency_env_keys: set[str] = set()
+        self._dependency_source_env_keys: set[str] = set()
+        self._dependency_control_env_keys: set[str] = set()
         self._dependency_env_prefixes: set[str] = set()
         self._schema = self._build_schema()
 
@@ -231,7 +233,9 @@ class AppRC:
         dependency fields must have Python defaults and keep those defaults.
         This method records the dependency schema and adds its parent-owned
         fields to this AppRC. It does not load dependency user files, storage
-        files, or environment values.
+        files, or environment values. If the section requires storage, the
+        parent must declare storage and select a valid parent storage before
+        building the imported config.
 
         :param dependency: AppRC that registered ``config_type``.
         :param config_type: Dependency ``rc.Config`` section to import.
@@ -274,10 +278,13 @@ class AppRC:
                 f"{config_type.__name__} is already registered directly on "
                 "the parent AppRC; import it through a separate config class."
             )
-        if dependency_owner.requires_storage:
+        if (
+            dependency_owner.requires_storage
+            and self._declaration.storage is None
+        ):
             raise ValueError(
-                f"{config_type.__name__} requires dependency storage and "
-                "cannot be imported as a leaf config section."
+                f"{config_type.__name__} requires storage; the parent AppRC "
+                "must declare storage=rc.Storage()."
             )
         if (
             include_packaged_defaults
@@ -344,6 +351,7 @@ class AppRC:
             declared_fields=normalized_fields,
             targets=targets,
             dependency_owner=dependency_owner,
+            requires_storage=dependency_owner.requires_storage,
         )
         imported_source_keys = {
             dependency_owner.env_key(name) for name in targets
@@ -358,10 +366,39 @@ class AppRC:
                 if item.owner is not None
             )
         )
+        dependency_control_env_keys = tuple(
+            key
+            for key in (
+                dependency.schema.storage_selector_env_key,
+                dependency.schema.apprc_dir_env_key,
+                *dependency.schema.legacy_apprc_toml_env_keys(),
+            )
+            if key is not None
+        )
+        dependency_control_keys = set(dependency_control_env_keys)
+        parent_control_keys = {
+            key
+            for key in (
+                self.schema.storage_selector_env_key,
+                self.schema.apprc_dir_env_key,
+                *self.schema.legacy_apprc_toml_env_keys(),
+            )
+            if key is not None
+        }
         collisions = imported_source_keys & (
-            self._dependency_env_keys
-            | set(self._env_key_index)
+            set(self._env_key_index)
             | mapped_parent_keys
+            | dependency_control_keys
+            | self._dependency_control_env_keys
+        )
+        collisions.update(dependency_control_keys & parent_control_keys)
+        collisions.update(
+            dependency_control_keys
+            & (
+                set(self._env_key_index)
+                | mapped_parent_keys
+                | self._dependency_source_env_keys
+            )
         )
         if collisions:
             joined = ", ".join(sorted(collisions))
@@ -404,6 +441,7 @@ class AppRC:
             runtime_owner=runtime_owner,
             field_targets=targets,
             dependency_env_prefixes=dependency_prefixes,
+            dependency_control_env_keys=dependency_control_env_keys,
             config_package=dependency._declaration.config_package,
             include_packaged_defaults=include_packaged_defaults,
             runtime_config_type=runtime_config_type,
@@ -415,7 +453,11 @@ class AppRC:
                 f"{dependency._declaration.app_id}.{config_type.__name__}",
                 field_spec.name,
             )
-        self._dependency_env_keys.update(imported_source_keys)
+        self._dependency_env_keys.update(
+            imported_source_keys | dependency_control_keys
+        )
+        self._dependency_source_env_keys.update(imported_source_keys)
+        self._dependency_control_env_keys.update(dependency_control_keys)
         self._dependency_env_prefixes.update(dependency_prefixes)
         self._imported_configs.append(binding)
         self._schema = self._build_schema()
@@ -459,6 +501,7 @@ class AppRC:
         declared_fields: Mapping[str, _FieldDeclaration],
         targets: Mapping[str, str],
         dependency_owner: ConfigOwner,
+        requires_storage: bool,
     ) -> ConfigOwner:
         """Build and validate parent-owned fields for an imported section."""
         if not prefix:
@@ -531,6 +574,7 @@ class AppRC:
             env_prefix=prefix,
             rc_path=rc_path,
             fields=tuple(fields),
+            requires_storage=requires_storage,
         )
         validate_config_owner(owner)
         _validate_prefix(
@@ -1153,6 +1197,7 @@ def _dependency_runtime_owner(
         env_prefix="",
         rc_path=parent_owner.rc_path,
         fields=tuple(dependency_fields),
+        requires_storage=parent_owner.requires_storage,
     )
 
 

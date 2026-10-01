@@ -80,13 +80,13 @@ def env_values_for_binding(
     override_python_values: bool,
     values: Mapping[str, str] | None = None,
 ) -> tuple[Mapping[str, str], list[str]]:
-    """Return an env mapping with protected Python fields removed.
+    """Return binding inputs and Python-owned fields to skip.
 
     :param owner: Config owner declaring env-backed fields.
     :param origins: Recorded origin states by owner field name.
     :param override_python_values: Whether env may replace Python-owned values.
     :param values: Optional env-like mapping for tests and internals.
-    :return: Filtered env mapping and skipped Python-owned field names.
+    :return: Env mapping and Python-owned field names that must remain unchanged.
     """
     env_values = os.environ if values is None else values
     if override_python_values:
@@ -95,9 +95,18 @@ def env_values_for_binding(
         provided_owner_field_names(owner, env_values)
         & protected_field_names(origins)
     )
-    if not skipped_fields:
-        return env_values, []
-    skipped_keys = {owner.env_key(field_name) for field_name in skipped_fields}
+    skipped = frozenset(skipped_fields)
+    skipped_keys = {
+        owner.env_key(field_name)
+        for field_name in skipped_fields
+        if all(
+            sibling.name in skipped
+            for sibling in owner.fields
+            if owner.env_key(sibling.name) == owner.env_key(field_name)
+        )
+    }
+    if not skipped_keys:
+        return env_values, skipped_fields
     return (
         {
             key: value
@@ -131,9 +140,10 @@ def bind_owner_from_env(
     )
     loaded = load_owner_from_env(owner, binding_env)
     provided_fields = provided_owner_field_names(owner, binding_env)
+    skipped_fields = frozenset(skipped_python_fields)
     bound_fields: list[EnvBoundField] = []
     for spec in owner.fields:
-        if spec.name not in provided_fields:
+        if spec.name not in provided_fields or spec.name in skipped_fields:
             continue
         env_key = owner.env_key(spec.name)
         loaded_value = getattr(loaded, spec.name)

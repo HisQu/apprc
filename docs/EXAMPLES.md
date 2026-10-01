@@ -302,8 +302,10 @@ https://host.example: host-model-v2
 ```
 
 The [dependency-import guide](How-To-User-Guides.md#import-settings-from-a-dependency)
-shows the same declaration step by step. Dependency user and storage files are
-never read in parent mode; packaged defaults can be opted into separately.
+shows the same declaration step by step. A storage-required imported section
+uses the parent's selected storage layer for mapped settings; dependency user
+and storage files are never read in parent mode. Dependency packaged defaults
+can be opted into separately.
 
 ## An application-owned CLI callback
 

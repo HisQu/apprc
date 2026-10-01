@@ -48,7 +48,7 @@ jobs:
         run: just --summary
 
       - name: Install project
-        run: uv sync --locked --all-extras --group dev
+        run: uv sync --locked --all-extras --group dev --group gui-test
 
       - name: Check generated terminal metadata
         run: uv run --locked python src/apprc_dev/packaging/terminal_metadata.py --check

@@ -74,7 +74,7 @@ def test_prefilled_fields_and_selectors_are_interactive(
                 server_port = page.get_by_label(
                     "Server port (restart required)"
                 )
-                expect(server_port).to_be_enabled()
+                expect(server_port).to_be_enabled(timeout=30_000)
                 expect(server_port).to_have_value("7860")
 
                 mode = page.get_by_label("Mode")

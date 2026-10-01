@@ -188,3 +188,36 @@ def test_restart_required_setting_is_labeled_and_notifies_after_edit(
         "Restart the application to reload configuration."
     )
     assert revision == 2
+
+
+def test_clearing_absent_restart_required_value_is_a_no_op(
+    tmp_path: Path,
+) -> None:
+    """A no-op clear neither increments revision nor asks for a restart."""
+    app = rc.AppRC(
+        app_id="gui-restart-required-noop-clear",
+        user_dotenv=rc.UserDotenv(),
+        apprc_dir=tmp_path / "config",
+    )
+
+    @app.config("server", prefix="GUI_RESTART_NOOP_")
+    class Server(rc.Config):
+        port: int = rc.field(
+            "GUI_RESTART_NOOP_PORT",
+            default=7860,
+            restart_required=True,
+        )
+
+    manager = app.manage(environment={})
+    manager.setup()
+    editor = ConfigEditor(manager)
+
+    message, revision = editor._clear(
+        "GUI_RESTART_NOOP_PORT",
+        True,
+        "user",
+        7,
+    )
+
+    assert message == "No saved GUI_RESTART_NOOP_PORT value in the user layer."
+    assert revision == 7

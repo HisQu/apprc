@@ -293,9 +293,13 @@ class ConfigEditor:
         """Remove a saved override and inspect the remaining winning value."""
         try:
             plan = self.manager.plan_removal(key, scope=scope)
-            if plan is not None:
-                self.manager.preview_edit(plan)
-                self.manager.apply_edit(plan)
+            if plan is None:
+                return (
+                    f"No saved {key} value in the {scope} layer.",
+                    revision,
+                )
+            self.manager.preview_edit(plan)
+            self.manager.apply_edit(plan)
         except (OSError, ValueError) as exc:
             return str(exc), revision
         restart_notice = (

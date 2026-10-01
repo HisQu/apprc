@@ -10,6 +10,7 @@ import pytest
 from textual.widgets import Button, DataTable, Static
 from typer.testing import CliRunner
 
+import apprc as rc
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.interfaces.tui._primitives import ConfirmScreen
 from apprc.user_files.storage_roots.registry import (
@@ -132,6 +133,54 @@ async def test_editor_saving_user_value_creates_only_user_dotenv() -> None:
             'STORAGE_FREE_APP_PROFILE="user-profile"\n'
         )
         assert not AppFiles(kit.schema).preferred_apprc_toml_path().exists()
+
+
+@pytest.mark.asyncio
+async def test_editor_notifies_after_saving_restart_required_setting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Saving a marked setting tells the user to restart the application."""
+    app = rc.AppRC(
+        app_id="restart-required-editor",
+        user_dotenv=rc.UserDotenv(),
+        apprc_dir=tmp_path / "config",
+    )
+
+    @app.config("server", prefix="RESTART_REQUIRED_")
+    class ServerSettings(rc.Config):
+        port: int = rc.field(
+            "RESTART_REQUIRED_PORT",
+            default=7860,
+            restart_required=True,
+        )
+
+    manager = app.manage(environment={})
+    manager.setup()
+    editor = ConfigEditorApp(apprc=app, manager=manager)
+    messages: list[str] = []
+
+    def record_notification(message: str, **_kwargs: object) -> None:
+        messages.append(message)
+
+    monkeypatch.setattr(editor, "notify", record_notification)
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        await editor._save_env_key(
+            "RESTART_REQUIRED_PORT",
+            "9000",
+            scope="user",
+        )
+
+    assert messages == [
+        "Saved RESTART_REQUIRED_PORT. Restart the application to reload "
+        "configuration."
+    ]
+    assert (
+        manager.paths.user_dotenv.read_text(encoding="utf-8")
+        == 'RESTART_REQUIRED_PORT="9000"\n'
+    )
 
 
 @pytest.mark.asyncio

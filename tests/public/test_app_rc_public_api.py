@@ -318,6 +318,24 @@ def test_field_accepts_explicit_compatibility_options() -> None:
     assert spec.explanation_short == "Provider name."
 
 
+def test_field_carries_restart_requirement_into_schema() -> None:
+    """Restart guidance is part of registered field metadata."""
+    MyRC = _process_env_app()
+
+    @MyRC.config("server", prefix="DEMO_SERVER_")
+    class ServerSettings(rc.Config):
+        port: int = rc.field(
+            "DEMO_SERVER_PORT",
+            default=7860,
+            restart_required=True,
+        )
+        label: str = rc.field("DEMO_SERVER_LABEL", default="Local")
+
+    assert ServerSettings.config_owner is not None
+    assert ServerSettings.config_owner.field("port").restart_required is True
+    assert ServerSettings.config_owner.field("label").restart_required is False
+
+
 def test_required_field_allows_packaged_default_and_constructor_value() -> None:
     """Packaged and explicit runtime values remain valid for required fields."""
     MyRC = _process_env_app()

@@ -104,11 +104,15 @@ editor's longer explanation. The CLI and editor read these definitions, so an
 application does not need to maintain separate lists of settings for each tool.
 
 `choices` restricts accepted string values. `editable=False` prevents normal
-editor changes to a field controlled by the application. `secret=True` hides
-a value in AppRC's display output. A secret value still exists in memory and
-may be stored as plaintext in a dotenv file; this flag does not provide encryption
-or a credential store. The [API-key guide](How-To-User-Guides.md#declare-an-api-key)
-shows a required secret field.
+editor changes to a field controlled by the application. Set
+`restart_required=True` when a saved value only takes effect after restarting
+the application. The Textual and Gradio editors mark the setting and repeat
+the restart instruction after saving; AppRC does not restart the application.
+`secret=True` hides a value in AppRC's display output. A secret value still
+exists in memory and may be stored as plaintext in a dotenv file; this flag
+does not provide encryption or a credential store. The
+[API-key guide](How-To-User-Guides.md#declare-an-api-key) shows a required
+secret field.
 
 Use `rc.ConfigBase` for Python-only sections that do not read environment keys.
 Both kinds can be fields of a [config bundle](#config-bundles). A section is an

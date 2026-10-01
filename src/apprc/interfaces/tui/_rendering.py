@@ -301,8 +301,21 @@ def setting_cell(spec: ConfigField, env_key: str) -> Text:
     :param env_key: Full process environment key.
     :return: Two-line setting label.
     """
+    return Text.assemble(
+        (setting_title(spec), "bold"), "\n", (env_key, LABEL_STYLE)
+    )
+
+
+def setting_title(spec: ConfigField) -> str:
+    """Return the field title and its restart marker when one is required.
+
+    :param spec: Field declaration whose title is shown.
+    :return: Display title, with restart guidance when applicable.
+    """
     title = spec.title or spec.name.replace("_", " ").title()
-    return Text.assemble((title, "bold"), "\n", (env_key, LABEL_STYLE))
+    if spec.restart_required:
+        return f"{title} (restart required)"
+    return title
 
 
 def section_separator_row(*, column_count: int) -> FieldTableRow:

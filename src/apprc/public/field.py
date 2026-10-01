@@ -36,6 +36,8 @@ class _FieldDeclaration:
     :param explanation_short: Compact table-facing explanation.
     :param explanation_long: Full editor-facing explanation.
     :param editable: Whether config editors should allow direct editing.
+    :param restart_required: Whether the application must restart for a saved
+        change to take effect.
     :param secret: Whether display surfaces should redact the value.
     :param choices: Optional accepted string values.
     :param python_type: Optional override for the annotation-derived type.
@@ -51,6 +53,7 @@ class _FieldDeclaration:
     explanation_short: str = ""
     explanation_long: str = ""
     editable: bool = True
+    restart_required: bool = False
     secret: bool = False
     choices: tuple[str, ...] = ()
     python_type: type[Any] | None = None
@@ -75,6 +78,7 @@ def field(
     description: str | None = None,
     packaged_default: object = CONFIG_MISSING,
     editable: bool = True,
+    restart_required: bool = False,
     secret: bool = False,
     choices: tuple[str, ...] | list[str] | None = None,
     shared_default: object = CONFIG_MISSING,
@@ -101,6 +105,9 @@ def field(
         required field has a shipped value or the shipped value intentionally
         differs from the Python fallback.
     :param editable: Whether config editors should allow direct editing.
+    :param restart_required: Whether the application must restart for a saved
+        change to take effect. AppRC marks the field and tells the user to
+        restart after saving; it never restarts the application itself.
     :param secret: Whether display surfaces should redact the value. This does
         not encrypt values, change storage, or imply requiredness.
     :param choices: Optional accepted string values.
@@ -176,6 +183,7 @@ def field(
         explanation_short=resolved_explanation_short,
         explanation_long=resolved_explanation_long,
         editable=editable,
+        restart_required=restart_required,
         secret=secret,
         choices=tuple(choices or ()),
         python_type=python_type,

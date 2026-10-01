@@ -106,6 +106,7 @@ default output.
 | `explanation_short` | Compact explanation used in tables. |
 | `explanation_long` | Longer explanation used in the editor; falls back to `description`, then the short explanation. |
 | `editable` | Whether the standard editor permits direct edits; defaults to `True`. |
+| [`restart_required`](Explanations.md#config-sections-and-fields) | Mark this setting as requiring an application restart after a saved change; defaults to `False`. Editors show the marker and a restart notice, but AppRC never restarts the application. |
 | `secret` | Redact display values and route managed writes to a [secret companion](Explanations.md#secret-companions); defaults to `False`. Does not encrypt persisted values. |
 | `packaged_default` | Metadata describing an expected packaged default; does not supply the runtime value. |
 

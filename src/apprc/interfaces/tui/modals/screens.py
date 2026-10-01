@@ -23,6 +23,7 @@ from apprc.interfaces.tui._field_state import (
     EditableConfigValueSource,
     EditableConfigValueSourceKey,
 )
+from apprc.interfaces.tui._rendering import setting_title
 from apprc.interfaces.tui._primitives import PathSuggester
 from apprc.interfaces.tui._styles import (
     LABEL_STYLE,
@@ -205,10 +206,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         """Compose field metadata, value input, and modal actions."""
         with Vertical(id="edit-dialog", classes=MODAL_DIALOG_CLASS):
             yield Static(
-                Text(
-                    self.spec.title or self.spec.name,
-                    style="bold",
-                ),
+                Text(setting_title(self.spec), style="bold"),
                 id="edit-title",
             )
             yield Static(env_key_text(self.env_key), id="edit-env-key")

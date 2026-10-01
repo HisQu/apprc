@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from rich.text import Text
@@ -20,6 +21,7 @@ from apprc.interfaces.tui._rendering import (
     missing_storage_title,
     possible_values_label,
     possible_values_style,
+    setting_cell,
     value_style,
 )
 from apprc.interfaces.tui._styles import (
@@ -158,6 +160,22 @@ def test_config_textual_rendering_labels_match_field_metadata() -> None:
         possible_values_label(enabled) == "true, false, yes, no, on, off, 1, 0"
     )
     assert possible_values_label(cache_dir) == "filesystem path"
+
+
+def test_setting_cell_marks_restart_required_fields() -> None:
+    spec = APPRC_EXAMPLE_APP_OWNER.field("profile")
+    restart_spec = replace(spec, restart_required=True)
+
+    assert setting_cell(spec, "APPRC_EXAMPLE_APP_PROFILE").plain == (
+        "Profile\nAPPRC_EXAMPLE_APP_PROFILE"
+    )
+    assert (
+        setting_cell(
+            restart_spec,
+            "APPRC_EXAMPLE_APP_PROFILE",
+        ).plain
+        == "Profile (restart required)\nAPPRC_EXAMPLE_APP_PROFILE"
+    )
 
 
 def test_value_modal_rendering_formats_sources_and_metadata() -> None:

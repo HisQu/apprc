@@ -48,7 +48,7 @@ jobs:
         run: just --summary
 
       - name: Install project
-        run: uv sync --locked --all-extras --all-groups
+        run: uv sync --locked --all-extras --group dev
 
       - name: Check generated terminal metadata
         run: uv run --locked python src/apprc_dev/packaging/terminal_metadata.py --check
@@ -92,12 +92,20 @@ jobs:
           enable-cache: auto
 
       - name: Install core and test dependencies
-        run: uv sync --locked --all-groups
+        run: uv sync --locked --group dev --group gui-test
 
       - name: Install GUI distribution
         run: uv pip install -e src/apprc_dev/packaging/gui
 
-      - name: Test native view with dummy backend
+      - name: Install Chromium for browser checks
+        if: matrix.os == 'ubuntu-latest'
+        run: uv run --no-sync playwright install --with-deps chromium
+
+      - name: Install Chromium for browser checks
+        if: matrix.os == 'windows-latest'
+        run: uv run --no-sync playwright install chromium
+
+      - name: Test GUI view and browser interaction
         env:
           TOGA_BACKEND: toga_dummy
         run: uv run --no-sync pytest src/apprc_dev/packaging/gui/tests

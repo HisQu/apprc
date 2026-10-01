@@ -87,6 +87,7 @@ manifests in consuming applications, outside AppRC runtime code.
 .venv/bin/pyright
 .venv/bin/pytest
 .venv/bin/pytest src/apprc_dev/packaging/gui/tests
+.venv/bin/playwright install chromium
 .venv/bin/apprc-examples-run-all
 .venv/bin/python src/apprc_dev/packaging/terminal_metadata.py --check
 git diff --check
@@ -96,6 +97,8 @@ Run focused tests during implementation, then the full suite for shared changes.
 The example runner creates disposable application directories, exercises setup,
 resolution and doctor, and checks cleanup. `apprc-examples-lab` opens an isolated
 manual session. See [examples](../examples/example_apps/README.md).
+The GUI tests include a browser-level check and require the Chromium binary
+installed by `playwright install chromium`.
 
 `just lock` regenerates `uv.lock` and `pylock.toml`; `just sync` installs locked
 dependencies. `just clean` removes caches and build outputs. Obsolete empty

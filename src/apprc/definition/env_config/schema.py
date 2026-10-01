@@ -32,6 +32,8 @@ class ConfigField:
     :param explanation_long: Full editor-facing description.
     :param secret: Whether UIs and serializers should redact the value.
     :param editable: Whether config editors should allow direct editing.
+    :param restart_required: Whether the application must restart for a saved
+        change to take effect.
     :param required: Whether the field has no fallback.
     :param choices: Optional string choices.
     """
@@ -49,6 +51,7 @@ class ConfigField:
     editable: bool = True
     required: bool = False
     choices: tuple[str, ...] = ()
+    restart_required: bool = False
 
     def has_default(self) -> bool:
         """Return whether this field has an owner-provided fallback."""

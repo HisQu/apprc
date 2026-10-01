@@ -117,6 +117,18 @@ class ResolvedConfig:
         """Return effective raw values; callers must redact secrets for display."""
         return self.source.values
 
+    @property
+    def _has_valid_storage_selection(self) -> bool:
+        """Whether runtime code can use the selected storage root.
+
+        Inspection may retain an invalid candidate selection so repair tools
+        can show its root and associated storage name. Such a candidate is not
+        usable until storage validation completes without issues.
+
+        :return: True when a selected storage root passed validation.
+        """
+        return self.selection is not None and not self.storage_issues
+
     def __repr__(self) -> str:
         """Describe the snapshot without printing configuration values."""
         return f"ResolvedConfig(app_id={self.schema.app_id!r}, layers={len(self.layers)})"
@@ -159,7 +171,7 @@ class ResolvedConfig:
             imported = self._require_imported_config(config_type)
             if (
                 imported.parent_owner.requires_storage
-                and self.selection is None
+                and not self._has_valid_storage_selection
             ):
                 raise ValueError(
                     f"{imported.parent_owner.title} requires a valid storage "

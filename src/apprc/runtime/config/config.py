@@ -232,7 +232,7 @@ class Config(ConfigBase):
                 )
             if (
                 imported_binding.parent_owner.requires_storage
-                and resolved.selection is None
+                and not resolved._has_valid_storage_selection
             ):
                 raise ValueError(
                     f"{imported_binding.parent_owner.title} requires a valid "

@@ -446,6 +446,152 @@ def test_storage_import_requires_valid_parent_selection(
         config.reload_from(absent)
 
 
+@pytest.mark.parametrize("root_state", ["missing", "uninitialized"])
+def test_storage_import_rejects_invalid_absolute_roots(
+    tmp_path: Path,
+    root_state: str,
+) -> None:
+    """Failed path selections stay inspectable but cannot build or reload."""
+    dependency = rc.AppRC(
+        app_id="provider",
+        storage=rc.Storage(selector_env_key="PROVIDER_STORAGE"),
+    )
+
+    @dependency.config("rag", prefix="PROVIDER_RAG_", requires_storage=True)
+    class RagRC(rc.Config):
+        source: str = rc.field("PROVIDER_RAG_SOURCE", default="dependency")
+
+    host = rc.AppRC(
+        app_id="host",
+        storage=rc.Storage(selector_env_key="HOST_STORAGE"),
+        apprc_dir=tmp_path / "host-home",
+    )
+    binding = host.import_dependency_config(
+        dependency,
+        RagRC,
+        key="rag",
+        prefix="HOST_RAG_",
+        fields={"source": rc.field("HOST_RAG_SOURCE")},
+        field_targets={"source": "source"},
+    )
+
+    candidate_root = tmp_path / f"{root_state}-storage"
+    if root_state == "uninitialized":
+        candidate_root.mkdir()
+    inspection = host.manage(environment={}).inspect(
+        storage=str(candidate_root)
+    )
+    assert inspection.resolved.selection is not None
+    assert inspection.resolved.selection.root == candidate_root.resolve()
+    assert inspection.resolved.storage_issues
+    assert inspection.fields[0].active is False
+    with pytest.raises(ValueError, match="valid storage selection"):
+        inspection.resolved.build(binding)
+
+    initialized_root = tmp_path / "initialized-storage"
+    initialized_root.mkdir()
+    (initialized_root / "apprc.storage.env").write_text(
+        "HOST_RAG_SOURCE=parent-storage\n", encoding="utf-8"
+    )
+    valid = host.resolve(
+        rc.ResolveOptions(storage=str(initialized_root)),
+        environment={},
+    )
+    config = valid.build(binding)
+    assert config.source == "parent-storage"
+    with pytest.raises(ValueError, match="valid storage selection"):
+        config.reload_from(inspection.resolved)
+    assert config.source == "parent-storage"
+
+
+def test_later_import_rejects_parent_field_matching_prior_control_key(
+    tmp_path: Path,
+) -> None:
+    """A previous dependency control key cannot become a parent setting."""
+    first_dependency = rc.AppRC(
+        app_id="first-dependency",
+        storage=rc.Storage(selector_env_key="CUSTOM_DEP_CONTROL"),
+    )
+
+    @first_dependency.config("section", prefix="FIRST_DEP_")
+    class FirstRC(rc.Config):
+        value: str = rc.field("FIRST_DEP_VALUE", default="first")
+
+    later_dependency = rc.AppRC(app_id="later-dependency")
+
+    @later_dependency.config("section", prefix="LATER_DEP_")
+    class LaterRC(rc.Config):
+        value: str = rc.field("LATER_DEP_VALUE", default="later")
+
+    host = rc.AppRC(app_id="host")
+    host.import_dependency_config(
+        first_dependency,
+        FirstRC,
+        key="first",
+        prefix="HOST_FIRST_",
+        fields={"value": rc.field("HOST_FIRST_VALUE", default="host")},
+        field_targets={"value": "value"},
+    )
+
+    with pytest.raises(ValueError, match="environment"):
+        host.import_dependency_config(
+            later_dependency,
+            LaterRC,
+            key="later",
+            prefix="CUSTOM_DEP_",
+            fields={"value": rc.field("CUSTOM_DEP_CONTROL", default="host")},
+            field_targets={"value": "value"},
+        )
+    assert len(host.schema.owners) == 1
+
+
+@pytest.mark.parametrize(
+    ("control_kind", "control_key", "host_options"),
+    [
+        (
+            "storage",
+            "VENDOR_STORAGE",
+            {"storage": rc.Storage(selector_env_key="VENDOR_STORAGE")},
+        ),
+        (
+            "directory",
+            "VENDOR_PARENT_HOME",
+            {
+                "user_dotenv": rc.UserDotenv(),
+                "apprc_dir_env_key": "VENDOR_PARENT_HOME",
+            },
+        ),
+    ],
+)
+def test_import_rejects_dependency_prefix_covering_parent_controls(
+    control_kind: str,
+    control_key: str,
+    host_options: dict[str, Any],
+) -> None:
+    """Dependency field prefixes cannot hide parent storage or path inputs."""
+    dependency = rc.AppRC(app_id="vendor")
+
+    @dependency.config("section", prefix="VENDOR_")
+    class VendorRC(rc.Config):
+        value: str = rc.field("VENDOR_VALUE", default="vendor")
+
+    host = rc.AppRC(app_id="host", **host_options)
+    assert control_key in {
+        host.schema.storage_selector_env_key,
+        host.schema.apprc_dir_env_key,
+    }
+    with pytest.raises(ValueError, match="environment"):
+        host.import_dependency_config(
+            dependency,
+            VendorRC,
+            key=f"vendor.{control_kind}",
+            prefix="HOST_VENDOR_",
+            fields={"value": rc.field("HOST_VENDOR_VALUE", default="host")},
+            field_targets={"value": "value"},
+        )
+    assert host.schema.owners == ()
+
+
 def test_import_can_select_fields_and_keep_defaulted_dependency_fields(
     tmp_path: Path,
 ) -> None:

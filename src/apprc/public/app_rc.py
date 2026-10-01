@@ -385,45 +385,37 @@ class AppRC:
             )
             if key is not None
         }
-        collisions = imported_source_keys & (
-            set(self._env_key_index)
-            | mapped_parent_keys
+        parent_keys = set(self._env_key_index) | mapped_parent_keys
+        parent_keys.update(parent_control_keys)
+        excluded_dependency_keys = (
+            self._dependency_env_keys
+            | imported_source_keys
             | dependency_control_keys
-            | self._dependency_control_env_keys
         )
-        collisions.update(dependency_control_keys & parent_control_keys)
+        excluded_dependency_prefixes = self._dependency_env_prefixes | set(
+            dependency_prefixes
+        )
+        collisions = parent_keys & excluded_dependency_keys
+        collisions.update(
+            key
+            for key in parent_keys
+            if any(
+                key.startswith(prefix)
+                for prefix in excluded_dependency_prefixes
+            )
+        )
+        collisions.update(
+            imported_source_keys & self._dependency_control_env_keys
+        )
         collisions.update(
             dependency_control_keys
-            & (
-                set(self._env_key_index)
-                | mapped_parent_keys
-                | self._dependency_source_env_keys
-            )
+            & (imported_source_keys | self._dependency_source_env_keys)
         )
         if collisions:
             joined = ", ".join(sorted(collisions))
             raise ValueError(
-                "Dependency environment keys cannot be parent-owned fields or "
-                f"overlap another import: {joined}."
-            )
-        parent_dependency_collisions = {
-            key
-            for key in (*self._env_key_index, *mapped_parent_keys)
-            if any(key.startswith(prefix) for prefix in dependency_prefixes)
-        }
-        parent_dependency_collisions.update(
-            key
-            for key in mapped_parent_keys
-            if any(
-                key.startswith(prefix)
-                for prefix in self._dependency_env_prefixes
-            )
-        )
-        if parent_dependency_collisions:
-            joined = ", ".join(sorted(parent_dependency_collisions))
-            raise ValueError(
-                "Parent field keys must differ from dependency environment "
-                f"keys: {joined}."
+                "Dependency environment keys and prefixes cannot overlap "
+                f"parent inputs or another import: {joined}."
             )
         runtime_owner = _dependency_runtime_owner(
             parent_owner=parent_owner,

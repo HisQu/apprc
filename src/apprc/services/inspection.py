@@ -72,7 +72,10 @@ def inspect_resolved(resolved: ResolvedConfig) -> ConfigInspection:
             origin = resolved.source.origins.get(
                 key, ConfigOriginState("python_config_default", env_key=key)
             )
-            if owner.requires_storage and resolved.selection is None:
+            if (
+                owner.requires_storage
+                and not resolved._has_valid_storage_selection
+            ):
                 fields.append(
                     FieldInspection(owner, spec, None, origin, active=False)
                 )

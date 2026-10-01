@@ -22,5 +22,8 @@ Import all config sections registered on `MyRC` before creating the editor.
 It works before storage or required fields are ready. The editor can create
 declared files, select storage, save user or storage overrides, and show the
 effective source of each setting. Secret values use password inputs and the
-private companion files. The [Gradio settings guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-a-gradio-settings-page)
+private companion files. Fields declared with `restart_required=True` are
+marked in the editor, which tells users to restart the application after
+saving. AppRC does not restart it automatically. The
+[Gradio settings guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-a-gradio-settings-page)
 shows how to include the editor in an existing application.

@@ -41,7 +41,12 @@ def test_editor_configures_storage_and_saves_secret(tmp_path: Path) -> None:
     assert status == "Selected storage default."
     assert manager.inspect().ready
     status, revision = editor._save(
-        "GUI_CHECK_TOKEN", True, "private-value", "storage", revision
+        "GUI_CHECK_TOKEN",
+        True,
+        False,
+        "private-value",
+        "storage",
+        revision,
     )
     assert status == "Saved GUI_CHECK_TOKEN in the storage layer."
     assert manager.resolve().build(Client).token == "private-value"
@@ -80,7 +85,12 @@ def test_save_secret_reports_repair_without_echoing_value(
 
     entered_value = "must-never-appear-in-the-status"
     message, revision = editor._save(
-        "GUI_SHARED_TOKEN", True, entered_value, "storage", revision
+        "GUI_SHARED_TOKEN",
+        True,
+        False,
+        entered_value,
+        "storage",
+        revision,
     )
 
     assert "parent directory is readable by other users" in message
@@ -115,3 +125,99 @@ def test_repair_reports_unusable_secret_path(tmp_path: Path) -> None:
     assert "The secret path is not a file." in message
     assert "Repaired storage secret file permissions." not in message
     assert revision == 4
+
+
+def test_restart_required_setting_is_labeled_and_notifies_after_edit(
+    tmp_path: Path,
+) -> None:
+    """The editor labels and reports changes that need an application restart."""
+    app = rc.AppRC(
+        app_id="gui-restart-required",
+        user_dotenv=rc.UserDotenv(),
+        apprc_dir=tmp_path / "config",
+    )
+
+    @app.config("server", prefix="GUI_RESTART_")
+    class Server(rc.Config):
+        port: int = rc.field(
+            "GUI_RESTART_PORT",
+            default=7860,
+            title="Server port",
+            restart_required=True,
+        )
+
+    manager = app.manage(environment={})
+    manager.setup()
+    editor = ConfigEditor(manager)
+    with gr.Blocks() as blocks:
+        editor._render_field(
+            manager.inspect().fields[0],
+            gr.Dropdown(
+                choices=["user"],
+                value="user",
+                label="Save changes in",
+            ),
+            gr.Textbox(label="Configuration status", interactive=False),
+            gr.State(0),
+        )
+
+    assert "Server port (restart required)" in str(blocks.config)
+    assert "Restart the application to load saved settings" in str(
+        blocks.config
+    )
+    status, revision = editor._save(
+        "GUI_RESTART_PORT",
+        False,
+        True,
+        "9000",
+        "user",
+        0,
+    )
+    assert status == (
+        "Saved GUI_RESTART_PORT in the user layer. Restart the application "
+        "to reload configuration."
+    )
+    status, revision = editor._clear(
+        "GUI_RESTART_PORT",
+        True,
+        "user",
+        revision,
+    )
+    assert status == (
+        "Cleared the saved GUI_RESTART_PORT value in the user layer. "
+        "Restart the application to reload configuration."
+    )
+    assert revision == 2
+
+
+def test_clearing_absent_restart_required_value_is_a_no_op(
+    tmp_path: Path,
+) -> None:
+    """A no-op clear neither increments revision nor asks for a restart."""
+    app = rc.AppRC(
+        app_id="gui-restart-required-noop-clear",
+        user_dotenv=rc.UserDotenv(),
+        apprc_dir=tmp_path / "config",
+    )
+
+    @app.config("server", prefix="GUI_RESTART_NOOP_")
+    class Server(rc.Config):
+        port: int = rc.field(
+            "GUI_RESTART_NOOP_PORT",
+            default=7860,
+            restart_required=True,
+        )
+
+    manager = app.manage(environment={})
+    manager.setup()
+    editor = ConfigEditor(manager)
+
+    message, revision = editor._clear(
+        "GUI_RESTART_NOOP_PORT",
+        True,
+        "user",
+        7,
+    )
+
+    assert message == "No saved GUI_RESTART_NOOP_PORT value in the user layer."
+    assert revision == 7

@@ -717,6 +717,7 @@ def _derive_config_fields(
                 editable=spec.editable,
                 required=spec.inferred_required(),
                 choices=spec.choices,
+                restart_required=spec.restart_required,
             )
         )
     return tuple(derived)

@@ -134,6 +134,10 @@ The [config editor](docs/Explanations.md#config-editor) displays configuration
 layers together, explains each setting, and edits user or storage overrides.
 The same [config fields](docs/Explanations.md#config-sections-and-fields)
 also drive the desktop settings view.
+Set [`restart_required=True`](docs/References.md#config-fields) on a field
+whose saved value takes effect only after the application restarts. The
+Textual and Gradio editors mark that field and repeat the restart instruction
+after saving; AppRC never restarts the application automatically.
 
 ## Add a Gradio settings page
 

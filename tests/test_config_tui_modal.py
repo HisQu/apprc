@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
 
 from apprc.interfaces.tui._field_state import EditableConfigValueSource
 from apprc.interfaces.tui.modals.screens import ConfigValueEditScreen
+from apprc.interfaces.tui._rendering import setting_title
 from apprc.interfaces.tui._value_modal_rendering import (
     source_copy_is_disabled,
 )
@@ -40,6 +42,13 @@ def test_value_edit_modal_prefills_only_writable_scope() -> None:
     )
 
     assert screen._target_value() == "user-profile"
+
+
+def test_value_edit_title_marks_restart_required_field() -> None:
+    spec = APPRC_EXAMPLE_APP_OWNER.field("profile")
+    restart_spec = replace(spec, restart_required=True)
+
+    assert setting_title(restart_spec) == "Profile (restart required)"
 
 
 def test_value_edit_modal_keyboard_save_requires_unambiguous_scope(

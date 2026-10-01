@@ -45,6 +45,7 @@ class ConfigEditor:
                     choices=list(scopes),
                     value=scopes[0],
                     label="Save changes in",
+                    interactive=True,
                 )
                 if scopes
                 else None
@@ -85,6 +86,7 @@ class ConfigEditor:
                 choices=list(registry.storages),
                 value=registry.selected_storage,
                 label="Selected storage",
+                interactive=True,
             )
             gr.Button("Use selected storage").click(
                 self._select_storage,
@@ -94,11 +96,13 @@ class ConfigEditor:
         name = gr.Textbox(
             value="default" if not registry.storages else "",
             label="New storage name",
+            interactive=True,
         )
         root = gr.Textbox(
             value=str(self.manager.paths.root / "storage"),
             label="Storage folder",
             info="AppRC creates this folder if needed.",
+            interactive=True,
         )
         gr.Button("Create and select storage", variant="primary").click(
             self._create_storage,
@@ -148,6 +152,8 @@ class ConfigEditor:
         spec = item.field
         key = item.owner.env_key(spec.name)
         title = spec.title or key
+        if spec.restart_required:
+            title = f"{title} (restart required)"
         if not item.active:
             gr.Textbox(
                 value="Select storage to edit this setting.",
@@ -163,6 +169,11 @@ class ConfigEditor:
             info = f"{info} {item.issue}"
         if spec.secret:
             info = f"{info} {'A value is set.' if item.value else 'No value is set.'}"
+        if spec.restart_required:
+            info = (
+                f"{info} Restart the application to load saved settings "
+                "after changing this setting."
+            )
         if spec.editable and scope is not None:
             value = "" if spec.secret or item.value is None else str(item.value)
             if spec.choices and not spec.secret:
@@ -171,6 +182,7 @@ class ConfigEditor:
                     value=value if value in spec.choices else None,
                     label=title,
                     info=info,
+                    interactive=True,
                 )
             else:
                 control = gr.Textbox(
@@ -178,15 +190,21 @@ class ConfigEditor:
                     label=title,
                     info=info,
                     type="password" if spec.secret else "text",
+                    interactive=True,
                 )
             with gr.Row():
                 gr.Button("Save", size="sm").click(
-                    partial(self._save, key, spec.secret),
+                    partial(
+                        self._save,
+                        key,
+                        spec.secret,
+                        spec.restart_required,
+                    ),
                     inputs=[control, scope, revision],
                     outputs=[status, revision],
                 )
                 gr.Button("Clear saved value", size="sm").click(
-                    partial(self._clear, key),
+                    partial(self._clear, key, spec.restart_required),
                     inputs=[scope, revision],
                     outputs=[status, revision],
                 )
@@ -202,6 +220,7 @@ class ConfigEditor:
         self,
         key: str,
         secret: bool,
+        restart_required: bool,
         value: str | None,
         scope: WriteScope,
         revision: int,
@@ -254,21 +273,43 @@ class ConfigEditor:
                 else str(exc)
             )
             return message, revision
-        return f"Saved {key} in the {scope} layer.", revision + 1
+        restart_notice = (
+            " Restart the application to reload configuration."
+            if restart_required
+            else ""
+        )
+        return (
+            f"Saved {key} in the {scope} layer.{restart_notice}",
+            revision + 1,
+        )
 
     def _clear(
-        self, key: str, scope: WriteScope, revision: int
+        self,
+        key: str,
+        restart_required: bool,
+        scope: WriteScope,
+        revision: int,
     ) -> tuple[str, int]:
         """Remove a saved override and inspect the remaining winning value."""
         try:
             plan = self.manager.plan_removal(key, scope=scope)
-            if plan is not None:
-                self.manager.preview_edit(plan)
-                self.manager.apply_edit(plan)
+            if plan is None:
+                return (
+                    f"No saved {key} value in the {scope} layer.",
+                    revision,
+                )
+            self.manager.preview_edit(plan)
+            self.manager.apply_edit(plan)
         except (OSError, ValueError) as exc:
             return str(exc), revision
+        restart_notice = (
+            " Restart the application to reload configuration."
+            if restart_required
+            else ""
+        )
         return (
-            f"Cleared the saved {key} value in the {scope} layer.",
+            f"Cleared the saved {key} value in the {scope} layer."
+            f"{restart_notice}",
             revision + 1,
         )
 

@@ -80,6 +80,10 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+- Added `restart_required=True` to `rc.field()` metadata. The Textual and
+  Gradio editors mark settings that need an application restart after a saved
+  change and show a restart notice after saving or clearing an override.
+
 <br>
 
 ### 💔 Changed
@@ -95,6 +99,9 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+- Fixed the Gradio editor disabling prefilled editable fields, storage
+  selectors, and save-layer selectors by explicitly enabling those controls.
 
 <br>
 

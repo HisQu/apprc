@@ -501,7 +501,12 @@ class ConfigEditorApp(App[None]):
             return
         self.user_dotenv_active = self._user_dotenv_is_active()
         self._populate_field_table()
-        self.notify(f"Saved {update.env_key}")
+        restart_notice = (
+            ". Restart the application to reload configuration."
+            if self._field_requires_restart(env_key)
+            else ""
+        )
+        self.notify(f"Saved {update.env_key}{restart_notice}")
 
     async def _confirm_env_file_edit(self, plan: EnvFileEditPlan) -> bool:
         """Ask before disabling duplicate dotenv assignments.
@@ -552,7 +557,24 @@ class ConfigEditorApp(App[None]):
             return
         self.user_dotenv_active = self._user_dotenv_is_active()
         self._populate_field_table()
-        self.notify(f"Cleared {update.env_key}")
+        restart_notice = (
+            ". Restart the application to reload configuration."
+            if self._field_requires_restart(env_key)
+            else ""
+        )
+        self.notify(f"Cleared {update.env_key}{restart_notice}")
+
+    def _field_requires_restart(self, env_key: str) -> bool:
+        """Return whether one field needs an application restart.
+
+        :param env_key: Full environment key used to identify the field.
+        :return: Whether the field declaration requires a restart.
+        """
+        return any(
+            owner.env_key(spec.name) == env_key and spec.restart_required
+            for owner in self.owners
+            for spec in owner.fields
+        )
 
     async def _refresh_storage_list(
         self,

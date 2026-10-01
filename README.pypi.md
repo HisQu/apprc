@@ -135,6 +135,10 @@ The [config editor](https://github.com/HisQu/apprc/blob/main/docs/Explanations.m
 layers together, explains each setting, and edits user or storage overrides.
 The same [config fields](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#config-sections-and-fields)
 also drive the desktop settings view.
+Set [`restart_required=True`](https://github.com/HisQu/apprc/blob/main/docs/References.md#config-fields) on a field
+whose saved value takes effect only after the application restarts. The
+Textual and Gradio editors mark that field and repeat the restart instruction
+after saving; AppRC never restarts the application automatically.
 
 ## Add a Gradio settings page
 

@@ -81,6 +81,9 @@ Issues = "https://github.com/HisQu/apprc/issues"
 demo = [
     "apprc-example-apps",
 ]
+gui-test = [
+    "playwright>=1.52,<2",  # < Browser-level Gradio editor checks
+]
 dev = [
     "apprc",
     "build>=1.2",

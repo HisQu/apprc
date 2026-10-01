@@ -115,6 +115,7 @@ References states the exact contracts. Link the relevant words between them.
 ```shell
 .venv/bin/pytest tests/test_documentation.py
 .venv/bin/python examples/section_bundle.py
+.venv/bin/python examples/dependency_config_import.py
 ```
 
 The tests check document links, heading hierarchy, table-of-contents order,

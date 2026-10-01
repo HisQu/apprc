@@ -20,6 +20,7 @@
   - [Gradio editor](#gradio-editor)
 - [Compose and ship applications](#compose-and-ship-applications)
   - [Config bundles](#config-bundles)
+  - [Imported dependency settings](#imported-dependency-settings)
   - [Copies, overrides, and reloads](#copies-overrides-and-reloads)
   - [Installed packages and installer builds](#installed-packages-and-installer-builds)
 
@@ -432,6 +433,41 @@ builds two sections together. The
 [larger application example](EXAMPLES.md#several-sections-and-temporary-overrides)
 also shows how to pass the bundle to application code. Custom factories have
 additional requirements described in [References](References.md#config-bundles).
+
+## Imported dependency settings
+
+An imported config binding connects one dependency's registered config section
+to fields owned by a parent `AppRC`. This lets a host choose the names, defaults,
+documentation, and secret metadata that appear in its own settings tools while
+the dependency keeps its standalone namespace and config class.
+
+The parent opts in with
+[`AppRC.import_dependency_config()`](References.md#dependency-config-imports).
+It selects one leaf section, declares the parent-owned fields, and maps the
+dependency fields the host wants to expose. Several compatible fields can share
+one parent field; for example, two model fields can use one host-selected model
+name. Omitted dependency fields keep their Python defaults and are not added to
+the parent's settings schema. Each parent can import the same dependency
+section with a different map. The dependency class and its AppRC registration
+are not changed.
+
+In parent mode, AppRC reads values from the parent's resolved layers. It does
+not use the dependency's ambient environment, user dotenv, storage files, or
+bundle registrations. Dependency packaged defaults are excluded unless the
+parent opts in; selected values then sit below the parent's packaged defaults.
+The parent's [field metadata and provenance](#provenance) describe the value
+that the dependency receives.
+
+`ResolvedConfig.build(binding)` constructs the dependency section from that
+parent snapshot. A parent config bundle can also declare the dependency class as
+a child; AppRC injects that child from the same snapshot. Calling the bundle's
+constructor directly reports that an imported child requires the parent's
+`ResolvedConfig`. The
+[dependency-import guide](How-To-User-Guides.md#import-settings-from-a-dependency)
+shows both forms. Imported instances cannot read the dependency's live process
+environment through `reload()` or `bind_from_env()`; resolve the parent again
+to build an updated instance, or use `reload_from()` with a snapshot containing
+the same imported binding.
 
 ## Copies, overrides, and reloads
 

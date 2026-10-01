@@ -34,7 +34,9 @@ Learn the components in this order:
    [config editor](Explanations.md#config-editor) for terminal use, or the
    [Gradio editor](Explanations.md#gradio-editor) in a browser application.
 5. Use a [config bundle](Explanations.md#config-bundles) when several parts of
-   the application need their own config sections.
+   the application need their own config sections. Use an
+   [imported config binding](Explanations.md#imported-dependency-settings) when
+   the parent application owns the settings exposed by a dependency.
 
 The [complete setups](EXAMPLES.md#choose-a-setup) show when to use each option.
 Sections in [How-to user guides](How-To-User-Guides.md) are independent; you do not
@@ -66,6 +68,7 @@ the Python name identifies its implementation.
 | [Config section](Explanations.md#config-sections-and-fields) | Subclass of `rc.Config` or `rc.ConfigBase` | A group of related typed settings. |
 | [Config field](Explanations.md#config-sections-and-fields) | `rc.field(...)` | One setting's environment key, default, and documentation. |
 | [`ResolvedConfig`](Explanations.md#resolvedconfig) | `rc.ResolvedConfig` | The result of reading configuration sources for one application run. |
+| [Imported config binding](Explanations.md#imported-dependency-settings) | `rc.ImportedConfig` | A parent-owned mapping from a dependency section to the parent's settings and resolved snapshot. |
 | [Configuration layer](Explanations.md#configuration-layers) | One file or the process environment | A source of values with a defined priority. |
 | [Provenance](Explanations.md#provenance) | `settings.provenance_of(...)` | The record of where a field's current value came from. |
 | [AppRC directory](Explanations.md#user-dotenv-and-the-apprc-directory) | `~/.local/share/<app_id>` by default | Directory containing the user dotenv and storage registry when enabled. |

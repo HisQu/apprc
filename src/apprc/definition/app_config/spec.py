@@ -76,6 +76,7 @@ class AppConfigSpec:
         display_name: str,
         config_package: str | None = None,
         envs: tuple[type[object], ...] = (),
+        additional_owners: tuple[ConfigOwner, ...] = (),
         user_dotenv: UserDotenv | None = None,
         storage: Storage | None = None,
         setup_next_step: str | None = None,
@@ -90,6 +91,8 @@ class AppConfigSpec:
         :param display_name: Human-readable application name.
         :param config_package: Package that may contain managed defaults.
         :param envs: Registered environment-backed config classes.
+        :param additional_owners: Parent-owned schemas that do not correspond
+            to config classes registered on this AppRC.
         :param user_dotenv: Optional user dotenv declaration.
         :param storage: Optional persistent-storage declaration.
         :param setup_next_step: Optional command or instruction shown after CLI
@@ -113,7 +116,10 @@ class AppConfigSpec:
                     "apprc_dir_env_key requires user_dotenv=rc.UserDotenv() "
                     "or storage=rc.Storage()."
                 )
-        resolved_owners = tuple(owner_for(config_cls) for config_cls in envs)
+        resolved_owners = (
+            *(owner_for(config_cls) for config_cls in envs),
+            *additional_owners,
+        )
         validate_config_owner_inventory(resolved_owners)
         resolved_selector_key = (
             resolve_storage_selector_env_key(

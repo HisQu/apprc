@@ -81,6 +81,11 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+- Added `AppRC.import_dependency_config()` so a parent can explicitly map a
+  dependency's leaf config section to parent-owned fields and build it from the
+  parent's `ResolvedConfig`. Dependency environment, user, and storage values
+  are excluded; dependency packaged defaults remain opt-in.
+
 <br>
 
 ### 💔 Changed

@@ -14,6 +14,7 @@ from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.resolution import (
     BundleFieldSpec,
     ConfigSource,
+    ImportedConfig,
     ResolveOptions,
 )
 from apprc.definition.provenance import ConfigOriginState
@@ -101,6 +102,7 @@ class ConfigManager:
         *,
         registered_types: tuple[type[object], ...],
         bundles: Mapping[type[object], tuple[BundleFieldSpec, ...]],
+        imported_configs: tuple[ImportedConfig[object], ...] = (),
         options: ResolveOptions | None = None,
         environment: Mapping[str, str] | None = None,
     ) -> None:
@@ -109,6 +111,7 @@ class ConfigManager:
         :param schema: Application declaration snapshot.
         :param registered_types: Config sections known at manager creation.
         :param bundles: Registered bundle construction rules.
+        :param imported_configs: Parent-owned dependency bindings.
         :param options: Invocation choices, independent of persisted defaults.
         :param environment: Explicit environment, or a copy of the process.
         """
@@ -119,6 +122,7 @@ class ConfigManager:
         )
         self._registered_types = registered_types
         self._bundles = MappingProxyType(dict(bundles))
+        self._imported_configs = tuple(imported_configs)
 
     def _path_environment(
         self, *, allow_unready: bool = False
@@ -158,6 +162,7 @@ class ConfigManager:
             self.schema,
             registered_types=self._registered_types,
             bundles=self._bundles,
+            imported_configs=self._imported_configs,
             options=self.options,
             environment=self.environment,
         )
@@ -180,6 +185,7 @@ class ConfigManager:
             self.schema,
             registered_types=self._registered_types,
             bundles=self._bundles,
+            imported_configs=self._imported_configs,
             options=options,
             environment=self.environment,
             allow_unready=True,

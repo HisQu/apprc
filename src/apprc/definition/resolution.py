@@ -6,9 +6,68 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Self
+from typing import Generic, Self, TypeVar
 
 from apprc.definition.provenance import ConfigOriginState
+from apprc.definition.env_config.schema import ConfigOwner
+
+ConfigTypeT = TypeVar("ConfigTypeT")
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class ImportedConfig(Generic[ConfigTypeT]):
+    """Parent-owned binding for one dependency config section.
+
+    The handle keeps the dependency class separate from the parent-owned
+    section owner used to resolve it. ``field_targets`` maps selected
+    dependency fields to parent-owned fields; repeated values represent aliases.
+
+    :param dependency_app_id: Dependency AppRC identity for diagnostics.
+    :param config_type: Dependency config class built by this binding.
+    :param parent_owner: Parent-owned fields exposed to resolution tools.
+    :param dependency_owner: Dependency schema captured at import time.
+    :param runtime_owner: Instance owner used when building the dependency.
+    :param field_targets: Dependency field name to parent field name mapping.
+    :param config_package: Optional dependency package for opted-in defaults.
+    :param dependency_env_prefixes: Declared dependency field prefixes excluded
+        from parent inputs.
+    :param include_packaged_defaults: Whether to load selected dependency
+        packaged defaults below the parent's packaged defaults.
+    :param runtime_config_type: Config class used to build parent-redacted
+        dependency instances when needed.
+    """
+
+    dependency_app_id: str
+    config_type: type[ConfigTypeT]
+    parent_owner: ConfigOwner
+    dependency_owner: ConfigOwner
+    runtime_owner: ConfigOwner
+    field_targets: Mapping[str, str]
+    dependency_env_prefixes: tuple[str, ...] = ()
+    config_package: str | None = None
+    include_packaged_defaults: bool = False
+    runtime_config_type: type[ConfigTypeT] | None = None
+
+    def __post_init__(self) -> None:
+        """Detach the field map from caller-owned mutable state."""
+        object.__setattr__(
+            self, "field_targets", MappingProxyType(dict(self.field_targets))
+        )
+        object.__setattr__(
+            self,
+            "dependency_env_prefixes",
+            tuple(dict.fromkeys(self.dependency_env_prefixes)),
+        )
+        if self.runtime_config_type is None:
+            object.__setattr__(self, "runtime_config_type", self.config_type)
+
+    @property
+    def dependency_env_keys(self) -> frozenset[str]:
+        """Return dependency field keys that must stay out of parent inputs."""
+        return frozenset(
+            self.dependency_owner.env_key(field_name)
+            for field_name in self.field_targets
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +84,7 @@ class BundleFieldSpec:
     config_type: type[object]
     init: bool
     default_factory: Callable[[], object] | None
+    imported_config: ImportedConfig[object] | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from importlib.resources import files
 from pathlib import Path
 from threading import RLock
 from types import MappingProxyType
@@ -15,6 +16,7 @@ from apprc.definition.provenance import ConfigOriginState, ShellProvenanceOrigin
 from apprc.definition.resolution import (
     BundleFieldSpec,
     ConfigSource,
+    ImportedConfig,
     ResolveOptions,
 )
 from apprc.user_files.env_files.layers import (
@@ -96,11 +98,17 @@ class ResolvedConfig:
     )
     issues: tuple[str, ...] = ()
     storage_issues: tuple[str, ...] = ()
+    imported_configs: tuple[ImportedConfig[object], ...] = field(
+        default=(), repr=False
+    )
 
     def __post_init__(self) -> None:
         """Freeze bundle registrations independently of the application."""
         object.__setattr__(
             self, "bundles", MappingProxyType(dict(self.bundles))
+        )
+        object.__setattr__(
+            self, "imported_configs", tuple(self.imported_configs)
         )
 
     @property
@@ -121,13 +129,21 @@ class ResolvedConfig:
         if (
             config_type not in self.registered_types
             and config_type not in self.bundles
+            and not any(
+                config_type in (item.config_type, item.runtime_config_type)
+                for item in self.imported_configs
+            )
         ):
             raise ValueError(
                 f"{config_type.__name__} was not registered when this configuration "
                 "was resolved. Register it with this AppRC and resolve again."
             )
 
-    def build[T](self, config_type: type[T], **overrides: Any) -> T:
+    def build[T](
+        self,
+        config_type: type[T] | ImportedConfig[T],
+        **overrides: Any,
+    ) -> T:
         """Construct a registered section or bundle using this source snapshot.
 
         Ordinary constructors and post-init hooks run once. A custom factory
@@ -138,14 +154,51 @@ class ResolvedConfig:
         :param overrides: Explicit constructor values or bundle children.
         :return: A newly constructed configuration object.
         """
+        if isinstance(config_type, ImportedConfig):
+            imported = self._require_imported_config(config_type)
+            if (
+                "_apprc_source" in overrides
+                or "_apprc_owner_override" in overrides
+            ):
+                raise TypeError("AppRC resolution state is reserved.")
+            runtime_type = imported.runtime_config_type
+            assert runtime_type is not None
+            runtime_config_type = cast(Any, runtime_type)
+            instance = runtime_config_type(
+                _apprc_source=self.source,
+                _apprc_owner_override=imported.runtime_owner,
+                **overrides,
+            )
+            object.__setattr__(
+                instance,
+                "_apprc_imported_field_names",
+                frozenset(imported.field_targets),
+            )
+            return cast(T, instance)
         self.require_registered(config_type)
-        if "_apprc_source" in overrides:
-            raise TypeError("_apprc_source is reserved for AppRC resolution.")
+        imported = self._imported_for_type(config_type)
+        if imported is not None:
+            return cast(T, self.build(imported, **overrides))
+        if "_apprc_source" in overrides or "_apprc_owner_override" in overrides:
+            raise TypeError("AppRC resolution state is reserved.")
         if issubclass(config_type, Config):
-            return cast(T, config_type(_apprc_source=self.source, **overrides))
+            runtime_config_type = cast(Any, config_type)
+            return cast(
+                T,
+                runtime_config_type(_apprc_source=self.source, **overrides),
+            )
         if config_type in self.bundles:
             for child in self.bundles[config_type]:
                 if not child.init or child.name in overrides:
+                    continue
+                if child.imported_config is not None:
+                    if child.default_factory is not child.config_type:
+                        raise TypeError(
+                            f"Inject {child.name!r} explicitly: its custom "
+                            "factory cannot receive the resolved configuration "
+                            "source."
+                        )
+                    overrides[child.name] = self.build(child.imported_config)
                     continue
                 if issubclass(child.config_type, Config):
                     if child.default_factory is not child.config_type:
@@ -155,6 +208,38 @@ class ResolvedConfig:
                         )
                     overrides[child.name] = self.build(child.config_type)
         return config_type(**overrides)
+
+    def _require_imported_config[T](
+        self,
+        imported_config: ImportedConfig[T],
+    ) -> ImportedConfig[T]:
+        """Require a binding captured by this exact resolution."""
+        if not any(item is imported_config for item in self.imported_configs):
+            raise ValueError(
+                "Imported config binding was not registered when this "
+                "configuration was resolved. Resolve the parent AppRC again."
+            )
+        return imported_config
+
+    def _imported_for_type[T](
+        self,
+        config_type: type[T],
+    ) -> ImportedConfig[T] | None:
+        """Find a unique imported binding for its dependency config class."""
+        candidates = [
+            item
+            for item in self.imported_configs
+            if config_type in (item.config_type, item.runtime_config_type)
+        ]
+        if len(candidates) > 1:
+            raise ValueError(
+                f"{config_type.__name__} has multiple imported bindings. "
+                "Build it with the desired ImportedConfig handle."
+            )
+        return cast(
+            ImportedConfig[T] | None,
+            candidates[0] if candidates else None,
+        )
 
     def export_environment(self) -> None:
         """Export effective file assignments and the selected storage path.
@@ -184,6 +269,7 @@ def resolve_config(
     *,
     registered_types: tuple[type[object], ...],
     bundles: Mapping[type[object], tuple[BundleFieldSpec, ...]],
+    imported_configs: tuple[ImportedConfig[object], ...] = (),
     options: ResolveOptions | None = None,
     environment: Mapping[str, str] | None = None,
     allow_unready: bool = False,
@@ -194,6 +280,8 @@ def resolve_config(
     :param schema: Registered declaration metadata.
     :param registered_types: Section registration snapshot.
     :param bundles: Bundle registration snapshot.
+    :param imported_configs: Parent-owned dependency bindings captured by the
+        declaration.
     :param options: Invocation policy, or defaults.
     :param environment: Explicit environment snapshot; ``None`` captures the process.
     :param allow_unready: Retain storage readiness failures for management inspection.
@@ -201,7 +289,30 @@ def resolve_config(
     :return: Immutable resolved inputs ready to build runtime objects.
     """
     options = options or ResolveOptions()
-    original = dict(os.environ if environment is None else environment)
+    excluded_dependency_keys = frozenset(
+        key for item in imported_configs for key in item.dependency_env_keys
+    )
+    excluded_dependency_prefixes = tuple(
+        dict.fromkeys(
+            prefix
+            for item in imported_configs
+            for prefix in item.dependency_env_prefixes
+        )
+    )
+
+    def is_dependency_env_key(key: str) -> bool:
+        """Return whether a key belongs to an imported dependency namespace."""
+        return key in excluded_dependency_keys or any(
+            key.startswith(prefix) for prefix in excluded_dependency_prefixes
+        )
+
+    original = {
+        key: value
+        for key, value in dict(
+            os.environ if environment is None else environment
+        ).items()
+        if not is_dependency_env_key(key)
+    }
     if (
         options.storage is not None or options.storage_required
     ) and not schema.uses_storage():
@@ -220,6 +331,11 @@ def resolve_config(
             raise
         issues.append(str(exc))
         explicit_layers, explicit_values = (), {}
+    explicit_values = {
+        key: value
+        for key, value in explicit_values.items()
+        if not is_dependency_env_key(key)
+    }
     selector_env = selection_env(
         original_env=original,
         explicit_values=explicit_values,
@@ -289,16 +405,21 @@ def resolve_config(
         resource: tuple[str, str] | None = None,
     ) -> None:
         """Record each input layer once for both inspection and binding."""
+        parent_values = {
+            key: value
+            for key, value in values.items()
+            if not is_dependency_env_key(key)
+        }
         layers.append(
             ResolvedLayer(
                 origin,
                 ConfigSource(
-                    values,
+                    parent_values,
                     {
                         key: ConfigOriginState(
                             origin, env_key=key, path=path, resource=resource
                         )
-                        for key in values
+                        for key in parent_values
                     },
                 ),
                 path,
@@ -339,6 +460,59 @@ def resolve_config(
         )
 
     if options.load_dotenv_layers:
+        for imported in imported_configs:
+            if not imported.include_packaged_defaults:
+                continue
+            assert imported.config_package is not None
+            try:
+                dependency_defaults = files(imported.config_package).joinpath(
+                    schema.defaults_dotenv_filename
+                )
+                if not dependency_defaults.is_file():
+                    continue
+                dependency_values = parse_dotenv_text(
+                    dependency_defaults.read_text(encoding="utf-8"),
+                    environment=original,
+                )
+                parent_values: dict[str, str] = {}
+                for (
+                    dependency_field,
+                    parent_field,
+                ) in imported.field_targets.items():
+                    dependency_key = imported.dependency_owner.env_key(
+                        dependency_field
+                    )
+                    if dependency_key not in dependency_values:
+                        continue
+                    parent_key = imported.parent_owner.env_key(parent_field)
+                    value = dependency_values[dependency_key]
+                    previous = parent_values.get(parent_key)
+                    if previous is not None and previous != value:
+                        raise ValueError(
+                            "Conflicting dependency packaged defaults map to "
+                            f"parent field {parent_field!r}."
+                        )
+                    parent_values[parent_key] = value
+                add_layer(
+                    parent_values,
+                    "shell_dotenv_defaults",
+                    path=(
+                        dependency_defaults
+                        if isinstance(dependency_defaults, Path)
+                        else None
+                    ),
+                    resource=(
+                        imported.config_package,
+                        schema.defaults_dotenv_filename,
+                    ),
+                )
+            except (ImportError, OSError, ValueError, TypeError) as exc:
+                if not allow_unready:
+                    raise
+                issues.append(
+                    "Could not read dependency packaged defaults from "
+                    f"{imported.config_package!r}: {exc}"
+                )
         try:
             defaults = defaults_dotenv_resource(schema)
             if defaults is not None and defaults.is_file():
@@ -400,6 +574,7 @@ def resolve_config(
         bundles,
         tuple(issues),
         tuple(storage_issues),
+        imported_configs,
     )
 
 

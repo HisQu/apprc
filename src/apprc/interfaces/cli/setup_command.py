@@ -173,14 +173,15 @@ def _run_setup_with_user_secret_repair(
         status = manager.secret_status("user")
         if status.issue != "The parent directory is readable by other users.":
             raise
-        access_change = (
-            "Restrict access to this user, SYSTEM, and Administrators"
+        allowed_principals = (
+            "this user, SYSTEM, and Administrators"
             if os.name == "nt"
-            else "Make the directory accessible only to its owner"
+            else "the current user"
         )
         if not typer.confirm(
             f"The user secret directory at {status.path.parent} is not "
-            f"private. {access_change} and continue setup?"
+            "private. Update safety permissions to allow access only to "
+            f"{allowed_principals}, then continue setup?"
         ):
             raise
         try:

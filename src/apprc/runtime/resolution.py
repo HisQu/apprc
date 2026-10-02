@@ -13,11 +13,13 @@ from typing import Any, cast
 
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.provenance import ConfigOriginState, ShellProvenanceOrigin
+from apprc.definition.env_config.sentinels import ENV_FIELD_MISSING
 from apprc.definition.resolution import (
     BundleFieldSpec,
     ConfigSource,
     ImportedConfig,
     ResolveOptions,
+    dependency_environment_exclusions,
     filter_dependency_environment,
 )
 from apprc.user_files.env_files.layers import (
@@ -180,28 +182,43 @@ class ResolvedConfig:
             if (
                 "_apprc_source" in overrides
                 or "_apprc_owner_override" in overrides
+                or "_apprc_imported_field_names" in overrides
+                or "_apprc_imported_binding" in overrides
             ):
                 raise TypeError("AppRC resolution state is reserved.")
             runtime_type = imported.runtime_config_type
             assert runtime_type is not None
             runtime_config_type = cast(Any, runtime_type)
+            imported_overrides = dict(overrides)
+            imported_overrides.update(
+                {
+                    "_apprc_imported_field_names": frozenset(
+                        imported.field_targets
+                    ),
+                    "_apprc_imported_binding": imported,
+                }
+            )
+            for field_name in imported.field_targets:
+                imported_overrides.setdefault(field_name, ENV_FIELD_MISSING)
             instance = runtime_config_type(
                 _apprc_source=self.source,
                 _apprc_owner_override=imported.runtime_owner,
-                **overrides,
+                **imported_overrides,
             )
-            object.__setattr__(
-                instance,
-                "_apprc_imported_field_names",
-                frozenset(imported.field_targets),
-            )
-            object.__setattr__(instance, "_apprc_imported_binding", imported)
             return cast(T, instance)
         self.require_registered(config_type)
         imported = self._imported_for_type(config_type)
         if imported is not None:
             return cast(T, self.build(imported, **overrides))
-        if "_apprc_source" in overrides or "_apprc_owner_override" in overrides:
+        if any(
+            name in overrides
+            for name in (
+                "_apprc_source",
+                "_apprc_owner_override",
+                "_apprc_imported_field_names",
+                "_apprc_imported_binding",
+            )
+        ):
             raise TypeError("AppRC resolution state is reserved.")
         if issubclass(config_type, Config):
             runtime_config_type = cast(Any, config_type)
@@ -315,6 +332,9 @@ def resolve_config(
         dict(os.environ if environment is None else environment),
         imported_configs,
     )
+    excluded_env_keys, excluded_env_prefixes = (
+        dependency_environment_exclusions(imported_configs)
+    )
     if (
         options.storage is not None or options.storage_required
     ) and not schema.uses_storage():
@@ -326,7 +346,10 @@ def resolve_config(
     issues: list[str] = []
     try:
         _, explicit_layers, explicit_values = read_explicit_env_files(
-            options.env_files, environment=original
+            options.env_files,
+            environment=original,
+            excluded_env_keys=excluded_env_keys,
+            excluded_env_prefixes=excluded_env_prefixes,
         )
     except (OSError, ValueError) as exc:
         if not allow_unready:
@@ -426,7 +449,12 @@ def resolve_config(
     def read_layer(path: Path, origin: ShellProvenanceOrigin) -> None:
         """Keep an unreadable managed layer visible during repair inspection."""
         try:
-            values = parse_dotenv_file(path, environment=original)
+            values = parse_dotenv_file(
+                path,
+                environment=original,
+                excluded_env_keys=excluded_env_keys,
+                excluded_env_prefixes=excluded_env_prefixes,
+            )
         except (OSError, ValueError) as exc:
             if not allow_unready:
                 raise
@@ -437,7 +465,12 @@ def resolve_config(
     def read_secret_layer(path: Path, origin: ShellProvenanceOrigin) -> None:
         """Read only declared secret fields from a companion file."""
         try:
-            parsed = parse_dotenv_file(path, environment=original)
+            parsed = parse_dotenv_file(
+                path,
+                environment=original,
+                excluded_env_keys=excluded_env_keys,
+                excluded_env_prefixes=excluded_env_prefixes,
+            )
         except (OSError, ValueError) as exc:
             if not allow_unready:
                 raise
@@ -517,6 +550,8 @@ def resolve_config(
                     parse_dotenv_text(
                         defaults.read_text(encoding="utf-8"),
                         environment=original,
+                        excluded_env_keys=excluded_env_keys,
+                        excluded_env_prefixes=excluded_env_prefixes,
                     ),
                     "shell_dotenv_defaults",
                     path=defaults if isinstance(defaults, Path) else None,

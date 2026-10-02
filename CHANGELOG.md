@@ -89,11 +89,15 @@ All notable changes to `AppRC` will be documented in this file.
   environment, selectors, registries, user files, and storage files are
   excluded. A storage-required section uses the parent's selected storage
   after the parent enables and selects storage. Dependency packaged defaults
-  remain opt-in.
+  remain opt-in. Mapped dependency fields must be dataclass fields with
+  `init=True` so the parent can supply their values during construction.
 
 <br>
 
 ### 💔 Changed
+
+- Clarified secret-directory permission prompts and repair guidance to name
+  this user, SYSTEM, and Administrators as the allowed Windows principals.
 
 <br>
 

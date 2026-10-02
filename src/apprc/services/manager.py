@@ -16,6 +16,7 @@ from apprc.definition.resolution import (
     ConfigSource,
     ImportedConfig,
     ResolveOptions,
+    dependency_environment_exclusions,
     filter_dependency_environment,
 )
 from apprc.definition.provenance import ConfigOriginState
@@ -129,12 +130,18 @@ class ConfigManager:
         self, *, allow_unready: bool = False
     ) -> dict[str, str]:
         """Apply structural directory precedence without mutating the process."""
+        excluded_env_keys, excluded_env_prefixes = (
+            dependency_environment_exclusions(self._imported_configs)
+        )
         environment = filter_dependency_environment(
             self.environment, self._imported_configs
         )
         try:
             _, _, explicit = read_explicit_env_files(
-                self.options.env_files, environment=environment
+                self.options.env_files,
+                environment=environment,
+                excluded_env_keys=excluded_env_keys,
+                excluded_env_prefixes=excluded_env_prefixes,
             )
         except (OSError, ValueError):
             if not allow_unready:
@@ -456,7 +463,15 @@ class ConfigManager:
         environment = filter_dependency_environment(
             self.environment, self._imported_configs
         )
-        if env_key in parse_dotenv_file(regular, environment=environment):
+        excluded_env_keys, excluded_env_prefixes = (
+            dependency_environment_exclusions(self._imported_configs)
+        )
+        if env_key in parse_dotenv_file(
+            regular,
+            environment=environment,
+            excluded_env_keys=excluded_env_keys,
+            excluded_env_prefixes=excluded_env_prefixes,
+        ):
             raise ValueError(
                 f"{env_key} is still in {regular.name}. Run `config secrets migrate` first."
             )
@@ -488,8 +503,16 @@ class ConfigManager:
         environment = filter_dependency_environment(
             self.environment, self._imported_configs
         )
+        excluded_env_keys, excluded_env_prefixes = (
+            dependency_environment_exclusions(self._imported_configs)
+        )
         values = filter_dependency_environment(
-            parse_dotenv_text(plan.text, environment=environment),
+            parse_dotenv_text(
+                plan.text,
+                environment=environment,
+                excluded_env_keys=excluded_env_keys,
+                excluded_env_prefixes=excluded_env_prefixes,
+            ),
             self._imported_configs,
         )
         layers = tuple(

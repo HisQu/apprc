@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from typed_settings.dict_utils import set_path
 from typed_settings.types import LoadedSettings, LoaderMeta
 
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.definition.env_config.sentinels import CONFIG_MISSING
 
 
 class OwnerMappingLoader:
@@ -59,8 +61,31 @@ def load_owner_from_sources(
     :param sources: Ordered sources from low to high precedence.
     :return: A generated settings dataclass instance.
     """
+    if any(spec.default_factory is not CONFIG_MISSING for spec in owner.fields):
+        # Loading sources only needs to convert supplied values. Config
+        # factories are applied at the runtime config boundary, where aliases
+        # can share one resolved parent value. Keeping them on this temporary
+        # typed-settings dataclass would evaluate a factory once per alias.
+        supplied_keys = {
+            env_key for source in sources for env_key in source.values
+        }
+        source_owner = replace(
+            owner,
+            fields=tuple(
+                replace(
+                    spec,
+                    default=CONFIG_MISSING,
+                    default_factory=CONFIG_MISSING,
+                )
+                for spec in owner.fields
+                if owner.env_key(spec.name) in supplied_keys
+            ),
+        )
+        settings_class = source_owner.settings_class()
+    else:
+        settings_class = owner.settings_class()
     return ts.load_settings(
-        owner.settings_class(),
+        settings_class,
         sources,
         converter=ts.default_converter(resolve_paths=False),
     )

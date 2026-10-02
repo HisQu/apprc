@@ -86,15 +86,13 @@ class ImportedConfig(Generic[ConfigTypeT]):
         )
 
 
-def filter_dependency_environment(
-    environment: Mapping[str, str],
+def dependency_environment_exclusions(
     imported_configs: tuple[ImportedConfig[object], ...],
-) -> dict[str, str]:
-    """Remove imported dependency keys before parent input processing.
+) -> tuple[frozenset[str], tuple[str, ...]]:
+    """Return dependency keys and prefixes excluded from parent inputs.
 
-    :param environment: Captured process or file-derived environment values.
     :param imported_configs: Parent-owned imports that define dependency keys.
-    :return: A new mapping without dependency-owned keys.
+    :return: Exact excluded keys and dependency prefixes.
     """
     excluded_keys = frozenset(
         key for item in imported_configs for key in item.dependency_env_keys
@@ -105,6 +103,22 @@ def filter_dependency_environment(
             for item in imported_configs
             for prefix in item.dependency_env_prefixes
         )
+    )
+    return excluded_keys, excluded_prefixes
+
+
+def filter_dependency_environment(
+    environment: Mapping[str, str],
+    imported_configs: tuple[ImportedConfig[object], ...],
+) -> dict[str, str]:
+    """Remove imported dependency keys before parent input processing.
+
+    :param environment: Captured process or file-derived environment values.
+    :param imported_configs: Parent-owned imports that define dependency keys.
+    :return: A new mapping without dependency-owned keys.
+    """
+    excluded_keys, excluded_prefixes = dependency_environment_exclusions(
+        imported_configs
     )
     return {
         key: value

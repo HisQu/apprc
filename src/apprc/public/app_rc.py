@@ -231,6 +231,8 @@ class AppRC:
         The parent supplies a complete set of field declarations and may map
         several compatible dependency fields to the same parent field. Omitted
         dependency fields must have Python defaults and keep those defaults.
+        Every mapped dependency field must be a dataclass field with
+        ``init=True`` so parent values can be supplied during construction.
         This method records the dependency schema and adds its parent-owned
         fields to this AppRC. It does not load dependency user files, storage
         files, or environment values. If the section requires storage, the
@@ -310,6 +312,20 @@ class AppRC:
             raise ValueError(
                 "field_targets contains unknown dependency fields: "
                 + ", ".join(unknown)
+                + "."
+            )
+        dependency_dataclass_fields = {
+            item.name: item for item in dataclasses.fields(config_type)
+        }
+        non_init_fields = sorted(
+            field_name
+            for field_name in targets
+            if not dependency_dataclass_fields[field_name].init
+        )
+        if non_init_fields:
+            raise TypeError(
+                "Mapped dependency fields must be dataclass init=True fields: "
+                + ", ".join(non_init_fields)
                 + "."
             )
         unmapped = source_names - set(targets)
@@ -702,6 +718,8 @@ class AppRC:
                 f'AppRC config key "{key}" is already registered by '
                 f"{existing.config_type.__name__}."
             )
+        if any(item.parent_owner.key == key for item in self._imported_configs):
+            raise ValueError(f'AppRC owner key "{key}" is already in use.')
 
         resolved_type = self._ensure_dataclass(config_type)
         if requires_storage and self.schema.storage is None:
@@ -728,6 +746,7 @@ class AppRC:
                 requires_storage=requires_storage,
             )
             self._validate_unique_env_keys(resolved_type, declared_fields)
+            validate_config_owner_inventory((*self.schema.owners, owner))
             setattr(resolved_type, "config_owner", owner)
         else:
             self._validate_python_only_registration(

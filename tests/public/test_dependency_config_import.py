@@ -3,7 +3,12 @@
 import importlib
 import logging
 from copy import deepcopy
-from dataclasses import FrozenInstanceError, dataclass, field as dc_field
+from dataclasses import (
+    FrozenInstanceError,
+    dataclass,
+    field as dc_field,
+    replace,
+)
 from pathlib import Path
 from typing import Any, cast
 
@@ -36,6 +41,36 @@ def _dependency(
         timeout: int = rc.field("DEP_TIMEOUT", default=5)
 
     return dependency, ClientRC
+
+
+def _single_field_dependency() -> tuple[rc.AppRC, type[Any]]:
+    """Declare a small dependency section for owner-key collision tests."""
+    dependency = rc.AppRC(app_id="single-field-dependency")
+
+    @dependency.config("client", prefix="DEP_")
+    class ClientRC(rc.Config):
+        endpoint: str = rc.field("DEP_ENDPOINT", default="dependency")
+
+    return dependency, ClientRC
+
+
+def _import_single_field_client(
+    host: rc.AppRC,
+    dependency: rc.AppRC,
+    config_type: type[Any],
+) -> rc.ImportedConfig[Any]:
+    """Import a small dependency section using the colliding owner key."""
+    return host.import_dependency_config(
+        dependency,
+        config_type,
+        key="client",
+        prefix="HOST_IMPORTED_",
+        fields={
+            "endpoint": rc.field(
+                "HOST_IMPORTED_ENDPOINT", default="host-default"
+            )
+        },
+    )
 
 
 def _host_import(
@@ -151,6 +186,166 @@ def test_parent_apps_import_one_dependency_without_changing_its_owner(
     with pytest.raises(RuntimeError, match="ambient environment"):
         first_config.bind_from_env()
     assert first_config.base_url == "https://first.example"
+
+
+def test_imported_mapped_fields_skip_dependency_default_factories() -> None:
+    """Imported construction uses only parent defaults and sources."""
+    dependency = rc.AppRC(app_id="dependency")
+    factory_calls: list[str] = []
+
+    def unavailable_dependency_default() -> str:
+        factory_calls.append("called")
+        raise RuntimeError("dependency default is unavailable")
+
+    @dependency.config("client", prefix="DEP_CLIENT_")
+    class ClientRC(rc.Config):
+        endpoint: str = rc.field(
+            "DEP_CLIENT_ENDPOINT",
+            default_factory=unavailable_dependency_default,
+        )
+
+    host = rc.AppRC(app_id="host")
+    binding = host.import_dependency_config(
+        dependency,
+        ClientRC,
+        key="client",
+        prefix="OTHER_HOST_",
+        fields={
+            "endpoint": rc.field(
+                "OTHER_HOST_ENDPOINT", default="parent-default"
+            )
+        },
+    )
+
+    defaulted = host.resolve(environment={}).build(binding)
+    assert defaulted.endpoint == "parent-default"
+    assert defaulted.provenance_of("endpoint").origin == "python_config_default"
+    assert factory_calls == []
+
+    sourced = host.resolve(
+        environment={"OTHER_HOST_ENDPOINT": "parent-source"}
+    ).build(binding)
+    assert sourced.endpoint == "parent-source"
+    assert sourced.provenance_of("endpoint").origin == "shell_export_variable"
+    assert factory_calls == []
+
+    with pytest.raises(RuntimeError, match="dependency default is unavailable"):
+        ClientRC()
+    assert factory_calls == ["called"]
+
+
+def test_import_metadata_is_available_during_dependency_post_init() -> None:
+    """Dependency hooks see parent mapping tags before base post-init returns."""
+    dependency = rc.AppRC(app_id="dependency")
+    hook_mappings: list[tuple[dict[str, str], dict[str, str]]] = []
+
+    @dependency.config("client", prefix="DEP_CLIENT_")
+    class ClientRC(rc.Config):
+        endpoint: str = rc.field(
+            "DEP_CLIENT_ENDPOINT", default="dependency-endpoint"
+        )
+        local_label: str = rc.field(
+            "DEP_CLIENT_LOCAL_LABEL", default="dependency-label"
+        )
+
+        def __post_init__(self) -> None:
+            """Record the mapping exposed after base initialization."""
+            super().__post_init__()
+            hook_mappings.append(
+                (
+                    self.current_env_mapping(),
+                    self.current_env_mapping(prefixed=False),
+                )
+            )
+
+    standalone = ClientRC(bind_from_env_on_init=False)
+    assert standalone._apprc_imported_field_names is None
+    assert standalone._apprc_imported_binding is None
+    assert standalone.current_env_mapping() == {
+        "DEP_CLIENT_ENDPOINT": "dependency-endpoint",
+        "DEP_CLIENT_LOCAL_LABEL": "dependency-label",
+    }
+    hook_mappings.clear()
+
+    host = rc.AppRC(app_id="host")
+    binding = host.import_dependency_config(
+        dependency,
+        ClientRC,
+        key="client",
+        prefix="HOST_CLIENT_",
+        fields={
+            "api_endpoint": rc.field(
+                "HOST_CLIENT_API_ENDPOINT", default="host-endpoint"
+            )
+        },
+        field_targets={"endpoint": "api_endpoint"},
+    )
+    resolved = host.resolve(
+        environment={"HOST_CLIENT_API_ENDPOINT": "parent-source"}
+    )
+    imported = cast(Any, resolved.build(binding))
+
+    expected = {
+        "HOST_CLIENT_API_ENDPOINT": "parent-source",
+    }
+    assert hook_mappings == [(expected, {"API_ENDPOINT": "parent-source"})]
+    assert imported.current_env_mapping() == expected
+    assert imported.endpoint == "parent-source"
+    with pytest.raises(TypeError, match="resolution state is reserved"):
+        resolved.build(binding, _apprc_imported_binding=binding)
+    with pytest.raises(TypeError, match="resolution state is reserved"):
+        resolved.build(
+            binding,
+            _apprc_imported_field_names=frozenset({"endpoint"}),
+        )
+
+
+def test_import_rejects_mapped_init_false_fields_before_registration() -> None:
+    """Mapped imported fields must accept parent values at construction."""
+    dependency = rc.AppRC(app_id="dependency")
+    endpoint_declaration = rc.field("DEP_ENDPOINT", default="dependency")
+
+    @dependency.config("client", prefix="DEP_")
+    class ClientRC(rc.Config):
+        endpoint: str = dc_field(
+            init=False,
+            default="dependency",
+            metadata=endpoint_declaration.metadata,
+        )
+
+    host = rc.AppRC(app_id="host")
+    schema_before = host.schema
+    registered_by_key_before = dict(host._registered_by_key)
+    registered_by_type_before = dict(host._registered_by_type)
+    env_key_index_before = dict(host._env_key_index)
+
+    with pytest.raises(
+        TypeError,
+        match="Mapped dependency fields must be dataclass init=True fields: endpoint",
+    ):
+        host.import_dependency_config(
+            dependency,
+            ClientRC,
+            key="client",
+            prefix="HOST_CLIENT_",
+            fields={
+                "endpoint": rc.field(
+                    "HOST_CLIENT_ENDPOINT", default="host-default"
+                )
+            },
+        )
+
+    assert host.schema is schema_before
+    assert host._registered_by_key == registered_by_key_before
+    assert host._registered_by_type == registered_by_type_before
+    assert host._env_key_index == env_key_index_before
+
+    @host.config("valid", prefix="HOST_VALID_")
+    class ValidRC(rc.Config):
+        value: str = rc.field("HOST_VALID_VALUE", default="valid")
+
+    resolved = host.resolve(environment={"HOST_VALID_VALUE": "ready"})
+    assert resolved.build(ValidRC).value == "ready"
 
 
 def test_parent_secret_metadata_redacts_logs_and_nested_serialization(
@@ -316,6 +511,9 @@ def test_alias_source_binds_siblings_when_one_field_is_overridden(
     assert client.provenance_of("model_fast").origin == (
         "shell_export_variable"
     )
+    unprefixed = client.current_env_mapping(prefixed=False)
+    assert unprefixed["CHAT_MODEL"] == "source-model"
+    assert "HOST_CLIENT_CHAT_MODEL" not in unprefixed
 
     client.model_llm = "assigned-model"
     client.reload_from(resolved)
@@ -326,6 +524,55 @@ def test_alias_source_binds_siblings_when_one_field_is_overridden(
     )
     client.reload_from(resolved, override_python_values=True)
     assert client.model_llm == client.model_fast == "source-model"
+
+
+def test_alias_default_factory_resolves_once_during_build_and_reload() -> None:
+    """Aliased dependency fields share one resolved parent default value."""
+    dependency = rc.AppRC(app_id="dependency")
+    factory_values: list[int] = []
+
+    def next_shared_value() -> int:
+        value = 10 + len(factory_values)
+        factory_values.append(value)
+        return value
+
+    @dependency.config("client", prefix="DEP_")
+    class ClientRC(rc.Config):
+        first: int = rc.field("DEP_FIRST", default=1)
+        second: int = rc.field("DEP_SECOND", default=2)
+        third: int = rc.field("DEP_THIRD", default=3)
+
+    host = rc.AppRC(app_id="host")
+    binding = host.import_dependency_config(
+        dependency,
+        ClientRC,
+        key="client",
+        prefix="HOST_",
+        fields={
+            "shared": rc.field("HOST_SHARED", default_factory=next_shared_value)
+        },
+        field_targets={
+            "first": "shared",
+            "second": "shared",
+            "third": "shared",
+        },
+    )
+    resolved = host.resolve(environment={})
+
+    config = cast(Any, resolved.build(binding, first=99))
+    assert config.first == 99
+    assert config.second == config.third == 10
+    assert factory_values == [10]
+    assert config.current_env_mapping(prefixed=False) == {"SHARED": "10"}
+
+    config.reload_from(resolved)
+    assert config.first == 99
+    assert config.second == config.third == 11
+    assert factory_values == [10, 11]
+
+    config.reload_from(resolved, override_python_values=True)
+    assert config.first == config.second == config.third == 12
+    assert factory_values == [10, 11, 12]
 
 
 def test_storage_import_requires_valid_parent_selection(
@@ -791,6 +1038,65 @@ def test_parent_resolution_ignores_dependency_user_storage_and_environment(
     assert standalone.base_url == "https://standalone.example"
 
 
+def test_parent_dotenv_interpolation_excludes_dependency_assignments(
+    tmp_path: Path,
+) -> None:
+    """A dependency assignment cannot feed a parent field in the same file."""
+    dependency, ClientRC = _dependency(tmp_path)
+    host = rc.AppRC(app_id="host")
+    binding = _host_import(host, dependency, ClientRC, prefix="HOST_CLIENT_")
+    explicit = tmp_path / "host-inputs.env"
+    explicit.write_text(
+        "DEP_BASE_URL=file-dependency-value\n"
+        "HOST_CLIENT_ENDPOINT=${DEP_BASE_URL:-parent-fallback}\n",
+        encoding="utf-8",
+    )
+
+    resolved = host.resolve(
+        rc.ResolveOptions(
+            env_files=(explicit,),
+            env_file_overrides_os_environ=True,
+        ),
+        environment={"HOST_CLIENT_API_KEY": "host-secret"},
+    )
+    config = cast(Any, resolved.build(binding))
+
+    assert config.base_url == "parent-fallback"
+    assert "DEP_BASE_URL" not in resolved.values
+
+
+def test_standalone_dependency_config_rejects_parent_resolution_reload(
+    tmp_path: Path,
+) -> None:
+    """A parent snapshot cannot reload an independently built dependency."""
+    dependency, ClientRC = _dependency(tmp_path)
+    host = rc.AppRC(app_id="host")
+    binding = _host_import(host, dependency, ClientRC, prefix="HOST_CLIENT_")
+    standalone = dependency.resolve(
+        environment={
+            "DEP_API_KEY": "standalone-secret",
+            "DEP_BASE_URL": "https://standalone.example",
+        }
+    ).build(ClientRC)
+    parent_resolved = host.resolve(
+        environment={
+            "HOST_CLIENT_API_KEY": "parent-secret",
+            "HOST_CLIENT_ENDPOINT": "https://parent.example",
+        }
+    )
+    before_values = standalone.to_dict()
+    before_provenance = standalone.provenance()
+
+    with pytest.raises(ValueError, match="Standalone dependency configs"):
+        standalone.reload_from(parent_resolved)
+
+    assert standalone.to_dict() == before_values
+    assert standalone.provenance() == before_provenance
+    imported = cast(Any, parent_resolved.build(binding))
+    imported.reload_from(parent_resolved)
+    assert imported.base_url == "https://parent.example"
+
+
 def test_manager_paths_and_edit_preview_filter_dependency_environment(
     tmp_path: Path,
 ) -> None:
@@ -806,7 +1112,11 @@ def test_manager_paths_and_edit_preview_filter_dependency_environment(
     )
     _host_import(host, dependency, ClientRC, prefix="HOST_CLIENT_")
     explicit = tmp_path / "host-inputs.env"
-    explicit.write_text("HOST_APPRC_DIR=${DEP_LOCATION}\n", encoding="utf-8")
+    explicit.write_text(
+        f"DEP_LOCATION={dependency_home}\n"
+        f"HOST_APPRC_DIR=${{DEP_LOCATION:-{parent_home}}}\n",
+        encoding="utf-8",
+    )
     manager = host.manage(
         rc.ResolveOptions(env_files=(explicit,)),
         environment={"DEP_LOCATION": str(dependency_home)},
@@ -820,11 +1130,23 @@ def test_manager_paths_and_edit_preview_filter_dependency_environment(
 
     plan = manager.plan_update("timeout", "12", scope="user")
     assert plan.path == manager.paths.user_dotenv
+    plan = replace(
+        plan,
+        text=(
+            "DEP_SHARED=preview-dependency-value\n"
+            "HOST_CLIENT_ENDPOINT=${DEP_SHARED:-safe-parent}\n"
+            "HOST_CLIENT_TIMEOUT=12\n"
+        ),
+    )
     preview = manager.preview_edit(plan)
     timeout = next(
         item for item in preview.fields if item.field.name == "timeout"
     )
+    endpoint = next(
+        item for item in preview.fields if item.field.name == "endpoint"
+    )
     assert timeout.value == 12
+    assert endpoint.value == "safe-parent"
 
 
 def test_dependency_packaged_defaults_are_opt_in_and_below_parent_defaults(
@@ -1020,6 +1342,139 @@ def test_import_rejects_missing_fields_incompatible_aliases_and_secret_weakening
             fields={"shared": rc.field("BAD_SHARED", default="value")},
             field_targets={"text": "shared", "count": "shared"},
         )
+
+
+def test_imported_owner_key_rejects_python_only_registration_before_mutation() -> (
+    None
+):
+    """Imported owner keys cannot be reused by Python-only direct configs."""
+    dependency, ClientRC = _single_field_dependency()
+    host = rc.AppRC(app_id="host")
+    binding = _import_single_field_client(host, dependency, ClientRC)
+    schema_before = host.schema
+    registered_by_key_before = dict(host._registered_by_key)
+    registered_by_type_before = dict(host._registered_by_type)
+    env_key_index_before = dict(host._env_key_index)
+
+    class ConflictingRC(rc.ConfigBase):
+        label: str = "local"
+
+    with pytest.raises(ValueError, match='AppRC owner key "client"'):
+        host.config("client")(ConflictingRC)
+
+    assert host.schema is schema_before
+    assert host._registered_by_key == registered_by_key_before
+    assert host._registered_by_type == registered_by_type_before
+    assert host._env_key_index == env_key_index_before
+    assert "__dataclass_fields__" not in ConflictingRC.__dict__
+
+    @host.config("valid", prefix="HOST_VALID_")
+    class ValidRC(rc.Config):
+        value: str = rc.field("HOST_VALID_VALUE", default="valid")
+
+    resolved = host.resolve(environment={"HOST_VALID_VALUE": "ready"})
+    assert resolved.build(ValidRC).value == "ready"
+    assert resolved.build(binding).endpoint == "host-default"
+
+
+def test_imported_owner_key_rejects_env_registration_before_mutation() -> None:
+    """Failed env config registration leaves the owner registries usable."""
+    dependency, ClientRC = _single_field_dependency()
+    host = rc.AppRC(app_id="host")
+    binding = _import_single_field_client(host, dependency, ClientRC)
+    schema_before = host.schema
+    registered_by_key_before = dict(host._registered_by_key)
+    registered_by_type_before = dict(host._registered_by_type)
+    env_key_index_before = dict(host._env_key_index)
+
+    class ConflictingRC(rc.Config):
+        value: str = rc.field("HOST_CONFLICT_VALUE", default="conflict")
+
+    with pytest.raises(ValueError, match='AppRC owner key "client"'):
+        host.config("client", prefix="HOST_CONFLICT_")(ConflictingRC)
+
+    assert host.schema is schema_before
+    assert host._registered_by_key == registered_by_key_before
+    assert host._registered_by_type == registered_by_type_before
+    assert host._env_key_index == env_key_index_before
+
+    @host.config("valid", prefix="HOST_VALID_")
+    class ValidRC(rc.Config):
+        value: str = rc.field("HOST_VALID_VALUE", default="valid")
+
+    resolved = host.resolve(environment={"HOST_VALID_VALUE": "ready"})
+    assert resolved.build(ValidRC).value == "ready"
+    assert resolved.build(binding).endpoint == "host-default"
+
+
+def test_direct_owner_key_rejects_later_import_and_parent_remains_usable() -> (
+    None
+):
+    """A later import cannot reuse a directly registered owner key."""
+    dependency, ClientRC = _single_field_dependency()
+    host = rc.AppRC(app_id="host")
+
+    @host.config("client", prefix="HOST_CLIENT_")
+    class LocalClient(rc.Config):
+        endpoint: str = rc.field("HOST_CLIENT_ENDPOINT", default="local")
+
+    schema_before = host.schema
+    registered_by_key_before = dict(host._registered_by_key)
+    registered_by_type_before = dict(host._registered_by_type)
+    env_key_index_before = dict(host._env_key_index)
+
+    with pytest.raises(ValueError, match='AppRC owner key "client"'):
+        _import_single_field_client(host, dependency, ClientRC)
+
+    assert host.schema is schema_before
+    assert host._registered_by_key == registered_by_key_before
+    assert host._registered_by_type == registered_by_type_before
+    assert host._env_key_index == env_key_index_before
+
+    @host.config("valid", prefix="HOST_VALID_")
+    class ValidRC(rc.Config):
+        value: str = rc.field("HOST_VALID_VALUE", default="valid")
+
+    resolved = host.resolve(environment={"HOST_CLIENT_ENDPOINT": "local"})
+    assert resolved.build(LocalClient).endpoint == "local"
+    assert resolved.build(ValidRC).value == "valid"
+
+
+def test_direct_owner_path_collision_fails_before_registration_mutation() -> (
+    None
+):
+    """A direct owner's field path cannot poison later registrations."""
+    dependency, ClientRC = _single_field_dependency()
+    host = rc.AppRC(app_id="host")
+    binding = _import_single_field_client(host, dependency, ClientRC)
+    schema_before = host.schema
+    registered_by_key_before = dict(host._registered_by_key)
+    registered_by_type_before = dict(host._registered_by_type)
+    env_key_index_before = dict(host._env_key_index)
+
+    class ConflictingRC(rc.Config):
+        endpoint: str = rc.field("HOST_DIRECT_ENDPOINT", default="direct")
+
+    with pytest.raises(ValueError, match="Duplicate config path"):
+        host.config(
+            "direct",
+            prefix="HOST_DIRECT_",
+            rc_path=("client",),
+        )(ConflictingRC)
+
+    assert host.schema is schema_before
+    assert host._registered_by_key == registered_by_key_before
+    assert host._registered_by_type == registered_by_type_before
+    assert host._env_key_index == env_key_index_before
+    assert ConflictingRC.__dict__.get("config_owner") is None
+
+    @host.config("valid", prefix="HOST_VALID_")
+    class ValidRC(rc.Config):
+        value: str = rc.field("HOST_VALID_VALUE", default="valid")
+
+    resolved = host.resolve(environment={"HOST_VALID_VALUE": "ready"})
+    assert resolved.build(ValidRC).value == "ready"
+    assert resolved.build(binding).endpoint == "host-default"
 
 
 def test_import_validation_and_parent_env_key_collisions(

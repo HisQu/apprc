@@ -161,7 +161,9 @@ does not inherit a dependency default. Aliased dependency fields must have the
 same Python type and their selected packaged defaults must agree when both are
 present. A parent field must match the dependency field type. A dependency
 secret must remain secret in the parent declaration. Prefix, owner-key, and
-environment-key collisions raise an error when the import is declared.
+environment-key collisions raise an error when the import is declared. Every
+mapped dependency field must be a dataclass field with `init=True`; otherwise
+the import declaration raises `TypeError` before registering parent state.
 
 The imported section uses only parent-resolved settings. AppRC excludes
 dependency namespace environment variables, explicit dotenv keys, dependency

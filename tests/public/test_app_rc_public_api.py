@@ -274,6 +274,51 @@ def test_config_preserves_post_init_hook_class_identity(
     assert config.d_retrieved == tmp_path / "retrieved"
 
 
+def test_direct_config_supports_mapping_serialization_and_reload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Direct config instances initialize the state used by snapshot APIs."""
+    MyRC = _process_env_app()
+
+    @MyRC.config("storage", prefix="HAIU_")
+    class StoragePaths(rc.Config):
+        storage_root: Path = rc.field("HAIU_STORAGE_ROOT")
+        label: str = rc.field("HAIU_STORAGE_LABEL", default="default")
+
+    initial_root = tmp_path / "initial"
+    resolved_root = tmp_path / "resolved"
+    monkeypatch.setenv("HAIU_STORAGE_ROOT", str(initial_root))
+    monkeypatch.setenv("HAIU_STORAGE_LABEL", "initial")
+    config = StoragePaths()
+
+    assert config.current_env_mapping() == {
+        "HAIU_STORAGE_ROOT": str(initial_root),
+        "HAIU_STORAGE_LABEL": "initial",
+    }
+    assert config.to_dict() == {
+        "storage_root": str(initial_root),
+        "label": "initial",
+    }
+
+    resolved = MyRC.resolve(
+        environment={
+            "HAIU_STORAGE_ROOT": str(resolved_root),
+            "HAIU_STORAGE_LABEL": "resolved",
+        }
+    )
+    config.reload_from(resolved)
+
+    assert config.current_env_mapping() == {
+        "HAIU_STORAGE_ROOT": str(resolved_root),
+        "HAIU_STORAGE_LABEL": "resolved",
+    }
+    assert config.to_dict() == {
+        "storage_root": str(resolved_root),
+        "label": "resolved",
+    }
+
+
 def test_rejects_optional_missing_field_without_fallback() -> None:
     """Missing optional env values must have a safe fallback representation."""
     with pytest.raises(ValueError, match="required=False"):

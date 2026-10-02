@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from importlib.resources import files
 from importlib.resources.abc import Traversable
@@ -49,6 +49,8 @@ def read_explicit_env_files(
     env_files: Sequence[Path],
     *,
     environment: Mapping[str, str] | None = None,
+    excluded_env_keys: Collection[str] = (),
+    excluded_env_prefixes: Collection[str] = (),
 ) -> tuple[tuple[Path, ...], tuple[ExplicitEnvLayer, ...], dict[str, str]]:
     """Read ordered explicit dotenv files.
 
@@ -66,7 +68,12 @@ def read_explicit_env_files(
             )
         loaded_paths.append(resolved)
         try:
-            values = parse_dotenv_file(resolved, environment=environment)
+            values = parse_dotenv_file(
+                resolved,
+                environment=environment,
+                excluded_env_keys=excluded_env_keys,
+                excluded_env_prefixes=excluded_env_prefixes,
+            )
         except OSError as exc:
             raise ExplicitEnvFileError(
                 f"Explicit env file could not be read: {resolved}: {exc}"

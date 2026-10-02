@@ -6,7 +6,7 @@ from __future__ import annotations
 # == Standard library
 # ===============================================================
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 # ===============================================================
@@ -21,7 +21,7 @@ from apprc.runtime.config._binding import (
     bind_owner_from_env,
     protected_field_names,
 )
-from apprc.definition.resolution import ConfigSource
+from apprc.definition.resolution import ConfigSource, ImportedConfig
 from apprc.definition.env_config.sentinels import ENV_FIELD_MISSING
 from apprc.runtime.config._defaults import (
     resolve_instance_owner_defaults,
@@ -70,6 +70,27 @@ class Config(ConfigBase):
         compare=False,
         metadata={"internal": True},
     )
+    _apprc_owner_override: ConfigOwner | None = field(
+        default=None,
+        kw_only=True,
+        repr=False,
+        compare=False,
+        metadata={"internal": True},
+    )
+    _apprc_imported_field_names: frozenset[str] | None = field(
+        default=None,
+        kw_only=True,
+        repr=False,
+        compare=False,
+        metadata={"internal": True},
+    )
+    _apprc_imported_binding: ImportedConfig[Any] | None = field(
+        default=None,
+        kw_only=True,
+        repr=False,
+        compare=False,
+        metadata={"internal": True},
+    )
     _apprc_field_origins: dict[str, ConfigOriginState] = field(
         init=False,
         repr=False,
@@ -93,19 +114,57 @@ class Config(ConfigBase):
         # !! Keep two-argument super(): slotted dataclass inheritance on
         # !! Python 3.12/3.13 breaks zero-argument super().
         self = super(Config, cls).__new__(cls, *args, **kwargs)
+        owner = cls._class_config_owner()
+        owner_override = kwargs.get("_apprc_owner_override")
+        if owner_override is not None:
+            if not isinstance(owner_override, ConfigOwner):
+                raise TypeError("_apprc_owner_override must be a ConfigOwner.")
+            owner = owner_override
+        imported_field_names = kwargs.get("_apprc_imported_field_names")
+        imported_binding = kwargs.get("_apprc_imported_binding")
+        if imported_field_names is not None or imported_binding is not None:
+            if not isinstance(imported_binding, ImportedConfig):
+                raise TypeError(
+                    "Imported config binding state is reserved for "
+                    "ResolvedConfig.build()."
+                )
+            if (
+                owner_override is None
+                or imported_binding.runtime_owner is not owner_override
+            ):
+                raise TypeError(
+                    "Imported config binding must match its runtime owner."
+                )
+            if imported_field_names != frozenset(
+                imported_binding.field_targets
+            ):
+                raise TypeError(
+                    "Imported config field names must match its binding."
+                )
+        elif owner_override is not None:
+            raise TypeError(
+                "Imported config owner state is reserved for "
+                "ResolvedConfig.build()."
+            )
         constructor_fields = python_constructor_field_names(
             cls,
-            cls._config_owner(),
+            owner,
             args,
             kwargs,
         )
+        if owner_override is not None:
+            constructor_fields -= frozenset(
+                field_name
+                for field_name, value in kwargs.items()
+                if value is ENV_FIELD_MISSING
+            )
         object.__setattr__(
             self,
             "_apprc_field_origins",
             {
                 field_name: ConfigOriginState(
                     "python_constructor_argument",
-                    env_key=cls._config_owner().env_key(field_name),
+                    env_key=owner.env_key(field_name),
                 )
                 for field_name in constructor_fields
             },
@@ -139,10 +198,18 @@ class Config(ConfigBase):
         ``override_python_values=True`` when the current process environment
         should deliberately replace those Python-provided values.
 
+        Imported dependency configs cannot reload from ambient environment;
+        resolve their parent AppRC again and build them from that snapshot.
+
         :param override_python_values: Whether env values may overwrite
             ``python_constructor_argument`` and
             ``python_runtime_assignment`` and ``python_scoped_override`` fields.
         """
+        if self._apprc_owner_override is not None:
+            raise RuntimeError(
+                "Imported configs cannot reload from ambient environment; "
+                "resolve the parent AppRC and build the imported config again."
+            )
         LOG.warning(f"Reloading from os.environ: {self.__class__.__name__} ...")
         skipped_python_fields = self._bind_from_env(
             override_python_values=override_python_values
@@ -155,11 +222,17 @@ class Config(ConfigBase):
         This does not load dotenv files or application config layers. Use ``reload_from(resolved)`` to apply a captured application source.
         Owner defaults are always resolved; this method only controls whether
         process env values overlay those defaults.
+        Imported dependency configs cannot read ambient environment values.
 
         :param override_python_values: Whether env values may overwrite fields
             provided through Python constructor arguments, later assignment, or
             scoped overrides.
         """
+        if self._apprc_owner_override is not None:
+            raise RuntimeError(
+                "Imported configs cannot bind from ambient environment; "
+                "resolve the parent AppRC and build the imported config again."
+            )
         self._bind_from_env(override_python_values=override_python_values)
         validate_required_fields(self, self._config_owner())
 
@@ -180,6 +253,36 @@ class Config(ConfigBase):
         :param override_python_values: Whether to replace Python-owned values.
         :return: None.
         """
+        imported_binding = self._apprc_imported_binding
+        if (
+            self._apprc_owner_override is None
+            and imported_binding is None
+            and type(self) not in resolved.registered_types
+            and any(
+                type(self) in (item.config_type, item.runtime_config_type)
+                for item in resolved.imported_configs
+            )
+        ):
+            raise ValueError(
+                "Standalone dependency configs cannot reload from a parent "
+                "resolution; build the config through its ImportedConfig binding."
+            )
+        if self._apprc_owner_override is not None:
+            if imported_binding is None or not any(
+                item is imported_binding for item in resolved.imported_configs
+            ):
+                raise ValueError(
+                    "This imported config can only reload from a resolution "
+                    "that contains its exact ImportedConfig binding."
+                )
+            if (
+                imported_binding.parent_owner.requires_storage
+                and not resolved._has_valid_storage_selection
+            ):
+                raise ValueError(
+                    f"{imported_binding.parent_owner.title} requires a valid "
+                    "storage selection in the parent resolution."
+                )
         resolved.require_registered(type(self))
         candidate = state_transfer.shallow_clone(self)
         owner = self._config_owner()
@@ -193,14 +296,19 @@ class Config(ConfigBase):
             for name, origin in self._apprc_field_origins.items()
             if name in protected
         }
+        resolved_defaults: dict[str, Any] = {}
         for spec in owner.fields:
             if spec.name in protected:
                 continue
-            value = (
-                state_transfer.deepcopy_state_value(spec.resolve_default(), {})
-                if spec.has_default()
-                else ENV_FIELD_MISSING
-            )
+            if spec.has_default():
+                env_key = owner.env_key(spec.name)
+                if env_key not in resolved_defaults:
+                    resolved_defaults[env_key] = spec.resolve_default()
+                value = state_transfer.deepcopy_state_value(
+                    resolved_defaults[env_key], {}
+                )
+            else:
+                value = ENV_FIELD_MISSING
             object.__setattr__(candidate, spec.name, value)
         object.__setattr__(candidate, "_apprc_field_origins", origins)
         candidate._bind_from_env(
@@ -246,9 +354,10 @@ class Config(ConfigBase):
         """
         # !! Keep two-argument super(): slotted dataclass inheritance on
         # !! Python 3.12/3.13 breaks zero-argument super().
-        if self.config_owner is None:
+        try:
+            owner = self._config_owner()
+        except RuntimeError:
             return super(Config, self)._build_config_provenance(field_name)
-        owner = self._config_owner()
         try:
             spec = owner.field(field_name)
         except KeyError:
@@ -266,13 +375,21 @@ class Config(ConfigBase):
             resource=state.resource,
         )
 
+    def _is_field_secret(self, field_name: str) -> bool:
+        """Apply this instance's owner metadata to display redaction."""
+        try:
+            secret = self._config_owner().field(field_name).secret
+        except (KeyError, RuntimeError):
+            secret = False
+        return secret or super(Config, self)._is_field_secret(field_name)
+
     # ===============================================================
     # == Implementation
     # ===============================================================
 
     @classmethod
-    def _config_owner(cls) -> ConfigOwner:
-        """Return the required owner spec for this config class."""
+    def _class_config_owner(cls) -> ConfigOwner:
+        """Return the owner spec registered on this config class."""
         if cls.config_owner is None:
             raise RuntimeError(
                 f"{cls.__name__} must be registered with @MyRC.config(...) "
@@ -280,12 +397,16 @@ class Config(ConfigBase):
             )
         return cls.config_owner
 
-    @classmethod
-    def _owner_field_names(cls) -> frozenset[str]:
+    def _config_owner(self) -> ConfigOwner:
+        """Return this instance's owner, or its class registration owner."""
+        return self._apprc_owner_override or type(self)._class_config_owner()
+
+    def _owner_field_names(self) -> frozenset[str]:
         """Return owner-backed runtime field names for this config class."""
-        if cls.config_owner is None:
+        try:
+            return frozenset(spec.name for spec in self._config_owner().fields)
+        except RuntimeError:
             return frozenset()
-        return frozenset(spec.name for spec in cls._config_owner().fields)
 
     def _field_origin(self, field_name: str) -> ConfigOriginState:
         """Return the recorded origin state or the implicit config default."""
@@ -310,6 +431,14 @@ class Config(ConfigBase):
     def _resolve_owner_defaults(self) -> None:
         """Resolve omitted owner-backed fields from derived owner defaults."""
         owner = self._config_owner()
+        if self._apprc_owner_override is not None:
+            for spec in owner.fields:
+                if (
+                    not spec.has_default()
+                    and self._field_origin(spec.name).origin
+                    != "python_constructor_argument"
+                ):
+                    object.__setattr__(self, spec.name, ENV_FIELD_MISSING)
         object.__setattr__(
             self,
             "_apprc_field_origins",
@@ -397,8 +526,33 @@ class Config(ConfigBase):
         include_empty: bool = False,
     ) -> dict[str, str]:
         """Serialize current env-backed fields into concrete env key/value pairs."""
+        owner = self._config_owner()
+        if self._apprc_imported_field_names is not None:
+            fields = tuple(
+                spec
+                for spec in owner.fields
+                if spec.name in self._apprc_imported_field_names
+            )
+            if self._apprc_imported_binding is not None:
+                parent_prefix = (
+                    self._apprc_imported_binding.parent_owner.env_prefix
+                )
+                fields = tuple(
+                    replace(
+                        spec,
+                        env_var=spec.env_var.removeprefix(parent_prefix),
+                    )
+                    for spec in fields
+                )
+                owner = replace(
+                    owner,
+                    env_prefix=parent_prefix,
+                    fields=fields,
+                )
+            else:
+                owner = replace(owner, fields=fields)
         return owner_env_mapping(
-            self._config_owner(),
+            owner,
             self,
             prefixed=prefixed,
             include_empty=include_empty,

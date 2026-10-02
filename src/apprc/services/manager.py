@@ -14,7 +14,10 @@ from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.resolution import (
     BundleFieldSpec,
     ConfigSource,
+    ImportedConfig,
     ResolveOptions,
+    dependency_environment_exclusions,
+    filter_dependency_environment,
 )
 from apprc.definition.provenance import ConfigOriginState
 from apprc.definition.env_config.lookup import resolve_config_field_reference
@@ -101,6 +104,7 @@ class ConfigManager:
         *,
         registered_types: tuple[type[object], ...],
         bundles: Mapping[type[object], tuple[BundleFieldSpec, ...]],
+        imported_configs: tuple[ImportedConfig[object], ...] = (),
         options: ResolveOptions | None = None,
         environment: Mapping[str, str] | None = None,
     ) -> None:
@@ -109,6 +113,7 @@ class ConfigManager:
         :param schema: Application declaration snapshot.
         :param registered_types: Config sections known at manager creation.
         :param bundles: Registered bundle construction rules.
+        :param imported_configs: Parent-owned dependency bindings.
         :param options: Invocation choices, independent of persisted defaults.
         :param environment: Explicit environment, or a copy of the process.
         """
@@ -119,21 +124,34 @@ class ConfigManager:
         )
         self._registered_types = registered_types
         self._bundles = MappingProxyType(dict(bundles))
+        self._imported_configs = tuple(imported_configs)
 
     def _path_environment(
         self, *, allow_unready: bool = False
     ) -> dict[str, str]:
         """Apply structural directory precedence without mutating the process."""
+        excluded_env_keys, excluded_env_prefixes = (
+            dependency_environment_exclusions(self._imported_configs)
+        )
+        environment = filter_dependency_environment(
+            self.environment, self._imported_configs
+        )
         try:
             _, _, explicit = read_explicit_env_files(
-                self.options.env_files, environment=self.environment
+                self.options.env_files,
+                environment=environment,
+                excluded_env_keys=excluded_env_keys,
+                excluded_env_prefixes=excluded_env_prefixes,
             )
         except (OSError, ValueError):
             if not allow_unready:
                 raise
             explicit = {}
+        explicit = filter_dependency_environment(
+            explicit, self._imported_configs
+        )
         environment = selection_env(
-            original_env=self.environment,
+            original_env=environment,
             explicit_values=explicit,
             env_file_overrides_os_environ=self.options.env_file_overrides_os_environ,
         )
@@ -158,6 +176,7 @@ class ConfigManager:
             self.schema,
             registered_types=self._registered_types,
             bundles=self._bundles,
+            imported_configs=self._imported_configs,
             options=self.options,
             environment=self.environment,
         )
@@ -180,6 +199,7 @@ class ConfigManager:
             self.schema,
             registered_types=self._registered_types,
             bundles=self._bundles,
+            imported_configs=self._imported_configs,
             options=options,
             environment=self.environment,
             allow_unready=True,
@@ -440,7 +460,18 @@ class ConfigManager:
     ) -> None:
         """Avoid unsafe writes or revealing a legacy ordinary-file value."""
         regular = self.writable_path(scope, storage=storage)
-        if env_key in parse_dotenv_file(regular, environment=self.environment):
+        environment = filter_dependency_environment(
+            self.environment, self._imported_configs
+        )
+        excluded_env_keys, excluded_env_prefixes = (
+            dependency_environment_exclusions(self._imported_configs)
+        )
+        if env_key in parse_dotenv_file(
+            regular,
+            environment=environment,
+            excluded_env_keys=excluded_env_keys,
+            excluded_env_prefixes=excluded_env_prefixes,
+        ):
             raise ValueError(
                 f"{env_key} is still in {regular.name}. Run `config secrets migrate` first."
             )
@@ -469,7 +500,21 @@ class ConfigManager:
         :return: Candidate effective values without changing files or selection.
         """
         resolved = self.inspect(storage=storage).resolved
-        values = parse_dotenv_text(plan.text, environment=self.environment)
+        environment = filter_dependency_environment(
+            self.environment, self._imported_configs
+        )
+        excluded_env_keys, excluded_env_prefixes = (
+            dependency_environment_exclusions(self._imported_configs)
+        )
+        values = filter_dependency_environment(
+            parse_dotenv_text(
+                plan.text,
+                environment=environment,
+                excluded_env_keys=excluded_env_keys,
+                excluded_env_prefixes=excluded_env_prefixes,
+            ),
+            self._imported_configs,
+        )
         layers = tuple(
             replace(
                 layer,

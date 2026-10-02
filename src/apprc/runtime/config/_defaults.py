@@ -30,6 +30,7 @@ def resolve_owner_defaults(
     :return: Updated origin map after resolving defaults.
     """
     next_origins = dict(field_origins)
+    resolved_defaults: dict[str, Any] = {}
     for spec in owner.fields:
         if (
             origin_for_field(owner, next_origins, spec.name).origin
@@ -43,14 +44,17 @@ def resolve_owner_defaults(
             )
         if not spec.has_default():
             continue
+        env_key = owner.env_key(spec.name)
+        if env_key not in resolved_defaults:
+            resolved_defaults[env_key] = spec.resolve_default()
         object.__setattr__(
             instance,
             spec.name,
-            copy_value(spec.resolve_default(), {}),
+            copy_value(resolved_defaults[env_key], {}),
         )
         next_origins[spec.name] = ConfigOriginState(
             "python_config_default",
-            env_key=owner.env_key(spec.name),
+            env_key=env_key,
         )
     return next_origins
 

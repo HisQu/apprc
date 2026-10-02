@@ -28,12 +28,16 @@ from apprc.services.manager import ConfigManager
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.resolution import (
     BundleFieldSpec as _BundleFieldSpec,
+    ImportedConfig,
     ResolveOptions,
 )
 from apprc.runtime.resolution import ResolvedConfig, resolve_config
 from apprc.definition.app_config.storage import Storage
 from apprc.definition.app_config.user_dotenv import UserDotenv
-from apprc.definition.env_config._validation import validate_config_owner
+from apprc.definition.env_config._validation import (
+    validate_config_owner,
+    validate_config_owner_inventory,
+)
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.public.config import Config, ConfigBase
 from apprc.public.field import (
@@ -42,6 +46,7 @@ from apprc.public.field import (
 )
 
 ConfigClassT = TypeVar("ConfigClassT", bound=type[ConfigBase])
+ConfigInstanceT = TypeVar("ConfigInstanceT", bound=ConfigBase)
 BundleClassT = TypeVar("BundleClassT", bound=type[object])
 
 LOG = logging.getLogger("apprc")
@@ -57,6 +62,7 @@ class RegisteredConfig:
     :param rc_path: Runtime config path components.
     :param prefix: Required env prefix for env-backed config classes.
     :param declared_fields: Field declarations registered on this class.
+    :param owner: Owner schema captured by this AppRC registration.
     """
 
     key: str
@@ -65,6 +71,7 @@ class RegisteredConfig:
     rc_path: tuple[str, ...]
     prefix: str | None
     declared_fields: Mapping[str, _FieldDeclaration]
+    owner: ConfigOwner | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,7 +158,12 @@ class AppRC:
         self._registered_by_key: dict[str, RegisteredConfig] = {}
         self._registered_by_type: dict[type[ConfigBase], RegisteredConfig] = {}
         self._bundles: dict[type[object], tuple[_BundleFieldSpec, ...]] = {}
+        self._imported_configs: list[ImportedConfig[Any]] = []
         self._env_key_index: dict[str, tuple[str, str]] = {}
+        self._dependency_env_keys: set[str] = set()
+        self._dependency_source_env_keys: set[str] = set()
+        self._dependency_control_env_keys: set[str] = set()
+        self._dependency_env_prefixes: set[str] = set()
         self._schema = self._build_schema()
 
     @property
@@ -175,6 +187,7 @@ class AppRC:
             self.schema,
             registered_types=tuple(self._registered_by_type),
             bundles=self._bundles,
+            imported_configs=tuple(self._imported_configs),
             options=options,
             environment=environment,
         )
@@ -195,9 +208,390 @@ class AppRC:
             self.schema,
             registered_types=tuple(self._registered_by_type),
             bundles=self._bundles,
+            imported_configs=tuple(self._imported_configs),
             options=options,
             environment=environment,
         )
+
+    def import_dependency_config(
+        self,
+        dependency: AppRC,
+        config_type: type[ConfigInstanceT],
+        *,
+        key: str,
+        prefix: str,
+        fields: Mapping[str, dataclasses.Field[Any]],
+        field_targets: Mapping[str, str] | None = None,
+        title: str | None = None,
+        rc_path: tuple[str, ...] | None = None,
+        include_packaged_defaults: bool = False,
+    ) -> ImportedConfig[ConfigInstanceT]:
+        """Import one dependency section under parent-owned field names.
+
+        The parent supplies a complete set of field declarations and may map
+        several compatible dependency fields to the same parent field. Omitted
+        dependency fields must have Python defaults and keep those defaults.
+        Every mapped dependency field must be a dataclass field with
+        ``init=True`` so parent values can be supplied during construction.
+        This method records the dependency schema and adds its parent-owned
+        fields to this AppRC. It does not load dependency user files, storage
+        files, or environment values. If the section requires storage, the
+        parent must declare storage and select a valid parent storage before
+        building the imported config.
+
+        :param dependency: AppRC that registered ``config_type``.
+        :param config_type: Dependency ``rc.Config`` section to import.
+        :param key: Parent-owned owner key.
+        :param prefix: Parent-owned environment prefix.
+        :param fields: Parent-owned ``rc.field(...)`` declarations keyed by
+            parent field name.
+        :param field_targets: Dependency field to parent field mapping.
+            Repeated parent field names declare aliases. Omitted dependency
+            fields use their Python defaults and are not parent settings. If
+            omitted, field names must match exactly.
+        :param title: Parent-facing owner title, or a title derived from key.
+        :param rc_path: Parent-owned config path, or ``(key,)``.
+        :param include_packaged_defaults: Whether selected values from the
+            dependency package's ``apprc.defaults.env`` may load below the
+            parent's packaged defaults.
+        :return: Immutable binding for building the imported section.
+        :raises TypeError: If the dependency section or field declarations are
+            invalid.
+        :raises ValueError: If field mappings, secrets, prefixes, or names
+            conflict.
+        """
+        if not isinstance(dependency, AppRC):
+            raise TypeError("dependency must be an AppRC instance.")
+        if not isinstance(config_type, type) or not issubclass(
+            config_type, Config
+        ):
+            raise TypeError(
+                "import_dependency_config(...) requires an rc.Config section."
+            )
+        registered = dependency._registered_by_type.get(config_type)
+        if registered is None or registered.owner is None:
+            raise ValueError(
+                f"{config_type.__name__} is not an env-backed config section "
+                "registered with the dependency AppRC."
+            )
+        dependency_owner = registered.owner
+        if config_type in self._registered_by_type:
+            raise ValueError(
+                f"{config_type.__name__} is already registered directly on "
+                "the parent AppRC; import it through a separate config class."
+            )
+        if (
+            dependency_owner.requires_storage
+            and self._declaration.storage is None
+        ):
+            raise ValueError(
+                f"{config_type.__name__} requires storage; the parent AppRC "
+                "must declare storage=rc.Storage()."
+            )
+        if (
+            include_packaged_defaults
+            and dependency._declaration.config_package is None
+        ):
+            raise ValueError(
+                "include_packaged_defaults=True requires the dependency "
+                "AppRC to declare config_package."
+            )
+        if key in self._registered_by_key or any(
+            item.parent_owner.key == key for item in self._imported_configs
+        ):
+            raise ValueError(f'AppRC owner key "{key}" is already in use.')
+
+        normalized_fields = self._import_field_declarations(fields)
+        source_names = {item.name for item in dependency_owner.fields}
+        if field_targets is None:
+            targets = {name: name for name in source_names}
+        else:
+            targets = dict(field_targets)
+        if not set(targets) <= source_names:
+            unknown = sorted(set(targets) - source_names)
+            raise ValueError(
+                "field_targets contains unknown dependency fields: "
+                + ", ".join(unknown)
+                + "."
+            )
+        dependency_dataclass_fields = {
+            item.name: item for item in dataclasses.fields(config_type)
+        }
+        non_init_fields = sorted(
+            field_name
+            for field_name in targets
+            if not dependency_dataclass_fields[field_name].init
+        )
+        if non_init_fields:
+            raise TypeError(
+                "Mapped dependency fields must be dataclass init=True fields: "
+                + ", ".join(non_init_fields)
+                + "."
+            )
+        unmapped = source_names - set(targets)
+        unmapped_without_defaults = sorted(
+            field_name
+            for field_name in unmapped
+            if not dependency_owner.field(field_name).has_default()
+        )
+        if unmapped_without_defaults:
+            raise ValueError(
+                "Unmapped dependency fields must have Python defaults: "
+                + ", ".join(unmapped_without_defaults)
+                + "."
+            )
+        if set(targets.values()) != set(normalized_fields):
+            unused = sorted(set(normalized_fields) - set(targets.values()))
+            unknown = sorted(set(targets.values()) - set(normalized_fields))
+            details = []
+            if unused:
+                details.append(f"unused parent fields: {', '.join(unused)}")
+            if unknown:
+                details.append(
+                    f"undeclared parent fields: {', '.join(unknown)}"
+                )
+            raise ValueError(
+                "field_targets must use every parent field exactly as needed; "
+                + "; ".join(details)
+                + "."
+            )
+
+        parent_title = title or _humanize_title(key)
+        parent_rc_path = rc_path or (key,)
+        parent_owner = self._build_imported_owner(
+            config_type,
+            key=key,
+            title=parent_title,
+            prefix=prefix,
+            rc_path=parent_rc_path,
+            declared_fields=normalized_fields,
+            targets=targets,
+            dependency_owner=dependency_owner,
+            requires_storage=dependency_owner.requires_storage,
+        )
+        imported_source_keys = {
+            dependency_owner.env_key(name) for name in targets
+        }
+        mapped_parent_keys = {
+            parent_owner.env_key(item.name) for item in parent_owner.fields
+        }
+        dependency_prefixes = tuple(
+            dict.fromkeys(
+                item.owner.env_prefix
+                for item in dependency._registered_by_type.values()
+                if item.owner is not None
+            )
+        )
+        dependency_control_env_keys = tuple(
+            key
+            for key in (
+                dependency.schema.storage_selector_env_key,
+                dependency.schema.apprc_dir_env_key,
+                *dependency.schema.legacy_apprc_toml_env_keys(),
+            )
+            if key is not None
+        )
+        dependency_control_keys = set(dependency_control_env_keys)
+        parent_control_keys = {
+            key
+            for key in (
+                self.schema.storage_selector_env_key,
+                self.schema.apprc_dir_env_key,
+                *self.schema.legacy_apprc_toml_env_keys(),
+            )
+            if key is not None
+        }
+        parent_keys = set(self._env_key_index) | mapped_parent_keys
+        parent_keys.update(parent_control_keys)
+        excluded_dependency_keys = (
+            self._dependency_env_keys
+            | imported_source_keys
+            | dependency_control_keys
+        )
+        excluded_dependency_prefixes = self._dependency_env_prefixes | set(
+            dependency_prefixes
+        )
+        collisions = parent_keys & excluded_dependency_keys
+        collisions.update(
+            key
+            for key in parent_keys
+            if any(
+                key.startswith(prefix)
+                for prefix in excluded_dependency_prefixes
+            )
+        )
+        collisions.update(
+            imported_source_keys & self._dependency_control_env_keys
+        )
+        collisions.update(
+            dependency_control_keys
+            & (imported_source_keys | self._dependency_source_env_keys)
+        )
+        if collisions:
+            joined = ", ".join(sorted(collisions))
+            raise ValueError(
+                "Dependency environment keys and prefixes cannot overlap "
+                f"parent inputs or another import: {joined}."
+            )
+        runtime_owner = _dependency_runtime_owner(
+            parent_owner=parent_owner,
+            dependency_owner=dependency_owner,
+            field_targets=targets,
+        )
+        runtime_config_type = _secret_safe_dependency_type(
+            config_type, runtime_owner
+        )
+        binding = ImportedConfig(
+            dependency_app_id=dependency._declaration.app_id,
+            config_type=config_type,
+            parent_owner=parent_owner,
+            dependency_owner=dependency_owner,
+            runtime_owner=runtime_owner,
+            field_targets=targets,
+            dependency_env_prefixes=dependency_prefixes,
+            dependency_control_env_keys=dependency_control_env_keys,
+            config_package=dependency._declaration.config_package,
+            include_packaged_defaults=include_packaged_defaults,
+            runtime_config_type=runtime_config_type,
+        )
+        validate_config_owner_inventory((*self.schema.owners, parent_owner))
+        for field_spec in parent_owner.fields:
+            env_key = parent_owner.env_key(field_spec.name)
+            self._env_key_index[env_key] = (
+                f"{dependency._declaration.app_id}.{config_type.__name__}",
+                field_spec.name,
+            )
+        self._dependency_env_keys.update(
+            imported_source_keys | dependency_control_keys
+        )
+        self._dependency_source_env_keys.update(imported_source_keys)
+        self._dependency_control_env_keys.update(dependency_control_keys)
+        self._dependency_env_prefixes.update(dependency_prefixes)
+        self._imported_configs.append(binding)
+        self._schema = self._build_schema()
+        return binding
+
+    @staticmethod
+    def _import_field_declarations(
+        fields_by_name: Mapping[str, dataclasses.Field[Any]],
+    ) -> dict[str, _FieldDeclaration]:
+        """Normalize explicit parent declarations for imported fields."""
+        if not isinstance(fields_by_name, Mapping) or not fields_by_name:
+            raise TypeError(
+                "fields must be a non-empty mapping of rc.field declarations."
+            )
+        normalized: dict[str, _FieldDeclaration] = {}
+        for field_name, dataclass_field in fields_by_name.items():
+            if not isinstance(field_name, str) or not field_name:
+                raise TypeError("Parent field names must be non-empty strings.")
+            if not isinstance(dataclass_field, dataclasses.Field):
+                raise TypeError(
+                    f"fields[{field_name!r}] must be declared with rc.field(...)."
+                )
+            declaration = dataclass_field.metadata.get(
+                _FIELD_DECLARATION_METADATA_KEY
+            )
+            if not isinstance(declaration, _FieldDeclaration):
+                raise TypeError(
+                    f"fields[{field_name!r}] must be declared with rc.field(...)."
+                )
+            normalized[field_name] = declaration
+        return normalized
+
+    def _build_imported_owner(
+        self,
+        config_type: type[ConfigBase],
+        *,
+        key: str,
+        title: str,
+        prefix: str,
+        rc_path: tuple[str, ...],
+        declared_fields: Mapping[str, _FieldDeclaration],
+        targets: Mapping[str, str],
+        dependency_owner: ConfigOwner,
+        requires_storage: bool,
+    ) -> ConfigOwner:
+        """Build and validate parent-owned fields for an imported section."""
+        if not prefix:
+            raise ValueError("import_dependency_config(...) requires a prefix.")
+        target_specs = {
+            field_name: dependency_owner.field(field_name)
+            for field_name in targets
+        }
+        fields_by_parent: dict[str, list[str]] = {}
+        for dependency_field, parent_field in targets.items():
+            fields_by_parent.setdefault(parent_field, []).append(
+                dependency_field
+            )
+
+        fields: list[ConfigField] = []
+        for parent_field, declaration in declared_fields.items():
+            dependency_fields = fields_by_parent[parent_field]
+            source_specs = [target_specs[name] for name in dependency_fields]
+            source_type = source_specs[0].python_type
+            if any(
+                item.python_type is not source_type for item in source_specs
+            ):
+                raise TypeError(
+                    f"Parent field {parent_field!r} aliases dependency fields "
+                    "with incompatible types."
+                )
+            if (
+                declaration.python_type is not None
+                and declaration.python_type is not source_type
+            ):
+                raise TypeError(
+                    f"Parent field {parent_field!r} declares type "
+                    f"{declaration.python_type.__name__}, but its dependency "
+                    f"field type is {source_type.__name__}."
+                )
+            if (
+                any(item.secret for item in source_specs)
+                and not declaration.secret
+            ):
+                raise ValueError(
+                    f"Parent field {parent_field!r} cannot weaken secret "
+                    "metadata from its dependency fields."
+                )
+            if not declaration.env_key.startswith(prefix):
+                raise ValueError(
+                    f"Parent field {parent_field!r} uses env key "
+                    f"{declaration.env_key}, which must start with {prefix}."
+                )
+            fields.append(
+                ConfigField(
+                    name=parent_field,
+                    env_var=declaration.env_key.removeprefix(prefix),
+                    python_type=source_type,
+                    default=declaration.default,
+                    default_factory=declaration.default_factory,
+                    packaged_default=declaration.packaged_default,
+                    title=declaration.title or "",
+                    explanation_short=declaration.explanation_short,
+                    explanation_long=declaration.explanation_long,
+                    secret=declaration.secret,
+                    editable=declaration.editable,
+                    required=declaration.inferred_required(),
+                    choices=declaration.choices,
+                    restart_required=declaration.restart_required,
+                )
+            )
+        owner = ConfigOwner(
+            key=key,
+            title=title,
+            env_prefix=prefix,
+            rc_path=rc_path,
+            fields=tuple(fields),
+            requires_storage=requires_storage,
+        )
+        validate_config_owner(owner)
+        _validate_prefix(
+            config_type=config_type,
+            config_key=key,
+            prefix=prefix,
+            fields=declared_fields,
+        )
+        return owner
 
     @dataclass_transform()
     def config(
@@ -292,6 +686,9 @@ class AppRC:
             display_name=declaration.display_name,
             config_package=declaration.config_package,
             envs=envs,
+            additional_owners=tuple(
+                item.parent_owner for item in self._imported_configs
+            ),
             user_dotenv=declaration.user_dotenv,
             storage=declaration.storage,
             setup_next_step=declaration.setup_next_step,
@@ -321,6 +718,8 @@ class AppRC:
                 f'AppRC config key "{key}" is already registered by '
                 f"{existing.config_type.__name__}."
             )
+        if any(item.parent_owner.key == key for item in self._imported_configs):
+            raise ValueError(f'AppRC owner key "{key}" is already in use.')
 
         resolved_type = self._ensure_dataclass(config_type)
         if requires_storage and self.schema.storage is None:
@@ -335,6 +734,7 @@ class AppRC:
         resolved_rc_path = rc_path or (key,)
         declared_fields = _collect_field_declarations(resolved_type)
 
+        owner: ConfigOwner | None = None
         if _is_env_config(resolved_type):
             owner = self._build_owner(
                 resolved_type,
@@ -346,6 +746,7 @@ class AppRC:
                 requires_storage=requires_storage,
             )
             self._validate_unique_env_keys(resolved_type, declared_fields)
+            validate_config_owner_inventory((*self.schema.owners, owner))
             setattr(resolved_type, "config_owner", owner)
         else:
             self._validate_python_only_registration(
@@ -361,6 +762,7 @@ class AppRC:
             rc_path=resolved_rc_path,
             prefix=prefix,
             declared_fields=declared_fields,
+            owner=owner,
         )
         self._registered_by_key[key] = registered
         self._registered_by_type[resolved_type] = registered
@@ -417,6 +819,14 @@ class AppRC:
     ) -> None:
         """Reject env keys that another registered config already owns."""
         for field_name, spec in declared_fields.items():
+            if spec.env_key in self._dependency_env_keys or any(
+                spec.env_key.startswith(prefix)
+                for prefix in self._dependency_env_prefixes
+            ):
+                raise ValueError(
+                    f"Env key {spec.env_key} belongs to an imported dependency "
+                    "section and cannot also be parent-owned."
+                )
             existing = self._env_key_index.get(spec.env_key)
             current = (config_type.__name__, field_name)
             if existing is not None and existing != current:
@@ -479,22 +889,44 @@ class AppRC:
                     annotation,
                 )
             registered = self._registered_by_type.get(annotation)
+            imported_config = None
             if registered is None:
+                candidates = [
+                    item
+                    for item in self._imported_configs
+                    if item.config_type is annotation
+                ]
+                if len(candidates) > 1:
+                    raise TypeError(
+                        f"{bundle_type.__name__}.{field_name} refers to "
+                        f"{annotation.__name__}, imported more than once. "
+                        "Inject the desired imported config explicitly when "
+                        "building the bundle."
+                    )
+                imported_config = candidates[0] if candidates else None
+            if registered is None and imported_config is None:
                 _raise_unregistered_bundle_field(
                     bundle_type,
                     field_name,
                     annotation,
                 )
-            assert registered is not None
+            config_type = (
+                imported_config.config_type
+                if imported_config is not None
+                else cast(RegisteredConfig, registered).config_type
+            )
             bundle_fields[field_name] = _BundleFieldSpec(
                 name=field_name,
-                config_type=registered.config_type,
+                config_type=config_type,
                 init=dataclass_fields[field_name].init,
                 default_factory=self._bundle_default_factory(
                     bundle_type=bundle_type,
                     field_name=field_name,
-                    config_type=registered.config_type,
+                    config_type=config_type,
                     dataclass_field=dataclass_fields[field_name],
+                ),
+                imported_config=cast(
+                    ImportedConfig[object] | None, imported_config
                 ),
             )
         return bundle_fields
@@ -567,6 +999,13 @@ class AppRC:
                             f"{type(value).__name__}."
                         )
                 else:
+                    if spec.imported_config is not None:
+                        raise TypeError(
+                            f"{bundle_type.__name__}.{field_name} is imported "
+                            "from a dependency and requires the parent "
+                            "ResolvedConfig. Build the bundle with "
+                            f"resolved.build({bundle_type.__name__})."
+                        )
                     assert issubclass(expected_type, ConfigBase)
                     registered = self_app._registered_by_type[expected_type]
                     LOG.debug(
@@ -736,6 +1175,91 @@ def _humanize_title(key: str) -> str:
     """Return a simple human display title from a config key."""
     words = key.replace("-", "_").split("_")
     return " ".join(word.capitalize() for word in words if word) or key
+
+
+def _dependency_runtime_owner(
+    *,
+    parent_owner: ConfigOwner,
+    dependency_owner: ConfigOwner,
+    field_targets: Mapping[str, str],
+) -> ConfigOwner:
+    """Map imported fields and retain safe Python defaults for the rest."""
+    dependency_fields = []
+    for dependency_spec in dependency_owner.fields:
+        parent_field = field_targets.get(dependency_spec.name)
+        if parent_field is None:
+            dependency_fields.append(
+                dataclasses.replace(
+                    dependency_spec,
+                    env_var=dependency_owner.env_key(dependency_spec.name),
+                )
+            )
+            continue
+        dependency_fields.append(
+            dataclasses.replace(
+                parent_owner.field(parent_field),
+                name=dependency_spec.name,
+                env_var=parent_owner.env_key(parent_field),
+            )
+        )
+    return ConfigOwner(
+        key=parent_owner.key,
+        title=parent_owner.title,
+        env_prefix="",
+        rc_path=parent_owner.rc_path,
+        fields=tuple(dependency_fields),
+        requires_storage=parent_owner.requires_storage,
+    )
+
+
+def _secret_safe_dependency_type(
+    config_type: type[ConfigInstanceT],
+    runtime_owner: ConfigOwner,
+) -> type[ConfigInstanceT]:
+    """Add an instance-owner-aware repr when the parent adds secret fields."""
+    dataclass_fields = {
+        item.name: item for item in fields(cast(Any, config_type))
+    }
+    newly_secret = any(
+        spec.secret and dataclass_fields[spec.name].repr
+        for spec in runtime_owner.fields
+    )
+    if not newly_secret:
+        return config_type
+
+    def __repr__(instance: object) -> str:
+        """Redact fields marked secret by the instance's parent owner."""
+        owner = cast(Config, instance)._config_owner()
+        values: list[str] = []
+        for item in fields(cast(Any, instance)):
+            if (
+                not item.repr
+                or item.name.startswith("_")
+                or item.metadata.get("internal")
+            ):
+                continue
+            try:
+                secret = owner.field(item.name).secret
+            except KeyError:
+                secret = False
+            rendered = (
+                "<redacted>" if secret else repr(getattr(instance, item.name))
+            )
+            values.append(f"{item.name}={rendered}")
+        return f"{type(instance).__qualname__}({', '.join(values)})"
+
+    return cast(
+        type[ConfigInstanceT],
+        type(
+            f"{config_type.__name__}Imported",
+            (config_type,),
+            {
+                "__module__": config_type.__module__,
+                "__slots__": (),
+                "__repr__": __repr__,
+            },
+        ),
+    )
 
 
 def _raise_unregistered_bundle_field(

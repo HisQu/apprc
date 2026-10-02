@@ -7,6 +7,7 @@
   - [Declarations](#declarations)
   - [Config fields](#config-fields)
   - [Config bundles](#config-bundles)
+  - [Dependency config imports](#dependency-config-imports)
   - [Resolution](#resolution)
 - [Value sources and files](#value-sources-and-files)
   - [Source precedence](#source-precedence)
@@ -133,6 +134,61 @@ so it receives the intended configuration sources.
 The [bundle guide](How-To-User-Guides.md#pass-several-settings-sections-together)
 provides a complete two-section example. The [larger example](EXAMPLES.md#several-sections-and-temporary-overrides)
 also exercises section overrides and reloads.
+
+## Dependency config imports
+
+`MyRC.import_dependency_config(dependency, ConfigType, *, key, prefix, fields,
+field_targets=None, title=None, rc_path=None, include_packaged_defaults=False)`
+imports one registered `rc.Config` section from another `AppRC`. It returns an
+immutable [`rc.ImportedConfig`](Explanations.md#imported-dependency-settings)
+binding scoped to this parent declaration.
+
+| Argument | Meaning |
+| --- | --- |
+| `dependency` | The `AppRC` that registered the dependency section. |
+| `ConfigType` | One leaf subclass of `rc.Config` registered on `dependency`. If its section requires storage, the parent must declare `storage=rc.Storage()`. |
+| `key`, `prefix` | Parent-owned schema key and required parent environment prefix. |
+| `fields` | Non-empty mapping of parent field names to `rc.field(...)` declarations. These fields own defaults, validation metadata, documentation, and secrets. |
+| `field_targets` | Mapping of selected dependency field names to parent field names. When omitted, names must match and every dependency field is selected. Repeated parent names explicitly alias compatible fields. |
+| `title`, `rc_path` | Optional parent-facing metadata; default to a title derived from `key` and `(key,)`. |
+| `include_packaged_defaults` | Opt in to selected dependency package defaults, loaded below parent package defaults. Defaults to `False`. |
+
+Every parent field must be used by at least one mapping. A dependency field may
+be omitted only when it has a Python default; omitted fields keep those defaults
+and are not included in the parent schema. Mapped fields use only parent
+defaults, parent sources, and explicit Python overrides. A required parent field
+does not inherit a dependency default. Aliased dependency fields must have the
+same Python type and their selected packaged defaults must agree when both are
+present. A parent field must match the dependency field type. A dependency
+secret must remain secret in the parent declaration. Prefix, owner-key, and
+environment-key collisions raise an error when the import is declared. Every
+mapped dependency field must be a dataclass field with `init=True`; otherwise
+the import declaration raises `TypeError` before registering parent state.
+
+The imported section uses only parent-resolved settings. AppRC excludes
+dependency namespace environment variables, explicit dotenv keys, dependency
+user dotenv files, and dependency storage files. If the dependency section
+requires storage, the parent must enable storage and select a valid parent
+storage before building the section; inspection marks its fields inactive until
+then. The parent's selected storage layer may supply mapped values. Dependency
+storage selectors, registries, user files, and storage files remain excluded.
+The dependency still receives storage paths separately from its host. AppRC
+never imports dependency bundles or lifecycle. Dependency packaged defaults are
+ignored unless opted in; when enabled, only mapped keys participate and the
+parent package has higher priority. Parent field metadata and the resulting
+provenance use parent names.
+
+Build with `resolved.build(binding)` to use the binding captured by that exact
+snapshot. Building with `resolved.build(ConfigType)` also works when that
+dependency section has one import binding. If a parent imports the same section
+more than once, pass the chosen handle because its mappings may differ. A bundle
+may declare the imported section class as a child, and AppRC injects that child
+from the bundle's resolved snapshot. If the bundle uses a custom child factory,
+pass an explicitly built child to `resolved.build(BundleType, child=value)`.
+Calling the bundle constructor without that snapshot raises `TypeError` and
+directs the caller to build it with `resolved.build(BundleType)`.
+See the [dependency-import guide](How-To-User-Guides.md#import-settings-from-a-dependency)
+for a complete example.
 
 ## Resolution
 

@@ -3,6 +3,7 @@
 PUBLIC_NAMES = [
     "AppRC",
     "ResolveOptions",
+    "ImportedConfig",
     "ResolvedConfig",
     "Storage",
     "UserDotenv",

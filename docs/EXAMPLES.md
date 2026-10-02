@@ -14,6 +14,7 @@
   - [User settings and storage](#user-settings-and-storage)
 - [Other application patterns](#other-application-patterns)
   - [Explicit dotenv precedence](#explicit-dotenv-precedence)
+  - [Parent-owned dependency settings](#parent-owned-dependency-settings)
   - [An application-owned CLI callback](#an-application-owned-cli-callback)
   - [Several sections and temporary overrides](#several-sections-and-temporary-overrides)
 
@@ -278,6 +279,33 @@ The first run reports `shell`; the second reports `file`. On PowerShell, write
 the file with `Set-Content` and set `$env:APPRC_EXAMPLE_PRECEDENCE_LABEL` instead.
 The [independent Python guide](How-To-User-Guides.md#load-dotenv-files)
 reproduces the priority change without shell-specific commands.
+
+## Parent-owned dependency settings
+
+The complete [dependency_config_import.py](../examples/dependency_config_import.py)
+imports a dependency's client section under a host-owned namespace. The host
+maps two dependency model fields to one setting, marks the API key secret, and
+builds the dependency client inside a config bundle from one parent snapshot.
+It also supplies an ambient dependency key and confirms that parent resolution
+uses the host's value instead.
+
+From the repository root, run:
+
+```shell
+python examples/dependency_config_import.py
+```
+
+Expected output:
+
+```text
+https://host.example: host-model-v2
+```
+
+The [dependency-import guide](How-To-User-Guides.md#import-settings-from-a-dependency)
+shows the same declaration step by step. A storage-required imported section
+uses the parent's selected storage layer for mapped settings; dependency user
+and storage files are never read in parent mode. Dependency packaged defaults
+can be opted into separately.
 
 ## An application-owned CLI callback
 

@@ -8,6 +8,7 @@ def test_root_exports_clean_public_api() -> None:
     assert rc.__all__ == [
         "AppRC",
         "ResolveOptions",
+        "ImportedConfig",
         "ResolvedConfig",
         "Storage",
         "UserDotenv",
@@ -22,6 +23,7 @@ def test_root_exports_clean_public_api() -> None:
         "storage",
     ]
     assert hasattr(rc, "AppRC")
+    assert hasattr(rc, "ImportedConfig")
     assert hasattr(rc, "Storage")
     assert hasattr(rc, "UserDotenv")
     assert hasattr(rc, "Config")

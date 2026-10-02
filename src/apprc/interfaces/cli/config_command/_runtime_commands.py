@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 # == Standard Library ========================
+import os
 import sys
 from pathlib import Path
 from dataclasses import replace
@@ -153,8 +154,14 @@ class RuntimeConfigCommands(ConfigCommandBase):
         if status.available and status.path.is_file():
             typer.echo("Secret file permissions are already private.")
             return
+        allowed_principals = (
+            "this user, SYSTEM, and Administrators"
+            if os.name == "nt"
+            else "the current user"
+        )
         typer.echo(
-            f"Restrict access to {status.path.parent} and {status.path.name}."
+            f"Update safety permissions for {status.path.parent} and "
+            f"{status.path.name}. Allow access only to {allowed_principals}."
         )
         if not assume_yes and not typer.confirm(
             "Apply this permission repair?"

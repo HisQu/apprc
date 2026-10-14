@@ -17,6 +17,7 @@ db/
 # === Development ===============================================
 .devtools/
 .vscode/
+.omp/
 # .gitignore
 .apprc-example*/
 examples/example_app_disk_files/

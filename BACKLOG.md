@@ -1,4 +1,4 @@
-# Todo list
+# Backlog
 
 Treat this as the parking lot for actionable problems discovered while working but intentionally left unresolved.
 
@@ -14,7 +14,7 @@ Treat this as the parking lot for actionable problems discovered while working b
 > ## Rules
 > 1) Do not remove or change this header and TOC without very good reason. 
 > 1) Newest at the top.
-> 1) Append a new entry only when the observation is real, actionable, not already listed, and out of scope for the current change. Do not modify `TODO.md` when there is nothing useful to add.
+> 1) Append a new entry only when the observation is real, actionable, not already listed, and out of scope for the current change. Do not modify `BACKLOG.md` when there is nothing useful to add.
 > 1) If an issue is new and related to another issue, reference it in the `Suggested next step`. Do not create a new entry for the same problem. Place the reference in both entries (bi-directional).
 > 1) If an issue was resolved, remove it and make an entry in the CHANGELOG.md.
 > 1) **Types:**
@@ -46,7 +46,7 @@ Treat this as the parking lot for actionable problems discovered while working b
 > - **Why not fixed now:** scope, risk, uncertainty, or user decision needed
 > - **Evidence:** concrete observation
 > - **Context:** explanation to ensure the problem is understood in the big-picture of the repo.
-> - **Suggested next step:** smallest reasonable follow-up. If applicable, reference related todos [here](#todo-list).
+> - **Suggested next step:** smallest reasonable follow-up. If applicable, reference related backlog items [here](#backlog).
 > 
 > ## <Priority> / <Effort> [<Type>] - *Short problem title*
 > - **Area:** `path/or/symbol`
@@ -71,7 +71,7 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 ## Table Of Contents
 
-1. [Todo list](#todo-list)
+1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
 2. [2026-09-04](#2026-09-04)
    1. [P3 / E1 \[Code smell\] - *Multi-file updates can stop between replacements*](#p3--e1-code-smell---multi-file-updates-can-stop-between-replacements)

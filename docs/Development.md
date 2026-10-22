@@ -103,7 +103,7 @@ installed by `playwright install chromium`.
 `just lock` regenerates `uv.lock` and `pylock.toml`; `just sync` installs locked
 dependencies. `just clean` removes caches and build outputs. Obsolete empty
 namespace directories can survive historical in-place checkouts; the remaining
-cleanup question is tracked in [TODO.md](../TODO.md#todo-list).
+cleanup question is tracked in [BACKLOG.md](../BACKLOG.md#backlog).
 
 ## Documentation checks
 

@@ -6,7 +6,8 @@
 - Check these modules first:
   - `apprc.utils`
 - If a helper is broadly reusable, place it in the appropriate shared module.
-- Mind the TODO.md before starting, assess if issues are related to your task and fix those that should be solved as part of your pass. 
+- Read `BACKLOG.md` before starting, assess related issues, and fix those that belong in your pass.
+- An active pass's `TODO.md` checklist belongs beside its `PLAN.md`, not in the durable backlog.
 
 ## Project rules
 - Do not duplicate helpers or re-implement existing utilities without checking first.
@@ -20,7 +21,7 @@
 - Add minimal `__main__` demo code only when it improves discoverability or manual testing.
 - If a test needs a lighter setup, add or reuse a dedicated test helper instead of widening production code to `Any`.
 - If a boundary is truly dynamic, model that boundary explicitly; do not probe strict domain objects defensively.
-- Update the TODO.md when you find a new issue that is real, actionable, and out of scope for the current change. Do not modify `TODO.md` when there is nothing useful to add.
+- Update `BACKLOG.md` when you find a new issue that is real, actionable, and out of scope for the current change. Do not modify it when there is nothing useful to add.
 
 ## Blocking user-input policy
 

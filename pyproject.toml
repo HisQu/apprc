@@ -128,7 +128,7 @@ source-include = [
     "README.md",
     "CHANGELOG.md",
     "AGENTS.md",
-    "TODO.md",
+    "BACKLOG.md",
     "docs/**",
     "examples/**",
     "src/apprc_dev/packaging/**",

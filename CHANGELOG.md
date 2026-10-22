@@ -78,6 +78,11 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+- Breaking: Renamed the durable repository backlog from `TODO.md` to
+  `BACKLOG.md`. Contributors and tooling using the old path must update their
+  links; existing entries are preserved. Reserve `TODO.md` for active-pass
+  checklists beside `PLAN.md`.
+
 <br>
 
 ### ➕ Added

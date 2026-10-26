@@ -143,6 +143,13 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
+### 🔨 Fixed
+
+- Deferred release dependency locking until all three distribution versions are
+  regenerated, so minor releases do not resolve mismatched workspace metadata.
+
+<br>
+
 
 ---
 

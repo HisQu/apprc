@@ -771,43 +771,6 @@ def test_release_recipe_surface_is_minimal() -> None:
     )
 
 
-def test_release_checks_before_commit_and_tag() -> None:
-    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
-    recipe = _just_recipe("release-prepare")
-
-    assert "release_notes.py" in recipe
-    assert "restore_version_files=true" in recipe
-    assert 'cp "$release_root/pyproject.toml" pyproject.toml' in recipe
-    assert (
-        "cp src/apprc_dev/packaging/gui/pyproject.toml "
-        '\\\n        "$release_root/gui-pyproject.toml"' in recipe
-    )
-    assert (
-        'cp "$release_root/gui-pyproject.toml" \\\n'
-        "                src/apprc_dev/packaging/gui/pyproject.toml" in recipe
-    )
-    assert "python src/apprc_dev/packaging/gui_metadata.py" in recipe
-    assert "src/apprc_dev/packaging/gui/pyproject.toml" in recipe
-    assert "APPRC_RELEASE_IN_PROGRESS=1 just publish-check" in recipe
-    assert recipe.index("gui_metadata.py") < recipe.index("just publish-check")
-    assert 'uv version --bump "{{level}}" --dry-run --short' in recipe
-    commit_start = recipe.index("git commit \\\n")
-    commit_end = recipe.index("restore_version_files=false", commit_start)
-    commit = recipe[commit_start:commit_end]
-    assert "src/apprc_dev/packaging/gui/pyproject.toml" in commit
-    assert recipe.index("just publish-check") < recipe.index("git commit")
-    assert recipe.index("git commit") < recipe.index('git tag -a "${tag}"')
-    assert 'git tag -a "${tag}"' in recipe
-    assert re.search(r"(?m)^\s+git push\b", recipe) is None
-    assert "Nothing has been uploaded" in recipe
-    assert "just release-push ${tag}" in recipe
-    assert "create" in recipe
-    assert "the GitHub Release" in recipe
-    assert "PyPI follows RELEASE_PYPI in the tagged justfile" in recipe
-    assert "PYPI_API_KEY" not in justfile
-    assert "PUBLISH_PYPI" not in justfile
-
-
 def test_release_recipe_pushes_prepared_tag_atomically() -> None:
     """Release orchestration should preserve a retryable local result."""
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")

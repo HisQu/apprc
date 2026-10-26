@@ -47,6 +47,7 @@ from apprc.interfaces.cli.doctor_output import (
     print_config_doctor,
     print_config_paths,
 )
+from apprc.interfaces.cli.appdata_command import mount_appdata_cli
 from apprc.interfaces.cli.mount import mount_config_cli
 from apprc.interfaces.cli.options import (
     COMMON_CLI_FLAG_OPTIONS,

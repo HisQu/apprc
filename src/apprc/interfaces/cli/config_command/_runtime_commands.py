@@ -7,7 +7,6 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from dataclasses import replace
 
 # == 3rd Party ===============================
 import typer
@@ -40,9 +39,6 @@ from apprc.user_files.migration import (
     ConfigMigrationError,
     StorageMigrationResolution,
     UnresolvedStorageMigrationError,
-)
-from apprc.user_files.purge import (
-    ConfigPurgeError,
 )
 
 
@@ -222,66 +218,6 @@ class RuntimeConfigCommands(ConfigCommandBase):
         for warning in plan.warnings:
             typer.echo(f"warning: {warning}", err=True)
 
-    def purge(
-        self,
-        ctx: typer.Context,
-        *,
-        apprc_dir: Path | None,
-        dry_run: bool,
-        assume_yes: bool,
-    ) -> None:
-        """Remove only fixed AppRC files and registered internal storage."""
-        try:
-            manager = self.manager(ctx)
-            if apprc_dir is not None:
-                manager = self.apprc.manage(
-                    replace(manager.options, apprc_dir=apprc_dir),
-                    environment=manager.environment,
-                )
-            plan = manager.plan_purge()
-        except ConfigPurgeError as exc:
-            raise typer.BadParameter(str(exc), param_hint="purge") from exc
-        typer.echo(f"apprc_dir: {plan.apprc_dir}")
-        for path in plan.managed_files:
-            typer.echo(f"{'would_remove' if dry_run else 'remove'}: {path}")
-        for root in plan.internal_storage_roots:
-            typer.echo(
-                f"{'would_remove_tree' if dry_run else 'remove_tree'}: {root}"
-            )
-        for root in plan.external_storage_roots:
-            typer.echo(f"keep_external_storage_data: {root}")
-        if plan.stale_storage:
-            typer.echo(
-                "warning: apprc.toml contains stale storage configuration for "
-                "an app that no longer declares storage.",
-                err=True,
-            )
-        if plan.stale_user_dotenv:
-            typer.echo(
-                "warning: apprc.user.env exists for an app that no longer "
-                "declares user-dotenv support.",
-                err=True,
-            )
-        if dry_run:
-            return
-        if not assume_yes and not typer.confirm(
-            "Remove these AppRC-managed files and internal storage roots?"
-        ):
-            typer.echo("No files were changed.")
-            raise typer.Exit(code=1)
-        try:
-            result = manager.apply_purge(plan)
-        except OSError as exc:
-            raise typer.BadParameter(str(exc), param_hint="purge") from exc
-        typer.echo(f"removed_entries: {len(result.removed)}")
-        for path in result.skipped:
-            typer.echo(f"skipped_unsafe_target: {path}", err=True)
-        if plan.apprc_dir.exists():
-            typer.echo(
-                "remaining_unmanaged_data: "
-                f"{plan.apprc_dir} was kept because it is not empty.",
-                err=True,
-            )
 
     def _migration_plan(
         self,

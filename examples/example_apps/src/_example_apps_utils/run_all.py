@@ -133,7 +133,9 @@ def _clean_appdata(
         )
     )
     if paths["apprc_dir"] != str(appdata_directory):
-        raise RuntimeError("appdata paths selected an unexpected AppRC directory.")
+        raise RuntimeError(
+            "appdata paths selected an unexpected AppRC directory."
+        )
     managed_files = [Path(value) for value in paths["managed_files"]]
     internal_roots = [Path(value) for value in paths["internal_storage_roots"]]
     external_roots = [Path(value) for value in paths["external_storage_roots"]]
@@ -164,7 +166,9 @@ def _clean_appdata(
         )
     )
     if not cleaned:
-        raise RuntimeError("appdata clean did not respect its cleanup inventory.")
+        raise RuntimeError(
+            "appdata clean did not respect its cleanup inventory."
+        )
     return cleaned
 
 

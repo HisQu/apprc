@@ -129,7 +129,9 @@ def test_cleanup_preview_decline_and_confirmation_preserve_scope(
     assert internal_payload.read_text(encoding="utf-8") == "internal"
     assert external_payload.read_text(encoding="utf-8") == "external"
     assert user_secret.read_text(encoding="utf-8").endswith("secret-value\n")
-    assert storage_secret.read_text(encoding="utf-8").endswith("storage-secret\n")
+    assert storage_secret.read_text(encoding="utf-8").endswith(
+        "storage-secret\n"
+    )
     assert (external / "apprc.storage.env").is_file()
     assert registry.is_file()
     assert unmanaged.read_text(encoding="utf-8") == "keep"
@@ -162,12 +164,14 @@ def test_explicit_apprc_dir_overrides_process_and_root_env_file(
     env_key = declaration.schema.apprc_dir_env_key
     monkeypatch.setenv(env_key, str(process_selected))
     env_file = tmp_path / "deployment.env"
-    env_file.write_text(
-        f'{env_key}="{root_env_selected}"\n', encoding="utf-8"
-    )
+    env_file.write_text(f'{env_key}="{root_env_selected}"\n', encoding="utf-8")
     sentinels = {
         directory: directory / "apprc.user.env"
-        for directory in (process_selected, root_env_selected, explicit_selected)
+        for directory in (
+            process_selected,
+            root_env_selected,
+            explicit_selected,
+        )
     }
     for sentinel in sentinels.values():
         sentinel.parent.mkdir()
@@ -193,7 +197,9 @@ def test_explicit_apprc_dir_overrides_process_and_root_env_file(
         ["--env-file", str(env_file), "appdata", "paths", "--json"],
     )
     assert default_paths.exit_code == 0, default_paths.output
-    assert json.loads(default_paths.stdout)["apprc_dir"] == str(process_selected)
+    assert json.loads(default_paths.stdout)["apprc_dir"] == str(
+        process_selected
+    )
 
     paths = runner.invoke(
         app,
@@ -309,7 +315,9 @@ def test_mount_preserves_host_callback_and_rejects_collision() -> None:
     assert command_result.stdout.strip() == "existing command"
 
 
-def test_paths_reports_stale_registry_and_internal_roots(tmp_path: Path) -> None:
+def test_paths_reports_stale_registry_and_internal_roots(
+    tmp_path: Path,
+) -> None:
     app, _ = _app(storage=False)
     apprc_dir = tmp_path / "apprc"
     storage = apprc_dir / "storage"

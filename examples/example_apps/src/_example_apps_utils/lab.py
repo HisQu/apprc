@@ -41,9 +41,7 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
             f"{command} config paths",
             f"{command} run",
             f"{command} config doctor",
-            (
-                f"{command} appdata paths --apprc-dir {root / 'apprc'} --json"
-            ),
+            (f"{command} appdata paths --apprc-dir {root / 'apprc'} --json"),
             (f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run"),
         )
     if spec.name == "user-dotenv":
@@ -116,10 +114,7 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
     commands.extend(
         (
             f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
-            (
-                f"{command} appdata clean --apprc-dir {root / 'apprc'} "
-                "--dry-run"
-            ),
+            (f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run"),
         )
     )
     return tuple(commands)

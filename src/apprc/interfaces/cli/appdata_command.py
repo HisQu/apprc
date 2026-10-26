@@ -30,7 +30,9 @@ def mount_appdata_cli(app: typer.Typer, apprc: AppRC) -> typer.Typer:
     :raises RuntimeError: If the host already owns the ``appdata`` name.
     """
     if not isinstance(app, typer.Typer):
-        raise TypeError("mount_appdata_cli supports typer.Typer instances only.")
+        raise TypeError(
+            "mount_appdata_cli supports typer.Typer instances only."
+        )
     _ensure_appdata_group_name_available(app)
     child = typer.Typer(
         no_args_is_help=True,
@@ -47,7 +49,9 @@ def mount_appdata_cli(app: typer.Typer, apprc: AppRC) -> typer.Typer:
         ] = None,
         json_output: Annotated[
             bool,
-            typer.Option("--json", help="Print the structured cleanup inventory."),
+            typer.Option(
+                "--json", help="Print the structured cleanup inventory."
+            ),
         ] = False,
     ) -> None:
         """Show managed locations and retained external storage data."""
@@ -166,7 +170,9 @@ def _print_plan(
     root_key = "internal_storage_root"
     if removal is not None:
         file_key = "would_remove" if removal == "preview" else "remove"
-        root_key = "would_remove_tree" if removal == "preview" else "remove_tree"
+        root_key = (
+            "would_remove_tree" if removal == "preview" else "remove_tree"
+        )
     typer.echo(f"apprc_dir: {plan.apprc_dir}")
     for path in plan.managed_files:
         typer.echo(f"{file_key}: {path}")

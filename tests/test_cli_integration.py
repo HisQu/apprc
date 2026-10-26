@@ -659,7 +659,9 @@ def test_appdata_bypasses_invalid_runtime_settings_across_actions(
     tmp_path: Path,
 ) -> None:
     kit = build_apprc_example_app()
-    monkeypatch.delenv(kit.schema.require_storage_selector_env_key(), raising=False)
+    monkeypatch.delenv(
+        kit.schema.require_storage_selector_env_key(), raising=False
+    )
     monkeypatch.setenv("APPRC_EXAMPLE_APP_MODE", "INVALID")
     monkeypatch.setenv("APPRC_EXAMPLE_APP_ENABLED", "not-a-bool")
     runtime_calls: list[str] = []

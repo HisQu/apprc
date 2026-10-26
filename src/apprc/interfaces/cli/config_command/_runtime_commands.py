@@ -218,7 +218,6 @@ class RuntimeConfigCommands(ConfigCommandBase):
         for warning in plan.warnings:
             typer.echo(f"warning: {warning}", err=True)
 
-
     def _migration_plan(
         self,
         ctx: typer.Context,

@@ -31,6 +31,7 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
+3. [0.29.0 - 2026-10-26](#0290---2026-10-26)
 3. [0.28.0 - 2026-10-02](#0280---2026-10-02)
 4. [0.27.4 - 2026-10-01](#0274---2026-10-01)
 5. [0.27.3 - 2026-10-01](#0273---2026-10-01)
@@ -78,6 +79,45 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+
+<br>
+
+### ➕ Added
+
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.29.0 - 2026-10-26
+
+<br>
+
+### 💥 Breaking changes
+
 - Breaking: Removed the `config purge` CLI command. Applications and scripts
   using it must explicitly mount `rc.cli.mount_appdata_cli(app, MyRC)` and
   invoke `appdata clean` instead; no alias remains. Add `paths` and `clean`
@@ -103,25 +143,6 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-### 💔 Changed
-
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
-### 🔨 Fixed
-
-<br>
-
-### 🔒 Security
-
-<br>
 
 ---
 

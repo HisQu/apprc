@@ -305,7 +305,7 @@ release-prepare level="patch":
     cp src/apprc_dev/packaging/gui/pyproject.toml \
         "$release_root/gui-pyproject.toml"
     restore_version_files=true
-    uv version --bump "{{level}}" --frozen --no-sync
+    uv version --bump "{{level}}" --frozen
     python src/apprc_dev/packaging/terminal_metadata.py
     python src/apprc_dev/packaging/gui_metadata.py
     uv lock

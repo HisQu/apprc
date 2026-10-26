@@ -78,6 +78,14 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+- Breaking: Removed the `config purge` CLI command. Applications and scripts
+  using it must explicitly mount `rc.cli.mount_appdata_cli(app, MyRC)` and
+  invoke `appdata clean` instead; no alias remains. Add `paths` and `clean`
+  action prefixes to the application's existing runtime-independent policy.
+  Use each action's `--apprc-dir PATH` for explicit cleanup targeting rather
+  than root env-file or storage selectors. `config paths` remains configuration
+  diagnostics; manager-level `plan_purge()` and `apply_purge(plan)` are unchanged.
+
 - Breaking: Renamed the durable repository backlog from `TODO.md` to
   `BACKLOG.md`. Contributors and tooling using the old path must update their
   links; existing entries are preserved. Reserve `TODO.md` for active-pass
@@ -86,6 +94,12 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### ➕ Added
+
+- Added an opt-in application-data CLI with `appdata paths`, a structured
+  `appdata paths --json` cleanup inventory, and previewed, confirmed
+  `appdata clean` removal. It uses the existing managed-file and internal-storage
+  safety boundary without resolving application settings, retains external
+  payloads and unrelated files, and is demonstrated by all executable examples.
 
 <br>
 

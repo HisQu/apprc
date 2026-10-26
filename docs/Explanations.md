@@ -16,6 +16,7 @@
 - [Inspect and edit configuration](#inspect-and-edit-configuration)
   - [ConfigManager](#configmanager)
   - [Config CLI](#config-cli)
+  - [Application-data CLI](#application-data-cli)
   - [Config editor](#config-editor)
   - [Gradio editor](#gradio-editor)
 - [Compose and ship applications](#compose-and-ship-applications)
@@ -378,6 +379,30 @@ the result in CLI state. A command obtains `state.resolved` and builds its setti
 from it. The [Typer guide](How-To-User-Guides.md#add-configuration-commands-to-typer)
 contains a complete runnable app. Applications that already own their root
 callback can instead use the [custom-callback example](EXAMPLES.md#an-application-owned-cli-callback).
+
+## Application-data CLI
+
+The application-data CLI is a separate Typer group for inspecting and removing
+AppRC-managed files and registered internal storage data. An application opts in
+with `rc.cli.mount_appdata_cli(app, MyRC)`; mounting the config CLI does not add it.
+It can also be mounted on a plain Typer application without a config CLI.
+
+`appdata paths` lists cleanup locations without creating files.
+`appdata clean --dry-run` previews the same plan, and `appdata clean` asks for
+confirmation before applying it. Both use `ConfigManager` without resolving
+application settings. Applications with a runtime callback declare these actions
+runtime-independent so missing storage or an invalid ordinary setting does not
+prevent cleanup. The [cleanup guide](How-To-User-Guides.md#preview-and-clean-managed-application-data)
+shows that policy and the separate mount.
+
+Cleanup removes fixed managed files, including secret companions, and registered
+storage trees strictly inside the AppRC directory. External storage payloads and
+unrelated files remain; AppRC does not inventory arbitrary application logs,
+caches, outputs, or databases outside those managed roots. It neither uninstalls
+the application nor removes Python or package-management tools.
+The [command reference](References.md#application-data-commands) defines targeting,
+the machine-readable inventory, and failure behavior. `config paths` remains
+configuration diagnostics, not a deletion inventory.
 
 ## Config editor
 

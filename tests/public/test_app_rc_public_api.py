@@ -1,11 +1,13 @@
 """Public AppRC facade behavior tests."""
 
+import json
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 import apprc as rc
 
@@ -604,6 +606,29 @@ def test_mount_cli_accepts_only_typer() -> None:
 
     with pytest.raises(TypeError, match="typer.Typer instances only"):
         rc.cli.mount_config_cli(object(), MyRC)  # type: ignore[arg-type]
+
+
+def test_mount_appdata_cli_is_public_and_accepts_plain_typer() -> None:
+    """The appdata mount is public and does not require a config mount."""
+    MyRC = _process_env_app()
+    app = typer.Typer()
+
+    mounted = rc.cli.mount_appdata_cli(app, MyRC)
+
+    assert isinstance(mounted, typer.Typer)
+    result = CliRunner().invoke(app, ["appdata", "paths", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output).keys() == {
+        "apprc_dir",
+        "managed_files",
+        "internal_storage_roots",
+        "external_storage_roots",
+        "stale_storage",
+        "stale_user_dotenv",
+    }
+
+    with pytest.raises(TypeError, match="typer.Typer instances only"):
+        rc.cli.mount_appdata_cli(object(), MyRC)  # type: ignore[arg-type]
 
 
 def test_explicit_resolution_constructs_registered_config(

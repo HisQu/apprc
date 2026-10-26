@@ -28,8 +28,9 @@ console scripts. It does not require `uv` or `direnv`.
 | [`cli_runtime`](src/cli_runtime/README.md) | `apprc-cli-runtime` | Yes | Yes | App-owned callback and `CliRuntime`. |
 | [`library_client`](src/library_client/README.md) | `apprc-library-client` | Yes | No | An importable client loads its own settings. |
 
-Each application exposes a realistic `run` command and generated AppRC
-configuration commands. The application packages do not import
+Each application exposes a realistic `run` command, generated AppRC
+configuration commands, and a separately mounted application-data CLI.
+The application packages do not import
 `_example_apps_utils`; they can be copied independently.
 
 ## Disposable Manual Sessions
@@ -57,7 +58,10 @@ shell exits, including after an interruption or command failure.
 
 Directly running an example is intentionally realistic: commands with declared
 managed features can create persistent files at the selected paths. Use
-`config paths` first and inspect `config purge --dry-run` before removal.
+`appdata paths` to inspect cleanup scope and `appdata clean --dry-run` before
+removal. `config paths` remains configuration diagnostics. Application-data
+commands use `--apprc-dir PATH` to select a registry explicitly; they do not
+inherit root env-file or storage selectors.
 
 ## Command Availability
 
@@ -66,7 +70,8 @@ managed features can create persistent files at the selected paths. Use
 | `run` | Yes | Yes | Yes | Yes |
 | Root env-file and logging options | Yes | Yes | Yes | Yes |
 | Root `--storage NAME_OR_PATH` | No | No | Yes | Yes |
-| `config paths/show/doctor/purge` | Yes | Yes | Yes | Yes |
+| `config paths/show/doctor` | Yes | Yes | Yes | Yes |
+| `appdata paths/clean` | Yes | Yes | Yes | Yes |
 | `config setup/set/edit/migrate` | No | Yes | Yes | Yes |
 | User write scope | No | Yes | No | Yes |
 | Storage write scope and `config storage ...` | No | No | Yes | Yes |
@@ -88,10 +93,11 @@ apprc-examples-run-all
 ```
 
 The runner invokes the installed CLIs as subprocesses. It exercises setup,
-doctor, application runtime, and purge for all seven apps. Its precedence
-scenario creates distinct shell-selected and explicit-file-selected storage
-roots and values, then verifies both outcomes. Every scenario uses temporary
-state and the command prints one JSON summary.
+doctor, application runtime, application-data inventory, and cleanup for all
+seven apps. Its precedence scenario creates distinct shell-selected and
+explicit-file-selected storage roots and values, then verifies both outcomes.
+Cleanup targets its temporary AppRC registry explicitly. Every scenario uses
+temporary state and the command prints one JSON summary.
 
 The pytest suite additionally covers the shared command surface on every app,
 the full named-storage lifecycle on `storage`, selector names and
@@ -110,3 +116,9 @@ The [complete setups](../../docs/EXAMPLES.md#choose-a-setup) explain which app t
 choose. Each app uses the same [config CLI](../../docs/Explanations.md#config-cli),
 whose [commands](../../docs/References.md#terminal-commands) are checked by the
 [development checks](../../docs/Development.md#checks).
+The separate [application-data CLI](../../docs/Explanations.md#application-data-cli)
+uses the [cleanup policy and confirmation flow](../../docs/How-To-User-Guides.md#preview-and-clean-managed-application-data).
+All examples declare `appdata paths` and `appdata clean` runtime-independent
+using action prefixes so trailing options do not require valid application
+settings. Cleanup removes managed files and internal storage trees, not external
+payloads or arbitrary application output.

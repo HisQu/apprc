@@ -19,6 +19,7 @@
   - [Provenance and lifecycle](#provenance-and-lifecycle)
 - [Commands and errors](#commands-and-errors)
   - [Terminal commands](#terminal-commands)
+  - [Application-data commands](#application-data-commands)
   - [Errors and write guarantees](#errors-and-write-guarantees)
 
 <br>
@@ -434,7 +435,6 @@ The standalone `apprc` executable provides `scaffold config`.
 | `config secrets repair --scope user\|storage [--yes]` | Restrict a layer's directory and secret file permissions after review. |
 | `config edit` | Open the [config editor](Explanations.md#config-editor) for declared persistence. |
 | `config migrate [--dry-run] [--yes]` | Migrate supported legacy files explicitly. |
-| `config purge [--dry-run] [--yes]` | Review or apply managed-file cleanup. |
 | `config storage list/add/select/rename/repoint/move/remove` | Manage registered storages when storage is declared. |
 
 Root options precede the subcommand: `--env-file`,
@@ -448,6 +448,62 @@ shows `CliRuntime` integration.
 `storage_not_selected`, `storage_not_ready`, `user_dotenv_not_ready`, and
 `storage_registry_not_ready`. Doctor JSON includes `writes="none"` and source
 paths. `user_dotenv_required` remains a report field with value `False`.
+
+## Application-data commands
+
+The [application-data CLI](Explanations.md#application-data-cli) is an explicit,
+separate mount:
+`rc.cli.mount_appdata_cli(app: typer.Typer, apprc: AppRC) -> typer.Typer`.
+It returns the child group, requires a Typer host, and rejects an existing
+`appdata` command or group before registration. It does not install or replace
+a host callback. Neither `mount_config_cli` nor `CliRuntime.mount_config_group`
+mounts it automatically. The
+[cleanup guide](How-To-User-Guides.md#preview-and-clean-managed-application-data)
+shows the runtime-independent action-prefix declaration needed when the host
+prepares runtime state.
+
+| Application command | Behavior |
+| --- | --- |
+| `appdata paths [--apprc-dir PATH] [--json]` | Plan and print cleanup locations and retention scope without creating files. |
+| `appdata clean [--apprc-dir PATH] [--dry-run] [--yes / -y]` | Preview exact targets, then confirm and apply the existing manager purge plan. `--dry-run` never applies it; `--yes` bypasses confirmation. |
+
+These commands call `MyRC.manage()` without resolving application settings.
+Without `--apprc-dir`, the declaration and process environment select the
+AppRC directory. `--apprc-dir PATH` selects a different managed registry for
+this action only. Root `--env-file`, `--storage`, and other runtime selectors
+do not retarget cleanup. Invalid ordinary setting values and missing runtime
+storage are irrelevant, but malformed registry data stops both commands before
+deletion; no fallback target is chosen. Missing managed files are harmless.
+
+Text `paths` uses `apprc_dir`, `managed_file`, `internal_storage_root`, and
+`keep_external_storage_data` keys. `paths --json` emits one object on stdout:
+
+| JSON key | Type | Meaning |
+| --- | --- | --- |
+| `apprc_dir` | string | Selected AppRC directory. |
+| `managed_files` | array of strings | Fixed managed-file targets, including secret companions. |
+| `internal_storage_roots` | array of strings | Registered storage roots strictly inside the AppRC directory, eligible for recursive deletion. |
+| `external_storage_roots` | array of strings | Registered roots whose application payloads are retained. |
+| `stale_storage` | boolean | Registry records exist although storage is no longer declared. |
+| `stale_user_dotenv` | boolean | A user dotenv exists although that capability is no longer declared. |
+
+This is the structured `ConfigPurgePlan` inventory, not a list limited to
+currently existing files. Diagnostics go to stderr. Use it rather than parsing
+human preview wording when checking deletion boundaries.
+
+`clean` reports `would_remove` and `would_remove_tree` in dry-run, or `remove`
+and `remove_tree` before applying. It also reports retained external roots,
+`removed_entries`, unsafe skipped targets as `skipped_unsafe_target`, and
+remaining AppRC-directory contents as `remaining_unmanaged_data` when relevant.
+Its confirmation is `Remove these AppRC-managed files and internal storage
+roots?`; declining exits 1 without applying the plan. Planning or apply errors
+exit nonzero with the invoked `appdata paths` or `appdata clean` parameter hint.
+
+Cleanup retains external payloads and unrelated files, does not follow symlinks,
+and does not discover arbitrary logs, caches, outputs, or databases outside the
+managed roots. It does not remove installed packages. The
+[manager API](#management), including `plan_purge()` and `apply_purge(plan)`,
+remains available for Python callers.
 
 ## Errors and write guarantees
 

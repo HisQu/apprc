@@ -80,6 +80,10 @@ def build_app(
         runtime_policy=rc.cli.CliRuntimePolicy(
             runtime_independent_commands={
                 "status": rc.cli.RuntimeIndependentCommand(skip_empty=True),
+                "appdata": rc.cli.RuntimeIndependentCommand(
+                    action_prefixes={("paths",), ("clean",)},
+                    skip_empty=True,
+                ),
             },
             extra_cli_flag_options={"--dry-run"},
             extra_cli_value_options={"--workspace", "--model"},
@@ -144,6 +148,7 @@ def build_app(
         )
 
     runtime.mount_config_group(app)
+    rc.cli.mount_appdata_cli(app, MyRC)
     return app
 
 

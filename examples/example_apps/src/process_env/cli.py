@@ -33,7 +33,16 @@ def build_app(
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
         runtime_payload=_runtime_payload,
+        runtime_policy=rc.cli.CliRuntimePolicy(
+            runtime_independent_commands={
+                "appdata": rc.cli.RuntimeIndependentCommand(
+                    action_prefixes={("paths",), ("clean",)},
+                    skip_empty=True,
+                ),
+            },
+        ),
     )
+    rc.cli.mount_appdata_cli(app, MyRC)
 
     @app.command("run")
     def run_cmd(ctx: typer.Context) -> None:

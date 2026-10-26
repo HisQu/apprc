@@ -749,6 +749,15 @@ def ensure_config_group_name_available(
     )
 
 
+def _ensure_appdata_group_name_available(app: typer.Typer) -> None:
+    """Reject an existing appdata name using the shared Typer inventory."""
+    if "appdata" in _registered_typer_names(app):
+        raise RuntimeError(
+            "mount_appdata_cli() cannot mount the appdata group because "
+            "this Typer app already has a command or group named 'appdata'."
+        )
+
+
 def _registered_typer_names(app: typer.Typer) -> set[str]:
     """Return explicit and implicit command names registered on ``app``."""
     names: set[str] = set()

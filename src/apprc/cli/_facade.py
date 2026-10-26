@@ -44,6 +44,7 @@ _CLI_EXPORTS = [
     "ensure_config_group_name_available",
     "exit_missing_action",
     "initial_storage_from_state",
+    "mount_appdata_cli",
     "mount_config_cli",
     "parse_log_level",
     "prepare_cli_runtime_context",

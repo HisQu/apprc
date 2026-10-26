@@ -335,40 +335,6 @@ def build_config_typer_app_from_options(
                 assume_yes=assume_yes,
             )
 
-    @app.command("purge")
-    def config_purge_cmd(
-        ctx: typer.Context,
-        apprc_dir: Annotated[
-            Path | None,
-            typer.Option(
-                "--apprc-dir",
-                help="AppRC directory to inspect and clean.",
-            ),
-        ] = None,
-        dry_run: Annotated[
-            bool,
-            typer.Option(
-                "--dry-run",
-                help="Show exact removal targets without changing files.",
-            ),
-        ] = False,
-        assume_yes: Annotated[
-            bool,
-            typer.Option(
-                "--yes",
-                "-y",
-                help="Remove the listed AppRC-managed targets without prompting.",
-            ),
-        ] = False,
-    ) -> None:
-        """Remove AppRC files that package uninstall leaves behind."""
-        handlers.purge(
-            ctx,
-            apprc_dir=apprc_dir,
-            dry_run=dry_run,
-            assume_yes=assume_yes,
-        )
-
     if apprc.schema.uses_managed_files():
 
         @app.command("set")

@@ -15,6 +15,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+import apprc as rc
 from apprc import AppRC
 from tests.support_declaration import app_from_envs
 from apprc.definition.app_config.user_dotenv import UserDotenv
@@ -27,6 +28,7 @@ from apprc.interfaces.cli import (
     ConfigRuntimePolicy,
     CliRuntime,
     DefaultConfigCliState,
+    CliRuntimePolicy,
     EnvFileOverridesOption,
     EnvFilesOption,
     LogLevelOption,
@@ -609,6 +611,143 @@ def test_mount_config_cli_runtime_policy_can_force_config_set_bootstrap(
 
     assert result.exit_code == 0, result.output
     assert len(factory_calls) == 1
+
+
+def test_appdata_action_prefixes_bypass_runtime_with_trailing_options(
+    tmp_path: Path,
+) -> None:
+    kit = _build_storage_free_kit_with_shared_env()
+    args = [
+        "appdata",
+        "paths",
+        "--json",
+        "--apprc-dir",
+        str(tmp_path / "selected"),
+    ]
+    factory_calls: list[CliRuntimeContext] = []
+
+    def state_factory(context: CliRuntimeContext) -> DefaultConfigCliState:
+        factory_calls.append(context)
+        return DefaultConfigCliState(resolved=context.resolved)
+
+    app = typer.Typer()
+    mount_config_cli(
+        app,
+        kit,
+        state_factory=state_factory,
+        args_provider=lambda: args,
+        runtime_policy=CliRuntimePolicy(
+            runtime_independent_commands={
+                "appdata": rc.cli.RuntimeIndependentCommand(
+                    action_prefixes={("paths",), ("clean",)},
+                    skip_empty=True,
+                ),
+            },
+        ),
+    )
+    rc.cli.mount_appdata_cli(app, kit)
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["apprc_dir"] == str(tmp_path / "selected")
+    assert factory_calls == []
+
+
+def test_appdata_bypasses_invalid_runtime_settings_across_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    kit = build_apprc_example_app()
+    monkeypatch.delenv(
+        kit.schema.require_storage_selector_env_key(), raising=False
+    )
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_MODE", "INVALID")
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_ENABLED", "not-a-bool")
+    runtime_calls: list[str] = []
+
+    def setup_logging(**kwargs: object) -> None:
+        runtime_calls.append("logging")
+
+    def state_factory(context: CliRuntimeContext) -> DefaultConfigCliState:
+        runtime_calls.append("state")
+        return DefaultConfigCliState(resolved=context.resolved)
+
+    apprc_dir = tmp_path / "selected"
+    managed = apprc_dir / "apprc.user.env"
+    managed.parent.mkdir()
+    managed.write_text("VALUE=1\n", encoding="utf-8")
+    current_args = ["--log-level", "INFO", "appdata", "--help"]
+    app = typer.Typer()
+    mount_config_cli(
+        app,
+        kit,
+        state_factory=state_factory,
+        storage_required=True,
+        setup_logging=setup_logging,
+        runtime_payload=lambda state: runtime_calls.append("payload") or {},
+        args_provider=lambda: current_args,
+        runtime_policy=CliRuntimePolicy(
+            runtime_independent_commands={
+                "appdata": rc.cli.RuntimeIndependentCommand(
+                    action_prefixes={("paths",), ("clean",)},
+                    skip_empty=True,
+                ),
+            },
+        ),
+    )
+    rc.cli.mount_appdata_cli(app, kit)
+
+    help_result = CliRunner().invoke(app, current_args)
+    current_args = [
+        "--log-level",
+        "INFO",
+        "appdata",
+        "paths",
+        "--apprc-dir",
+        str(apprc_dir),
+    ]
+    text_paths = CliRunner().invoke(app, current_args)
+    current_args = [
+        "--log-level",
+        "INFO",
+        "appdata",
+        "paths",
+        "--json",
+        "--apprc-dir",
+        str(apprc_dir),
+    ]
+    paths = CliRunner().invoke(app, current_args)
+    current_args = [
+        "--log-level",
+        "INFO",
+        "appdata",
+        "clean",
+        "--dry-run",
+        "--apprc-dir",
+        str(apprc_dir),
+    ]
+    clean = CliRunner().invoke(app, current_args)
+    current_args = [
+        "--log-level",
+        "INFO",
+        "appdata",
+        "clean",
+        "--yes",
+        "--apprc-dir",
+        str(apprc_dir),
+    ]
+    clean_yes = CliRunner().invoke(app, current_args)
+
+    assert help_result.exit_code == 0, help_result.output
+    assert text_paths.exit_code == 0, text_paths.output
+    assert str(apprc_dir) in text_paths.output
+    assert paths.exit_code == 0, paths.output
+    assert json.loads(paths.stdout)["apprc_dir"] == str(apprc_dir)
+    assert clean.exit_code == 0, clean.output
+    assert clean_yes.exit_code == 0, clean_yes.output
+    assert not managed.exists()
+    assert runtime_calls == []
 
 
 def test_mount_config_cli_custom_config_group_name_appears_in_guidance(

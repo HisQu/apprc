@@ -42,6 +42,7 @@ from apprc.interfaces.cli import (
     ensure_config_group_name_available as ensure_config_group_name_available,
     exit_missing_action as exit_missing_action,
     initial_storage_from_state as initial_storage_from_state,
+    mount_appdata_cli as mount_appdata_cli,
     mount_config_cli as mount_config_cli,
     parse_log_level as parse_log_level,
     prepare_cli_runtime_context as prepare_cli_runtime_context,

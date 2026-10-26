@@ -57,6 +57,14 @@ exit that shell before opening another. The shell starts in your original
 working directory. The command sequences below first change into `$APPRC_EXAMPLE_LAB_ROOT`, so relative data paths stay
 inside the temporary directory. On PowerShell use `cd $env:APPRC_EXAMPLE_LAB_ROOT`.
 
+Every example explicitly mounts the
+[application-data CLI](Explanations.md#application-data-cli). Inside its lab,
+use `<command> appdata paths --json` for the managed inventory and
+`<command> appdata clean --dry-run` to preview removal. Replace `<command>` with
+the executable listed in that example. These actions bypass runtime settings,
+retain external storage payloads, and use `--apprc-dir PATH` rather than root
+env-file or storage selectors for explicit cleanup targeting.
+
 > [!IMPORTANT]
 > Keep demonstration data inside the lab's printed temporary directory.
 > Directories explicitly chosen elsewhere are not removed when the lab exits.
@@ -331,7 +339,10 @@ apprc-cli-runtime --workspace ./workspace --model example-model --dry-run run
 
 `status` works before setup. `run` prints the app-owned options and resolved
 settings together. `CliRuntime.mount_config_group()` supplies the configuration
-commands without replacing the application's root callback. The ordinary
+commands without replacing the application's root callback.
+`rc.cli.mount_appdata_cli(app, MyRC)` separately adds the cleanup group, and the
+existing `CliRuntimePolicy` declares `paths` and `clean` as runtime-independent
+action prefixes. The ordinary
 [Typer mounting guide](How-To-User-Guides.md#add-configuration-commands-to-typer)
 is smaller when the application does not need a custom callback.
 

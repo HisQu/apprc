@@ -18,6 +18,7 @@
   - [Move, reconnect, or archive storage](#move-reconnect-or-archive-storage)
 - [Give users configuration tools](#give-users-configuration-tools)
   - [Add configuration commands to Typer](#add-configuration-commands-to-typer)
+  - [Preview and clean managed application data](#preview-and-clean-managed-application-data)
   - [Inspect and edit settings in the terminal](#inspect-and-edit-settings-in-the-terminal)
   - [Save and migrate secret settings](#save-and-migrate-secret-settings)
   - [Add a Gradio settings page](#add-a-gradio-settings-page)
@@ -571,7 +572,19 @@ class ClientSettings(rc.Config):
     timeout: int = rc.field("DEMO_TIMEOUT", default=30)
 
 app = typer.Typer()
-rc.cli.mount_config_cli(app, MyRC)
+rc.cli.mount_config_cli(
+    app,
+    MyRC,
+    runtime_policy=rc.cli.CliRuntimePolicy(
+        runtime_independent_commands={
+            "appdata": rc.cli.RuntimeIndependentCommand(
+                action_prefixes={("paths",), ("clean",)},
+                skip_empty=True,
+            ),
+        },
+    ),
+)
+rc.cli.mount_appdata_cli(app, MyRC)
 
 @app.command()
 def run(ctx: typer.Context) -> None:
@@ -612,6 +625,72 @@ or using `--yes` leaves permissions unchanged; use the reported
 separately.
 The [custom-callback example](EXAMPLES.md#an-application-owned-cli-callback)
 shows how to keep an application-owned Typer callback.
+
+## Preview and clean managed application data
+
+The [application-data CLI](Explanations.md#application-data-cli) inventories
+AppRC-managed files and previews cleanup separately from application startup.
+Applications mount it explicitly with `rc.cli.mount_appdata_cli(app, MyRC)`,
+as in the complete [Typer application](#add-configuration-commands-to-typer).
+The returned value is the mounted child Typer group. This helper also works
+without a config CLI and leaves any existing host callback intact.
+
+If `mount_config_cli` or `CliRuntime` prepares runtime state, add this entry to
+its existing `CliRuntimePolicy.runtime_independent_commands` mapping, preserving
+the application's other entries:
+
+```python
+"appdata": rc.cli.RuntimeIndependentCommand(
+    action_prefixes={("paths",), ("clean",)},
+    skip_empty=True,
+)
+```
+
+This is a mapping excerpt, not a standalone Python program. Action prefixes
+cover options after the action, such as `appdata paths --json`. A custom host
+callback must likewise avoid starting application work for these requests.
+
+To try the commands without creating your own application, install the
+[example applications](EXAMPLES.md#run-the-example-applications), then run:
+
+```shell
+apprc-examples-lab user-dotenv-with-storage
+```
+
+Inside that disposable shell, use this POSIX command sequence:
+
+```shell
+cd "$APPRC_EXAMPLE_LAB_ROOT"
+apprc-user-dotenv-with-storage config setup --yes --storage-root ./data
+apprc-user-dotenv-with-storage appdata paths
+apprc-user-dotenv-with-storage appdata paths --json
+apprc-user-dotenv-with-storage appdata clean --dry-run
+apprc-user-dotenv-with-storage appdata clean
+```
+
+The final command asks `Remove these AppRC-managed files and internal storage
+roots?`. Answering No exits with status 1 and changes nothing. Answering Yes
+removes the previewed managed files, including secret companions. The `./data`
+root is outside the lab's AppRC directory, so its application payload remains;
+its managed dotenv files are removed. Registered roots strictly inside the
+AppRC directory are instead removed recursively. The lab deletes its whole
+temporary root when you exit.
+
+> [!CAUTION]
+> `appdata clean --yes` (or `-y`) skips confirmation and removes the planned
+> managed files and internal storage trees. Review `--dry-run` first.
+> Unrelated files and external payloads are retained, but AppRC cannot recover
+> removed data.
+
+Both commands use the declaration and process environment to select the AppRC
+directory. To choose another registry explicitly, pass
+`appdata paths --apprc-dir PATH` and
+`appdata clean --apprc-dir PATH --dry-run`, then use the same path when applying.
+Root `--env-file` and `--storage` options do not retarget these commands.
+Missing ordinary settings or an unselected runtime storage do not block them;
+a malformed storage registry does. The
+[command reference](References.md#application-data-commands) describes the JSON
+inventory and errors. Cleanup does not uninstall the application.
 
 ## Inspect and edit settings in the terminal
 
@@ -1023,6 +1102,23 @@ Neither needs all runtime settings to be valid.
 | A direct settings constructor misses dotenv values | Use [`ResolvedConfig.build()`](Explanations.md#resolvedconfig), which receives the selected files' values. |
 
 ## Migrate existing applications
+
+### Migrate cleanup commands
+
+Applications upgrading to the separate application-data CLI must replace
+`config purge` with `appdata clean`; no compatibility alias remains.
+Mount `rc.cli.mount_appdata_cli(app, MyRC)` explicitly, and add the
+[runtime-independent action-prefix policy](#preview-and-clean-managed-application-data)
+to the application's existing policy. This applies to both `mount_config_cli`
+and `CliRuntime` integrations.
+
+Scripts should obtain cleanup targets from `appdata paths --json` and pass
+`--apprc-dir PATH` on each appdata action when targeting a nondefault directory.
+Do not carry over root `--env-file` or storage selectors as cleanup targeting.
+`config paths` remains available for configuration diagnostics.
+The Python manager methods `plan_purge()` and `apply_purge(plan)` are unchanged.
+
+### Migrate earlier APIs and packaging
 
 This is a breaking API and packaging change. Managed filenames and registry
 format remain unchanged; current storage data needs no conversion.

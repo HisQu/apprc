@@ -457,18 +457,22 @@ def test_config_set_requires_user_dotenv_setup() -> None:
     assert not AppFiles(kit.schema).user_dotenv_path().exists()
 
 
-def test_config_purge_reports_unmanaged_data_that_remains() -> None:
+def test_config_purge_is_not_registered_or_executable() -> None:
+    import apprc as rc
+    import typer
+
     kit = build_storage_free_example_app()
-    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
-    AppFiles(kit.schema).ensure_user_dotenv()
-    unrelated = AppFiles(kit.schema).apprc_dir() / "keep.txt"
-    unrelated.write_text("keep", encoding="utf-8")
+    app = typer.Typer()
+    rc.cli.mount_config_cli(app, kit)
+    runner = CliRunner()
 
-    result = CliRunner().invoke(app, ["purge", "--yes"])
+    help_result = runner.invoke(app, ["config", "--help"])
+    purge_result = runner.invoke(app, ["config", "purge", "--yes"])
 
-    assert result.exit_code == 0, result.output
-    assert "remaining_unmanaged_data:" in result.output
-    assert unrelated.read_text(encoding="utf-8") == "keep"
+    assert help_result.exit_code == 0
+    assert "purge" not in help_result.output
+    assert purge_result.exit_code != 0
+    assert not AppFiles(kit.schema).apprc_dir().exists()
 
 
 def test_generated_commands_follow_declared_capabilities() -> None:
@@ -490,27 +494,14 @@ def test_generated_commands_follow_declared_capabilities() -> None:
         ),
     )
 
-    assert {command.name for command in process_only.registered_commands} == {
-        "paths",
-        "show",
-        "doctor",
-        "purge",
-    }
-    assert {command.name for command in storage_only.registered_commands} == {
-        "paths",
-        "show",
-        "doctor",
-        "setup",
-        "migrate",
-        "purge",
-        "set",
-        "edit",
-    }
-    assert {group.name for group in process_only.registered_groups} == set()
-    assert {group.name for group in storage_only.registered_groups} == {
-        "storage",
-        "secrets",
-    }
+    process_result = CliRunner().invoke(process_only, ["--help"])
+    storage_result = CliRunner().invoke(storage_only, ["--help"])
+
+    assert process_result.exit_code == 0
+    assert storage_result.exit_code == 0
+    assert "purge" not in process_result.output
+    assert "purge" not in storage_result.output
+    assert "storage" in storage_result.output
 
 
 def test_migrate_storage_mapping_options_follow_storage_capability() -> None:
@@ -645,16 +636,17 @@ def test_config_set_warns_after_noninteractive_duplicate_cleanup() -> None:
     assert "comment out duplicate line 2" in result.output
 
 
-def test_setup_show_and_purge_honor_explicit_directory_inputs(
+def test_setup_show_and_appdata_clean_honor_explicit_directory_inputs(
     tmp_path: Path,
 ) -> None:
-    """All command kinds use the same invocation-selected managed directory."""
+    """Config selection and appdata cleanup use separate explicit targets."""
     import apprc as rc
     import typer
 
     declaration = rc.AppRC(app_id="input-routing", user_dotenv=rc.UserDotenv())
     app = typer.Typer()
     rc.cli.mount_config_cli(app, declaration)
+    rc.cli.mount_appdata_cli(app, declaration)
     directory = tmp_path / "selected"
     explicit = tmp_path / "deployment.env"
     explicit.write_text(f'INPUT_ROUTING_APPRC_DIR="{directory.as_posix()}"\n')
@@ -666,7 +658,15 @@ def test_setup_show_and_purge_honor_explicit_directory_inputs(
     show = runner.invoke(app, [*options, "config", "show", "--json"])
     assert show.exit_code == 0, show.output
     assert json.loads(show.output)["apprc_dir"] == str(directory)
-    purge = runner.invoke(app, [*options, "config", "purge", "--yes"])
-    assert purge.exit_code == 0, purge.output
-    assert not (directory / "apprc.user.env").exists()
+    cleanup_directory = tmp_path / "appdata-selected"
+    managed_file = cleanup_directory / "apprc.user.env"
+    managed_file.parent.mkdir()
+    managed_file.write_text("KEEP=1\n", encoding="utf-8")
+    cleanup = runner.invoke(
+        app,
+        ["appdata", "clean", "--apprc-dir", str(cleanup_directory), "--yes"],
+    )
+    assert cleanup.exit_code == 0, cleanup.output
+    assert not managed_file.exists()
     assert explicit.is_file()
+    assert (directory / "apprc.user.env").is_file()

@@ -106,8 +106,74 @@ def _setup_storage(
         )
 
 
+def _clean_appdata(
+    spec: ExampleAppSpec,
+    root: Path,
+    env: Mapping[str, str],
+) -> bool:
+    """Clean the temporary registry and verify removal and retention.
+
+    :param spec: Example whose installed CLI owns the managed files.
+    :param root: Temporary scenario directory containing AppRC data.
+    :param env: Isolated process environment for the example.
+    :return: Whether cleanup respected its inventory and retained payloads.
+    """
+    appdata_directory = root / "apprc"
+    paths = _json_output(
+        _run_cli(
+            spec,
+            [
+                "appdata",
+                "paths",
+                "--apprc-dir",
+                str(appdata_directory),
+                "--json",
+            ],
+            env=env,
+        )
+    )
+    if paths["apprc_dir"] != str(appdata_directory):
+        raise RuntimeError(
+            "appdata paths selected an unexpected AppRC directory."
+        )
+    managed_files = [Path(value) for value in paths["managed_files"]]
+    internal_roots = [Path(value) for value in paths["internal_storage_roots"]]
+    external_roots = [Path(value) for value in paths["external_storage_roots"]]
+    unmanaged = appdata_directory / "runner-unmanaged.txt"
+    unmanaged.parent.mkdir(parents=True, exist_ok=True)
+    unmanaged.write_text("keep", encoding="utf-8")
+    external_payloads = [root / "runner-payload.txt" for root in external_roots]
+    for payload in external_payloads:
+        payload.write_text("keep", encoding="utf-8")
+    _run_cli(
+        spec,
+        [
+            "appdata",
+            "clean",
+            "--apprc-dir",
+            str(appdata_directory),
+            "--yes",
+        ],
+        env=env,
+    )
+    cleaned = (
+        all(not path.exists() for path in managed_files)
+        and all(not path.exists() for path in internal_roots)
+        and unmanaged.read_text(encoding="utf-8") == "keep"
+        and all(
+            path.read_text(encoding="utf-8") == "keep"
+            for path in external_payloads
+        )
+    )
+    if not cleaned:
+        raise RuntimeError(
+            "appdata clean did not respect its cleanup inventory."
+        )
+    return cleaned
+
+
 def _smoke_standard(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
-    """Run setup, diagnostics, runtime, and purge for one example."""
+    """Run setup, diagnostics, runtime, and appdata cleanup for one example."""
     env = _example_environment(spec, root)
     if spec.uses_storage:
         _setup_storage(spec, root, env)
@@ -132,15 +198,12 @@ def _smoke_standard(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
             ]
         )
     run_payload = _json_output(_run_cli(spec, [*run_args, "run"], env=env))
-    purge_args = [*runtime_prefix, "config", "purge", "--yes"]
-    if not spec.uses_user_dotenv and not spec.uses_storage:
-        purge_args.extend(("--apprc-dir", str(root / "apprc")))
-    _run_cli(spec, purge_args, env=env)
+    cleaned = _clean_appdata(spec, root, env)
     return {
         "example": spec.name,
         "doctor_status": doctor["status"],
         "app_id": run_payload["app_id"],
-        "purged": True,
+        "cleaned": cleaned,
     }
 
 
@@ -192,9 +255,7 @@ def _smoke_precedence(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
             env=shell_env,
         )
     )
-    _run_cli(
-        spec, ["--storage", "default", "config", "purge", "--yes"], env=env
-    )
+    cleaned = _clean_appdata(spec, root, env)
     return {
         "example": spec.name,
         "shell_wins": {
@@ -205,7 +266,7 @@ def _smoke_precedence(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
             "storage_root": file_wins["storage_root"],
             "label": file_wins["label"],
         },
-        "purged": True,
+        "cleaned": cleaned,
     }
 
 

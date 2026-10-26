@@ -36,9 +36,9 @@ Python 3.12 or newer is required.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install "apprc>=0.27.0,<0.28"` | Configuration, Typer commands, prompts, and the Textual editor. |
-| `python -m pip install "apprc-core>=0.27.0,<0.28"` | Configuration and noninteractive management without terminal dependencies. |
-| `python -m pip install "apprc-gui>=0.27.0,<0.28"` | Configuration and a Gradio settings editor. |
+| `python -m pip install "apprc>=0.29.0,<0.30"` | Configuration, Typer commands, prompts, and the Textual editor. |
+| `python -m pip install "apprc-core>=0.29.0,<0.30"` | Configuration and noninteractive management without terminal dependencies. |
+| `python -m pip install "apprc-gui>=0.29.0,<0.30"` | Configuration and a Gradio settings editor. |
 
 `apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
 `from apprc_gui import ConfigEditor`. The terminal and GUI distributions each
@@ -130,6 +130,15 @@ Set [`setup_next_step`](https://github.com/HisQu/apprc/blob/main/docs/References
 app-supplied next-step text after successful `config setup`. The
 [Typer guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
 shows the entire application and command sequence.
+
+Applications can separately opt in to the
+[application-data CLI](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#application-data-cli) with
+`rc.cli.mount_appdata_cli(app, MyRC)`. It adds `appdata paths` for the cleanup
+inventory and `appdata clean --dry-run` to preview removal of AppRC-managed
+files and internal storage data. Cleanup is explicit; external storage payloads
+and unrelated files are retained. Follow the
+[cleanup guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#preview-and-clean-managed-application-data)
+for the mount, runtime-independent policy, and confirmation behavior.
 
 The [config editor](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#config-editor) displays configuration
 layers together, explains each setting, and edits user or storage overrides.

@@ -96,4 +96,4 @@ def test_run_all_uses_real_installed_clis() -> None:
     ]
     precedence = results[4]
     assert precedence["shell_wins"] != precedence["explicit_file_wins"]
-    assert all(result["purged"] is True for result in results)
+    assert all(result["cleaned"] is True for result in results)

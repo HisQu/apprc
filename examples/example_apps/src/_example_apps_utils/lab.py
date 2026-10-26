@@ -41,7 +41,8 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
             f"{command} config paths",
             f"{command} run",
             f"{command} config doctor",
-            (f"{command} config purge --apprc-dir {root / 'apprc'} --dry-run"),
+            (f"{command} appdata paths --apprc-dir {root / 'apprc'} --json"),
+            (f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run"),
         )
     if spec.name == "user-dotenv":
         return (
@@ -50,6 +51,8 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
             f"{command} config set profile lab --scope user",
             f"{command} run",
             f"{command} config doctor",
+            f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
+            f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run",
         )
     if spec.name == "library-client":
         return (
@@ -58,6 +61,8 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
             f"{command} config set request_timeout 15 --scope user",
             f"{command} run",
             "python -c 'from library_client import LibraryClient; print(LibraryClient().request_timeout)'",
+            f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
+            f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run",
         )
     if spec.name == "explicit-env-precedence":
         explicit_root = root / "explicit-storage"
@@ -84,6 +89,8 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
                 f"{command} --env-file {env_file} "
                 "--env-file-overrides-os-environ run"
             ),
+            f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
+            f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run",
         )
     setup = f"{command} config setup --storage-root {storage_root} --yes"
     required_key = spec.required_storage_key or "api_token"
@@ -104,6 +111,12 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
         )
     else:
         commands.extend((f"{command} run", f"{command} config storage list"))
+    commands.extend(
+        (
+            f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
+            (f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run"),
+        )
+    )
     return tuple(commands)
 
 

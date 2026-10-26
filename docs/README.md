@@ -78,6 +78,7 @@ the Python name identifies its implementation.
 | [Storage registry](Explanations.md#storage-registry) | `apprc.toml` | Storage names, directory paths, and the saved default storage. |
 | [`ConfigManager`](Explanations.md#configmanager) | Returned by `MyRC.manage()` | Application-specific setup, inspection, editing, and storage operations. |
 | [Config CLI](Explanations.md#config-cli) | `rc.cli.mount_config_cli(...)` | Configuration commands added to a Typer application. |
+| [Application-data CLI](Explanations.md#application-data-cli) | `rc.cli.mount_appdata_cli(...)` | Separately mounted commands for inventory and cleanup of AppRC-managed files and internal storage data. |
 | [Config editor](Explanations.md#config-editor) | `rc.tui.ConfigEditorApp` | Terminal interface for inspecting layers and editing saved overrides. |
 | [Gradio editor](Explanations.md#gradio-editor) | `apprc_gui.ConfigEditor` | Settings controls embedded in application-owned Gradio `Blocks`. |
 | [Config bundle](Explanations.md#config-bundles) | Dataclass registered with `@MyRC.bundle` | An object containing several config sections. |

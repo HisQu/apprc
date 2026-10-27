@@ -27,94 +27,80 @@ def _clean_environment(spec: ExampleAppSpec, root: Path) -> dict[str, str]:
         if not key.startswith("APPRC_EXAMPLE_")
     }
     env["APPRC_EXAMPLE_LAB_ROOT"] = str(root)
-    if spec.uses_user_dotenv or spec.uses_storage:
-        env[spec.apprc_dir_env_key] = str(root / "apprc")
+    env[spec.root_env_key] = str(root / "apprc")
     return env
 
 
 def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
-    """Return copyable commands for one fresh lab session."""
+    """Return copyable grouped commands for one fresh lab session."""
     command = spec.command_name
-    storage_root = root / "storage"
-    if spec.name == "process-env":
-        return (
-            f"{command} config paths",
-            f"{command} run",
-            f"{command} config doctor",
-            (f"{command} appdata paths --apprc-dir {root / 'apprc'} --json"),
-            (f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run"),
-        )
-    if spec.name == "user-dotenv":
-        return (
-            f"{command} config paths",
-            f"{command} config setup --yes",
-            f"{command} config set profile lab --scope user",
-            f"{command} run",
-            f"{command} config doctor",
-            f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
-            f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run",
-        )
-    if spec.name == "library-client":
-        return (
-            f"{command} run",
-            f"{command} config setup --yes",
-            f"{command} config set request_timeout 15 --scope user",
-            f"{command} run",
-            "python -c 'from library_client import LibraryClient; print(LibraryClient().request_timeout)'",
-            f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
-            f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run",
-        )
-    if spec.name == "explicit-env-precedence":
-        explicit_root = root / "explicit-storage"
-        env_file = root / "explicit.env"
-        return (
-            f"{command} config setup --storage-root {storage_root} --yes",
-            f"{command} config storage add explicit {explicit_root} --yes",
-            (
-                f"{command} --storage default config set label "
-                "storage-default --scope storage"
-            ),
-            (
-                f"{command} --storage explicit config set label "
-                "storage-explicit --scope storage"
-            ),
-            (
-                f"printf '%s\\n' 'APPRC_EXAMPLE_PRECEDENCE_STORAGE=explicit' "
-                f"'APPRC_EXAMPLE_PRECEDENCE_LABEL=explicit-file' > {env_file}"
-            ),
-            "export APPRC_EXAMPLE_PRECEDENCE_STORAGE=default",
-            "export APPRC_EXAMPLE_PRECEDENCE_LABEL=shell",
-            f"{command} --env-file {env_file} run",
-            (
-                f"{command} --env-file {env_file} "
-                "--env-file-overrides-os-environ run"
-            ),
-            f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
-            f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run",
-        )
-    setup = f"{command} config setup --storage-root {storage_root} --yes"
-    required_key = spec.required_storage_key or "api_token"
-    commands = [
-        setup,
-        (
-            f"{command} --storage default config set {required_key} "
-            "lab-secret --scope storage"
-        ),
-    ]
-    if spec.name == "cli-runtime":
+    commands = [f"{command} --help", f"{command} paths --json"]
+    if spec.name == "cache-only":
         commands.extend(
             (
-                f"{command} status",
-                f"{command} --workspace {root / 'workspace'} "
-                "--model demo --dry-run run",
+                f"{command} cache --help",
+                f"{command} cache init",
+                f"{command} paths cache",
             )
         )
+    elif spec.name == "explicit-env-precedence":
+        env_file = root / "explicit.env"
+        commands.extend(
+            (
+                f"{command} workspace add default {root / 'workspace'}",
+                f"{command} workspace add explicit {root / 'explicit-workspace'}",
+                f"{command} --workspace default config set label workspace-default --scope workspace",
+                f"{command} --workspace explicit config set label workspace-explicit --scope workspace",
+                f"printf '%s\\n' 'APPRC_EXAMPLE_PRECEDENCE_WORKSPACE=explicit' "
+                f"'APPRC_EXAMPLE_PRECEDENCE_LABEL=explicit-file' > {env_file}",
+                "export APPRC_EXAMPLE_PRECEDENCE_WORKSPACE=default",
+                "export APPRC_EXAMPLE_PRECEDENCE_LABEL=shell",
+                f"{command} --env-file {env_file} run",
+                f"{command} --env-file {env_file} --env-file-overrides-os-environ run",
+            )
+        )
+    elif spec.uses_workspace:
+        commands.append(f"{command} workspace add default {root / 'workspace'}")
+        if spec.required_workspace_key is not None:
+            commands.append(
+                f"{command} --workspace default config set "
+                f"{spec.required_workspace_key} lab-secret --scope workspace"
+            )
+        if spec.name == "cli-runtime":
+            commands.extend(
+                (
+                    f"{command} status",
+                    f"{command} --workspace default --workdir {root / 'workdir'} "
+                    "--model demo --dry-run run",
+                )
+            )
+        else:
+            commands.append(f"{command} --workspace default run")
+        commands.append(f"{command} workspace list")
+    elif spec.uses_user_dotenv:
+        key, value = (
+            ("request_timeout", "15")
+            if spec.name == "library-client"
+            else ("profile", "lab")
+        )
+        commands.extend(
+            (
+                f"{command} config setup --yes",
+                f"{command} config set {key} {value} --scope user",
+                f"{command} run",
+            )
+        )
+        if spec.name == "library-client":
+            commands.append(
+                "python -c 'from library_client import LibraryClient; "
+                "print(LibraryClient().request_timeout)'"
+            )
     else:
-        commands.extend((f"{command} run", f"{command} config storage list"))
+        commands.append(f"{command} run")
     commands.extend(
         (
-            f"{command} appdata paths --apprc-dir {root / 'apprc'} --json",
-            (f"{command} appdata clean --apprc-dir {root / 'apprc'} --dry-run"),
+            f"{command} doctor",
+            f"{command} purge --all --dry-run --json",
         )
     )
     return tuple(commands)
@@ -144,10 +130,10 @@ def run_lab(name: str) -> int:
         env = _clean_environment(spec, root)
         print(f"AppRC example: {name}")
         print(f"Temporary root: {root}")
-        if spec.uses_user_dotenv or spec.uses_storage:
-            print(f"AppRC directory: {root / 'apprc'} (not created yet)")
+        if spec.has_managed_paths:
+            print(f"AppRC layout root: {root / 'apprc'} (not created yet)")
         else:
-            print("Managed AppRC files: none")
+            print("Managed AppRC paths: none")
         print("\nTry these commands:\n")
         for command in _walkthrough(spec, root):
             print(f"  {command}")

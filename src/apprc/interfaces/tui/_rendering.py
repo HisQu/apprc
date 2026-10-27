@@ -22,13 +22,8 @@ from rich.text import Text
 
 # == Internal ================================
 from apprc.definition.env_config.schema import ConfigField
-from apprc.runtime.resolution import ResolvedConfig
-from apprc.interfaces.tui._field_state import config_value_sources
 from apprc.definition.env_config.sentinels import CONFIG_MISSING
-from apprc.user_files.storage_roots.registry import (
-    ArchivedStorageRecord,
-    StorageRecord,
-)
+from apprc.interfaces.tui._field_state import config_value_sources
 from apprc.interfaces.tui._styles import (
     ARCHIVE_STYLE,
     BOOL_STYLE,
@@ -45,7 +40,12 @@ from apprc.interfaces.tui._styles import (
     label_value_text,
     lines_text,
     path_text,
-    storage_name_text,
+    workspace_name_text,
+)
+from apprc.runtime.resolution import ResolvedConfig
+from apprc.user_files.workspace_roots.model import (
+    ArchivedWorkspaceRecord,
+    WorkspaceRecord,
 )
 
 type FieldTableCell = str | Text
@@ -71,20 +71,20 @@ class FieldTableRow:
 def field_table_columns(
     *,
     include_user_dotenv: bool,
-    include_storage: bool,
+    include_workspace: bool,
     include_explicit: bool = False,
 ) -> tuple[str, ...]:
     """Return source columns supported by the application declaration.
 
     :param include_user_dotenv: Whether the app declares a user dotenv.
-    :param include_storage: Whether the app declares storage.
+    :param include_workspace: Whether the app declares workspaces.
     :return: Table headings in runtime precedence order.
     """
     columns = ["#", "Section", "Setting", "Effective", "Process environment"]
     if include_explicit:
         columns.append("Explicit dotenv")
-    if include_storage:
-        columns.append("Storage dotenv")
+    if include_workspace:
+        columns.append("Workspace dotenv")
     if include_user_dotenv:
         columns.append("User dotenv")
     columns.extend(("Default", "Explanation"))
@@ -95,15 +95,13 @@ def build_field_table_rows(
     *,
     resolved: ResolvedConfig,
     include_user_dotenv: bool,
-    include_storage: bool,
+    include_workspace: bool,
     hidden_env_keys: set[str] | frozenset[str],
 ) -> tuple[FieldTableRow, ...]:
     """Render sources already selected by the shared resolver.
 
-    :param resolved: Inspected application inputs.
     :param include_user_dotenv: Whether to show user overrides.
-    :param include_storage: Whether to show storage overrides.
-    :param hidden_env_keys: Structural keys omitted from editable rows.
+    :param include_workspace: Whether to show workspace overrides.
     :return: Rich cells, row keys, and section separators.
     """
     rows: list[FieldTableRow] = []
@@ -122,7 +120,7 @@ def build_field_table_rows(
                     column_count=len(
                         field_table_columns(
                             include_user_dotenv=include_user_dotenv,
-                            include_storage=include_storage,
+                            include_workspace=include_workspace,
                             include_explicit=bool(resolved.options.env_files),
                         )
                     )
@@ -137,7 +135,7 @@ def build_field_table_rows(
                     env_key=env_key,
                     resolved=resolved,
                     include_user_dotenv=include_user_dotenv,
-                    include_storage=include_storage,
+                    include_workspace=include_workspace,
                 )
             }
             cells: list[FieldTableCell] = [
@@ -149,8 +147,8 @@ def build_field_table_rows(
             ]
             if resolved.options.env_files:
                 cells.append(source_value_cell(spec, sources.get("explicit")))
-            if include_storage:
-                cells.append(source_value_cell(spec, sources.get("storage")))
+            if include_workspace:
+                cells.append(source_value_cell(spec, sources.get("workspace")))
             if include_user_dotenv:
                 cells.append(source_value_cell(spec, sources.get("user")))
             cells.extend(
@@ -174,7 +172,7 @@ def default_value_cell(
     spec: ConfigField,
     *,
     user_dotenv_value: str | None,
-    storage_value: str | None,
+    workspace_value: str | None,
     env_is_set: bool,
     default_value: str | None,
 ) -> FieldTableCell:
@@ -186,7 +184,7 @@ def default_value_cell(
 
     :param spec: Field declaration that describes type and fallback.
     :param user_dotenv_value: User value currently shown in the row.
-    :param storage_value: Storage value currently shown in the row.
+    :param workspace_value: Workspace value currently shown in the row.
     :param env_is_set: Whether the process environment sets this env key.
     :param default_value: Packaged or declared default value.
     :return: Empty text, required marker, or styled default value.
@@ -194,7 +192,7 @@ def default_value_cell(
     if default_value is None:
         if (
             user_dotenv_value is None
-            and storage_value is None
+            and workspace_value is None
             and not env_is_set
         ):
             return Text("<required>", style=REQUIRED_STYLE)
@@ -222,12 +220,17 @@ def source_value_cell(spec: ConfigField, value: str | None) -> FieldTableCell:
 def first_effective_value(
     *,
     shell_value: str | None,
-    storage_value: str | None,
+    workspace_value: str | None,
     user_dotenv_value: str | None,
     default_value: str | None,
 ) -> str | None:
     """Return the effective editor-visible value by runtime precedence."""
-    for value in (shell_value, storage_value, user_dotenv_value, default_value):
+    for value in (
+        shell_value,
+        workspace_value,
+        user_dotenv_value,
+        default_value,
+    ):
         if value is not None:
             return value
     return None
@@ -368,55 +371,60 @@ def possible_values_label(spec: ConfigField) -> str:
     return "free text"
 
 
-def live_storage_title(record: StorageRecord, storage_dotenv: Path) -> Text:
-    """Return the title shown for one editable live storage.
+def live_workspace_title(
+    record: WorkspaceRecord, workspace_dotenv: Path
+) -> Text:
+    """Return the title shown for one editable live workspace.
 
-    :param record: Registry storage record.
-    :param storage_dotenv: Storage dotenv path.
-    :return: Multi-line title for the selected storage.
+    :param record: Workspace registry record.
+    :param workspace_dotenv: Workspace dotenv path.
+    :return: Multi-line title for the selected workspace.
     """
-    title = storage_name_text(record.name)
+    title = workspace_name_text(record.name)
     title.append(": ")
     title.append_text(path_text(record.root))
-    return lines_text(title, path_text(storage_dotenv))
+    return lines_text(title, path_text(workspace_dotenv))
 
 
-def active_storage_title(storage_root: Path, storage_dotenv: Path) -> Text:
-    """Return the title shown for an unregistered active storage path.
+def active_workspace_title(
+    workspace_root: Path, workspace_dotenv: Path
+) -> Text:
+    """Return the title shown for an unregistered active workspace path.
 
-    :param storage_root: Active storage root selected by ``<APP>_STORAGE``.
-    :param storage_dotenv: Storage dotenv path.
+    :param workspace_root: Active workspace root selected by
+        ``<APP>_WORKSPACE``.
+    :param workspace_dotenv: Workspace dotenv path.
     :return: Multi-line title for the selected path.
     """
-    title = Text("Active storage", style="bold")
+    title = Text("Active workspace", style="bold")
     title.append(": ")
-    title.append_text(path_text(storage_root))
-    return lines_text(title, path_text(storage_dotenv))
+    title.append_text(path_text(workspace_root))
+    return lines_text(title, path_text(workspace_dotenv))
 
 
-def missing_storage_title(record: StorageRecord) -> Text:
-    """Return the title shown when a registered storage root is missing.
+def missing_workspace_title(record: WorkspaceRecord) -> Text:
+    """Return the title shown when a registered workspace root is missing.
 
-    :param record: Registry storage record whose root is unavailable.
+    :param record: Workspace record whose root is unavailable.
     :return: Multi-line title explaining the missing root.
     """
-    title = storage_name_text(record.name)
+    title = workspace_name_text(record.name)
     title.append(": ")
-    title.append("Missing storage root", style=MISSING_STYLE)
+    title.append("Missing workspace root", style=MISSING_STYLE)
     return lines_text(
         title,
         label_value_text("Root", path_text(record.root)),
-        "No storage env file is available.",
+        "No workspace env file is available.",
     )
 
 
-def archived_storage_title(record: ArchivedStorageRecord) -> Text:
-    """Return the title shown for an archived storage record.
+def archived_workspace_title(record: ArchivedWorkspaceRecord) -> Text:
+    """Return the title shown for an archived workspace record.
 
-    :param record: Archived storage metadata from the registry.
+    :param record: Archived workspace metadata from the registry.
     :return: Multi-line title with archive and last source paths.
     """
-    title = storage_name_text(record.name)
+    title = workspace_name_text(record.name)
     title.append(": ")
     title.append("Last Archived", style=ARCHIVE_STYLE)
     return lines_text(

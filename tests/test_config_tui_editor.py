@@ -1,439 +1,133 @@
 from __future__ import annotations
-from apprc.interfaces.cli.config_command.app import build_config_typer_app
-
-
-from apprc.user_files.app_home.application import AppFiles
 
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, DataTable, Static
-from typer.testing import CliRunner
 
 import apprc as rc
+from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.tui.editor import ConfigEditorApp
-from apprc.interfaces.tui._primitives import ConfirmScreen
-from apprc.user_files.storage_roots.registry import (
-    StorageRecord,
-    StorageRegistry,
-    register_storage,
-    write_storage_registry,
-)
-from apprc.user_files.storage_roots.selector import (
-    StorageSelectorInput,
-    StorageSelectorIssue,
-)
+from apprc.user_files.app_home.application import AppFiles
 from tests.support_config import (
-    build_apprc_example_app,
-    build_storage_free_example_app,
+    build_config_only_example_app,
+    build_workspace_example_app,
 )
 
 
-def test_editor_uses_fixed_dotenv_and_registry_labels() -> None:
-    kit = build_apprc_example_app()
-    editor = ConfigEditorApp(
+def _single_root(root: Path) -> ResolveOptions:
+    return ResolveOptions(layout=rc.Layout.single_root(root))
+
+
+def _workspace_editor(kit: rc.AppRC, root: Path) -> ConfigEditorApp:
+    options = _single_root(root)
+    paths = kit.paths(options, environment={})
+    return ConfigEditorApp(
         apprc=kit,
-        storage_registry=None,
-        active_storage_root=Path("/tmp/storage"),
+        manager=kit._manage_with_paths(options, {}, paths),
+        workspace_manager=kit.workspaces(options=options, environment={}),
     )
 
-    assert editor.apprc.schema.storage_dotenv_filename == "apprc.storage.env"
-    assert editor.apprc_toml_label == "apprc.toml"
-    assert editor.init_command.endswith("config storage add NAME PATH")
-
 
 @pytest.mark.asyncio
-async def test_editor_hides_storage_controls_for_storage_free_app() -> None:
-    editor = ConfigEditorApp(
-        apprc=build_storage_free_example_app(),
-        storage_registry=None,
-    )
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-
-        assert list(editor.query("#storage-list")) == []
-        for button_id in (
-            "storage-new",
-            "storage-rename",
-            "storage-location",
-            "storage-move",
-        ):
-            assert list(editor.query(f"#{button_id}")) == []
-        assert editor.query_one("#field-table", DataTable).row_count > 0
-        setup = editor.query_one("#config-setup", Button)
-        assert str(setup.label) == "Set up user dotenv..."
-        assert (
-            "user dotenv is not set up"
-            in str(editor.query_one("#scope-title", Static).content).lower()
-        )
-
-
-@pytest.mark.asyncio
-async def test_editor_hides_setup_after_user_dotenv_is_initialized() -> None:
-    kit = build_storage_free_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-
-        assert list(editor.query("#config-setup")) == []
-        scope_text = str(editor.query_one("#scope-title", Static).content)
-        assert "User dotenv:" in scope_text
-        assert str(AppFiles(kit.schema).user_dotenv_path()) in scope_text
-
-
-@pytest.mark.asyncio
-async def test_editor_exposes_every_user_registered_storage(
+async def test_config_only_editor_saves_user_setting_without_workspace_service(
     tmp_path: Path,
 ) -> None:
-    kit = build_apprc_example_app()
-    registry_path = AppFiles(kit.schema).preferred_apprc_toml_path()
-    registry = register_storage(
-        name="alpha",
-        root=tmp_path / "alpha",
-        path=registry_path,
-    )
-    registry = register_storage(
-        name="beta",
-        root=tmp_path / "beta",
-        path=registry_path,
-    )
-    editor = ConfigEditorApp(
-        apprc=kit,
-        storage_registry=registry,
-        initial_storage="alpha",
-        active_storage_root=tmp_path / "alpha",
-    )
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-
-        assert editor.query_one("#storage-list").children.__len__() == 2
-        assert editor.query_one("#storage-new", Button).disabled is False
-
-
-@pytest.mark.asyncio
-async def test_editor_saving_user_value_creates_only_user_dotenv() -> None:
-    kit = build_storage_free_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-        user_dotenv = AppFiles(kit.schema).user_dotenv_path()
-        await editor._save_env_key(
-            "STORAGE_FREE_APP_PROFILE",
-            "user-profile",
-            scope="user",
-        )
-
-        assert user_dotenv.read_text(encoding="utf-8") == (
-            'STORAGE_FREE_APP_PROFILE="user-profile"\n'
-        )
-        assert not AppFiles(kit.schema).preferred_apprc_toml_path().exists()
-
-
-@pytest.mark.asyncio
-async def test_editor_notifies_after_saving_restart_required_setting(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Saving a marked setting tells the user to restart the application."""
-    app = rc.AppRC(
-        app_id="restart-required-editor",
-        user_dotenv=rc.UserDotenv(),
-        apprc_dir=tmp_path / "config",
-    )
-
-    @app.config("server", prefix="RESTART_REQUIRED_")
-    class ServerSettings(rc.Config):
-        port: int = rc.field(
-            "RESTART_REQUIRED_PORT",
-            default=7860,
-            restart_required=True,
-        )
-
-    manager = app.manage(environment={})
+    kit = build_config_only_example_app()
+    options = _single_root(tmp_path)
+    manager = kit.manage(options=options, environment={})
     manager.setup()
-    editor = ConfigEditorApp(apprc=app, manager=manager)
-    messages: list[str] = []
-
-    def record_notification(message: str, **_kwargs: object) -> None:
-        messages.append(message)
-
-    monkeypatch.setattr(editor, "notify", record_notification)
+    editor = ConfigEditorApp(apprc=kit, manager=manager)
 
     async with editor.run_test() as pilot:
         await pilot.pause()
         await editor._save_env_key(
-            "RESTART_REQUIRED_PORT",
-            "9000",
-            scope="user",
+            "CONFIG_ONLY_APP_PROFILE", "edited", scope="user"
         )
-
-    assert messages == [
-        "Saved RESTART_REQUIRED_PORT. Restart the application to reload "
-        "configuration."
-    ]
-    assert (
-        manager.paths.user_dotenv.read_text(encoding="utf-8")
-        == 'RESTART_REQUIRED_PORT="9000"\n'
-    )
-
-
-@pytest.mark.asyncio
-async def test_editor_saving_storage_value_creates_only_storage_dotenv(
-    tmp_path: Path,
-) -> None:
-    kit = build_apprc_example_app()
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    editor = ConfigEditorApp(
-        apprc=kit,
-        storage_registry=None,
-        active_storage_root=storage_root,
-    )
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-        await editor._save_env_key(
-            "APPRC_EXAMPLE_APP_PROFILE",
-            "storage-profile",
-            scope="storage",
-        )
-
         assert (
-            AppFiles(kit.schema)
-            .storage_dotenv_path(storage_root)
-            .read_text(encoding="utf-8")
-            == 'APPRC_EXAMPLE_APP_PROFILE="storage-profile"\n'
+            editor._inspected_resolution().values["CONFIG_ONLY_APP_PROFILE"]
+            == "edited"
         )
-        assert not AppFiles(kit.schema).user_dotenv_path().exists()
+
+    files = AppFiles(kit.schema, manager.paths)
+    assert files.user_dotenv_path().read_text(encoding="utf-8") == (
+        'CONFIG_ONLY_APP_PROFILE="edited"\n'
+    )
+    assert not files.config_file().exists()
 
 
 @pytest.mark.asyncio
-async def test_editor_duplicate_warning_cancels_before_write(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_registry_editor_selects_workspace_and_saves_workspace_overlay(
+    tmp_path: Path,
 ) -> None:
-    kit = build_storage_free_example_app()
-    user_dotenv = AppFiles(kit.schema).ensure_user_dotenv()
-    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
-    original = (
-        "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n"
-    )
-    user_dotenv.write_text(original, encoding="utf-8")
-    shown_screens: list[object] = []
-
-    async def cancel(screen: object) -> object | None:
-        """Capture the confirmation and decline the write."""
-        shown_screens.append(screen)
-        return None
-
-    monkeypatch.setattr(editor, "push_screen_wait", cancel)
+    kit = build_workspace_example_app()
+    editor = _workspace_editor(kit, tmp_path)
+    assert editor.workspace_manager is not None
+    editor.workspace_manager.register_workspace("alpha", tmp_path / "alpha")
+    editor.workspace_manager.register_workspace("beta", tmp_path / "beta")
+    editor.workspace_registry = editor.workspace_manager.registry()
 
     async with editor.run_test() as pilot:
         await pilot.pause()
+        await editor._refresh_workspace_list(select_name="alpha")
         await editor._save_env_key(
-            "STORAGE_FREE_APP_PROFILE",
-            "new",
-            scope="user",
+            "APPRC_EXAMPLE_APP_PROFILE", "workspace-value", scope="workspace"
         )
+        assert len(editor.query_one("#workspace-list").children) == 2
+        assert editor._selected_workspace_name() == "alpha"
 
-    assert len(shown_screens) == 1
-    assert isinstance(shown_screens[0], ConfirmScreen)
-    assert user_dotenv.read_text(encoding="utf-8") == original
-
-
-@pytest.mark.asyncio
-async def test_editor_disables_storage_fields_until_marker_exists(
-    tmp_path: Path,
-) -> None:
-    """A directory alone is not an initialized AppRC storage.
-
-    :param tmp_path: Isolated uninitialized storage directory.
-    """
-    kit = build_apprc_example_app()
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    editor = ConfigEditorApp(
-        apprc=kit,
-        storage_registry=None,
-        active_storage_root=storage_root,
-    )
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-
-        assert editor.query_one("#field-table", DataTable).disabled is True
-        assert editor.query_one("#config-setup", Button).disabled is False
-        assert "Missing AppRC marker" in str(
-            editor.query_one("#scope-title", Static).content
+    files = AppFiles(kit.schema, editor.paths)
+    assert (
+        files.workspace_dotenv_path(tmp_path / "alpha").read_text(
+            encoding="utf-8"
         )
+        == 'APPRC_EXAMPLE_APP_PROFILE="workspace-value"\n'
+    )
+    assert not files.user_dotenv_path().exists()
 
 
 @pytest.mark.asyncio
-async def test_editor_keeps_selector_failure_separate_from_setup() -> None:
-    """A selector error does not claim that managed files need setup."""
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    editor = ConfigEditorApp(
-        apprc=kit,
-        storage_registry=None,
-        storage_registry_error="apprc.toml is malformed",
-        storage_selector_issue=StorageSelectorIssue(
-            selector=StorageSelectorInput(
-                source="APPRC_EXAMPLE_APP_STORAGE",
-                raw_value="broken",
-                source_kind="process_environment",
-            ),
-            message="Unknown storage 'broken'",
-        ),
-    )
+async def test_workspace_actions_require_manager_and_unregister_keeps_payload(
+    tmp_path: Path,
+) -> None:
+    kit = build_workspace_example_app()
+    options = _single_root(tmp_path)
+    manager = kit.manage(options=options, environment={})
+    with pytest.raises(ValueError, match="Workspace controls require"):
+        ConfigEditorApp(apprc=kit, manager=manager)
 
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-
-        status = editor.query_one("#selector-status", Static)
-        assert "Unknown storage 'broken'" in str(status.content)
-        assert "process environment" in str(status.content)
-        assert list(editor.query("#config-setup")) == []
+    editor = _workspace_editor(kit, tmp_path)
+    assert editor.workspace_manager is not None
+    payload_root = tmp_path / "retained"
+    editor.workspace_manager.register_workspace("retained", payload_root)
+    payload = payload_root / "payload.txt"
+    payload.write_text("keep", encoding="utf-8")
+    editor.workspace_manager.remove_workspace("retained")
+    assert payload.read_text(encoding="utf-8") == "keep"
 
 
 @pytest.mark.asyncio
-async def test_editor_keeps_registered_storages_usable_with_bad_override(
-    tmp_path: Path,
+async def test_settings_refresh_keeps_captured_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An invalid shell selector must not hide valid registry entries.
-
-    :param tmp_path: Isolated storage parent.
-    """
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    registry = register_storage(
-        name="opa",
-        root=tmp_path / "opa",
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
-    )
-    editor = ConfigEditorApp(
-        apprc=kit,
-        storage_registry=registry,
-        initial_storage="opa",
-        storage_selector_issue=StorageSelectorIssue(
-            selector=StorageSelectorInput(
-                source="APPRC_EXAMPLE_APP_STORAGE",
-                raw_value="ontology",
-                source_kind="process_environment",
-            ),
-            message="Unknown storage 'ontology'. Known storages: opa.",
-            configured_storage="opa",
-        ),
-    )
+    kit = build_config_only_example_app()
+    first_root = tmp_path / "first"
+    environment = {
+        "CONFIG_ONLY_APP_LAYOUT": "single-root",
+        "CONFIG_ONLY_APP_ROOT": str(first_root),
+    }
+    manager = kit.manage(environment=environment)
+    manager.setup()
+    editor = ConfigEditorApp(apprc=kit, manager=manager)
+    captured = editor.paths
 
     async with editor.run_test() as pilot:
         await pilot.pause()
+        monkeypatch.setenv("CONFIG_ONLY_APP_LAYOUT", "native")
+        monkeypatch.setenv("CONFIG_ONLY_APP_ROOT", str(tmp_path / "second"))
+        await editor._refresh_workspace_list()
+        assert editor.paths is captured
+        assert editor.manager.paths is captured
+        assert editor._inspected_resolution().paths is captured
 
-        status = str(editor.query_one("#selector-status", Static).content)
-        assert "overrides selected_storage='opa'" in status
-        assert "Registered storages: opa" in status
-        assert len(editor.query_one("#storage-list").children) == 1
-        assert editor.query_one("#field-table", DataTable).disabled is False
-        assert list(editor.query("#config-setup")) == []
-        assert str(editor.query_one("#storage-location", Button).label) == (
-            "Reconnect"
-        )
-
-
-@pytest.mark.asyncio
-async def test_editor_offers_reconnect_for_missing_registered_root(
-    tmp_path: Path,
-) -> None:
-    """A missing registered directory is not a setup operation.
-
-    :param tmp_path: Isolated storage parent.
-    """
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    root = tmp_path / "manually-moved"
-    registry = StorageRegistry(
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
-        storages={"opa": StorageRecord(name="opa", root=root)},
-        selected_storage="opa",
-        archived_storages={},
-    )
-    write_storage_registry(registry)
-    editor = ConfigEditorApp(
-        apprc=kit,
-        storage_registry=registry,
-        initial_storage="opa",
-    )
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-
-        assert list(editor.query("#config-setup")) == []
-        reconnect = editor.query_one("#storage-location", Button)
-        assert str(reconnect.label) == "Reconnect"
-        assert reconnect.disabled is False
-        scope = str(editor.query_one("#scope-title", Static).content)
-        assert "Missing storage root" in scope
-
-
-def test_config_edit_opens_when_storage_selector_is_invalid(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Editor startup converts selector failures into repairable state.
-
-    :param monkeypatch: Process environment mutation fixture.
-    :param tmp_path: Isolated AppRC directory.
-    """
-    kit = build_apprc_example_app()
-    monkeypatch.setenv(
-        kit.schema.apprc_dir_env_key,
-        str(tmp_path / "apprc"),
-    )
-    monkeypatch.setenv(
-        kit.schema.require_storage_selector_env_key(),
-        "unknown",
-    )
-    AppFiles(kit.schema).ensure_user_dotenv()
-    register_storage(
-        name="opa",
-        root=tmp_path / "opa",
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
-    )
-    launched: list[tuple[StorageSelectorIssue | None, tuple[str, ...]]] = []
-
-    class HeadlessEditor(ConfigEditorApp):
-        """Record editor launch without starting a terminal application."""
-
-        def run(self, *args: object, **kwargs: object) -> None:
-            """Record one launch attempt.
-
-            :param args: Ignored Textual positional arguments.
-            :param kwargs: Ignored Textual keyword arguments.
-            :return: None.
-            """
-            registry = self.storage_registry
-            launched.append(
-                (
-                    self.storage_selector_issue,
-                    tuple(registry.storages) if registry is not None else (),
-                )
-            )
-
-    app = build_config_typer_app(kit, editor_app_cls=HeadlessEditor)
-
-    result = CliRunner().invoke(app, ["edit"])
-
-    assert result.exit_code == 0, result.output
-    assert len(launched) == 1
-    issue, storage_names = launched[0]
-    assert issue is not None
-    assert issue.selector is not None
-    assert issue.selector.raw_value == "unknown"
-    assert issue.selector.source_kind == "process_environment"
-    assert issue.configured_storage == "opa"
-    assert storage_names == ("opa",)
+    assert AppFiles(kit.schema, captured).user_dotenv_path().is_file()
+    assert not (tmp_path / "second").exists()

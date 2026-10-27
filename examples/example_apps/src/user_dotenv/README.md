@@ -1,6 +1,6 @@
 # User dotenv example
 
-This app declares `user_dotenv=rc.UserDotenv()` and no storage. Setup creates
+This app declares `user_dotenv=rc.UserDotenv()` and no workspace. Setup creates
 `apprc.user.env` and `apprc.user.secret.env`. The terminal editor and
 `config set --scope user` save ordinary fields in `apprc.user.env`.
 

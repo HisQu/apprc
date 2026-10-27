@@ -1,57 +1,35 @@
-"""Validation and derivation helpers for application config specs."""
+"""Validation and derivation helpers for application declarations."""
 
 from __future__ import annotations
 
-# == Standard Library ========================
 import re
 
 
-def _environment_key_prefix(app_id: str) -> str:
-    """Return the normalized environment-key prefix for an application.
+def environment_key_prefix(app_id: str) -> str:
+    """Return the normalized bootstrap prefix for an application.
 
     :param app_id: Stable application identity.
-    :return: Uppercase identifier suitable for an environment key.
+    :return: Uppercase identifier suitable for environment keys.
     """
-    normalized = re.sub(r"[^A-Za-z0-9]+", "_", app_id).strip("_").upper()
-    return normalized or "APP"
+    return re.sub(r"[^A-Za-z0-9]+", "_", app_id).strip("_").upper()
 
 
-def derive_apprc_dir_env_key(app_id: str) -> str:
-    """Return the environment key that relocates the AppRC directory.
+def derive_workspace_selector_env_key(app_id: str) -> str:
+    """Return the default workspace selector key.
 
-    :param app_id: Stable application identity.
-    :return: Uppercase ``<APP>_APPRC_DIR`` key.
+    :param app_id: Application identity or explicit bootstrap prefix.
+    :return: The conventional workspace environment key.
     """
-    return f"{_environment_key_prefix(app_id)}_APPRC_DIR"
+    return f"{environment_key_prefix(app_id)}_WORKSPACE"
 
 
-def derive_legacy_apprc_toml_env_key(app_id: str) -> str:
-    """Return the released 0.19 AppRC TOML relocation key.
-
-    :param app_id: Legacy application identity.
-    :return: Uppercase ``<APP>_APPRC_TOML`` key.
-    """
-    return f"{_environment_key_prefix(app_id)}_APPRC_TOML"
-
-
-def derive_storage_selector_env_key(app_id: str) -> str:
-    """Return the environment variable that selects active storage.
-
-    :param app_id: Application name from the AppRC integration spec.
-    :return: Uppercase env key for the active storage selector.
-    """
-    return f"{_environment_key_prefix(app_id)}_STORAGE"
-
-
-def resolve_storage_selector_env_key(
-    *,
-    app_id: str,
-    selector_env_key: str | None,
+def resolve_workspace_selector_env_key(
+    *, app_id: str, selector_env_key: str | None
 ) -> str:
-    """Return the explicit or derived active-storage selector key.
+    """Return an explicit selector or its application-derived default.
 
-    :param app_id: Application name used for the conventional key.
-    :param selector_env_key: Optional caller-supplied key.
-    :return: Explicit key or the derived ``<APP>_STORAGE`` key.
+    :param app_id: Identity used to derive the default prefix.
+    :param selector_env_key: Explicit selection key, when declared.
+    :return: Workspace selection environment key.
     """
-    return selector_env_key or derive_storage_selector_env_key(app_id)
+    return selector_env_key or derive_workspace_selector_env_key(app_id)

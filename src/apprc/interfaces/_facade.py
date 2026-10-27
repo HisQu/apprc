@@ -21,7 +21,7 @@ _CLI_EXPORTS = [
     "MountCliRuntimeStateFactory",
     "resolve_cli_config",
     "cli_options_from",
-    "mount_config_cli",
+    "mount_app_cli",
     "parse_log_level",
 ]
 _TUI_EXPORTS = [

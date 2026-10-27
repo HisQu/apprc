@@ -1,294 +1,109 @@
 from __future__ import annotations
 
-from apprc.user_files.app_home.application import AppFiles
-
-import os
 from pathlib import Path
 
 import pytest
-from rich.text import Text
-from textual.widgets import Button
 
-from tests.support_declaration import app_from_envs
-from apprc.definition.app_config.storage import Storage
-from apprc.definition.app_config.user_dotenv import UserDotenv
+import apprc as rc
+from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.tui._primitives import (
     ConfirmScreen,
     PathInputResult,
     PathInputScreen,
-    PathSuggester,
 )
 from apprc.interfaces.tui.editor import ConfigEditorApp
-from apprc.interfaces._setup_text import setup_overview_text
-from apprc.user_files.storage_roots.registry import (
-    StorageRecord,
-    StorageRegistry,
-    load_storage_registry_or_empty,
-    write_storage_registry,
-)
+from apprc.user_files.app_home.application import AppFiles
+
 from tests.support_config import (
-    build_apprc_example_app,
-    build_storage_free_example_app,
+    WorkspaceExampleEnv,
+    build_config_only_example_app,
 )
 
 
-def test_setup_overview_describes_fixed_storage_files() -> None:
-    text = setup_overview_text(build_apprc_example_app())
-
-    assert "apprc.user.env" in text
-    assert "storage named default" in text
-    assert "apprc.toml" in text
-
-
-def test_setup_overview_describes_storage_free_user_dotenv() -> None:
-    text = setup_overview_text(build_storage_free_example_app())
-
-    assert "empty apprc.user.env" in text
-    assert "registers" not in text
-
-
 @pytest.mark.asyncio
-async def test_editor_offers_setup_for_missing_optional_layers(
+async def test_config_only_editor_setup_initializes_only_user_configuration(
     tmp_path: Path,
-) -> None:
-    """Optional persistence is available without being reported as broken."""
-    kit = app_from_envs(
-        app_id="optional_editor",
-        display_name="Optional Editor",
-        config_package="apprc",
-        user_dotenv=UserDotenv(),
-        storage=Storage(),
-        apprc_dir=tmp_path / "apprc",
-    )
-    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-        setup = editor.query_one("#config-setup", Button)
-        assert str(setup.label) == "Set up user dotenv and storage..."
-        assert not editor.query("#selector-status")
-
-    assert not AppFiles(kit.schema).apprc_dir().exists()
-
-
-@pytest.mark.asyncio
-async def test_path_suggester_completes_filesystem_directories(
-    tmp_path: Path,
-) -> None:
-    expected = tmp_path / "persistent-data"
-    expected.mkdir()
-
-    suggestion = await PathSuggester(case_sensitive=True).get_suggestion(
-        str(tmp_path / "pers")
-    )
-
-    assert suggestion == f"{expected}{os.sep}"
-
-
-@pytest.mark.asyncio
-async def test_editor_setup_registers_default_storage(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    apprc_dir = tmp_path / "relocated-apprc"
-    previous_apprc_dir = tmp_path / "previous-apprc"
-    monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_APPRC_DIR",
-        str(previous_apprc_dir),
-    )
-    kit = build_apprc_example_app()
-    storage_root = tmp_path / "storage"
-    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
-    responses: list[object | None] = [
-        PathInputResult(path=apprc_dir),
-        PathInputResult(path=storage_root),
-        "setup",
-        "done",
-    ]
-    screens: list[object] = []
+    kit = build_config_only_example_app()
+    options = ResolveOptions(layout=rc.Layout.single_root(tmp_path))
+    manager = kit.manage(options=options, environment={})
+    editor = ConfigEditorApp(apprc=kit, manager=manager)
+    shown: list[object] = []
 
-    async def push_screen_wait(screen: object) -> object | None:
-        screens.append(screen)
-        return responses.pop(0)
+    async def respond(screen: object) -> object:
+        shown.append(screen)
+        return "done"
 
-    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
-
+    monkeypatch.setattr(editor, "push_screen_wait", respond)
     async with editor.run_test() as pilot:
         await pilot.pause()
         await editor.setup_workflow.open_setup_flow()
 
-    registry = editor.manager.registry()
-    assert registry.selected_storage == "default"
-    assert registry.selected("default").root == storage_root.resolve()
-    assert editor.manager.paths.user_dotenv.is_file()
-    assert AppFiles(kit.schema).storage_dotenv_path(storage_root).is_file()
-    apprc_prompt = screens[0]
-    assert isinstance(apprc_prompt, PathInputScreen)
-    assert apprc_prompt.value == str(previous_apprc_dir)
-    path_prompt = screens[1]
-    assert isinstance(path_prompt, PathInputScreen)
-    assert path_prompt.value == str(apprc_dir / "storage")
-    summary = screens[-1]
-    assert isinstance(summary, ConfirmScreen)
-    assert isinstance(summary.message, Text)
-    assert "user_dotenv:" in summary.message.plain
-    assert "cannot remember this custom directory" in summary.message.plain
-    assert os.environ["APPRC_EXAMPLE_APP_APPRC_DIR"] == str(previous_apprc_dir)
+    files = AppFiles(kit.schema, manager.paths)
+    assert files.user_dotenv_path().is_file()
+    assert files.config_file().parent.is_dir()
+    assert not files.config_file().exists()
+    assert len(shown) == 1 and isinstance(shown[0], ConfirmScreen)
+
+
+def _direct_workspace_app() -> rc.AppRC:
+    app = rc.AppRC(
+        app_id="direct-workspace-test",
+        paths=rc.Paths(config=True),
+        user_dotenv=rc.UserDotenv(),
+        workspaces=rc.Workspaces(registry=False),
+    )
+    app.config("app", prefix="APPRC_EXAMPLE_APP_")(WorkspaceExampleEnv)
+    return app
 
 
 @pytest.mark.asyncio
-async def test_storage_free_editor_setup_creates_user_dotenv(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    kit = build_storage_free_example_app()
-    monkeypatch.setenv(
-        kit.schema.apprc_dir_env_key,
-        str(AppFiles(kit.schema).apprc_dir()),
-    )
-    editor = ConfigEditorApp(apprc=kit, storage_registry=None)
-    responses: list[object | None] = [
-        PathInputResult(path=AppFiles(kit.schema).apprc_dir()),
-        "done",
-    ]
-
-    async def push_screen_wait(_: object) -> object | None:
-        return responses.pop(0)
-
-    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-        await editor.setup_workflow.open_setup_flow()
-
-    assert (
-        AppFiles(kit.schema).user_dotenv_path().read_text(encoding="utf-8")
-        == ""
-    )
-    assert not AppFiles(kit.schema).preferred_apprc_toml_path().exists()
-
-
-@pytest.mark.asyncio
-async def test_editor_initializes_marker_for_existing_named_storage(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_direct_workspace_setup_accepts_relative_path_without_registry_or_name_prompt(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Marker repair keeps the registered name and directory unchanged.
-
-    :param monkeypatch: TUI response replacement fixture.
-    :param tmp_path: Isolated storage parent.
-    """
-    kit = build_apprc_example_app()
-    monkeypatch.setenv(
-        kit.schema.apprc_dir_env_key,
-        str(AppFiles(kit.schema).apprc_dir()),
+    monkeypatch.chdir(tmp_path)
+    kit = _direct_workspace_app()
+    options = ResolveOptions(
+        layout=rc.Layout.single_root(tmp_path / "app-config")
     )
-    kit.manage().setup_user_dotenv()
-    storage_root = tmp_path / "ontology"
-    storage_root.mkdir()
-    registry = StorageRegistry(
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
-        storages={
-            "ontology": StorageRecord(
-                name="ontology",
-                root=storage_root,
-            )
-        },
-        selected_storage="ontology",
-        archived_storages={},
-    )
-    write_storage_registry(registry)
+    paths = kit.paths(options, environment={})
+    manager = kit._manage_with_paths(options, {}, paths)
+    workspace_manager = kit.workspaces(options=options, environment={})
     editor = ConfigEditorApp(
         apprc=kit,
-        storage_registry=registry,
-        initial_storage="ontology",
+        manager=manager,
+        workspace_manager=workspace_manager,
+        active_workspace_root=None,
     )
-    responses: list[object | None] = ["setup", "done"]
-    screens: list[object] = []
-
-    async def push_screen_wait(screen: object) -> object | None:
-        screens.append(screen)
-        return responses.pop(0)
-
-    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-        setup = editor.query_one("#config-setup", Button)
-        assert str(setup.label) == "Initialize storage config..."
-        await editor.setup_workflow.open_setup_flow()
-
-    updated = load_storage_registry_or_empty(registry.path)
-    assert updated.selected_storage == "ontology"
-    assert updated.selected("ontology").root == storage_root
-    assert AppFiles(kit.schema).storage_dotenv_path(storage_root).is_file()
-    assert len(screens) == 2
-    assert all(isinstance(screen, ConfirmScreen) for screen in screens)
-
-
-@pytest.mark.asyncio
-async def test_canceling_storage_setup_does_not_change_process_environment(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    previous_apprc_dir = tmp_path / "previous"
-    selected_apprc_dir = tmp_path / "selected"
-    monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_APPRC_DIR",
-        str(previous_apprc_dir),
+    monkeypatch.setattr(
+        workspace_manager,
+        "registry",
+        lambda: pytest.fail("direct-only setup must not read a registry"),
     )
-    editor = ConfigEditorApp(
-        apprc=build_apprc_example_app(),
-        storage_registry=None,
-    )
-    responses: list[object | None] = [
-        PathInputResult(path=selected_apprc_dir),
-        None,
-    ]
-
-    async def push_screen_wait(_: object) -> object | None:
-        return responses.pop(0)
-
-    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
-
-    async with editor.run_test() as pilot:
-        await pilot.pause()
-        await editor.setup_workflow.open_setup_flow()
-
-    assert os.environ["APPRC_EXAMPLE_APP_APPRC_DIR"] == str(previous_apprc_dir)
-    assert not selected_apprc_dir.exists()
-
-
-@pytest.mark.asyncio
-async def test_combined_editor_sets_up_only_missing_user_dotenv(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    apprc_dir = tmp_path / "apprc"
-    storage_root = tmp_path / "storage"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(apprc_dir))
-    kit = build_apprc_example_app()
-    registry = kit.manage().register_storage("default", storage_root)
-    editor = ConfigEditorApp(
-        apprc=kit,
-        storage_registry=registry,
-        active_storage_root=storage_root,
-    )
-    responses: list[object | None] = [
-        PathInputResult(path=apprc_dir),
+    shown: list[object] = []
+    responses: list[object] = [
+        PathInputResult(path=Path("./relative-workspace")),
         "done",
     ]
 
-    async def push_screen_wait(_: object) -> object | None:
+    async def respond(screen: object) -> object:
+        shown.append(screen)
         return responses.pop(0)
 
-    monkeypatch.setattr(editor, "push_screen_wait", push_screen_wait)
-
+    monkeypatch.setattr(editor, "push_screen_wait", respond)
     async with editor.run_test() as pilot:
         await pilot.pause()
-        setup = editor.query_one("#config-setup", Button)
-        assert str(setup.label) == "Set up user dotenv..."
         await editor.setup_workflow.open_setup_flow()
 
-    assert responses == []
-    assert AppFiles(kit.schema).user_dotenv_path().is_file()
-    assert AppFiles(kit.schema).storage_dotenv_path(storage_root).is_file()
+    root = tmp_path / "relative-workspace"
+    assert AppFiles(kit.schema, paths).workspace_dotenv_path(root).is_file()
+    assert AppFiles(kit.schema, paths).user_dotenv_path().is_file()
+    assert not AppFiles(kit.schema, paths).config_file().exists()
+    assert len(shown) == 2
+    assert isinstance(shown[0], PathInputScreen)
+    assert all(not isinstance(screen, PathInputScreen) for screen in shown[1:])
+    assert not any(
+        "register" in type(screen).__name__.lower() for screen in shown
+    )

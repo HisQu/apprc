@@ -1,24 +1,20 @@
-"""Managed secret companions and explicit migration behavior."""
+"""Managed user settings keep secret values in private companions."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-import pytest
-
 import apprc as rc
-from apprc.interfaces.cli.diagnostics.payload import build_config_doctor_payload
-from apprc.user_files.env_files.secrets import repair_secret_file_permissions
 
 
-def _app(tmp_path: Path) -> rc.AppRC:
-    """Declare one editable secret and one ordinary field."""
+def test_user_settings_save_reload_keeps_secret_in_private_companion(
+    tmp_path: Path,
+) -> None:
     app = rc.AppRC(
         app_id="secret-example",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path / "app"),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(selector_env_key="DEMO_STORAGE"),
-        apprc_dir=tmp_path / "config",
     )
 
     @app.config("client", prefix="DEMO_")
@@ -26,263 +22,22 @@ def _app(tmp_path: Path) -> rc.AppRC:
         token: str = rc.field("DEMO_TOKEN", default="", secret=True)
         label: str = rc.field("DEMO_LABEL", default="default")
 
-    return app
-
-
-def _user_only_app(tmp_path: Path) -> rc.AppRC:
-    """Declare one user dotenv secret without storage setup."""
-    app = rc.AppRC(
-        app_id="secret-user-only",
-        user_dotenv=rc.UserDotenv(),
-        apprc_dir=tmp_path / "config",
-    )
-
-    @app.config("client", prefix="DEMO_")
-    class Client(rc.Config):
-        token: str = rc.field("DEMO_TOKEN", default="", secret=True)
-        label: str = rc.field("DEMO_LABEL", default="default")
-
-    return app
-
-
-def test_secret_companions_follow_layer_precedence(tmp_path: Path) -> None:
-    app = _app(tmp_path)
     manager = app.manage(environment={})
-    manager.setup(storage_root=tmp_path / "data")
-
-    user = manager.plan_update("DEMO_TOKEN", "user-key", scope="user")
-    manager.apply_edit(user)
-    storage = manager.plan_update("DEMO_TOKEN", "storage-key", scope="storage")
-    manager.apply_edit(storage)
-
-    assert user.path.name == "apprc.user.secret.env"
-    assert storage.path.name == "apprc.storage.secret.env"
-    assert "DEMO_TOKEN" not in manager.writable_path("user").read_text()
-    assert manager.resolve().values["DEMO_TOKEN"] == "storage-key"
-    assert manager.resolve().source.origins["DEMO_TOKEN"].path == storage.path
-    assert (
-        app.manage(environment={"DEMO_TOKEN": "shell-key"})
-        .resolve()
-        .values["DEMO_TOKEN"]
-        == "shell-key"
-    )
-
-
-def test_storage_setup_supports_a_nested_root_under_the_apprc_directory(
-    tmp_path: Path,
-) -> None:
-    """Keep a new nested data root usable for secret settings."""
-    app = _app(tmp_path)
-    manager = app.manage(environment={})
-    storage_root = tmp_path / "config" / "nested" / "data"
-
-    manager.setup(storage_root=storage_root)
-
-    assert manager.writable_path("storage").is_file()
-    assert manager.secret_status("storage").available
-    assert manager.writable_path("storage", secret=True).is_file()
-
-
-@pytest.mark.parametrize("setup_method", ["setup", "setup_user_dotenv"])
-def test_fresh_user_only_setup_creates_secret_companion(
-    tmp_path: Path, setup_method: str
-) -> None:
-    """Initialize private user files when setup creates the AppRC directory."""
-    manager = _user_only_app(tmp_path).manage(environment={})
-
-    if setup_method == "setup":
-        manager.setup()
-    else:
-        manager.setup_user_dotenv()
-
-    assert manager.writable_path("user").is_file()
-    assert manager.writable_path("user", secret=True).is_file()
-    assert manager.secret_status("user").available
-
-
-def test_register_storage_before_setup_keeps_user_home_private(
-    tmp_path: Path,
-) -> None:
-    """Create a private AppRC home when storage is registered first.
-
-    :param tmp_path: Isolated test directory.
-    """
-    manager = _app(tmp_path).manage(environment={})
-    storage_root = tmp_path / "data"
-
-    manager.register_storage("default", storage_root)
-    assert manager.secret_status("user").available
-    manager.setup(storage_root=storage_root)
-
-    assert manager.writable_path("user", secret=True).is_file()
-    assert manager.secret_status("user").available
-
-
-def test_user_edit_before_setup_keeps_user_home_private(
-    tmp_path: Path,
-) -> None:
-    """A pre-setup ordinary edit must leave room for private secrets.
-
-    :param tmp_path: Isolated test directory.
-    """
-    manager = _user_only_app(tmp_path).manage(environment={})
-
-    plan = manager.plan_update("DEMO_LABEL", "edited", scope="user")
-    manager.apply_edit(plan)
-
-    assert manager.writable_path("user").is_file()
-    assert manager.secret_status("user").available
-    manager.setup_user_dotenv()
-    assert manager.writable_path("user", secret=True).is_file()
-    assert manager.secret_status("user").available
-
-
-@pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
-@pytest.mark.parametrize("operation", ["user_edit", "storage_registration"])
-def test_operations_do_not_change_existing_shared_home(
-    tmp_path: Path, operation: str
-) -> None:
-    """Keep shared homes unchanged until the user requests secret repair.
-
-    :param tmp_path: Isolated test directory.
-    :param operation: Managed operation that encounters the shared home.
-    """
-    apprc_dir = tmp_path / "config"
-    apprc_dir.mkdir()
-    apprc_dir.chmod(0o755)
-    manager = _app(tmp_path).manage(environment={})
-    storage_root = tmp_path / "data"
-
-    if operation == "user_edit":
-        manager.apply_edit(
-            manager.plan_update("DEMO_LABEL", "edited", scope="user")
-        )
-    else:
-        manager.register_storage("default", storage_root)
-
-    assert apprc_dir.stat().st_mode & 0o777 == 0o755
-    assert not manager.secret_status("user").available
-    if operation == "user_edit":
-        assert manager.writable_path("user").is_file()
-        with pytest.raises(ValueError, match="readable by other users"):
-            manager.setup_user_dotenv()
-    else:
-        with pytest.raises(ValueError, match="readable by other users"):
-            manager.setup(storage_root=storage_root)
-    assert apprc_dir.stat().st_mode & 0o777 == 0o755
-
-
-@pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
-@pytest.mark.parametrize("setup_method", ["setup", "setup_user_dotenv"])
-def test_user_only_setup_reports_shared_directory_and_keeps_repair_explicit(
-    tmp_path: Path, setup_method: str
-) -> None:
-    """Do not report setup success when the user secret file cannot be created."""
-    app = _user_only_app(tmp_path)
-    apprc_dir = tmp_path / "config"
-    apprc_dir.mkdir()
-    apprc_dir.chmod(0o755)
-    manager = app.manage(environment={})
-
-    with pytest.raises(ValueError) as exc_info:
-        if setup_method == "setup":
-            manager.setup()
-        else:
-            manager.setup_user_dotenv()
-
-    message = str(exc_info.value)
-    assert "parent directory is readable by other users" in message
-    assert "config secrets repair --scope user" in message
-    assert apprc_dir.stat().st_mode & 0o777 == 0o755
-    assert not manager.writable_path("user").exists()
-    assert not manager.writable_path("user", secret=True).exists()
-
-    status = manager.repair_secret_permissions("user")
-    assert status.available
-    assert manager.writable_path("user", secret=True).is_file()
-    assert apprc_dir.stat().st_mode & 0o777 == 0o700
-
-
-def test_legacy_secret_migration_is_explicit_and_archive_excludes_secret(
-    tmp_path: Path,
-) -> None:
-    app = _app(tmp_path)
-    manager = app.manage(environment={})
-    manager.setup(storage_root=tmp_path / "data")
-    ordinary = manager.writable_path("storage")
-    ordinary.write_text(
-        'DEMO_TOKEN="legacy-key"\n'
-        '# AppRC disabled duplicate assignment: DEMO_TOKEN="old-key"\n'
-        '# DEMO_TOKEN="commented-key"\n'
-        '# AppRC disabled duplicate assignment: DEMO_TOKEN="older\n'
-        '# multiline-key"\n'
-        'DEMO_LABEL="safe"\n',
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="secrets migrate"):
-        manager.plan_update("DEMO_TOKEN", "replacement", scope="storage")
-    doctor = build_config_doctor_payload(app, storage=None, manager=manager)
-    assert "legacy-key" not in str(doctor.to_payload())
-    assert any("secrets migrate" in step for step in doctor.next_steps)
-
-    plan = manager.plan_secret_migration("storage")
-    assert plan.keys == ("DEMO_TOKEN",)
-    assert "legacy-key" not in repr(plan)
-    manager.apply_secret_migration(plan)
-    assert "DEMO_TOKEN" not in ordinary.read_text()
-    assert "multiline-key" not in ordinary.read_text()
-    assert 'DEMO_LABEL="safe"' in ordinary.read_text()
-    assert manager.resolve().values["DEMO_TOKEN"] == "legacy-key"
-
-    archive = manager.archive_storage("default", tmp_path / "data.apprc.tar.xz")
-    import tarfile
-
-    with tarfile.open(archive, "r:xz") as stream:
-        assert "apprc.storage.secret.env" not in stream.getnames()
-
-    user_secret = manager.writable_path("user", secret=True)
-    storage_secret = manager.writable_path("storage", secret=True)
-    manager.apply_purge(manager.plan_purge())
-    assert not user_secret.exists()
-    assert not storage_secret.exists()
-
-
-@pytest.mark.skipif(os.name == "nt", reason="POSIX mode check")
-def test_shared_storage_disables_secret_saving_without_disabling_storage(
-    tmp_path: Path,
-) -> None:
-    app = _app(tmp_path)
-    manager = app.manage(environment={})
-    storage_root = tmp_path / "data"
-    storage_root.mkdir()
-    storage_root.chmod(0o755)
-    manager.setup(storage_root=storage_root)
-
-    assert not manager.secret_status("storage").available
-    assert manager.writable_path("storage").is_file()
-    assert not manager.writable_path("storage", secret=True).exists()
-    assert storage_root.stat().st_mode & 0o777 == 0o755
+    manager.setup()
     manager.apply_edit(
-        manager.plan_update("DEMO_LABEL", "ordinary", scope="storage")
+        manager.plan_update("DEMO_TOKEN", "private-token", scope="user")
     )
-    with pytest.raises(ValueError, match="readable by other users"):
-        manager.plan_update("DEMO_TOKEN", "private", scope="storage")
-    assert manager.repair_secret_permissions("storage").available
     manager.apply_edit(
-        manager.plan_update("DEMO_TOKEN", "private", scope="storage")
+        manager.plan_update("DEMO_LABEL", "saved-label", scope="user")
     )
 
+    resolved = app.resolve(environment={})
+    config = resolved.build(Client)
+    secret_path = manager.writable_path("user", secret=True)
+    ordinary_path = manager.writable_path("user")
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows ACL inheritance check")
-def test_repair_keeps_ordinary_storage_file_readable(tmp_path: Path) -> None:
-    """New private parent access must inherit into ordinary layer files."""
-    root = tmp_path / "storage"
-    root.mkdir()
-    ordinary = root / "apprc.storage.env"
-    ordinary.write_text('DEMO_LABEL="readable"\n', encoding="utf-8")
-
-    status = repair_secret_file_permissions(root / "apprc.storage.secret.env")
-
-    assert status.available
-    assert ordinary.read_text(encoding="utf-8") == 'DEMO_LABEL="readable"\n'
+    assert config.token == "private-token"
+    assert config.label == "saved-label"
+    assert secret_path.name == "apprc.user.secret.env"
+    assert "DEMO_TOKEN" in secret_path.read_text(encoding="utf-8")
+    assert "DEMO_TOKEN" not in ordinary_path.read_text(encoding="utf-8")

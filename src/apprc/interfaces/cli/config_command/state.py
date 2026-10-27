@@ -2,48 +2,35 @@
 
 from __future__ import annotations
 
-from apprc.user_files.app_home.application import AppFiles
-
 # == Standard Library ========================
 import os
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 # == Internal ================================
-from apprc.interfaces.cli.context import CliRuntimeContext
-from apprc.interfaces.cli.options import (
-    COMMON_CLI_FLAG_OPTIONS,
-    COMMON_CLI_VALUE_OPTIONS,
-)
+from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli._typer_utils import (
     args_after_cli_command,
     help_requested_before_separator,
     parse_leading_options,
 )
-from apprc.runtime.resolution import ResolvedConfig
-from apprc.runtime._selection import selection_env
+from apprc.interfaces.cli.context import CliRuntimeContext
+from apprc.interfaces.cli.options import (
+    COMMON_CLI_FLAG_OPTIONS,
+    COMMON_CLI_VALUE_OPTIONS,
+)
 from apprc.public.app_rc import AppRC
-from apprc.user_files.storage_roots._loading import (
-    load_optional_runtime_storage_registry,
-)
-from apprc.user_files.storage_roots.registry import StorageRegistry
-from apprc.user_files.storage_roots.selector import (
-    resolve_active_storage_selection,
-)
+from apprc.runtime._selection import selection_env
+from apprc.runtime.resolution import ResolvedConfig
 
 
 class ConfigCliState(Protocol):
     """Host CLI state fields understood by the generic config app."""
 
     resolved: ResolvedConfig | None
-
-
-class StorageConfigCliState(ConfigCliState, Protocol):
-    """Host CLI state fields used by storage-capable config commands."""
-
-    storage: str | None
+    workspace: str | None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -51,11 +38,11 @@ class DefaultConfigCliState:
     """Default CLI state understood by generated AppRC config commands.
 
     :param resolved: Runtime resolution result, when resolution ran.
-    :param storage: Optional CLI ``--storage`` selector.
+    :param workspace: Optional CLI ``--workspace`` selector.
     """
 
     resolved: ResolvedConfig | None = None
-    storage: str | None = None
+    workspace: str | None = None
 
     @classmethod
     def from_context(
@@ -69,7 +56,7 @@ class DefaultConfigCliState:
         """
         return cls(
             resolved=context.resolved,
-            storage=context.runtime_options.storage,
+            workspace=context.runtime_options.workspace,
         )
 
 
@@ -77,12 +64,11 @@ DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS = frozenset(
     {
         "doctor",
         "edit",
-        "migrate",
+        "init",
         "paths",
-        "set",
         "secrets",
+        "set",
         "setup",
-        "storage",
     }
 )
 
@@ -183,147 +169,94 @@ def config_request_skips_runtime(
     return action_args[0] in runtime_independent_actions
 
 
-def active_storage_root_from_state(
+def active_workspace_root_from_state(
     apprc: AppRC,
     state: ConfigCliState,
     *,
     explicit_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool = False,
 ) -> Path | None:
-    """Return the active storage root from generic CLI state.
+    """Return the active workspace root from generic CLI state.
 
     :param apprc: Application config facade.
     :param state: Host CLI state object.
-    :param explicit_values: Parsed values from CLI ``--env-file``
-        options.
+    :param explicit_values: Parsed values from CLI ``--env-file`` options.
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
-        process env values during selector resolution.
-    :return: Resolved storage root, or ``None`` when no selector is active.
+        process env values during workspace selection.
+    :return: Resolved workspace root, or ``None`` when no workspace is active.
     """
-    if not apprc.schema.uses_storage():
+    if not apprc.schema.uses_workspaces():
         return None
-    storage_state = cast(StorageConfigCliState, state)
-    if storage_state.resolved is not None:
-        selection = storage_state.resolved.selection
-        return selection.root if selection is not None else None
+    if state.resolved is not None:
+        workspace = state.resolved.workspace
+        return workspace.root if workspace is not None else None
     selector_env = selection_env(
         original_env=os.environ,
         explicit_values=explicit_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
-    registry = load_optional_runtime_storage_registry(
-        apprc.schema,
-        proc_env=selector_env,
-    )
-    selection = resolve_active_storage_selection(
-        registry=registry,
-        apprc_toml_path=AppFiles(apprc.schema).preferred_apprc_toml_path(
-            selector_env
+    resolved = apprc.manage(
+        ResolveOptions(
+            workspace=state.workspace,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
         ),
-        storage=storage_state.storage,
-        storage_selector_env_key=apprc.schema.require_storage_selector_env_key(),
-        original_env=os.environ,
-        explicit_values=explicit_values or {},
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-    )
-    return selection.root if selection is not None else None
+        environment=selector_env,
+    ).resolve()
+    return resolved.workspace.root if resolved.workspace is not None else None
 
 
-def active_storage_root_from_env(
+def active_workspace_root_from_env(
     apprc: AppRC,
     *,
-    registry: StorageRegistry | None = None,
+    workspace: str | None = None,
     explicit_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool = False,
 ) -> Path | None:
-    """Return the active storage root selected by the current environment.
-
-    :param apprc: Application config facade.
-    :param registry: Parsed storage registry, if already loaded.
-    :param explicit_values: Parsed values from CLI ``--env-file``
-        options.
-    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
-        process env values during selector resolution.
-    :return: Resolved storage root, or ``None`` when no env selector is set.
-    :raises StorageSelectorError: If the env selector cannot be resolved.
-    """
-    if not apprc.schema.uses_storage():
+    """Return the workspace root selected by the current environment."""
+    if not apprc.schema.uses_workspaces():
         return None
-    storage_selector_env_key = apprc.schema.require_storage_selector_env_key()
-    explicit_selector_values = explicit_values or {}
     selector_env = selection_env(
         original_env=os.environ,
-        explicit_values=explicit_selector_values,
+        explicit_values=explicit_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
-    selected_registry = registry
-    if selected_registry is None:
-        selected_registry = load_optional_runtime_storage_registry(
-            apprc.schema,
-            proc_env=selector_env,
-        )
-    selection = resolve_active_storage_selection(
-        registry=selected_registry,
-        apprc_toml_path=AppFiles(apprc.schema).preferred_apprc_toml_path(
-            selector_env
+    resolved = apprc.manage(
+        ResolveOptions(
+            workspace=workspace,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
         ),
-        storage=None,
-        storage_selector_env_key=storage_selector_env_key,
-        original_env=os.environ,
-        explicit_values=explicit_selector_values,
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
-    )
-    return selection.root if selection is not None else None
+        environment=selector_env,
+    ).resolve()
+    return resolved.workspace.root if resolved.workspace is not None else None
 
 
-def initial_storage_from_state(
+def initial_workspace_from_state(
     apprc: AppRC,
     state: ConfigCliState,
-    registry: StorageRegistry | None = None,
     *,
     explicit_values: Mapping[str, str] | None = None,
     env_file_overrides_os_environ: bool = False,
 ) -> str | None:
-    """Return the storage that should be selected first in editors.
-
-    :param apprc: Application config facade.
-    :param state: Host CLI state object.
-    :param registry: Optional already-loaded storage table.
-    :param explicit_values: Parsed values from CLI ``--env-file``
-        options.
-    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
-        process env values during selector resolution.
-    :return: Storage selector to preselect, or ``None``.
-    """
-    if state.resolved is not None:
-        return (
-            state.resolved.selection.storage_name
-            if state.resolved.selection is not None
-            else None
-        )
-    if not apprc.schema.uses_storage():
+    """Return the workspace name selected first in config editors."""
+    if not apprc.schema.uses_workspaces():
         return None
-    storage_state = cast(StorageConfigCliState, state)
+    if state.resolved is not None:
+        workspace = state.resolved.workspace
+        return workspace.workspace_name if workspace is not None else None
     selector_env = selection_env(
         original_env=os.environ,
         explicit_values=explicit_values or {},
         env_file_overrides_os_environ=env_file_overrides_os_environ,
     )
-    selected_registry = registry
-    if selected_registry is None:
-        selected_registry = load_optional_runtime_storage_registry(
-            apprc.schema,
-            proc_env=selector_env,
-        )
-    selection = resolve_active_storage_selection(
-        registry=selected_registry,
-        apprc_toml_path=AppFiles(apprc.schema).preferred_apprc_toml_path(
-            selector_env
+    resolved = apprc.manage(
+        ResolveOptions(
+            workspace=state.workspace,
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
         ),
-        storage=storage_state.storage,
-        storage_selector_env_key=apprc.schema.require_storage_selector_env_key(),
-        original_env=os.environ,
-        explicit_values=explicit_values or {},
-        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        environment=selector_env,
+    ).resolve()
+    return (
+        resolved.workspace.workspace_name
+        if resolved.workspace is not None
+        else None
     )
-    return selection.storage_name if selection is not None else None

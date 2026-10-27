@@ -4,6 +4,6 @@
 
 from apprc.interfaces.tui.editor import (
     ConfigEditorApp,
-    ConfigEditorStorageWorkflows,
+    ConfigEditorWorkspaceWorkflows,
 )
 from apprc.interfaces.tui.setup import ConfigSetupApp

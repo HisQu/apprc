@@ -5,16 +5,15 @@ import os
 import sys
 import zipfile
 from collections.abc import MutableMapping
-from typing import cast
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 import pytest
 from typed_settings.exceptions import InvalidSettingsError
 
 import apprc as rc
-from apprc.user_files.storage_roots.selector import StorageSelectorError
 
 
 def declare_settings(**kwargs):
@@ -48,20 +47,21 @@ def test_empty_environment_and_late_registration(monkeypatch):
     assert app.resolve(environment={}).build(Later).value == 1
 
 
-def test_independent_storage_sessions_and_provenance(tmp_path, monkeypatch):
-    app, Settings = declare_settings(
-        storage=rc.Storage(), apprc_dir=tmp_path / "managed"
-    )
+def test_independent_workspace_sessions_and_provenance(tmp_path, monkeypatch):
+    app, Settings = declare_settings(workspaces=rc.Workspaces(registry=False))
     roots = [tmp_path / "first", tmp_path / "second"]
     for root in roots:
         root.mkdir()
-        (root / "apprc.storage.env").write_text("RESOLVE_VALUE=${CAPTURED}\n")
+        (root / "apprc.workspace.env").write_text(
+            "RESOLVE_VALUE=${CAPTURED}\n",
+            encoding="utf-8",
+        )
     monkeypatch.setenv("CAPTURED", "ambient")
     before = dict(os.environ)
 
     def build(index):
         resolved = app.resolve(
-            rc.ResolveOptions(storage=str(roots[index])),
+            rc.ResolveOptions(workspace=str(roots[index])),
             environment={"CAPTURED": str(index)},
         )
         config = resolved.build(Settings)
@@ -71,11 +71,10 @@ def test_independent_storage_sessions_and_provenance(tmp_path, monkeypatch):
         pairs = list(pool.map(build, [0, 1]))
     for index, (resolved, config) in enumerate(pairs):
         assert config.value == str(index)
-        assert (
-            config.provenance_of("value").path
-            == roots[index] / "apprc.storage.env"
+        assert config.provenance_of("value").path == (
+            roots[index] / "apprc.workspace.env"
         )
-        assert config.provenance_of("value").origin == "shell_dotenv_storage"
+        assert config.provenance_of("value").origin == "shell_dotenv_workspace"
         with pytest.raises(TypeError):
             cast(MutableMapping[str, str], resolved.values)["RESOLVE_VALUE"] = (
                 "mutation"
@@ -179,16 +178,16 @@ def test_bundle_injection_factories_and_post_init():
     assert resolved.build(Custom, settings=injected).settings is injected
 
 
-def test_optional_storage_does_not_suppress_invalid_selection(tmp_path):
-    app, _ = declare_settings(
-        storage=rc.Storage(), apprc_dir=tmp_path / "managed"
-    )
-    assert app.resolve(environment={}).selection is None
-    with pytest.raises(StorageSelectorError):
-        app.resolve(rc.ResolveOptions(storage_required=True), environment={})
-    with pytest.raises(StorageSelectorError):
+def test_direct_workspaces_reject_bare_name_without_writing(tmp_path):
+    app, _ = declare_settings(workspaces=rc.Workspaces(registry=False))
+    assert app.resolve(environment={}).workspace is None
+    with pytest.raises(
+        ValueError,
+        match="^Named workspaces require a registry\\.$",
+    ):
         app.resolve(
-            rc.ResolveOptions(storage=str(tmp_path / "missing")), environment={}
+            rc.ResolveOptions(workspace="unregistered"),
+            environment={},
         )
     assert list(tmp_path.iterdir()) == []
 

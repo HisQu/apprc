@@ -15,21 +15,21 @@ from apprc.user_files.app_home.locations import (
     AppRCDirectoryError,
     write_text_atomic,
 )
-from apprc.user_files.env_files.files import (
-    require_existing_storage_root,
-    storage_dotenv_path,
-)
-from apprc.user_files.env_files._document import (
-    clear_dotenv_document_value,
-    set_dotenv_document_value,
-)
-from apprc.user_files.env_files.values import normalize_env_value
-from apprc.user_files.storage_roots.paths import StorageRootPathError
 from apprc.user_files.app_home.writes import (
     StaleEditError,
     file_revision,
     managed_write_lock,
 )
+from apprc.user_files.env_files._document import (
+    clear_dotenv_document_value,
+    set_dotenv_document_value,
+)
+from apprc.user_files.env_files.files import (
+    require_existing_workspace_root,
+    workspace_dotenv_path,
+)
+from apprc.user_files.env_files.values import normalize_env_value
+from apprc.user_files.workspace_roots.paths import WorkspaceRootPathError
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,36 +79,36 @@ class EnvFileEditPlan:
     private_directories: tuple[Path, ...] = ()
 
 
-def set_storage_dotenv_value(
+def set_workspace_dotenv_value(
     *,
-    storage_root: Path,
+    workspace_root: Path,
     reference: str,
     raw_value: str,
     owners: Iterable[ConfigOwner],
-    storage_dotenv_filename: str = "apprc.storage.env",
+    workspace_dotenv_filename: str = "apprc.workspace.env",
 ) -> EnvFileUpdate:
-    """Set one value in a storage dotenv file.
+    """Set one value in a workspace dotenv file.
 
-    :param storage_root: Active storage root from the application selector.
+    :param workspace_root: Active workspace root from the application selector.
     :param reference: Full env key, dotted config path, or unique field name.
     :param raw_value: User-provided value before type validation.
     :param owners: Config owners to search.
-    :param storage_dotenv_filename: Storage dotenv filename.
+    :param workspace_dotenv_filename: Workspace dotenv filename.
     :return: Written file, key, and normalized value.
     :raises ValueError: If the key is unknown, read-only, or invalid.
-    :raises StorageRootPathError: If the storage root cannot be used.
+    :raises WorkspaceRootPathError: If the workspace root cannot be used.
     """
     try:
-        plan = plan_storage_dotenv_value_update(
-            storage_root=storage_root,
+        plan = plan_workspace_dotenv_value_update(
+            workspace_root=workspace_root,
             reference=reference,
             raw_value=raw_value,
             owners=owners,
-            storage_dotenv_filename=storage_dotenv_filename,
+            workspace_dotenv_filename=workspace_dotenv_filename,
         )
         return apply_env_file_edit(plan)
     except (AppRCDirectoryError, OSError) as exc:
-        raise StorageRootPathError(str(exc)) from exc
+        raise WorkspaceRootPathError(str(exc)) from exc
 
 
 def set_env_file_value(
@@ -139,32 +139,32 @@ def set_env_file_value(
     return apply_env_file_edit(plan)
 
 
-def plan_storage_dotenv_value_update(
+def plan_workspace_dotenv_value_update(
     *,
-    storage_root: Path,
+    workspace_root: Path,
     reference: str,
     raw_value: str,
     owners: Iterable[ConfigOwner],
-    storage_dotenv_filename: str = "apprc.storage.env",
+    workspace_dotenv_filename: str = "apprc.workspace.env",
 ) -> EnvFileEditPlan:
-    """Prepare a storage dotenv edit without writing it.
+    """Prepare a workspace dotenv edit without writing it.
 
-    :param storage_root: Active storage root from the application selector.
+    :param workspace_root: Active workspace root from the application selector.
     :param reference: Full env key, config path, or unique field name.
     :param raw_value: User-provided value before type validation.
     :param owners: Config owners to search.
-    :param storage_dotenv_filename: Storage dotenv filename.
+    :param workspace_dotenv_filename: Workspace dotenv filename.
     :return: Validated edit ready to apply.
-    :raises StorageRootPathError: If the storage root cannot be used.
+    :raises WorkspaceRootPathError: If the workspace root cannot be used.
     """
-    root = require_existing_storage_root(storage_root)
-    path = storage_dotenv_path(root, filename=storage_dotenv_filename)
+    root = require_existing_workspace_root(workspace_root)
+    path = workspace_dotenv_path(root, filename=workspace_dotenv_filename)
     return plan_env_file_value_update(
         path=path,
         reference=reference,
         raw_value=raw_value,
         owners=owners,
-        layer_name=storage_dotenv_filename,
+        layer_name=workspace_dotenv_filename,
     )
 
 
@@ -242,34 +242,34 @@ def apply_env_file_edit(plan: EnvFileEditPlan) -> EnvFileUpdate:
     )
 
 
-def clear_storage_dotenv_value(
+def clear_workspace_dotenv_value(
     *,
-    storage_root: Path,
+    workspace_root: Path,
     reference: str,
     owners: Iterable[ConfigOwner],
-    storage_dotenv_filename: str = "apprc.storage.env",
+    workspace_dotenv_filename: str = "apprc.workspace.env",
 ) -> EnvFileUpdate | None:
-    """Remove one override value from a storage dotenv file.
+    """Remove one override value from a workspace dotenv file.
 
-    :param storage_root: Active storage root from the application selector.
+    :param workspace_root: Active workspace root from the application selector.
     :param reference: Full env key, dotted config path, or unique field name.
     :param owners: Config owners to search.
-    :param storage_dotenv_filename: Storage dotenv filename.
+    :param workspace_dotenv_filename: Workspace dotenv filename.
     :return: Written file and removed key, or ``None`` when the key was absent.
     :raises ValueError: If the key is unknown or read-only.
-    :raises StorageRootPathError: If the storage root cannot be used.
+    :raises WorkspaceRootPathError: If the workspace root cannot be used.
     """
-    root = require_existing_storage_root(storage_root)
-    path = storage_dotenv_path(root, filename=storage_dotenv_filename)
+    root = require_existing_workspace_root(workspace_root)
+    path = workspace_dotenv_path(root, filename=workspace_dotenv_filename)
     try:
         return clear_env_file_value(
             path=path,
             reference=reference,
             owners=owners,
-            layer_name=storage_dotenv_filename,
+            layer_name=workspace_dotenv_filename,
         )
     except (AppRCDirectoryError, OSError) as exc:
-        raise StorageRootPathError(str(exc)) from exc
+        raise WorkspaceRootPathError(str(exc)) from exc
 
 
 def clear_env_file_value(

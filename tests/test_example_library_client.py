@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from library_client import LibraryClient
 from library_client.config.app import MyRC
 from library_client.config.sections.client import ClientSettings
@@ -14,8 +13,9 @@ def test_importable_client_reads_current_layers_without_writing(
     tmp_path: Path,
 ) -> None:
     """A new client reads changed files; injected settings stay authoritative."""
-    config_dir = tmp_path / "apprc"
-    monkeypatch.setenv(MyRC.schema.apprc_dir_env_key, str(config_dir))
+    layout_root = tmp_path / "apprc"
+    config_dir = layout_root / "config"
+    monkeypatch.setenv(MyRC.schema.root_env_key, str(layout_root))
     monkeypatch.delenv("APPRC_EXAMPLE_LIBRARY_REQUEST_TIMEOUT", raising=False)
 
     first = LibraryClient()
@@ -26,7 +26,7 @@ def test_importable_client_reads_current_layers_without_writing(
     )
     assert not config_dir.exists()
 
-    config_dir.mkdir()
+    config_dir.mkdir(parents=True)
     (config_dir / "apprc.user.env").write_text(
         "APPRC_EXAMPLE_LIBRARY_REQUEST_TIMEOUT=15\n", encoding="utf-8"
     )

@@ -39,10 +39,10 @@ class PathInputResult:
 
 
 @dataclass(frozen=True, slots=True)
-class StorageNameResult:
-    """Storage name returned by the name modal.
+class WorkspaceNameResult:
+    """Workspace name returned by the name modal.
 
-    :param name: Registry selector entered by the user.
+    :param name: Workspace selector entered by the user.
     """
 
     name: str
@@ -186,12 +186,12 @@ class PathInputScreen(ModalScreen[PathInputResult | None]):
         self.dismiss(None)
 
 
-class StorageNameScreen(ModalScreen[StorageNameResult | None]):
-    """Modal storage-name input."""
+class WorkspaceNameScreen(ModalScreen[WorkspaceNameResult | None]):
+    """Modal workspace-name input."""
 
     CSS = (
         """
-    StorageNameScreen {
+    WorkspaceNameScreen {
         align: center middle;
     }
 
@@ -219,9 +219,9 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
         default_name: str,
         message: VisualType,
     ) -> None:
-        """Store the suggested storage name and helper text.
+        """Store the suggested workspace name and helper text.
 
-        :param default_name: Prefilled storage selector.
+        :param default_name: Prefilled workspace selector.
         :param message: Help text or Rich renderable shown above the input.
         """
         super().__init__()
@@ -229,12 +229,12 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
         self.message = message
 
     def compose(self) -> ComposeResult:
-        """Compose the storage name dialog.
+        """Compose the workspace name dialog.
 
         :return: Textual widgets for the modal.
         """
         with Vertical(id="name-dialog", classes=MODAL_DIALOG_CLASS):
-            yield Static(Text("Storage name", style="bold"), id="name-title")
+            yield Static(Text("Workspace name", style="bold"), id="name-title")
             yield Static(self.message, id="name-message")
             yield Input(value=self.default_name, id="name-input")
             with Horizontal(id="name-button-row"):
@@ -265,12 +265,12 @@ class StorageNameScreen(ModalScreen[StorageNameResult | None]):
             self.action_cancel()
 
     def _continue(self) -> None:
-        """Dismiss with the typed storage name when it is not empty."""
+        """Dismiss with the typed workspace name when it is not empty."""
         name = self.query_one("#name-input", Input).value.strip()
         if not name:
-            self.notify("Enter a storage name first.", severity="warning")
+            self.notify("Enter a workspace name first.", severity="warning")
             return
-        self.dismiss(StorageNameResult(name=name))
+        self.dismiss(WorkspaceNameResult(name=name))
 
     def action_cancel(self) -> None:
         """Dismiss without choosing a name."""

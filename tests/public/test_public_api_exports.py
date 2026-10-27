@@ -10,7 +10,19 @@ def test_root_exports_clean_public_api() -> None:
         "ResolveOptions",
         "ImportedConfig",
         "ResolvedConfig",
-        "Storage",
+        "Paths",
+        "Layout",
+        "AppPaths",
+        "PathKind",
+        "ResourceKind",
+        "Workspaces",
+        "RemovalPlan",
+        "RemovalResult",
+        "RemovalOperation",
+        "AppDataOperations",
+        "CacheOperations",
+        "StateOperations",
+        "MaintenanceHandlers",
         "UserDotenv",
         "Config",
         "ConfigBase",
@@ -20,17 +32,18 @@ def test_root_exports_clean_public_api() -> None:
         "files",
         "provenance",
         "schema",
-        "storage",
+        "workspaces",
     ]
     assert hasattr(rc, "AppRC")
     assert hasattr(rc, "ImportedConfig")
-    assert hasattr(rc, "Storage")
+    assert hasattr(rc, "Paths")
+    assert hasattr(rc, "Workspaces")
     assert hasattr(rc, "UserDotenv")
     assert hasattr(rc, "Config")
     assert hasattr(rc, "ConfigBase")
     assert hasattr(rc, "field")
     assert hasattr(rc, "cli")
-    assert hasattr(rc, "storage")
+    assert hasattr(rc, "workspaces")
     assert hasattr(rc, "provenance")
     assert hasattr(rc, "files")
     assert hasattr(rc, "schema")
@@ -46,10 +59,10 @@ def test_schema_namespace_exports_metadata_helpers() -> None:
     assert hasattr(rc.schema, "owner_for")
 
 
-def test_storage_namespace_uses_fixed_layout_helpers() -> None:
-    """The storage namespace does not expose an alternate app directory."""
-    assert not hasattr(rc.storage, "app_data_dir")
-    assert not hasattr(rc.storage, "suggested_storage_root")
+def test_workspaces_namespace_uses_fixed_layout_helpers() -> None:
+    """The workspaces namespace does not expose an alternate app directory."""
+    assert not hasattr(rc.workspaces, "app_data_dir")
+    assert not hasattr(rc.workspaces, "suggested_workspace_root")
 
 
 def test_root_does_not_export_legacy_symbols() -> None:

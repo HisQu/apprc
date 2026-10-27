@@ -4,28 +4,16 @@
 [![PyPI](https://img.shields.io/pypi/v/apprc)](https://pypi.org/project/apprc/)
 [![Python](https://img.shields.io/pypi/pyversions/apprc)](https://pypi.org/project/apprc/)
 [![License](https://img.shields.io/pypi/l/apprc)](LICENSE)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-AppRC gives Python applications typed settings and tools for configuring them.
-Define each setting's type, default, and explanation once. Use the same
-application declaration to load values, show where they came from, and let users
-edit saved overrides.
-
-Applications can also register named data directories outside their source
-checkout. Each directory can have its own settings. A config CLI and terminal
-editor provide setup, inspection, editing, and storage management.
-
-<!-- Graphical Abstract goes here: -->
-
-| ![Graphical abstract](docs/assets/apprc-abstract-configuration-overview.svg) |
-|:--:|
-| **Fig. 1 - Graphical Abstract:** AppRC resolves typed settings from layered sources, connects selected storage to its settings and data directory, and shares one declaration across application code and configuration tools. |
+AppRC provides typed application settings, optional user preferences, and
+independent application paths. An application opts in to configuration,
+application data, cache, and state separately; a cache-only application does not
+also acquire configuration files or a workspace registry.
 
 - [Install](#install)
 - [Load settings](#load-settings)
+- [Choose application paths](#choose-application-paths)
 - [Save user settings](#save-user-settings)
-- [Add named storage](#add-named-storage)
 - [Add terminal commands](#add-terminal-commands)
 - [Add a Gradio settings page](#add-a-gradio-settings-page)
 - [Examples and documentation](#examples-and-documentation)
@@ -36,25 +24,27 @@ Python 3.12 or newer is required.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install "apprc>=0.29.0,<0.30"` | Configuration, Typer commands, prompts, and the Textual editor. |
-| `python -m pip install "apprc-core>=0.29.0,<0.30"` | Configuration and noninteractive management without terminal dependencies. |
-| `python -m pip install "apprc-gui>=0.29.0,<0.30"` | Configuration and a Gradio settings editor. |
+| `python -m pip install "apprc>=0.30.0,<0.31"` | Core configuration, Typer commands, prompts, and Textual editor. |
+| `python -m pip install "apprc-core>=0.30.0,<0.31"` | Configuration and noninteractive path/maintenance APIs. |
+| `python -m pip install "apprc-gui>=0.30.0,<0.31"` | Configuration and Gradio settings editor. |
 
 `apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
-`from apprc_gui import ConfigEditor`. The terminal and GUI distributions each
-install the exact matching `apprc-core` version.
+`from apprc_gui import ConfigEditor`. Terminal and GUI distributions install the
+matching `apprc-core` release.
 
-> [!WARNING]
-> When upgrading from the previous single-distribution package, use a fresh
-> environment or uninstall the old `apprc` first. Follow the
-> [migration instructions](docs/How-To-User-Guides.md#migrate-existing-applications)
-> for the changed Python API and package ownership.
+> [!CAUTION]
+> Version 0.30 makes a breaking API and on-disk configuration cutover. Existing
+> `Storage`, `storage`, `apprc_dir`, and `--storage` integrations must be changed
+> to the new contracts described in the
+> [upgrade guide](docs/How-To-User-Guides.md#migrate-existing-applications).
+> AppRC does not move, rename, scan, delete, or automatically upgrade old user
+> files. Keep any old files as-is and deliberately configure the new paths.
 
 ## Load settings
 
-Create one [`AppRC`](docs/Explanations.md#apprc) for the application and register
-its [config sections](docs/Explanations.md#config-sections-and-fields).
-This complete example needs no files:
+Create one [`AppRC`](docs/Explanations.md#apprc), register
+[config sections](docs/Explanations.md#config-sections-and-fields), then build
+typed settings from a `ResolvedConfig`:
 
 ```python
 import apprc as rc
@@ -63,113 +53,98 @@ MyRC = rc.AppRC(app_id="demo")
 
 @MyRC.config("client", prefix="DEMO_")
 class ClientSettings(rc.Config):
-    timeout: int = rc.field(
-        "DEMO_TIMEOUT",
-        default=30,
-        title="Request timeout",
-        explanation_short="Seconds to wait for an API response.",
-    )
+    timeout: int = rc.field("DEMO_TIMEOUT", default=30)
 
 resolved = MyRC.resolve(environment={"DEMO_TIMEOUT": "10"})
 settings = resolved.build(ClientSettings)
 assert settings.timeout == 10
-assert settings.provenance_of("timeout").origin == "shell_export_variable"
 ```
 
-`resolve()` reads the chosen inputs and returns a
-[`ResolvedConfig`](docs/Explanations.md#resolvedconfig). `build()` converts those
-inputs into the Python values used by `ClientSettings`. Pass `settings` to your
-application functions. Omit `environment` to use the actual process environment.
+`resolve()` reads configuration and captures a snapshot; `build()` converts
+values and validates required fields. Add [dotenv files](docs/How-To-User-Guides.md#load-dotenv-files)
+or [packaged defaults](docs/How-To-User-Guides.md#ship-defaults-with-the-application)
+when required. [Provenance](docs/Explanations.md#provenance) records which source
+supplied each value. Resolution does not write files or alter `os.environ`.
 
-Add [dotenv files](docs/How-To-User-Guides.md#load-dotenv-files) or
-[packaged defaults](docs/How-To-User-Guides.md#ship-defaults-with-the-application)
-when values should come from files. AppRC applies a defined
-[source precedence](docs/References.md#source-precedence), and
-[provenance](docs/Explanations.md#provenance) records the source of each field.
-Reading configuration creates no files and does not change `os.environ`.
-An [importable client](docs/How-To-User-Guides.md#use-apprc-inside-an-importable-client)
-can resolve these layers when constructed, so its caller only imports the client.
-The [complete client example](docs/EXAMPLES.md#importable-client-with-saved-preferences)
-shows the package and its configuration commands.
+## Choose application paths
+
+Declare only the managed components the application uses:
+
+```python
+import apprc as rc
+
+MyRC = rc.AppRC(
+    app_id="demo",
+    paths=rc.Paths(cache=True),
+    layout=rc.Layout.native(),
+)
+
+paths = MyRC.paths()                   # inspect; no filesystem writes
+cache_dir = MyRC.ensure_path("cache")  # create privately and record ownership
+```
+
+`Paths` independently enables `config`, `appdata`, `cache`, and `state`.
+`Layout.native()` uses platform user locations; `Layout.single_root(root)` places
+enabled categories beneath one explicit root. `AppPaths` reports disabled
+locations as `None`; `ensure_path(kind)` initializes only the requested
+component. See [path declarations](docs/Explanations.md#application-paths) and
+the [path reference](docs/References.md#application-paths).
+
+Applications that need selectable named working directories declare
+`Workspaces()`. A [`WorkspaceManager`](docs/Explanations.md#workspaces) manages
+the registry and archive operations separately from `AppPaths`; selecting a
+workspace does not relocate configuration, cache, or state. `registry=False`
+permits direct-directory selection without enabling config. Call
+`WorkspaceManager.initialize_workspace(root)` or use `workspace init PATH` to
+prepare the workspace dotenv; this writes no config or registry file.
 
 ## Save user settings
 
-Add `user_dotenv=rc.UserDotenv()` to the `AppRC` declaration when users need saved
-preferences. The [user dotenv](docs/Explanations.md#user-dotenv-and-the-apprc-directory)
-is `apprc.user.env` in the AppRC directory, separate from the installed code.
-Its default location for `app_id="demo"` is `~/.local/share/demo`;
-`DEMO_APPRC_DIR` relocates it.
-
-[`ConfigManager`](docs/Explanations.md#configmanager), obtained from `MyRC.manage()`,
-initializes files and applies reviewed edits. The
+`user_dotenv=rc.UserDotenv()` opts into `apprc.user.env` inside the enabled config
+directory. `UserDotenv` requires `paths=rc.Paths(config=True)`; it never enables
+config implicitly. Obtain a [`ConfigManager`](docs/Explanations.md#configmanager)
+with `MyRC.manage()` for settings inspection, setup, and reviewed edits. The
 [saved-preference guide](docs/How-To-User-Guides.md#save-a-user-preference)
-is a complete runnable program. The
-[user preferences example](docs/EXAMPLES.md#persistent-user-preferences)
-provides the same operations through a CLI.
-
-## Add named storage
-
-Add `storage=rc.Storage()` when the application writes persistent data.
-A [storage](docs/Explanations.md#storage) is a registered directory with its own
-`apprc.storage.env`. The application obtains the selected root and writes its
-data there. Users can keep data outside the source checkout, switch between
-named directories, and move or archive them.
-
-The [data-directory guide](docs/How-To-User-Guides.md#store-data-outside-the-source-checkout)
-writes a report to selected storage. The
-[combined example](docs/EXAMPLES.md#user-settings-and-storage) shows how storage
-settings override user preferences. `UserDotenv()` and `Storage()` are independent;
-enable either or both.
+contains a complete example. Saved secrets use private companion files; the
+[secret explanation](docs/Explanations.md#secret-companions) describes their limits.
 
 ## Add terminal commands
 
-The [config CLI](docs/Explanations.md#config-cli) adds `config setup`, `config doctor`,
-`config set`, `config edit`, and storage commands to a Typer application.
-Set [`setup_next_step`](docs/References.md#declarations) on `AppRC` to print
-app-supplied next-step text after successful `config setup`. The
-[Typer guide](docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
-shows the entire application and command sequence.
+Use `rc.cli.mount_app_cli(app, MyRC)` to mount available configuration and
+maintenance groups together. The returned subgroup mapping lets an application
+add category-specific commands. `paths` and `doctor` are always available;
+config, workspace, and category groups appear only when their declared
+capabilities exist. The [Typer guide](docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
+and [command reference](docs/References.md#terminal-commands) document the groups.
 
-Applications can separately opt in to the
-[application-data CLI](docs/Explanations.md#application-data-cli) with
-`rc.cli.mount_appdata_cli(app, MyRC)`. It adds `appdata paths` for the cleanup
-inventory and `appdata clean --dry-run` to preview removal of AppRC-managed
-files and internal storage data. Cleanup is explicit; external storage payloads
-and unrelated files are retained. Follow the
-[cleanup guide](docs/How-To-User-Guides.md#preview-and-clean-managed-application-data)
-for the mount, runtime-independent policy, and confirmation behavior.
+The root `purge` command previews or removes explicitly declared AppRC-managed
+resources. It validates ownership and exact targets, never recursively removes
+unknown files, and never touches workspace payloads or package caches. Providers
+are required for application-specific operations. See
+[maintenance](docs/Explanations.md#maintenance) for its safety boundary.
 
-The [config editor](docs/Explanations.md#config-editor) displays configuration
-layers together, explains each setting, and edits user or storage overrides.
-The same [config fields](docs/Explanations.md#config-sections-and-fields)
-also drive the desktop settings view.
-Set [`restart_required=True`](docs/References.md#config-fields) on a field
-whose saved value takes effect only after the application restarts. The
-Textual and Gradio editors mark that field and repeat the restart instruction
-after saving; AppRC never restarts the application automatically.
+The [Textual editor](docs/Explanations.md#config-editor) and
+[Gradio editor](docs/Explanations.md#gradio-editor) edit config settings; when a
+workspace registry exists, callers supply the separate `WorkspaceManager`.
+Editors do not initialize application state merely by opening.
 
 ## Add a Gradio settings page
 
-Embed `apprc_gui.ConfigEditor` in an application-owned Gradio `Blocks`. Pass it
-`MyRC.manage()` so the page can set up declared files, show where effective
-values came from, and save user or storage overrides. It opens before required
-settings are complete, which makes it suitable for first-run setup. The
-[Gradio settings guide](docs/How-To-User-Guides.md#add-a-gradio-settings-page)
-shows the connection, and the [secret companion explanation](docs/Explanations.md#secret-companions)
-explains where saved `secret=True` fields go.
-
-AppRC does not create installers. The [Windows installer guide](docs/How-To-User-Guides.md#build-a-windows-installer)
-shows how an application can package its own launcher and dependencies in one
-Setup.exe.
+Embed `apprc_gui.ConfigEditor(manager)` in an application-owned Gradio `Blocks`.
+If the application declares registry-backed workspaces, provide
+`workspaces=MyRC.workspaces()` as well. The
+[Gradio guide](docs/How-To-User-Guides.md#add-a-gradio-settings-page) shows the
+integration. AppRC does not create installers; applications own their launchers
+and Windows `Setup.exe` builds.
 
 ## Examples and documentation
 
-Start with [Documentation](docs/README.md) for the learning order and component names.
+Start with [Documentation](docs/README.md) for component names and learning order.
 
 | Document | Purpose |
 | --- | --- |
-| [Explanations](docs/Explanations.md) | Understand the components and their connections. |
-| [How-to user guides](docs/How-To-User-Guides.md) | Complete one task using an independent example. |
+| [Explanations](docs/Explanations.md) | Understand components and how they connect. |
+| [How-to user guides](docs/How-To-User-Guides.md) | Complete one task with an independent example. |
 | [References](docs/References.md) | Look up exact APIs, files, commands, and behavior. |
-| [Examples](docs/EXAMPLES.md) | Choose and run a complete application setup. |
+| [Examples](docs/EXAMPLES.md) | Choose and run a complete application setup, including cache-only. |
 | [Development](docs/Development.md) | Change, verify, build, and release AppRC. |

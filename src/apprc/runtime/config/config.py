@@ -9,22 +9,19 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
-# ===============================================================
-# == Internal
-# ===============================================================
-from apprc.runtime.config.base import BaseConfig as ConfigBase
-from apprc.runtime.config._loading import (
-    owner_env_mapping,
-)
 import apprc.runtime.config._state_transfer as state_transfer
+from apprc.definition.env_config.schema import ConfigOwner
+from apprc.definition.env_config.sentinels import ENV_FIELD_MISSING
+from apprc.definition.resolution import ConfigSource, ImportedConfig
 from apprc.runtime.config._binding import (
     bind_owner_from_env,
     protected_field_names,
 )
-from apprc.definition.resolution import ConfigSource, ImportedConfig
-from apprc.definition.env_config.sentinels import ENV_FIELD_MISSING
 from apprc.runtime.config._defaults import (
     resolve_instance_owner_defaults,
+)
+from apprc.runtime.config._loading import (
+    owner_env_mapping,
 )
 from apprc.runtime.config._origins import (
     origin_for_field,
@@ -37,13 +34,17 @@ from apprc.runtime.config._runtime_validation import (
     validate_python_constructor_fields,
     validate_required_fields,
 )
+
+# ===============================================================
+# == Internal
+# ===============================================================
+from apprc.runtime.config.base import BaseConfig as ConfigBase
 from apprc.runtime.provenance import (
     ConfigOriginState,
     ConfigProvenance,
     PythonProvenanceOrigin,
     source_for_origin,
 )
-from apprc.definition.env_config.schema import ConfigOwner
 
 LOG = logging.getLogger(__name__)
 
@@ -276,12 +277,12 @@ class Config(ConfigBase):
                     "that contains its exact ImportedConfig binding."
                 )
             if (
-                imported_binding.parent_owner.requires_storage
-                and not resolved._has_valid_storage_selection
+                imported_binding.parent_owner.requires_workspace
+                and not resolved._has_valid_workspace_selection
             ):
                 raise ValueError(
                     f"{imported_binding.parent_owner.title} requires a valid "
-                    "storage selection in the parent resolution."
+                    "workspace selection in the parent resolution."
                 )
         resolved.require_registered(type(self))
         candidate = state_transfer.shallow_clone(self)

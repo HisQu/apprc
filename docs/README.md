@@ -13,35 +13,36 @@
 
 ## Start here
 
-AppRC lets a Python application declare its settings once and use that declaration
-to load values, explain their sources, and provide configuration tools to users.
-Start with the [working example](../README.md#load-settings), then read how
-[`AppRC`](Explanations.md#apprc) connects the settings to those tools.
+AppRC lets a Python application declare typed settings and independently opt in
+to configuration, application data, cache, and state paths. Start with the
+[working example](../README.md#load-settings), then read how
+[`AppRC`](Explanations.md#apprc) connects these features.
 
 Learn the components in this order:
 
 1. Define a [config section](Explanations.md#config-sections-and-fields) and build
    settings from a [`ResolvedConfig`](Explanations.md#resolvedconfig).
 2. Understand [configuration layers](Explanations.md#configuration-layers) and
-   [provenance](Explanations.md#provenance) before adding files.
-3. Add a [user dotenv](Explanations.md#user-dotenv-and-the-apprc-directory) when
-   users need saved preferences, or [storage](Explanations.md#storage) when the
-   application needs a persistent data directory.
-   An [importable client](How-To-User-Guides.md#use-apprc-inside-an-importable-client)
-   can load those layers inside its own constructor.
-4. Use [`ConfigManager`](Explanations.md#configmanager) to initialize and edit
-   those files. Add the [config CLI](Explanations.md#config-cli) and
-   [config editor](Explanations.md#config-editor) for terminal use, or the
-   [Gradio editor](Explanations.md#gradio-editor) in a browser application.
-5. Use a [config bundle](Explanations.md#config-bundles) when several parts of
-   the application need their own config sections. Use an
-   [imported config binding](Explanations.md#imported-dependency-settings) when
-   the parent application owns the settings exposed by a dependency.
+   [provenance](Explanations.md#provenance).
+3. Declare independent [application paths](Explanations.md#application-paths)
+   with `Paths` and choose a [layout](Explanations.md#layouts). A cache-only
+   application does not need config files.
+4. Add [user preferences](Explanations.md#user-dotenv), or selectable
+   [workspaces](Explanations.md#workspaces) when the application needs named
+   working directories. A direct workspace does not require a registry.
+5. Use [`ConfigManager`](Explanations.md#configmanager) for settings and
+   [`WorkspaceManager`](Explanations.md#workspaces) for workspace operations.
+   Add the grouped [application CLI](Explanations.md#application-cli) or a
+   [Textual](Explanations.md#config-editor)/[Gradio](Explanations.md#gradio-editor)
+   editor when users need those interfaces.
+6. Use a [config bundle](Explanations.md#config-bundles) for related settings
+   sections and an [imported config binding](Explanations.md#imported-dependency-settings)
+   when the parent application owns dependency settings.
 
 The [complete setups](EXAMPLES.md#choose-a-setup) show when to use each option.
-Sections in [How-to user guides](How-To-User-Guides.md) are independent; you do not
-have to run every earlier guide. Existing applications can use the
-[migration instructions](How-To-User-Guides.md#migrate-existing-applications).
+Guides in [How-to user guides](How-To-User-Guides.md) are independent. Existing
+applications can follow the explicit [breaking-change upgrade guide](How-To-User-Guides.md#migrate-existing-applications);
+AppRC never moves old files or upgrades the old schema automatically.
 
 ## Choose a document
 
@@ -59,28 +60,27 @@ have to run every earlier guide. Existing applications can use the
 
 ## Component names
 
-Use these names in every document. The linked explanation defines each term;
+Use these names consistently. The linked explanation defines each component;
 the Python name identifies its implementation.
 
 | Name | Python name or file | Meaning |
 | --- | --- | --- |
-| [`AppRC`](Explanations.md#apprc) | `rc.AppRC` | Application declaration that registers config sections and enables optional features. |
+| [`AppRC`](Explanations.md#apprc) | `rc.AppRC` | Application declaration for settings and optional capabilities. |
 | [Config section](Explanations.md#config-sections-and-fields) | Subclass of `rc.Config` or `rc.ConfigBase` | A group of related typed settings. |
 | [Config field](Explanations.md#config-sections-and-fields) | `rc.field(...)` | One setting's environment key, default, and documentation. |
-| [`ResolvedConfig`](Explanations.md#resolvedconfig) | `rc.ResolvedConfig` | The result of reading configuration sources for one application run. |
-| [Imported config binding](Explanations.md#imported-dependency-settings) | `rc.ImportedConfig` | A parent-owned mapping from a dependency section to the parent's settings and resolved snapshot. |
-| [Configuration layer](Explanations.md#configuration-layers) | One file or the process environment | A source of values with a defined priority. |
-| [Provenance](Explanations.md#provenance) | `settings.provenance_of(...)` | The record of where a field's current value came from. |
-| [AppRC directory](Explanations.md#user-dotenv-and-the-apprc-directory) | `~/.local/share/<app_id>` by default | Directory containing the user dotenv and storage registry when enabled. |
-| [User dotenv](Explanations.md#user-dotenv-and-the-apprc-directory) | `apprc.user.env` | Saved user overrides enabled by `rc.UserDotenv()`. |
-| [Secret companion](Explanations.md#secret-companions) | `apprc.user.secret.env` or `apprc.storage.secret.env` | Private file for saved `secret=True` fields in the same layer. |
-| [Storage](Explanations.md#storage) | `rc.Storage()` enables it | A persistent data directory with its own `apprc.storage.env`. |
-| [Storage registry](Explanations.md#storage-registry) | `apprc.toml` | Storage names, directory paths, and the saved default storage. |
-| [`ConfigManager`](Explanations.md#configmanager) | Returned by `MyRC.manage()` | Application-specific setup, inspection, editing, and storage operations. |
-| [Config CLI](Explanations.md#config-cli) | `rc.cli.mount_config_cli(...)` | Configuration commands added to a Typer application. |
-| [Application-data CLI](Explanations.md#application-data-cli) | `rc.cli.mount_appdata_cli(...)` | Separately mounted commands for inventory and cleanup of AppRC-managed files and internal storage data. |
-| [Config editor](Explanations.md#config-editor) | `rc.tui.ConfigEditorApp` | Terminal interface for inspecting layers and editing saved overrides. |
-| [Gradio editor](Explanations.md#gradio-editor) | `apprc_gui.ConfigEditor` | Settings controls embedded in application-owned Gradio `Blocks`. |
+| [`ResolvedConfig`](Explanations.md#resolvedconfig) | `rc.ResolvedConfig` | Settings-source snapshot for one application run; it always carries `AppPaths`. |
+| [Paths](Explanations.md#application-paths) | `rc.Paths` | Declaration enabling config, appdata, cache, and state independently. |
+| [Layout](Explanations.md#layouts) | `rc.Layout` | Native or single-root mapping for enabled path components. |
+| [AppPaths](Explanations.md#application-paths) | `rc.AppPaths` | Read-only resolved locations; disabled components are `None`. |
+| [Workspace](Explanations.md#workspaces) | `rc.Workspaces` | Optional named or direct working-directory selection, separate from `AppPaths`. |
+| [User dotenv](Explanations.md#user-dotenv) | `apprc.user.env` | Saved overrides enabled by `rc.UserDotenv()` with config enabled. |
+| [Secret companion](Explanations.md#secret-companions) | `apprc.user.secret.env` or `apprc.workspace.secret.env` | Private file for saved `secret=True` fields in that layer. |
+| [`ConfigManager`](Explanations.md#configmanager) | Returned by `MyRC.manage()` | Settings setup, inspection, editing, and secret repair. |
+| [`WorkspaceManager`](Explanations.md#workspaces) | Returned by `MyRC.workspaces()` | Workspace registry, selection, and archive operations. |
+| [Maintenance](Explanations.md#maintenance) | `rc.MaintenanceHandlers` | Explicit application operations for supported resource categories. |
+| [Application CLI](Explanations.md#application-cli) | `rc.cli.mount_app_cli(...)` | Grouped paths, doctor, config, workspace, category, and purge commands. |
+| [Config editor](Explanations.md#config-editor) | `rc.tui.ConfigEditorApp` | Terminal interface for inspecting and editing saved settings. |
+| [Gradio editor](Explanations.md#gradio-editor) | `apprc_gui.ConfigEditor` | Settings controls in application-owned Gradio `Blocks`. |
 | [Config bundle](Explanations.md#config-bundles) | Dataclass registered with `@MyRC.bundle` | An object containing several config sections. |
 
 ## Documentation rules
@@ -92,56 +92,42 @@ before changing documentation.
 ### Names and learning order
 
 - Use the document labels in [Choose a document](#choose-a-document) verbatim.
-  Do not relabel Explanations as Architecture or How-to user guides as Recipes.
-- Use the [component names](#component-names) consistently. Add a definition
-  before introducing a new component. Do not invent synonyms for variation.
-- Call the Windows `Setup.exe` an **installer** and the process of creating it
-  an **installer build**. The installer is one file; the installed application
-  contains Python, packages, and shortcuts in a directory.
+- Use the [component names](#component-names) consistently. Define a component
+  before relying on it in instructions.
+- Call the Windows `Setup.exe` an **installer** and the process of creating it an
+  **installer build**.
 - Introduce basic settings before files, optional features, and integrations.
-  Explain an unfamiliar term before relying on it in instructions.
-- Start Explanations sections with what the named component is and why the
-  application needs it. Describe its inputs, outputs, and connections through
-  concrete actions. A list of technical nouns is not an explanation.
-- Use task headings in How-to user guides. For example, use "Pass several
-  settings sections together" and define "config bundle" in the opening text.
-- Describe current behavior. Keep previous implementations and upgrade details
-  in migration instructions and the changelog.
+- Start Explanations sections with what a component is and why an application
+  needs it. Describe concrete inputs, outputs, and connections.
+- Use task headings in How-to user guides and define unfamiliar terms when first
+  used.
+- Describe current behavior. Keep upgrade instructions in clearly labeled
+  migration guidance and breaking changes in the changelog.
 
 ### Links and examples
 
-- Link the relevant word or phrase within its paragraph or table cell, as in
-  "The [storage registry](Explanations.md#storage-registry) remembers the path."
-- Link a component to Explanations, an operation to its How-to user guide, an
-  exact API to References, and a complete setup to Examples. Use section anchors.
-- Make these connections in both directions where they help the reader. Link
-  the first useful occurrence in a section; do not link every repetition.
-- Do not collect ordinary cross-links into "Related links" callouts or generic
-  further-reading paragraphs. Use GitHub callouts for prerequisites, context,
-  warnings, or optional advice that actually needs emphasis.
+- Link the relevant phrase in its paragraph or table cell. Link a component to
+  Explanations, an operation to How-to user guides, an exact API to References,
+  and a complete setup to Examples.
 - Give each independent guide all imports, declarations, filenames, commands,
   and expected results needed to reproduce it. State when a block is an excerpt.
 - Keep complete application sources in the existing examples tree. Examples
-  explains their setup and links to specific files; it must not be only a link list.
-- Exercise documented code against the current API. Explain why a setting wins,
-  which file an edit changes, and whether an operation writes application data.
+  explains the setup and links to sources rather than becoming only a link list.
+- Explain why a setting wins, which file an edit changes, and whether an
+  operation writes application data.
 
 ### Review and maintenance
 
 - In the six pages in `docs/`, keep the document-title H1 above the table of
-  contents. Add topical H1 sections below it and put every H2 under one of them.
-  The table of contents lists each topical H1 at the top level and every H2
-  exactly once beneath its H1, in document order. The title does not need a
-  table-of-contents link; H3 headings may stay out of the compact list.
+  contents. List each topical H1 and every H2 exactly once in document order.
 - Put a standalone `<br>` before the first topical H1 and between later H1
-  sections. Do not add spacers between H2 sections. The root README, changelog,
-  and TODO keep their own heading layouts.
-- Check links and anchors after renaming headings. Preserve existing published
-  anchors when practical, while updating internal links to current headings.
-- Check prose manually for undefined terms, synonym drift, vague claims, and
-  sentences that enumerate components without explaining their relationship.
+  sections. Do not add spacers between H2 sections.
+- Check links and anchors after renaming headings. Preserve existing anchors
+  where practical and update internal links to current headings.
+- Review prose for undefined terms, synonym drift, vague claims, and unexplained
+  component relationships.
 - Follow the [generated-file procedure](Development.md#generated-files) for
-  package descriptions. Edit diagram source scripts before regenerating assets;
-  Graphigs remains the source of figure styling.
+  package descriptions. Diagram source scripts are canonical; do not hand-edit
+  generated SVG files.
 - Run the [documentation checks](Development.md#documentation-checks) alongside
-  the checks required for any accompanying code changes.
+  checks required for any accompanying code changes.

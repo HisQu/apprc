@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import importlib.metadata as metadata
 import importlib.util
-from pathlib import Path
 import sys
 import tempfile
+from importlib import metadata
+from pathlib import Path
 
 
 def verify_install(*, core_only: bool, gui: bool = False) -> None:
@@ -32,8 +32,9 @@ def verify_install(*, core_only: bool, gui: bool = False) -> None:
         app = apprc.AppRC(
             app_id="install_test",
             display_name="Install test",
+            paths=apprc.Paths(config=True),
             user_dotenv=apprc.UserDotenv(),
-            apprc_dir=Path(directory),
+            layout=apprc.Layout.single_root(Path(directory)),
         )
 
         @app.config("settings", prefix="INSTALL_")
@@ -59,8 +60,9 @@ def verify_install(*, core_only: bool, gui: bool = False) -> None:
         assert not any(
             str(path).startswith("apprc/") for path in wrapper.files or ()
         )
-        from apprc._cli_app import app as terminal_app
         from typer.testing import CliRunner
+
+        from apprc._cli_app import app as terminal_app
 
         assert CliRunner().invoke(terminal_app, ["--help"]).exit_code == 0
         assert apprc.tui.ConfigEditorApp is not None

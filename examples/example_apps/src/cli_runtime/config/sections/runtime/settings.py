@@ -10,14 +10,14 @@ from cli_runtime.config.app import MyRC
 
 @MyRC.config("runtime", prefix="APPRC_EXAMPLE_RUNTIME_", title="Runtime")
 class CliRuntimeConfig(rc.Config):
-    """Storage fields used by the app-owned callback runtime example."""
+    """Workspace fields used by the app-owned callback runtime example."""
 
-    storage_root: Path = rc.field(
-        "APPRC_EXAMPLE_RUNTIME_STORAGE",
+    workspace_root: Path = rc.field(
+        "APPRC_EXAMPLE_RUNTIME_WORKSPACE",
         editable=False,
         required=True,
-        title="Storage root",
-        explanation_short="Active storage root selected through the runtime.",
+        title="Workspace root",
+        explanation_short="Active workspace root selected through the runtime.",
     )
     profile: str = rc.field(
         "APPRC_EXAMPLE_RUNTIME_PROFILE",

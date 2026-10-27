@@ -14,14 +14,14 @@ from explicit_env_precedence.config.app import MyRC
     title="Precedence",
 )
 class ExplicitEnvPrecedenceConfig(rc.Config):
-    """Storage fields used to demonstrate explicit env-file precedence."""
+    """Workspace fields used to demonstrate explicit env-file precedence."""
 
-    storage_root: Path = rc.field(
-        "APPRC_EXAMPLE_PRECEDENCE_STORAGE",
+    workspace_root: Path = rc.field(
+        "APPRC_EXAMPLE_PRECEDENCE_WORKSPACE",
         editable=False,
         required=True,
-        title="Storage root",
-        explanation_short="Storage selector used in precedence examples.",
+        title="Workspace root",
+        explanation_short="Workspace selector used in precedence examples.",
     )
     label: str = rc.field(
         "APPRC_EXAMPLE_PRECEDENCE_LABEL",

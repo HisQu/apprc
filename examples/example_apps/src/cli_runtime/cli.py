@@ -14,8 +14,8 @@ import typer
 
 # == Internal ================================
 import apprc as rc
-from cli_runtime.config.bundle import CliRuntimeExampleConfig
 from cli_runtime.config.app import MyRC
+from cli_runtime.config.bundle import CliRuntimeExampleConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,9 +26,10 @@ class RuntimeOptions:
     :param env_file_overrides_os_environ: Whether explicit dotenv values beat
         current process env values.
     :param load_dotenv_layers: Whether AppRC should merge dotenv layers.
-    :param storage: Optional active storage selector.
+    :param workspace: Optional active workspace selector.
+    :param layout: Optional native or single-root AppRC layout.
     :param log_level: Optional logging level.
-    :param workspace: Example app-specific workspace path.
+    :param workdir: Example app-specific work directory.
     :param model: Example app-specific model name.
     :param dry_run: Example app-specific execution flag.
     """
@@ -36,9 +37,10 @@ class RuntimeOptions:
     env_files: Sequence[Path] | None = None
     env_file_overrides_os_environ: bool = False
     load_dotenv_layers: bool = True
-    storage: str | None = None
+    workspace: str | None = None
+    layout: rc.Layout | None = None
     log_level: str | None = None
-    workspace: Path | None = None
+    workdir: Path | None = None
     model: str | None = None
     dry_run: bool = False
 
@@ -47,12 +49,12 @@ class RuntimeOptions:
 class RuntimeState(rc.cli.DefaultConfigCliState):
     """Runtime state built by the app callback after AppRC setup.
 
-    :param workspace: Example app-specific workspace path.
+    :param workdir: Example app-specific workdir path.
     :param model: Example app-specific model name.
     :param dry_run: Example app-specific execution flag.
     """
 
-    workspace: Path | None = None
+    workdir: Path | None = None
     model: str | None = None
     dry_run: bool = False
 
@@ -86,7 +88,7 @@ def build_app(
                 ),
             },
             extra_cli_flag_options={"--dry-run"},
-            extra_cli_value_options={"--workspace", "--model"},
+            extra_cli_value_options={"--workdir", "--model"},
         ),
         args_provider=args_provider,
         runtime_payload=_runtime_payload,
@@ -99,11 +101,13 @@ def build_app(
         env_files: rc.cli.EnvFilesOption = None,
         env_file_overrides_os_environ: (rc.cli.EnvFileOverridesOption) = False,
         skip_dotenv_layers: rc.cli.SkipDotenvLayersOption = False,
-        storage: rc.cli.StorageOption = None,
+        workspace: rc.cli.WorkspaceOption = None,
+        layout: rc.cli.LayoutOption = None,
+        app_root: rc.cli.AppRootOption = None,
         log_level: rc.cli.LogLevelOption = None,
-        workspace: Annotated[
+        workdir: Annotated[
             Path | None,
-            typer.Option("--workspace", help="Example app workspace path."),
+            typer.Option("--workdir", help="Example app workdir path."),
         ] = None,
         model: Annotated[
             str | None,
@@ -115,13 +119,18 @@ def build_app(
         ] = False,
     ) -> None:
         """Prepare AppRC plus app-specific CLI state."""
+        bootstrap = rc.cli.CliRuntimeOptions.from_typer(
+            layout=layout,
+            app_root=app_root,
+        )
         options = RuntimeOptions(
             env_files=env_files,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=not skip_dotenv_layers,
-            storage=storage,
-            log_level=log_level,
             workspace=workspace,
+            layout=bootstrap.layout,
+            log_level=log_level,
+            workdir=workdir,
             model=model,
             dry_run=dry_run,
         )
@@ -147,8 +156,7 @@ def build_app(
             )
         )
 
-    runtime.mount_config_group(app)
-    rc.cli.mount_appdata_cli(app, MyRC)
+    runtime.mount_app_groups(app)
     return app
 
 
@@ -164,8 +172,7 @@ def _build_state(
     """
     return RuntimeState(
         resolved=context.resolved,
-        storage=options.storage,
-        workspace=options.workspace,
+        workdir=options.workdir,
         model=options.model,
         dry_run=options.dry_run,
     )
@@ -179,19 +186,19 @@ def _runtime_payload(state: RuntimeState) -> dict[str, object]:
     """
     assert state.resolved is not None
     config = state.resolved.build(CliRuntimeExampleConfig)
-    selection = state.resolved.selection if state.resolved is not None else None
+    selection = state.resolved.workspace if state.resolved is not None else None
     return {
         "app_id": MyRC.schema.app_id,
         "command_name": MyRC.schema.config_command_name(),
         "display_name": MyRC.schema.display_name,
         "bundle": type(config).__name__,
         "cli_options": {
-            "workspace": str(state.workspace) if state.workspace else None,
+            "workdir": str(state.workdir) if state.workdir else None,
             "model": state.model,
             "dry_run": state.dry_run,
         },
-        "storage_name": selection.storage_name if selection else None,
-        "storage_root": str(selection.root) if selection else None,
+        "workspace_name": selection.workspace_name if selection else None,
+        "workspace_root": str(selection.root) if selection else None,
         "config": {
             "profile": config.runtime.profile,
             "api_token": "<redacted>",

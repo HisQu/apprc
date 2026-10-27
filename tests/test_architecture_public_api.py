@@ -13,15 +13,14 @@ import apprc.files as files_api
 import apprc.provenance as provenance_api
 import apprc.runtime as runtime_api
 import apprc.schema as schema_api
-import apprc.storage as storage_api
+import apprc.workspaces as workspaces_api
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.public.app_rc import AppRC
 from apprc.public.config import Config, ConfigBase
 from apprc.runtime.resolution import ResolvedConfig
 from apprc.user_files.env_files.updates import EnvFileUpdate
-from apprc.user_files.storage_roots.model import StorageRegistry
-from apprc.interfaces.tui.editor.storage_base import StorageWorkflowBase
+from apprc.user_files.workspace_roots.model import WorkspaceRegistry
 
 
 def test_definitions_do_not_depend_on_operations() -> None:
@@ -91,10 +90,10 @@ def test_top_level_facade_exports_stable_config_interfaces() -> None:
     assert schema_api.ConfigOwner is ConfigOwner
     assert schema_api.ConfigField is ConfigField
     assert files_api.EnvFileUpdate is EnvFileUpdate
-    assert storage_api.StorageRegistry is StorageRegistry
+    assert workspaces_api.WorkspaceRegistry is WorkspaceRegistry
     assert not hasattr(files_api, "resolve_package_root")
-    assert not hasattr(storage_api, "register_storage")
-    assert not hasattr(files_api, "set_storage_dotenv_value")
+    assert not hasattr(workspaces_api, "register_workspace")
+    assert not hasattr(files_api, "set_workspace_dotenv_value")
     assert callable(provenance_api.provenance_of)
 
 
@@ -102,7 +101,7 @@ def test_definition_and_runtime_facades_stay_owned() -> None:
     assert not hasattr(definition_api, "ConfigOwner")
     assert not hasattr(definition_api, "ConfigField")
     assert not hasattr(definition_api, "AppRC")
-    assert not hasattr(runtime_api, "StorageRegistry")
+    assert not hasattr(runtime_api, "WorkspaceRegistry")
     assert not hasattr(runtime_api, "EnvFileUpdate")
     assert not hasattr(runtime_api, "ResolvedConfig")
     assert not hasattr(contract_api, "AppConfigSpec")
@@ -111,19 +110,13 @@ def test_definition_and_runtime_facades_stay_owned() -> None:
 def test_supported_helper_namespaces_are_lazy_boundaries() -> None:
     """Supported helper namespaces own lazy public exports."""
     assert importlib.import_module("apprc.files").__all__
-    assert importlib.import_module("apprc.storage").__all__
+    assert importlib.import_module("apprc.workspaces").__all__
     assert not hasattr(importlib.import_module("apprc.runtime"), "__all__")
     assert not hasattr(importlib.import_module("apprc.user_files"), "__all__")
     assert not hasattr(
-        importlib.import_module("apprc.user_files.storage_roots"),
+        importlib.import_module("apprc.user_files.workspace_roots"),
         "__all__",
     )
-
-
-def test_storage_workflow_base_does_not_define_cross_workflow_stubs() -> None:
-    """Storage leaf workflows must not inherit placeholder cross-actions."""
-    assert not hasattr(StorageWorkflowBase, "register_storage_directory_flow")
-    assert not hasattr(StorageWorkflowBase, "remove_live_storage")
 
 
 def test_old_config_package_is_removed() -> None:

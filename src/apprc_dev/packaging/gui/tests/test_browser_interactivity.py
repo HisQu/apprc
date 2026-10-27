@@ -5,10 +5,11 @@ from __future__ import annotations
 import socket
 from pathlib import Path
 
-import apprc as rc
 import gradio as gr
-from playwright.sync_api import expect, sync_playwright
 from apprc_gui import ConfigEditor
+from playwright.sync_api import expect, sync_playwright
+
+import apprc as rc
 
 
 def test_prefilled_fields_and_selectors_are_interactive(
@@ -17,9 +18,10 @@ def test_prefilled_fields_and_selectors_are_interactive(
     """Allow browser edits to prefilled controls and keep read-only fields disabled."""
     app = rc.AppRC(
         app_id="gui-browser-check",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(selector_env_key="GUI_BROWSER_STORAGE"),
-        apprc_dir=tmp_path / "config",
+        workspaces=rc.Workspaces(selector_env_key="GUI_BROWSER_WORKSPACE"),
     )
 
     @app.config("server", prefix="GUI_BROWSER_")
@@ -44,10 +46,14 @@ def test_prefilled_fields_and_selectors_are_interactive(
         )
 
     manager = app.manage(environment={})
-    manager.setup(storage_root=tmp_path / "storage-one", storage_name="one")
-    manager.register_storage("two", tmp_path / "storage-two")
-    manager.setup_user_dotenv()
-    editor = ConfigEditor(manager)
+    app.ensure_path("config")
+
+    workspace_manager = app.workspaces(environment={})
+    workspace_manager.register_workspace("one", tmp_path / "workspace-one")
+    workspace_manager.select_workspace("one")
+    workspace_manager.register_workspace("two", tmp_path / "workspace-two")
+    manager.setup()
+    editor = ConfigEditor(manager, workspace_manager)
 
     with gr.Blocks() as blocks:
         editor.render()
@@ -87,25 +93,27 @@ def test_prefilled_fields_and_selectors_are_interactive(
                 scope = page.get_by_label("Save changes in")
                 expect(scope).to_be_enabled()
                 scope.click()
-                page.get_by_role("option", name="storage").click()
+                page.get_by_role("option", name="workspace").click()
 
-                storage_folder = page.get_by_label("Storage folder")
-                expect(storage_folder).to_be_enabled()
-                expect(storage_folder).to_have_value(
-                    str(manager.paths.root / "storage")
+                workspace_folder = page.get_by_label("Workspace folder")
+                expect(workspace_folder).to_be_enabled()
+                expect(workspace_folder).to_have_value(
+                    str(manager.paths.require("config") / "workspaces")
                 )
-                selected_storage = page.get_by_label("Selected storage")
-                expect(selected_storage).to_be_enabled()
-                expect(selected_storage).to_have_value("one")
-                selected_storage.click()
+                selected_workspace = page.get_by_label("Selected workspace")
+                expect(selected_workspace).to_be_enabled()
+                expect(selected_workspace).to_have_value("one")
+                selected_workspace.click()
                 page.get_by_role("option", name="two").click()
-                page.get_by_role("button", name="Use selected storage").click()
+                page.get_by_role(
+                    "button", name="Use selected workspace"
+                ).click()
                 status = page.get_by_label("Configuration status")
-                expect(status).to_have_value("Selected storage two.")
+                expect(status).to_have_value("Selected workspace two.")
 
                 scope = page.get_by_label("Save changes in")
                 scope.click()
-                page.get_by_role("option", name="storage").click()
+                page.get_by_role("option", name="workspace").click()
                 server_port = page.get_by_label(
                     "Server port (restart required)"
                 )
@@ -118,7 +126,7 @@ def test_prefilled_fields_and_selectors_are_interactive(
                     "button", name="Save", exact=True
                 ).first.click()
                 expect(status).to_have_value(
-                    "Saved GUI_BROWSER_PORT in the storage layer. Restart "
+                    "Saved GUI_BROWSER_PORT in the workspace layer. Restart "
                     "the application to reload configuration."
                 )
                 assert manager.resolve().build(Server).port == 9000

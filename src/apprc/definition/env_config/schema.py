@@ -86,7 +86,7 @@ class ConfigOwner:
     :param rc_path: Runtime config path components from the application root
         config object.
     :param fields: Owner-local field specs.
-    :param requires_storage: Whether field inspection needs selected storage.
+    :param requires_workspace: Whether inspection needs a selected workspace.
     """
 
     key: str
@@ -94,7 +94,7 @@ class ConfigOwner:
     env_prefix: str
     rc_path: tuple[str, ...]
     fields: tuple[ConfigField, ...] = ()
-    requires_storage: bool = False
+    requires_workspace: bool = False
     _settings_class_cache: type[Any] | None = field(
         default=None,
         init=False,

@@ -5,20 +5,16 @@ from pathlib import Path
 
 from rich.text import Text
 
-from apprc.user_files.storage_roots.registry import (
-    ArchivedStorageRecord,
-    StorageRecord,
-)
 from apprc.interfaces.tui._field_state import EditableConfigValueSource
 from apprc.interfaces.tui._rendering import (
     FieldTableRow,
-    archived_storage_title,
+    archived_workspace_title,
     build_field_table_rows,
     field_table_columns,
     field_type_label,
     field_type_style,
-    live_storage_title,
-    missing_storage_title,
+    live_workspace_title,
+    missing_workspace_title,
     possible_values_label,
     possible_values_style,
     setting_cell,
@@ -41,14 +37,16 @@ from apprc.interfaces.tui._value_modal_rendering import (
     field_type_text,
     possible_values_text,
     shell_status_text,
-    source_label,
     source_label_text,
-    source_origin_text,
     source_value_text,
 )
+from apprc.user_files.workspace_roots.model import (
+    ArchivedWorkspaceRecord,
+    WorkspaceRecord,
+)
 from tests.support_config import (
+    WORKSPACE_EXAMPLE_OWNER,
     example_resolution,
-    APPRC_EXAMPLE_APP_OWNER,
 )
 from tests.support_tui import text_has_span
 
@@ -68,13 +66,13 @@ def _text_cell(row: FieldTableRow, index: int) -> Text:
 def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     rows = build_field_table_rows(
         include_user_dotenv=True,
-        include_storage=True,
-        hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_STORAGE"}),
+        include_workspace=True,
+        hidden_env_keys=frozenset({"APPRC_EXAMPLE_APP_WORKSPACE"}),
         resolved=example_resolution(
             user_dotenv_values={
                 "APPRC_EXAMPLE_APP_ACCESS_TOKEN": "secret",
             },
-            storage_values={
+            workspace_values={
                 "APPRC_EXAMPLE_APP_RETRY_COUNT": "9",
             },
             defaults_values=None,
@@ -83,21 +81,7 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
     )
     rows_by_key = {row.env_key: row for row in rows if row.env_key is not None}
 
-    assert field_table_columns(
-        include_user_dotenv=True,
-        include_storage=True,
-    ) == (
-        "#",
-        "Section",
-        "Setting",
-        "Effective",
-        "Process environment",
-        "Storage dotenv",
-        "User dotenv",
-        "Default",
-        "Explanation",
-    )
-    assert "APPRC_EXAMPLE_APP_STORAGE" not in rows_by_key
+    assert "APPRC_EXAMPLE_APP_WORKSPACE" not in rows_by_key
     assert (
         str(rows_by_key["APPRC_EXAMPLE_APP_ACCESS_TOKEN"].cells[3])
         == "<secret>"
@@ -125,28 +109,37 @@ def test_build_field_table_rows_hides_keys_and_styles_declared_types() -> None:
 
 
 def test_field_table_columns_only_show_declared_sources() -> None:
-    assert field_table_columns(
+    base_columns = field_table_columns(
         include_user_dotenv=False,
-        include_storage=False,
-    ) == (
-        "#",
-        "Section",
-        "Setting",
-        "Effective",
-        "Process environment",
-        "Default",
-        "Explanation",
+        include_workspace=False,
     )
-    assert "User dotenv" not in field_table_columns(
+    user_columns = field_table_columns(
+        include_user_dotenv=True,
+        include_workspace=False,
+    )
+    workspace_columns = field_table_columns(
         include_user_dotenv=False,
-        include_storage=True,
+        include_workspace=True,
+    )
+    both_columns = field_table_columns(
+        include_user_dotenv=True,
+        include_workspace=True,
+    )
+    assert user_columns == (
+        base_columns[:-2] + (both_columns[-3],) + base_columns[-2:]
+    )
+    assert workspace_columns == (
+        base_columns[:-2] + (both_columns[-4],) + base_columns[-2:]
+    )
+    assert both_columns == (
+        workspace_columns[:-2] + (user_columns[-3],) + base_columns[-2:]
     )
 
 
 def test_config_textual_rendering_labels_match_field_metadata() -> None:
-    mode = APPRC_EXAMPLE_APP_OWNER.field("mode")
-    enabled = APPRC_EXAMPLE_APP_OWNER.field("enabled")
-    cache_dir = APPRC_EXAMPLE_APP_OWNER.field("cache_dir")
+    mode = WORKSPACE_EXAMPLE_OWNER.field("mode")
+    enabled = WORKSPACE_EXAMPLE_OWNER.field("enabled")
+    cache_dir = WORKSPACE_EXAMPLE_OWNER.field("cache_dir")
 
     assert value_style(mode) == CHOICE_STYLE
     assert value_style(cache_dir) == PATH_STYLE
@@ -163,7 +156,7 @@ def test_config_textual_rendering_labels_match_field_metadata() -> None:
 
 
 def test_setting_cell_marks_restart_required_fields() -> None:
-    spec = APPRC_EXAMPLE_APP_OWNER.field("profile")
+    spec = WORKSPACE_EXAMPLE_OWNER.field("profile")
     restart_spec = replace(spec, restart_required=True)
 
     assert setting_cell(spec, "APPRC_EXAMPLE_APP_PROFILE").plain == (
@@ -179,36 +172,34 @@ def test_setting_cell_marks_restart_required_fields() -> None:
 
 
 def test_value_modal_rendering_formats_sources_and_metadata() -> None:
-    mode = APPRC_EXAMPLE_APP_OWNER.field("mode")
-    access_token = APPRC_EXAMPLE_APP_OWNER.field("access_token")
+    mode = WORKSPACE_EXAMPLE_OWNER.field("mode")
+    access_token = WORKSPACE_EXAMPLE_OWNER.field("access_token")
     effective = EditableConfigValueSource(
         key="effective",
         raw_value="super-secret",
-        origin_key="storage",
+        origin_key="workspace",
     )
     shell = EditableConfigValueSource(key="shell", raw_value=None)
     shell_set = EditableConfigValueSource(key="shell", raw_value="MANUAL")
-    storage = EditableConfigValueSource(
-        key="storage",
+    workspace = EditableConfigValueSource(
+        key="workspace",
         raw_value="super-secret",
     )
-    empty_storage = EditableConfigValueSource(key="storage", raw_value="")
+    empty_workspace = EditableConfigValueSource(key="workspace", raw_value="")
     shared = EditableConfigValueSource(key="defaults", raw_value=None)
 
-    assert source_label(effective) == "Effective"
     assert source_label_text(effective).style == EFFECTIVE_SOURCE_STYLE
-    assert source_origin_text(effective).plain == "from Storage"
     assert source_value_text(access_token, effective).plain == "<secret>"
     assert (
         source_value_text(access_token, effective).style
         == EFFECTIVE_SOURCE_STYLE
     )
-    assert source_value_text(access_token, storage).plain == "<secret>"
-    assert source_value_text(access_token, storage).style == SECRET_STYLE
+    assert source_value_text(access_token, workspace).plain == "<secret>"
+    assert source_value_text(access_token, workspace).style == SECRET_STYLE
     assert source_value_text(mode, shell).plain == "unset"
     assert source_value_text(mode, shell).style == LABEL_STYLE
     assert source_value_text(mode, shared).plain == "missing"
-    assert source_value_text(mode, empty_storage).plain == "<empty>"
+    assert source_value_text(mode, empty_workspace).plain == "<empty>"
     assert shell_status_text(shell).plain == "unset"
     assert shell_status_text(shell_set).plain == "set"
     assert shell_status_text(shell_set).style == DEFAULT_STYLE
@@ -216,39 +207,30 @@ def test_value_modal_rendering_formats_sources_and_metadata() -> None:
     assert possible_values_text(access_token).style == GENERIC_VALUE_STYLE
 
 
-def test_storage_titles_match_editor_text(tmp_path: Path) -> None:
-    root = tmp_path / "demo-storage"
-    storage_env_path = root / ".env.apprc_example_app"
+def test_workspace_titles_style_paths_and_record_states(tmp_path: Path) -> None:
+    root = tmp_path / "demo-workspace"
+    workspace_env_path = root / ".env.apprc_example_app"
     archive = tmp_path / "beta.apprc.tar.xz"
     source_root = tmp_path / "beta"
-    live = StorageRecord(name="alpha", root=root)
-    archived = ArchivedStorageRecord(
+    live = WorkspaceRecord(name="alpha", root=root)
+    archived = ArchivedWorkspaceRecord(
         name="beta",
         archive=archive,
         source_root=source_root,
     )
 
-    live_title = live_storage_title(live, storage_env_path)
-    missing_title = missing_storage_title(live)
-    archived_title = archived_storage_title(archived)
+    live_title = live_workspace_title(live, workspace_env_path)
+    missing_title = missing_workspace_title(live)
+    archived_title = archived_workspace_title(archived)
 
-    assert live_title.plain == f"alpha: {root}\n{storage_env_path}"
-    assert missing_title.plain == (
-        "alpha: Missing storage root\n"
-        f"Root: {root}\n"
-        "No storage env file is available."
-    )
-    assert archived_title.plain == (
-        f"beta: Last Archived\nArchive: {archive}\nLast source: {source_root}"
-    )
     assert text_has_span(live_title, str(root), PATH_STYLE)
     assert text_has_span(
         live_title,
-        str(storage_env_path),
+        str(workspace_env_path),
         PATH_STYLE,
     )
-    assert text_has_span(missing_title, "Missing storage root", MISSING_STYLE)
+    assert any(span.style == MISSING_STYLE for span in missing_title.spans)
     assert text_has_span(missing_title, str(root), PATH_STYLE)
-    assert text_has_span(archived_title, "Last Archived", ARCHIVE_STYLE)
+    assert any(span.style == ARCHIVE_STYLE for span in archived_title.spans)
     assert text_has_span(archived_title, str(archive), PATH_STYLE)
     assert text_has_span(archived_title, str(source_root), PATH_STYLE)

@@ -1,7 +1,7 @@
 # Explicit Env Precedence Example
 
 `explicit_env_precedence` makes selector and value precedence observable. Its
-`APPRC_EXAMPLE_PRECEDENCE_STORAGE` selector accepts a registered name or path.
+`APPRC_EXAMPLE_PRECEDENCE_WORKSPACE` selector accepts a registered name or path.
 
 Start a clean session:
 

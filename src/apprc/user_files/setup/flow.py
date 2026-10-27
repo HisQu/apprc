@@ -1,41 +1,17 @@
-"""Explicit setup operations for AppRC-managed files."""
+"""Result and error records for explicit AppRC configuration setup."""
 
 from __future__ import annotations
 
-from apprc.user_files.app_home.application import AppFiles
-
-# == Standard Library ===========================================
-from collections.abc import Mapping
 from dataclasses import dataclass
-import os
 from pathlib import Path
-
-# == Internal ===================================================
-from apprc.definition.app_config.spec import AppConfigSpec
-from apprc.user_files.app_home.locations import AppRCDirectoryError
-from apprc.user_files.env_files.files import ensure_env_file
-from apprc.user_files.env_files.secrets import (
-    ensure_secret_file,
-    repair_secret_file_permissions,
-)
-from apprc.user_files.app_home._paths import path_entry_exists
-from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
-from apprc.user_files.storage_roots.paths import (
-    StorageRootPathError,
-    resolve_storage_root_path,
-)
-from apprc.user_files.storage_roots.registry import (
-    register_storage,
-    select_storage,
-)
 
 
 class ConfigSetupError(ValueError):
     """Readable setup failure with optional CLI context.
 
-    :param message: Human-facing failure text.
-    :param param_hint: Optional Typer parameter hint.
-    :param exit_code: Optional process exit code for user cancellation.
+    :param message: Human-readable setup failure.
+    :param param_hint: Optional Typer parameter hint for the cause.
+    :param exit_code: Optional command exit code.
     """
 
     def __init__(
@@ -53,231 +29,11 @@ class ConfigSetupError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ConfigSetupResult:
-    """Files initialized by one setup run.
+    """Configuration locations initialized by one explicit setup run.
 
-    :param apprc_dir: AppRC directory used for this setup run.
-    :param active_storage_root: Registered storage root, if supported.
-    :param storage_dotenv: Storage-local dotenv file, if supported.
-    :param user_dotenv: Per-user dotenv file, if declared.
+    :param config_dir: Captured configuration component root.
+    :param user_dotenv: Initialized preference file, when declared.
     """
 
-    apprc_dir: Path
-    active_storage_root: Path | None
-    storage_dotenv: Path | None
+    config_dir: Path
     user_dotenv: Path | None
-
-
-class ConfigSetupFlow:
-    """Reusable noninteractive setup operations for one application."""
-
-    def __init__(
-        self,
-        spec: AppConfigSpec,
-        *,
-        environment: Mapping[str, str] | None = None,
-    ) -> None:
-        """Store the application whose managed files will be initialized."""
-        self.spec = spec
-        self.environment = dict(
-            os.environ if environment is None else environment
-        )
-
-    def ensure_user_dotenv(self, *, apprc_dir: Path | None = None) -> Path:
-        """Create the per-user dotenv file.
-
-        :return: Fixed ``apprc.user.env`` path.
-        """
-        try:
-            proc_env = self._proc_env_for_apprc_dir(apprc_dir)
-            files = AppFiles(self.spec)
-            try:
-                status = ensure_secret_file(
-                    files.user_secret_dotenv_path(proc_env)
-                )
-            except OSError as exc:
-                raise ConfigSetupError(
-                    "Could not create the user secret file: "
-                    f"{exc}. Review the AppRC directory permissions, then run "
-                    "`config secrets repair --scope user`.",
-                    param_hint="--apprc-dir",
-                ) from exc
-            if not status.available:
-                issue = status.issue or "The secret file is unavailable."
-                next_step = (
-                    "Move or remove the file blocking the AppRC directory, "
-                    "then run setup again."
-                    if issue == "The parent path exists but is not a directory."
-                    else "Review the AppRC directory permissions, then run "
-                    "`config secrets repair --scope user`."
-                )
-                raise ConfigSetupError(
-                    f"Could not prepare the user secret file: {issue} "
-                    f"{next_step}",
-                    param_hint="--apprc-dir",
-                )
-            return files.ensure_user_dotenv(proc_env)
-        except AppRCDirectoryError as exc:
-            raise ConfigSetupError(
-                str(exc),
-                param_hint="--apprc-dir",
-            ) from exc
-
-    def run_user_dotenv_setup(
-        self,
-        *,
-        apprc_dir: Path | None = None,
-    ) -> ConfigSetupResult:
-        """Create the explicitly declared per-user dotenv file.
-
-        :param apprc_dir: Optional directory override for this setup run.
-        :return: Initialized file paths.
-        """
-        proc_env = self._proc_env_for_apprc_dir(apprc_dir)
-        return ConfigSetupResult(
-            apprc_dir=AppFiles(self.spec).apprc_dir(proc_env),
-            active_storage_root=None,
-            storage_dotenv=None,
-            user_dotenv=self.ensure_user_dotenv(apprc_dir=apprc_dir),
-        )
-
-    def run_storage_setup(
-        self,
-        storage_root: Path,
-        *,
-        storage_name: str = "default",
-        apprc_dir: Path | None = None,
-    ) -> ConfigSetupResult:
-        """Create the registry and one named storage.
-
-        Repeating setup for the same name and root is safe. Setup never
-        repoints or moves an existing storage implicitly. A user dotenv is
-        created only when the application declares that separate feature.
-
-        :param storage_root: Root for the initial named storage.
-        :param storage_name: Registry name, normally ``default``.
-        :param apprc_dir: Optional directory override for this setup run.
-        :return: Initialized file paths.
-        """
-        spec = self.spec
-        spec.require_storage()
-        proc_env = self._proc_env_for_apprc_dir(apprc_dir)
-        registry_path = AppFiles(spec).preferred_apprc_toml_path(proc_env)
-        try:
-            root = resolve_storage_root_path(
-                storage_root,
-                base=registry_path.parent,
-            )
-        except StorageRootPathError as exc:
-            raise ConfigSetupError(
-                str(exc),
-                param_hint="--storage-root",
-            ) from exc
-        if root.exists() and not root.is_dir():
-            raise ConfigSetupError(
-                f"Storage root exists but is not a directory: {root}",
-                param_hint="--storage-root",
-            )
-
-        user_dotenv = (
-            AppFiles(spec).user_dotenv_path(proc_env)
-            if spec.uses_user_dotenv()
-            else None
-        )
-        user_dotenv_existed = (
-            path_entry_exists(user_dotenv) if user_dotenv is not None else False
-        )
-        try:
-            ensured_user_dotenv = (
-                self.ensure_user_dotenv(apprc_dir=apprc_dir)
-                if spec.uses_user_dotenv()
-                else None
-            )
-            root_existed = root.exists()
-            registry = load_storage_registry_or_empty(registry_path)
-            existing = registry.storages.get(storage_name)
-            if existing is None:
-                register_storage(
-                    name=storage_name,
-                    root=root,
-                    path=registry_path,
-                    storage_dotenv_filename=spec.storage_dotenv_filename,
-                )
-            elif existing.root != root:
-                raise ConfigSetupError(
-                    f"Storage {storage_name!r} already points to "
-                    f"{existing.root}. Setup does not change registered "
-                    "locations. If the files were moved manually, use "
-                    "`config storage repoint`. Use `config storage move` "
-                    "only when AppRC should move the files.",
-                    param_hint="--storage-root",
-                )
-            else:
-                if not root.is_dir():
-                    raise ConfigSetupError(
-                        f"Registered storage root does not exist: {root}. Repoint the registration to its current location.",
-                        param_hint="--storage-root",
-                    )
-                root.mkdir(parents=True, exist_ok=True)
-                ensure_env_file(AppFiles(spec).storage_dotenv_path(root))
-                if registry.selected_storage is None:
-                    select_storage(name=storage_name, path=registry_path)
-            secret_path = AppFiles(spec).storage_secret_dotenv_path(root)
-            if root_existed:
-                ensure_secret_file(secret_path)
-            else:
-                repair_secret_file_permissions(secret_path)
-        except ConfigSetupError:
-            self._remove_new_user_dotenv(
-                user_dotenv,
-                existed=user_dotenv_existed,
-            )
-            raise
-        except (AppRCDirectoryError, OSError, ValueError) as exc:
-            self._remove_new_user_dotenv(
-                user_dotenv,
-                existed=user_dotenv_existed,
-            )
-            raise ConfigSetupError(str(exc)) from exc
-
-        return ConfigSetupResult(
-            apprc_dir=registry_path.parent,
-            active_storage_root=root,
-            storage_dotenv=AppFiles(spec).storage_dotenv_path(root),
-            user_dotenv=ensured_user_dotenv,
-        )
-
-    @staticmethod
-    def _remove_new_user_dotenv(
-        path: Path | None,
-        *,
-        existed: bool,
-    ) -> None:
-        """Remove a newly created empty user dotenv after setup failure.
-
-        :param path: User dotenv candidate.
-        :param existed: Whether it existed before setup.
-        """
-        if path is None or existed or not path.is_file():
-            return
-        try:
-            if path.stat().st_size == 0:
-                path.unlink()
-                path.parent.rmdir()
-        except OSError:
-            return
-
-    def _proc_env_for_apprc_dir(
-        self,
-        apprc_dir: Path | None,
-    ) -> dict[str, str] | None:
-        """Return setup-local directory selection without changing the shell.
-
-        :param apprc_dir: Optional command or editor selection.
-        :return: Process environment copy with the selection, or ``None``.
-        """
-        if apprc_dir is None:
-            return dict(self.environment)
-        return {
-            **self.environment,
-            self.spec.apprc_dir_env_key: str(apprc_dir),
-        }

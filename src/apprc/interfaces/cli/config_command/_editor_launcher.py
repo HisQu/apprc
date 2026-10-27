@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-
 # == Standard Library ========================
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any
 
 # == 3rd Party ===============================
 import typer
 
 # == Internal ================================
-from apprc.public.app_rc import AppRC
 from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli.config_command._selector_context import (
     ConfigSelectorContext,
@@ -21,13 +19,14 @@ from apprc.interfaces.cli.config_command._selector_context import (
     _empty_selector_context,
 )
 from apprc.interfaces.cli.config_command.state import (
-    ConfigCliState,
-    initial_storage_from_state,
+    DefaultConfigCliState,
+    initial_workspace_from_state,
 )
-from apprc.user_files.storage_roots.registry import StorageRegistry
-from apprc.user_files.storage_roots.selector import StorageSelectorError
-from apprc.user_files.storage_roots.selector import StorageSelectorIssue
-from apprc.user_files.app_home.locations import AppRCDirectoryError
+from apprc.public.app_rc import AppRC
+from apprc.services.manager import ConfigManager
+from apprc.services.workspaces import WorkspaceManager
+from apprc.user_files.workspace_roots.model import WorkspaceRegistry
+from apprc.user_files.workspace_roots.selector import WorkspaceSelectorIssue
 
 if TYPE_CHECKING:
     from apprc.interfaces.tui import ConfigEditorApp
@@ -40,19 +39,12 @@ MISSING_TUI_EXTRA_MESSAGE = (
 
 @dataclass(slots=True)
 class ConfigEditorLauncher:
-    """Resolve editor startup state and launch the Textual editor.
-
-    :param apprc: Application config facade.
-    :param editor_app_cls: Optional app-provided editor subclass.
-    :param config_group_name: Generated config command group name.
-    :param initial_storage_with_context_hook: Optional selector-aware initial
-        selection.
-    """
+    """Resolve editor startup state and launch the Textual editor."""
 
     apprc: AppRC
     editor_app_cls: type["ConfigEditorApp"] | None
     config_group_name: str
-    initial_storage_with_context_hook: (
+    initial_workspace_with_context_hook: (
         Callable[[Any, ConfigSelectorContext], str | None] | None
     )
 
@@ -60,44 +52,40 @@ class ConfigEditorLauncher:
         self,
         *,
         current_state: ResolvedConfigState | None,
-        storage_registry: StorageRegistry | None,
-        storage_registry_error: str | None = None,
-        active_storage_root: Path | None,
-        storage_selector_issue: StorageSelectorIssue | None = None,
+        workspace_registry: WorkspaceRegistry | None,
+        workspace_registry_error: str | None = None,
+        active_workspace_root: Path | None,
+        workspace_selector_issue: WorkspaceSelectorIssue | None = None,
         selector_context: ConfigSelectorContext | None = None,
+        workspace_manager: WorkspaceManager | None = None,
     ) -> None:
-        """Create and run the Textual config editor.
-
-        :param current_state: Runtime config state available to the editor.
-        :param storage_registry: Named-storage records to display, if enabled.
-        :param storage_registry_error: Read failure that blocks registry writes.
-        :param active_storage_root: Directly selected storage path, if any.
-        :param storage_selector_issue: Selector failure shown without treating
-            managed files as incomplete.
-        :param selector_context: Host CLI selector inputs.
-        """
-        selected_storage = None
-        if current_state is not None:
-            try:
-                selected_storage = self.initial_storage(
-                    current_state,
-                    storage_registry=storage_registry,
-                    selector_context=selector_context,
-                )
-            except (
-                AppRCDirectoryError,
-                StorageSelectorError,
-                ValueError,
-            ) as exc:
-                storage_selector_issue = _merge_selector_issue(
-                    storage_selector_issue,
-                    message=str(exc),
-                    configured_storage=(
-                        storage_registry.selected_storage
-                        if storage_registry is not None
-                        else None
-                    ),
-                )
+        """Create and run the Textual config editor."""
+        context = selector_context or _empty_selector_context()
+        options = ResolveOptions(
+            workspace=context.workspace,
+            env_files=context.env_files,
+            env_file_overrides_os_environ=(
+                context.env_file_overrides_os_environ
+            ),
+            load_dotenv_layers=context.load_dotenv_layers,
+            layout=context.layout,
+        )
+        paths = context.paths or self.apprc.paths(
+            options, environment=context.environment
+        )
+        manager = self.apprc._manage_with_paths(
+            options, context.environment, paths
+        )
+        selected_workspace = self.initial_workspace(
+            current_state,
+            workspace_registry=workspace_registry,
+            selector_context=context,
+            manager=manager,
+        )
+        if self.apprc.schema.uses_workspaces() and workspace_manager is None:
+            workspace_manager = self.apprc.workspaces(
+                manager.options, environment=manager.environment
+            )
         editor_app_cls = self.editor_app_cls
         if editor_app_cls is None:
             try:
@@ -107,51 +95,63 @@ class ConfigEditorLauncher:
                     raise typer.BadParameter(MISSING_TUI_EXTRA_MESSAGE) from exc
                 raise
             editor_app_cls = ConfigEditorApp
-
-        source_context = selector_context or _empty_selector_context()
-        manager = self.apprc.manage(
-            ResolveOptions(
-                env_files=source_context.env_files,
-                env_file_overrides_os_environ=source_context.env_file_overrides_os_environ,
-                load_dotenv_layers=source_context.load_dotenv_layers,
-            ),
-            environment=source_context.environment,
-        )
         editor_app = editor_app_cls(
             manager=manager,
             apprc=self.apprc,
-            storage_registry=storage_registry,
-            storage_registry_error=storage_registry_error,
-            initial_storage=selected_storage,
-            active_storage_root=active_storage_root,
-            storage_selector_issue=storage_selector_issue,
+            workspace_manager=workspace_manager,
+            workspace_registry_error=workspace_registry_error,
+            initial_workspace=selected_workspace,
+            active_workspace_root=active_workspace_root,
+            workspace_selector_issue=workspace_selector_issue,
             config_group_name=self.config_group_name,
         )
         editor_app.run()
 
-    def initial_storage(
+    def initial_workspace(
         self,
-        resolved_state: ResolvedConfigState,
+        resolved_state: ResolvedConfigState | None,
         *,
-        storage_registry: StorageRegistry | None,
+        workspace_registry: WorkspaceRegistry | None,
         selector_context: ConfigSelectorContext | None = None,
+        manager: ConfigManager | None = None,
     ) -> str | None:
-        """Return the storage name the editor should select on startup."""
+        """Return the workspace name the editor should select on startup."""
         context = selector_context or _empty_selector_context()
-        state = resolved_state.state
+        if not self.apprc.schema.uses_workspaces():
+            return None
         if (
-            resolved_state.app_owned
-            and self.initial_storage_with_context_hook is not None
+            resolved_state is not None
+            and resolved_state.app_owned
+            and self.initial_workspace_with_context_hook is not None
         ):
-            return self.initial_storage_with_context_hook(state, context)
-        return initial_storage_from_state(
-            self.apprc,
-            cast(ConfigCliState, state),
-            registry=storage_registry,
-            explicit_values=context.explicit_values,
-            env_file_overrides_os_environ=(
-                context.env_file_overrides_os_environ
-            ),
+            return self.initial_workspace_with_context_hook(
+                resolved_state.state, context
+            )
+        if resolved_state is not None:
+            state = resolved_state.state
+            if not isinstance(state, DefaultConfigCliState):
+                state = DefaultConfigCliState(
+                    resolved=getattr(state, "resolved", None),
+                    workspace=context.workspace,
+                )
+            if state.resolved is not None:
+                return initial_workspace_from_state(
+                    self.apprc,
+                    state,
+                    explicit_values=context.explicit_values,
+                    env_file_overrides_os_environ=(
+                        context.env_file_overrides_os_environ
+                    ),
+                )
+        resolved = (manager or self.apprc.manage()).resolve()
+        return (
+            resolved.workspace.workspace_name
+            if resolved.workspace is not None
+            else (
+                workspace_registry.selected_workspace
+                if workspace_registry is not None
+                else None
+            )
         )
 
 
@@ -160,31 +160,4 @@ def _module_not_found_is_textual(exc: ModuleNotFoundError) -> bool:
     missing_name = exc.name
     return missing_name == "textual" or (
         missing_name is not None and missing_name.startswith("textual.")
-    )
-
-
-def _merge_selector_issue(
-    issue: StorageSelectorIssue | None,
-    *,
-    message: str,
-    configured_storage: str | None,
-) -> StorageSelectorIssue:
-    """Add one distinct failure message without losing selector provenance.
-
-    :param issue: Earlier selector issue, when active-root resolution failed.
-    :param message: Later initial-selection failure.
-    :param configured_storage: Registry fallback hidden by an override.
-    :return: Complete selector issue for the editor.
-    """
-    messages = [issue.message] if issue is not None else []
-    if message not in messages:
-        messages.append(message)
-    return StorageSelectorIssue(
-        selector=issue.selector if issue is not None else None,
-        message="\n".join(messages),
-        configured_storage=(
-            issue.configured_storage
-            if issue is not None
-            else configured_storage
-        ),
     )

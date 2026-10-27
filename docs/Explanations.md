@@ -9,14 +9,15 @@
   - [Configuration layers](#configuration-layers)
   - [Provenance](#provenance)
 - [Save settings and application data](#save-settings-and-application-data)
-  - [User dotenv and the AppRC directory](#user-dotenv-and-the-apprc-directory)
+  - [User dotenv](#user-dotenv)
   - [Secret companions](#secret-companions)
-  - [Storage](#storage)
-  - [Storage registry](#storage-registry)
+  - [Application paths](#application-paths)
+  - [Workspaces](#workspaces)
+  - [Layouts](#layouts)
+  - [Maintenance](#maintenance)
 - [Inspect and edit configuration](#inspect-and-edit-configuration)
   - [ConfigManager](#configmanager)
-  - [Config CLI](#config-cli)
-  - [Application-data CLI](#application-data-cli)
+  - [Application CLI](#application-cli)
   - [Config editor](#config-editor)
   - [Gradio editor](#gradio-editor)
 - [Compose and ship applications](#compose-and-ship-applications)
@@ -25,9 +26,10 @@
   - [Copies, overrides, and reloads](#copies-overrides-and-reloads)
   - [Installed packages and installer builds](#installed-packages-and-installer-builds)
 
-This page explains AppRC's components in the order you need them. A small
-application needs only an `AppRC`, a config section, and a `ResolvedConfig`.
-Files, storage, and interactive tools can be added as the application grows.
+This page explains typed settings, independent application paths, optional
+workspaces, configuration tools, and application-owned maintenance operations.
+A small application can use settings alone or declare one path such as cache.
+
 
 <br>
 
@@ -60,12 +62,11 @@ Its two main operations have different jobs:
 
 | Operation | What it creates | What you use it for |
 | --- | --- | --- |
-| [`MyRC.resolve()`](References.md#resolution) | A [`ResolvedConfig`](#resolvedconfig) containing values read from the configured sources | [Build typed settings](How-To-User-Guides.md#read-typed-settings) for application code. |
-| [`MyRC.manage()`](References.md#management) | A [`ConfigManager`](#configmanager) bound to this declaration | [Initialize or edit saved settings](How-To-User-Guides.md#save-a-user-preference) and manage data directories. |
+| [`MyRC.manage()`](References.md#configmanager) | A [`ConfigManager`](#configmanager) bound to this declaration | [Initialize or edit saved settings](How-To-User-Guides.md#save-a-user-preference). |
 
 The [basic settings example](EXAMPLES.md#settings-without-managed-files) uses
-only `resolve()`. Both operations are useful in the
-[user settings and storage example](EXAMPLES.md#user-settings-and-storage).
+only `resolve()`. The
+[user preferences example](EXAMPLES.md#persistent-user-preferences) adds config files.
 
 ## Config sections and fields
 
@@ -123,10 +124,10 @@ values for several sections.
 
 ## ResolvedConfig
 
-`ResolvedConfig` is the result of reading configuration sources for one run.
-`MyRC.resolve()` reads the enabled files and captures the process environment.
-It records the selected storage, if there is one, and which source supplies each
-value. It returns that information without writing files or changing `os.environ`.
+`ResolvedConfig` captures setting sources, the selected workspace, and `AppPaths`
+for one run. `MyRC.resolve()` reads configuration and bootstrap inputs without
+creating directories or changing `os.environ`. The same resolved snapshot keeps
+its original layout and path provenance even if settings are refreshed.
 
 `resolved.build(ClientSettings)` uses those values to construct a settings
 object. This is where AppRC converts field values and checks required fields.
@@ -149,9 +150,9 @@ prevent the [config editor](#config-editor) from inspecting and repairing it.
 <a id="why-explicit-snapshots"></a>
 Resolving again creates another `ResolvedConfig`. If a file changes between
 the two calls, the second result can contain new values while the first keeps
-the values it read. Selecting another storage also leaves earlier results
-unchanged. This permits separate tests or application jobs to use different
-settings in the same Python process.
+the values it read. Selecting another workspace also leaves the captured
+`AppPaths` unchanged. This permits separate tests or application jobs to use
+different settings and working directories in the same Python process.
 
 Passing `environment={}` excludes process environment values. Passing another
 mapping supplies controlled inputs, as in the [basic example](EXAMPLES.md#settings-without-managed-files).
@@ -174,10 +175,10 @@ The usual priority, from lowest to highest, is:
 | --- | --- |
 | Python field default | A fallback written beside the field's type and documentation. |
 | Packaged `apprc.defaults.env` | Defaults shipped as data inside the application package. |
-| [User dotenv](#user-dotenv-and-the-apprc-directory) | Preferences saved for this user. |
+| [User dotenv](#user-dotenv) | Preferences saved for this user. |
 | User [secret companion](#secret-companions) | Secret fields saved for this user; takes priority over the ordinary user dotenv. |
-| Selected [storage dotenv](#storage) | Settings saved with a particular data directory. |
-| Selected storage secret companion | Secret fields saved for that data directory; takes priority over its ordinary dotenv. |
+| Selected workspace dotenv | Overrides for the selected workspace. |
+| Workspace secret companion | Declared secret fields saved for the selected workspace. |
 | Explicit dotenv files | Extra inputs supplied for this invocation. |
 | Process environment | Values inherited by the process, often exported by a shell or deployment system. |
 
@@ -188,9 +189,9 @@ The [precedence example](EXAMPLES.md#explicit-dotenv-precedence) demonstrates th
 with distinct values so the winning source is visible.
 
 An application does not need all these layers. Packaged defaults require a
-`config_package`; the user and storage files require their respective declarations.
+`config_package`; user and workspace files require their respective declarations.
 The [dotenv guide](How-To-User-Guides.md#load-dotenv-files) shows how to supply an
-explicit file without enabling saved user settings or storage.
+explicit file without enabling saved preferences or a workspace.
 
 Constructor arguments override the resolved value for the constructed object.
 The [source precedence reference](References.md#source-precedence) also describes
@@ -220,116 +221,154 @@ helps the user compare the alternatives.
 # Save settings and application data
 
 <a id="capabilities-and-runtime-requirements"></a>
-## User dotenv and the AppRC directory
+## User dotenv
 
-The user dotenv is `apprc.user.env`, a file containing saved overrides for one
-user of the application. Enable it with `user_dotenv=rc.UserDotenv()` on `AppRC`.
-This is useful when a user changes a preference and expects it to survive the
-next run without changing the application package.
+The user dotenv is `apprc.user.env`, a file of saved preferences for one
+application user. Declare `user_dotenv=rc.UserDotenv()` to enable it, and also
+enable the config component with `paths=rc.Paths(config=True)`. The requirement
+is explicit: user preferences never turn on a path category.
 
-The file lives in the AppRC directory, which defaults to
-`~/.local/share/<app_id>`. For `app_id="demo"`, `DEMO_APPRC_DIR` relocates that
-directory. The [managed-files reference](References.md#managed-files) explains
-the other directory overrides. These paths are independent of the directory
-from which the user launches the application.
-
-Reading settings does not create the user dotenv. A missing file contributes no
-overrides. The application can explicitly [save a user preference](How-To-User-Guides.md#save-a-user-preference)
-through `ConfigManager`, or expose the [config editor](#config-editor) to users.
-The [user preferences example](EXAMPLES.md#persistent-user-preferences) needs no storage.
+The file is derived from `AppPaths.config_dir`. `MyRC.paths()` inspects the
+captured location without creating it; `MyRC.ensure_path("config")` initializes
+that category and records `.apprc-owner.json` before a managed write. See the
+[path reference](References.md#application-paths) for native and single-root
+placement. Missing optional files contribute no values when resolving.
 
 ## Secret companions
 
-A secret companion is a private dotenv file beside an ordinary managed layer.
-When a [config field](#config-sections-and-fields) has `secret=True`,
-`ConfigManager.plan_update()` targets `apprc.user.secret.env` for the user layer
-or `apprc.storage.secret.env` for a selected storage. Ordinary fields stay in
-`apprc.user.env` and `apprc.storage.env`. The [secret-setting guide](How-To-User-Guides.md#save-and-migrate-secret-settings)
-shows both paths and the explicit migration of old values.
+A secret companion is a private dotenv file beside a managed layer. For
+`secret=True`, `ConfigManager` writes user values to `apprc.user.secret.env` and
+workspace values to `apprc.workspace.secret.env`. Each companion is read after
+its ordinary dotenv, so secrets override ordinary assignments in that same
+layer. The [secret guide](How-To-User-Guides.md#save-and-repair-secret-settings)
+covers deliberate secret repair and movement within the current secret workflow.
 
-Each companion is read immediately after its ordinary layer. A saved storage
-secret therefore overrides a saved user secret, and a process environment value
-overrides both. The effective [provenance](#provenance) records the companion path.
-Setup creates empty companions, but reading configuration creates no files.
-If an existing AppRC directory is shared, user-layer setup reports the
-`config secrets repair --scope user` command. Interactive `config setup` and
-first-run setup also offer to make that directory private, then retry after the
-user confirms. Declining or passing `--yes` leaves the existing permissions and
-setup state unchanged. An existing shared storage directory can still hold
-ordinary settings, but secret saving stays blocked until the user explicitly
-repairs permissions or chooses another storage. The Gradio editor shows the
-reason and offers a repair action. The
-[permission commands](References.md#terminal-commands) provide the same repair
-through the CLI.
-
-On Linux and macOS, AppRC requires mode `0700` on the companion's parent
-directory and `0600` on the file. On Windows, it checks the file and directory
-ACL for access by ordinary other users. The repair command changes permissions
-only after the user requests it.
-AppRC does not encrypt the file; it does not protect against a process running
-as the same user or someone with administrator access.
-
-Storage archives omit `apprc.storage.secret.env`. AppRC refuses to archive a
-storage while declared secret assignments remain in its ordinary dotenv;
-otherwise the archive would carry those values. Restoring an archive creates an
-empty companion. A separate deliberate backup of secrets remains the user's
+AppRC does not encrypt these files. On Linux and macOS, the parent directory
+must be mode `0700` and the file `0600`; on Windows AppRC checks access by
+ordinary other users. `config secrets repair` changes permissions only after
+the user requests repair. A workspace archive omits its secret companion and
+refuses to include declared secret assignments left in an ordinary workspace
+dotenv. A separate deliberate backup of secrets remains the user's
 responsibility.
 
-## Storage
+## Application paths
 
-A storage is a persistent data directory used by the application. Enable storage
-with `storage=rc.Storage()` on `AppRC`. A data directory can live outside the
-source checkout and outside the installed package, so its location need not
-change when the application is updated or run from another directory.
+`Paths` is an opt-in declaration, not a record of existing directories:
 
-AppRC manages the directory's registration and its `apprc.storage.env` file.
-The application decides what data to write there. For example, an export tool
-can obtain the selected root and write `root / "report.txt"`. AppRC does not
-intercept file writes or redirect arbitrary relative paths. The
-[data-directory guide](How-To-User-Guides.md#store-data-outside-the-source-checkout)
-shows the complete operation.
+```python
+import apprc as rc
 
-Each storage has its own dotenv file. A storage named `work` might use one API
-endpoint while `personal` uses another. Selecting a storage selects both a data
-directory and its configuration layer. A user dotenv, if enabled, supplies shared
-preferences underneath those storage-specific overrides.
+MyRC = rc.AppRC(
+    app_id="demo",
+    paths=rc.Paths(config=True, appdata=True, cache=True, state=True),
+    layout=rc.Layout.native(),
+    user_dotenv=rc.UserDotenv(),
+)
 
-Declaring storage support does not force every operation to use it. An application
-can show help without a selected storage, then require storage for an export job
-with `ResolveOptions(storage_required=True)`. An explicitly supplied invalid
-storage still fails. The [storage-only example](EXAMPLES.md#named-storage-without-user-overrides)
-shows an operation that always needs storage.
+locations = MyRC.paths()
+config_dir = MyRC.ensure_path("config")
+```
 
-Some config sections contain fields that only matter after storage selection.
-Mark such a section with [`requires_storage=True`](References.md#declarations).
-When no storage is selected, [`ConfigManager.inspect()`](References.md#management)
-keeps its fields visible but marks them inactive and does not validate their
-values. Other sections remain active, so `config doctor` can still report a bad
-client setting. A runtime that needs the marked section must select storage
-before building it.
+The four booleans enable config, appdata, cache, and state independently. Logs
+are subordinate to state, not a fifth enabled category. With all booleans false,
+path resolution still returns an `AppPaths` record whose locations are `None`.
+`AppPaths.require(kind)` raises `ValueError` for a disabled location.
 
-## Storage registry
+`AppPaths` captures the chosen layout, source, and absolute component locations
+for one invocation. `paths()` is read-only: it neither creates directories nor
+repairs ownership. `ensure_path(kind)` creates only the requested enabled root,
+privately, and writes a `.apprc-owner.json` marker containing
+`schema_version: 1`, `app_id`, and category. `ensure_path("state")` does not
+create logs; `ensure_path("logs")` initializes only the log location, with state
+ownership initialized first when logs are nested within state.
 
-The storage registry is `apprc.toml` in the AppRC directory. It maps storage names
-to paths and remembers the default selection. Giving directories names lets a
-user select `work` rather than repeatedly typing its full path.
+Creation refuses symlinks/junctions, overlapping category roots, mismatched
+markers, and nonempty unowned directories. `adopt=True` on `ensure_path` is the
+explicit choice to claim a nonempty unowned root; it does not move or delete its
+contents. Config setup uses the same ownership checks, and
+`config init --adopt` provides explicit config adoption. Ordinary settings edits
+do not adopt unrelated directories. Read-only path inspection diagnoses unsafe
+locations without creating markers or changing files.
 
-Three operations must be distinguished:
+No code scans old locations as fallback. A path declaration alone does not
+enable `UserDotenv`, workspaces, or a provider operation. Ordinary application
+code can obtain an enabled directory and use its own database/files; maintenance
+providers are needed only for app-specific backup, restore, pruning, reset, or
+purge operations.
 
-| Operation | Effect |
-| --- | --- |
-| Browse a storage in the config editor | Show that directory's settings without changing the saved default. |
-| Supply `--storage work` or `ResolveOptions(storage="work")` | Choose `work` for this invocation. |
-| [Select the saved default](How-To-User-Guides.md#register-and-switch-data-directories) | Update the registry so later runs can use `work` when no invocation choice overrides it. |
+## Workspaces
 
-AppRC must select the directory before it can read that directory's dotenv file.
-For that reason, the storage dotenv cannot select its own storage. The user
-dotenv and packaged defaults also do not select storage. The
-[selection reference](References.md#storage-selection) lists the exact priority.
+`Workspaces(selector_env_key=None, registry=True)` declares optional selection
+of an application's working directory. A registered workspace has a name, a
+root, and a config overlay; its selection affects workspace settings and
+`ResolvedConfig.workspace`, never `AppPaths`. Registry-backed workspaces require
+`Paths(config=True)`, because the registry is `apprc.toml` in the config root.
+The new TOML has `schema_version = 1`, `selected_workspace`,
+`[workspaces.NAME] root = ...`, and `[archived_workspaces.NAME] archive/source_root`.
 
-The registry also supports [moving or reconnecting a directory](How-To-User-Guides.md#move-reconnect-or-archive-storage).
-Moving tells AppRC to move the data. Reconnecting updates the recorded path after
-the directory was moved elsewhere. Unregistering normally keeps the data.
+`MyRC.workspaces()` returns a `WorkspaceManager` for explicit list, register,
+select, rename, repoint, move, remove, archive, and restore operations.
+`initialize_workspace(root)` prepares a direct workspace root by creating
+`apprc.workspace.env`; it writes no config or registry file, and creates no
+secret companion until needed. Removing a registry entry does not delete its
+payload. New registered roots may not overlap AppRC-managed category roots. A
+workspace dotenv is `apprc.workspace.env`; secret assignments use
+`apprc.workspace.secret.env`. Config scope `workspace` writes to the currently
+selected workspace.
+
+`Workspaces(registry=False)` permits a direct directory selector without config,
+registry reads, or registration prompts. Relative direct selectors resolve
+against invocation current working directory. Call
+`WorkspaceManager.initialize_workspace(root)` before selecting a new direct
+root; `workspace init PATH` and `workspace info PATH` are the corresponding CLI
+commands. Named selectors fail with
+`ValueError("Named workspaces require a registry.")`; direct mode does not offer
+registration persistence.
+
+The selector defaults to `<PREFIX>_WORKSPACE`. Invocation `ResolveOptions.workspace`
+or `--workspace` wins over the selector environment/file values and saved
+registry default. Workspace selection is independent of the layout bootstrap
+pair. See [selection precedence](References.md#workspace-selection) and the
+[workspace guide](How-To-User-Guides.md#select-a-workspace).
+
+## Layouts
+
+`Layout.native()` uses platformdirs user locations for each enabled category.
+`Layout.single_root(root)` resolves `root` once against invocation current
+working directory and maps enabled categories to `root/config`, `root/appdata`,
+`root/cache`, and `root/state`, with logs under `root/state/logs`. Disabled
+components remain `None` in either layout. Native category suffix rules are
+independent, so enabling another category does not relocate existing ones.
+
+Layout bootstrap controls are `<PREFIX>_LAYOUT` and `<PREFIX>_ROOT`. The
+normalized application ID supplies the prefix unless `bootstrap_env_prefix` is
+set. Invocation `Layout` has highest priority. Otherwise AppRC selects one whole
+raw layer containing either nonblank control and interprets only that layer's
+pair: root alone means single-root; `native` with root in the same pair is an
+error; higher-layer `native` ignores lower-layer root. Process environment
+normally outranks explicit dotenv files in reverse argument order; setting
+`env_file_overrides_os_environ=True` reverses that layer precedence. A managed
+dotenv cannot relocate itself. `AppPaths.source` records invocation,
+environment, declaration, or default selection. See the complete
+[bootstrap reference](References.md#layout-bootstrap).
+
+## Maintenance
+
+`AppRC.maintain(..., handlers=MaintenanceHandlers(...))` supplies explicit
+category handlers. Enabled paths provide basic `info`; semantic backup,
+restore, prune, clear, reset, and purge operations appear only when their
+operation is supplied. Providers for disabled categories are declaration
+errors. `AppDataOperations`, `CacheOperations`, and `StateOperations` use named
+fields rather than arbitrary operation dispatch.
+
+Purge planning lists exact managed files and empty directories, tracks a
+revision, and refuses unknown or unowned contents. Apply rechecks markers,
+boundaries, links, and revisions immediately before dispatch; provider
+operations repeat freshness and lease checks under their coordination lock.
+It never grants permission to delete a single-root parent or a workspace.
+Multiple roots are not an atomic transaction; partial and skipped results are
+reported. Missing roots produce empty plans without creating markers. The
+[maintenance reference](References.md#maintenance) documents result shapes.
 
 <br>
 
@@ -338,103 +377,51 @@ the directory was moved elsewhere. Unregistering normally keeps the data.
 <a id="interfaces-and-shared-operations"></a>
 ## ConfigManager
 
-`ConfigManager`, returned by `MyRC.manage()`, performs operations on the files
-declared by that `AppRC`. It gives Python code, the CLI, and the editor the same
-setup and editing behavior. It does not display prompts itself.
+`ConfigManager`, returned by `MyRC.manage()`, performs operations on settings
+files and current secret workflows. Creating it does not write. `inspect()`
+reports field values and individual problems; `setup(*, adopt=False)`
+initializes only enabled user configuration. Workspace registration is owned by
+`WorkspaceManager`, not config setup.
 
-Creating a manager does not write files. Each operation reads the files it needs.
-`inspect()` reports available field values and individual problems, including
-missing required values. `setup()` initializes the declared user dotenv or storage.
-The [management reference](References.md#management) lists which methods read,
-plan, or write.
+An edit has an explicit review step. `plan_update()` validates the value and
+records the target revision; `preview_edit()` shows effective settings;
+`apply_edit()` writes only if the file still matches that revision. Editing a
+file does not change an earlier resolved snapshot. Atomic replacements and
+cross-process locks protect managed writes, but multiple filesystem roots are
+not one transaction. See [management reference](References.md#configmanager).
+## Application CLI
 
-An edit has an explicit review step. `plan_update()` validates the proposed value
-and records the target file's revision. `preview_edit()` shows what the effective
-settings would be. `apply_edit()` writes only if the file still matches the
-recorded revision. The [edit guide](How-To-User-Guides.md#edit-or-remove-a-saved-override)
-shows this sequence and how to handle a stale plan.
+`rc.cli.mount_app_cli(app, MyRC, ...)` mounts fixed groups for available
+capabilities and returns a dictionary of mounted category subgroups. It owns the
+root callback and rejects replacement of an existing callback. Applications
+that own a callback use `CliRuntime.prepare()` and its `mount_app_groups()`
+method. Both routes use one captured bootstrap/path snapshot. Maintenance
+commands skip business-state construction while retaining that snapshot.
 
-Editing a file does not change an earlier `ResolvedConfig` or settings object.
-Resolve again to read the new file, then build or reload the settings needed by
-the application. Writes use atomic file replacement and cross-process file
-locks. A stale edit plan is rejected under that lock. Moving an old secret from
-one file to another writes the private copy first, then removes the old
-assignment; it is not a filesystem transaction. The
-[write guarantees](References.md#errors-and-write-guarantees) state the limits.
-
-## Config CLI
-
-The config CLI is a group of Typer commands attached to the application's command
-line. `rc.cli.mount_config_cli(app, MyRC)` adds the `config` group and the options
-needed to choose inputs. It uses the same `AppRC` that registered the application's
-config sections.
-
-For example, `demo config doctor` inspects the settings, `demo config set` saves
-an override, and `demo config edit` opens the config editor. Storage commands are
-available when the declaration enables storage. [References](References.md#terminal-commands)
-lists the commands and their availability.
-
-The mounting function also resolves settings for application commands and places
-the result in CLI state. A command obtains `state.resolved` and builds its settings
-from it. The [Typer guide](How-To-User-Guides.md#add-configuration-commands-to-typer)
-contains a complete runnable app. Applications that already own their root
-callback can instead use the [custom-callback example](EXAMPLES.md#an-application-owned-cli-callback).
-
-## Application-data CLI
-
-The application-data CLI is a separate Typer group for inspecting and removing
-AppRC-managed files and registered internal storage data. An application opts in
-with `rc.cli.mount_appdata_cli(app, MyRC)`; mounting the config CLI does not add it.
-It can also be mounted on a plain Typer application without a config CLI.
-
-`appdata paths` lists cleanup locations without creating files.
-`appdata clean --dry-run` previews the same plan, and `appdata clean` asks for
-confirmation before applying it. Both use `ConfigManager` without resolving
-application settings. Applications with a runtime callback declare these actions
-runtime-independent so missing storage or an invalid ordinary setting does not
-prevent cleanup. The [cleanup guide](How-To-User-Guides.md#preview-and-clean-managed-application-data)
-shows that policy and the separate mount.
-
-Cleanup removes fixed managed files, including secret companions, and registered
-storage trees strictly inside the AppRC directory. External storage payloads and
-unrelated files remain; AppRC does not inventory arbitrary application logs,
-caches, outputs, or databases outside those managed roots. It neither uninstalls
-the application nor removes Python or package-management tools.
-The [command reference](References.md#application-data-commands) defines targeting,
-the machine-readable inventory, and failure behavior. `config paths` remains
-configuration diagnostics, not a deletion inventory.
+`paths [CATEGORY]` and `doctor` are always mounted. The `config`, `workspace`,
+`appdata`, `cache`, and `state` groups appear only when their required
+declarations exist. The root `purge` command handles AppRC-owned exact targets;
+category commands expose only supported provider operations. The
+[command reference](References.md#terminal-commands) gives availability,
+options, JSON, and exit behavior. There is no `appdata clean` or layout
+migration command.
 
 ## Config editor
 
-The config editor is AppRC's Textual terminal interface. It displays registered
-settings, field explanations, effective values, and values from the contributing
-configuration layers. Users can edit saved overrides in the user dotenv and
-storage dotenv, and manage named storages from the same interface.
-
-The editor displays packaged defaults and process-environment inputs for comparison.
-It does not rewrite the installed defaults or the environment of the shell that
-launched it. This distinction matters when an environment value overrides an edit
-to a saved file. The [editor guide](How-To-User-Guides.md#inspect-and-edit-settings-in-the-terminal)
-explains how to choose an edit target and recognize such an override.
-
-Opening the editor writes nothing. Setup and save actions call `ConfigManager`
-explicitly. The editor can open before all required values are valid so the user
-can fix them.
+The Textual `ConfigEditorApp` displays registered settings, explanations,
+effective values, and their contributing layers. It edits user or workspace
+overrides through `ConfigManager`; a workspace registry is supplied separately
+through `WorkspaceManager`. Opening the editor does not initialize application
+state. Setup and save actions call managers explicitly.
 
 ## Gradio editor
 
-The Gradio editor is `apprc_gui.ConfigEditor`, installed by the separate
-`apprc-gui` distribution. It renders registered fields inside an application-
-owned Gradio `Blocks`. The application supplies a `ConfigManager` from its
-`AppRC` declaration. The editor uses that manager for setup, inspection,
-editing, storage selection, secret migration, and permission repair. The
-[Gradio settings guide](How-To-User-Guides.md#add-a-gradio-settings-page) shows
-how to place it next to an application action.
+`apprc_gui.ConfigEditor(manager, *, workspaces=None)` embeds settings controls
+in an application-owned Gradio `Blocks`. `manager` is a `ConfigManager`.
+Registry-backed workspace controls require the separate `WorkspaceManager`;
+they fail clearly if it was not supplied. The editor does not build the
+application runtime or initialize appdata/cache.
 
-The editor opens with missing storage or required settings. It shows the
-effective source for each active field; password inputs do not display saved
-secret values. The application decides when it is ready to start its own work.
-The editor does not launch Gradio or build the application's runtime.
 
 <br>
 
@@ -477,18 +464,18 @@ section with a different map. The dependency class and its AppRC registration
 are not changed.
 
 In parent mode, AppRC reads values from the parent's resolved layers. It does
-not use the dependency's ambient environment, user dotenv, storage files, or
+not use the dependency's ambient environment, user dotenv, workspace files, or
 bundle registrations. Dependency packaged defaults are excluded unless the
 parent opts in; selected values then sit below the parent's packaged defaults.
 The parent's [field metadata and provenance](#provenance) describe the value
 that the dependency receives.
 
-When an imported section requires storage, the parent must declare
-`storage=rc.Storage()` and choose a valid parent storage before building that
-section. Inspection leaves its fields inactive until the parent selects
-storage. The parent's selected storage layer can supply mapped settings; the
-dependency's storage selector, registry, user files, and storage files remain
-outside the import. The host passes any storage paths the dependency needs
+When an imported section requires a workspace, the parent must declare
+`workspaces=rc.Workspaces()` and select a valid parent workspace before building
+that section. Inspection leaves its fields inactive until selection. The
+parent's selected workspace layer can supply mapped settings; the dependency's
+selector, registry, user files, workspace files, and layout bootstrap keys
+remain excluded. The host passes any workspace paths required by the dependency
 through its normal integration API.
 
 `ResolvedConfig.build(binding)` constructs the dependency section from that

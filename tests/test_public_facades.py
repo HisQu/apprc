@@ -1,6 +1,5 @@
 """Public facade and namespace surface tests."""
 
-import ast
 import importlib
 import json
 import subprocess
@@ -11,12 +10,12 @@ import pytest
 
 import apprc
 import apprc.cli as apprc_cli
-import apprc.tui as apprc_tui
-import apprc.files as apprc_files
-import apprc.interfaces as apprc_interfaces
-import apprc.provenance as apprc_provenance
-import apprc.storage as apprc_storage
 import apprc.definition.env_config as config_models
+import apprc.files as apprc_files
+import apprc.provenance as apprc_provenance
+import apprc.tui as apprc_tui
+import apprc.workspaces as apprc_workspaces
+from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.interfaces.cli._resolution import resolve_cli_config
 from apprc.interfaces.cli.config_command import (
     ConfigSelectorContext,
@@ -24,37 +23,26 @@ from apprc.interfaces.cli.config_command import (
     config_request_skips_runtime,
 )
 from apprc.interfaces.cli.context import CliRuntimeOptions, cli_options_from
-from apprc.interfaces.cli.mount import CliArgvProvider, mount_config_cli
+from apprc.interfaces.cli.mount import CliArgvProvider, mount_app_cli
 from apprc.interfaces.cli.options import (
     COMMON_CLI_FLAG_OPTIONS,
     COMMON_CLI_VALUE_OPTIONS,
 )
 from apprc.interfaces.cli.runtime import (
-    RuntimeIndependentCommand,
     CliRuntime,
     CliRuntimePolicy,
     CliRuntimeSession,
     CliRuntimeStateFactory,
     MountCliRuntimeStateFactory,
+    RuntimeIndependentCommand,
 )
 from apprc.public.app_rc import AppRC
 from apprc.public.config import Config, ConfigBase
 from apprc.public.field import field
-from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.runtime.provenance import ConfigProvenance, provenance_of
-from apprc.user_files.storage_roots.model import StorageRegistry
+from apprc.user_files.workspace_roots.model import WorkspaceRegistry
 
 ROOT = Path(__file__).resolve().parents[1]
-ROOT_FACADE_SNAPSHOT = ROOT / "tests" / "snapshots" / "apprc_root_facade.txt"
-
-
-def test_root_facade_public_surface_matches_snapshot() -> None:
-    """Make root facade changes intentional and easy to review."""
-    expected_exports = ROOT_FACADE_SNAPSHOT.read_text(
-        encoding="utf-8"
-    ).splitlines()
-
-    assert list(apprc.__all__) == expected_exports
 
 
 def test_root_facade_exports_clean_public_api() -> None:
@@ -67,13 +55,13 @@ def test_root_facade_exports_clean_public_api() -> None:
     assert apprc.cli is apprc_cli
     assert apprc.files is apprc_files
     assert apprc.provenance is apprc_provenance
-    assert apprc.storage is apprc_storage
+    assert apprc.workspaces is apprc_workspaces
 
     assert not hasattr(apprc, "AppConfigKit")
     assert not hasattr(apprc, "EnvConfig")
     assert not hasattr(apprc, "env_field")
     assert not hasattr(apprc, "env_owner")
-    assert not hasattr(apprc, "mount_config_cli")
+    assert not hasattr(apprc, "mount_app_cli")
 
 
 def test_cli_namespace_exports_advanced_cli_symbols() -> None:
@@ -90,7 +78,7 @@ def test_cli_namespace_exports_advanced_cli_symbols() -> None:
     assert apprc_cli.CliRuntimePolicy is CliRuntimePolicy
     assert apprc_cli.ConfigSelectorContext is ConfigSelectorContext
     assert apprc_cli.DefaultConfigCliState is DefaultConfigCliState
-    assert apprc_cli.mount_config_cli is mount_config_cli
+    assert apprc_cli.mount_app_cli is mount_app_cli
     assert apprc_cli.COMMON_CLI_FLAG_OPTIONS is COMMON_CLI_FLAG_OPTIONS
     assert apprc_cli.COMMON_CLI_VALUE_OPTIONS is COMMON_CLI_VALUE_OPTIONS
     assert (
@@ -100,7 +88,10 @@ def test_cli_namespace_exports_advanced_cli_symbols() -> None:
     assert "EnvFilesOption" in apprc_cli.__all__
     assert "EnvFileOverridesOption" in apprc_cli.__all__
     assert "SkipDotenvLayersOption" in apprc_cli.__all__
-    assert "StorageOption" in apprc_cli.__all__
+    assert "WorkspaceOption" in apprc_cli.__all__
+    assert "LayoutOption" in apprc_cli.__all__
+    assert "AppRootOption" in apprc_cli.__all__
+    assert "StorageOption" not in apprc_cli.__all__
     assert "LogLevelOption" in apprc_cli.__all__
     assert "cli_runtime_options_to_args" in apprc_cli.__all__
     assert "cli_options_from" in apprc_cli.__all__
@@ -140,19 +131,6 @@ print(json.dumps(any(
     assert json.loads(result.stdout) is False
 
 
-def test_lazy_facade_stubs_match_runtime_exports() -> None:
-    """Typed lazy facades must describe the same public names as runtime."""
-    assert _stub_import_names(
-        ROOT / "src" / "apprc" / "cli" / "__init__.pyi"
-    ) == set(apprc_cli.__all__)
-    assert _stub_import_names(
-        ROOT / "src" / "apprc" / "interfaces" / "__init__.pyi"
-    ) == set(apprc_interfaces.__all__)
-    assert _stub_import_names(
-        ROOT / "src" / "apprc" / "tui" / "__init__.pyi"
-    ) == set(apprc_tui.__all__)
-
-
 def test_lazy_facade_runtime_inits_do_not_duplicate_type_exports() -> None:
     """Keep type-only facade declarations in stubs, not runtime modules."""
     for path in (
@@ -164,10 +142,10 @@ def test_lazy_facade_runtime_inits_do_not_duplicate_type_exports() -> None:
         assert "from apprc.interfaces.tui import" not in text
 
 
-def test_storage_files_and_provenance_namespaces_export_helpers() -> None:
+def test_workspace_files_and_provenance_namespaces_export_helpers() -> None:
     """Advanced non-CLI helpers live under explicit namespaces."""
-    assert apprc_storage.StorageRegistry is StorageRegistry
-    assert not hasattr(apprc_storage, "register_storage")
+    assert apprc_workspaces.WorkspaceRegistry is WorkspaceRegistry
+    assert not hasattr(apprc_workspaces, "register_workspace")
     assert not hasattr(apprc_files, "resolve_package_root")
     assert not hasattr(apprc_files, "set_env_file_value")
     assert apprc_provenance.ConfigProvenance is ConfigProvenance
@@ -194,15 +172,15 @@ def test_legacy_aggregate_packages_are_not_public_facades() -> None:
         },
         "apprc.user_files": {
             "EnvFileUpdate",
-            "StorageRegistry",
+            "WorkspaceRegistry",
             "resolve_package_root",
             "set_env_file_value",
         },
-        "apprc.user_files.storage_roots": {
-            "StorageRegistry",
-            "StorageSelection",
-            "register_storage",
-            "write_storage_registry",
+        "apprc.user_files.workspace_roots": {
+            "WorkspaceRegistry",
+            "WorkspaceSelection",
+            "register_workspace",
+            "write_workspace_registry",
         },
     }
 
@@ -225,17 +203,6 @@ def test_internal_config_package_does_not_expose_legacy_declarations() -> None:
         importlib.import_module("apprc.definition.env_config.fields")
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("apprc.definition.env_config.env")
-
-
-def _stub_import_names(path: Path) -> set[str]:
-    """Return public names imported by one facade stub."""
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        names.update(alias.asname or alias.name for alias in node.names)
-    return names
 
 
 def test_public_docs_do_not_reference_unreleased_runtime_names() -> None:

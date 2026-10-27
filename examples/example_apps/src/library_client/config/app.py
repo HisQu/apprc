@@ -2,10 +2,10 @@
 
 import apprc as rc
 
-
 MyRC = rc.AppRC(
     app_id="apprc-example-library-client",
     display_name="AppRC Library Client Example",
+    paths=rc.Paths(config=True),
     config_package="library_client.config",
     user_dotenv=rc.UserDotenv(),
     command_name="apprc-library-client",

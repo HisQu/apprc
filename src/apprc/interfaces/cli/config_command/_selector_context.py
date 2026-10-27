@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-
-# == Standard Library ========================
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -14,28 +12,35 @@ from typing import Any, cast
 import typer
 
 # == Internal ================================
-from apprc.interfaces.cli.config_command.state import DefaultConfigCliState
-from apprc.interfaces.cli.context import cli_runtime_context_from
+from apprc.definition.paths import AppPaths, Layout
 from apprc.interfaces.cli._typer_utils import state_from
+from apprc.interfaces.cli.config_command.state import DefaultConfigCliState
+from apprc.interfaces.cli.context import (
+    CliRuntimeContext,
+    cli_runtime_context_from,
+)
+from apprc.runtime._selection import selection_env
 from apprc.user_files.env_files.layers import (
     ExplicitEnvFileError,
     read_explicit_env_files,
 )
-from apprc.runtime._selection import selection_env
 
 
 @dataclass(frozen=True, slots=True)
 class ConfigSelectorContext:
-    """Host CLI explicit env values used only for selector resolution."""
+    """Host CLI inputs used to reuse one captured AppRC path snapshot."""
 
     explicit_values: Mapping[str, str]
     env_file_overrides_os_environ: bool
     proc_env: Mapping[str, str]
+    workspace: str | None = None
     env_files: tuple[Path, ...] = ()
     environment: Mapping[str, str] = field(
         default_factory=lambda: dict(os.environ), repr=False
     )
     load_dotenv_layers: bool = True
+    layout: Layout | None = None
+    paths: AppPaths | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +132,7 @@ class SelectorContextReader:
                 "skip_dotenv_layers": (
                     not context.runtime_options.load_dotenv_layers
                 ),
-                "storage": context.runtime_options.storage,
+                "workspace": context.runtime_options.workspace,
             }
             if name in option_values:
                 return option_values[name]
@@ -138,37 +143,48 @@ class SelectorContextReader:
             current = current.parent
         return None
 
+    def runtime_context(
+        self, ctx: typer.Context
+    ) -> CliRuntimeContext[Any] | None:
+        """Return the captured host runtime context, when available."""
+        return cli_runtime_context_from(ctx)
+
     def cli_selector_context(
         self,
         ctx: typer.Context,
     ) -> ConfigSelectorContext:
-        """Return CLI explicit env-file values for selector-only reads."""
+        """Return CLI inputs and captured paths for selector-only reads."""
         env_files = _cli_env_files(self.cli_context_param(ctx, "env_files"))
         overrides = bool(
             self.cli_context_param(ctx, "env_file_overrides_os_environ")
         )
-        environment = dict(os.environ)
+        runtime = self.runtime_context(ctx)
+        environment = (
+            dict(runtime.environment)
+            if runtime is not None
+            else dict(os.environ)
+        )
         try:
             _, _, explicit_values = read_explicit_env_files(
                 env_files, environment=environment
             )
         except FileNotFoundError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint="--env-file",
-            ) from exc
+            raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
         except ExplicitEnvFileError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint="--env-file",
-            ) from exc
+            raise typer.BadParameter(str(exc), param_hint="--env-file") from exc
+        workspace = self.cli_context_param(ctx, "workspace")
         return _selector_context(
             explicit_values=explicit_values,
             env_file_overrides_os_environ=overrides,
+            workspace=workspace if isinstance(workspace, str) else None,
             env_files=env_files,
             environment=environment,
             load_dotenv_layers=self.cli_context_param(ctx, "load_dotenv_layers")
             is not False,
+            layout=runtime.runtime_options.layout
+            if runtime is not None
+            else None,
+            paths=runtime.paths if runtime is not None else None,
         )
 
 
@@ -190,17 +206,23 @@ def _selector_context(
     *,
     explicit_values: Mapping[str, str],
     env_file_overrides_os_environ: bool,
+    workspace: str | None = None,
     env_files: tuple[Path, ...] = (),
     environment: Mapping[str, str] | None = None,
     load_dotenv_layers: bool = True,
+    layout: Layout | None = None,
+    paths: AppPaths | None = None,
 ) -> ConfigSelectorContext:
     """Return selector-only context for explicit env-file values."""
     environment = dict(os.environ if environment is None else environment)
     copied_values = dict(explicit_values)
     return ConfigSelectorContext(
+        workspace=workspace,
         env_files=env_files,
         environment=environment,
         load_dotenv_layers=load_dotenv_layers,
+        paths=paths,
+        layout=layout,
         explicit_values=copied_values,
         env_file_overrides_os_environ=env_file_overrides_os_environ,
         proc_env=selection_env(

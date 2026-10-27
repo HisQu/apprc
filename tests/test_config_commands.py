@@ -1,672 +1,212 @@
 from __future__ import annotations
 
 import json
-import os
-import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 import typer
 from typer.testing import CliRunner
 
-import apprc.interfaces.cli.config_command._runtime_commands as runtime_commands
-from apprc.definition.app_config.storage import Storage
-from apprc.interfaces.cli.config_command.app import build_config_typer_app
-from apprc.interfaces.cli.setup_command import run_config_setup
-from apprc.services.manager import ConfigManager, WriteScope
+import apprc as rc
+from apprc.definition.paths import Layout, Paths
+from apprc.interfaces.cli.mount import mount_app_cli
 from apprc.user_files.app_home.application import AppFiles
-from apprc.user_files.storage_roots.registry import (
-    load_storage_registry_or_empty,
-)
-from tests.support_declaration import app_from_envs
-from tests.support_config import (
-    ApprcExampleAppConfigState,
-    ApprcExampleAppEnv,
-    StorageFreeExampleConfigState,
-    build_apprc_example_app,
-    build_storage_free_example_app,
-    compact_cli_output,
-    register_storage_for_app,
-)
 
 
-def test_config_paths_is_zero_write_and_uses_file_specific_names() -> None:
-    kit = build_apprc_example_app()
-    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
+def _root_cli(app_rc: rc.AppRC) -> tuple[typer.Typer, dict[str, typer.Typer]]:
+    app = typer.Typer()
+    groups = mount_app_cli(app, app_rc)
+    return app, groups
+
+
+def test_root_paths_is_zero_write_and_uses_captured_config_location(
+    tmp_path: Path,
+) -> None:
+    kit = rc.AppRC(
+        app_id="read_only_paths",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        user_dotenv=rc.UserDotenv(),
+    )
+    app, groups = _root_cli(kit)
 
     result = CliRunner().invoke(app, ["paths", "--json"])
 
     assert result.exit_code == 0, result.output
+    assert set(groups) >= {"config"}
     payload = json.loads(result.output)
-    assert payload["writes"] == "none"
-    assert payload["storage_enabled"] is True
-    assert Path(payload["user_dotenv"]).name == "apprc.user.env"
-    assert Path(payload["apprc_toml"]).name == "apprc.toml"
-    assert not Path(payload["user_dotenv"]).exists()
-    assert not Path(payload["apprc_toml"]).exists()
+    config_dir = kit.paths(environment={}).require("config")
+    assert payload["paths"]["config"] == str(config_dir)
+    assert payload["exists"]["config"] is False
+    assert not config_dir.exists()
 
 
-def test_setup_default_storage_follows_relocated_apprc_directory(
-    monkeypatch, tmp_path: Path
-) -> None:
-    """The default root remains beside AppRC files after relocation."""
-    apprc_dir = tmp_path / "relocated"
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(apprc_dir))
-    kit = build_apprc_example_app()
-
-    run_config_setup(kit, assume_yes=True)
-
-    registry = load_storage_registry_or_empty(
-        AppFiles(kit.schema).preferred_apprc_toml_path()
-    )
-    assert registry.selected("default").root == apprc_dir / "storage"
-    assert (apprc_dir / "storage" / "apprc.storage.env").is_file()
-
-
-def _make_shared_apprc_directory(
-    monkeypatch: pytest.MonkeyPatch,
-    apprc_dir: Path,
-) -> set[Path]:
-    """Make one existing test directory fail the private-secret check."""
-    from apprc.user_files.env_files import secrets
-
-    apprc_dir.mkdir()
-    private_paths: set[Path] = set()
-    if os.name == "nt":
-
-        def acl_is_private(path: Path) -> bool:
-            return path in private_paths
-
-        def set_private_acl(path: Path) -> None:
-            private_paths.add(path)
-
-        monkeypatch.setattr(secrets, "windows_acl_is_private", acl_is_private)
-        monkeypatch.setattr(secrets, "set_windows_private_acl", set_private_acl)
-    else:
-        apprc_dir.chmod(0o755)
-    return private_paths
-
-
-def test_interactive_setup_repairs_selected_user_directory_and_retries_storage(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Repair the selected AppRC directory and retry the same storage setup."""
-    apprc_dir = tmp_path / "selected-config"
-    private_paths = _make_shared_apprc_directory(monkeypatch, apprc_dir)
-    monkeypatch.setattr(
-        sys,
-        "stdin",
-        _StreamProxy(sys.stdin, interactive=True),
-    )
-    monkeypatch.setattr(
-        sys,
-        "stdout",
-        _StreamProxy(sys.stdout, interactive=True),
-    )
-    setup_calls: list[tuple[ConfigManager, Path | None, str]] = []
-    repair_calls: list[tuple[ConfigManager, str]] = []
-    original_setup = ConfigManager.setup
-    original_repair = ConfigManager.repair_secret_permissions
-
-    def record_setup(
-        manager: ConfigManager,
-        *,
-        storage_root: Path | None = None,
-        storage_name: str = "default",
-    ):
-        setup_calls.append((manager, storage_root, storage_name))
-        return original_setup(
-            manager,
-            storage_root=storage_root,
-            storage_name=storage_name,
-        )
-
-    def record_repair(
-        manager: ConfigManager,
-        scope: WriteScope,
-        *,
-        storage: str | None = None,
-    ):
-        repair_calls.append((manager, scope))
-        return original_repair(manager, scope, storage=storage)
-
-    monkeypatch.setattr(ConfigManager, "setup", record_setup)
-    monkeypatch.setattr(
-        ConfigManager,
-        "repair_secret_permissions",
-        record_repair,
-    )
-    prompts: list[str] = []
-    monkeypatch.setattr(
-        typer,
-        "confirm",
-        lambda message: prompts.append(message) or True,
-    )
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "work")
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_ACCESS_TOKEN", "test-token")
-    kit = build_apprc_example_app()
-    storage_root = tmp_path / "selected-storage"
-
-    run_config_setup(
-        kit,
-        apprc_dir=apprc_dir,
-        storage_root=storage_root,
+def test_config_setup_and_edit_are_persisted_and_reload(tmp_path: Path) -> None:
+    kit = rc.AppRC(
+        app_id="saved_config",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        user_dotenv=rc.UserDotenv(),
     )
 
-    assert len(prompts) == 1
-    assert str(apprc_dir) in prompts[0]
-    assert len(setup_calls) == 2
-    assert setup_calls[0][0] is setup_calls[1][0]
-    assert setup_calls[0][1:] == (storage_root, "work")
-    assert setup_calls[1][1:] == (storage_root, "work")
-    assert repair_calls == [(setup_calls[0][0], "user")]
-    assert (apprc_dir / "apprc.user.secret.env").is_file()
-    assert (storage_root / "apprc.storage.env").is_file()
-    registry = load_storage_registry_or_empty(apprc_dir / "apprc.toml")
-    assert registry.selected("work").root == storage_root
-    if os.name == "nt":
-        assert apprc_dir in private_paths
-    else:
-        assert apprc_dir.stat().st_mode & 0o777 == 0o700
+    @kit.config("global", prefix="SAVED_CONFIG_")
+    class Settings(rc.Config):
+        profile: str = rc.field("SAVED_CONFIG_PROFILE", default="default")
 
-
-def test_declined_setup_repair_leaves_directory_and_files_unchanged(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Declining setup repair does not change permissions or create files."""
-    apprc_dir = tmp_path / "selected-config"
-    private_paths = _make_shared_apprc_directory(monkeypatch, apprc_dir)
-    monkeypatch.setattr(
-        sys,
-        "stdin",
-        _StreamProxy(sys.stdin, interactive=True),
-    )
-    monkeypatch.setattr(
-        sys,
-        "stdout",
-        _StreamProxy(sys.stdout, interactive=True),
-    )
-    prompts: list[str] = []
-    monkeypatch.setattr(
-        typer,
-        "confirm",
-        lambda message: prompts.append(message) or False,
-    )
-    kit = build_apprc_example_app()
-
-    with pytest.raises(typer.BadParameter) as exc_info:
-        run_config_setup(
-            kit,
-            apprc_dir=apprc_dir,
-            storage_root=tmp_path / "selected-storage",
-        )
-
-    assert "config secrets repair --scope user" in str(exc_info.value)
-    assert len(prompts) == 1
-    assert str(apprc_dir) in prompts[0]
-    assert list(apprc_dir.iterdir()) == []
-    if os.name == "nt":
-        assert not private_paths
-    else:
-        assert apprc_dir.stat().st_mode & 0o777 == 0o755
-
-
-class _StreamProxy:
-    """Delegate a captured stream while controlling its TTY status."""
-
-    def __init__(self, stream: Any, *, interactive: bool) -> None:
-        self._stream = stream
-        self._interactive = interactive
-
-    def isatty(self) -> bool:
-        return self._interactive
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._stream, name)
-
-
-@pytest.mark.parametrize("assume_yes", [False, True])
-def test_noninteractive_setup_keeps_user_secret_repair_fail_closed(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    assume_yes: bool,
-) -> None:
-    """No TTY or --yes keeps the existing repair guidance without changes."""
-    apprc_dir = tmp_path / "selected-config"
-    private_paths = _make_shared_apprc_directory(monkeypatch, apprc_dir)
-    if not assume_yes:
-        monkeypatch.setattr(
-            sys,
-            "stdin",
-            _StreamProxy(sys.stdin, interactive=False),
-        )
-        monkeypatch.setattr(
-            sys,
-            "stdout",
-            _StreamProxy(sys.stdout, interactive=False),
-        )
-    else:
-        monkeypatch.setattr(
-            sys,
-            "stdin",
-            _StreamProxy(sys.stdin, interactive=True),
-        )
-        monkeypatch.setattr(
-            sys,
-            "stdout",
-            _StreamProxy(sys.stdout, interactive=True),
-        )
-    monkeypatch.setattr(
-        typer,
-        "confirm",
-        lambda _: pytest.fail("Noninteractive setup must not prompt."),
-    )
-    kit = build_apprc_example_app()
-
-    with pytest.raises(typer.BadParameter) as exc_info:
-        run_config_setup(
-            kit,
-            assume_yes=assume_yes,
-            apprc_dir=apprc_dir,
-            storage_root=tmp_path / "selected-storage",
-        )
-
-    assert "config secrets repair --scope user" in str(exc_info.value)
-    assert not (apprc_dir / "apprc.user.env").exists()
-    assert not (apprc_dir / "apprc.user.secret.env").exists()
-    assert not (apprc_dir / "apprc.toml").exists()
-    if os.name == "nt":
-        assert not private_paths
-    else:
-        assert apprc_dir.stat().st_mode & 0o777 == 0o755
-
-
-def test_config_doctor_reports_required_field_without_runtime_policy(
-    monkeypatch,
-) -> None:
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    AppFiles(kit.schema).preferred_apprc_toml_path().write_text(
-        "", encoding="utf-8"
-    )
-    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
-
-    result = CliRunner().invoke(app, ["doctor"])
-    output = compact_cli_output(result)
-
-    assert result.exit_code == 1
-    assert "Configurationvaluesareinvalid" in output
-    assert "APPRC_EXAMPLE_APP_STORAGE" in output
-
-
-def test_storage_free_app_hides_storage_commands() -> None:
-    kit = build_storage_free_example_app()
-    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
+    app, _ = _root_cli(kit)
     runner = CliRunner()
-
-    help_result = runner.invoke(app, ["--help"])
-    command_result = runner.invoke(app, ["storage", "list"])
-    storage_scope = runner.invoke(
+    setup = runner.invoke(app, ["config", "setup", "--yes"])
+    update = runner.invoke(
         app,
-        ["set", "global.profile", "demo", "--scope", "storage"],
-    )
-
-    assert help_result.exit_code == 0, help_result.output
-    assert "Manage named storages" not in help_result.output
-    assert command_result.exit_code != 0
-    assert storage_scope.exit_code != 0
-    assert "user" in storage_scope.output.lower()
-
-
-def test_storage_cli_enforces_selection_lifecycle(tmp_path: Path) -> None:
-    kit = build_apprc_example_app()
-    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-    alpha = tmp_path / "alpha"
-    beta = tmp_path / "beta"
-
-    first = runner.invoke(app, ["storage", "add", "alpha", str(alpha), "--yes"])
-    second = runner.invoke(app, ["storage", "add", "beta", str(beta), "--yes"])
-    duplicate = runner.invoke(
-        app, ["storage", "add", "alpha", str(tmp_path / "other"), "--yes"]
-    )
-    renamed = runner.invoke(app, ["storage", "rename", "alpha", "primary"])
-    selected = runner.invoke(app, ["storage", "select", "beta"])
-    removed = runner.invoke(app, ["storage", "remove", "beta"])
-
-    assert first.exit_code == 0, first.output
-    assert second.exit_code == 0, second.output
-    assert duplicate.exit_code != 0
-    assert "already registered" in duplicate.output
-    assert renamed.exit_code == 0, renamed.output
-    assert "selected_storage: primary" in renamed.output
-    assert selected.exit_code == 0, selected.output
-    assert removed.exit_code == 0, removed.output
-    assert "no storage is selected" in removed.output
-    registry = load_storage_registry_or_empty(
-        AppFiles(kit.schema).preferred_apprc_toml_path()
-    )
-    assert list(registry.storages) == ["primary"]
-    assert registry.selected_storage is None
-
-
-def test_storage_repoint_changes_only_registry_path(tmp_path: Path) -> None:
-    kit = build_apprc_example_app()
-    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    add = runner.invoke(app, ["storage", "add", "alpha", str(source), "--yes"])
-    target.mkdir()
-
-    repoint = runner.invoke(app, ["storage", "repoint", "alpha", str(target)])
-
-    assert add.exit_code == 0, add.output
-    assert repoint.exit_code == 0, repoint.output
-    assert "files_moved: no" in repoint.output
-    assert source.is_dir()
-    assert target.is_dir()
-    registry = load_storage_registry_or_empty(
-        AppFiles(kit.schema).preferred_apprc_toml_path()
-    )
-    assert registry.selected("alpha").root == target.resolve()
-
-
-def test_storage_move_moves_directory_and_updates_registry(
-    tmp_path: Path,
-) -> None:
-    kit = build_apprc_example_app()
-    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
-    runner = CliRunner()
-    source = tmp_path / "source"
-    destination = tmp_path / "destination"
-    add = runner.invoke(app, ["storage", "add", "alpha", str(source), "--yes"])
-    (source / "payload.txt").write_text("keep", encoding="utf-8")
-
-    moved = runner.invoke(
-        app, ["storage", "move", "alpha", str(destination), "--yes"]
-    )
-
-    assert add.exit_code == 0, add.output
-    assert moved.exit_code == 0, moved.output
-    assert not source.exists()
-    assert (destination / "payload.txt").read_text(encoding="utf-8") == "keep"
-    registry = load_storage_registry_or_empty(
-        AppFiles(kit.schema).preferred_apprc_toml_path()
-    )
-    assert registry.selected("alpha").root == destination.resolve()
-
-
-def test_relative_storage_roots_resolve_from_apprc_toml(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    kit = build_apprc_example_app()
-    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
-    unrelated_cwd = tmp_path / "cwd"
-    unrelated_cwd.mkdir()
-    monkeypatch.chdir(unrelated_cwd)
-
-    result = CliRunner().invoke(
-        app, ["storage", "add", "alpha", "relative-root", "--yes"]
-    )
-
-    assert result.exit_code == 0, result.output
-    registry = load_storage_registry_or_empty(
-        AppFiles(kit.schema).preferred_apprc_toml_path()
-    )
-    assert (
-        registry.selected("alpha").root
-        == (AppFiles(kit.schema).apprc_dir() / "relative-root").resolve()
-    )
-
-
-def test_config_set_writes_user_dotenv_for_storage_free_app() -> None:
-    kit = build_storage_free_example_app()
-    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
-    setup = CliRunner().invoke(app, ["setup", "--yes"])
-
-    result = CliRunner().invoke(
-        app,
-        ["set", "global.profile", "local", "--scope", "user"],
+        ["config", "set", "global.profile", "local", "--scope", "user"],
     )
 
     assert setup.exit_code == 0, setup.output
-    assert result.exit_code == 0, result.output
-    assert AppFiles(kit.schema).user_dotenv_path().read_text(
+    assert update.exit_code == 0, update.output
+    assert (
+        kit.resolve(environment={}).source.values["SAVED_CONFIG_PROFILE"]
+        == "local"
+    )
+    assert (tmp_path / "home" / "config" / "apprc.user.env").read_text(
         encoding="utf-8"
-    ) == ('STORAGE_FREE_APP_PROFILE="local"\n')
+    ) == 'SAVED_CONFIG_PROFILE="local"\n'
 
 
-def test_config_set_requires_user_dotenv_setup() -> None:
-    kit = build_storage_free_example_app()
-    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
-
-    result = CliRunner().invoke(
-        app,
-        ["set", "global.profile", "local", "--scope", "user"],
-    )
-
-    assert result.exit_code != 0
-    assert "unavailable" in result.output
-    assert "Initializeuseroverrides" in compact_cli_output(result)
-    assert not AppFiles(kit.schema).user_dotenv_path().exists()
-
-
-def test_config_purge_is_not_registered_or_executable() -> None:
-    import apprc as rc
-    import typer
-
-    kit = build_storage_free_example_app()
-    app = typer.Typer()
-    rc.cli.mount_config_cli(app, kit)
-    runner = CliRunner()
-
-    help_result = runner.invoke(app, ["config", "--help"])
-    purge_result = runner.invoke(app, ["config", "purge", "--yes"])
-
-    assert help_result.exit_code == 0
-    assert "purge" not in help_result.output
-    assert purge_result.exit_code != 0
-    assert not AppFiles(kit.schema).apprc_dir().exists()
-
-
-def test_generated_commands_follow_declared_capabilities() -> None:
-    process_only = build_config_typer_app(
-        app_from_envs(
-            app_id="process_only",
-            display_name="Process Only",
-            config_package="process_env.config",
-            envs=(ApprcExampleAppEnv,),
-        ),
-    )
-    storage_only = build_config_typer_app(
-        app_from_envs(
-            app_id="storage_only",
-            display_name="Storage Only",
-            config_package="storage.config",
-            envs=(ApprcExampleAppEnv,),
-            storage=Storage(),
-        ),
-    )
-
-    process_result = CliRunner().invoke(process_only, ["--help"])
-    storage_result = CliRunner().invoke(storage_only, ["--help"])
-
-    assert process_result.exit_code == 0
-    assert storage_result.exit_code == 0
-    assert "purge" not in process_result.output
-    assert "purge" not in storage_result.output
-    assert "storage" in storage_result.output
-
-
-def test_migrate_storage_mapping_options_follow_storage_capability() -> None:
-    """Only storage declarations expose selector migration options."""
-    storage_app = build_config_typer_app(
-        build_apprc_example_app(),
-    )
-    user_dotenv_app = build_config_typer_app(
-        build_storage_free_example_app(),
-    )
-    runner = CliRunner()
-
-    storage_help = runner.invoke(storage_app, ["migrate", "--help"])
-    user_help = runner.invoke(user_dotenv_app, ["migrate", "--help"])
-
-    assert storage_help.exit_code == 0, storage_help.output
-    storage_output = compact_cli_output(storage_help)
-    user_output = compact_cli_output(user_help)
-    assert "--storage-root" in storage_output
-    assert "--replace-storage" in storage_output
-    assert user_help.exit_code == 0, user_help.output
-    assert "--storage-root" not in user_output
-    assert "--replace-storage" not in user_output
-
-
-def test_migrate_unknown_selector_requires_explicit_root_noninteractively(
-    monkeypatch,
+def test_workspace_lifecycle_is_root_group_and_config_setup_does_not_initialize_it(
     tmp_path: Path,
 ) -> None:
-    """A bare unknown selector produces one copyable recovery command."""
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    register_storage_for_app(kit, name="opa", root=tmp_path / "opa")
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "ontology")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "legacy-config"))
-    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
-
-    result = CliRunner().invoke(app, ["migrate", "--dry-run"])
-
-    assert result.exit_code != 0
-    assert "unregistered storage 'ontology'" in result.output
-    output = compact_cli_output(result)
-    assert (
-        "apprc_example_appconfigmigrate--storage-root"
-        "/absolute/path/to/ontology--yes"
-    ) in output
-    assert "--replace-storage" in output
-    assert "OLD_NAME" in output
-
-
-def test_migrate_unknown_selector_registers_explicit_root(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    """The non-interactive option maps a name without replacing entries."""
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    register_storage_for_app(kit, name="opa", root=tmp_path / "opa")
-    ontology_root = tmp_path / "ontology"
-    ontology_root.mkdir()
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "ontology")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "legacy-config"))
-    app = build_config_typer_app(kit, state_type=ApprcExampleAppConfigState)
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "migrate",
-            "--storage-root",
-            str(ontology_root),
-            "--yes",
-        ],
+    kit = rc.AppRC(
+        app_id="workspace_commands",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        user_dotenv=rc.UserDotenv(),
+        workspaces=rc.Workspaces(),
     )
-
-    assert result.exit_code == 0, result.output
-    assert f"register: ontology -> {ontology_root.resolve()}" in result.output
-    registry = load_storage_registry_or_empty(
-        AppFiles(kit.schema).preferred_apprc_toml_path()
-    )
-    assert set(registry.storages) == {"opa", "ontology"}
-    assert registry.selected_storage == "ontology"
-    assert registry.selected("ontology").root == ontology_root.resolve()
-    assert AppFiles(kit.schema).storage_dotenv_path(ontology_root).is_file()
-
-
-def test_config_set_confirms_duplicate_cleanup_before_writing(
-    monkeypatch,
-) -> None:
-    kit = build_storage_free_example_app()
-    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
-    dotenv = AppFiles(kit.schema).ensure_user_dotenv()
-    original = (
-        "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n"
-    )
-    dotenv.write_text(original, encoding="utf-8")
-    monkeypatch.setattr(
-        runtime_commands,
-        "_is_interactive_terminal",
-        lambda: True,
-    )
-
-    result = CliRunner().invoke(
-        app,
-        ["set", "global.profile", "new", "--scope", "user"],
-        input="n\n",
-    )
-
-    assert result.exit_code == 1
-    assert "comment out duplicate line 2" in result.output
-    assert "Continue with this dotenv edit?" in result.output
-    assert dotenv.read_text(encoding="utf-8") == original
-
-
-def test_config_set_warns_after_noninteractive_duplicate_cleanup() -> None:
-    kit = build_storage_free_example_app()
-    app = build_config_typer_app(kit, state_type=StorageFreeExampleConfigState)
-    dotenv = AppFiles(kit.schema).ensure_user_dotenv()
-    dotenv.write_text(
-        "STORAGE_FREE_APP_PROFILE=first\nSTORAGE_FREE_APP_PROFILE=second\n",
-        encoding="utf-8",
-    )
-
-    result = CliRunner().invoke(
-        app,
-        ["set", "global.profile", "new", "--scope", "user"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert result.output.index("updated: STORAGE_FREE_APP_PROFILE") < (
-        result.output.index("Warning:")
-    )
-    assert "comment out duplicate line 2" in result.output
-
-
-def test_setup_show_and_appdata_clean_honor_explicit_directory_inputs(
-    tmp_path: Path,
-) -> None:
-    """Config selection and appdata cleanup use separate explicit targets."""
-    import apprc as rc
-    import typer
-
-    declaration = rc.AppRC(app_id="input-routing", user_dotenv=rc.UserDotenv())
-    app = typer.Typer()
-    rc.cli.mount_config_cli(app, declaration)
-    rc.cli.mount_appdata_cli(app, declaration)
-    directory = tmp_path / "selected"
-    explicit = tmp_path / "deployment.env"
-    explicit.write_text(f'INPUT_ROUTING_APPRC_DIR="{directory.as_posix()}"\n')
+    app, groups = _root_cli(kit)
     runner = CliRunner()
-    options = ["--env-file", str(explicit)]
-    setup = runner.invoke(app, [*options, "config", "setup", "--yes"])
+    setup = runner.invoke(app, ["config", "setup", "--yes"])
+    root = tmp_path / "workspace"
     assert setup.exit_code == 0, setup.output
-    assert (directory / "apprc.user.env").is_file()
-    show = runner.invoke(app, [*options, "config", "show", "--json"])
-    assert show.exit_code == 0, show.output
-    assert json.loads(show.output)["apprc_dir"] == str(directory)
-    cleanup_directory = tmp_path / "appdata-selected"
-    managed_file = cleanup_directory / "apprc.user.env"
-    managed_file.parent.mkdir()
-    managed_file.write_text("KEEP=1\n", encoding="utf-8")
-    cleanup = runner.invoke(
-        app,
-        ["appdata", "clean", "--apprc-dir", str(cleanup_directory), "--yes"],
+    assert not root.exists()
+    add = runner.invoke(app, ["workspace", "add", "work", str(root)])
+    listing = runner.invoke(app, ["workspace", "list", "--json"])
+
+    assert "workspace" in groups
+    assert add.exit_code == 0, add.output
+    assert (root / "apprc.workspace.env").is_file()
+    assert listing.exit_code == 0, listing.output
+    payload = json.loads(listing.output)
+    assert payload["registry"]["selected_workspace"] == "work"
+    assert payload["registry"]["workspaces"] == [
+        {"name": "work", "root": str(root.resolve())}
+    ]
+
+
+def test_workspace_registration_owns_config_and_purge_preserves_workspace(
+    tmp_path: Path,
+) -> None:
+    kit = rc.AppRC(
+        app_id="workspace_owned_config",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        workspaces=rc.Workspaces(),
     )
-    assert cleanup.exit_code == 0, cleanup.output
-    assert not managed_file.exists()
-    assert explicit.is_file()
-    assert (directory / "apprc.user.env").is_file()
+    manager = kit.workspaces(environment={})
+    config = kit.paths(environment={}).require("config")
+    root = tmp_path / "workspace"
+    root.mkdir()
+    data = root / "data.txt"
+    data.write_text("external workspace data", encoding="utf-8")
+    assert not config.exists()
+
+    registry = manager.register_workspace("work", root)
+
+    assert registry.workspaces["work"].root == root
+    assert manager.registry().selected_workspace == "work"
+    assert json.loads(
+        (config / ".apprc-owner.json").read_text(encoding="utf-8")
+    ) == {
+        "schema_version": 1,
+        "app_id": "workspace_owned_config",
+        "category": "config",
+    }
+    assert not (config / "apprc.user.env").exists()
+    workspace_files = {
+        path: path.read_bytes() for path in root.iterdir() if path.is_file()
+    }
+    maintenance = kit.maintain(environment={})
+    plans = maintenance.plan_purge(("config",))
+    assert manager.registry_path() in plans[0].targets
+
+    (result,) = maintenance.apply_purge(plans)
+
+    assert manager.registry_path() in result.removed
+    assert not config.exists()
+    assert data.read_text(encoding="utf-8") == "external workspace data"
+    assert {
+        path: path.read_bytes() for path in root.iterdir() if path.is_file()
+    } == workspace_files
+
+
+def test_workspace_registration_refuses_nonempty_unowned_config(
+    tmp_path: Path,
+) -> None:
+    kit = rc.AppRC(
+        app_id="workspace_unowned_config",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        workspaces=rc.Workspaces(),
+    )
+    config = kit.paths(environment={}).require("config")
+    config.mkdir(parents=True)
+    user_file = config / "apprc.user.env"
+    user_file.write_text("USER_VALUE=keep\n", encoding="utf-8")
+    manager = kit.workspaces(environment={})
+    root = tmp_path / "workspace"
+
+    with pytest.raises(ValueError, match="nonempty unowned"):
+        manager.register_workspace("work", root)
+
+    assert not manager.registry_path().exists()
+    assert not (config / ".apprc-owner.json").exists()
+    assert user_file.read_text(encoding="utf-8") == "USER_VALUE=keep\n"
+    assert set(config.iterdir()) == {user_file}
+    assert not root.exists()
+
+
+
+def test_secret_migration_moves_value_to_private_companion(
+    tmp_path: Path,
+) -> None:
+    kit = rc.AppRC(
+        app_id="secret_migration",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        user_dotenv=rc.UserDotenv(),
+    )
+
+    @kit.config("credentials", prefix="SECRET_MIGRATION_")
+    class Credentials(rc.Config):
+        token: str = rc.field("SECRET_MIGRATION_TOKEN", secret=True)
+
+    manager = kit.manage(environment={})
+    manager.setup()
+    files = AppFiles(kit.schema, manager.paths)
+    ordinary = files.user_dotenv_path()
+    secret = files.user_secret_dotenv_path()
+    ordinary.write_text(
+        'SECRET_MIGRATION_TOKEN="private-value"\n', encoding="utf-8"
+    )
+    plan = manager.plan_secret_migration("user")
+
+    assert plan.keys == ("SECRET_MIGRATION_TOKEN",)
+    assert "private-value" not in repr(plan)
+    manager.apply_secret_migration(plan)
+
+    assert "SECRET_MIGRATION_TOKEN" not in ordinary.read_text(encoding="utf-8")
+    assert "SECRET_MIGRATION_TOKEN" in secret.read_text(encoding="utf-8")
+    assert "private-value" not in repr(manager.inspect())
+    assert (
+        manager.resolve().source.values["SECRET_MIGRATION_TOKEN"]
+        == "private-value"
+    )

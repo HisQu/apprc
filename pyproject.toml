@@ -11,7 +11,7 @@ build-backend = "uv_build"
 
 [project]
 name        = "apprc-core"
-version     = "0.29.0"
+version     = "0.30.0"
 description = "Reusable runtime configuration and config CLI helpers for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
 readme      = { file = "README.pypi.md", content-type = "text/markdown" }
@@ -38,6 +38,7 @@ classifiers = [
 dependencies = [
     # > Core imports used by ordinary pip installations of this root project.
     "filelock>=3.20,<4",
+    "platformdirs>=4,<5",
     "python-dotenv",
     "pywin32>=311; sys_platform == 'win32'",
     "typed-settings[dotenv]",

@@ -22,7 +22,7 @@ def test_lab_starts_empty_sanitizes_env_and_cleans_up(
 ) -> None:
     """A successful child shell cannot inherit or retain AppRC lab state."""
     monkeypatch.setenv("APPRC_EXAMPLE_USER_PROFILE", "inherited")
-    monkeypatch.setenv("APPRC_EXAMPLE_STORAGE_STORAGE", "inherited")
+    monkeypatch.setenv("APPRC_EXAMPLE_WORKSPACE_WORKSPACE", "inherited")
     external = tmp_path / "outside-lab"
     external.mkdir()
     observed_root: Path | None = None
@@ -33,11 +33,13 @@ def test_lab_starts_empty_sanitizes_env_and_cleans_up(
         observed_root = Path(env["APPRC_EXAMPLE_LAB_ROOT"])
         assert not (observed_root / "apprc").exists()
         assert "APPRC_EXAMPLE_USER_PROFILE" not in env
-        assert "APPRC_EXAMPLE_STORAGE_STORAGE" not in env
-        apprc_dir_key = example_app("user-dotenv").apprc_dir_env_key
-        assert env[apprc_dir_key] == str(observed_root / "apprc")
-        (observed_root / "apprc").mkdir()
-        (observed_root / "apprc" / "apprc.user.env").write_text(
+        assert "APPRC_EXAMPLE_WORKSPACE_WORKSPACE" not in env
+        root_env_key = example_app("user-dotenv").root_env_key
+        layout_root = Path(env[root_env_key])
+        assert layout_root == observed_root / "apprc"
+        config_dir = layout_root / "config"
+        config_dir.mkdir(parents=True)
+        (config_dir / "apprc.user.env").write_text(
             "PROFILE=lab\n", encoding="utf-8"
         )
         (external / "keep.txt").write_text("keep", encoding="utf-8")
@@ -67,7 +69,7 @@ def test_lab_cleans_up_when_shell_launch_fails(
     monkeypatch.setattr(lab, "_open_shell", fail_shell)
 
     with pytest.raises(RuntimeError, match="shell failed"):
-        lab.run_lab("storage")
+        lab.run_lab("workspace")
     assert observed_root is not None
     assert not observed_root.exists()
 
@@ -76,7 +78,17 @@ def test_example_apps_do_not_depend_on_runner_support() -> None:
     """Each user-facing CLI remains copyable without the test harness."""
     cli_paths = sorted(EXAMPLE_SOURCE.glob("*/cli.py"))
 
-    assert len(cli_paths) == 7
+    assert len(cli_paths) == 8
+    assert {path.parent.name for path in cli_paths} == {
+        "cache_only",
+        "cli_runtime",
+        "explicit_env_precedence",
+        "library_client",
+        "process_env",
+        "user_dotenv",
+        "user_dotenv_with_workspace",
+        "workspace",
+    }
     for path in cli_paths:
         assert "_example_apps_utils" not in path.read_text(encoding="utf-8")
 
@@ -86,14 +98,15 @@ def test_run_all_uses_real_installed_clis() -> None:
     results = run_all()
 
     assert [result["example"] for result in results] == [
+        "cache-only",
         "process-env",
         "user-dotenv",
-        "storage",
-        "user-dotenv-with-storage",
+        "workspace",
+        "user-dotenv-with-workspace",
         "explicit-env-precedence",
         "cli-runtime",
         "library-client",
     ]
-    precedence = results[4]
+    precedence = results[5]
     assert precedence["shell_wins"] != precedence["explicit_file_wins"]
     assert all(result["cleaned"] is True for result in results)

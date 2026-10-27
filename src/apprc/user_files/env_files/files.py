@@ -1,6 +1,6 @@
 """Path, read, and write helpers for AppRC dotenv override files.
 
-User and storage dotenv files use the same validation and write
+User and workspace dotenv files use the same validation and write
 rules: values are checked against declared ``ConfigField`` metadata, known
 keys are written in declaration order, and unknown keys are preserved after
 known AppRC keys.
@@ -13,48 +13,54 @@ import json
 from pathlib import Path
 from typing import Iterable, Mapping
 
+from apprc.definition.env_config.lookup import iter_config_fields
+from apprc.definition.env_config.schema import ConfigOwner
+
 # == Internal ================================
 from apprc.user_files.app_home.locations import (
     AppRCDirectoryError,
+    assert_no_links,
     ensure_text_file,
     write_text_atomic,
 )
-from apprc.definition.env_config.lookup import iter_config_fields
-from apprc.definition.env_config.schema import ConfigOwner
 from apprc.user_files.env_files._parsing import parse_dotenv_file
-from apprc.user_files.storage_roots.paths import StorageRootPathError
+from apprc.user_files.workspace_roots.paths import (
+    WorkspaceRootPathError,
+    resolve_workspace_root_path,
+)
 
 
-def storage_dotenv_path(
-    storage_root: Path,
-    filename: str = "apprc.storage.env",
+def workspace_dotenv_path(
+    workspace_root: Path,
+    filename: str = "apprc.workspace.env",
 ) -> Path:
-    """Return the dotenv override file owned by one storage root.
+    """Return the dotenv override path owned by one workspace root.
 
-    :param storage_root: Storage root that owns the dotenv file.
-    :param filename: Dotenv filename inside the storage root.
-    :return: Resolved storage dotenv path.
+    :param workspace_root: Workspace root that owns the dotenv file.
+    :param filename: Dotenv filename inside the workspace root.
+    :return: Absolute workspace dotenv path.
     """
-    return Path(storage_root).expanduser().resolve() / filename
+    return (
+        resolve_workspace_root_path(workspace_root, base=Path.cwd()) / filename
+    )
 
 
-def ensure_storage_dotenv_file(
-    storage_root: Path,
-    filename: str = "apprc.storage.env",
+def ensure_workspace_dotenv_file(
+    workspace_root: Path,
+    filename: str = "apprc.workspace.env",
 ) -> Path:
-    """Create the storage dotenv file when it is missing.
+    """Create the workspace dotenv file when it is missing.
 
-    :param storage_root: Directory that owns the storage dotenv file.
-    :param filename: Dotenv filename inside the storage root.
+    :param workspace_root: Existing directory that owns the dotenv file.
+    :param filename: Dotenv filename inside the workspace root.
     :return: Path to the existing dotenv file.
-    :raises StorageRootPathError: If the root is missing or not a directory.
+    :raises WorkspaceRootPathError: If the root is missing or not a directory.
     """
-    root = require_existing_storage_root(storage_root)
-    path = root / filename
+    root = require_existing_workspace_root(workspace_root)
     try:
-        return ensure_text_file(path)
+        return ensure_text_file(root / filename)
     except AppRCDirectoryError as exc:
-        raise StorageRootPathError(str(exc)) from exc
+        raise WorkspaceRootPathError(str(exc)) from exc
 
 
 def ensure_env_file(path: Path) -> Path:
@@ -99,18 +105,21 @@ def write_env_file(
     return write_text_atomic(env_path, "\n".join(lines).rstrip() + "\n")
 
 
-def require_existing_storage_root(storage_root: Path) -> Path:
-    """Return ``storage_root`` after proving it already exists.
+def require_existing_workspace_root(workspace_root: Path) -> Path:
+    """Return a workspace root after proving it exists and is link-free.
 
-    :param storage_root: Storage root expected to own a dotenv file.
-    :return: Resolved existing storage root.
-    :raises StorageRootPathError: If the root is missing or not a directory.
+    :param workspace_root: Root expected to own a workspace dotenv file.
+    :return: Absolute existing workspace root.
+    :raises WorkspaceRootPathError: If the root is missing or not a directory.
     """
-    root = Path(storage_root).expanduser().resolve()
+    root = resolve_workspace_root_path(workspace_root, base=Path.cwd())
+    assert_no_links(root)
     if not root.exists():
-        raise StorageRootPathError(f"Storage root does not exist: {root!s}")
+        raise WorkspaceRootPathError(f"Workspace root does not exist: {root!s}")
     if not root.is_dir():
-        raise StorageRootPathError(f"Storage root is not a directory: {root!s}")
+        raise WorkspaceRootPathError(
+            f"Workspace root is not a directory: {root!s}"
+        )
     return root
 
 

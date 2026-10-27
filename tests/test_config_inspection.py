@@ -1,376 +1,64 @@
-from __future__ import annotations
+"""Inspection captures declared workspace state without filesystem writes."""
 
-from apprc.user_files.app_home.application import AppFiles
+from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
+
 import apprc as rc
-
-from tests.support_declaration import app_from_envs
+from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.app_config.user_dotenv import UserDotenv
-from apprc.definition.app_config.storage import Storage
-from apprc.interfaces.cli.diagnostics.payload import build_config_doctor_payload
-from apprc.interfaces.cli.diagnostics.status import ConfigDoctorStatus
-from apprc.user_files.storage_roots.registry import (
-    StorageRecord,
-    StorageRegistry,
-    register_storage,
-    write_storage_registry,
-)
-from tests.support_config import (
-    ApprcExampleAppEnv,
-    build_apprc_example_app,
-    build_storage_free_example_app,
-)
+from apprc.definition.app_config.workspaces import Workspaces
+from apprc.definition.paths import Layout, Paths
 
 
-def test_direct_kit_declarations_control_storage_capability() -> None:
-    assert build_storage_free_example_app().schema.uses_storage() is False
-    assert build_apprc_example_app().schema.uses_storage() is True
-
-
-def test_direct_kit_storage_values_are_preserved() -> None:
-    storage = Storage(selector_env_key="DEMO_STORAGE")
-    kit = app_from_envs(
-        app_id="demo",
-        display_name="Demo",
-        config_package="apprc",
-        storage=storage,
+def test_declarations_keep_paths_and_workspaces_independent() -> None:
+    direct = rc.AppRC(
+        app_id="direct-workspace",
+        paths=Paths(cache=True),
+        workspaces=Workspaces(registry=False),
+    )
+    registered = rc.AppRC(
+        app_id="registered-workspace",
+        paths=Paths(config=True, appdata=True),
+        workspaces=Workspaces(selector_env_key="CUSTOM_WORKSPACE"),
     )
 
-    assert kit.schema.require_storage() == storage
+    assert direct.schema.paths == Paths(cache=True)
+    assert direct.schema.require_workspaces().registry is False
+    assert registered.schema.paths == Paths(config=True, appdata=True)
+    assert registered.schema.workspace_selector_env_key == "CUSTOM_WORKSPACE"
 
 
-def test_persistence_declarations_enable_capabilities_only() -> None:
-    assert not hasattr(UserDotenv(), "required")
-    assert not hasattr(Storage(), "required")
-
-
-def test_kit_rejects_removed_capability_keywords() -> None:
-    with pytest.raises(TypeError):
-        app_from_envs(
-            app_id="demo",
-            display_name="Demo",
-            config_package="apprc",
-            storage_mode="required",  # pyright: ignore[reportCallIssue]
-        )
-
-
-def test_doctor_reports_missing_user_dotenv_without_writing() -> None:
-    kit = build_storage_free_example_app()
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert payload.user_dotenv_exists is False
-    assert payload.user_dotenv is not None
-    assert not Path(payload.user_dotenv).exists()
-    assert payload.writes == "none"
-    assert payload.user_dotenv_required is False
-
-
-def test_doctor_treats_missing_optional_layers_as_warnings(
-    tmp_path: Path,
-) -> None:
-    kit = app_from_envs(
-        app_id="optional_app",
-        display_name="Optional App",
-        config_package="apprc",
-        user_dotenv=UserDotenv(),
-        storage=Storage(),
-        apprc_dir=tmp_path / "apprc",
-    )
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert payload.user_dotenv_required is False
-    assert payload.storage_required is False
-    assert payload.to_payload()["user_dotenv_required"] is False
-    assert payload.to_payload()["storage_required"] is False
-    assert payload.issues == ()
-    assert not AppFiles(kit.schema).apprc_dir().exists()
-
-
-def test_optional_storage_skips_only_storage_dependent_fields(
+def test_workspace_inspection_captures_selection_without_writing(
     tmp_path: Path,
 ) -> None:
     app = rc.AppRC(
-        app_id="optional-storage-fields",
-        storage=rc.Storage(selector_env_key="DEMO_STORAGE"),
-        apprc_dir=tmp_path / "apprc",
+        app_id="workspace-inspection",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "app"),
+        workspaces=Workspaces(registry=False),
     )
+    root = tmp_path / "project"
+    options = rc.ResolveOptions(workspace=str(root))
+    app.workspaces(options, environment={}).initialize_workspace(root)
 
-    @app.config("client", prefix="DEMO_CLIENT_")
-    class ClientSettings(rc.Config):
-        timeout: int = rc.field("DEMO_CLIENT_TIMEOUT", default=10)
+    inspected = app.manage(options, environment={}).inspect()
 
-    @app.config("data", prefix="DEMO_DATA_", requires_storage=True)
-    class DataSettings(rc.Config):
-        token: str = rc.field("DEMO_DATA_TOKEN", required=True, secret=True)
-
-    manager = app.manage(environment={})
-    inspection = manager.inspect()
-    assert inspection.ready
-    assert [field.active for field in inspection.fields] == [True, False]
-    assert inspection.fields[1].value is None
-    assert inspection.fields[1].display_value is None
-    assert inspection.fields[1].issue is None
-    payload = build_config_doctor_payload(app, storage=None, manager=manager)
-    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert not (tmp_path / "apprc").exists()
-
-    invalid_client = app.manage(environment={"DEMO_CLIENT_TIMEOUT": "bad"})
-    assert any(
-        "DEMO_CLIENT_TIMEOUT" in issue
-        for issue in invalid_client.inspect().issues
-    )
-    assert (
-        build_config_doctor_payload(
-            app, storage=None, manager=invalid_client
-        ).status
-        == ConfigDoctorStatus.CONFIG_INVALID.value
-    )
-
-    invalid_selector = app.manage(environment={"DEMO_STORAGE": "missing"})
-    assert not invalid_selector.inspect().fields[1].active
-    assert (
-        build_config_doctor_payload(
-            app, storage=None, manager=invalid_selector
-        ).status
-        == ConfigDoctorStatus.STORAGE_NOT_READY.value
-    )
-
-    required = app.manage(
-        rc.ResolveOptions(storage_required=True), environment={}
-    )
-    assert (
-        build_config_doctor_payload(app, storage=None, manager=required).status
-        == ConfigDoctorStatus.STORAGE_NOT_SELECTED.value
-    )
-
-    manager.setup(storage_root=tmp_path / "storage")
-    selected = manager.inspect()
-    assert selected.fields[1].active
-    assert (
-        selected.fields[1].issue == "Missing required setting: DEMO_DATA_TOKEN."
-    )
-    assert (
-        build_config_doctor_payload(app, storage=None, manager=manager).status
-        == ConfigDoctorStatus.CONFIG_INVALID.value
-    )
+    assert inspected.resolved.workspace is not None
+    assert inspected.resolved.workspace.root == root
+    assert inspected.resolved.workspace_issues == ()
+    assert inspected.resolved.paths.config_dir == tmp_path / "app" / "config"
+    assert not (tmp_path / "app").exists()
 
 
-def test_doctor_reports_selected_registered_storage(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_ACCESS_TOKEN", "test-token")
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    storage_root = tmp_path / "alpha"
-    register_storage(
-        name="alpha",
-        root=storage_root,
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
-    )
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert payload.configured_selected_storage == "alpha"
-    assert payload.selected_storage == "alpha"
-    assert payload.selected_storage_source == "apprc.toml selected_storage"
-    assert payload.selected_storage_root == str(storage_root.resolve())
-
-
-def test_doctor_reports_malformed_registry(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    registry = AppFiles(kit.schema).preferred_apprc_toml_path()
-    registry.write_text("[invalid", encoding="utf-8")
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.status == ConfigDoctorStatus.STORAGE_REGISTRY_NOT_READY.value
-    assert payload.apprc_toml_parse_ok is False
-    assert payload.apprc_toml_error is not None
-
-
-def test_doctor_reports_storage_not_selected_without_missing_env_key(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    AppFiles(kit.schema).preferred_apprc_toml_path().write_text(
-        "", encoding="utf-8"
-    )
-
-    payload = build_config_doctor_payload(
-        kit, storage=None, storage_required=True
-    )
-
-    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_SELECTED.value
-    assert "missing_env_keys" not in payload.to_payload()
-    assert any("--storage NAME_OR_PATH" in issue for issue in payload.issues)
-    assert any(
-        "setup --yes --storage-root" in step for step in payload.next_steps
-    )
-
-
-def test_doctor_distinguishes_invalid_selector_from_missing_selection(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_STORAGE", "missing")
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    storage_root = tmp_path / "alpha"
-    register_storage(
-        name="alpha",
-        root=storage_root,
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
-    )
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_READY.value
-    assert any("missing" in issue for issue in payload.issues)
-    assert all(
-        "No storage is selected" not in issue for issue in payload.issues
-    )
-    assert payload.next_steps[0].startswith("Fix or unset")
-    assert all(" config setup" not in step for step in payload.next_steps)
-
-
-def test_doctor_recommends_repoint_for_missing_registered_root(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """A manually moved named storage is not reported as missing setup.
-
-    :param monkeypatch: Process environment mutation fixture.
-    :param tmp_path: Isolated AppRC and missing storage parent.
-    """
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    registry_path = AppFiles(kit.schema).preferred_apprc_toml_path()
-    write_storage_registry(
-        StorageRegistry(
-            path=registry_path,
-            storages={
-                "ontology": StorageRecord(
-                    name="ontology",
-                    root=tmp_path / "missing",
-                )
-            },
-            selected_storage="ontology",
-            archived_storages={},
+def test_disabled_workspace_component_is_rejected_by_spec() -> None:
+    with pytest.raises(
+        ValueError, match="UserDotenv requires paths.config=True"
+    ):
+        AppConfigSpec(
+            app_id="no-config",
+            display_name="No Config",
+            user_dotenv=UserDotenv(),
         )
-    )
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_READY.value
-    assert payload.next_steps[0].endswith(
-        "config storage repoint ontology /absolute/path/to/existing-storage"
-    )
-    assert all("setup" not in step.lower() for step in payload.next_steps)
-
-
-def test_doctor_recommends_selecting_an_existing_storage(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(tmp_path / "apprc"))
-    monkeypatch.delenv("APPRC_EXAMPLE_APP_STORAGE", raising=False)
-    kit = build_apprc_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    storage_root = tmp_path / "alpha"
-    storage_root.mkdir()
-    (storage_root / "apprc.storage.env").write_text("", encoding="utf-8")
-    registry_path = AppFiles(kit.schema).preferred_apprc_toml_path()
-    write_storage_registry(
-        StorageRegistry(
-            path=registry_path,
-            storages={"alpha": StorageRecord(name="alpha", root=storage_root)},
-            selected_storage=None,
-            archived_storages={},
-        )
-    )
-
-    payload = build_config_doctor_payload(
-        kit, storage=None, storage_required=True
-    )
-
-    assert payload.status == ConfigDoctorStatus.STORAGE_NOT_SELECTED.value
-    assert payload.storage_count == 1
-    assert "storage select NAME" in payload.next_steps[0]
-
-
-def test_disk_registry_never_enables_storage_for_storage_free_app(
-    tmp_path: Path,
-) -> None:
-    kit = app_from_envs(
-        app_id="config_only",
-        display_name="Config Only",
-        config_package="apprc",
-        envs=(ApprcExampleAppEnv,),
-        user_dotenv=UserDotenv(),
-        apprc_dir=tmp_path / "apprc",
-    )
-    AppFiles(kit.schema).ensure_user_dotenv()
-    registry = AppFiles(kit.schema).preferred_apprc_toml_path()
-    registry.write_text(
-        'selected_storage = "alpha"\n\n[storages.alpha]\nroot = "storage"\n',
-        encoding="utf-8",
-    )
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.storage_enabled is False
-    assert payload.selected_storage is None
-    assert any(
-        "stale storage" in warning.lower() for warning in payload.warnings
-    )
-
-
-def test_disk_files_never_enable_features_for_process_env_app(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    apprc_dir = tmp_path / "stale-apprc"
-    apprc_dir.mkdir()
-    (apprc_dir / "apprc.user.env").write_text("OLD=1\n", encoding="utf-8")
-    (apprc_dir / "apprc.toml").write_text("", encoding="utf-8")
-    monkeypatch.setenv("PROCESS_ONLY_APPRC_DIR", str(apprc_dir))
-    kit = app_from_envs(
-        app_id="process_only",
-        display_name="Process Only",
-        config_package="process_env.config",
-    )
-
-    payload = build_config_doctor_payload(kit, storage=None)
-
-    assert payload.status == ConfigDoctorStatus.RUNNABLE.value
-    assert payload.user_dotenv_enabled is False
-    assert payload.storage_enabled is False
-    assert payload.apprc_dir is None
-    assert payload.user_dotenv is None
-    assert payload.apprc_toml is None
-    assert any("stale user dotenv" in item.lower() for item in payload.warnings)
-    assert any("stale storage" in item.lower() for item in payload.warnings)

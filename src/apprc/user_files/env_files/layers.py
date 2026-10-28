@@ -10,13 +10,13 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Mapping
 
-# == 3rd Party ===============================
-from apprc.user_files.env_files._parsing import parse_dotenv_file
-
 # == Internal ================================
 from apprc.definition.app_config.spec import (
     AppConfigSpec,
 )
+
+# == 3rd Party ===============================
+from apprc.user_files.env_files._parsing import parse_dotenv_file
 
 
 class ExplicitEnvFileError(ValueError):
@@ -54,7 +54,7 @@ def read_explicit_env_files(
 ) -> tuple[tuple[Path, ...], tuple[ExplicitEnvLayer, ...], dict[str, str]]:
     """Read ordered explicit dotenv files.
 
-    Explicit values may guide storage selection even when dotenv layers
+    Explicit values may guide workspace selection even when dotenv layers
     are not included in setting values. Later files override earlier files.
     """
     loaded_paths: list[Path] = []

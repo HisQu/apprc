@@ -51,10 +51,10 @@ shell startup files or `PATH` to locate project tools; use `.venv/bin/<tool>`.
 
 | Path | Purpose |
 | --- | --- |
-| `src/apprc/definition` | Validated metadata and shared records |
-| `src/apprc/runtime` | Explicit resolution and config lifecycle |
-| `src/apprc/services` | Shared manager and field inspection |
-| `src/apprc/user_files` | File parsing, persistence, storage operations |
+| `src/apprc/definition` | Validated metadata, path declarations, and shared records |
+| `src/apprc/runtime` | Explicit resolution, path snapshots, and config lifecycle |
+| `src/apprc/services` | Config, workspace, and maintenance services |
+| `src/apprc/user_files` | File parsing, ownership, persistence, workspace operations |
 | `src/apprc/interfaces` | Typer and Textual adapters |
 | `src/apprc/public` | Application declaration facade |
 | `src/apprc/scaffold` | Small generated application layout |
@@ -62,7 +62,7 @@ shell startup files or `PATH` to locate project tools; use `.venv/bin/<tool>`.
 | `src/apprc_dev/packaging/gui/src/apprc_gui` | Gradio presentation; no copy of the core's `apprc` modules |
 | `tests` | Behavior, architecture, and integration checks |
 | `examples/example_apps` | Curated CLIs, automated runner, manual lab |
-| `docs/assets` | Diagram sources and generated SVGs |
+| `docs/assets` | Diagram source scripts and generated SVGs; generated diagrams must follow their source scripts |
 
 The root project builds `apprc-core` and owns all `apprc` Python files. The
 `src/apprc_dev/packaging/terminal` project builds `apprc`, owns no Python package,

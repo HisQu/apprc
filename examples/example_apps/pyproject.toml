@@ -8,17 +8,18 @@ version = "0.0.0"
 description = "Repository-local example CLIs for AppRC integration workflows."
 requires-python = ">=3.12"
 dependencies = [
-    "apprc>=0.29.0,<0.30",
+    "apprc>=0.30.0,<0.31",
 ]
 
 [project.optional-dependencies]
-desktop = ["apprc-gui>=0.29.0,<0.30"]
+desktop = ["apprc-gui>=0.30.0,<0.31"]
 
 [project.scripts]
 apprc-process-env = "process_env.cli:main"
 apprc-user-dotenv = "user_dotenv.cli:main"
-apprc-storage = "storage.cli:main"
-apprc-user-dotenv-with-storage = "user_dotenv_with_storage.cli:main"
+apprc-workspace = "workspace.cli:main"
+apprc-user-dotenv-with-workspace = "user_dotenv_with_workspace.cli:main"
+apprc-cache-only = "cache_only.cli:main"
 apprc-explicit-env-precedence = "explicit_env_precedence.cli:main"
 apprc-cli-runtime = "cli_runtime.cli:main"
 apprc-library-client = "library_client.cli:main"
@@ -34,7 +35,8 @@ include = [
     "cli_runtime*",
     "process_env*",
     "user_dotenv*",
-    "storage*",
+    "workspace*",
+    "cache_only*",
     "_example_apps_utils",
     "explicit_env_precedence*",
     "library_client*",

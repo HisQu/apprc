@@ -4,28 +4,30 @@ from pathlib import Path
 
 import pytest
 
+from apprc.definition.env_config.schema import ConfigField
 from apprc.user_files.env_files import (
     clear_env_file_value,
-    clear_storage_dotenv_value,
-    ensure_storage_dotenv_file,
+    clear_workspace_dotenv_value,
+    ensure_workspace_dotenv_file,
     normalize_env_value,
     read_env_file,
     set_env_file_value,
-    set_storage_dotenv_value,
+    set_workspace_dotenv_value,
     write_env_file,
 )
-from apprc.user_files.storage_roots.paths import StorageRootPathError
-from apprc.definition.env_config.schema import ConfigField
+from apprc.user_files.workspace_roots.paths import WorkspaceRootPathError
 from tests.support_config import (
-    APPRC_EXAMPLE_APP_OWNER,
-    APPRC_EXAMPLE_APP_OWNERS,
+    WORKSPACE_EXAMPLE_OWNER as APPRC_EXAMPLE_APP_OWNER,
+)
+from tests.support_config import (
+    WORKSPACE_EXAMPLE_OWNERS as APPRC_EXAMPLE_APP_OWNERS,
 )
 
 
 def test_write_env_file_orders_known_keys_before_unknown_keys(
     tmp_path: Path,
 ) -> None:
-    env_path = tmp_path / ".env.apprc_example_app"
+    env_path = tmp_path / "apprc.workspace.env"
 
     write_env_file(
         env_path,
@@ -46,176 +48,133 @@ def test_write_env_file_orders_known_keys_before_unknown_keys(
     )
 
 
-def test_ensure_storage_dotenv_file_creates_file_in_existing_root(
+def test_ensure_workspace_dotenv_file_creates_file_in_existing_root(
     tmp_path: Path,
 ) -> None:
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
 
-    path = ensure_storage_dotenv_file(
-        storage_root, filename=".env.apprc_example_app"
+    path = ensure_workspace_dotenv_file(
+        workspace_root,
+        filename="apprc.workspace.env",
     )
 
-    assert path == storage_root.resolve() / ".env.apprc_example_app"
+    assert path == workspace_root.resolve() / "apprc.workspace.env"
     assert path.is_file()
 
 
-def test_ensure_storage_dotenv_file_rejects_missing_root(
+def test_ensure_workspace_dotenv_file_rejects_missing_root(
     tmp_path: Path,
 ) -> None:
-    storage_root = tmp_path / "storage"
+    workspace_root = tmp_path / "workspace"
 
-    with pytest.raises(StorageRootPathError, match="does not exist"):
-        ensure_storage_dotenv_file(
-            storage_root,
-            filename=".env.apprc_example_app",
+    with pytest.raises(WorkspaceRootPathError, match="does not exist"):
+        ensure_workspace_dotenv_file(
+            workspace_root,
+            filename="apprc.workspace.env",
         )
 
 
-def test_set_storage_dotenv_value_accepts_env_key_config_path_or_unique_name(
+def test_set_workspace_dotenv_value_accepts_env_key_config_path_or_unique_name(
     tmp_path: Path,
 ) -> None:
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
 
-    update_by_env = set_storage_dotenv_value(
-        storage_root=storage_root,
+    update_by_env = set_workspace_dotenv_value(
+        workspace_root=workspace_root,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         raw_value="local-profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_dotenv_filename=".env.apprc_example_app",
     )
-    update_by_path = set_storage_dotenv_value(
-        storage_root=storage_root,
+    update_by_path = set_workspace_dotenv_value(
+        workspace_root=workspace_root,
         reference="app.retry_count",
         raw_value="5",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_dotenv_filename=".env.apprc_example_app",
     )
-    update_by_name = set_storage_dotenv_value(
-        storage_root=storage_root,
+    update_by_name = set_workspace_dotenv_value(
+        workspace_root=workspace_root,
         reference="enabled",
         raw_value="yes",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_dotenv_filename=".env.apprc_example_app",
     )
 
     assert update_by_env.env_key == "APPRC_EXAMPLE_APP_PROFILE"
     assert update_by_path.value == "5"
     assert update_by_name.value == "true"
-    assert read_env_file(storage_root / ".env.apprc_example_app") == {
+    assert read_env_file(workspace_root / "apprc.workspace.env") == {
         "APPRC_EXAMPLE_APP_PROFILE": "local-profile",
         "APPRC_EXAMPLE_APP_ENABLED": "true",
         "APPRC_EXAMPLE_APP_RETRY_COUNT": "5",
     }
 
 
-def test_set_storage_dotenv_value_rejects_registry_owned_storage_root(
+def test_set_workspace_dotenv_value_rejects_missing_workspace_root(
     tmp_path: Path,
 ) -> None:
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
+    workspace_root = tmp_path / "workspace"
 
-    with pytest.raises(
-        ValueError,
-        match=r"managed outside \.env\.apprc_example_app",
-    ):
-        set_storage_dotenv_value(
-            storage_root=storage_root,
-            reference="APPRC_EXAMPLE_APP_STORAGE",
-            raw_value="/tmp/storage",
-            owners=APPRC_EXAMPLE_APP_OWNERS,
-            storage_dotenv_filename=".env.apprc_example_app",
-        )
-
-
-def test_set_storage_dotenv_value_rejects_missing_storage_root(
-    tmp_path: Path,
-) -> None:
-    storage_root = tmp_path / "storage"
-
-    with pytest.raises(StorageRootPathError, match="does not exist"):
-        set_storage_dotenv_value(
-            storage_root=storage_root,
+    with pytest.raises(WorkspaceRootPathError, match="does not exist"):
+        set_workspace_dotenv_value(
+            workspace_root=workspace_root,
             reference="APPRC_EXAMPLE_APP_PROFILE",
             raw_value="local-profile",
             owners=APPRC_EXAMPLE_APP_OWNERS,
-            storage_dotenv_filename=".env.apprc_example_app",
         )
 
-    assert not storage_root.exists()
+    assert not workspace_root.exists()
 
 
-def test_clear_storage_dotenv_value_removes_existing_override(
+def test_clear_workspace_dotenv_value_removes_existing_override(
     tmp_path: Path,
 ) -> None:
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
-    set_storage_dotenv_value(
-        storage_root=storage_root,
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    set_workspace_dotenv_value(
+        workspace_root=workspace_root,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         raw_value="local-profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_dotenv_filename=".env.apprc_example_app",
     )
 
-    update = clear_storage_dotenv_value(
-        storage_root=storage_root,
+    update = clear_workspace_dotenv_value(
+        workspace_root=workspace_root,
         reference="app.profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        storage_dotenv_filename=".env.apprc_example_app",
     )
 
     assert update is not None
     assert update.env_key == "APPRC_EXAMPLE_APP_PROFILE"
     assert update.value == ""
-    assert read_env_file(storage_root / ".env.apprc_example_app") == {}
+    assert read_env_file(workspace_root / "apprc.workspace.env") == {}
 
 
-def test_clear_storage_dotenv_value_rejects_registry_owned_storage_root(
+def test_clear_workspace_dotenv_value_rejects_missing_workspace_root(
     tmp_path: Path,
 ) -> None:
-    storage_root = tmp_path / "storage"
-    storage_root.mkdir()
+    workspace_root = tmp_path / "workspace"
 
-    with pytest.raises(
-        ValueError,
-        match=r"managed outside \.env\.apprc_example_app",
-    ):
-        clear_storage_dotenv_value(
-            storage_root=storage_root,
-            reference="APPRC_EXAMPLE_APP_STORAGE",
-            owners=APPRC_EXAMPLE_APP_OWNERS,
-            storage_dotenv_filename=".env.apprc_example_app",
-        )
-
-
-def test_clear_storage_dotenv_value_rejects_missing_storage_root(
-    tmp_path: Path,
-) -> None:
-    storage_root = tmp_path / "storage"
-
-    with pytest.raises(StorageRootPathError, match="does not exist"):
-        clear_storage_dotenv_value(
-            storage_root=storage_root,
+    with pytest.raises(WorkspaceRootPathError, match="does not exist"):
+        clear_workspace_dotenv_value(
+            workspace_root=workspace_root,
             reference="APPRC_EXAMPLE_APP_PROFILE",
             owners=APPRC_EXAMPLE_APP_OWNERS,
-            storage_dotenv_filename=".env.apprc_example_app",
         )
 
-    assert not storage_root.exists()
+    assert not workspace_root.exists()
 
 
 def test_clear_env_file_value_missing_file_is_zero_write(
     tmp_path: Path,
 ) -> None:
-    env_path = tmp_path / ".env.apprc_example_app"
+    env_path = tmp_path / "apprc.user.env"
 
     update = clear_env_file_value(
         path=env_path,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        layer_name=".env.apprc_example_app",
+        layer_name="apprc.user.env",
     )
 
     assert update is None
@@ -225,14 +184,14 @@ def test_clear_env_file_value_missing_file_is_zero_write(
 def test_clear_env_file_value_absent_key_preserves_existing_file(
     tmp_path: Path,
 ) -> None:
-    env_path = tmp_path / ".env.apprc_example_app"
+    env_path = tmp_path / "apprc.user.env"
     env_path.write_text('OTHER="value"\n', encoding="utf-8")
 
     update = clear_env_file_value(
         path=env_path,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         owners=APPRC_EXAMPLE_APP_OWNERS,
-        layer_name=".env.apprc_example_app",
+        layer_name="apprc.user.env",
     )
 
     assert update is None

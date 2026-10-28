@@ -18,15 +18,15 @@ from apprc.interfaces._terminal_styles import (
     PATH_STYLE,
     REQUIRED_STYLE,
     SECRET_STYLE,
-    STORAGE_NAME_STYLE,
     TEXT_STYLE,
+    WORKSPACE_NAME_STYLE,
     env_key_text,
     label_value_text,
     lines_text,
     path_markup,
     path_text,
-    storage_name_text,
     style_literals,
+    workspace_name_text,
 )
 
 __all__ = [
@@ -48,14 +48,14 @@ __all__ = [
     "PATH_STYLE",
     "REQUIRED_STYLE",
     "SECRET_STYLE",
-    "STORAGE_NAME_STYLE",
+    "WORKSPACE_NAME_STYLE",
     "TEXT_STYLE",
     "env_key_text",
     "label_value_text",
     "lines_text",
     "path_markup",
     "path_text",
-    "storage_name_text",
+    "workspace_name_text",
     "style_literals",
 ]
 

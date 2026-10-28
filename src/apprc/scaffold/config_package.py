@@ -1,47 +1,31 @@
 """Generate AppRC's recommended config package layout."""
 
 # == Standard Library ========================
+import re
 from dataclasses import dataclass
 from pathlib import Path
-import re
 
 _PACKAGE_TOKEN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass(frozen=True, slots=True)
 class ConfigScaffoldRequest:
-    """Input values for one generated config package.
-
-    :param package: Import package that receives ``config/``.
-    :param user_dotenv: Whether the app declares a managed user dotenv.
-    :param storage: Whether the generated app declares storage.
-    :param app_id: Stable AppRC application name.
-    :param display_name: Human-readable application label.
-    :param target: Source root containing the package.
-    :param storage_selector_env_key: Optional storage selector env key override.
-    :param env_prefix: Prefix used by the generated env-backed section.
-    :param force: Whether existing generated files may be replaced.
-    """
+    """Input values for one generated config package."""
 
     package: str
     app_id: str
     target: Path
     user_dotenv: bool = False
-    storage: bool = False
+    workspaces: bool = False
     display_name: str | None = None
-    storage_selector_env_key: str | None = None
+    workspace_selector_env_key: str | None = None
     env_prefix: str | None = None
     force: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class ConfigScaffoldResult:
-    """Files written by the config package scaffold.
-
-    :param config_package_dir: Directory containing the generated config
-        package.
-    :param written_files: Files created or replaced by the scaffold.
-    """
+    """Files written by the config package scaffold."""
 
     config_package_dir: Path
     written_files: tuple[Path, ...]
@@ -50,14 +34,7 @@ class ConfigScaffoldResult:
 def scaffold_config_package(
     request: ConfigScaffoldRequest,
 ) -> ConfigScaffoldResult:
-    """Create AppRC's standard config package files.
-
-    :param request: Scaffold inputs from the CLI or a test.
-    :return: Paths written by the scaffold.
-    :raises ValueError: If request values are inconsistent.
-    :raises FileExistsError: If generated files already exist and
-        ``force`` is false.
-    """
+    """Create AppRC's standard config package files."""
     _validate_request(request)
     package_parts = tuple(request.package.split("."))
     package_dir = request.target.joinpath(*package_parts)
@@ -74,19 +51,15 @@ def scaffold_config_package(
     if existing_files and not request.force:
         joined = "\n".join(f"- {path}" for path in existing_files)
         raise FileExistsError(
-            "AppRC config scaffold target files already exist. "
-            "Pass --force to replace them:\n"
+            "AppRC config scaffold target files already exist. Pass --force to replace them:\n"
             f"{joined}"
         )
-
     _ensure_package_dirs(request.target, package_parts)
     for path, content in files.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-
     return ConfigScaffoldResult(
-        config_package_dir=config_dir,
-        written_files=tuple(files),
+        config_package_dir=config_dir, written_files=tuple(files)
     )
 
 
@@ -95,13 +68,16 @@ def _validate_request(request: ConfigScaffoldRequest) -> None:
     _validate_package(request.package)
     if not request.app_id:
         raise ValueError("--app-id must be non-empty.")
-    if not request.storage and request.storage_selector_env_key:
-        raise ValueError("--storage-selector-env-key requires --storage.")
-    if request.storage_selector_env_key and request.env_prefix:
-        _validate_env_key_prefix(
-            storage_selector_env_key=request.storage_selector_env_key,
-            env_prefix=request.env_prefix,
-        )
+    if not request.workspaces and request.workspace_selector_env_key:
+        raise ValueError("--workspace-selector-env-key requires --workspaces.")
+    if request.workspace_selector_env_key and request.env_prefix:
+        if not request.workspace_selector_env_key.startswith(
+            request.env_prefix
+        ):
+            raise ValueError(
+                f"--workspace-selector-env-key {request.workspace_selector_env_key!r} must "
+                f"start with --env-prefix {request.env_prefix!r}."
+            )
 
 
 def _validate_package(package: str) -> None:
@@ -114,20 +90,6 @@ def _validate_package(package: str) -> None:
         raise ValueError(
             "--package contains invalid Python package segments: "
             + ", ".join(invalid)
-        )
-
-
-def _validate_env_key_prefix(
-    *,
-    storage_selector_env_key: str,
-    env_prefix: str,
-) -> None:
-    """Ensure generated storage fields satisfy AppRC prefix validation."""
-    if not storage_selector_env_key.startswith(env_prefix):
-        raise ValueError(
-            f"--storage-selector-env-key {storage_selector_env_key!r} must "
-            "start with "
-            f"--env-prefix {env_prefix!r}."
         )
 
 
@@ -146,11 +108,9 @@ def _ensure_package_dirs(target: Path, package_parts: tuple[str, ...]) -> None:
 
 def _default_env_prefix(request: ConfigScaffoldRequest) -> str:
     """Return an explicit generated prefix for the example section."""
-    if (
-        request.storage_selector_env_key
-        and "_" in request.storage_selector_env_key
-    ):
-        return request.storage_selector_env_key.rsplit("_", 1)[0] + "_"
+    key = request.workspace_selector_env_key
+    if key and "_" in key:
+        return key.rsplit("_", 1)[0] + "_"
     return _upper_env_token(request.app_id) + "_"
 
 
@@ -180,17 +140,14 @@ def _render_files(
     return {
         config_dir / "__init__.py": _render_config_init(),
         config_dir / "app.py": _render_app_module(
-            request=request,
-            module_prefix=module_prefix,
+            request=request, module_prefix=module_prefix
         ),
         config_dir / "sections" / "__init__.py": _render_sections_init(),
         config_dir / "sections" / "app.py": _render_section_module(
-            request=request,
-            env_prefix=env_prefix,
+            request=request, env_prefix=env_prefix
         ),
         config_dir / "bundle.py": _render_bundle_module(
-            module_prefix=module_prefix,
-            bundle_name=bundle_name,
+            module_prefix=module_prefix, bundle_name=bundle_name
         ),
     }
 
@@ -201,23 +158,26 @@ def _render_config_init() -> str:
 
 
 def _render_app_module(
-    *,
-    request: ConfigScaffoldRequest,
-    module_prefix: str,
+    *, request: ConfigScaffoldRequest, module_prefix: str
 ) -> str:
     """Render ``config/app.py``."""
     display_name = request.display_name or request.app_id
+    paths_line = (
+        "    paths=rc.Paths(config=True),\n"
+        if request.user_dotenv or request.workspaces
+        else ""
+    )
     user_dotenv_line = (
         "    user_dotenv=rc.UserDotenv(),\n" if request.user_dotenv else ""
     )
-    storage_line = ""
-    if request.storage:
-        env_key = (
-            f"selector_env_key={request.storage_selector_env_key!r}"
-            if request.storage_selector_env_key is not None
+    workspace_line = ""
+    if request.workspaces:
+        key = (
+            f"selector_env_key={request.workspace_selector_env_key!r}"
+            if request.workspace_selector_env_key is not None
             else ""
         )
-        storage_line = f"    storage=rc.Storage({env_key}),\n"
+        workspace_line = f"    workspaces=rc.Workspaces({key}),\n"
     return f'''"""AppRC application contract."""
 
 import apprc as rc
@@ -227,7 +187,7 @@ MyRC = rc.AppRC(
     app_id={request.app_id!r},
     display_name={display_name!r},
     config_package={module_prefix!r},
-{user_dotenv_line}{storage_line}    command_name={request.app_id!r},
+{paths_line}{user_dotenv_line}{workspace_line}    command_name={request.app_id!r},
 )
 
 '''
@@ -239,59 +199,34 @@ def _render_sections_init() -> str:
 
 
 def _render_section_module(
-    *,
-    request: ConfigScaffoldRequest,
-    env_prefix: str,
+    *, request: ConfigScaffoldRequest, env_prefix: str
 ) -> str:
     """Render ``config/sections/app.py``."""
-    imports = (
-        "from pathlib import Path\n\n"
-        if request.storage_selector_env_key
-        else ""
-    )
-    storage_field = ""
-    if request.storage_selector_env_key is not None:
-        _validate_env_key_prefix(
-            storage_selector_env_key=request.storage_selector_env_key,
-            env_prefix=env_prefix,
-        )
-        storage_field = f"""    storage_root: Path = rc.field(
-        {request.storage_selector_env_key!r},
-        editable=False,
-        required=True,
-        title="Storage root",
-        explanation_short="Active storage root selected for this run.",
-    )
-"""
     return f'''"""App-owned AppRC config section."""
 
-{imports}import apprc as rc
+import apprc as rc
 
 from {request.package}.config.app import MyRC
 
 
 @MyRC.config("app", prefix={env_prefix!r}, title="App")
 class AppSection(rc.Config):
-    """Env-backed application settings."""
-
-{storage_field}    profile: str = rc.field(
+    profile: str = rc.field(
         {f"{env_prefix}PROFILE"!r},
         default="default",
         title="Profile",
-        explanation_short="Named profile resolved from AppRC env layers.",
+        explanation_short="Application profile name.",
     )
 '''
 
 
-def _render_bundle_module(
-    *,
-    module_prefix: str,
-    bundle_name: str,
-) -> str:
-    """Render ``config/bundle.py``."""
-    return f'''"""Top-level AppRC config bundle."""
+def _render_bundle_module(*, module_prefix: str, bundle_name: str) -> str:
+    """Render one bundle combining generated sections."""
+    return f'''"""Bundle for the generated AppRC config sections."""
 
 from dataclasses import dataclass, field
+
+import apprc as rc
 
 from {module_prefix}.app import MyRC
 from {module_prefix}.sections.app import AppSection
@@ -299,8 +234,6 @@ from {module_prefix}.sections.app import AppSection
 
 @MyRC.bundle
 @dataclass(kw_only=True)
-class {bundle_name}:
-    """Aggregate all registered AppRC config sections."""
-
+class {bundle_name}(rc.ConfigBase):
     app: AppSection = field(default_factory=AppSection)
 '''

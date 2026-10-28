@@ -1,46 +1,34 @@
-"""Shared Example App config declarations for AppRC tests.
-
-The production package expects applications to provide their own config
-inventory. Tests use this tiny fake application so storage, dotenv, CLI, and
-TUI behavior can be exercised without depending on a downstream app.
-"""
+"""Shared AppRC example declarations for maintained interface tests."""
 
 from __future__ import annotations
 
-from apprc.user_files.app_home.application import AppFiles
-from apprc.user_files.env_files.secrets import repair_secret_file_permissions
-
-from dataclasses import dataclass
+# == Standard Library ========================
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
+# == 3rd Party ===============================
 from pytest import MonkeyPatch
 from rich.text import Text
 from typer.testing import Result
 
+# == Internal ================================
 import apprc as rc
 from apprc import AppRC
-from apprc.runtime.resolution import ResolvedConfig
-from apprc.runtime.resolution import ResolvedLayer, merge_layers
-from apprc.definition.resolution import ConfigSource
+from apprc.definition.paths import AppPaths, Layout
 from apprc.definition.provenance import ConfigOriginState, ShellProvenanceOrigin
-from apprc.user_files.storage_roots.registry import (
-    StorageRegistry,
-    record_archived_storage,
-    register_storage,
+from apprc.definition.resolution import ConfigSource
+from apprc.runtime.resolution import ResolvedConfig, ResolvedLayer, merge_layers
+from apprc.user_files.app_home.application import AppFiles
+from apprc.user_files.env_files.secrets import repair_secret_file_permissions
+from apprc.user_files.workspace_roots.registry import (
+    WorkspaceRegistry,
+    record_archived_workspace,
 )
 
 
 def compact_cli_output(result: Result) -> str:
-    """Return rendered CLI text without terminal presentation details.
-
-    Typer and Rich may insert ANSI codes, whitespace, or table borders inside
-    a phrase according to the host terminal. Content assertions use this
-    representation so those presentation details cannot change their result.
-
-    :param result: Captured command result.
-    :return: Command text without styling, whitespace, or box-drawing glyphs.
-    """
+    """Return rendered CLI text without terminal presentation details."""
     plain = Text.from_ansi(result.output).plain
     return "".join(
         character
@@ -49,38 +37,31 @@ def compact_cli_output(result: Result) -> str:
     )
 
 
-_APPRC_EXAMPLE_APP_RC = rc.AppRC(
+_WORKSPACE_EXAMPLE_RC = rc.AppRC(
     app_id="apprc_example_app",
     display_name="Example App",
-    config_package="user_dotenv_with_storage.config",
+    config_package="user_dotenv_with_workspace.config",
+    paths=rc.Paths(config=True),
     user_dotenv=rc.UserDotenv(),
-    storage=rc.Storage(selector_env_key="APPRC_EXAMPLE_APP_STORAGE"),
+    workspaces=rc.Workspaces(selector_env_key="APPRC_EXAMPLE_APP_WORKSPACE"),
 )
 
 
-@_APPRC_EXAMPLE_APP_RC.config(
-    "app",
-    title="App",
-    prefix="APPRC_EXAMPLE_APP_",
-    rc_path=("app",),
+@_WORKSPACE_EXAMPLE_RC.config(
+    "app", title="App", prefix="APPRC_EXAMPLE_APP_", rc_path=("app",)
 )
-class ApprcExampleAppEnv(rc.Config):
-    """Example App env section used by AppRC integration tests."""
+class WorkspaceExampleEnv(rc.Config):
+    """Example configuration owner used by workspace interface tests."""
 
-    storage_root: Path = rc.field(
-        "APPRC_EXAMPLE_APP_STORAGE",
-        editable=False,
-        required=True,
+    workspace_root: Path = rc.field(
+        "APPRC_EXAMPLE_APP_WORKSPACE", editable=False, required=True
     )
     profile: str = rc.field(
         "APPRC_EXAMPLE_APP_PROFILE",
         default="default",
         title="Profile",
         explanation_short="Named profile used by the example app.",
-        explanation_long=(
-            "Named profile used by the example app. Longer context appears in "
-            "the modal editor."
-        ),
+        explanation_long="Named profile used by the example app. Longer context appears in the modal editor.",
     )
     mode: str = rc.field(
         "APPRC_EXAMPLE_APP_MODE",
@@ -105,44 +86,66 @@ class ApprcExampleAppEnv(rc.Config):
         "APPRC_EXAMPLE_APP_CACHE_DIR",
         default=Path("cache"),
         title="Cache directory",
-        explanation_short="Storage-local cache path.",
+        explanation_short="Workspace-local cache path.",
     )
     access_token: str = rc.field(
         "APPRC_EXAMPLE_APP_ACCESS_TOKEN",
         title="Access token",
         explanation_short="Required secret token.",
-        explanation_long=(
-            "Secret token required by the example app when no shell "
-            "environment or local override provides one."
-        ),
+        explanation_long="Secret token required by the example app when no shell environment or local override provides one.",
         required=True,
         secret=True,
     )
 
 
-APPRC_EXAMPLE_APP_OWNER = rc.schema.owner_for(ApprcExampleAppEnv)
-APPRC_EXAMPLE_APP_OWNERS = (APPRC_EXAMPLE_APP_OWNER,)
+WORKSPACE_EXAMPLE_OWNER = rc.schema.owner_for(WorkspaceExampleEnv)
+WORKSPACE_EXAMPLE_OWNERS = (WORKSPACE_EXAMPLE_OWNER,)
+
+
+_CONFIG_ONLY_RC = rc.AppRC(
+    app_id="config_only_app",
+    display_name="Config-only App",
+    config_package="user_dotenv.config",
+    paths=rc.Paths(config=True),
+    user_dotenv=rc.UserDotenv(),
+)
+
+
+@_CONFIG_ONLY_RC.config(
+    "global", title="Global", prefix="CONFIG_ONLY_APP_", rc_path=("global",)
+)
+class ConfigOnlyExampleEnv(rc.Config):
+    """Config-only env section used by AppRC CLI tests."""
+
+    profile: str = rc.field(
+        "CONFIG_ONLY_APP_PROFILE",
+        default="default",
+        title="Profile",
+        explanation_short="Named profile used by the config-only app.",
+    )
+    enabled: bool = rc.field(
+        "CONFIG_ONLY_APP_ENABLED",
+        default=True,
+        title="Enabled",
+        explanation_short="Turns the config-only app on or off.",
+    )
+
+
+CONFIG_ONLY_EXAMPLE_OWNER = rc.schema.owner_for(ConfigOnlyExampleEnv)
 
 
 def example_resolution(
     *,
     user_dotenv_values: Mapping[str, str],
-    storage_values: Mapping[str, str],
+    workspace_values: Mapping[str, str],
     shell_env: Mapping[str, str],
     defaults_values: Mapping[str, str] | None,
 ) -> ResolvedConfig:
-    """Build source records for presentation-only unit tests.
-
-    :param user_dotenv_values: Saved user assignments.
-    :param storage_values: Inspected storage assignments.
-    :param shell_env: Captured process inputs.
-    :param defaults_values: Packaged defaults, if present.
-    :return: Snapshot merged by the production resolver without filesystem setup.
-    """
+    """Build presentation-only sources with workspace dotenv provenance."""
     inputs: tuple[tuple[ShellProvenanceOrigin, Mapping[str, str]], ...] = (
         ("shell_dotenv_defaults", defaults_values or {}),
         ("shell_dotenv_user", user_dotenv_values),
-        ("shell_dotenv_storage", storage_values),
+        ("shell_dotenv_workspace", workspace_values),
         ("shell_export_variable", shell_env),
     )
     layers = tuple(
@@ -156,267 +159,179 @@ def example_resolution(
         for origin, values in inputs
     )
     return ResolvedConfig(
-        schema=_APPRC_EXAMPLE_APP_RC.schema,
+        schema=_WORKSPACE_EXAMPLE_RC.schema,
         options=rc.ResolveOptions(),
         source=merge_layers(layers),
         layers=layers,
-        paths=None,
-        selection=None,
-        storage_count=0,
-        registered_types=(ApprcExampleAppEnv,),
+        paths=AppPaths(
+            Layout.native(), "default", None, None, None, None, None
+        ),
+        workspace=None,
+        workspace_count=0,
+        registered_types=(WorkspaceExampleEnv,),
         bundles={},
     )
 
 
-_STORAGE_FREE_APP_RC = rc.AppRC(
-    app_id="storage_free_app",
-    display_name="Storage-Free App",
-    config_package="user_dotenv.config",
-    user_dotenv=rc.UserDotenv(),
-)
-
-
-@_STORAGE_FREE_APP_RC.config(
-    "global",
-    title="Global",
-    prefix="STORAGE_FREE_APP_",
-    rc_path=("global",),
-)
-class StorageFreeExampleEnv(rc.Config):
-    """Storage-free env section used by AppRC integration tests."""
-
-    profile: str = rc.field(
-        "STORAGE_FREE_APP_PROFILE",
-        default="default",
-        title="Profile",
-        explanation_short="Named profile used by the storage-free app.",
-    )
-    enabled: bool = rc.field(
-        "STORAGE_FREE_APP_ENABLED",
-        default=True,
-        title="Enabled",
-        explanation_short="Turns the storage-free app on or off.",
-    )
-
-
-STORAGE_FREE_EXAMPLE_OWNER = rc.schema.owner_for(StorageFreeExampleEnv)
-
-
-def assert_apprc_dir_cli_error(result: Result) -> None:
-    """Assert that a CLI failure reports AppRC-directory readiness.
-
-    :param result: Captured Typer invocation result.
-    """
-    assert result.exit_code != 0, result.output
-    assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "AppRC" in result.output
-    assert (
-        "AppRC directory" in result.output
-        or "AppRC-managed file" in result.output
-    )
-    assert "Traceback" not in result.output
-    assert "ConfigHomeError" not in result.output
-    assert "Invalid value for KEY" not in result.output
-    assert "Invalid value for 'KEY'" not in result.output
-    assert "Invalid value for --storage" not in result.output
-    assert 'Invalid value for "--storage"' not in result.output
-    assert "Invalid value for '--storage'" not in result.output
-    assert "Invalid value for --name" not in result.output
-    assert 'Invalid value for "--name"' not in result.output
-    assert "Invalid value for '--name'" not in result.output
-
-
-def block_apprc_dir_with_file(kit: AppRC) -> Path:
-    """Replace the AppRC directory with a blocking file.
-
-    :param kit: App config facade under test.
-    :return: Path that now blocks config-home creation.
-    """
-    apprc_dir = AppFiles(kit.schema).apprc_dir()
-    apprc_dir.parent.mkdir(parents=True, exist_ok=True)
-    apprc_dir.write_text("not a directory", encoding="utf-8")
-    return apprc_dir
-
-
 @dataclass(slots=True)
-class ApprcExampleAppConfigState:
-    """Host CLI state used by generated config app tests."""
+class WorkspaceExampleState:
+    """Host CLI state used by generated config/workspace tests."""
 
     resolved: ResolvedConfig | None
-    storage: str | None = None
+    workspace: str | None = None
 
 
 @dataclass(slots=True)
-class StorageFreeExampleConfigState:
-    """Host CLI state used by storage-free generated config tests."""
+class ConfigOnlyExampleState:
+    """Host CLI state used by config-only generated tests."""
 
     resolved: ResolvedConfig | None = None
-    storage: str | None = None
+    workspace: str | None = None
 
 
 @dataclass(slots=True)
-class StorageFreeExampleConfigStateWithoutStorage:
-    """Storage-free host CLI state that has no storage selector field."""
+class ConfigOnlyExampleStateWithoutWorkspace:
+    """Config-only host state with no workspace selector field."""
 
     resolved: ResolvedConfig | None = None
 
 
-def build_apprc_example_app(*, setup_next_step: str | None = None) -> AppRC:
-    """Return a tiny storage-capable AppRC.
-
-    :param setup_next_step: Optional instruction printed after CLI setup.
-    :return: Isolated application declaration for tests.
-    """
+def build_workspace_example_app(*, setup_next_step: str | None = None) -> AppRC:
+    """Return an isolated workspace-capable AppRC declaration."""
     app_rc = rc.AppRC(
         app_id="apprc_example_app",
         display_name="Example App",
-        config_package="user_dotenv_with_storage.config",
+        config_package="user_dotenv_with_workspace.config",
+        paths=rc.Paths(config=True),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(
-            selector_env_key="APPRC_EXAMPLE_APP_STORAGE",
+        workspaces=rc.Workspaces(
+            selector_env_key="APPRC_EXAMPLE_APP_WORKSPACE"
         ),
         setup_next_step=setup_next_step,
     )
     app_rc.config(
-        "app",
-        title="App",
-        prefix="APPRC_EXAMPLE_APP_",
-        rc_path=("app",),
-    )(ApprcExampleAppEnv)
+        "app", title="App", prefix="APPRC_EXAMPLE_APP_", rc_path=("app",)
+    )(WorkspaceExampleEnv)
     return app_rc
 
 
-def build_storage_free_example_app(
+def build_config_only_example_app(
     *, setup_next_step: str | None = None
 ) -> AppRC:
-    """Return a tiny AppRC that does not use storage.
-
-    :param setup_next_step: Optional instruction printed after CLI setup.
-    :return: Storage-free application declaration for tests.
-    """
+    """Return an AppRC declaration with user config but no workspaces."""
     app_rc = rc.AppRC(
-        app_id="storage_free_app",
-        display_name="Storage-Free App",
+        app_id="config_only_app",
+        display_name="Config-only App",
         config_package="user_dotenv.config",
+        paths=rc.Paths(config=True),
         user_dotenv=rc.UserDotenv(),
         setup_next_step=setup_next_step,
     )
     app_rc.config(
-        "global",
-        title="Global",
-        prefix="STORAGE_FREE_APP_",
-        rc_path=("global",),
-    )(StorageFreeExampleEnv)
+        "global", title="Global", prefix="CONFIG_ONLY_APP_", rc_path=("global",)
+    )(ConfigOnlyExampleEnv)
     return app_rc
 
 
-def set_apprc_example_app_apprc_toml(
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
+def set_workspace_example_app_apprc_toml(
+    monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> Path:
-    """Point the example app at a test AppRC TOML file."""
-    index_path, _ = set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
-    return index_path
+    """Point the workspace example at an isolated config root."""
+    path, _ = set_workspace_example_bootstrap(monkeypatch, tmp_path)
+    return path
 
 
-def create_empty_apprc_example_app_apprc_toml(
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
+def create_empty_workspace_example_app_apprc_toml(
+    monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> Path:
-    """Point the example app at an empty AppRC TOML file."""
-    index_path = set_apprc_example_app_apprc_toml(monkeypatch, tmp_path)
-    index_path.parent.mkdir(parents=True, exist_ok=True)
-    index_path.write_text("", encoding="utf-8")
-    return index_path
+    """Point the workspace example at an empty registry file."""
+    path = set_workspace_example_app_apprc_toml(monkeypatch, tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("", encoding="utf-8")
+    return path
 
 
-def set_apprc_example_app_bootstrap(
+def set_workspace_example_bootstrap(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
     *,
     apprc_toml: Path | None = None,
-    storage_root: Path | None = None,
+    workspace_root: Path | None = None,
 ) -> tuple[Path, Path]:
-    """Point the example app at explicit bootstrap environment variables."""
-    index_path = (
-        apprc_toml
-        if apprc_toml is not None
-        else tmp_path / "config" / "apprc_example_app" / "apprc.toml"
-    )
-    active_storage_root = (
-        storage_root
-        if storage_root is not None
-        else tmp_path / "default-storage"
-    )
-    active_storage_root.mkdir(parents=True, exist_ok=True)
-
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_APPRC_DIR", str(index_path.parent))
-    register_storage(
-        name="default",
-        root=active_storage_root,
-        path=index_path,
-    )
-    monkeypatch.setenv(
-        "APPRC_EXAMPLE_APP_STORAGE",
-        "default",
-    )
-    return index_path, active_storage_root
+    """Capture isolated config/workspace bootstrap values for CLI tests."""
+    config_home = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    kit = build_workspace_example_app()
+    paths = kit.paths(environment=dict(__import__("os").environ))
+    if apprc_toml is not None:
+        config_root = apprc_toml.parent
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(config_root.parent.parent))
+        path = apprc_toml
+    else:
+        path = AppFiles(kit.schema, paths).config_file()
+    root = workspace_root or tmp_path / "default-workspace"
+    kit.ensure_path("config", environment=dict(__import__("os").environ))
+    kit.workspaces(
+        environment=dict(__import__("os").environ)
+    ).register_workspace(name="default", root=root)
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_WORKSPACE", "default")
+    return path, root
 
 
-def apprc_example_app_state(
-    kit: AppRC,
-    storage_root: Path,
-) -> ApprcExampleAppConfigState:
-    """Return generic CLI state with one active storage root."""
-    return ApprcExampleAppConfigState(
-        resolved=kit.resolve(rc.ResolveOptions(storage=str(storage_root))),
-        storage="alpha",
+def workspace_example_app_state(
+    kit: AppRC, workspace_root: Path
+) -> WorkspaceExampleState:
+    """Return host CLI state resolved from an explicit workspace path."""
+    return WorkspaceExampleState(
+        resolved=kit.resolve(
+            rc.ResolveOptions(workspace=str(workspace_root)), environment={}
+        ),
+        workspace="alpha",
     )
 
 
-def register_storage_for_app(
-    kit: AppRC,
-    *,
-    name: str,
-    root: Path,
-) -> StorageRegistry:
-    """Register a storage root through the kit's app contract in tests.
-
-    :param kit: App config facade under test.
-    :param name: Storage selector to write.
-    :param root: Storage root directory.
-    :return: Updated storage registry.
-    """
-    registry = register_storage(
-        name=name,
-        root=root,
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
-        storage_dotenv_filename=kit.schema.storage_dotenv_filename,
-    )
+def register_workspace_for_app(
+    kit: AppRC, *, name: str, root: Path
+) -> WorkspaceRegistry:
+    """Register a test workspace through the application's manager."""
+    kit.ensure_path("config", environment={})
+    registry = kit.workspaces(environment={}).register_workspace(name, root)
+    files = AppFiles(kit.schema, kit.paths(environment={}))
     repair_secret_file_permissions(
-        AppFiles(kit.schema).storage_secret_dotenv_path(root)
+        files.workspace_secret_dotenv_path(root.resolve())
     )
     return registry
 
 
-def record_archived_storage_for_kit(
+def record_archived_workspace_for_kit(
     kit: AppRC,
     *,
     name: str,
     archive: Path,
     source_root: Path,
-) -> StorageRegistry:
-    """Record an archived storage through the kit's app contract in tests.
-
-    :param kit: App config facade under test.
-    :param name: Storage selector to write.
-    :param archive: Archive path to remember.
-    :param source_root: Storage directory that produced the archive.
-    :return: Updated storage registry.
-    """
-    return record_archived_storage(
+) -> WorkspaceRegistry:
+    """Record an archived workspace through its application registry."""
+    manager = kit.workspaces(environment={})
+    return record_archived_workspace(
         name=name,
         archive=archive,
         source_root=source_root,
-        path=AppFiles(kit.schema).preferred_apprc_toml_path(),
+        path=manager.registry_path(),
     )
+
+
+def assert_app_path_cli_error(result: Result) -> None:
+    """Assert that a CLI failure reports an AppRC path readiness error."""
+    assert result.exit_code != 0, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "AppRC" in result.output
+    assert "Traceback" not in result.output
+    assert "Invalid value for 'KEY'" not in result.output
+
+
+def block_config_path_with_file(kit: AppRC) -> Path:
+    """Replace the declared config directory with a blocking file."""
+    config_dir = kit.paths().require("config")
+    config_dir.parent.mkdir(parents=True, exist_ok=True)
+    config_dir.write_text("not a directory", encoding="utf-8")
+    return config_dir

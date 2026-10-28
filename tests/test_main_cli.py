@@ -8,14 +8,11 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from tests.support_config import compact_cli_output
 from typing import ClassVar
 
 import pytest
 import typer
-from packaging.requirements import Requirement
-from typer.testing import CliRunner, Result
-
+from cache_only import cli as cache_only
 from cli_runtime import cli as cli_runtime
 from cli_runtime.config.app import MyRC as RUNTIME_KIT
 from explicit_env_precedence import (
@@ -24,18 +21,21 @@ from explicit_env_precedence import (
 from explicit_env_precedence.config.app import (
     MyRC as EXPLICIT_ENV_PRECEDENCE_KIT,
 )
-from apprc import AppRC
-from apprc.interfaces.tui.editor import ConfigEditorApp
-from apprc.interfaces.cli.diagnostics.messages import config_command_text
+from packaging.requirements import Requirement
 from process_env import cli as process_env
 from process_env.config.app import MyRC as PROCESS_ENV_RC
-from storage import cli as storage
-from storage.config.app import MyRC as STORAGE_RC
+from typer.testing import CliRunner, Result
 from user_dotenv import cli as user_dotenv
 from user_dotenv.config.app import MyRC as USER_DOTENV_RC
-from user_dotenv_with_storage import cli as user_dotenv_with_storage
-from user_dotenv_with_storage.config.app import MyRC as BOTH_RC
-from tests.support_config import build_apprc_example_app
+from user_dotenv_with_workspace import cli as user_dotenv_with_workspace
+from user_dotenv_with_workspace.config.app import MyRC as BOTH_RC
+from workspace import cli as workspace
+from workspace.config.app import MyRC as WORKSPACE_RC
+
+from apprc import AppRC
+from apprc.interfaces.cli.diagnostics.messages import config_command_text
+from apprc.interfaces.tui.editor import ConfigEditorApp
+from tests.support_config import build_workspace_example_app
 
 ROOT = Path(__file__).parents[1]
 
@@ -65,14 +65,14 @@ class ExampleCliDefinition:
     build_app: Callable[..., typer.Typer]
     app_key: str
     app_value: str
-    storage_key: str | None = None
-    storage_value: str | None = None
+    workspace_key: str | None = None
+    workspace_value: str | None = None
     runtime: bool = False
 
     @property
-    def uses_storage(self) -> bool:
-        """Return whether this example mounts storage commands."""
-        return self.kit.schema.uses_storage()
+    def uses_workspaces(self) -> bool:
+        """Return whether this example declares workspace selection."""
+        return self.kit.schema.uses_workspaces()
 
     @property
     def uses_user_dotenv(self) -> bool:
@@ -98,24 +98,24 @@ EXAMPLE_CLIS = (
         app_value="user-dotenv-profile",
     ),
     ExampleCliDefinition(
-        scenario="storage",
-        command_name="apprc-storage",
-        kit=STORAGE_RC,
-        build_app=storage.build_app,
+        scenario="workspace",
+        command_name="apprc-workspace",
+        kit=WORKSPACE_RC,
+        build_app=workspace.build_app,
         app_key="profile",
-        app_value="storage-profile",
-        storage_key="api_token",
-        storage_value="storage-secret",
+        app_value="workspace-profile",
+        workspace_key="api_token",
+        workspace_value="workspace-secret",
     ),
     ExampleCliDefinition(
-        scenario="user_dotenv_with_storage",
-        command_name="apprc-user-dotenv-with-storage",
+        scenario="user_dotenv_with_workspace",
+        command_name="apprc-user-dotenv-with-workspace",
         kit=BOTH_RC,
-        build_app=user_dotenv_with_storage.build_app,
+        build_app=user_dotenv_with_workspace.build_app,
         app_key="profile",
         app_value="combined-profile",
-        storage_key="api_token",
-        storage_value="combined-secret",
+        workspace_key="api_token",
+        workspace_value="combined-secret",
     ),
     ExampleCliDefinition(
         scenario="explicit_env_precedence",
@@ -124,8 +124,8 @@ EXAMPLE_CLIS = (
         build_app=explicit_env_precedence.build_app,
         app_key="label",
         app_value="precedence-app-label",
-        storage_key="label",
-        storage_value="precedence-storage-label",
+        workspace_key="label",
+        workspace_value="precedence-workspace-label",
     ),
     ExampleCliDefinition(
         scenario="cli_runtime",
@@ -134,8 +134,8 @@ EXAMPLE_CLIS = (
         build_app=cli_runtime.build_app,
         app_key="profile",
         app_value="runtime-app-profile",
-        storage_key="api_token",
-        storage_value="runtime-secret",
+        workspace_key="api_token",
+        workspace_value="runtime-secret",
         runtime=True,
     ),
 )
@@ -192,68 +192,38 @@ def test_example_cli_runs_every_supported_config_command(
     tmp_path: Path,
 ) -> None:
     harness = ExampleCliHarness(definition)
-    storage_root = tmp_path / definition.scenario / "active-storage"
-    named_storage = tmp_path / definition.scenario / "named-storage"
+    workspace_root = tmp_path / definition.scenario / "workspace"
 
     _assert_success(harness.invoke(["--help"]))
     _assert_success(harness.invoke(["config", "--help"]))
     _assert_success(harness.invoke(["config", "paths"]))
-    paths_json = _assert_json_success(
+    _assert_json_success(
         harness.invoke(["--log-level", "INFO", "config", "paths", "--json"])
     )
-    if definition.uses_user_dotenv or definition.uses_storage:
-        assert str(paths_json["apprc_dir"]).endswith(
-            definition.kit.schema.app_id
-        )
-    else:
-        assert paths_json["apprc_dir"] is None
 
-    if definition.uses_user_dotenv or definition.uses_storage:
-        setup_args = ["config", "setup", "--yes"]
-        if definition.uses_storage:
-            setup_args.extend(["--storage-root", str(storage_root)])
-        _assert_success(harness.invoke(setup_args))
-    else:
+    if definition.uses_user_dotenv:
+        _assert_success(harness.invoke(["config", "setup", "--yes"]))
+    elif not definition.uses_workspaces:
         assert harness.invoke(["config", "setup", "--yes"]).exit_code != 0
 
-    if definition.uses_storage:
+    runtime_prefix: list[str] = []
+    if definition.uses_workspaces:
+        _assert_success(
+            harness.invoke(["workspace", "add", "default", str(workspace_root)])
+        )
+        runtime_prefix = ["--workspace", "default"]
+        assert definition.workspace_key is not None
+        assert definition.workspace_value is not None
         _assert_success(
             harness.invoke(
                 [
-                    "config",
-                    "storage",
-                    "add",
-                    "alpha",
-                    str(named_storage),
-                    "--yes",
-                ]
-            )
-        )
-        _assert_success(harness.invoke(["config", "storage", "list"]))
-        storage_list = _assert_json_success(
-            harness.invoke(["config", "storage", "list", "--json"])
-        )
-        storages = storage_list["storages"]
-        assert isinstance(storages, list)
-        storage_names = {row["name"] for row in storages}
-        assert "alpha" in storage_names
-        _assert_success(
-            harness.invoke(["config", "storage", "remove", "alpha"])
-        )
-
-        assert definition.storage_key is not None
-        assert definition.storage_value is not None
-        storage_prefix = ["--storage", "default"]
-        _assert_success(
-            harness.invoke(
-                [
-                    *storage_prefix,
+                    *runtime_prefix,
                     "config",
                     "set",
-                    definition.storage_key,
-                    definition.storage_value,
+                    definition.workspace_key,
+                    definition.workspace_value,
                     "--scope",
-                    "storage",
+                    "workspace",
                 ]
             )
         )
@@ -261,7 +231,6 @@ def test_example_cli_runs_every_supported_config_command(
             _assert_success(
                 harness.invoke(
                     [
-                        *storage_prefix,
                         "config",
                         "set",
                         definition.app_key,
@@ -271,32 +240,29 @@ def test_example_cli_runs_every_supported_config_command(
                     ]
                 )
             )
-        runtime_prefix = storage_prefix
-    else:
-        unavailable = harness.invoke(["config", "storage", "list"])
+    elif definition.uses_user_dotenv:
+        unavailable = harness.invoke(["workspace", "list"])
         assert unavailable.exit_code != 0
-        if definition.uses_user_dotenv:
-            _assert_success(
-                harness.invoke(
-                    [
-                        "config",
-                        "set",
-                        definition.app_key,
-                        definition.app_value,
-                        "--scope",
-                        "user",
-                    ]
-                )
+        _assert_success(
+            harness.invoke(
+                [
+                    "config",
+                    "set",
+                    definition.app_key,
+                    definition.app_value,
+                    "--scope",
+                    "user",
+                ]
             )
-        else:
-            assert harness.invoke(["config", "set", "x", "y"]).exit_code != 0
-        runtime_prefix = []
+        )
+    else:
+        assert harness.invoke(["config", "set", "x", "y"]).exit_code != 0
 
     _assert_success(harness.invoke([*runtime_prefix, "config", "doctor"]))
     doctor_json = _assert_json_success(
         harness.invoke([*runtime_prefix, "config", "doctor", "--json"])
     )
-    assert doctor_json["status"] == "runnable"
+    assert doctor_json["status"] == "ok"
 
     _assert_success(harness.invoke([*runtime_prefix, "config", "show"]))
     show_json = _assert_json_success(
@@ -304,24 +270,13 @@ def test_example_cli_runs_every_supported_config_command(
     )
     assert show_json["app_id"] == definition.kit.schema.app_id
 
-    if definition.uses_user_dotenv or definition.uses_storage:
-        HeadlessConfigEditorApp.reset()
-        _assert_success(harness.invoke([*runtime_prefix, "config", "edit"]))
-        assert HeadlessConfigEditorApp.run_count == 1
-    else:
-        assert harness.invoke(["config", "edit"]).exit_code != 0
+    HeadlessConfigEditorApp.reset()
+    _assert_success(harness.invoke([*runtime_prefix, "config", "edit"]))
+    assert HeadlessConfigEditorApp.run_count == 1
 
     run_args = [*runtime_prefix]
     if definition.runtime:
-        run_args.extend(
-            [
-                "--workspace",
-                str(tmp_path / definition.scenario / "workspace"),
-                "--model",
-                "test-model",
-                "--dry-run",
-            ]
-        )
+        run_args.extend(["--model", "test-model", "--dry-run"])
     run_payload = _assert_json_success(harness.invoke([*run_args, "run"]))
     assert run_payload["app_id"] == definition.kit.schema.app_id
 
@@ -345,17 +300,9 @@ def test_cli_runtime_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
     assert result.output.strip() == "runtime_status: runtime-independent"
 
 
-def test_process_env_help_describes_dotenv_skip_without_storage() -> None:
-    harness = ExampleCliHarness(EXAMPLE_CLIS[0])
-
-    result = _assert_success(harness.invoke(["--help"]))
-
-    assert "Excludedotenvvaluesfromsettings" in compact_cli_output(result)
-    assert "Explicitfilesstill" in compact_cli_output(result)
-    assert "Select storage" not in result.output
 
 
-def test_storage_example_exercises_registry_lifecycle_and_path_selection(
+def test_workspace_example_exercises_registry_lifecycle_and_path_selection(
     tmp_path: Path,
 ) -> None:
     definition = EXAMPLE_CLIS[2]
@@ -366,102 +313,141 @@ def test_storage_example_exercises_registry_lifecycle_and_path_selection(
     moved_root = tmp_path / "moved"
 
     _assert_success(
-        harness.invoke(
-            [
-                "config",
-                "setup",
-                "--storage-root",
-                str(default_root),
-                "--yes",
-            ]
-        )
+        harness.invoke(["workspace", "add", "default", str(default_root)])
     )
     _assert_success(
         harness.invoke(
             [
-                "--storage",
+                "--workspace",
                 "default",
                 "config",
                 "set",
                 "api_token",
                 "example-secret",
                 "--scope",
-                "storage",
+                "workspace",
             ]
         )
     )
     selected_by_name = _assert_json_success(
-        harness.invoke(["--storage", "default", "run"])
+        harness.invoke(["--workspace", "default", "run"])
     )
-    selected_by_path = _assert_json_success(
-        harness.invoke(["--storage", str(default_root), "run"])
+    assert selected_by_name["workspace"] == str(default_root.resolve())
+
+    _assert_success(
+        harness.invoke(["workspace", "add", "alpha", str(alpha_root)])
     )
-    assert selected_by_name["storage_name"] == "default"
-    assert selected_by_path["storage_name"] == "default"
-    assert selected_by_path["storage_root"] == str(default_root.resolve())
 
     _assert_success(
         harness.invoke(
-            ["config", "storage", "add", "alpha", str(alpha_root), "--yes"]
+            [
+                "--workspace",
+                "alpha",
+                "config",
+                "set",
+                "api_token",
+                "alpha-secret",
+                "--scope",
+                "workspace",
+            ]
         )
     )
     after_add = _assert_json_success(
-        harness.invoke(["config", "storage", "list", "--json"])
+        harness.invoke(["workspace", "list", "--json"])
     )
-    storage_rows = after_add["storages"]
-    assert isinstance(storage_rows, list)
-    active_after_add = [
-        row["name"]
-        for row in storage_rows
-        if isinstance(row, dict) and row["active"]
-    ]
-    assert active_after_add == ["default"]
+    assert after_add["workspace_count"] == 2
+    registry = after_add["registry"]
+    assert isinstance(registry, dict)
+    assert registry["selected_workspace"] == "default"
 
-    renamed = _assert_success(
-        harness.invoke(["config", "storage", "rename", "default", "primary"])
-    )
-    assert "selected_storage: primary" in renamed.output
-
-    _assert_success(harness.invoke(["config", "storage", "select", "alpha"]))
-    repointed_root.mkdir()
     _assert_success(
-        harness.invoke(
-            [
-                "config",
-                "storage",
-                "repoint",
-                "alpha",
-                str(repointed_root),
-            ]
-        )
+        harness.invoke(["workspace", "rename", "default", "primary"])
+    )
+    _assert_success(harness.invoke(["workspace", "select", "alpha"]))
+
+    after_select = _assert_json_success(
+        harness.invoke(["workspace", "list", "--json"])
+    )
+    registry = after_select["registry"]
+    assert isinstance(registry, dict)
+    assert registry["selected_workspace"] == "alpha"
+    repointed_root.mkdir(mode=0o700)
+    _assert_success(
+        harness.invoke(["workspace", "repoint", "alpha", str(repointed_root)])
     )
     _assert_success(
         harness.invoke(
             [
-                "config",
-                "storage",
-                "move",
+                "--workspace",
                 "alpha",
-                str(moved_root),
-                "--yes",
+                "config",
+                "set",
+                "api_token",
+                "alpha-secret",
+                "--scope",
+                "workspace",
             ]
         )
     )
-    removed = _assert_success(
-        harness.invoke(["config", "storage", "remove", "alpha"])
+    _assert_success(
+        harness.invoke(["workspace", "move", "alpha", str(moved_root)])
     )
-    assert "no storage is selected" in removed.output
+    selected_after_move = _assert_json_success(
+        harness.invoke(["--workspace", "alpha", "run"])
+    )
+    assert selected_after_move["workspace"] == str(moved_root.resolve())
+    _assert_success(harness.invoke(["workspace", "remove", "alpha"]))
+    after_remove = _assert_json_success(
+        harness.invoke(["workspace", "list", "--json"])
+    )
+    assert after_remove["workspace_count"] == 1
+    registry = after_remove["registry"]
+    assert isinstance(registry, dict)
+    assert registry["selected_workspace"] is None
 
 
-def test_example_cli_env_file_options_control_apprc_directory(
+def test_cache_only_entrypoint_exercises_help_initialization_and_paths(
+    tmp_path: Path,
+) -> None:
+    app = cache_only.build_app()
+    runner = CliRunner()
+    env = {"XDG_CACHE_HOME": str(tmp_path / "cache")}
+
+    help_result = _assert_success(
+        runner.invoke(app, ["--help"], prog_name="apprc-cache-only")
+    )
+    assert "paths" in help_result.output
+    assert "cache" in help_result.output
+
+    before_init = _assert_json_success(
+        runner.invoke(app, ["paths", "cache", "--json"], env=env)
+    )
+    assert before_init["exists"] is False
+    cache_path = before_init["path"]
+
+    init_result = _assert_success(
+        runner.invoke(app, ["cache", "init"], env=env)
+    )
+    assert init_result.output.strip() == cache_path
+    after_init = _assert_json_success(
+        runner.invoke(app, ["paths", "cache", "--json"], env=env)
+    )
+    assert after_init == {
+        "category": "cache",
+        "path": cache_path,
+        "exists": True,
+    }
+
+
+def test_example_cli_env_file_options_control_layout(
     tmp_path: Path,
 ) -> None:
     definition = EXAMPLE_CLIS[2]
     harness = ExampleCliHarness(definition)
-    explicit_apprc_dir = tmp_path / "explicit"
+    explicit_root = tmp_path / "explicit"
     env_file = tmp_path / ".env"
     env_file.write_text(
-        f"{definition.kit.schema.apprc_dir_env_key}={explicit_apprc_dir}\n",
+        f"{definition.kit.schema.root_env_key}={explicit_root}\n",
         encoding="utf-8",
     )
 
@@ -471,17 +457,19 @@ def test_example_cli_env_file_options_control_apprc_directory(
                 "--env-file",
                 str(env_file),
                 "--env-file-overrides-os-environ",
-                "config",
                 "paths",
                 "--json",
-            ]
+            ],
+            env={definition.kit.schema.layout_env_key: "native"},
         )
     )
 
-    assert result["apprc_dir"] == str(explicit_apprc_dir.resolve())
-    assert result["apprc_toml"] == str(
-        explicit_apprc_dir.resolve() / "apprc.toml"
-    )
+    assert result["layout"] == "single-root"
+    assert result["root"] == str(explicit_root.resolve())
+    assert result["source"] == "environment"
+    paths = result["paths"]
+    assert isinstance(paths, dict)
+    assert paths["config"] == str(explicit_root.resolve() / "config")
 
 
 def test_console_scripts_point_to_example_clis() -> None:
@@ -498,9 +486,12 @@ def test_console_scripts_point_to_example_clis() -> None:
     assert demo_pyproject["project"]["scripts"] == {
         "apprc-process-env": "process_env.cli:main",
         "apprc-user-dotenv": "user_dotenv.cli:main",
-        "apprc-storage": "storage.cli:main",
-        "apprc-user-dotenv-with-storage": ("user_dotenv_with_storage.cli:main"),
-        "apprc-explicit-env-precedence": ("explicit_env_precedence.cli:main"),
+        "apprc-workspace": "workspace.cli:main",
+        "apprc-user-dotenv-with-workspace": (
+            "user_dotenv_with_workspace.cli:main"
+        ),
+        "apprc-cache-only": "cache_only.cli:main",
+        "apprc-explicit-env-precedence": "explicit_env_precedence.cli:main",
         "apprc-cli-runtime": "cli_runtime.cli:main",
         "apprc-library-client": "library_client.cli:main",
         "apprc-examples-lab": "_example_apps_utils.lab:main",
@@ -512,7 +503,8 @@ def test_console_scripts_point_to_example_clis() -> None:
         "cli_runtime*",
         "process_env*",
         "user_dotenv*",
-        "storage*",
+        "workspace*",
+        "cache_only*",
         "_example_apps_utils",
         "explicit_env_precedence*",
         "library_client*",
@@ -869,23 +861,26 @@ def test_core_package_does_not_import_demo_package() -> None:
     assert offenders == []
 
 
-def test_storage_modules_do_not_import_bootstrap_layer() -> None:
-    storage_files = (
-        ROOT / "src" / "apprc" / "user_files" / "storage_roots"
+def test_workspace_root_modules_do_not_import_bootstrap_layer() -> None:
+    workspace_root_files = (
+        ROOT / "src" / "apprc" / "user_files" / "workspace_roots"
     ).rglob("*.py")
 
     offenders = [
-        path for path in storage_files if _imports_runtime_bootstrap(path)
+        path
+        for path in workspace_root_files
+        if _imports_runtime_bootstrap(path)
     ]
     assert offenders == []
 
 
 def test_command_name_falls_back_or_uses_declared_command() -> None:
-    assert config_command_text(build_apprc_example_app(), "show") == (
+    assert config_command_text(build_workspace_example_app(), "show") == (
         "apprc_example_app config show"
     )
     assert (
-        config_command_text(STORAGE_RC, "show") == "apprc-storage config show"
+        config_command_text(WORKSPACE_RC, "show")
+        == "apprc-workspace config show"
     )
 
 

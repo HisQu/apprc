@@ -1,4 +1,4 @@
-"""Output helpers for ``config storage list`` rows."""
+"""Output helpers for ``config workspace list`` rows."""
 
 from __future__ import annotations
 
@@ -13,134 +13,112 @@ from rich.text import Text
 from rich.tree import Tree
 
 # == Internal ================================
-from apprc.user_files.storage_roots.registry import (
-    StorageRegistry,
-    ordered_storage_names,
-)
+from apprc.user_files.workspace_roots._io import ordered_workspace_names
+from apprc.user_files.workspace_roots.model import WorkspaceRegistry
 
 
-class StorageListRowPayload(TypedDict):
-    """Machine-readable data for one registered storage row."""
+class WorkspaceListRowPayload(TypedDict):
+    """Machine-readable data for one registered workspace row."""
 
     name: str
     active: bool
     root: str
     root_exists: bool
-    storage_dotenv: str
-    storage_dotenv_exists: bool
+    workspace_dotenv: str
+    workspace_dotenv_exists: bool
 
 
-class StorageListPayload(TypedDict):
-    """Machine-readable data emitted by ``config storage list --json``."""
+class WorkspaceListPayload(TypedDict):
+    """Machine-readable data emitted by ``config workspace list --json``."""
 
-    apprc_toml: str
-    storages: list[StorageListRowPayload]
+    config_file: str
+    workspaces: list[WorkspaceListRowPayload]
 
 
-def storage_list_payload(
-    registry: StorageRegistry,
+def workspace_list_payload(
+    registry: WorkspaceRegistry,
     *,
-    storage_dotenv_filename: str,
-    active_storage_root: Path | None = None,
-) -> StorageListPayload:
-    """Return JSON-friendly named storage rows for ``config storage list``.
+    workspace_dotenv_filename: str,
+    active_workspace_root: Path | None = None,
+) -> WorkspaceListPayload:
+    """Return JSON-friendly named-workspace rows.
 
-    :param registry: Storage table to serialize.
-    :param storage_dotenv_filename: Dotenv filename expected inside each root.
-    :param active_storage_root: Root selected by ``<APP>_STORAGE``, if known.
-    :return: Machine-readable storage summary.
+    :param registry: Workspace table to serialize.
+    :param workspace_dotenv_filename: Dotenv filename expected in each root.
+    :param active_workspace_root: Root selected for the current invocation.
+    :return: Machine-readable workspace summary.
     """
-    storages: list[StorageListRowPayload] = []
+    workspaces: list[WorkspaceListRowPayload] = []
     active_root = (
-        Path(active_storage_root).expanduser().resolve()
-        if active_storage_root is not None
+        Path(active_workspace_root).expanduser().resolve()
+        if active_workspace_root is not None
         else None
     )
-    for name in ordered_storage_names(registry):
+    for name in ordered_workspace_names(registry):
         record = registry.selected(name)
-        record_root = Path(record.root).expanduser().resolve()
-        storage_dotenv = record.root / storage_dotenv_filename
-        storages.append(
+        workspace_dotenv = record.root / workspace_dotenv_filename
+        workspaces.append(
             {
                 "name": record.name,
-                "active": active_root == record_root,
+                "active": active_root == record.root.resolve(),
                 "root": str(record.root),
                 "root_exists": record.root.is_dir(),
-                "storage_dotenv": str(storage_dotenv),
-                "storage_dotenv_exists": storage_dotenv.is_file(),
+                "workspace_dotenv": str(workspace_dotenv),
+                "workspace_dotenv_exists": workspace_dotenv.is_file(),
             }
         )
-    return {
-        "apprc_toml": str(registry.path),
-        "storages": storages,
-    }
+    return {"config_file": str(registry.path), "workspaces": workspaces}
 
 
-def print_storage_list(payload: StorageListPayload) -> None:
-    """Print named storage rows in a readable text format.
+def print_workspace_list(payload: WorkspaceListPayload) -> None:
+    """Print named workspace rows in a readable text format.
 
-    :param payload: Storage payload from :func:`storage_list_payload`.
+    :param payload: Workspace payload from :func:`workspace_list_payload`.
     """
     console = Console(soft_wrap=True)
-    console.print(_storage_detail_text("apprc_toml", payload["apprc_toml"]))
-    storages = payload["storages"]
-    if not storages:
-        typer.echo("storages: <none>")
+    console.print(_workspace_detail_text("config_file", payload["config_file"]))
+    workspaces = payload["workspaces"]
+    if not workspaces:
+        typer.echo("workspaces: <none>")
         return
-    tree = Tree(Text("storages:", style="dim cyan"))
-    for storage in storages:
-        branch = tree.add(_storage_name_text(storage))
-        branch.add(_storage_detail_text("root", storage["root"]))
+    tree = Tree(Text("workspaces:", style="dim cyan"))
+    for workspace in workspaces:
+        branch = tree.add(_workspace_name_text(workspace))
+        branch.add(_workspace_detail_text("root", workspace["root"]))
         branch.add(
-            _storage_bool_text(
-                "root_exists",
-                bool(storage["root_exists"]),
+            _workspace_bool_text("root_exists", workspace["root_exists"])
+        )
+        branch.add(
+            _workspace_detail_text(
+                "workspace_dotenv", workspace["workspace_dotenv"]
             )
         )
         branch.add(
-            _storage_detail_text("storage_dotenv", storage["storage_dotenv"])
-        )
-        branch.add(
-            _storage_bool_text(
-                "storage_dotenv_exists",
-                bool(storage["storage_dotenv_exists"]),
+            _workspace_bool_text(
+                "workspace_dotenv_exists",
+                workspace["workspace_dotenv_exists"],
             )
         )
     console.print(tree)
 
 
-def _storage_detail_text(key: str, value: object) -> Text:
-    """Return one colored key/value line for storage list output.
-
-    :param key: Display field name.
-    :param value: Display field value.
-    :return: Rich text with a styled key and plain value.
-    """
+def _workspace_detail_text(key: str, value: object) -> Text:
+    """Return one colored key/value line for workspace-list output."""
     return Text.assemble((key, "dim cyan"), ": ", str(value))
 
 
-def _storage_bool_text(key: str, value: bool) -> Text:
-    """Return one colored boolean line for storage list output.
-
-    :param key: Display field name.
-    :param value: Boolean value to show as ``true`` or ``false``.
-    :return: Rich text with a styled key and colored boolean value.
-    """
-    style = "green" if value else "red"
+def _workspace_bool_text(key: str, value: bool) -> Text:
+    """Return one colored boolean line for workspace-list output."""
     return Text.assemble(
         (key, "dim cyan"),
         ": ",
-        (str(value).lower(), style),
+        (str(value).lower(), "green" if value else "red"),
     )
 
 
-def _storage_name_text(storage: StorageListRowPayload) -> Text:
-    """Return the display label for one storage tree branch.
-
-    :param storage: JSON-friendly storage payload row.
-    :return: Rich text with the storage name and optional active marker.
-    """
-    label = Text(str(storage["name"]), style="bold")
-    if storage["active"]:
+def _workspace_name_text(workspace: WorkspaceListRowPayload) -> Text:
+    """Return a workspace branch label with an active marker."""
+    label = Text(workspace["name"], style="bold")
+    if workspace["active"]:
         label.append(" [active]", style="green")
     return label

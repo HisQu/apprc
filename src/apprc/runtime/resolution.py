@@ -5,15 +5,16 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from importlib.resources import files
+from importlib.resources import files as package_files
 from pathlib import Path
 from threading import RLock
 from types import MappingProxyType
 from typing import Any, cast
 
 from apprc.definition.app_config.spec import AppConfigSpec
-from apprc.definition.provenance import ConfigOriginState, ShellProvenanceOrigin
 from apprc.definition.env_config.sentinels import ENV_FIELD_MISSING
+from apprc.definition.paths import AppPaths
+from apprc.definition.provenance import ConfigOriginState, ShellProvenanceOrigin
 from apprc.definition.resolution import (
     BundleFieldSpec,
     ConfigSource,
@@ -22,34 +23,28 @@ from apprc.definition.resolution import (
     dependency_environment_exclusions,
     filter_dependency_environment,
 )
-from apprc.user_files.env_files.layers import (
-    defaults_dotenv_resource,
-    read_explicit_env_files,
-)
-from apprc.runtime._selection import selection_env
 from apprc.runtime.config.config import Config
 from apprc.user_files.app_home.application import AppFiles
-from apprc.user_files.app_home.locations import (
-    AppRCDirectoryError,
-    AppRCDirectoryPaths,
-)
+from apprc.user_files.app_home.layouts import resolve_app_paths
 from apprc.user_files.env_files._parsing import (
     parse_dotenv_file,
     parse_dotenv_text,
 )
-from apprc.user_files.storage_roots._loading import (
-    load_optional_runtime_storage_registry,
+from apprc.user_files.env_files.layers import (
+    defaults_dotenv_resource,
+    read_explicit_env_files,
 )
-from apprc.user_files.storage_roots.readiness import (
-    validate_runtime_storage_root,
+from apprc.user_files.workspace_roots._loading import (
+    load_optional_runtime_workspace_registry,
 )
-from apprc.user_files.storage_roots.selector import (
-    StorageSelection,
-    StorageSelectorError,
-    missing_storage_selector_error,
-    resolve_active_storage_selection,
-    select_storage_selector,
-    storage_selector_is_path_like,
+from apprc.user_files.workspace_roots.readiness import (
+    validate_runtime_workspace_root,
+)
+from apprc.user_files.workspace_roots.selector import (
+    WorkspaceSelection,
+    WorkspaceSelectorError,
+    missing_workspace_selector_error,
+    resolve_active_workspace_selection,
 )
 
 _EXPORT_LOCK = RLock()
@@ -79,28 +74,28 @@ class ResolvedConfig:
     :param options: Invocation choices.
     :param source: Effective values and provenance.
     :param layers: Sources in increasing precedence order.
-    :param paths: Managed paths, when a capability needs them.
-    :param selection: Validated active storage, when selected.
-    :param storage_count: Number of registry entries.
+    :param paths: Always-present captured component paths.
+    :param workspace: Validated active workspace, when selected.
+    :param workspace_count: Number of registry entries.
     :param registered_types: Section classes known at resolution time.
     :param bundles: Registered bundle construction rules.
-    :param issues: Source and storage findings retained only during inspection.
-    :param storage_issues: Storage-specific findings for recovery interfaces.
+    :param issues: Source and workspace findings retained during inspection.
+    :param workspace_issues: Workspace-specific recovery findings.
     """
 
     schema: AppConfigSpec
     options: ResolveOptions
     source: ConfigSource = field(repr=False)
     layers: tuple[ResolvedLayer, ...]
-    paths: AppRCDirectoryPaths | None
-    selection: StorageSelection | None
-    storage_count: int
+    paths: AppPaths
+    workspace: WorkspaceSelection | None
+    workspace_count: int
     registered_types: tuple[type[object], ...] = field(repr=False)
     bundles: Mapping[type[object], tuple[BundleFieldSpec, ...]] = field(
         repr=False
     )
     issues: tuple[str, ...] = ()
-    storage_issues: tuple[str, ...] = ()
+    workspace_issues: tuple[str, ...] = ()
     imported_configs: tuple[ImportedConfig[object], ...] = field(
         default=(), repr=False
     )
@@ -120,16 +115,9 @@ class ResolvedConfig:
         return self.source.values
 
     @property
-    def _has_valid_storage_selection(self) -> bool:
-        """Whether runtime code can use the selected storage root.
-
-        Inspection may retain an invalid candidate selection so repair tools
-        can show its root and associated storage name. Such a candidate is not
-        usable until storage validation completes without issues.
-
-        :return: True when a selected storage root passed validation.
-        """
-        return self.selection is not None and not self.storage_issues
+    def _has_valid_workspace_selection(self) -> bool:
+        """Whether runtime code can use the selected workspace root."""
+        return self.workspace is not None and not self.workspace_issues
 
     def __repr__(self) -> str:
         """Describe the snapshot without printing configuration values."""
@@ -172,11 +160,11 @@ class ResolvedConfig:
         if isinstance(config_type, ImportedConfig):
             imported = self._require_imported_config(config_type)
             if (
-                imported.parent_owner.requires_storage
-                and not self._has_valid_storage_selection
+                imported.parent_owner.requires_workspace
+                and not self._has_valid_workspace_selection
             ):
                 raise ValueError(
-                    f"{imported.parent_owner.title} requires a valid storage "
+                    f"{imported.parent_owner.title} requires a valid workspace "
                     "selection in the parent resolution."
                 )
             if (
@@ -281,7 +269,7 @@ class ResolvedConfig:
         )
 
     def export_environment(self) -> None:
-        """Export effective file assignments and the selected storage path.
+        """Export effective file assignments and the selected workspace path.
 
         This explicitly changes the current process for dependencies that read
         environment variables. It neither removes unrelated keys nor changes
@@ -312,20 +300,21 @@ def resolve_config(
     options: ResolveOptions | None = None,
     environment: Mapping[str, str] | None = None,
     allow_unready: bool = False,
-    include_storage: bool = True,
+    include_workspace: bool = True,
+    app_paths: AppPaths | None = None,
 ) -> ResolvedConfig:
-    """Capture inputs once and resolve every layer without external writes.
+    """Capture inputs and resolve declared layers without writing files.
 
-    :param schema: Registered declaration metadata.
-    :param registered_types: Section registration snapshot.
-    :param bundles: Bundle registration snapshot.
-    :param imported_configs: Parent-owned dependency bindings captured by the
-        declaration.
-    :param options: Invocation policy, or defaults.
-    :param environment: Explicit environment snapshot; ``None`` captures the process.
-    :param allow_unready: Retain storage readiness failures for management inspection.
-    :param include_storage: Whether an inspection includes a storage layer.
-    :return: Immutable resolved inputs ready to build runtime objects.
+    :param schema: Validated application capabilities and configuration owners.
+    :param registered_types: Registered config sections captured by the facade.
+    :param bundles: Bundle construction rules captured by the facade.
+    :param imported_configs: Parent-owned dependency bindings.
+    :param options: Source and workspace choices for this invocation.
+    :param environment: Detached process environment, or the current process.
+    :param allow_unready: Retain source/workspace failures for inspection.
+    :param include_workspace: Skip workspace registry and local files when false.
+    :param app_paths: Previously captured paths to reuse without re-resolution.
+    :return: Immutable values, provenance, and path/workspace snapshot.
     """
     options = options or ResolveOptions()
     original = filter_dependency_environment(
@@ -336,13 +325,11 @@ def resolve_config(
         dependency_environment_exclusions(imported_configs)
     )
     if (
-        options.storage is not None or options.storage_required
-    ) and not schema.uses_storage():
-        raise StorageSelectorError(
-            "Storage options require storage=rc.Storage()."
+        options.workspace is not None or options.workspace_required
+    ) and not schema.uses_workspaces():
+        raise WorkspaceSelectorError(
+            "Workspace options require workspaces=rc.Workspaces()."
         )
-    if options.apprc_dir is not None and not schema.uses_managed_files():
-        raise ValueError("apprc_dir requires a managed-file capability.")
     issues: list[str] = []
     try:
         _, explicit_layers, explicit_values = read_explicit_env_files(
@@ -359,65 +346,53 @@ def resolve_config(
     explicit_values = filter_dependency_environment(
         explicit_values, imported_configs
     )
-    selector_env = selection_env(
-        original_env=original,
-        explicit_values=explicit_values,
-        env_file_overrides_os_environ=options.env_file_overrides_os_environ,
-    )
-    if options.apprc_dir is not None:
-        selector_env[schema.apprc_dir_env_key] = str(options.apprc_dir)
-    paths = (
-        AppFiles(schema).paths(selector_env)
-        if schema.uses_managed_files()
-        else None
+    paths = app_paths or resolve_app_paths(
+        schema,
+        options,
+        original,
+        excluded_env_prefixes=excluded_env_prefixes,
+        allow_unready=allow_unready,
     )
     registry = None
-    selection = None
-    storage_issues: list[str] = []
+    workspace = None
+    workspace_issues: list[str] = []
     try:
-        if schema.uses_storage() and include_storage:
-            assert paths is not None
-            key = schema.require_storage_selector_env_key()
-            try:
-                registry = load_optional_runtime_storage_registry(
-                    schema, proc_env=selector_env
+        if schema.uses_workspaces() and include_workspace:
+            declaration = schema.require_workspaces()
+            if declaration.registry:
+                registry = load_optional_runtime_workspace_registry(
+                    schema, app_paths=paths
                 )
-            except (AppRCDirectoryError, ValueError):
-                selector = select_storage_selector(
-                    storage=options.storage,
-                    original_env=original,
-                    explicit_values=explicit_values,
-                    env_file_overrides_os_environ=options.env_file_overrides_os_environ,
-                    storage_selector_env_key=key,
-                    selected_storage=None,
-                )
-                if selector is None or not storage_selector_is_path_like(
-                    selector[1]
-                ):
-                    raise
-            selection = resolve_active_storage_selection(
+            key = schema.require_workspace_selector_env_key()
+            config_path = (
+                AppFiles(schema, paths).config_file()
+                if declaration.registry
+                else None
+            )
+            workspace = resolve_active_workspace_selection(
                 registry=registry,
-                apprc_toml_path=paths.apprc_toml,
-                storage=options.storage,
-                storage_selector_env_key=key,
+                apprc_toml_path=config_path,
+                workspace=options.workspace,
+                workspace_selector_env_key=key,
                 original_env=original,
                 explicit_values=explicit_values,
                 env_file_overrides_os_environ=options.env_file_overrides_os_environ,
             )
-            if selection is None and options.storage_required:
-                raise missing_storage_selector_error(key)
-            if selection is not None:
-                validate_runtime_storage_root(
+            if workspace is None and options.workspace_required:
+                raise missing_workspace_selector_error(key)
+            if workspace is not None:
+                validate_runtime_workspace_root(
                     spec=schema,
-                    storage_root=selection.root,
-                    storage_name=selection.storage_name,
-                    param_hint=selection.source,
+                    app_paths=paths,
+                    workspace_root=workspace.root,
+                    workspace_name=workspace.workspace_name,
+                    param_hint=workspace.source,
                 )
     except (OSError, ValueError) as exc:
         if not allow_unready:
             raise
         issues.append(str(exc))
-        storage_issues.append(str(exc))
+        workspace_issues.append(str(exc))
     layers: list[ResolvedLayer] = []
 
     def add_layer(
@@ -494,9 +469,9 @@ def resolve_config(
                 continue
             assert imported.config_package is not None
             try:
-                dependency_defaults = files(imported.config_package).joinpath(
-                    schema.defaults_dotenv_filename
-                )
+                dependency_defaults = package_files(
+                    imported.config_package
+                ).joinpath(schema.defaults_dotenv_filename)
                 if not dependency_defaults.is_file():
                     continue
                 dependency_values = parse_dotenv_text(
@@ -566,20 +541,23 @@ def resolve_config(
             issues.append(
                 f"Could not read packaged defaults from {schema.config_package!r}: {exc}"
             )
-        if paths is not None and schema.uses_user_dotenv():
-            read_layer(paths.user_dotenv, "shell_dotenv_user")
+        if schema.paths.config and schema.uses_user_dotenv():
+            files = AppFiles(schema, paths)
+            user_path = files.user_dotenv_path()
+            read_layer(user_path, "shell_dotenv_user")
             read_secret_layer(
-                AppFiles(schema).user_secret_dotenv_path(selector_env),
+                files.user_secret_dotenv_path(),
                 "shell_dotenv_user",
             )
-        if selection is not None:
+        if workspace is not None:
+            files = AppFiles(schema, paths)
             read_layer(
-                AppFiles(schema).storage_dotenv_path(selection.root),
-                "shell_dotenv_storage",
+                files.workspace_dotenv_path(workspace.root),
+                "shell_dotenv_workspace",
             )
             read_secret_layer(
-                AppFiles(schema).storage_secret_dotenv_path(selection.root),
-                "shell_dotenv_storage",
+                files.workspace_secret_dotenv_path(workspace.root),
+                "shell_dotenv_workspace",
             )
     if options.env_file_overrides_os_environ:
         add_layer(original, "shell_export_variable")
@@ -588,10 +566,10 @@ def resolve_config(
             add_layer(layer.values, "shell_dotenv_explicit", path=layer.path)
     if not options.env_file_overrides_os_environ:
         add_layer(original, "shell_export_variable")
-    if selection is not None:
+    if workspace is not None:
         add_layer(
-            {schema.require_storage_selector_env_key(): str(selection.root)},
-            "shell_storage_selector",
+            {schema.require_workspace_selector_env_key(): str(workspace.root)},
+            "shell_workspace_selector",
         )
     return ResolvedConfig(
         schema,
@@ -599,12 +577,12 @@ def resolve_config(
         merge_layers(tuple(layers)),
         tuple(layers),
         paths,
-        selection,
-        len(registry.storages) if registry is not None else 0,
+        workspace,
+        len(registry.workspaces) if registry is not None else 0,
         registered_types,
         bundles,
         tuple(issues),
-        tuple(storage_issues),
+        tuple(workspace_issues),
         imported_configs,
     )
 

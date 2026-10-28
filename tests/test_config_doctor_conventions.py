@@ -1,54 +1,78 @@
-"""Doctor reports readiness, independent of application module layout."""
+from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
+import typer
+from typer.testing import CliRunner
 
 import apprc as rc
-from apprc.interfaces.cli.diagnostics.payload import build_config_doctor_payload
+from apprc.definition.paths import Layout, Paths
+from apprc.interfaces.cli.mount import mount_app_cli
 
 
-def test_doctor_accepts_arbitrary_section_module_layout() -> None:
-    app = rc.AppRC(app_id="doctor_test", display_name="Doctor test")
+def _doctor_app(
+    tmp_path: Path,
+    *,
+    required_secret: bool = True,
+) -> tuple[rc.AppRC, typer.Typer]:
+    app_rc = rc.AppRC(
+        app_id="doctor_configuration",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        user_dotenv=rc.UserDotenv(),
+    )
 
-    @app.config("settings", prefix="DOCTOR_")
+    @app_rc.config("secrets", prefix="DOCTOR_CONFIGURATION_")
     class Settings(rc.Config):
-        count: int = rc.field("DOCTOR_COUNT", default=1)
+        token: str = (
+            rc.field("DOCTOR_CONFIGURATION_TOKEN", required=True, secret=True)
+            if required_secret
+            else rc.field("DOCTOR_CONFIGURATION_TOKEN", default="", secret=True)
+        )
 
-    payload = build_config_doctor_payload(app, storage=None)
-    assert payload.status == "runnable"
-    assert not payload.warnings
+    app = typer.Typer()
+    mount_app_cli(app, app_rc)
+    return app_rc, app
 
 
-def test_doctor_reports_missing_resource_package_without_writes(
+def test_config_doctor_reports_missing_required_secret_without_writes(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    app = rc.AppRC(
-        app_id="doctor_test",
-        display_name="Doctor test",
-        config_package="nonexistent_apprc_test_package",
-        user_dotenv=rc.UserDotenv(),
-        apprc_dir=tmp_path / "absent",
+    monkeypatch.delenv("DOCTOR_CONFIGURATION_TOKEN", raising=False)
+    app_rc, app = _doctor_app(tmp_path)
+
+    result = CliRunner().invoke(app, ["config", "doctor", "--json"])
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == "error"
+    assert any(
+        check["status"] == "error"
+        and "DOCTOR_CONFIGURATION_TOKEN" in check["message"]
+        for check in payload["checks"]
     )
-    payload = build_config_doctor_payload(app, storage=None)
-    assert any("packaged defaults" in issue for issue in payload.issues)
-    assert payload.status == "config_invalid"
-    assert not (tmp_path / "absent").exists()
-    with pytest.raises(ModuleNotFoundError):
-        app.resolve(environment={})
+    assert "secret-value" not in result.output
+    assert not app_rc.paths(environment={}).require("config").exists()
 
 
-def test_doctor_reports_missing_required_values_without_echoing_secrets() -> (
-    None
-):
-    app = rc.AppRC(app_id="doctor_fields", display_name="Doctor fields")
+def test_config_doctor_reports_uninitialized_user_preferences_without_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    app_rc, app = _doctor_app(tmp_path, required_secret=False)
+    monkeypatch.setenv("DOCTOR_CONFIGURATION_TOKEN", "private-test-secret")
 
-    @app.config("settings", prefix="DOCTOR_")
-    class Settings(rc.Config):
-        token: str = rc.field("DOCTOR_TOKEN", required=True, secret=True)
+    result = CliRunner().invoke(app, ["config", "doctor", "--json"])
 
-    payload = build_config_doctor_payload(
-        app, storage=None, manager=app.manage(environment={})
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == "warning"
+    assert "private-test-secret" not in result.output
+    assert any(
+        check["name"] == "user_dotenv" and check["status"] == "warning"
+        for check in payload["checks"]
     )
-    assert payload.status == "config_invalid"
-    assert payload.issues
+    assert not app_rc.paths(environment={}).require("config").exists()

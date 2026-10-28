@@ -9,19 +9,29 @@ import gradio as gr
 
 from apprc.services.inspection import FieldInspection
 from apprc.services.manager import ConfigManager, WriteScope
+from apprc.services.workspaces import WorkspaceManager
+from apprc.user_files.app_home.application import AppFiles
 
 
 class ConfigEditor:
     """Render setup and settings inside an existing Gradio Blocks.
 
     The host owns the Blocks, server, and runtime. The editor reads files
-    after each action and delegates every write to the AppRC manager.
+    after each action, delegates field edits to the configuration manager,
+    and delegates registry operations to the workspace manager.
 
     :param manager: Application-bound configuration manager.
+    :param workspace_manager: Optional manager for registry-backed workspaces.
     """
 
-    def __init__(self, manager: ConfigManager) -> None:
+    def __init__(
+        self,
+        manager: ConfigManager,
+        workspace_manager: WorkspaceManager | None = None,
+    ) -> None:
         self.manager = manager
+        self.workspace_manager = workspace_manager
+        self.selected_workspace = manager.options.workspace
 
     def render(self) -> None:
         """Add controls to the current Gradio container."""
@@ -30,7 +40,7 @@ class ConfigEditor:
 
         @gr.render(inputs=revision)
         def show_current(_revision: int) -> None:
-            inspection = self.manager.inspect()
+            inspection = self.manager.inspect(workspace=self.selected_workspace)
             if inspection.issues:
                 gr.Markdown(
                     "### Needs attention\n"
@@ -38,8 +48,10 @@ class ConfigEditor:
                 )
             else:
                 gr.Markdown("Configuration is ready.")
-            self._render_storage(status, revision)
-            scopes = self.manager.writable_scopes()
+            self._render_workspace(status, revision)
+            scopes = self.manager.writable_scopes(
+                workspace=self.selected_workspace
+            )
             scope = (
                 gr.Dropdown(
                     choices=list(scopes),
@@ -58,12 +70,14 @@ class ConfigEditor:
                     if item.owner.key == owner.key:
                         self._render_field(item, scope, status, revision)
 
-    def _render_storage(self, status: gr.Textbox, revision: gr.State) -> None:
-        """Show the selected root and actions for managed storage."""
-        if not self.manager.schema.uses_storage():
+    def _render_workspace(self, status: gr.Textbox, revision: gr.State) -> None:
+        """Show the selected workspace and registry-backed workspace actions."""
+        if not self.manager.schema.uses_workspaces():
             if (
                 self.manager.schema.uses_user_dotenv()
-                and not self.manager.paths.user_dotenv.is_file()
+                and not AppFiles(self.manager.schema, self.manager.paths)
+                .user_dotenv_path()
+                .is_file()
             ):
                 gr.Button("Create user settings file").click(
                     self._setup_user,
@@ -71,41 +85,50 @@ class ConfigEditor:
                     outputs=[status, revision],
                 )
             return
-        gr.Markdown("### Storage")
-        registry_state = self.manager.inspect_registry()
+        workspaces = self.manager.schema.workspaces
+        if workspaces is None or not workspaces.registry:
+            return
+        if self.workspace_manager is None:
+            raise ValueError(
+                "Registry-backed workspace UI requires a WorkspaceManager."
+            )
+        gr.Markdown("### Workspace")
+        registry_state = self.workspace_manager.inspect_registry()
         if registry_state.error is not None:
             gr.Textbox(
                 value=registry_state.error,
-                label="Storage status",
+                label="Workspace status",
                 interactive=False,
             )
             return
-        registry = registry_state.registry or self.manager.registry()
-        if registry.storages:
+        registry = registry_state.registry or self.workspace_manager.registry()
+        if self.selected_workspace is None:
+            self.selected_workspace = registry.selected_workspace
+        if registry.workspaces:
             selected = gr.Dropdown(
-                choices=list(registry.storages),
-                value=registry.selected_storage,
-                label="Selected storage",
+                choices=list(registry.workspaces),
+                value=self.selected_workspace,
+                label="Selected workspace",
                 interactive=True,
             )
-            gr.Button("Use selected storage").click(
-                self._select_storage,
+            gr.Button("Use selected workspace").click(
+                self._select_workspace,
                 inputs=[selected, revision],
                 outputs=[status, revision],
             )
         name = gr.Textbox(
-            value="default" if not registry.storages else "",
-            label="New storage name",
+            value="default" if not registry.workspaces else "",
+            label="New workspace name",
             interactive=True,
         )
         root = gr.Textbox(
-            value=str(self.manager.paths.root / "storage"),
-            label="Storage folder",
+            value=str(self.manager.paths.require("config") / "workspaces"),
+            label="Workspace folder",
             info="AppRC creates this folder if needed.",
             interactive=True,
         )
-        gr.Button("Create and select storage", variant="primary").click(
-            self._create_storage,
+        gr.Button("Create and select workspace", variant="primary").click(
+            self._create_workspace,
             inputs=[name, root, revision],
             outputs=[status, revision],
         )
@@ -119,16 +142,24 @@ class ConfigEditor:
         """Keep legacy secret migration and permission repair available."""
         for scope in scopes:
             try:
-                migration = self.manager.plan_secret_migration(scope)
+                migration = self.manager.plan_secret_migration(
+                    scope, workspace=self.selected_workspace
+                )
             except (OSError, ValueError):
                 migration = None
             if migration is not None and migration.keys:
                 gr.Button(f"Move {scope} secrets to private file").click(
-                    partial(self._migrate_secrets, scope),
+                    partial(
+                        self._migrate_secrets,
+                        scope,
+                        self.selected_workspace,
+                    ),
                     inputs=revision,
                     outputs=[status, revision],
                 )
-            secret_status = self.manager.secret_status(scope)
+            secret_status = self.manager.secret_status(
+                scope, workspace=self.selected_workspace
+            )
             if not secret_status.available:
                 gr.Textbox(
                     value=secret_status.issue,
@@ -136,7 +167,11 @@ class ConfigEditor:
                     interactive=False,
                 )
                 gr.Button(f"Repair {scope} secret file permissions").click(
-                    partial(self._repair_secrets, scope),
+                    partial(
+                        self._repair_secrets,
+                        scope,
+                        self.selected_workspace,
+                    ),
                     inputs=revision,
                     outputs=[status, revision],
                 )
@@ -156,7 +191,7 @@ class ConfigEditor:
             title = f"{title} (restart required)"
         if not item.active:
             gr.Textbox(
-                value="Select storage to edit this setting.",
+                value="Select a workspace to edit this setting.",
                 label=title,
                 interactive=False,
             )
@@ -199,12 +234,18 @@ class ConfigEditor:
                         key,
                         spec.secret,
                         spec.restart_required,
+                        workspace=self.selected_workspace,
                     ),
                     inputs=[control, scope, revision],
                     outputs=[status, revision],
                 )
                 gr.Button("Clear saved value", size="sm").click(
-                    partial(self._clear, key, spec.restart_required),
+                    partial(
+                        self._clear,
+                        key,
+                        spec.restart_required,
+                        workspace=self.selected_workspace,
+                    ),
                     inputs=[scope, revision],
                     outputs=[status, revision],
                 )
@@ -224,6 +265,8 @@ class ConfigEditor:
         value: str | None,
         scope: WriteScope,
         revision: int,
+        *,
+        workspace: str | None = None,
     ) -> tuple[str, int]:
         """Validate and write one field without showing secret input on error."""
         if secret and not value:
@@ -233,7 +276,9 @@ class ConfigEditor:
             )
         if secret:
             try:
-                secret_status = self.manager.secret_status(scope)
+                secret_status = self.manager.secret_status(
+                    scope, workspace=workspace
+                )
             except (OSError, ValueError):
                 return (
                     f"Could not inspect the private file for {key}. Review its "
@@ -255,8 +300,10 @@ class ConfigEditor:
                     revision,
                 )
         try:
-            plan = self.manager.plan_update(key, value or "", scope=scope)
-            preview = self.manager.preview_edit(plan)
+            plan = self.manager.plan_update(
+                key, value or "", scope=scope, workspace=workspace
+            )
+            preview = self.manager.preview_edit(plan, workspace=workspace)
             if any(
                 field.issue
                 for field in preview.fields
@@ -289,16 +336,20 @@ class ConfigEditor:
         restart_required: bool,
         scope: WriteScope,
         revision: int,
+        *,
+        workspace: str | None = None,
     ) -> tuple[str, int]:
         """Remove a saved override and inspect the remaining winning value."""
         try:
-            plan = self.manager.plan_removal(key, scope=scope)
+            plan = self.manager.plan_removal(
+                key, scope=scope, workspace=workspace
+            )
             if plan is None:
                 return (
                     f"No saved {key} value in the {scope} layer.",
                     revision,
                 )
-            self.manager.preview_edit(plan)
+            self.manager.preview_edit(plan, workspace=workspace)
             self.manager.apply_edit(plan)
         except (OSError, ValueError) as exc:
             return str(exc), revision
@@ -313,58 +364,65 @@ class ConfigEditor:
             revision + 1,
         )
 
-    def _create_storage(
+    def _create_workspace(
         self, name: str, root: str, revision: int
     ) -> tuple[str, int]:
-        """Initialize or register one named folder through the manager."""
+        """Initialize or register one named workspace through its managers."""
         if not name.strip() or not root.strip():
-            return "Enter a storage name and folder.", revision
+            return "Enter a workspace name and folder.", revision
+        if self.workspace_manager is None:
+            raise ValueError(
+                "Workspace management requires a WorkspaceManager."
+            )
         try:
-            if self.manager.registry().storages:
-                self.manager.register_storage(name.strip(), Path(root))
-                self.manager.select_storage(name.strip())
-            else:
-                self.manager.setup(
-                    storage_root=Path(root), storage_name=name.strip()
-                )
+            self.workspace_manager.register_workspace(name.strip(), Path(root))
+            self.workspace_manager.select_workspace(name.strip())
+            self.selected_workspace = name.strip()
         except (OSError, ValueError) as exc:
             return str(exc), revision
-        return f"Selected storage {name.strip()}.", revision + 1
+        return f"Selected workspace {name.strip()}.", revision + 1
 
-    def _select_storage(self, name: str, revision: int) -> tuple[str, int]:
-        """Persist the selected registered storage for later launches."""
+    def _select_workspace(self, name: str, revision: int) -> tuple[str, int]:
+        """Persist the selected registered workspace for later launches."""
+        if self.workspace_manager is None:
+            raise ValueError(
+                "Workspace management requires a WorkspaceManager."
+            )
         try:
-            self.manager.select_storage(name)
+            self.workspace_manager.select_workspace(name)
+            self.selected_workspace = name
         except (OSError, ValueError) as exc:
             return str(exc), revision
-        return f"Selected storage {name}.", revision + 1
+        return f"Selected workspace {name}.", revision + 1
 
     def _setup_user(self, revision: int) -> tuple[str, int]:
-        """Create the user layer for an application without storage."""
+        """Create the user layer for an application without workspaces."""
         try:
-            self.manager.setup_user_dotenv()
+            self.manager.setup()
         except (OSError, ValueError) as exc:
             return str(exc), revision
         return "Created user settings file.", revision + 1
 
     def _migrate_secrets(
-        self, scope: WriteScope, revision: int
+        self, scope: WriteScope, workspace: str | None, revision: int
     ) -> tuple[str, int]:
         """Move legacy secret assignments to their private companion."""
         try:
             self.manager.apply_secret_migration(
-                self.manager.plan_secret_migration(scope)
+                self.manager.plan_secret_migration(scope, workspace=workspace)
             )
         except (OSError, ValueError) as exc:
             return str(exc), revision
         return f"Moved {scope} secrets to the private file.", revision + 1
 
     def _repair_secrets(
-        self, scope: WriteScope, revision: int
+        self, scope: WriteScope, workspace: str | None, revision: int
     ) -> tuple[str, int]:
         """Repair a secret companion after an explicit button press."""
         try:
-            secret_status = self.manager.repair_secret_permissions(scope)
+            secret_status = self.manager.repair_secret_permissions(
+                scope, workspace=workspace
+            )
         except (OSError, ValueError) as exc:
             return str(exc), revision
         if not secret_status.available:

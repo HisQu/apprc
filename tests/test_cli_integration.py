@@ -1,75 +1,54 @@
 from __future__ import annotations
-from apprc.interfaces.cli.config_command.app import build_config_typer_app
-
-
-from apprc.user_files.app_home.application import AppFiles
 
 import json
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pytest
 import typer
 from typer.testing import CliRunner
 
-import apprc as rc
-from apprc import AppRC
-from tests.support_declaration import app_from_envs
-from apprc.definition.app_config.user_dotenv import UserDotenv
+from apprc.cli import prepare_cli_runtime_context
+from apprc.definition.paths import Layout
 from apprc.interfaces.cli import (
-    DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS,
+    AppRootOption,
     CliArgvProvider,
+    CliRuntime,
     CliRuntimeContext,
     CliRuntimeOptions,
-    ConfigSelectorContext,
-    ConfigRuntimePolicy,
-    CliRuntime,
-    DefaultConfigCliState,
-    CliRuntimePolicy,
     EnvFileOverridesOption,
     EnvFilesOption,
+    LayoutOption,
     LogLevelOption,
     SkipDotenvLayersOption,
-    StorageOption,
     cli_runtime_context_from,
     cli_runtime_options_to_args,
-    build_config_doctor_payload,
-    mount_config_cli,
-    prepare_cli_runtime_context,
+    mount_app_cli,
 )
 from tests.support_config import (
-    StorageFreeExampleEnv,
-    build_apprc_example_app,
-    build_storage_free_example_app,
-    register_storage_for_app,
+    ConfigOnlyExampleEnv,
+    ConfigOnlyExampleState,
+    WorkspaceExampleEnv,
+    build_config_only_example_app,
+    build_workspace_example_app,
+    register_workspace_for_app,
 )
 
 
-def _build_storage_free_kit_with_shared_env() -> AppRC:
-    """Return a storage-free kit whose package includes defaults."""
-    return app_from_envs(
-        app_id="storage_free_app",
-        display_name="Storage-Free App",
-        config_package="user_dotenv.config",
-        envs=(StorageFreeExampleEnv,),
-        user_dotenv=UserDotenv(),
-    )
-
-
-def test_cli_bootstrap_options_normalize_and_forward_repeated_env_files(
+def test_cli_bootstrap_options_normalize_and_forward_workspace_layout(
     tmp_path: Path,
 ) -> None:
     first_env = tmp_path / "first.env"
     second_env = tmp_path / "second.env"
-
+    app_root = tmp_path / "app-root"
     options = CliRuntimeOptions.from_typer(
         env_files=[first_env, second_env],
         env_file_overrides_os_environ=True,
         load_dotenv_layers=False,
-        storage="alpha",
+        workspace="alpha",
+        layout="single-root",
+        app_root=app_root,
         log_level="DEBUG",
     )
 
@@ -83,8 +62,12 @@ def test_cli_bootstrap_options_normalize_and_forward_repeated_env_files(
         str(second_env),
         "--env-file-overrides-os-environ",
         "--skip-dotenv-layers",
-        "--storage",
+        "--workspace",
         "alpha",
+        "--layout",
+        "single-root",
+        "--app-root",
+        str(app_root),
     ]
 
 
@@ -96,7 +79,8 @@ def test_cli_bootstrap_options_accept_option_like_none_env_files() -> None:
         env_files: list[Path] | None = None
         env_file_overrides_os_environ: bool = False
         load_dotenv_layers: bool = True
-        storage: str | None = None
+        workspace: str | None = None
+        layout: Layout | None = None
         log_level: str | None = None
 
     options = CliRuntimeOptions.from_options(OptionLike())
@@ -104,55 +88,45 @@ def test_cli_bootstrap_options_accept_option_like_none_env_files() -> None:
     assert options.env_files == ()
 
 
-def test_prepare_cli_runtime_context_stores_metadata_without_ctx_obj(
+def test_prepare_cli_runtime_context_captures_paths_and_environment_when_skipped(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    kit = build_storage_free_example_app()
-    env_file = tmp_path / "explicit.env"
-    env_file.write_text(
-        "STORAGE_FREE_APP_PROFILE=from-file\n", encoding="utf-8"
-    )
+    kit = build_config_only_example_app()
+    app_root = tmp_path / "selected-root"
+    monkeypatch.setenv("CAPTURED_BY_APPRC", "before")
     app = typer.Typer()
 
     @app.callback()
     def root_cmd(
         ctx: typer.Context,
+        layout: LayoutOption = None,
+        app_root_option: AppRootOption = None,
         env_files: EnvFilesOption = None,
         env_file_overrides_os_environ: EnvFileOverridesOption = False,
         skip_dotenv_layers: SkipDotenvLayersOption = False,
-        storage: StorageOption = None,
         log_level: LogLevelOption = None,
     ) -> None:
-        """Store only AppRC metadata, leaving ``ctx.obj`` app-owned."""
         options = CliRuntimeOptions.from_typer(
+            layout=layout,
+            app_root=app_root_option,
             env_files=env_files,
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=not skip_dotenv_layers,
-            storage=storage,
             log_level=log_level,
         )
         prepare_cli_runtime_context(ctx, kit, options, skip_runtime_setup=True)
+        os.environ["CAPTURED_BY_APPRC"] = "after"
 
     @app.command()
     def inspect(ctx: typer.Context) -> None:
-        """Print the metadata seen by a child command."""
         context = cli_runtime_context_from(ctx)
-        if context is None:
-            raise RuntimeError("AppRC context missing.")
+        assert context is not None
         typer.echo(
             json.dumps(
                 {
-                    "env_files": [
-                        str(path) for path in context.runtime_options.env_files
-                    ],
-                    "overrides": (
-                        context.runtime_options.env_file_overrides_os_environ
-                    ),
-                    "load_dotenv_layers": (
-                        context.runtime_options.load_dotenv_layers
-                    ),
-                    "storage": context.runtime_options.storage,
-                    "log_level": context.runtime_options.log_level,
+                    "app_root": str(context.paths.layout.root),
+                    "environment": context.environment["CAPTURED_BY_APPRC"],
                     "skipped": context.runtime_setup_skipped,
                 },
                 sort_keys=True,
@@ -161,687 +135,78 @@ def test_prepare_cli_runtime_context_stores_metadata_without_ctx_obj(
 
     result = CliRunner().invoke(
         app,
-        [
-            "--env-file",
-            str(env_file),
-            "--env-file-overrides-os-environ",
-            "--skip-dotenv-layers",
-            "--storage",
-            "alpha",
-            "--log-level",
-            "INFO",
-            "inspect",
-        ],
+        ["--layout", "single-root", "--app-root", str(app_root), "inspect"],
     )
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == {
-        "env_files": [str(env_file)],
-        "load_dotenv_layers": False,
-        "log_level": "INFO",
-        "overrides": True,
+        "app_root": str(app_root),
+        "environment": "before",
         "skipped": True,
-        "storage": "alpha",
     }
 
 
-def test_mount_config_cli_bootstraps_simple_storage_free_app(
+def test_mount_app_cli_resolves_config_from_workspace_and_env_precedence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.delenv("STORAGE_FREE_APP_PROFILE", raising=False)
-    kit = _build_storage_free_kit_with_shared_env()
-    first_env = tmp_path / "first.env"
-    second_env = tmp_path / "second.env"
-    first_env.write_text(
-        "STORAGE_FREE_APP_PROFILE=first\n",
+    kit = build_workspace_example_app()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    register_workspace_for_app(
+        kit,
+        name="alpha",
+        root=tmp_path / "workspace",
+    )
+    env_file = tmp_path / "explicit.env"
+    env_file.write_text(
+        "APPRC_EXAMPLE_APP_PROFILE=from-file\n"
+        "APPRC_EXAMPLE_APP_ACCESS_TOKEN=from-file-secret\n",
         encoding="utf-8",
     )
-    second_env.write_text(
-        "STORAGE_FREE_APP_PROFILE=second\n",
-        encoding="utf-8",
-    )
+    monkeypatch.setenv("APPRC_EXAMPLE_APP_PROFILE", "from-shell")
     app = typer.Typer()
-    mount_config_cli(app, kit)
+    mount_app_cli(app, kit)
 
     @app.command()
     def run(ctx: typer.Context) -> None:
-        """Build the section from the source captured by the CLI callback."""
         context = cli_runtime_context_from(ctx)
         assert context is not None and context.resolved is not None
-        typer.echo(context.resolved.build(StorageFreeExampleEnv).profile)
-
-    runner = CliRunner()
-    loaded = runner.invoke(
-        app,
-        [
-            "--env-file",
-            str(first_env),
-            "--env-file",
-            str(second_env),
-            "--env-file-overrides-os-environ",
-            "run",
-        ],
-    )
-    os.environ.pop("STORAGE_FREE_APP_PROFILE", None)
-    skipped = runner.invoke(
-        app,
-        [
-            "--env-file",
-            str(second_env),
-            "--skip-dotenv-layers",
-            "run",
-        ],
-    )
-
-    assert loaded.exit_code == 0, loaded.output
-    assert loaded.output.strip() == "second"
-    assert skipped.exit_code == 0, skipped.output
-    assert skipped.output.strip() == "default"
-
-
-def test_mount_config_cli_passes_storage_to_default_config_show(
-    tmp_path: Path,
-) -> None:
-    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app()
-
-    kit = APPRC_EXAMPLE_APP_KIT
-    storage_root = tmp_path / "storage"
-    register_storage_for_app(kit, name="alpha", root=storage_root)
-    app = typer.Typer()
-    mount_config_cli(app, kit)
+        typer.echo(context.resolved.build(WorkspaceExampleEnv).profile)
 
     result = CliRunner().invoke(
         app,
-        [
-            "--storage",
-            "alpha",
-            "config",
-            "show",
-            "--json",
-        ],
+        ["--workspace", "alpha", "--env-file", str(env_file), "run"],
     )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert payload["storage_root"] == str(storage_root.resolve())
+    assert result.output.strip() == "from-shell"
 
 
-def test_mount_config_cli_reports_repoint_for_missing_registered_storage(
-    tmp_path: Path,
-) -> None:
-    """Fail before runtime and identify the non-destructive repair command.
-
-    :param tmp_path: Temporary parent for the missing selected root.
-    """
-    kit = build_apprc_example_app()
-    missing_root = tmp_path / "missing-storage"
-    registry = AppFiles(kit.schema).preferred_apprc_toml_path()
-    registry.parent.mkdir(parents=True)
-    registry.write_text(
-        'selected_storage = "missing"\n\n'
-        f"[storages.missing]\nroot = {json.dumps(str(missing_root))}\n",
-        encoding="utf-8",
-    )
-    app = typer.Typer()
-    mount_config_cli(app, kit)
-
-    @app.command()
-    def run() -> None:
-        raise AssertionError("runtime command must not run")
-
-    result = CliRunner().invoke(
-        app,
-        ["--storage", "missing", "run"],
-        terminal_width=500,
-    )
-
-    output = " ".join(result.output.split())
-    assert result.exit_code == 2, result.output
-    assert "Selected Example App storage root" in output
-    assert "apprc_example_app config storage repoint missing" in output
-    assert "/absolute/path/to/existing-storage" in output
-    assert "Setup will not recreate a missing registered root" in output
-    assert "Traceback" not in result.output
-
-
-def test_config_cli_runtime_default_policy_renders_storage_required_help() -> (
-    None
-):
-    kit = build_apprc_example_app()
-    args = ["run", "--help"]
-    runtime = CliRuntime(kit, args_provider=lambda: args)
-    app = typer.Typer()
-    sessions: list[bool] = []
-
-    @app.callback()
-    def host_callback(
-        ctx: typer.Context,
-        storage: StorageOption = None,
-    ) -> None:
-        session = runtime.prepare(
-            ctx,
-            CliRuntimeOptions.from_typer(storage=storage),
-        )
-        sessions.append(session.runtime_setup_skipped)
-
-    @app.command()
-    def run() -> None:
-        typer.echo("should not run")
-
-    result = CliRunner().invoke(app, args)
-
-    assert result.exit_code == 0, result.output
-    assert "Usage:" in result.output
-    assert sessions == [True]
-
-
-def test_mount_config_cli_default_policy_renders_storage_required_help() -> (
-    None
-):
-    kit = build_apprc_example_app()
-    args = ["run", "--help"]
-    app = typer.Typer()
-    mount_config_cli(app, kit, args_provider=lambda: args)
-
-    @app.command()
-    def run() -> None:
-        typer.echo("should not run")
-
-    result = CliRunner().invoke(app, args)
-
-    assert result.exit_code == 0, result.output
-    assert "Usage:" in result.output
-    assert "APPRC_EXAMPLE_APP_STORAGE is required" not in result.output
-
-
-def test_mount_config_cli_separator_help_is_runtime_argument() -> None:
-    kit = _build_storage_free_kit_with_shared_env()
-    args = ["run", "--", "--help"]
-    app = typer.Typer()
-    mount_config_cli(app, kit, args_provider=lambda: args)
-
-    @app.command()
-    def run(ctx: typer.Context, text: str) -> None:
-        typer.echo(
-            json.dumps(
-                {
-                    "state": isinstance(ctx.obj, DefaultConfigCliState),
-                    "text": text,
-                },
-                sort_keys=True,
-            )
-        )
-
-    result = CliRunner().invoke(app, args)
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output) == {
-        "state": True,
-        "text": "--help",
-    }
-
-
-def test_mount_config_cli_state_factory_builds_app_state_for_runtime_command(
-    tmp_path: Path,
-) -> None:
-    kit = _build_storage_free_kit_with_shared_env()
-    app = typer.Typer()
-
-    @dataclass(slots=True)
-    class CustomState(DefaultConfigCliState):
-        payload_marker: str = "factory-state"
-
-    def state_factory(context: CliRuntimeContext) -> CustomState:
-        """Return app-owned state after runtime bootstrap."""
-        return CustomState(
-            resolved=context.resolved,
-            storage=context.runtime_options.storage,
-        )
-
-    mount_config_cli(
-        app,
-        kit,
-        state_type=CustomState,
-        state_factory=state_factory,
-    )
-
-    @app.command()
-    def run(ctx: typer.Context) -> None:
-        """Print the state type created by the mount helper."""
-        state = ctx.obj
-        if not isinstance(state, CustomState):
-            raise RuntimeError("custom state missing")
-        typer.echo(
-            json.dumps(
-                {
-                    "marker": state.payload_marker,
-                    "bootstrapped": state.resolved is not None,
-                },
-                sort_keys=True,
-            )
-        )
-
-    result = CliRunner().invoke(app, ["run"])
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output) == {
-        "bootstrapped": True,
-        "marker": "factory-state",
-    }
-
-
-def test_mount_config_cli_runtime_independent_set_uses_context_not_app_hooks(
-    tmp_path: Path,
-) -> None:
-    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app()
-
-    kit = APPRC_EXAMPLE_APP_KIT
-    storage_root = tmp_path / "storage"
-    register_storage_for_app(kit, name="alpha", root=storage_root)
-    args = [
-        "--storage",
-        "alpha",
-        "config",
-        "set",
-        "access_token",
-        "secret-value",
-        "--scope",
-        "storage",
-    ]
-    factory_calls: list[CliRuntimeContext] = []
-    hook_calls: list[DefaultConfigCliState] = []
-
-    @dataclass(slots=True)
-    class CustomState(DefaultConfigCliState):
-        payload_marker: str = "factory-state"
-
-    def state_factory(context: CliRuntimeContext) -> CustomState:
-        """Record unexpected runtime bootstrap for a runtime_independent command."""
-        factory_calls.append(context)
-        return CustomState(resolved=context.resolved)
-
-    def active_storage_root_with_context(
-        state: CustomState,
-        _selector_context: ConfigSelectorContext,
-    ) -> Path | None:
-        """Record whether app hooks see runtime_independent generic state."""
-        hook_calls.append(state)
-        raise RuntimeError(
-            "app hook should not run for runtime_independent config set"
-        )
-
-    app = typer.Typer()
-    mount_config_cli(
-        app,
-        kit,
-        state_type=CustomState,
-        state_factory=state_factory,
-        args_provider=lambda: args,
-        active_storage_root_with_context=active_storage_root_with_context,
-    )
-
-    result = CliRunner().invoke(app, args)
-
-    assert result.exit_code == 0, result.output
-    assert factory_calls == []
-    assert hook_calls == []
-    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-value"\n' in (
-        storage_root / "apprc.storage.secret.env"
-    ).read_text(encoding="utf-8")
-
-
-def test_mount_config_cli_runtime_payload_receives_factory_state(
-    tmp_path: Path,
-) -> None:
-    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app()
-
-    kit = APPRC_EXAMPLE_APP_KIT
-    storage_root = tmp_path / "storage"
-    register_storage_for_app(kit, name="alpha", root=storage_root)
-    args = ["--storage", "alpha", "config", "show", "--json"]
-
-    @dataclass(slots=True)
-    class CustomState(DefaultConfigCliState):
-        payload_marker: str = "factory-state"
-
-    def state_factory(context: CliRuntimeContext) -> CustomState:
-        """Return state that custom runtime payloads may inspect."""
-        return CustomState(
-            resolved=context.resolved,
-            storage=context.runtime_options.storage,
-        )
-
-    def payload(state: CustomState) -> dict[str, Any]:
-        """Return state details proving the payload received app state."""
-        return {
-            "marker": state.payload_marker,
-            "bootstrapped": state.resolved is not None,
-            "storage": state.storage,
-        }
-
-    app = typer.Typer()
-    mount_config_cli(
-        app,
-        kit,
-        state_type=CustomState,
-        state_factory=state_factory,
-        args_provider=lambda: args,
-        runtime_payload=payload,
-    )
-
-    result = CliRunner().invoke(app, args)
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output) == {
-        "bootstrapped": True,
-        "marker": "factory-state",
-        "storage": "alpha",
-    }
-
-
-def test_mount_config_cli_requires_factory_for_custom_state_type() -> None:
-    kit = _build_storage_free_kit_with_shared_env()
-    app = typer.Typer()
-
-    @dataclass(slots=True)
-    class CustomState(DefaultConfigCliState):
-        payload_marker: str = "custom-state"
-
-    with pytest.raises(TypeError, match="state_factory"):
-        mount_config_cli(app, kit, state_type=CustomState)
-
-
-def test_mount_config_cli_args_provider_controls_skip_policy(
+def test_mount_app_cli_args_provider_controls_runtime_skip(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    kit = build_storage_free_example_app()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    kit = build_config_only_example_app()
     args = ["config", "paths", "--json"]
-    factory_calls: list[CliRuntimeContext] = []
+    state_calls: list[CliRuntimeContext] = []
 
-    def state_factory(context: CliRuntimeContext) -> DefaultConfigCliState:
-        """Record runtime bootstrap when skip policy does not match."""
-        factory_calls.append(context)
-        return DefaultConfigCliState(resolved=context.resolved)
+    def state_factory(context: CliRuntimeContext) -> ConfigOnlyExampleState:
+        state_calls.append(context)
+        return ConfigOnlyExampleState(resolved=context.resolved)
 
     app = typer.Typer()
-    mount_config_cli(
+    mount_app_cli(
         app,
         kit,
+        state_type=ConfigOnlyExampleState,
         state_factory=state_factory,
         args_provider=lambda: args,
     )
-
     result = CliRunner().invoke(app, args)
 
     assert result.exit_code == 0, result.output
-    assert factory_calls == []
-
-
-def test_mount_config_cli_runtime_policy_can_force_config_set_bootstrap(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    kit = _build_storage_free_kit_with_shared_env()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    args = ["config", "set", "profile", "forced"]
-    factory_calls: list[CliRuntimeContext] = []
-
-    def state_factory(context: CliRuntimeContext) -> DefaultConfigCliState:
-        factory_calls.append(context)
-        return DefaultConfigCliState(resolved=context.resolved)
-
-    app = typer.Typer()
-    mount_config_cli(
-        app,
-        kit,
-        state_factory=state_factory,
-        args_provider=lambda: args,
-        runtime_policy=ConfigRuntimePolicy(
-            runtime_independent_actions=(
-                DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS - {"set"}
-            ),
-        ),
-    )
-
-    result = CliRunner().invoke(app, args)
-
-    assert result.exit_code == 0, result.output
-    assert len(factory_calls) == 1
-
-
-def test_appdata_action_prefixes_bypass_runtime_with_trailing_options(
-    tmp_path: Path,
-) -> None:
-    kit = _build_storage_free_kit_with_shared_env()
-    args = [
-        "appdata",
-        "paths",
-        "--json",
-        "--apprc-dir",
-        str(tmp_path / "selected"),
-    ]
-    factory_calls: list[CliRuntimeContext] = []
-
-    def state_factory(context: CliRuntimeContext) -> DefaultConfigCliState:
-        factory_calls.append(context)
-        return DefaultConfigCliState(resolved=context.resolved)
-
-    app = typer.Typer()
-    mount_config_cli(
-        app,
-        kit,
-        state_factory=state_factory,
-        args_provider=lambda: args,
-        runtime_policy=CliRuntimePolicy(
-            runtime_independent_commands={
-                "appdata": rc.cli.RuntimeIndependentCommand(
-                    action_prefixes={("paths",), ("clean",)},
-                    skip_empty=True,
-                ),
-            },
-        ),
-    )
-    rc.cli.mount_appdata_cli(app, kit)
-
-    result = CliRunner().invoke(app, args)
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["apprc_dir"] == str(tmp_path / "selected")
-    assert factory_calls == []
-
-
-def test_appdata_bypasses_invalid_runtime_settings_across_actions(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    kit = build_apprc_example_app()
-    monkeypatch.delenv(
-        kit.schema.require_storage_selector_env_key(), raising=False
-    )
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_MODE", "INVALID")
-    monkeypatch.setenv("APPRC_EXAMPLE_APP_ENABLED", "not-a-bool")
-    runtime_calls: list[str] = []
-
-    def setup_logging(**kwargs: object) -> None:
-        runtime_calls.append("logging")
-
-    def state_factory(context: CliRuntimeContext) -> DefaultConfigCliState:
-        runtime_calls.append("state")
-        return DefaultConfigCliState(resolved=context.resolved)
-
-    apprc_dir = tmp_path / "selected"
-    managed = apprc_dir / "apprc.user.env"
-    managed.parent.mkdir()
-    managed.write_text("VALUE=1\n", encoding="utf-8")
-    current_args = ["--log-level", "INFO", "appdata", "--help"]
-    app = typer.Typer()
-    mount_config_cli(
-        app,
-        kit,
-        state_factory=state_factory,
-        storage_required=True,
-        setup_logging=setup_logging,
-        runtime_payload=lambda state: runtime_calls.append("payload") or {},
-        args_provider=lambda: current_args,
-        runtime_policy=CliRuntimePolicy(
-            runtime_independent_commands={
-                "appdata": rc.cli.RuntimeIndependentCommand(
-                    action_prefixes={("paths",), ("clean",)},
-                    skip_empty=True,
-                ),
-            },
-        ),
-    )
-    rc.cli.mount_appdata_cli(app, kit)
-
-    help_result = CliRunner().invoke(app, current_args)
-    current_args = [
-        "--log-level",
-        "INFO",
-        "appdata",
-        "paths",
-        "--apprc-dir",
-        str(apprc_dir),
-    ]
-    text_paths = CliRunner().invoke(app, current_args)
-    current_args = [
-        "--log-level",
-        "INFO",
-        "appdata",
-        "paths",
-        "--json",
-        "--apprc-dir",
-        str(apprc_dir),
-    ]
-    paths = CliRunner().invoke(app, current_args)
-    current_args = [
-        "--log-level",
-        "INFO",
-        "appdata",
-        "clean",
-        "--dry-run",
-        "--apprc-dir",
-        str(apprc_dir),
-    ]
-    clean = CliRunner().invoke(app, current_args)
-    current_args = [
-        "--log-level",
-        "INFO",
-        "appdata",
-        "clean",
-        "--yes",
-        "--apprc-dir",
-        str(apprc_dir),
-    ]
-    clean_yes = CliRunner().invoke(app, current_args)
-
-    assert help_result.exit_code == 0, help_result.output
-    assert text_paths.exit_code == 0, text_paths.output
-    assert str(apprc_dir) in text_paths.output
-    assert paths.exit_code == 0, paths.output
-    assert json.loads(paths.stdout)["apprc_dir"] == str(apprc_dir)
-    assert clean.exit_code == 0, clean.output
-    assert clean_yes.exit_code == 0, clean_yes.output
-    assert not managed.exists()
-    assert runtime_calls == []
-
-
-def test_mount_config_cli_custom_config_group_name_appears_in_guidance(
-    tmp_path: Path,
-) -> None:
-    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app()
-
-    kit = APPRC_EXAMPLE_APP_KIT
-    storage_root = tmp_path / "storage"
-    current_args: list[str] = []
-    app = typer.Typer()
-    mount_config_cli(
-        app,
-        kit,
-        config_group_name="settings",
-        args_provider=lambda: current_args,
-    )
-
-    setup_args = [
-        "settings",
-        "setup",
-        "--yes",
-        "--storage-root",
-        str(storage_root),
-    ]
-    current_args = setup_args
-    setup = CliRunner().invoke(app, setup_args)
-    current_args = [
-        "settings",
-        "set",
-        "app.profile",
-        "demo",
-        "--scope",
-        "user",
-    ]
-    app_scope = CliRunner().invoke(
-        app,
-        current_args,
-    )
-
-    assert setup.exit_code == 0, setup.output
-    assert f"{kit.schema.app_id} settings doctor" in setup.output
-    assert app_scope.exit_code == 0, app_scope.output
-    assert AppFiles(kit.schema).user_dotenv_path().is_file()
-
-
-def test_config_doctor_payload_custom_config_group_name_next_steps(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app()
-
-    kit = APPRC_EXAMPLE_APP_KIT
-    monkeypatch.delenv(
-        kit.schema.require_storage_selector_env_key(), raising=False
-    )
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-
-    payload = build_config_doctor_payload(
-        kit,
-        storage=None,
-        storage_required=True,
-        config_group_name="settings",
-    )
-
-    assert any(
-        step.startswith(f"{kit.schema.app_id} settings setup")
-        for step in payload.next_steps
-    )
-    assert all("apprc config" not in step for step in payload.next_steps)
-
-
-def test_mount_config_cli_rejects_existing_root_callback() -> None:
-    kit = _build_storage_free_kit_with_shared_env()
-    app = typer.Typer()
-
-    @app.callback()
-    def root_cmd() -> None:
-        """Existing callback owned by the host app."""
-
-    with pytest.raises(RuntimeError, match="already has a callback"):
-        mount_config_cli(app, kit)
-
-
-def test_mount_config_cli_rejects_existing_config_group_name() -> None:
-    kit = _build_storage_free_kit_with_shared_env()
-    app = typer.Typer()
-
-    @app.command()
-    def config() -> None:
-        """Host command that would collide with the generated config group."""
-
-    with pytest.raises(RuntimeError, match="already has a command or group"):
-        mount_config_cli(app, kit)
+    assert state_calls == []
 
 
 def test_cli_argv_provider_alias_accepts_token_provider() -> None:
@@ -854,124 +219,88 @@ def test_cli_argv_provider_alias_accepts_token_provider() -> None:
     assert provider() == ["config", "paths"]
 
 
-def test_generated_config_set_uses_context_without_ctx_obj(
-    tmp_path: Path,
-) -> None:
-    APPRC_EXAMPLE_APP_KIT = build_apprc_example_app()
-
-    kit = APPRC_EXAMPLE_APP_KIT
-    storage_root = tmp_path / "storage"
-    register_storage_for_app(kit, name="alpha", root=storage_root)
+def test_mount_app_cli_rejects_existing_root_callback() -> None:
     app = typer.Typer()
 
     @app.callback()
-    def root_cmd(
-        ctx: typer.Context,
-        storage: StorageOption = None,
-    ) -> None:
-        """Provide AppRC context without application runtime state."""
-        options = CliRuntimeOptions.from_typer(
-            load_dotenv_layers=False,
-            storage=storage,
-        )
-        prepare_cli_runtime_context(ctx, kit, options, skip_runtime_setup=True)
+    def root_cmd() -> None:
+        """Existing callback owned by the host app."""
 
-    app.add_typer(
-        build_config_typer_app(
-            kit,
+    with pytest.raises(RuntimeError, match="already has a callback"):
+        mount_app_cli(app, build_config_only_example_app())
+
+
+def test_mount_app_cli_rejects_existing_app_group_name() -> None:
+    app = typer.Typer()
+
+    @app.command()
+    def config() -> None:
+        """Host command that collides with the generated config group."""
+
+    with pytest.raises(RuntimeError, match="command names are already in use"):
+        mount_app_cli(app, build_config_only_example_app())
+
+
+def test_runtime_mount_app_groups_preserves_host_callback_and_mounts_groups() -> (
+    None
+):
+    kit = build_config_only_example_app()
+    args = ["config", "paths", "--json"]
+    runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](
+        kit,
+        state_type=ConfigOnlyExampleState,
+        state_factory=lambda context, _options: ConfigOnlyExampleState(
+            resolved=context.resolved
         ),
-        name="config",
+        args_provider=lambda: args,
     )
+    app = typer.Typer()
+    callback_calls: list[str | None] = []
 
-    result = CliRunner().invoke(
-        app,
-        [
-            "--storage",
-            "alpha",
-            "config",
-            "set",
-            "access_token",
-            "secret-value",
-            "--scope",
-            "storage",
-        ],
-    )
+    @app.callback()
+    def host_callback(ctx: typer.Context) -> None:
+        callback_calls.append(ctx.invoked_subcommand)
+        runtime.prepare(ctx, CliRuntimeOptions())
 
+    mounted = runtime.mount_app_groups(app)
+
+    assert "config" in mounted
+    result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
-    assert 'APPRC_EXAMPLE_APP_ACCESS_TOKEN="secret-value"\n' in (
-        storage_root / "apprc.storage.secret.env"
-    ).read_text(encoding="utf-8")
+    assert callback_calls == ["config"]
 
 
-def test_config_runtime_policy_can_force_config_set_bootstrap(
+def test_runtime_mount_app_groups_rejects_existing_config_group() -> None:
+    kit = build_config_only_example_app()
+    app = typer.Typer()
+    app.add_typer(typer.Typer(), name="config")
+    runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](kit)
+
+    with pytest.raises(RuntimeError, match="already has a command or group"):
+        runtime.mount_app_groups(app)
+
+
+def test_config_only_app_cli_resolves_explicit_environment_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
-    kit = build_storage_free_example_app()
-    AppFiles(kit.schema).ensure_user_dotenv()
-    bootstrapped_commands: list[str | None] = []
-    policy = ConfigRuntimePolicy(
-        runtime_independent_actions=DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS
-        - {"set"},
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("CONFIG_ONLY_APP_PROFILE", "from-shell")
+    env_file = tmp_path / "explicit.env"
+    env_file.write_text(
+        "CONFIG_ONLY_APP_PROFILE=from-file\n",
+        encoding="utf-8",
     )
     app = typer.Typer()
+    mount_app_cli(app, build_config_only_example_app())
 
-    @dataclass(slots=True)
-    class HaiuShapedState(DefaultConfigCliState):
-        payload_marker: str = "haiu-shaped"
+    @app.command()
+    def run(ctx: typer.Context) -> None:
+        context = cli_runtime_context_from(ctx)
+        assert context is not None and context.resolved is not None
+        typer.echo(context.resolved.build(ConfigOnlyExampleEnv).profile)
 
-    @app.callback()
-    def root_cmd(
-        ctx: typer.Context,
-        env_files: EnvFilesOption = None,
-        env_file_overrides_os_environ: EnvFileOverridesOption = False,
-        skip_dotenv_layers: SkipDotenvLayersOption = False,
-        storage: StorageOption = None,
-    ) -> None:
-        """Bootstrap only when the policy says this command needs runtime."""
-        options = CliRuntimeOptions.from_typer(
-            env_files=env_files,
-            env_file_overrides_os_environ=env_file_overrides_os_environ,
-            load_dotenv_layers=not skip_dotenv_layers,
-            storage=storage,
-        )
-        context = prepare_cli_runtime_context(
-            ctx,
-            kit,
-            options,
-            skip_runtime_setup=policy.request_skips_runtime(),
-        )
-        if context.runtime_setup_skipped:
-            return
-        bootstrapped_commands.append(ctx.invoked_subcommand)
-        ctx.obj = HaiuShapedState(resolved=context.resolved)
+    result = CliRunner().invoke(app, ["--env-file", str(env_file), "run"])
 
-    def payload(state: HaiuShapedState) -> dict[str, Any]:
-        """Return a tiny custom payload proving app state remains supported."""
-        return {
-            "payload_marker": state.payload_marker,
-            "bootstrapped": state.resolved is not None,
-        }
-
-    app.add_typer(
-        build_config_typer_app(
-            kit,
-            state_type=HaiuShapedState,
-            runtime_payload=payload,
-        ),
-        name="config",
-    )
-    runner = CliRunner()
-    set_args = ["--skip-dotenv-layers", "config", "set", "profile", "forced"]
-    doctor_args = ["--skip-dotenv-layers", "config", "doctor", "--json"]
-
-    monkeypatch.setattr(sys, "argv", ["apprc-test", *set_args])
-    set_result = runner.invoke(app, set_args)
-    monkeypatch.setattr(sys, "argv", ["apprc-test", *doctor_args])
-    doctor_result = runner.invoke(app, doctor_args)
-
-    assert set_result.exit_code == 0, set_result.output
-    assert bootstrapped_commands == ["config"]
-    assert doctor_result.exit_code == 0, doctor_result.output
-    assert len(bootstrapped_commands) == 1
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "from-shell"

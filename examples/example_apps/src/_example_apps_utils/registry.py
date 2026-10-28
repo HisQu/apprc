@@ -5,15 +5,17 @@ from __future__ import annotations
 # == Standard Library ===========================================
 from dataclasses import dataclass
 
-# == Internal ===================================================
-import apprc as rc
+from cache_only.config.app import MyRC as CACHE_ONLY_RC
 from cli_runtime.config.app import MyRC as CLI_RUNTIME_RC
 from explicit_env_precedence.config.app import MyRC as PRECEDENCE_RC
 from library_client.config.app import MyRC as LIBRARY_CLIENT_RC
 from process_env.config.app import MyRC as PROCESS_ENV_RC
-from storage.config.app import MyRC as STORAGE_RC
 from user_dotenv.config.app import MyRC as USER_DOTENV_RC
-from user_dotenv_with_storage.config.app import MyRC as BOTH_RC
+from user_dotenv_with_workspace.config.app import MyRC as BOTH_RC
+from workspace.config.app import MyRC as WORKSPACE_RC
+
+# == Internal ===================================================
+import apprc as rc
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,22 +25,24 @@ class ExampleAppSpec:
     :param name: Short selector accepted by the lab command.
     :param command_name: Installed console-script name.
     :param app_id: Stable AppRC application identifier.
-    :param apprc_dir_env_key: Environment key that relocates managed files.
+    :param root_env_key: Environment key that relocates managed files.
     :param env_prefix: Prefix removed from inherited lab environments.
     :param uses_user_dotenv: Whether setup manages a user dotenv.
-    :param uses_storage: Whether the application declares storage support.
-    :param required_storage_key: Required storage field populated by smoke
-        runs, or ``None`` for storage-free examples.
+    :param uses_workspace: Whether the application declares workspace support.
+    :param has_managed_paths: Whether any removable AppRC paths are enabled.
+    :param required_workspace_key: Required workspace field populated by smoke
+        runs, or ``None`` for workspace-free examples.
     """
 
     name: str
     command_name: str
     app_id: str
-    apprc_dir_env_key: str
+    root_env_key: str
     env_prefix: str
     uses_user_dotenv: bool
-    uses_storage: bool
-    required_storage_key: str | None = None
+    uses_workspace: bool
+    has_managed_paths: bool
+    required_workspace_key: str | None = None
 
 
 def _spec(
@@ -47,7 +51,7 @@ def _spec(
     app_rc: rc.AppRC,
     *,
     env_prefix: str,
-    required_storage_key: str | None = None,
+    required_workspace_key: str | None = None,
 ) -> ExampleAppSpec:
     """Build a registry row from one public AppRC facade."""
     spec = app_rc.schema
@@ -55,15 +59,29 @@ def _spec(
         name=name,
         command_name=command_name,
         app_id=spec.app_id,
-        apprc_dir_env_key=spec.apprc_dir_env_key,
+        root_env_key=spec.root_env_key,
         env_prefix=env_prefix,
         uses_user_dotenv=spec.uses_user_dotenv(),
-        uses_storage=spec.uses_storage(),
-        required_storage_key=required_storage_key,
+        uses_workspace=spec.uses_workspaces(),
+        has_managed_paths=any(
+            (
+                spec.paths.config,
+                spec.paths.appdata,
+                spec.paths.cache,
+                spec.paths.state,
+            )
+        ),
+        required_workspace_key=required_workspace_key,
     )
 
 
 EXAMPLE_APPS = (
+    _spec(
+        "cache-only",
+        "apprc-cache-only",
+        CACHE_ONLY_RC,
+        env_prefix="APPRC_EXAMPLE_CACHE_ONLY_",
+    ),
     _spec(
         "process-env",
         "apprc-process-env",
@@ -77,18 +95,18 @@ EXAMPLE_APPS = (
         env_prefix="APPRC_EXAMPLE_USER_",
     ),
     _spec(
-        "storage",
-        "apprc-storage",
-        STORAGE_RC,
-        env_prefix="APPRC_EXAMPLE_STORAGE_",
-        required_storage_key="api_token",
+        "workspace",
+        "apprc-workspace",
+        WORKSPACE_RC,
+        env_prefix="APPRC_EXAMPLE_WORKSPACE_",
+        required_workspace_key="api_token",
     ),
     _spec(
-        "user-dotenv-with-storage",
-        "apprc-user-dotenv-with-storage",
+        "user-dotenv-with-workspace",
+        "apprc-user-dotenv-with-workspace",
         BOTH_RC,
         env_prefix="APPRC_EXAMPLE_BOTH_",
-        required_storage_key="api_token",
+        required_workspace_key="api_token",
     ),
     _spec(
         "explicit-env-precedence",
@@ -101,7 +119,7 @@ EXAMPLE_APPS = (
         "apprc-cli-runtime",
         CLI_RUNTIME_RC,
         env_prefix="APPRC_EXAMPLE_RUNTIME_",
-        required_storage_key="api_token",
+        required_workspace_key="api_token",
     ),
     _spec(
         "library-client",

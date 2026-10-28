@@ -12,15 +12,15 @@
   - [Save a user preference](#save-a-user-preference)
   - [Use AppRC inside an importable client](#use-apprc-inside-an-importable-client)
   - [Edit or remove a saved override](#edit-or-remove-a-saved-override)
-- [Manage storage](#manage-storage)
-  - [Store data outside the source checkout](#store-data-outside-the-source-checkout)
-  - [Register and switch data directories](#register-and-switch-data-directories)
-  - [Move, reconnect, or archive storage](#move-reconnect-or-archive-storage)
+- [Choose and initialize application paths](#choose-and-initialize-application-paths)
+  - [Select a workspace](#select-a-workspace)
+  - [Choose a layout from bootstrap inputs](#choose-a-layout-from-bootstrap-inputs)
+  - [Supply application maintenance operations](#supply-application-maintenance-operations)
 - [Give users configuration tools](#give-users-configuration-tools)
   - [Add configuration commands to Typer](#add-configuration-commands-to-typer)
-  - [Preview and clean managed application data](#preview-and-clean-managed-application-data)
+  - [Preview and apply a purge](#preview-and-apply-a-purge)
   - [Inspect and edit settings in the terminal](#inspect-and-edit-settings-in-the-terminal)
-  - [Save and migrate secret settings](#save-and-migrate-secret-settings)
+  - [Save and repair secret settings](#save-and-repair-secret-settings)
   - [Add a Gradio settings page](#add-a-gradio-settings-page)
   - [Build a Windows installer](#build-a-windows-installer)
 - [Use settings across application code](#use-settings-across-application-code)
@@ -253,10 +253,8 @@ lets users compare source values without writing Python inspection code.
 <a id="set-up-persistence"></a>
 ## Save a user preference
 
-Enable a [user dotenv](Explanations.md#user-dotenv-and-the-apprc-directory), then
-use [`ConfigManager`](Explanations.md#configmanager) to initialize and edit it.
-This example uses a temporary AppRC directory rather than changing your real
-preferences. Run it as `demo.py`:
+Enable a [user dotenv](Explanations.md#user-dotenv) together with the config
+component. This example uses a temporary single-root layout:
 
 <!-- example-file: demo.py -->
 ```python
@@ -265,8 +263,12 @@ from tempfile import TemporaryDirectory
 import apprc as rc
 
 with TemporaryDirectory() as directory:
-    apprc_dir = Path(directory) / "demo-config"
-    MyRC = rc.AppRC(app_id="demo", user_dotenv=rc.UserDotenv(), apprc_dir=apprc_dir)
+    MyRC = rc.AppRC(
+        app_id="demo",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(Path(directory)),
+        user_dotenv=rc.UserDotenv(),
+    )
 
     @MyRC.config("client", prefix="DEMO_")
     class ClientSettings(rc.Config):
@@ -274,22 +276,17 @@ with TemporaryDirectory() as directory:
 
     manager = MyRC.manage(environment={})
     manager.setup()
-    plan = manager.plan_update("client.timeout", "20", scope="user")
-    manager.apply_edit(plan)
-    assert (apprc_dir / "apprc.user.env").is_file()
+    manager.apply_edit(manager.plan_update("client.timeout", "20", scope="user"))
+    config_dir = MyRC.paths().require("config")
+    assert (config_dir / "apprc.user.env").is_file()
     assert manager.resolve().build(ClientSettings).timeout == 20
     print("saved timeout: 20")
 ```
 
-In an application, omit `apprc_dir` to use the
-[default AppRC directory](References.md#managed-files), or set `DEMO_APPRC_DIR`
-to a persistent directory chosen by the user. Missing user dotenv files are
-allowed when reading settings. `setup()` creates one explicitly and preserves
-an existing file. The [user preferences example](EXAMPLES.md#persistent-user-preferences)
-exposes this behavior through CLI commands.
-
-If the declaration also enables storage, `setup()` expects a storage root.
-Use `setup_user_dotenv()` to initialize only user overrides in that case.
+`UserDotenv()` does not enable config; `Paths(config=True)` declares that
+component. `setup()` initializes only user configuration. The user dotenv path
+comes from the resolved config directory, not a separate `apprc_dir` override.
+Reading settings does not create a missing dotenv.
 
 <a id="edit-saved-values"></a>
 ## Use AppRC inside an importable client
@@ -298,7 +295,7 @@ A library can own its [`AppRC`](Explanations.md#apprc) declaration and load
 settings when a client is constructed. Its caller then imports `Client` and does
 not need to declare AppRC or call a setup function. This example uses a
 [config section](Explanations.md#config-sections-and-fields), packaged defaults,
-and a [user dotenv](Explanations.md#user-dotenv-and-the-apprc-directory).
+and a [user dotenv](Explanations.md#user-dotenv).
 
 Create these files in one working directory:
 
@@ -330,8 +327,11 @@ import apprc as rc
 MyRC = rc.AppRC(
     app_id="demo",
     config_package="myclient",
+    paths=rc.Paths(config=True),
+    bootstrap_env_prefix="DEMO",
     user_dotenv=rc.UserDotenv(),
 )
+
 
 @MyRC.config("client", prefix="DEMO_")
 class ClientSettings(rc.Config):
@@ -372,16 +372,16 @@ from tempfile import TemporaryDirectory
 from myclient import Client
 
 with TemporaryDirectory() as directory:
-    config_dir = Path(directory)
-    os.environ["DEMO_APPRC_DIR"] = directory
-    assert Client().timeout == 20
-
+    os.environ["DEMO_LAYOUT"] = "single-root"
+    os.environ["DEMO_ROOT"] = directory
+    config_dir = Path(directory) / "config"
+    config_dir.mkdir()
     (config_dir / "apprc.user.env").write_text("DEMO_TIMEOUT=15\n", encoding="utf-8")
     assert Client().timeout == 15
 
     os.environ["DEMO_TIMEOUT"] = "10"
     assert Client().timeout == 10
-    print("packaged: 20; user: 15; process: 10")
+    print("user: 15; process: 10")
 ```
 
 Run `python demo.py`. The demonstration script writes `apprc.user.env`; importing
@@ -408,8 +408,12 @@ from tempfile import TemporaryDirectory
 import apprc as rc
 
 with TemporaryDirectory() as directory:
-    apprc_dir = Path(directory) / "demo-config"
-    MyRC = rc.AppRC(app_id="demo", user_dotenv=rc.UserDotenv(), apprc_dir=apprc_dir)
+    MyRC = rc.AppRC(
+        app_id="demo",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(Path(directory)),
+        user_dotenv=rc.UserDotenv(),
+    )
 
     @MyRC.config("client", prefix="DEMO_")
     class ClientSettings(rc.Config):
@@ -436,18 +440,15 @@ comments and formatting. Duplicate assignments are reported for cleanup.
 `apply_edit()` raises [`StaleEditError`](References.md#errors-and-write-guarantees)
 if the target file changed after planning. Inspect again and create a new plan;
 do not retry the old one. Explicit `scope="user"` can create a missing user
-dotenv. Storage edits require an initialized storage. The
-[combined setup](EXAMPLES.md#user-settings-and-storage) demonstrates both scopes.
+dotenv. Workspace edits require a selected workspace. The
+[user/workspace setup](EXAMPLES.md#user-preferences-and-workspaces) demonstrates both scopes.
 
 <br>
 
-# Manage storage
+# Choose and initialize application paths
 
-## Store data outside the source checkout
-
-A [storage](Explanations.md#storage) supplies a directory path. Your application
-uses that path when writing its own data. This complete `demo.py` uses a temporary
-directory outside the checkout and deletes the demonstration data on exit:
+Declare the components the application actually uses. This complete `demo.py`
+uses only cache and writes no files until `ensure_path()` is called:
 
 <!-- example-file: demo.py -->
 ```python
@@ -456,280 +457,46 @@ from tempfile import TemporaryDirectory
 import apprc as rc
 
 with TemporaryDirectory() as directory:
-    base = Path(directory)
-    MyRC = rc.AppRC(app_id="demo", storage=rc.Storage(), apprc_dir=base / "config")
-    manager = MyRC.manage(environment={})
-    manager.setup(storage_root=base / "data", storage_name="work")
-    resolved = MyRC.resolve(rc.ResolveOptions(storage="work", storage_required=True), environment={})
-    assert resolved.selection is not None
-    report = resolved.selection.root / "report.txt"
-    report.write_text("Completed\n", encoding="utf-8")
-    assert report.read_text(encoding="utf-8") == "Completed\n"
-    print("report written to selected storage")
+    MyRC = rc.AppRC(
+        app_id="cache-demo",
+        paths=rc.Paths(cache=True),
+        layout=rc.Layout.single_root(Path(directory)),
+    )
+    inspected = MyRC.paths()
+    assert inspected.config_dir is None
+    assert inspected.cache_dir == Path(directory) / "cache"
+    assert not inspected.cache_dir.exists()
+    cache_dir = MyRC.ensure_path("cache")
+    assert cache_dir.is_dir()
+    assert (cache_dir / ".apprc-owner.json").is_file()
+    assert not (Path(directory) / "config").exists()
+    print("only cache initialized")
 ```
 
-For persistent use, replace the temporary paths with a user-chosen data directory
-and an [AppRC directory](References.md#managed-files). The storage directory
-contains `apprc.storage.env` and the application's `report.txt`; the AppRC
-directory contains the registry. The [storage-only example](EXAMPLES.md#named-storage-without-user-overrides)
-provides a complete CLI with the same separation.
+`Paths` enables config, appdata, cache, and state separately. `AppPaths` returns
+absolute paths for enabled components and `None` for disabled components.
+`paths()` is zero-write; `ensure_path(kind)` creates only the requested
+component and records ownership. See the [component explanation](Explanations.md#application-paths)
+and [API reference](References.md#application-paths).
 
-<a id="manage-storage"></a>
-## Register and switch data directories
+For native locations use `Layout.native()`. To colocate enabled roots use
+`Layout.single_root(root)`, which resolves the root against invocation current
+working directory. `ensure_path("state")` does not create logs; use
+`ensure_path("logs")` to initialize the subordinate log path.
 
-Register paths in the [storage registry](Explanations.md#storage-registry).
-Choosing a saved default affects future resolutions; an explicit invocation
-choice affects only that resolution. Run this `demo.py`:
+If a category root already contains files without an owner marker, the safe
+default is refusal. `ensure_path("config", adopt=True)` explicitly adopts a
+nonempty unowned config root without moving or deleting its contents. `config
+init --adopt` provides the same explicit choice through the CLI. Do not use
+adoption to make AppRC claim files you do not control.
+
+## Select a workspace
+
+Declare `Workspaces()` when users need named working directories. This complete
+script demonstrates registration and selection; the registry is in the enabled
+config root, while the workspace payload is separate:
 
 <!-- example-file: demo.py -->
-```python
-from pathlib import Path
-from tempfile import TemporaryDirectory
-import apprc as rc
-
-with TemporaryDirectory() as directory:
-    base = Path(directory)
-    MyRC = rc.AppRC(app_id="demo", storage=rc.Storage(), apprc_dir=base / "config")
-    manager = MyRC.manage(environment={})
-    manager.setup(storage_root=base / "work", storage_name="work")
-    manager.register_storage("personal", base / "personal")
-    manager.select_storage("work")
-    before = manager.resolve()
-    personal = MyRC.resolve(rc.ResolveOptions(storage="personal"), environment={})
-    assert before.selection is not None and before.selection.storage_name == "work"
-    assert personal.selection is not None and personal.selection.storage_name == "personal"
-    manager.select_storage("personal")
-    assert before.selection.storage_name == "work"
-    print("saved default changed; previous resolution still uses work")
-```
-
-An explicit invalid name fails instead of falling back to another directory.
-An invocation can also select an initialized directory path without registering
-it. The [selection reference](References.md#storage-selection) defines the
-requirements and the relationship to environment variables.
-
-## Move, reconnect, or archive storage
-
-Use `move_storage()` when AppRC should move the data, and `repoint_storage()` when
-the directory already moved. The following independent script exercises both,
-then archives and restores the data inside one temporary directory:
-
-<!-- example-file: demo.py -->
-```python
-from pathlib import Path
-from tempfile import TemporaryDirectory
-import apprc as rc
-
-with TemporaryDirectory() as directory:
-    base = Path(directory)
-    MyRC = rc.AppRC(app_id="demo", storage=rc.Storage(), apprc_dir=base / "config")
-    manager = MyRC.manage(environment={})
-    manager.setup(storage_root=base / "original", storage_name="work")
-    (base / "original" / "report.txt").write_text("Completed\n", encoding="utf-8")
-    manager.move_storage("work", base / "moved")
-    (base / "moved").rename(base / "reconnected")
-    manager.repoint_storage("work", base / "reconnected")
-    archive = manager.archive_storage("work", base / "work.apprc.tar.xz")
-    manager.restore_storage("copy", archive, base / "restored")
-    assert (base / "restored" / "report.txt").read_text(encoding="utf-8") == "Completed\n"
-    manager.remove_storage("copy")
-    assert (base / "restored" / "report.txt").exists()
-    print("restored and unregistered copy; its data remains")
-```
-
-The [operation reference](References.md#storage-operations) distinguishes
-unregistering, deleting data, and forgetting an archive record. Moves require a
-new or empty destination. Archive filenames must end in `.apprc.tar.xz`.
-Archive creation retains the original directory.
-
-> [!CAUTION]
-> `remove_storage(name, delete_content=True)` deletes that directory's contents.
-> Use the ordinary `remove_storage(name)` when only removing a registration.
-
-<br>
-
-# Give users configuration tools
-
-<a id="integrate-a-terminal-application"></a>
-## Add configuration commands to Typer
-
-Install the `apprc` distribution, which includes terminal dependencies. Save
-this complete application as `demo.py` in a new working directory:
-
-<!-- example-file: demo.py -->
-```python
-import apprc as rc
-import typer
-
-MyRC = rc.AppRC(
-    app_id="demo",
-    user_dotenv=rc.UserDotenv(),
-    setup_next_step="python demo.py run",
-)
-
-@MyRC.config("client", prefix="DEMO_")
-class ClientSettings(rc.Config):
-    timeout: int = rc.field("DEMO_TIMEOUT", default=30)
-
-app = typer.Typer()
-rc.cli.mount_config_cli(
-    app,
-    MyRC,
-    runtime_policy=rc.cli.CliRuntimePolicy(
-        runtime_independent_commands={
-            "appdata": rc.cli.RuntimeIndependentCommand(
-                action_prefixes={("paths",), ("clean",)},
-                skip_empty=True,
-            ),
-        },
-    ),
-)
-rc.cli.mount_appdata_cli(app, MyRC)
-
-@app.command()
-def run(ctx: typer.Context) -> None:
-    state = rc.cli.state_from(ctx, rc.cli.DefaultConfigCliState)
-    assert state.resolved is not None
-    settings = state.resolved.build(ClientSettings)
-    typer.echo(settings.timeout)
-
-if __name__ == "__main__":
-    app()
-```
-
-These commands use a local demonstration directory. They are POSIX-shell syntax;
-on PowerShell set `$env:DEMO_APPRC_DIR = "$PWD/demo-config"` instead of `export`.
-
-```shell
-export DEMO_APPRC_DIR="$PWD/demo-config"
-python demo.py --help
-python demo.py run
-python demo.py config setup --yes
-python demo.py config set client.timeout 20 --scope user
-python demo.py run
-python demo.py config doctor --json
-```
-
-With `DEMO_TIMEOUT` unset, the first run prints `30` and the second prints `20`.
-The edit persists in `demo-config/apprc.user.env`. Root options such as
-`--env-file deployment.env` go before the command. The
-[command reference](References.md#terminal-commands) explains command availability.
-After `config setup` succeeds, AppRC prints the declaration's
-[`setup_next_step`](References.md#declarations) after the doctor command. It
-prints this block after required-field prompts, or directly when you pass
-`--yes`.
-If an existing AppRC directory is not private, interactive setup asks before
-changing its permissions and retries after confirmation. Declining the prompt
-or using `--yes` leaves permissions unchanged; use the reported
-`config secrets repair --scope user` command when you want to repair them
-separately.
-The [custom-callback example](EXAMPLES.md#an-application-owned-cli-callback)
-shows how to keep an application-owned Typer callback.
-
-## Preview and clean managed application data
-
-The [application-data CLI](Explanations.md#application-data-cli) inventories
-AppRC-managed files and previews cleanup separately from application startup.
-Applications mount it explicitly with `rc.cli.mount_appdata_cli(app, MyRC)`,
-as in the complete [Typer application](#add-configuration-commands-to-typer).
-The returned value is the mounted child Typer group. This helper also works
-without a config CLI and leaves any existing host callback intact.
-
-If `mount_config_cli` or `CliRuntime` prepares runtime state, add this entry to
-its existing `CliRuntimePolicy.runtime_independent_commands` mapping, preserving
-the application's other entries:
-
-```python
-"appdata": rc.cli.RuntimeIndependentCommand(
-    action_prefixes={("paths",), ("clean",)},
-    skip_empty=True,
-)
-```
-
-This is a mapping excerpt, not a standalone Python program. Action prefixes
-cover options after the action, such as `appdata paths --json`. A custom host
-callback must likewise avoid starting application work for these requests.
-
-To try the commands without creating your own application, install the
-[example applications](EXAMPLES.md#run-the-example-applications), then run:
-
-```shell
-apprc-examples-lab user-dotenv-with-storage
-```
-
-Inside that disposable shell, use this POSIX command sequence:
-
-```shell
-cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-user-dotenv-with-storage config setup --yes --storage-root ./data
-apprc-user-dotenv-with-storage appdata paths
-apprc-user-dotenv-with-storage appdata paths --json
-apprc-user-dotenv-with-storage appdata clean --dry-run
-apprc-user-dotenv-with-storage appdata clean
-```
-
-The final command asks `Remove these AppRC-managed files and internal storage
-roots?`. Answering No exits with status 1 and changes nothing. Answering Yes
-removes the previewed managed files, including secret companions. The `./data`
-root is outside the lab's AppRC directory, so its application payload remains;
-its managed dotenv files are removed. Registered roots strictly inside the
-AppRC directory are instead removed recursively. The lab deletes its whole
-temporary root when you exit.
-
-> [!CAUTION]
-> `appdata clean --yes` (or `-y`) skips confirmation and removes the planned
-> managed files and internal storage trees. Review `--dry-run` first.
-> Unrelated files and external payloads are retained, but AppRC cannot recover
-> removed data.
-
-Both commands use the declaration and process environment to select the AppRC
-directory. To choose another registry explicitly, pass
-`appdata paths --apprc-dir PATH` and
-`appdata clean --apprc-dir PATH --dry-run`, then use the same path when applying.
-Root `--env-file` and `--storage` options do not retarget these commands.
-Missing ordinary settings or an unselected runtime storage do not block them;
-a malformed storage registry does. The
-[command reference](References.md#application-data-commands) describes the JSON
-inventory and errors. Cleanup does not uninstall the application.
-
-## Inspect and edit settings in the terminal
-
-Use the installed [user preferences example](EXAMPLES.md#persistent-user-preferences)
-to try the editor without first writing an application:
-
-```shell
-apprc-examples-lab user-dotenv
-```
-
-Inside the disposable shell, run:
-
-```shell
-apprc-user-dotenv config paths
-apprc-user-dotenv config edit
-```
-
-If the user dotenv does not exist, use the editor's setup action. Select a
-setting to read its explanation and compare its effective value with the layer
-values. Save the override to the user dotenv, then run the application's `run`
-command to observe the result. For an application with storage, select the
-storage to inspect and choose the user or storage edit target explicitly.
-
-The [config editor](Explanations.md#config-editor) displays defaults, explicit
-files, and process-environment inputs alongside editable saved overrides.
-It does not edit the parent shell or packaged defaults. An environment value
-can therefore still win after a successful save. Browsing storage does not
-change the [saved default](Explanations.md#storage-registry).
-
-Opening the editor creates no files. Changes happen through explicit setup and
-save actions. Exit the lab shell to remove its temporary settings and data.
-
-## Save and migrate secret settings
-
-Mark a [config field](Explanations.md#config-sections-and-fields) with
-`secret=True` when AppRC must redact its display value and save it in a
-[secret companion](Explanations.md#secret-companions). This example creates a
-temporary user layer and storage, then shows where each saved value goes:
-
 ```python
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -739,56 +506,234 @@ with TemporaryDirectory() as directory:
     root = Path(directory)
     MyRC = rc.AppRC(
         app_id="demo",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(root / "app"),
+        workspaces=rc.Workspaces(),
+    )
+    MyRC.ensure_path("config")
+    manager = MyRC.workspaces(environment={})
+    manager.register_workspace("work", root / "work")
+    manager.select_workspace("work")
+    before = MyRC.resolve(environment={})
+    assert before.workspace is not None
+    assert before.workspace.workspace_name == "work"
+    assert before.paths.config_dir == root / "app" / "config"
+    print(before.workspace.root)
+```
+
+Selection changes the workspace settings overlay and root, not the captured
+`AppPaths`. `WorkspaceManager` owns registration, selection, rename, repoint,
+move, remove, archive, and restore. Unregistering never deletes workspace
+payloads. The [workspace reference](References.md#workspace-selection) defines
+selector precedence and direct paths.
+
+`Workspaces(registry=False)` permits direct path selection without config or a
+registry. Relative paths resolve against invocation current working directory;
+a bare value supplied as a workspace selector fails because names require a
+registry. The explicit `WorkspaceManager.initialize_workspace(root)` path
+argument may be any relative path, including `Path("demo-workspace")`. Initialize
+the directory before selecting it. This creates `apprc.workspace.env` in the
+root, without config or registry writes; the secret companion is created only
+if needed. The direct mode does not persist named registration:
+
+```python
+from pathlib import Path
+import apprc as rc
+
+MyRC = rc.AppRC(
+    app_id="demo",
+    workspaces=rc.Workspaces(registry=False),
+)
+manager = MyRC.workspaces(environment={})
+root = Path("demo-workspace")
+manager.initialize_workspace(root)
+selected_root = manager.select_workspace("./demo-workspace")
+assert selected_root == root.resolve()
+```
+
+Run the CLI form with:
+
+```shell
+python demo.py workspace init ./demo-workspace
+python demo.py workspace info ./demo-workspace
+```
+
+The CLI exposes the same setup and inspection as `workspace init PATH` and
+`workspace info PATH`. Both take an explicit root path; they do not enable config
+or write a registry. Registry-backed workspaces continue to use named
+registration and selection.
+
+## Choose a layout from bootstrap inputs
+
+With `bootstrap_env_prefix="DEMO"` the bootstrap pair is `DEMO_LAYOUT` and
+`DEMO_ROOT`. AppRC selects both values from one winning raw layer: root alone
+means single-root; `native` plus a root in that same layer is invalid; a higher
+layer's `native` ignores a lower layer's root. Invocation `Layout` overrides
+these inputs. Explicit dotenv files are separate layers, and their ordering
+relative to process environment follows `env_file_overrides_os_environ`.
+`AppPaths.source` records which layer supplied the chosen layout.
+
+## Supply application maintenance operations
+
+AppRC can describe basic information for each enabled path, but application
+backup, restore, cache pruning, state reset, and semantic purge require an
+explicit provider handler. Supply `MaintenanceHandlers` to
+`MyRC.maintain(...)` and to the CLI mount. Commands for absent operations are
+not mounted. An app-specific provider owns its database format, leases, and
+coordination; AppRC validates ownership, boundaries, exact target lists, and
+plan revisions before dispatch.
+
+Purge is not recursive cleanup. It previews exact AppRC-managed files and empty
+directories, refuses unknown contents and unsafe links, and reports partial
+results. It never includes workspace payloads or package caches, and multiple
+roots are not deleted atomically. See [maintenance contracts](References.md#maintenance).
+<br>
+
+# Give users configuration tools
+
+<a id="integrate-a-terminal-application"></a>
+## Add configuration commands to Typer
+
+`mount_app_cli` provides the high-level integration: it owns the Typer callback,
+captures bootstrap options, and puts the resolved snapshot in CLI state. This
+complete `demo.py` configures user preferences and a single-root layout:
+
+<!-- example-file: demo.py -->
+```python
+import apprc as rc
+import typer
+
+MyRC = rc.AppRC(
+    app_id="demo",
+    paths=rc.Paths(config=True),
+    layout=rc.Layout.single_root("demo-config"),
+    user_dotenv=rc.UserDotenv(),
+)
+
+@MyRC.config("client", prefix="DEMO_")
+class ClientSettings(rc.Config):
+    timeout: int = rc.field("DEMO_TIMEOUT", default=30)
+
+app = typer.Typer()
+rc.cli.mount_app_cli(app, MyRC)
+
+@app.command()
+def run(ctx: typer.Context) -> None:
+    state = rc.cli.state_from(ctx, rc.cli.DefaultConfigCliState)
+    assert state.resolved is not None
+    typer.echo(state.resolved.build(ClientSettings).timeout)
+
+if __name__ == "__main__":
+    app()
+```
+
+Run from the directory containing `demo.py`:
+
+```shell
+python demo.py --help
+python demo.py paths config
+python demo.py config init
+python demo.py config setup --yes
+python demo.py config set client.timeout 20 --scope user
+python demo.py run
+python demo.py doctor --json
+```
+
+`paths config` prints its absolute path without creating it. `config init`
+initializes the config category and its owner marker. The edit is saved in
+`demo-config/config/apprc.user.env`; `run` then prints `20`. A high-level mount
+rejects an existing root callback. If the application already owns that
+callback, use `CliRuntime`'s `mount_app_groups()` method and call
+`CliRuntime.prepare()` in the callback. See the
+[callback example](EXAMPLES.md#an-application-owned-cli-callback).
+
+## Preview and apply a purge
+
+`paths` reports locations and existence; `doctor` reports configuration and
+declared-path diagnostics. The root `purge` previews exact files and empty
+directories; it is not a recursive application-data cleaner. For a cache-only
+app with `Paths(cache=True)`, the maintenance commands work without config,
+registry, or application state setup:
+
+```shell
+demo paths --json
+demo doctor --json
+demo purge --scope cache --dry-run --json
+demo purge --scope cache --yes --json
+```
+
+`purge` requires `--scope CATEGORY` one or more times, or `--all`, but not both.
+Disabled explicit categories are invalid; `--all` expands only declared
+components and succeeds as a no-op when none are declared. JSON output contains
+`plans` and `results`; preview results are empty. A JSON apply prompt goes to
+stderr. Noninteractive apply requires `--yes`/`-y`. Exit status is 0 for
+success/preview, 1 for cancellation or partial/failure, and 2 for invalid or
+unsafe preflight. Unknown files, unsafe links, changed revisions, or unowned
+nonempty roots are not deleted. Applications provide handlers for their own
+backup, restore, pruning, reset, or purge semantics; commands without handlers
+are absent. See the [maintenance reference](References.md#maintenance).
+
+## Inspect and edit settings in the terminal
+
+Use the [user preferences example](EXAMPLES.md#persistent-user-preferences) to
+try the Textual editor. The editor can show defaults, explicit files, and
+environment values beside saved overrides. A higher-priority process value can
+still win after a successful file edit. Workspace browsing is independent of
+the saved selected workspace; see the [editor explanation](Explanations.md#config-editor).
+
+Opening the editor creates no files. Setup and save actions call
+`ConfigManager`; workspace selection and registry operations use
+`WorkspaceManager`.
+
+## Save and repair secret settings
+
+Mark a [config field](Explanations.md#config-sections-and-fields) with
+`secret=True` to redact display output and route managed writes to a private
+companion. This example uses the config layer and selected workspace layer:
+
+<!-- example-file: demo.py -->
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import apprc as rc
+
+with TemporaryDirectory() as directory:
+    root = Path(directory)
+    MyRC = rc.AppRC(
+        app_id="demo",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(root / "app"),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(),
-        apprc_dir=root / "config",
+        workspaces=rc.Workspaces(),
     )
 
     @MyRC.config("client", prefix="DEMO_")
     class ClientSettings(rc.Config):
         token: str = rc.field("DEMO_TOKEN", default="", secret=True)
 
+    MyRC.ensure_path("config")
+    workspaces = MyRC.workspaces(environment={})
+    workspaces.register_workspace("work", root / "work")
+    workspaces.select_workspace("work")
     manager = MyRC.manage(environment={})
-    manager.setup(storage_root=root / "data")
+    manager.setup()
     manager.apply_edit(manager.plan_update("DEMO_TOKEN", "user-example", scope="user"))
-    manager.apply_edit(manager.plan_update("DEMO_TOKEN", "storage-example", scope="storage"))
-
+    manager.apply_edit(manager.plan_update("DEMO_TOKEN", "workspace-example", scope="workspace"))
     assert manager.writable_path("user", secret=True).name == "apprc.user.secret.env"
-    assert manager.writable_path("storage", secret=True).name == "apprc.storage.secret.env"
-    assert manager.resolve().build(ClientSettings).token == "storage-example"
+    assert manager.writable_path("workspace", secret=True).name == "apprc.workspace.secret.env"
+    assert manager.resolve().build(ClientSettings).token == "workspace-example"
 ```
 
-Run the code with `python demo.py`. The ordinary user and storage dotenv files
-do not contain `DEMO_TOKEN`. The selected storage secret wins over the user
-secret. A process `DEMO_TOKEN` would still win over both.
-
-For an existing application, a secret field may still be in an ordinary
-dotenv. AppRC reads that value for compatibility, but refuses new saves for
-that field until it is moved. If the application mounted the [config CLI](Explanations.md#config-cli),
-review the scope and then run one command for each affected layer:
-
-```shell
-demo config secrets migrate --scope user
-demo config secrets migrate --scope user --yes
-demo config secrets migrate --scope storage
-demo config secrets migrate --scope storage --yes
-```
-
-For storage, first select the intended storage with the application's
-`--storage NAME` root option. Without `--yes`, the command lists field keys
-without showing values. With `--yes`, AppRC copies values to the private
-companion before removing ordinary assignments. If the companion's directory
-or file is shared, `demo config secrets repair --scope storage --yes` restricts
-its permissions; review that storage directory before using this command.
-The same operations are available as `ConfigManager.plan_secret_migration()`,
-`apply_secret_migration()`, `secret_status()`, and
-`repair_secret_permissions()` in the [management reference](References.md#management).
+The current secret migration/repair commands concern secret assignments only;
+they do not migrate old layout or registry formats. Inspect `config secrets
+status` before explicitly migrating existing secrets. Do not rename old storage
+files to the new workspace filenames.
 
 ## Add a Gradio settings page
 
-Install `apprc-gui` alongside your application. Define `MyRC` and import its
-registered config sections before creating the page. The [user dotenv example](../examples/example_apps/src/user_dotenv/desktop.py)
-contains a complete application-owned Gradio page. Its essential connection is:
+Install `apprc-gui` alongside the application. The editor receives a
+`ConfigManager`; provide a separate `WorkspaceManager` when registry-backed
+workspace controls are needed:
 
 ```python
 import gradio as gr
@@ -797,20 +742,20 @@ from apprc_gui import ConfigEditor
 from my_app.config import MyRC
 
 manager = MyRC.manage()
+workspaces = MyRC.workspaces()  # only when Workspaces(registry=True) is declared
 with gr.Blocks() as page:
     gr.Markdown("# My App")
     with gr.Tab("Settings"):
-        ConfigEditor(manager).render()
+        ConfigEditor(manager, workspaces=workspaces).render()
 
 page.launch(server_name="127.0.0.1", share=False)
 ```
 
-The editor shows missing required settings and can initialize declared user
-and storage layers. Each saved field goes through `ConfigManager`; the page
-shows when a process environment variable still overrides that value. Check
-`manager.inspect().ready` in your own Start button callback before building
-your application runtime. The [Gradio editor explanation](Explanations.md#gradio-editor)
-describes why the application owns that callback and the server.
+Config-only applications can pass just `manager`. Registry-backed workspace
+controls without a manager fail clearly rather than silently disappearing.
+The application owns the start callback and builds its runtime only after
+`manager.inspect().ready`.
+
 
 ## Build a Windows installer
 
@@ -960,18 +905,17 @@ print(f"{bundle.client.base_url}: {bundle.client.model_llm}")
 
 Run it with `python demo.py`. The dependency's `DEP_BASE_URL` input is ignored
 because the host resolves this section from its own namespace. The dependency's
-user and storage files are also excluded, even if its `AppRC` enables those
-features. Parent fields determine editor and doctor metadata, and a parent
-secret field cannot weaken a secret declared by the dependency. The
+user and workspace files are also excluded, as are its layout bootstrap keys.
+Parent fields determine editor and doctor metadata, and a parent secret field
+cannot weaken a secret declared by the dependency. The
 [API reference](References.md#dependency-config-imports) documents field-map
 validation, packaged-default opt-in, and snapshot behavior.
 
-If the imported dependency section uses `requires_storage=True`, declare
-`storage=rc.Storage()` on `HostRC` and select a valid parent storage before
-building it. The parent's selected storage layer can provide mapped settings;
-the dependency's storage selector, registry, and files remain excluded. The
-host supplies any storage paths required by the dependency through its normal
-integration API.
+If an imported dependency section requires a workspace, the host declares
+`workspaces=rc.Workspaces()` and selects a valid parent workspace before
+building it. The parent's workspace layer can supply mapped settings; the
+dependency's selector, registry, and files remain excluded. The host supplies
+any workspace path the dependency needs through its normal integration API.
 
 <a id="reload-and-export"></a>
 ## Reload settings or use temporary overrides
@@ -1042,7 +986,7 @@ with TemporaryDirectory() as directory:
 
 Run this in its own process with `python demo.py`. Export changes that process's
 environment; it does not change the launching shell. It exports keys contributed
-by dotenv files and the selected storage key, rather than serializing every
+by dotenv files and the selected workspace key, rather than serializing every
 Python default. A later direct constructor sees environment provenance and
 cannot reconstruct the original file source. Prefer passing settings objects
 within your own application.
@@ -1084,80 +1028,58 @@ or an installed [example application](EXAMPLES.md#run-the-example-applications).
 The commands below assume the `demo.py` from the Typer guide:
 
 ```shell
-python demo.py config paths --json
-python demo.py config doctor --json
+python demo.py paths config --json
+python demo.py doctor --json
 ```
-
-`paths` reports where the application looks for managed files. `doctor` inspects
-sources and fields without writing files and exits nonzero for readiness problems.
-Neither needs all runtime settings to be valid.
+`paths` reports declared paths without creating them. Root `doctor` performs
+read-only path and configuration diagnostics and exits nonzero for error-status
+checks. It does not run application state factories or contact external services.
 
 | Symptom | What to inspect or change |
 | --- | --- |
-| A saved edit has no effect | Compare the [configuration layers](Explanations.md#configuration-layers); an explicit file or environment value may override the saved file. |
+| A saved edit has no effect | Compare [configuration layers](Explanations.md#configuration-layers); an explicit file or environment value may override the saved file. |
 | A required field is missing | Read its [field definition](References.md#config-fields) and supply a value through an enabled source. Missing optional user files are allowed. |
-| A storage name is unknown | Check the [registry and selector priority](References.md#storage-selection); an invalid explicit selector is not replaced with the default. |
-| A registered directory was moved | [Reconnect the storage](#move-reconnect-or-archive-storage) to its existing path. Setup does not recreate a missing registered root. |
+| A workspace name is unknown | Check [workspace selector priority](References.md#workspace-selection); an invalid explicit selector does not fall back to the saved selection. |
+| A workspace directory moved | Use `WorkspaceManager.repoint_workspace()` to record its new existing location. Setup does not recreate missing roots. |
+| A path is disabled or unsafe | Check the `Paths` declaration and selected `Layout`; do not expect fallback to an old directory. |
 | An edit is stale | [Inspect and plan again](#edit-or-remove-a-saved-override); another write changed the target file. |
 | A direct settings constructor misses dotenv values | Use [`ResolvedConfig.build()`](Explanations.md#resolvedconfig), which receives the selected files' values. |
 
 ## Migrate existing applications
 
-### Migrate cleanup commands
+AppRC 0.30 is a breaking API, CLI, environment, and config-format cutover.
+Update all callers and user-facing instructions before upgrading applications:
 
-Applications upgrading to the separate application-data CLI must replace
-`config purge` with `appdata clean`; no compatibility alias remains.
-Mount `rc.cli.mount_appdata_cli(app, MyRC)` explicitly, and add the
-[runtime-independent action-prefix policy](#preview-and-clean-managed-application-data)
-to the application's existing policy. This applies to both `mount_config_cli`
-and `CliRuntime` integrations.
-
-Scripts should obtain cleanup targets from `appdata paths --json` and pass
-`--apprc-dir PATH` on each appdata action when targeting a nondefault directory.
-Do not carry over root `--env-file` or storage selectors as cleanup targeting.
-`config paths` remains available for configuration diagnostics.
-The Python manager methods `plan_purge()` and `apply_purge(plan)` are unchanged.
-
-### Migrate earlier APIs and packaging
-
-This is a breaking API and packaging change. Managed filenames and registry
-format remain unchanged; current storage data needs no conversion.
-
-| Previous usage | Replacement |
+| Previous contract | Replacement |
 | --- | --- |
-| `MyRC.bootstrap(...)`, `ensure_bootstrapped()`, cached bootstrap result | `resolved = MyRC.resolve(rc.ResolveOptions(...))` per invocation |
-| Bootstrap followed by `Settings()` | `resolved.build(Settings)` |
-| `MyRC.kit` or `AppConfigKit` | `MyRC`, `MyRC.manage()`, or explicit interface functions |
-| `MyRC.spec` | Read-only `MyRC.schema` |
-| `MyRC.mount_cli(app)` | `rc.cli.mount_config_cli(app, MyRC)` |
-| `kit.typer_app(...)` | `rc.cli.build_config_typer_app(MyRC, ...)` for a standalone config group |
-| `Storage(required=True)` | `Storage()` and `ResolveOptions(storage_required=True)` or CLI `storage_required=True` |
-| `UserDotenv(required=True)` | `UserDotenv()`; missing user files are allowed, required fields enforce value readiness |
-| `state.env_bootstrap` | `state.resolved`; storage metadata is under `resolved.selection` |
-| Raw write helpers under `rc.files` / `rc.storage` | Application-bound manager methods |
-| `rc.cli.ConfigEditorApp`, `rc.cli.ConfigSetupApp` | `rc.tui.ConfigEditorApp`, `rc.tui.ConfigSetupApp` |
-| Config catalog and package convenience exports | Direct section/bundle imports, then `MyRC.schema.owners` |
-| `shell_bootstrap_selector` provenance | `shell_storage_selector` |
-| `apprc[tui]` | Plain `apprc`; Textual is included |
-| Small installation without terminal dependencies | `apprc-core` |
+| `Storage`, `storage=`, `ResolveOptions.storage`, `storage_required`, and `resolved.selection` | `Workspaces`, `workspaces=`, `ResolveOptions.workspace`, `workspace_required`, and `resolved.workspace`; application data roots are no longer workspace roots. |
+| `apprc_dir`, `apprc_dir_env_key`, `legacy_app_ids`, or `*_APPRC_DIR` | Declare each used `Paths` category and choose `Layout.native()` or `Layout.single_root(root)`; use `<PREFIX>_LAYOUT` plus `<PREFIX>_ROOT` as one bootstrap pair. |
+| `requires_storage=True` | `requires_workspace=True` when fields belong to a selected workspace. |
+| `mount_config_cli`, `mount_appdata_cli`, `mount_config_group`, `appdata paths`, and `appdata clean` | `mount_app_cli` or `mount_app_groups`; use root `paths`, `doctor`, category groups, and exact-target `purge`. Supply providers for application-owned operations. |
+| ConfigManager storage registry methods | Use `WorkspaceManager` methods such as `register_workspace()` and `archive_workspace()`. |
+| `apprc.storage.env`, `apprc.storage.secret.env`, and old `storages` TOML records | New `apprc.workspace.env`, `apprc.workspace.secret.env`, and versioned `workspaces` schema. |
+| Textual/Gradio storage controls | Provide `WorkspaceManager` separately from `ConfigManager`. |
 
-`Settings()` and `reload()` still use the live process environment. They no longer
-recover file provenance from a previous global bootstrap. Use explicit construction
-and `reload_from()` for managed sources. No hidden compatibility bootstrap runs.
-Custom environment-backed bundle factories need explicit child injection.
+Choose which independent components each application truly uses; `UserDotenv`
+and registry-backed `Workspaces` both require `Paths(config=True)`. Use native
+or single-root locations deliberately. Update command scripts and CI invocations
+to the new grouped CLI and bootstrap controls.
 
-For package ownership migration, use a fresh virtual environment or:
+**There is no automatic data migration.** AppRC does not search old directories,
+move or rename user files, reinterpret the old registry, or delete old data.
+Do not rename old `apprc.storage.*` files or expect an old registry to be
+upgraded. Keep old files untouched. If users need their prior data, separately
+review and export it using the application that owns its format, then explicitly
+choose new paths and recreate registrations. Never place conversion in normal
+startup or upgrade hooks. The current `config secrets` migration workflow is
+only for declared secret assignments and does not convert layouts, filenames,
+or registry schemas.
 
-```shell
-python -m pip uninstall apprc
-python -m pip install apprc
-```
-
-The second command must install the new release once it is published. The root
-source checkout now builds `apprc-core`; for a local terminal installation use
-`python -m pip install -e . -e src/apprc_dev/packaging/terminal`.
-Uninstalling the new wrapper later leaves `apprc-core` installed. A plain upgrade
-from the old wheel is not the supported ownership-transfer procedure.
-
-For old 0.19 filenames, retain the separate `config migrate --dry-run` workflow.
-Do not rename data files as part of the API migration.
+Other earlier API changes retain their existing guidance: resolve per run with
+`MyRC.resolve(...)`, construct registered sections with `resolved.build(...)`,
+use `MyRC.schema` instead of `MyRC.spec`, and explicitly inject custom
+environment-backed bundle children. `Settings()` and `reload()` use live
+process environment; use `reload_from()` with a resolved snapshot for managed
+sources. `apprc-core` owns the Python source, while `apprc` adds terminal
+dependencies. For package ownership changes, use a fresh virtual environment
+or uninstall the old package before installing the new split distributions.

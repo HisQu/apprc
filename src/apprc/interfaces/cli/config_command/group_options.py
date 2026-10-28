@@ -22,13 +22,13 @@ class ConfigGroupOptions:
 
     :param state_type: Application CLI state type stored on ``ctx.obj``.
     :param runtime_payload: Optional serializer for ``config show``.
-    :param active_storage_root_with_context: Optional storage-root resolver that
-        receives explicit env-file selector context.
-    :param initial_storage_with_context: Optional editor initial-selection
+    :param active_workspace_root_with_context: Optional workspace-root resolver
+        that receives explicit env-file selector context.
+    :param initial_workspace_with_context: Optional editor initial-selection
         resolver that receives explicit env-file selector context.
     :param editor_app_cls: Optional Textual subclass.
     :param help: Optional command-group help.
-    :param setup_message: Optional setup text for missing storage.
+    :param setup_message: Optional setup text when the config directory is absent.
     :param runtime_error_param_hint: Parameter hint for runtime-payload
         validation errors.
     :param config_group_name: Config command group name used in generated
@@ -37,10 +37,10 @@ class ConfigGroupOptions:
 
     state_type: type[Any]
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None
-    active_storage_root_with_context: (
+    active_workspace_root_with_context: (
         Callable[[Any, "ConfigSelectorContext"], Path | None] | None
     ) = None
-    initial_storage_with_context: (
+    initial_workspace_with_context: (
         Callable[[Any, "ConfigSelectorContext"], str | None] | None
     ) = None
     editor_app_cls: type["ConfigEditorApp"] | None = None

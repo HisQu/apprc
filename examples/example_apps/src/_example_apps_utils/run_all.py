@@ -24,8 +24,7 @@ def _example_environment(spec: ExampleAppSpec, root: Path) -> dict[str, str]:
         for key, value in os.environ.items()
         if not key.startswith("APPRC_EXAMPLE_")
     }
-    if spec.uses_user_dotenv or spec.uses_storage:
-        env[spec.apprc_dir_env_key] = str(root / "apprc")
+    env[spec.root_env_key] = str(root / "apprc")
     return env
 
 
@@ -72,177 +71,143 @@ def _json_output(output: str) -> dict[str, Any]:
     return value
 
 
-def _setup_storage(
+def _setup_workspace(
     spec: ExampleAppSpec,
     root: Path,
     env: Mapping[str, str],
 ) -> None:
-    """Create and populate the default storage for one example."""
+    _run_cli(spec, ["config", "init"], env=env)
     _run_cli(
-        spec,
-        [
-            "config",
-            "setup",
-            "--storage-root",
-            str(root / "storage"),
-            "--yes",
-        ],
-        env=env,
+        spec, ["workspace", "add", "default", str(root / "workspace")], env=env
     )
-    if spec.required_storage_key is not None:
+    if spec.required_workspace_key is not None:
         _run_cli(
             spec,
             [
-                "--storage",
+                "--workspace",
                 "default",
                 "config",
                 "set",
-                spec.required_storage_key,
+                spec.required_workspace_key,
                 "smoke-secret",
                 "--scope",
-                "storage",
+                "workspace",
             ],
             env=env,
         )
 
 
-def _clean_appdata(
+def _clean_managed(
     spec: ExampleAppSpec,
     root: Path,
     env: Mapping[str, str],
 ) -> bool:
-    """Clean the temporary registry and verify removal and retention.
-
-    :param spec: Example whose installed CLI owns the managed files.
-    :param root: Temporary scenario directory containing AppRC data.
-    :param env: Isolated process environment for the example.
-    :return: Whether cleanup respected its inventory and retained payloads.
-    """
-    appdata_directory = root / "apprc"
-    paths = _json_output(
-        _run_cli(
-            spec,
-            [
-                "appdata",
-                "paths",
-                "--apprc-dir",
-                str(appdata_directory),
-                "--json",
-            ],
-            env=env,
-        )
-    )
-    if paths["apprc_dir"] != str(appdata_directory):
-        raise RuntimeError(
-            "appdata paths selected an unexpected AppRC directory."
-        )
-    managed_files = [Path(value) for value in paths["managed_files"]]
-    internal_roots = [Path(value) for value in paths["internal_storage_roots"]]
-    external_roots = [Path(value) for value in paths["external_storage_roots"]]
-    unmanaged = appdata_directory / "runner-unmanaged.txt"
-    unmanaged.parent.mkdir(parents=True, exist_ok=True)
-    unmanaged.write_text("keep", encoding="utf-8")
-    external_payloads = [root / "runner-payload.txt" for root in external_roots]
-    for payload in external_payloads:
+    """Purge managed resources while retaining unrelated external payloads."""
+    if not spec.has_managed_paths:
+        return True
+    payload = root / "workspace" / "runner-payload.txt"
+    if spec.uses_workspace:
         payload.write_text("keep", encoding="utf-8")
-    _run_cli(
-        spec,
-        [
-            "appdata",
-            "clean",
-            "--apprc-dir",
-            str(appdata_directory),
-            "--yes",
-        ],
-        env=env,
+    preview = _json_output(
+        _run_cli(spec, ["purge", "--all", "--dry-run", "--json"], env=env)
     )
-    cleaned = (
-        all(not path.exists() for path in managed_files)
-        and all(not path.exists() for path in internal_roots)
-        and unmanaged.read_text(encoding="utf-8") == "keep"
-        and all(
-            path.read_text(encoding="utf-8") == "keep"
-            for path in external_payloads
-        )
-    )
+    targets = [
+        Path(target) for plan in preview["plans"] for target in plan["targets"]
+    ]
+    _run_cli(spec, ["purge", "--all", "--yes"], env=env)
+    cleaned = all(not path.exists() for path in targets)
+    if spec.uses_workspace:
+        cleaned = cleaned and payload.read_text(encoding="utf-8") == "keep"
     if not cleaned:
         raise RuntimeError(
-            "appdata clean did not respect its cleanup inventory."
+            "Purge did not remove its inventory or retained payloads changed."
         )
     return cleaned
 
 
 def _smoke_standard(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
-    """Run setup, diagnostics, runtime, and appdata cleanup for one example."""
+    """Exercise declared command groups, application runtime, and scoped purge."""
     env = _example_environment(spec, root)
-    if spec.uses_storage:
-        _setup_storage(spec, root, env)
-        runtime_prefix = ["--storage", "default"]
-    elif spec.uses_user_dotenv:
-        _run_cli(spec, ["config", "setup", "--yes"], env=env)
-        runtime_prefix = []
-    else:
-        runtime_prefix = []
-    doctor = _json_output(
-        _run_cli(spec, [*runtime_prefix, "config", "doctor", "--json"], env=env)
-    )
-    run_args = [*runtime_prefix]
-    if spec.name == "cli-runtime":
-        run_args.extend(
-            [
-                "--workspace",
-                str(root / "workspace"),
-                "--model",
-                "smoke",
-                "--dry-run",
-            ]
+    _run_cli(spec, ["--help"], env=env)
+    runtime_prefix: list[str] = []
+    if spec.name == "cache-only":
+        _run_cli(spec, ["cache", "--help"], env=env)
+        _run_cli(spec, ["cache", "init"], env=env)
+        cache = _json_output(
+            _run_cli(spec, ["paths", "cache", "--json"], env=env)
         )
-    run_payload = _json_output(_run_cli(spec, [*run_args, "run"], env=env))
-    cleaned = _clean_appdata(spec, root, env)
+        if cache["exists"] is not True or cache["path"] != str(
+            root / "apprc" / "cache"
+        ):
+            raise RuntimeError(
+                "Cache-only initialization selected an unexpected path."
+            )
+        app_id = spec.app_id
+    else:
+        if spec.uses_workspace:
+            _setup_workspace(spec, root, env)
+            runtime_prefix = ["--workspace", "default"]
+        elif spec.uses_user_dotenv:
+            _run_cli(spec, ["config", "setup", "--yes"], env=env)
+        run_args = [*runtime_prefix]
+        if spec.name == "cli-runtime":
+            _run_cli(spec, ["status"], env=env)
+            run_args.extend(
+                [
+                    "--workdir",
+                    str(root / "workdir"),
+                    "--model",
+                    "smoke",
+                    "--dry-run",
+                ]
+            )
+        app_id = _json_output(_run_cli(spec, [*run_args, "run"], env=env))[
+            "app_id"
+        ]
+    doctor = _json_output(_run_cli(spec, ["doctor", "--json"], env=env))
     return {
         "example": spec.name,
         "doctor_status": doctor["status"],
-        "app_id": run_payload["app_id"],
-        "cleaned": cleaned,
+        "app_id": app_id,
+        "cleaned": _clean_managed(spec, root, env),
     }
 
 
 def _smoke_precedence(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
-    """Prove both sides of explicit dotenv precedence with distinct values."""
+    """Prove shell and explicit-file precedence with distinct workspace roots."""
     env = _example_environment(spec, root)
-    _setup_storage(spec, root, env)
-    explicit_root = root / "explicit-storage"
+    _setup_workspace(spec, root, env)
     _run_cli(
         spec,
-        ["config", "storage", "add", "explicit", str(explicit_root), "--yes"],
+        ["workspace", "add", "explicit", str(root / "explicit-workspace")],
         env=env,
     )
     for name, label in (
-        ("default", "storage-default"),
-        ("explicit", "storage-explicit"),
+        ("default", "workspace-default"),
+        ("explicit", "workspace-explicit"),
     ):
         _run_cli(
             spec,
             [
-                "--storage",
+                "--workspace",
                 name,
                 "config",
                 "set",
                 "label",
                 label,
                 "--scope",
-                "storage",
+                "workspace",
             ],
             env=env,
         )
     explicit_env = root / "explicit.env"
     explicit_env.write_text(
-        "APPRC_EXAMPLE_PRECEDENCE_STORAGE=explicit\n"
+        "APPRC_EXAMPLE_PRECEDENCE_WORKSPACE=explicit\n"
         "APPRC_EXAMPLE_PRECEDENCE_LABEL=explicit-file\n",
         encoding="utf-8",
     )
     shell_env = dict(env)
-    shell_env["APPRC_EXAMPLE_PRECEDENCE_STORAGE"] = "default"
+    shell_env["APPRC_EXAMPLE_PRECEDENCE_WORKSPACE"] = "default"
     shell_env["APPRC_EXAMPLE_PRECEDENCE_LABEL"] = "shell"
     base_args = ["--env-file", str(explicit_env)]
     shell_wins = _json_output(
@@ -255,18 +220,27 @@ def _smoke_precedence(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
             env=shell_env,
         )
     )
-    cleaned = _clean_appdata(spec, root, env)
+    if shell_wins["label"] != "shell" or file_wins["label"] != "explicit-file":
+        raise RuntimeError(
+            "Explicit dotenv value precedence was not respected."
+        )
+    if shell_wins["workspace_root"] != str(root / "workspace") or file_wins[
+        "workspace_root"
+    ] != str(root / "explicit-workspace"):
+        raise RuntimeError(
+            "Explicit dotenv workspace precedence was not respected."
+        )
     return {
         "example": spec.name,
         "shell_wins": {
-            "storage_root": shell_wins["storage_root"],
+            "workspace_root": shell_wins["workspace_root"],
             "label": shell_wins["label"],
         },
         "explicit_file_wins": {
-            "storage_root": file_wins["storage_root"],
+            "workspace_root": file_wins["workspace_root"],
             "label": file_wins["label"],
         },
-        "cleaned": cleaned,
+        "cleaned": _clean_managed(spec, root, env),
     }
 
 

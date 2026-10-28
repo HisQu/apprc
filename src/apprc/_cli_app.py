@@ -45,11 +45,11 @@ def scaffold_config_cmd(
             help="Generate a declaration with a managed user dotenv.",
         ),
     ] = False,
-    storage: Annotated[
+    workspaces: Annotated[
         bool,
         typer.Option(
-            "--storage",
-            help="Generate an app declaration with AppRC storage.",
+            "--workspaces",
+            help="Generate an app declaration with AppRC workspaces.",
         ),
     ] = False,
     display_name: Annotated[
@@ -59,11 +59,11 @@ def scaffold_config_cmd(
             help="Human-readable application name.",
         ),
     ] = None,
-    storage_selector_env_key: Annotated[
+    workspace_selector_env_key: Annotated[
         str | None,
         typer.Option(
-            "--storage-selector-env-key",
-            help="Optional storage selector env key override.",
+            "--workspace-selector-env-key",
+            help="Optional workspace selector environment-key override.",
         ),
     ] = None,
     env_prefix: Annotated[
@@ -97,8 +97,8 @@ def scaffold_config_cmd(
                 display_name=display_name,
                 target=target,
                 user_dotenv=user_dotenv,
-                storage=storage,
-                storage_selector_env_key=storage_selector_env_key,
+                workspaces=workspaces,
+                workspace_selector_env_key=workspace_selector_env_key,
                 env_prefix=env_prefix,
                 force=force,
             )

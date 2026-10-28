@@ -1,10 +1,12 @@
 import importlib
+import runpy
 import sys
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+import apprc as rc
 from apprc._cli_app import app
 from apprc.scaffold import ConfigScaffoldRequest, scaffold_config_package
 
@@ -19,10 +21,10 @@ def test_scaffold_config_package_generates_importable_standard_layout(
         ConfigScaffoldRequest(
             package="demo_app",
             app_id="demo-app",
-            storage=True,
-            display_name="Demo App",
-            storage_selector_env_key="DEMO_APP_STORAGE",
             target=source_root,
+            workspaces=True,
+            display_name="Demo App",
+            workspace_selector_env_key="DEMO_APP_WORKSPACE",
         )
     )
 
@@ -37,14 +39,14 @@ def test_scaffold_config_package_generates_importable_standard_layout(
     assert result.config_package_dir == source_root / "demo_app" / "config"
 
     monkeypatch.syspath_prepend(str(source_root))
-    monkeypatch.setenv("DEMO_APP_STORAGE", str(tmp_path / "storage"))
+    monkeypatch.setenv("DEMO_APP_WORKSPACE", str(tmp_path / "workspace"))
     config_module = importlib.import_module("demo_app.config.app")
     bundle_module = importlib.import_module("demo_app.config.bundle")
 
-    assert config_module.MyRC.schema.uses_storage() is True
+    assert config_module.MyRC.schema.uses_workspaces() is True
     assert config_module.MyRC.schema.uses_user_dotenv() is False
     assert config_module.MyRC.schema.owners[0].key == "app"
-    config_module.MyRC.manage().setup(storage_root=tmp_path / "storage")
+    config_module.MyRC.workspaces().register_workspace("default", tmp_path / "workspace")
     generated_bundle = config_module.MyRC.resolve().build(
         bundle_module.DemoAppConfig
     )
@@ -96,17 +98,17 @@ def test_scaffold_config_package_keeps_leaf_imports_lightweight(
     assert "leaf_demo.config.bundle" in sys.modules
 
 
-def test_scaffold_config_package_refuses_unrelated_storage_prefix(
+def test_scaffold_config_package_refuses_unrelated_workspace_prefix(
     tmp_path: Path,
 ) -> None:
-    """Generated storage selector fields must satisfy AppRC prefix checks."""
+    """Workspace selector overrides must satisfy AppRC prefix checks."""
     with pytest.raises(ValueError, match="must start with --env-prefix"):
         scaffold_config_package(
             ConfigScaffoldRequest(
                 package="demo_app",
                 app_id="demo-app",
-                storage=True,
-                storage_selector_env_key="OTHER_STORAGE",
+                workspaces=True,
+                workspace_selector_env_key="OTHER_WORKSPACE",
                 env_prefix="DEMO_APP_",
                 target=tmp_path / "src",
             )
@@ -114,30 +116,36 @@ def test_scaffold_config_package_refuses_unrelated_storage_prefix(
 
 
 @pytest.mark.parametrize(
-    ("user_dotenv", "storage"),
+    ("user_dotenv", "workspaces"),
     ((False, False), (True, False), (False, True), (True, True)),
 )
 def test_scaffold_config_package_renders_independent_capabilities(
     tmp_path: Path,
     *,
     user_dotenv: bool,
-    storage: bool,
+    workspaces: bool,
 ) -> None:
-    """Every capability combination should produce an explicit declaration."""
+    """Every user-file and workspace capability combination is explicit."""
     result = scaffold_config_package(
         ConfigScaffoldRequest(
             package="capability_demo",
             app_id="capability-demo",
             target=tmp_path / "src",
             user_dotenv=user_dotenv,
-            storage=storage,
+            workspaces=workspaces,
         )
     )
-
-    source = (result.config_package_dir / "app.py").read_text(encoding="utf-8")
-
-    assert ("user_dotenv=rc.UserDotenv()" in source) is user_dotenv
-    assert ("storage=rc.Storage(" in source) is storage
+    generated = runpy.run_path(str(result.config_package_dir / "app.py"))["MyRC"]
+    assert isinstance(generated, rc.AppRC)
+    root = tmp_path / "application"
+    options = rc.ResolveOptions(layout=rc.Layout.single_root(root))
+    if user_dotenv or workspaces:
+        assert generated.ensure_path("config", options, environment={}) == root / "config"
+        assert (root / "config" / ".apprc-owner.json").is_file()
+    else:
+        with pytest.raises(ValueError):
+            generated.ensure_path("config", options, environment={})
+        assert not root.exists()
 
 
 def test_scaffold_config_package_escapes_generated_python_literals(

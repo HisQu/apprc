@@ -2,67 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
 import pytest
 
-import apprc.user_files.app_home.locations as app_home_locations
-import apprc.user_files.storage_roots._naming as storage_naming
-
-
-def _isolated_default_apprc_dir(app_id: str) -> Path:
-    """Return one predictable per-test AppRC directory.
-
-    :param app_id: Stable application identity.
-    :return: Application path below the test's isolated data root.
-    """
-    return Path(os.environ["APPRC_TEST_DATA_HOME"]) / app_id
-
-
-def _required_apprc_prefixes(item: pytest.Item) -> list[str]:
-    """Collect required bootstrap prefixes requested by test markers."""
-    prefixes: set[str] = set()
-    for marker in item.iter_markers(name="requires_apprc_env"):
-        prefixes.update(marker.args)
-    return sorted(prefixes)
-
-
-def _bootstrap_env_keys_for(prefix: str) -> tuple[str, str]:
-    """Return the optional directory key and required storage key."""
-    return f"{prefix}_APPRC_DIR", f"{prefix}_STORAGE"
-
-
-def _format_bootstrap_usage(prefix: str) -> str:
-    """Build concise guidance for one required bootstrap prefix."""
-    directory_key, storage_key = _bootstrap_env_keys_for(prefix)
-    return (
-        f"{prefix}: set the storage variable in your shell startup (or env):\n"
-        f'  export {storage_key}="default"\n'
-        f"Optional AppRC directory relocation:\n"
-        f'  export {directory_key}="/absolute/path/to/apprc-directory"\n'
-    )
-
-
-def _bootstrap_contract_is_complete(prefix: str) -> bool:
-    """Return whether required AppRC bootstrap variables are present."""
-    _, storage_key = _bootstrap_env_keys_for(prefix)
-    return bool(os.environ.get(storage_key))
-
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Expose the example package and register AppRC test markers."""
-    config.addinivalue_line(
-        "markers",
-        "requires_apprc_env(prefix): requires APP_STORAGE "
-        "to be available before the test body runs.",
-    )
-    config.addinivalue_line(
-        "markers",
-        "allow_missing_apprc_env: skip AppRC bootstrap env enforcement for this "
-        "test.",
-    )
+    """Expose the example package for repository-local tests."""
+    del config
     example_src = (
         Path(__file__).resolve().parents[1]
         / "examples"
@@ -75,51 +23,13 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _set_default_apprc_example_app_bootstrap(
-    request: pytest.FixtureRequest,
+def _isolate_native_app_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Provide the common Example App bootstrap env for marked tests."""
-    monkeypatch.setenv("APPRC_TEST_DATA_HOME", str(tmp_path / "data-home"))
-    monkeypatch.setattr(
-        app_home_locations,
-        "default_apprc_dir",
-        _isolated_default_apprc_dir,
-    )
-    monkeypatch.setattr(
-        storage_naming,
-        "default_apprc_dir",
-        _isolated_default_apprc_dir,
-    )
-    if request.node.get_closest_marker("allow_missing_apprc_env") is not None:
-        return
-    if "APPRC_EXAMPLE_APP" not in _required_apprc_prefixes(request.node):
-        return
-
-    from tests.support_config import set_apprc_example_app_bootstrap
-
-    set_apprc_example_app_bootstrap(monkeypatch, tmp_path)
-
-
-def pytest_runtest_call(item: pytest.Item) -> None:
-    """Fail fast when test-body AppRC bootstrap environment is missing."""
-    if item.get_closest_marker("allow_missing_apprc_env") is not None:
-        return
-    prefixes = _required_apprc_prefixes(item)
-    if not prefixes:
-        return
-
-    missing_messages: list[str] = []
-    for prefix in prefixes:
-        if _bootstrap_contract_is_complete(prefix):
-            continue
-        missing_messages.append(_format_bootstrap_usage(prefix))
-
-    if not missing_messages:
-        return
-
-    raise pytest.UsageError(
-        "AppRC bootstrap contract is incomplete:\n\n"
-        + "\n".join(missing_messages)
-    )
+    """Keep platform-native AppRC locations inside each test's temporary home."""
+    test_home = tmp_path / "data-home"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(test_home / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(test_home / "data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(test_home / "cache"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(test_home / "state"))

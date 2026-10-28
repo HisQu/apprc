@@ -5,16 +5,16 @@ from apprc.interfaces.tui._field_state import (
     selected_field_for_row,
 )
 from tests.support_config import (
+    WORKSPACE_EXAMPLE_OWNER,
+    WORKSPACE_EXAMPLE_OWNERS,
     example_resolution,
-    APPRC_EXAMPLE_APP_OWNER,
-    APPRC_EXAMPLE_APP_OWNERS,
 )
 
 
 def test_selected_field_for_row_ignores_non_field_rows() -> None:
     assert (
         selected_field_for_row(
-            owners=APPRC_EXAMPLE_APP_OWNERS,
+            owners=WORKSPACE_EXAMPLE_OWNERS,
             row_env_keys=["APPRC_EXAMPLE_APP_PROFILE"],
             row_index=None,
         )
@@ -22,7 +22,7 @@ def test_selected_field_for_row_ignores_non_field_rows() -> None:
     )
     assert (
         selected_field_for_row(
-            owners=APPRC_EXAMPLE_APP_OWNERS,
+            owners=WORKSPACE_EXAMPLE_OWNERS,
             row_env_keys=[None],
             row_index=0,
         )
@@ -30,7 +30,7 @@ def test_selected_field_for_row_ignores_non_field_rows() -> None:
     )
     assert (
         selected_field_for_row(
-            owners=APPRC_EXAMPLE_APP_OWNERS,
+            owners=WORKSPACE_EXAMPLE_OWNERS,
             row_env_keys=["APPRC_EXAMPLE_APP_PROFILE"],
             row_index=10,
         )
@@ -40,7 +40,7 @@ def test_selected_field_for_row_ignores_non_field_rows() -> None:
 
 def test_selected_field_for_row_resolves_known_env_key() -> None:
     selected = selected_field_for_row(
-        owners=APPRC_EXAMPLE_APP_OWNERS,
+        owners=WORKSPACE_EXAMPLE_OWNERS,
         row_env_keys=["APPRC_EXAMPLE_APP_PROFILE"],
         row_index=0,
     )
@@ -50,20 +50,20 @@ def test_selected_field_for_row_resolves_known_env_key() -> None:
     assert selected.owner.env_key("profile") == "APPRC_EXAMPLE_APP_PROFILE"
 
 
-def test_config_value_sources_prefer_shell_over_storage_user_and_defaults() -> (
+def test_config_value_sources_prefer_shell_over_workspace_user_and_defaults() -> (
     None
 ):
-    profile = APPRC_EXAMPLE_APP_OWNER.field("profile")
-    env_key = APPRC_EXAMPLE_APP_OWNER.env_key("profile")
+    profile = WORKSPACE_EXAMPLE_OWNER.field("profile")
+    env_key = WORKSPACE_EXAMPLE_OWNER.env_key("profile")
 
     sources = config_value_sources(
         spec=profile,
         env_key=env_key,
         include_user_dotenv=True,
-        include_storage=True,
+        include_workspace=True,
         resolved=example_resolution(
             user_dotenv_values={env_key: "user-profile"},
-            storage_values={env_key: "storage-profile"},
+            workspace_values={env_key: "workspace-profile"},
             shell_env={env_key: "shell-profile"},
             defaults_values={env_key: "shared-profile"},
         ),
@@ -74,22 +74,22 @@ def test_config_value_sources_prefer_shell_over_storage_user_and_defaults() -> (
     assert sources_by_key["effective"].origin_key == "shell"
     assert sources_by_key["shell"].raw_value == "shell-profile"
     assert sources_by_key["user"].raw_value == "user-profile"
-    assert sources_by_key["storage"].raw_value == "storage-profile"
+    assert sources_by_key["workspace"].raw_value == "workspace-profile"
     assert sources_by_key["defaults"].raw_value == "shared-profile"
 
 
-def test_config_value_sources_keep_empty_storage_values_copyable() -> None:
-    profile = APPRC_EXAMPLE_APP_OWNER.field("profile")
-    env_key = APPRC_EXAMPLE_APP_OWNER.env_key("profile")
+def test_config_value_sources_keep_empty_workspace_values_copyable() -> None:
+    profile = WORKSPACE_EXAMPLE_OWNER.field("profile")
+    env_key = WORKSPACE_EXAMPLE_OWNER.env_key("profile")
 
     sources = config_value_sources(
         spec=profile,
         env_key=env_key,
         include_user_dotenv=False,
-        include_storage=True,
+        include_workspace=True,
         resolved=example_resolution(
             user_dotenv_values={},
-            storage_values={env_key: ""},
+            workspace_values={env_key: ""},
             shell_env={},
             defaults_values={env_key: "shared-profile"},
         ),
@@ -97,23 +97,23 @@ def test_config_value_sources_keep_empty_storage_values_copyable() -> None:
     sources_by_key = {source.key: source for source in sources}
 
     assert sources_by_key["effective"].raw_value == ""
-    assert sources_by_key["effective"].origin_key == "storage"
-    assert sources_by_key["storage"].raw_value == ""
-    assert sources_by_key["storage"].is_available is True
+    assert sources_by_key["effective"].origin_key == "workspace"
+    assert sources_by_key["workspace"].raw_value == ""
+    assert sources_by_key["workspace"].is_available is True
 
 
 def test_config_value_sources_disable_missing_required_values() -> None:
-    access_token = APPRC_EXAMPLE_APP_OWNER.field("access_token")
-    env_key = APPRC_EXAMPLE_APP_OWNER.env_key("access_token")
+    access_token = WORKSPACE_EXAMPLE_OWNER.field("access_token")
+    env_key = WORKSPACE_EXAMPLE_OWNER.env_key("access_token")
 
     sources = config_value_sources(
         spec=access_token,
         env_key=env_key,
         include_user_dotenv=True,
-        include_storage=True,
+        include_workspace=True,
         resolved=example_resolution(
             user_dotenv_values={},
-            storage_values={},
+            workspace_values={},
             shell_env={},
             defaults_values={},
         ),
@@ -123,17 +123,17 @@ def test_config_value_sources_disable_missing_required_values() -> None:
 
 
 def test_config_value_sources_fall_back_to_declared_default() -> None:
-    enabled = APPRC_EXAMPLE_APP_OWNER.field("enabled")
-    env_key = APPRC_EXAMPLE_APP_OWNER.env_key("enabled")
+    enabled = WORKSPACE_EXAMPLE_OWNER.field("enabled")
+    env_key = WORKSPACE_EXAMPLE_OWNER.env_key("enabled")
 
     sources = config_value_sources(
         spec=enabled,
         env_key=env_key,
         include_user_dotenv=False,
-        include_storage=False,
+        include_workspace=False,
         resolved=example_resolution(
             user_dotenv_values={},
-            storage_values={},
+            workspace_values={},
             shell_env={},
             defaults_values=None,
         ),

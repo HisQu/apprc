@@ -11,7 +11,7 @@ from rich.markup import escape
 from rich.text import Text
 
 PATH_STYLE = "cyan"
-STORAGE_NAME_STYLE = "bold"
+WORKSPACE_NAME_STYLE = "bold"
 ENV_KEY_STYLE = "bold blue"
 LABEL_STYLE = "dim"
 DEFAULT_STYLE = "green"
@@ -49,13 +49,13 @@ def path_markup(path: str | Path) -> str:
     return f"[{PATH_STYLE}]{escape(str(path))}[/]"
 
 
-def storage_name_text(name: str) -> Text:
-    """Return a storage selector with the canonical name style.
+def workspace_name_text(name: str) -> Text:
+    """Return a workspace selector with the canonical name style.
 
-    :param name: Registry selector shown to the user.
+    :param name: Workspace selector shown to the user.
     :return: Styled Rich text.
     """
-    return Text(name, style=STORAGE_NAME_STYLE)
+    return Text(name, style=WORKSPACE_NAME_STYLE)
 
 
 def env_key_text(env_key: str) -> Text:

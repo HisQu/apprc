@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-import re
 
 from dotenv.parser import parse_stream
 
@@ -50,7 +50,7 @@ def plan_secret_migration(
 ) -> SecretMigrationPlan:
     """Plan a value-preserving move without touching either file.
 
-    :param ordinary_path: Managed user or storage dotenv path.
+    :param ordinary_path: Managed user or workspace dotenv path.
     :param secret_path: Its secret companion.
     :param secret_keys: Keys declared with ``secret=True``.
     :return: Revision-checked plan with no values in its representation.

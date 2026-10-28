@@ -5,13 +5,14 @@
 - [Choose and run an example](#choose-and-run-an-example)
   - [Choose a setup](#choose-a-setup)
   - [Run the example applications](#run-the-example-applications)
-- [Settings without storage](#settings-without-storage)
+- [Settings examples](#settings-examples)
   - [Settings without managed files](#settings-without-managed-files)
   - [Persistent user preferences](#persistent-user-preferences)
   - [Importable client with saved preferences](#importable-client-with-saved-preferences)
-- [Settings with storage](#settings-with-storage)
-  - [Named storage without user overrides](#named-storage-without-user-overrides)
-  - [User settings and storage](#user-settings-and-storage)
+- [Independent paths and workspaces](#independent-paths-and-workspaces)
+  - [Cache-only application](#cache-only-application)
+  - [Single-root application paths](#single-root-application-paths)
+  - [User preferences and workspaces](#user-preferences-and-workspaces)
 - [Other application patterns](#other-application-patterns)
   - [Explicit dotenv precedence](#explicit-dotenv-precedence)
   - [Parent-owned dependency settings](#parent-owned-dependency-settings)
@@ -24,67 +25,47 @@
 
 ## Choose a setup
 
-Choose the files your application needs. [User dotenv](Explanations.md#user-dotenv-and-the-apprc-directory)
-and [storage](Explanations.md#storage) are independent options on one `AppRC`
-declaration; they are not different application classes.
+Choose only the resources your application uses. `Paths` independently enables
+config, appdata, cache, and state; `UserDotenv` and `Workspaces` are separate
+features that require config only when they use managed config files or a
+registry.
 
-| Setup | Saved user overrides | Named data directories | Choose it when |
+| Setup | Declared paths | Additional feature | Choose it when |
 | --- | --- | --- | --- |
-| [Settings without managed files](#settings-without-managed-files) | No | No | The process environment and application defaults supply the settings. |
-| [Persistent user preferences](#persistent-user-preferences) | Yes | No | Users need to save preferences, but the application does not manage data directories. |
-| [Importable client with saved preferences](#importable-client-with-saved-preferences) | Yes | No | Callers should construct a library client without declaring or loading AppRC themselves. |
-| [Named storage without user overrides](#named-storage-without-user-overrides) | No | Yes | Settings belong to selected data directories. |
-| [User settings and storage](#user-settings-and-storage) | Yes | Yes | User preferences apply across several data directories, with per-directory overrides. |
-| [Explicit dotenv precedence](#explicit-dotenv-precedence) | Yes | Yes | Invocation files must supplement or override process inputs. |
-| [An application-owned CLI callback](#an-application-owned-cli-callback) | Yes | Yes | The application has its own root CLI options and state. |
-| [Several sections and temporary overrides](#several-sections-and-temporary-overrides) | No | No | Several parts of Python application code need related settings. |
-
-The first four setups cover all combinations of the two optional file features.
-The remaining examples demonstrate features that can be used with those setups.
+| [Settings without managed files](#settings-without-managed-files) | None | None | Process environment and defaults supply settings. |
+| [Persistent user preferences](#persistent-user-preferences) | Config | `UserDotenv()` | Users save preferences, but the application needs no other managed resource. |
+| [Importable client with saved preferences](#importable-client-with-saved-preferences) | Config | User dotenv and packaged defaults | Callers construct a library client without declaring AppRC. |
+| [Cache-only application](#cache-only-application) | Cache | None | The application needs disposable cache and nothing else. |
+| [Single-root application paths](#single-root-application-paths) | Any chosen subset | Explicit layout | The application wants enabled categories colocated beneath a caller-owned root. |
+| [User preferences and workspaces](#user-preferences-and-workspaces) | Config | User dotenv and registry-backed `Workspaces()` | Users share preferences and select named working directories. |
+| [Parent-owned dependency settings](#parent-owned-dependency-settings) | Parent's chosen paths | Imported config binding | The host owns dependency field names and values. |
 
 ## Run the example applications
 
-From an AppRC checkout, install the code, terminal distribution, and examples:
+From an AppRC checkout, install the core, terminal distribution, and examples:
 
 ```shell
 python -m pip install -e . -e src/apprc_dev/packaging/terminal -e examples/example_apps
 ```
 
-`apprc-examples-lab NAME` opens a disposable shell for one example. It removes
-inherited example-specific variables and sets the correct AppRC directory to a
-temporary location. Run each command sequence below inside the specified lab;
-exit that shell before opening another. The shell starts in your original
-working directory. The command sequences below first change into `$APPRC_EXAMPLE_LAB_ROOT`, so relative data paths stay
-inside the temporary directory. On PowerShell use `cd $env:APPRC_EXAMPLE_LAB_ROOT`.
-
-Every example explicitly mounts the
-[application-data CLI](Explanations.md#application-data-cli). Inside its lab,
-use `<command> appdata paths --json` for the managed inventory and
-`<command> appdata clean --dry-run` to preview removal. Replace `<command>` with
-the executable listed in that example. These actions bypass runtime settings,
-retain external storage payloads, and use `--apprc-dir PATH` rather than root
-env-file or storage selectors for explicit cleanup targeting.
-
-> [!IMPORTANT]
-> Keep demonstration data inside the lab's printed temporary directory.
-> Directories explicitly chosen elsewhere are not removed when the lab exits.
+`apprc-examples-lab NAME` opens an isolated shell for one example. The lab sets
+its environment and creates its own temporary root. Example commands use current
+`paths`, `doctor`, category, workspace, and root `purge` commands; no old AppRC
+storage or `appdata clean` command is used. Keep demonstration data inside the
+lab root because paths explicitly chosen elsewhere remain after the lab exits.
 
 The [example package README](../examples/example_apps/README.md) describes the
-lab and smoke runner. Each application has its own declaration, section, bundle,
-and CLI. Those files can be copied without the lab utilities. The
-[How-to user guides](How-To-User-Guides.md) provide smaller independent Python
-programs when you do not need a CLI application.
+lab and smoke runner. Complete source code remains in `examples`; the guides
+below explain the decisions each setup demonstrates.
 
 <br>
 
-# Settings without storage
+# Settings examples
 
 ## Settings without managed files
 
-Choose this setup for a script or service configured by its launcher. This
-complete `demo.py` uses no files:
+A script can use settings without declaring a filesystem category:
 
-<!-- example-file: demo.py -->
 ```python
 import apprc as rc
 
@@ -99,67 +80,41 @@ second = MyRC.resolve(environment={"DEMO_TIMEOUT": "20"})
 assert first.build(ClientSettings).timeout == 10
 assert second.build(ClientSettings).timeout == 20
 assert MyRC.resolve(environment={}).build(ClientSettings).timeout == 30
-print("separate runs: 10, 20; Python default: 30")
 ```
 
-Run `python demo.py`. Each [`ResolvedConfig`](Explanations.md#resolvedconfig)
-retains its own inputs. To use actual process values, omit `environment`.
-
+Each `ResolvedConfig` captures independent inputs. This example creates no files.
 The runnable [process_env declaration](../examples/example_apps/src/process_env/config/app.py)
-adds a [CLI](../examples/example_apps/src/process_env/cli.py).
-It declares neither user overrides nor storage:
-
-```shell
-apprc-examples-lab process-env
-```
-
-Inside the lab:
-
-```shell
-cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-process-env run
-apprc-process-env config doctor
-```
-
-`run` prints the typed `profile` and `debug` values. There is no writable scope,
-so setup and editing commands are absent. The
-[packaged-defaults guide](How-To-User-Guides.md#ship-defaults-with-the-application)
-shows how to add a defaults file if the application needs one.
+shows the same configuration approach in a CLI.
 
 ## Persistent user preferences
 
 The [user_dotenv declaration](../examples/example_apps/src/user_dotenv/config/app.py)
-enables `user_dotenv=rc.UserDotenv()` on `AppRC`. Its
-[settings section](../examples/example_apps/src/user_dotenv/config/sections/app.py)
-defines a profile and a boolean debug setting. The user dotenv stores changes
-outside the installed package.
+enables `Paths(config=True)` and `UserDotenv()`. The lab sequence initializes
+preferences, saves a value, then launches the application:
 
 ```shell
 apprc-examples-lab user-dotenv
 ```
 
-Inside the lab:
-
 ```shell
 cd "$APPRC_EXAMPLE_LAB_ROOT"
+apprc-user-dotenv paths config
+apprc-user-dotenv config init
 apprc-user-dotenv config setup --yes
 apprc-user-dotenv config set app.profile personal --scope user
 apprc-user-dotenv run
 apprc-user-dotenv config edit
 ```
 
-`run` reports profile `personal`. The edit is in `apprc.user.env` under the lab's
-AppRC directory. The editor shows that layer and the Python defaults. The
-[Python preference guide](How-To-User-Guides.md#save-a-user-preference)
-performs the same setup and edit through `ConfigManager`.
+The edit is saved in `apprc.user.env` beneath the config category root. The
+[Python preference guide](How-To-User-Guides.md#save-a-user-preference) shows the
+same operation through `ConfigManager`.
 
 ## Importable client with saved preferences
 
 The [`library_client` package](../examples/example_apps/src/library_client/README.md)
-owns its [AppRC declaration](../examples/example_apps/src/library_client/config/app.py)
-and [config section](../examples/example_apps/src/library_client/config/sections/client.py).
-Its public [`LibraryClient`](../examples/example_apps/src/library_client/client.py)
-loads the current layers when constructed. The caller only imports the client:
+owns its declaration and client. Its caller imports the public client and need
+not call AppRC directly:
 
 ```python
 from library_client import LibraryClient
@@ -168,94 +123,105 @@ client = LibraryClient()
 print(client.request_timeout)
 ```
 
-In a disposable lab, change the saved timeout and construct a fresh client:
-
-```shell
-apprc-examples-lab library-client
-```
-
-Inside the lab:
-
-```shell
-cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-library-client run
-apprc-library-client config setup --yes
-apprc-library-client config set request_timeout 15 --scope user
-apprc-library-client run
-python -c 'from library_client import LibraryClient; print(LibraryClient().request_timeout)'
-```
-
-The first `run` reports `20` from packaged defaults. The later commands report
-`15` from `apprc.user.env`. The `run` command passes settings from its CLI
-snapshot into the client, so root CLI options remain authoritative. Ordinary
-Python callers use `LibraryClient()`; the
-[importable-client guide](How-To-User-Guides.md#use-apprc-inside-an-importable-client)
-shows the same pattern in a smaller independent package.
+The client resolves settings when constructed and does not initialize config
+files. A separate user setup command initializes the configured user dotenv.
+This keeps library construction read-only while making preferences opt-in.
 
 <br>
 
-# Settings with storage
+# Independent paths and workspaces
 
-## Named storage without user overrides
+## Cache-only application
 
-The [storage declaration](../examples/example_apps/src/storage/config/app.py)
-enables `storage=rc.Storage()`. Each directory has its own configuration file.
-The [settings section](../examples/example_apps/src/storage/config/sections/app.py)
-requires a storage path and a secret API-token value.
+The maintained `cache_only` example declares only cache and has no schema,
+config, registry, or maintenance provider:
 
-```shell
-apprc-examples-lab storage
+```python
+import apprc as rc
+
+MyRC = rc.AppRC(app_id="cache-demo", paths=rc.Paths(cache=True))
+cache_dir = MyRC.ensure_path("cache")
+print(cache_dir)
 ```
 
-Inside the lab, initialize a directory and supply a demonstration placeholder:
+Run its actual installed command in a disposable lab:
 
 ```shell
+apprc-examples-lab cache-only
 cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-storage config setup --yes --storage-root ./data
-apprc-storage config set app.api_token example-placeholder --scope storage
-apprc-storage config set app.profile work --scope storage
-apprc-storage run
-apprc-storage config storage list
+apprc-cache-only --help
+apprc-cache-only paths --json
+apprc-cache-only cache init
+apprc-cache-only paths cache --json
 ```
 
-`run` reports profile `work` and the selected root while redacting the token.
-`apprc.toml` records the directory; `data/apprc.storage.env` contains the overrides.
-The [data-directory guide](How-To-User-Guides.md#store-data-outside-the-source-checkout)
-shows application code writing its own report inside a selected root. The
-[storage operations reference](References.md#storage-operations) covers moving,
-reconnecting, archiving, and unregistering directories.
+`paths --json` reports the declared locations and existence without creating
+any directory. `cache init` initializes only cache and its owner marker; config,
+appdata, state, logs, and workspace locations remain disabled. The grouped help
+contains paths, doctor, cache info/init, and purge, but no config, workspace,
+appdata, or state groups. Cache data initialization belongs at the application's
+actual write boundary, not matcher/service construction.
 
-## User settings and storage
+## Single-root application paths
 
-The [combined declaration](../examples/example_apps/src/user_dotenv_with_storage/config/app.py)
-enables both `UserDotenv()` and `Storage()`. A saved user preference applies
-unless the selected storage or another higher-priority layer overrides it.
+This complete example chooses only appdata and cache beneath an explicit root:
 
-```shell
-apprc-examples-lab user-dotenv-with-storage
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import apprc as rc
+
+with TemporaryDirectory() as directory:
+    MyRC = rc.AppRC(
+        app_id="demo",
+        paths=rc.Paths(appdata=True, cache=True),
+        layout=rc.Layout.single_root(Path(directory)),
+    )
+    before = MyRC.paths()
+    assert before.config_dir is None
+    assert before.appdata_dir == Path(directory) / "appdata"
+    assert before.cache_dir == Path(directory) / "cache"
+    assert not before.cache_dir.exists()
+    cache_dir = MyRC.ensure_path("cache")
+    assert cache_dir.is_dir()
+    assert not before.appdata_dir.exists()
 ```
 
-Inside the lab:
+Inspection is read-only; ensuring cache creates only that category and its
+ownership marker. If an existing nonempty unowned path is intentional,
+`ensure_path("appdata", adopt=True)` is explicit adoption, not migration: it
+claims the directory but moves or deletes nothing. A mismatched owner marker,
+symlink, junction, or overlapping managed root refuses mutation.
 
-```shell
-cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-user-dotenv-with-storage config setup --yes --storage-root ./data
-apprc-user-dotenv-with-storage config set app.api_token example-placeholder --scope user
-apprc-user-dotenv-with-storage config set app.profile personal --scope user
-apprc-user-dotenv-with-storage run
-apprc-user-dotenv-with-storage config set app.profile work --scope storage
-apprc-user-dotenv-with-storage run
+## User preferences and workspaces
+
+`Workspaces()` provides named roots and an optional config overlay; selecting one
+does not change the resolved application paths. The example declaration is:
+
+```python
+import apprc as rc
+
+MyRC = rc.AppRC(
+    app_id="demo",
+    paths=rc.Paths(config=True),
+    user_dotenv=rc.UserDotenv(),
+    workspaces=rc.Workspaces(selector_env_key="DEMO_WORKSPACE"),
+)
 ```
 
-The first run reports `personal`; the second reports `work`. Both saved values
-still exist, but the storage layer wins. The
-[config editor](Explanations.md#config-editor) displays both values, and the
-[edit-removal guide](How-To-User-Guides.md#edit-or-remove-a-saved-override)
-shows how removing an override reveals the lower-priority value again.
+Registry files and user preferences share the enabled config root. Each
+workspace's `apprc.workspace.env` and `apprc.workspace.secret.env` live in its
+workspace root. `WorkspaceManager` registers, selects, renames, repoints, moves,
+archives, and restores workspace roots. Unregistering retains payloads. The
+[workspace guide](How-To-User-Guides.md#select-a-workspace) describes direct
+registry-free selection as well.
 
-This setup is useful when different datasets need different endpoints or options
-while sharing user preferences. [Storage selection](References.md#storage-selection)
-chooses which directory's overrides participate.
+A `Workspaces(registry=False)` declaration accepts direct directory paths
+without config or a registry; it does not persist named registrations. For
+layout bootstrap, `<PREFIX>_LAYOUT` and `<PREFIX>_ROOT` are interpreted as one
+pair from one highest-priority raw input layer. Root alone means single-root;
+`native` plus root in that layer is invalid. The [layout reference](References.md#layout-bootstrap)
+describes priority, including explicit-file precedence.
 
 <br>
 
@@ -264,115 +230,32 @@ chooses which directory's overrides participate.
 ## Explicit dotenv precedence
 
 The [precedence application](../examples/example_apps/src/explicit_env_precedence/cli.py)
-uses both persistent features and a `label` setting. It demonstrates the
-[priority switch](References.md#source-precedence) between process values and
-explicit dotenv files.
-
-```shell
-apprc-examples-lab explicit-env-precedence
-```
-
-Inside a POSIX lab shell:
-
-```shell
-cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-explicit-env-precedence config setup --yes --storage-root ./data
-printf 'APPRC_EXAMPLE_PRECEDENCE_LABEL=file\n' > invocation.env
-export APPRC_EXAMPLE_PRECEDENCE_LABEL=shell
-apprc-explicit-env-precedence --env-file invocation.env run
-apprc-explicit-env-precedence --env-file invocation.env --env-file-overrides-os-environ run
-```
-
-The first run reports `shell`; the second reports `file`. On PowerShell, write
-the file with `Set-Content` and set `$env:APPRC_EXAMPLE_PRECEDENCE_LABEL` instead.
-The [independent Python guide](How-To-User-Guides.md#load-dotenv-files)
-reproduces the priority change without shell-specific commands.
+demonstrates explicit files and process values. By default process environment
+wins; `env_file_overrides_os_environ=True` makes explicit dotenv values win.
+Each explicit file remains a distinct layer for the layout bootstrap pair.
+See the [source precedence reference](References.md#source-precedence).
 
 ## Parent-owned dependency settings
 
 The complete [dependency_config_import.py](../examples/dependency_config_import.py)
-imports a dependency's client section under a host-owned namespace. The host
-maps two dependency model fields to one setting, marks the API key secret, and
-builds the dependency client inside a config bundle from one parent snapshot.
-It also supplies an ambient dependency key and confirms that parent resolution
-uses the host's value instead.
-
-From the repository root, run:
-
-```shell
-python examples/dependency_config_import.py
-```
-
-Expected output:
-
-```text
-https://host.example: host-model-v2
-```
-
-The [dependency-import guide](How-To-User-Guides.md#import-settings-from-a-dependency)
-shows the same declaration step by step. A storage-required imported section
-uses the parent's selected storage layer for mapped settings; dependency user
-and storage files are never read in parent mode. Dependency packaged defaults
-can be opted into separately.
+imports a dependency section under a host-owned namespace. The host controls its
+fields, defaults, and secret metadata while importing values from its own
+resolved snapshot. Dependency environment variables, files, workspace selector,
+registry, and layout bootstrap keys are excluded. Dependency packaged defaults
+remain opt-in. This example does not require model calls or external services.
 
 ## An application-owned CLI callback
 
 The [cli_runtime application](../examples/example_apps/src/cli_runtime/cli.py)
-defines its own `RuntimeOptions` and `RuntimeState`. Its root callback passes
-options to `rc.cli.CliRuntime.prepare()`. The resulting state contains both
-AppRC's `ResolvedConfig` and the application's `workspace`, `model`, and
-`dry_run` values.
-
-```shell
-apprc-examples-lab cli-runtime
-```
-
-Inside the lab:
-
-```shell
-cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-cli-runtime status
-apprc-cli-runtime config setup --yes --storage-root ./data
-apprc-cli-runtime config set runtime.api_token example-placeholder --scope storage
-apprc-cli-runtime --workspace ./workspace --model example-model --dry-run run
-```
-
-`status` works before setup. `run` prints the app-owned options and resolved
-settings together. `CliRuntime.mount_config_group()` supplies the configuration
-commands without replacing the application's root callback.
-`rc.cli.mount_appdata_cli(app, MyRC)` separately adds the cleanup group, and the
-existing `CliRuntimePolicy` declares `paths` and `clean` as runtime-independent
-action prefixes. The ordinary
-[Typer mounting guide](How-To-User-Guides.md#add-configuration-commands-to-typer)
-is smaller when the application does not need a custom callback.
+owns its root callback and runtime state. It uses `mount_app_groups(app)` and
+`CliRuntime.prepare()` rather than the high-level callback-owning
+`mount_app_cli`. Maintenance commands bypass business-state construction while
+capturing the same paths/layout snapshot.
 
 ## Several sections and temporary overrides
 
-The complete [section_bundle.py](../examples/section_bundle.py) defines an API
-client section and an output section, registers their
-[config bundle](Explanations.md#config-bundles), and passes it to application code.
-It supplies explicit environment mappings, so it needs no setup or saved files.
-
-From the repository root:
-
-```shell
-python examples/section_bundle.py
-```
-
-Expected output:
-
-```text
-json: timeout=10
-one request: timeout=5
-json: timeout=20
-```
-
-The first line uses a bundle built from `DEMO_TIMEOUT=10`. The second uses a
-scoped copy for one operation. Reloading the original section produces the third
-line while the scoped copy retains its own value. The initial `ResolvedConfig`
-can still build a section with timeout `10`.
-
-The [bundle guide](How-To-User-Guides.md#pass-several-settings-sections-together)
-shows the declaration in full. The
-[reload guide](How-To-User-Guides.md#reload-settings-or-use-temporary-overrides)
-explains when explicit Python overrides survive a reload.
+The complete [section_bundle.py](../examples/section_bundle.py) defines client
+and output sections, registers their dataclass bundle, and builds both from one
+`ResolvedConfig`. The example also demonstrates temporary settings overrides and
+reloads; these configuration features are independent of the application's path
+selection. See the [bundle guide](How-To-User-Guides.md#pass-several-settings-sections-together).

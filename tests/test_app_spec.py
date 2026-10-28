@@ -1,108 +1,81 @@
+"""Application declarations retain immutable path and workspace contracts."""
+
 from __future__ import annotations
 
-from apprc.user_files.app_home.application import AppFiles
-
-from pathlib import Path
+from itertools import product
 
 import pytest
 
 import apprc as rc
 from apprc.definition.app_config.spec import AppConfigSpec
-from apprc.definition.app_config.storage import Storage
 from apprc.definition.app_config.user_dotenv import UserDotenv
+from apprc.definition.app_config.workspaces import Workspaces
+from apprc.definition.paths import Layout, Paths
 
-
-_DUPLICATE_OWNER_A_RC = rc.AppRC(
-    app_id="duplicate_owner_a",
-    display_name="Duplicate Owner A",
-    config_package="duplicate_owner_a.config",
-)
+_DUPLICATE_OWNER_A_RC = rc.AppRC(app_id="duplicate_owner_a")
 
 
 @_DUPLICATE_OWNER_A_RC.config(
-    "dup.owner",
-    title="Duplicate Owner A",
-    prefix="DUP_A_",
-    rc_path=("dup", "owner_a"),
+    "duplicate", prefix="DUPLICATE_OWNER_A_", title="Duplicate Owner A"
 )
 class _DuplicateOwnerA(rc.Config):
-    value: str = rc.field("DUP_A_VALUE", default="a")
+    value: str = rc.field("DUPLICATE_OWNER_A_VALUE", default="a")
 
 
-_DUPLICATE_OWNER_B_RC = rc.AppRC(
-    app_id="duplicate_owner_b",
-    display_name="Duplicate Owner B",
-    config_package="duplicate_owner_b.config",
-)
+_DUPLICATE_OWNER_B_RC = rc.AppRC(app_id="duplicate_owner_b")
 
 
 @_DUPLICATE_OWNER_B_RC.config(
-    "dup.owner",
-    title="Duplicate Owner B",
-    prefix="DUP_B_",
-    rc_path=("dup", "owner_b"),
+    "duplicate", prefix="DUPLICATE_OWNER_B_", title="Duplicate Owner B"
 )
 class _DuplicateOwnerB(rc.Config):
-    value: str = rc.field("DUP_B_VALUE", default="b")
+    value: str = rc.field("DUPLICATE_OWNER_B_VALUE", default="b")
 
 
-_DUPLICATE_ENV_A_RC = rc.AppRC(
-    app_id="duplicate_env_a",
-    display_name="Duplicate Env A",
-    config_package="duplicate_env_a.config",
-)
+_DUPLICATE_ENV_A_RC = rc.AppRC(app_id="duplicate_env_a")
 
 
-@_DUPLICATE_ENV_A_RC.config(
-    "dup.env_a",
-    title="Duplicate Env A",
-    prefix="DUP_ENV_",
-    rc_path=("dup", "env_a"),
-)
+@_DUPLICATE_ENV_A_RC.config("first", prefix="DUPLICATE_ENV_")
 class _DuplicateEnvA(rc.Config):
-    value: str = rc.field("DUP_ENV_VALUE", default="a")
+    value: str = rc.field("DUPLICATE_ENV_VALUE", default="a")
 
 
-_DUPLICATE_ENV_B_RC = rc.AppRC(
-    app_id="duplicate_env_b",
-    display_name="Duplicate Env B",
-    config_package="duplicate_env_b.config",
-)
+_DUPLICATE_ENV_B_RC = rc.AppRC(app_id="duplicate_env_b")
 
 
-@_DUPLICATE_ENV_B_RC.config(
-    "dup.env_b",
-    title="Duplicate Env B",
-    prefix="DUP_ENV_",
-    rc_path=("dup", "env_b"),
-)
+@_DUPLICATE_ENV_B_RC.config("second", prefix="DUPLICATE_ENV_")
 class _DuplicateEnvB(rc.Config):
-    value: str = rc.field("DUP_ENV_VALUE", default="b")
+    value: str = rc.field("DUPLICATE_ENV_VALUE", default="b")
 
 
 def _spec(
     *,
-    storage: Storage | None = None,
+    paths: Paths = Paths(),
+    layout: Layout | None = None,
+    user_dotenv: UserDotenv | None = None,
+    workspaces: Workspaces | None = None,
 ) -> AppConfigSpec:
     return AppConfigSpec(
         app_id="demo",
         display_name="Demo",
         config_package="apprc",
-        storage=storage,
+        paths=paths,
+        layout=layout,
+        user_dotenv=user_dotenv,
+        workspaces=workspaces,
     )
 
 
-def test_app_config_spec_derives_legacy_apprc_toml_filename() -> None:
-    derive = AppConfigSpec.derive_legacy_apprc_toml_filename
+def test_app_config_spec_defaults_to_no_optional_capabilities() -> None:
+    spec = _spec()
 
-    assert derive("demo") == "demo.apprc.toml"
-    assert derive("my-app.rc") == "my-app_rc.apprc.toml"
-    assert derive("") == "app.apprc.toml"
-    assert derive("???") == "app.apprc.toml"
-
-
-def test_app_config_spec_derives_apprc_dir_env_key() -> None:
-    assert _spec().apprc_dir_env_key == "DEMO_APPRC_DIR"
+    assert spec.paths == Paths()
+    assert spec.layout is None
+    assert spec.user_dotenv is None
+    assert spec.workspaces is None
+    assert spec.workspace_selector_env_key is None
+    assert spec.workspace_dotenv_filename == "apprc.workspace.env"
+    assert spec.apprc_toml_filename == "apprc.toml"
 
 
 def test_app_config_spec_keeps_setup_next_step() -> None:
@@ -115,99 +88,66 @@ def test_app_config_spec_keeps_setup_next_step() -> None:
     assert spec.setup_next_step == "demo run"
 
 
-def test_app_config_spec_defaults_to_config_without_storage() -> None:
-    spec = _spec()
-
-    assert spec.uses_storage() is False
-    assert spec.storage_selector_env_key is None
-    assert spec.user_dotenv_filename == "apprc.user.env"
-    assert spec.apprc_toml_filename == "apprc.toml"
-    assert spec.storage is None
-    assert spec.uses_user_dotenv() is False
-    assert spec.uses_managed_files() is False
-
-
 @pytest.mark.parametrize(
-    ("user_dotenv", "storage", "uses_managed_files"),
-    (
-        (None, None, False),
-        (UserDotenv(), None, True),
-        (None, Storage(), True),
-        (UserDotenv(), Storage(), True),
-    ),
+    "paths",
+    [
+        Paths(config=config, appdata=appdata, cache=cache, state=state)
+        for config, appdata, cache, state in product((False, True), repeat=4)
+    ],
 )
-def test_app_config_spec_treats_persistent_capabilities_independently(
-    user_dotenv: UserDotenv | None,
-    storage: Storage | None,
-    *,
-    uses_managed_files: bool,
+def test_app_config_spec_preserves_independent_path_capabilities(
+    paths: Paths,
 ) -> None:
-    spec = AppConfigSpec(
-        app_id="demo",
-        display_name="Demo",
-        config_package="apprc",
-        user_dotenv=user_dotenv,
-        storage=storage,
+    assert _spec(paths=paths).paths == paths
+
+
+def test_app_config_spec_derives_workspace_selector_from_app_identity() -> None:
+    spec = _spec(
+        paths=Paths(config=True),
+        workspaces=Workspaces(),
     )
 
-    assert spec.uses_user_dotenv() is (user_dotenv is not None)
-    assert spec.uses_storage() is (storage is not None)
-    assert spec.uses_managed_files() is uses_managed_files
+    assert spec.uses_workspaces() is True
+    assert spec.workspace_selector_env_key == "DEMO_WORKSPACE"
+    assert spec.require_workspaces() == Workspaces()
 
 
-def test_app_config_spec_rejects_directory_for_process_env_only_app(
-    tmp_path: Path,
-) -> None:
-    with pytest.raises(ValueError, match="apprc_dir requires"):
-        AppConfigSpec(
-            app_id="demo",
-            display_name="Demo",
-            config_package="apprc",
-            apprc_dir=tmp_path,
-        )
-
-
-def test_app_config_spec_storage_derives_selector_env_key() -> None:
-    spec = _spec(storage=Storage())
-
-    assert spec.uses_storage() is True
-    assert spec.storage_selector_env_key == "DEMO_STORAGE"
-    assert spec.storage_dotenv_filename == "apprc.storage.env"
-
-
-def test_app_config_spec_uses_fixed_filenames() -> None:
-    spec = _spec(storage=Storage())
-
-    assert spec.defaults_dotenv_filename == "apprc.defaults.env"
-    assert spec.user_dotenv_filename == "apprc.user.env"
-    assert spec.storage_dotenv_filename == "apprc.storage.env"
-    assert spec.apprc_toml_filename == "apprc.toml"
-
-
-def test_app_config_spec_rejects_legacy_storage_key_argument() -> None:
-    with pytest.raises(TypeError, match="storage_env_key"):
-        AppConfigSpec(
-            app_id="demo",
-            display_name="Demo",
-            config_package="apprc",
-            storage_env_key="DEMO_STORAGE",  # pyright: ignore[reportCallIssue]
-        )
-
-
-def test_app_config_spec_apprc_dir_uses_env_override(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    custom_apprc_dir = tmp_path / "custom"
-    spec = _spec()
-
-    monkeypatch.setenv("DEMO_APPRC_DIR", str(custom_apprc_dir))
-
-    assert AppFiles(spec).apprc_dir() == custom_apprc_dir
-    assert (
-        AppFiles(spec).preferred_apprc_toml_path()
-        == custom_apprc_dir / "apprc.toml"
+def test_app_config_spec_keeps_explicit_workspace_selector() -> None:
+    spec = _spec(
+        paths=Paths(config=True),
+        workspaces=Workspaces(selector_env_key="CUSTOM_WORKSPACE"),
     )
+
+    assert spec.workspace_selector_env_key == "CUSTOM_WORKSPACE"
+
+
+def test_direct_workspaces_do_not_require_config_capability() -> None:
+    spec = _spec(workspaces=Workspaces(registry=False))
+
+    assert spec.uses_workspaces() is True
+    assert spec.paths.config is False
+
+
+def test_registry_workspaces_require_config_capability() -> None:
+    with pytest.raises(
+        ValueError, match="Registry-backed workspaces require paths.config=True"
+    ):
+        _spec(workspaces=Workspaces())
+
+
+def test_user_dotenv_requires_config_capability() -> None:
+    with pytest.raises(
+        ValueError, match="UserDotenv requires paths.config=True"
+    ):
+        _spec(user_dotenv=UserDotenv())
+
+
+def test_layout_declaration_is_preserved() -> None:
+    layout = Layout.single_root("relative-root")
+
+    assert _spec(layout=layout).layout == layout
+    assert layout.root is not None
+    assert layout.root.is_absolute()
 
 
 def test_app_config_spec_rejects_manual_owner_argument() -> None:
@@ -215,7 +155,6 @@ def test_app_config_spec_rejects_manual_owner_argument() -> None:
         AppConfigSpec(
             app_id="demo",
             display_name="Demo",
-            config_package="apprc",
             owners=(),  # pyright: ignore[reportCallIssue]
         )
 
@@ -225,7 +164,6 @@ def test_app_config_spec_rejects_duplicate_owner_keys() -> None:
         AppConfigSpec(
             app_id="demo",
             display_name="Demo",
-            config_package="apprc",
             envs=(_DuplicateOwnerA, _DuplicateOwnerB),
         )
 
@@ -235,6 +173,10 @@ def test_app_config_spec_rejects_duplicate_env_keys() -> None:
         AppConfigSpec(
             app_id="demo",
             display_name="Demo",
-            config_package="apprc",
             envs=(_DuplicateEnvA, _DuplicateEnvB),
         )
+
+
+def test_app_config_spec_rejects_invalid_application_identity() -> None:
+    with pytest.raises(ValueError, match="safe nonempty filename segment"):
+        _spec().__class__(app_id="../demo", display_name="Demo")

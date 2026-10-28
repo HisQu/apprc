@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-from apprc.runtime.resolution import ResolvedConfig
-
 # == Standard Library ========================
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from os import environ
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Generic, Protocol, TypeVar
 
 # == 3rd Party ===============================
 import typer
 
 # == Internal ================================
+from apprc.definition.paths import AppPaths, Layout
+from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli._resolution import resolve_cli_config
-from apprc.runtime.logging import (
-    ResolutionLogger,
-)
 from apprc.public.app_rc import AppRC
+from apprc.runtime.logging import ResolutionLogger
+from apprc.runtime.resolution import ResolvedConfig
 
 APPRC_CONTEXT_META_KEY = "apprc.interfaces.cli.runtime_context"
 OptionsT = TypeVar("OptionsT", bound="CliRuntimeOptionsProtocol")
@@ -28,49 +29,33 @@ class CliRuntimeOptionsProtocol(Protocol):
     """Fields accepted by AppRC CLI runtime helpers."""
 
     @property
-    def env_files(self) -> Sequence[Path] | None:
-        """Explicit dotenv files passed to the CLI."""
-        ...
+    def env_files(self) -> Sequence[Path] | None: ...
 
     @property
-    def env_file_overrides_os_environ(self) -> bool:
-        """Whether explicit dotenv values beat process env values."""
-        ...
+    def env_file_overrides_os_environ(self) -> bool: ...
 
     @property
-    def load_dotenv_layers(self) -> bool:
-        """Whether configured dotenv layers should be merged."""
-        ...
+    def load_dotenv_layers(self) -> bool: ...
 
     @property
-    def storage(self) -> str | None:
-        """Optional active storage selector."""
-        ...
+    def workspace(self) -> str | None: ...
 
     @property
-    def log_level(self) -> str | None:
-        """Optional logging level token."""
-        ...
+    def layout(self) -> Layout | None: ...
+
+    @property
+    def log_level(self) -> str | None: ...
 
 
 @dataclass(frozen=True, slots=True)
 class CliRuntimeOptions:
-    """Parsed AppRC runtime options for one Typer CLI run.
-
-    :param env_files: Explicit dotenv files passed to the CLI.
-    :param env_file_overrides_os_environ: Whether explicit dotenv values beat
-        values already present in ``os.environ``.
-    :param load_dotenv_layers: Whether AppRC should merge configured dotenv
-        layers into this Python process.
-    :param storage: Optional active storage selector.
-    :param log_level: Optional logging level token passed to the app logging
-        setup callable.
-    """
+    """Parsed AppRC runtime options for one Typer CLI run."""
 
     env_files: tuple[Path, ...] = ()
     env_file_overrides_os_environ: bool = False
     load_dotenv_layers: bool = True
-    storage: str | None = None
+    workspace: str | None = None
+    layout: Layout | None = None
     log_level: str | None = None
 
     @classmethod
@@ -80,23 +65,37 @@ class CliRuntimeOptions:
         env_files: Sequence[Path] | None = None,
         env_file_overrides_os_environ: bool = False,
         load_dotenv_layers: bool = True,
-        storage: str | None = None,
+        workspace: str | None = None,
+        layout: str | None = None,
+        app_root: Path | None = None,
         log_level: str | None = None,
     ) -> CliRuntimeOptions:
-        """Build normalized options from Typer callback parameters.
-
-        :param env_files: Optional repeated ``--env-file`` values.
-        :param env_file_overrides_os_environ: Parsed override policy flag.
-        :param load_dotenv_layers: Whether dotenv values should be merged.
-        :param storage: Parsed storage selector.
-        :param log_level: Parsed logging level token.
-        :return: Immutable AppRC runtime options.
-        """
+        """Normalize Typer runtime controls, including paired layout inputs."""
+        selected_layout = None
+        if layout is not None or app_root is not None:
+            mode = layout or (
+                "single-root" if app_root is not None else "native"
+            )
+            if mode == "native":
+                if app_root is not None:
+                    raise ValueError(
+                        "--app-root cannot be combined with --layout native."
+                    )
+                selected_layout = Layout.native()
+            elif mode == "single-root":
+                if app_root is None:
+                    raise ValueError(
+                        "--layout single-root requires --app-root."
+                    )
+                selected_layout = Layout.single_root(app_root)
+            else:
+                raise ValueError(f"Unsupported AppRC layout: {mode!r}.")
         return cls(
             env_files=tuple(env_files or ()),
             env_file_overrides_os_environ=env_file_overrides_os_environ,
             load_dotenv_layers=load_dotenv_layers,
-            storage=storage,
+            workspace=workspace,
+            layout=selected_layout,
             log_level=log_level,
         )
 
@@ -105,67 +104,54 @@ class CliRuntimeOptions:
         cls,
         options: CliRuntimeOptionsProtocol,
     ) -> CliRuntimeOptions:
-        """Return an immutable copy of an option-like object.
-
-        :param options: Object exposing AppRC runtime option attributes.
-        :return: Normalized runtime options.
-        """
+        """Return an immutable copy of an option-like object."""
         if isinstance(options, cls):
             return options
         return cls(
             env_files=tuple(options.env_files or ()),
-            env_file_overrides_os_environ=(
-                options.env_file_overrides_os_environ
-            ),
+            env_file_overrides_os_environ=options.env_file_overrides_os_environ,
             load_dotenv_layers=options.load_dotenv_layers,
-            storage=options.storage,
+            workspace=options.workspace,
+            layout=options.layout,
             log_level=options.log_level,
         )
 
 
 @dataclass(slots=True)
 class CliRuntimeContext(Generic[OptionsT]):
-    """AppRC state stored on Typer context metadata.
-
-    :param runtime_options: Normalized AppRC runtime options.
-    :param cli_options: Original app CLI options passed to the runtime.
-    :param resolved: Resolved snapshot when runtime setup ran.
-    :param runtime_setup_skipped: Whether this CLI run intentionally
-        avoided runtime setup.
-    """
+    """Captured bootstrap state stored on Typer context metadata."""
 
     runtime_options: CliRuntimeOptions
     cli_options: OptionsT
+    paths: AppPaths
+    environment: Mapping[str, str]
     resolved: ResolvedConfig | None = None
     runtime_setup_skipped: bool = False
-    storage_required: bool = False
+    workspace_required: bool = False
 
 
 def resolve_cli_options(
     apprc: AppRC,
     options: CliRuntimeOptionsProtocol,
     *,
-    storage_required: bool = False,
+    workspace_required: bool = False,
+    environment: Mapping[str, str] | None = None,
+    app_paths: AppPaths | None = None,
     setup_logging: Callable[..., Any] | None = None,
     logger: ResolutionLogger | None = None,
 ) -> ResolvedConfig:
-    """Run AppRC resolution from a parsed options object.
-
-    :param apprc: Application config facade.
-    :param options: Parsed AppRC runtime options.
-    :param storage_required: Runtime storage policy, independent of the declaration.
-    :param setup_logging: Optional application logging setup callable.
-    :param logger: Optional application logger for resolution status.
-    :return: Resolved snapshot for diagnostics and command state.
-    """
+    """Resolve configuration using a captured environment/path snapshot."""
     parsed = CliRuntimeOptions.from_options(options)
     return resolve_cli_config(
         apprc,
         env_files=parsed.env_files,
-        env_file_overrides_os_environ=(parsed.env_file_overrides_os_environ),
+        env_file_overrides_os_environ=parsed.env_file_overrides_os_environ,
         load_dotenv_layers=parsed.load_dotenv_layers,
-        storage=parsed.storage,
-        storage_required=storage_required,
+        workspace=parsed.workspace,
+        workspace_required=workspace_required,
+        layout=parsed.layout,
+        environment=environment,
+        app_paths=app_paths,
         log_level=parsed.log_level,
         setup_logging=setup_logging,
         logger=logger,
@@ -178,37 +164,40 @@ def prepare_cli_runtime_context(
     options: OptionsT,
     *,
     skip_runtime_setup: bool = False,
-    storage_required: bool = False,
+    workspace_required: bool = False,
     setup_logging: Callable[..., Any] | None = None,
     logger: ResolutionLogger | None = None,
 ) -> CliRuntimeContext[OptionsT]:
-    """Store AppRC resolution context for a Typer CLI run.
-
-    :param ctx: Active Typer context.
-    :param apprc: Application config facade.
-    :param options: Parsed AppRC runtime options.
-    :param skip_runtime_setup: Whether runtime setup should be skipped.
-    :param storage_required: Runtime storage policy, independent of the declaration.
-    :param setup_logging: Optional application logging setup callable.
-    :param logger: Optional application logger for resolution status.
-    :return: Context stored on ``ctx.meta`` for child commands.
-    """
+    """Capture bootstrap paths/environment before optional runtime setup."""
     parsed = CliRuntimeOptions.from_options(options)
+    environment = MappingProxyType(dict(environ))
+    resolve_options = ResolveOptions(
+        env_files=parsed.env_files,
+        env_file_overrides_os_environ=parsed.env_file_overrides_os_environ,
+        load_dotenv_layers=parsed.load_dotenv_layers,
+        workspace=parsed.workspace,
+        layout=parsed.layout,
+    )
+    paths = apprc.paths(resolve_options, environment=environment)
     resolved = None
     if not skip_runtime_setup:
         resolved = resolve_cli_options(
             apprc,
             parsed,
-            storage_required=storage_required,
+            workspace_required=workspace_required,
+            environment=environment,
+            app_paths=paths,
             setup_logging=setup_logging,
             logger=logger,
         )
     context = CliRuntimeContext(
         runtime_options=parsed,
         cli_options=options,
+        paths=paths,
+        environment=environment,
         resolved=resolved,
         runtime_setup_skipped=skip_runtime_setup,
-        storage_required=storage_required,
+        workspace_required=workspace_required,
     )
     _store_apprc_context(ctx, context)
     return context
@@ -217,12 +206,7 @@ def prepare_cli_runtime_context(
 def cli_runtime_context_from(
     ctx: typer.Context,
 ) -> CliRuntimeContext[Any] | None:
-    """Return the nearest AppRC resolution context for a Typer command.
-
-    :param ctx: Active Typer context.
-    :return: Stored runtime context, or ``None`` when the app did not prepare
-        AppRC runtime metadata.
-    """
+    """Return the nearest AppRC resolution context for a Typer command."""
     current: Any = ctx
     while current is not None:
         context = getattr(current, "meta", {}).get(APPRC_CONTEXT_META_KEY)
@@ -236,14 +220,7 @@ def cli_options_from(
     ctx: typer.Context,
     expected_type: type[OptionsT],
 ) -> OptionsT:
-    """Return the typed app CLI options stored on Typer metadata.
-
-    :param ctx: Active Typer context.
-    :param expected_type: Runtime type expected for the original options.
-    :return: The app CLI options passed to ``CliRuntime.prepare(...)``.
-    :raises RuntimeError: If no AppRC CLI runtime context is present.
-    :raises TypeError: If the stored options have another runtime type.
-    """
+    """Return the typed app CLI options stored on Typer metadata."""
     context = cli_runtime_context_from(ctx)
     if context is None:
         raise RuntimeError("AppRC CLI runtime context is not initialized.")
@@ -251,8 +228,7 @@ def cli_options_from(
     if not isinstance(cli_options, expected_type):
         raise TypeError(
             "AppRC CLI options have type "
-            f"{type(cli_options).__name__}; expected "
-            f"{expected_type.__name__}."
+            f"{type(cli_options).__name__}; expected {expected_type.__name__}."
         )
     return cli_options
 
@@ -260,11 +236,7 @@ def cli_options_from(
 def cli_runtime_options_to_args(
     options: CliRuntimeOptionsProtocol,
 ) -> list[str]:
-    """Return CLI tokens that preserve AppRC runtime option values.
-
-    :param options: Parsed AppRC runtime options.
-    :return: Long-form CLI option tokens suitable for forwarding.
-    """
+    """Return CLI tokens that preserve AppRC runtime option values."""
     parsed = CliRuntimeOptions.from_options(options)
     args: list[str] = []
     if parsed.log_level is not None:
@@ -275,8 +247,12 @@ def cli_runtime_options_to_args(
         args.append("--env-file-overrides-os-environ")
     if not parsed.load_dotenv_layers:
         args.append("--skip-dotenv-layers")
-    if parsed.storage is not None:
-        args.extend(["--storage", parsed.storage])
+    if parsed.workspace is not None:
+        args.extend(["--workspace", parsed.workspace])
+    if parsed.layout is not None:
+        args.extend(["--layout", parsed.layout.mode])
+        if parsed.layout.root is not None:
+            args.extend(["--app-root", str(parsed.layout.root)])
     return args
 
 

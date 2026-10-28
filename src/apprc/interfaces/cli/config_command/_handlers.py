@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from pathlib import Path
-
 # == 3rd Party ===============================
 import typer
+
+from apprc.interfaces.cli._typer_utils import exit_missing_action
 
 # == Internal ================================
 from apprc.interfaces.cli.config_command._editor_commands import (
@@ -15,16 +15,11 @@ from apprc.interfaces.cli.config_command._editor_commands import (
 from apprc.interfaces.cli.config_command._runtime_commands import (
     RuntimeConfigCommands,
 )
-from apprc.interfaces.cli.config_command._storage_commands import (
-    StorageConfigCommands,
-)
 from apprc.interfaces.cli.setup_command import run_config_setup
-from apprc.interfaces.cli._typer_utils import exit_missing_action
 
 
 class ConfigCommandHandlers(
     RuntimeConfigCommands,
-    StorageConfigCommands,
     EditorConfigCommands,
 ):
     """Command implementations for the generated ``config`` Typer group."""
@@ -40,17 +35,14 @@ class ConfigCommandHandlers(
         ctx: typer.Context,
         *,
         assume_yes: bool,
-        apprc_dir: str | Path | None,
-        storage_root: str | Path | None,
+        adopt: bool,
     ) -> None:
-        """Configure the files required by this AppRC declaration."""
+        """Initialize declared config files without creating a workspace."""
         run_config_setup(
             self.apprc,
             assume_yes=assume_yes,
-            apprc_dir=apprc_dir
-            if apprc_dir is not None
-            else self.manager(ctx).paths.root,
-            storage_root=storage_root,
+            adopt=adopt,
+            manager=self.manager(ctx),
             config_group_name=self.config_group_name,
             show_next_step=True,
         )

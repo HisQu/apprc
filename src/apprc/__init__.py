@@ -1,22 +1,30 @@
-"""Clean public facade for AppRC."""
+"""Public application, path and maintenance declarations."""
 
 # ruff: noqa: F401
 
-# > Explicit aliases mark public imports for downstream type checkers.
-from apprc.public.app_rc import AppRC as AppRC
-from apprc.definition.resolution import ResolveOptions as ResolveOptions
-from apprc.definition.resolution import ImportedConfig as ImportedConfig
-from apprc.runtime.resolution import ResolvedConfig as ResolvedConfig
-from apprc.public.config import Config as Config, ConfigBase as ConfigBase
-from apprc.public.field import field as field
-from apprc.definition.app_config.storage import Storage as Storage
-from apprc.definition.app_config.user_dotenv import UserDotenv as UserDotenv
+from apprc.definition.app_config.user_dotenv import UserDotenv
+from apprc.definition.app_config.workspaces import Workspaces
+from apprc.definition.maintenance import (
+    AppDataOperations,
+    CacheOperations,
+    MaintenanceHandlers,
+    RemovalOperation,
+    RemovalPlan,
+    RemovalResult,
+    StateOperations,
+)
+from apprc.definition.paths import (
+    AppPaths,
+    Layout,
+    PathKind,
+    Paths,
+    ResourceKind,
+)
+from apprc.definition.resolution import ImportedConfig, ResolveOptions
+from apprc.public.app_rc import AppRC
+from apprc.public.config import Config, ConfigBase
+from apprc.public.field import field
+from apprc.runtime.resolution import ResolvedConfig
 
-from . import cli
-from . import tui
-from . import files
-from . import provenance
-from . import schema
-from . import storage
-
+from . import cli, files, provenance, schema, tui, workspaces
 from ._exports import PUBLIC_NAMES as __all__

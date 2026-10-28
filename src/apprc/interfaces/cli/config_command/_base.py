@@ -2,24 +2,22 @@
 
 from __future__ import annotations
 
-
-from apprc.user_files.app_home.application import AppFiles
-
 # == Standard Library ========================
-import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 # == 3rd Party ===============================
 import typer
 
 # == Internal ================================
-from apprc.public.app_rc import AppRC
-from apprc.runtime.resolution import ResolvedConfig
-from apprc.interfaces.cli.context import cli_runtime_context_from
 from apprc.definition.resolution import ResolveOptions
-from apprc.services.manager import ConfigManager
-from apprc.interfaces.cli.config_command.group_options import ConfigGroupOptions
+from apprc.interfaces.cli._errors import app_path_bad_parameter
+from apprc.interfaces.cli.config_command._editor_launcher import (
+    ConfigEditorLauncher,
+)
+from apprc.interfaces.cli.config_command._runtime_payload import (
+    default_runtime_payload,
+)
 from apprc.interfaces.cli.config_command._selector_context import (
     ConfigSelectorContext,
     ConfigStateResolver,
@@ -27,32 +25,15 @@ from apprc.interfaces.cli.config_command._selector_context import (
     SelectorContextReader,
     _empty_selector_context,
 )
-from apprc.interfaces.cli.config_command._editor_launcher import (
-    ConfigEditorLauncher,
-)
-from apprc.interfaces.cli.config_command._runtime_payload import (
-    default_runtime_payload,
-)
-from apprc.interfaces.cli.config_command.state import (
-    ConfigCliState,
-    DefaultConfigCliState,
-    active_storage_root_from_env,
-    active_storage_root_from_state,
-)
-from apprc.interfaces.cli._errors import apprc_dir_bad_parameter
+from apprc.interfaces.cli.config_command.group_options import ConfigGroupOptions
+from apprc.interfaces.cli.config_command.state import DefaultConfigCliState
+from apprc.public.app_rc import AppRC
+from apprc.runtime.resolution import ResolvedConfig
+from apprc.services.manager import ConfigManager
+from apprc.services.workspaces import WorkspaceManager
 from apprc.user_files.app_home.locations import AppRCDirectoryError
-from apprc.user_files.storage_roots._loading import (
-    load_create_or_empty_storage_registry,
-    load_optional_runtime_storage_registry,
-)
-from apprc.user_files.storage_roots.registry import StorageRegistry
-from apprc.user_files.storage_roots.selector import (
-    StorageSelectorIssue,
-    StorageSelectorError,
-    resolve_storage_selector_value,
-    select_storage_selector,
-    storage_selector_is_path_like,
-)
+from apprc.user_files.workspace_roots.model import WorkspaceRegistry
+from apprc.user_files.workspace_roots.selector import WorkspaceSelectorIssue
 
 
 class ConfigCommandBase:
@@ -69,13 +50,13 @@ class ConfigCommandBase:
 
         :param apprc: Application config facade.
         :param options: Generated config command hook bundle.
-        :param missing_setup: Message shown when runtime storage is absent.
+        :param missing_setup: Message shown when config setup is absent.
         """
         self.apprc = apprc
         self.state_type = options.state_type
         self.runtime_payload = options.runtime_payload
-        self.active_storage_root_with_context_hook = (
-            options.active_storage_root_with_context
+        self.active_workspace_root_with_context_hook = (
+            options.active_workspace_root_with_context
         )
         self.missing_setup = missing_setup
         self.runtime_error_param_hint = options.runtime_error_param_hint
@@ -86,8 +67,8 @@ class ConfigCommandBase:
             apprc=apprc,
             editor_app_cls=options.editor_app_cls,
             config_group_name=options.config_group_name,
-            initial_storage_with_context_hook=(
-                options.initial_storage_with_context
+            initial_workspace_with_context_hook=(
+                options.initial_workspace_with_context
             ),
         )
 
@@ -96,25 +77,45 @@ class ConfigCommandBase:
         return self.state_resolver.state(ctx)
 
     def manager(self, ctx: typer.Context) -> ConfigManager:
-        """Capture management inputs from the active CLI invocation.
+        """Capture selection and source inputs from the active CLI invocation.
 
         :param ctx: Generated command context.
-        :return: Shared operations with explicit files and selector precedence.
+        :return: Manager using this invocation's workspace and path snapshot.
         """
         source = self.cli_selector_context(ctx)
-        context = cli_runtime_context_from(ctx)
-        storage = self.cli_context_param(ctx, "storage")
-        return self.apprc.manage(
-            ResolveOptions(
-                storage_required=context.storage_required
-                if context is not None
-                else False,
-                env_files=source.env_files,
-                env_file_overrides_os_environ=source.env_file_overrides_os_environ,
-                load_dotenv_layers=source.load_dotenv_layers,
-                storage=storage if isinstance(storage, str) else None,
+        workspace = self.cli_context_param(ctx, "workspace")
+        runtime_context = self.selector_context_reader.runtime_context(ctx)
+        runtime_options = (
+            runtime_context.runtime_options
+            if runtime_context is not None
+            else None
+        )
+        options = ResolveOptions(
+            workspace=workspace if isinstance(workspace, str) else None,
+            workspace_required=(
+                runtime_context.workspace_required
+                if runtime_context is not None
+                else False
             ),
-            environment=source.environment,
+            env_files=source.env_files,
+            env_file_overrides_os_environ=source.env_file_overrides_os_environ,
+            load_dotenv_layers=source.load_dotenv_layers,
+            layout=runtime_options.layout
+            if runtime_options is not None
+            else None,
+        )
+        if source.paths is None:
+            return self.apprc.manage(options, environment=source.environment)
+        return self.apprc._manage_with_paths(
+            options, source.environment, source.paths
+        )
+
+    def workspace_manager(self, ctx: typer.Context) -> WorkspaceManager:
+        """Return workspace operations bound to the CLI's captured inputs."""
+        manager = self.manager(ctx)
+        return self.apprc.workspaces(
+            manager.options,
+            environment=manager.environment,
         )
 
     def context_state(self, ctx: typer.Context) -> DefaultConfigCliState | None:
@@ -151,264 +152,139 @@ class ConfigCommandBase:
         return self.selector_context_reader.cli_context_param(ctx, name)
 
     def cli_selector_context(self, ctx: typer.Context) -> ConfigSelectorContext:
-        """Return CLI explicit env-file values for selector-only reads."""
+        """Return explicit env-file values and captured environment."""
         return self.selector_context_reader.cli_selector_context(ctx)
 
-    def apprc_dir_bad_parameter(
+    def app_path_bad_parameter(
         self,
         exc: AppRCDirectoryError | OSError,
     ) -> typer.BadParameter:
-        """Return Typer's error type for AppRC directory failures.
+        """Adapt a managed AppRC path failure to Typer's error type."""
+        return app_path_bad_parameter(exc)
 
-        :param exc: Path preparation failure from AppRC-managed files.
-        :return: Typer parameter error with the shared directory hint.
-        """
-        return apprc_dir_bad_parameter(exc)
-
-    def apprc_toml_bad_parameter(
-        self,
-        exc: ValueError,
-    ) -> typer.BadParameter:
-        """Return Typer's error type for AppRC TOML failures."""
-        return typer.BadParameter(
-            str(exc), param_hint=self.apprc.schema.apprc_dir_env_key
-        )
-
-    def require_storage_support(self) -> None:
-        """Raise a CLI error when a storage command is unavailable."""
-        if not self.apprc.schema.uses_storage():
+    def require_workspace_support(self) -> None:
+        """Raise a CLI error when workspace selection is not declared."""
+        if not self.apprc.schema.uses_workspaces():
             raise typer.BadParameter(
-                f"{self.apprc.schema.display_name} does not use AppRC storage.",
-                param_hint="storage",
+                f"{self.apprc.schema.display_name} does not use AppRC workspaces.",
+                param_hint="workspace",
             )
 
-    def require_storage_registry_support(self) -> None:
-        """Raise a CLI error when storage is unavailable."""
-        self.require_storage_support()
-
-    def load_optional_storage_registry(
-        self,
-        *,
-        selector_context: ConfigSelectorContext | None = None,
-    ) -> StorageRegistry | None:
-        """Return the AppRC TOML storage registry when it exists."""
-        context = selector_context or _empty_selector_context()
-        try:
-            return load_optional_runtime_storage_registry(
-                self.apprc.schema,
-                proc_env=context.proc_env,
+    def require_workspace_registry_support(self) -> None:
+        """Raise a CLI error when the declaration does not enable a registry."""
+        self.require_workspace_support()
+        if not self.apprc.schema.require_workspaces().registry:
+            raise typer.BadParameter(
+                f"{self.apprc.schema.display_name} uses direct workspace paths, "
+                "not a registry.",
+                param_hint="workspace",
             )
-        except AppRCDirectoryError as exc:
-            raise self.apprc_dir_bad_parameter(exc) from exc
-        except ValueError as exc:
-            raise self.apprc_toml_bad_parameter(exc) from exc
 
-    def load_storage_registry_or_empty(
+    def active_workspace_root_for_cli(
         self,
-        *,
-        selector_context: ConfigSelectorContext | None = None,
-    ) -> StorageRegistry:
-        """Return a parsed or empty storage registry without writing."""
-        self.require_storage_registry_support()
-        context = selector_context or _empty_selector_context()
-        try:
-            return load_create_or_empty_storage_registry(
-                AppFiles(self.apprc.schema).preferred_apprc_toml_path(
-                    context.proc_env
-                )
-            )
-        except AppRCDirectoryError as exc:
-            raise self.apprc_dir_bad_parameter(exc) from exc
-        except ValueError as exc:
-            raise self.apprc_toml_bad_parameter(exc) from exc
-
-    def active_storage_root_for_cli(
-        self,
-        resolved_state: ResolvedConfigState,
+        resolved_state: ResolvedConfigState | None,
         *,
         selector_context: ConfigSelectorContext | None = None,
     ) -> Path | None:
-        """Return the selected storage root using app overrides first."""
-        context = selector_context or _empty_selector_context()
+        """Return the selected workspace root from the current resolution."""
+        if resolved_state is None:
+            return None
+        if (
+            resolved_state.app_owned
+            and self.active_workspace_root_with_context_hook is not None
+        ):
+            context = selector_context or _empty_selector_context()
+            return self.active_workspace_root_with_context_hook(
+                resolved_state.state, context
+            )
         state = resolved_state.state
-        try:
-            if (
-                resolved_state.app_owned
-                and self.active_storage_root_with_context_hook is not None
-            ):
-                return self.active_storage_root_with_context_hook(
-                    state,
-                    context,
-                )
-            return active_storage_root_from_state(
-                self.apprc,
-                cast(ConfigCliState, state),
-                explicit_values=context.explicit_values,
-                env_file_overrides_os_environ=(
-                    context.env_file_overrides_os_environ
-                ),
-            )
-        except StorageSelectorError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=exc.param_hint,
-            ) from exc
-        except AppRCDirectoryError as exc:
-            raise self.apprc_dir_bad_parameter(exc) from exc
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc), param_hint="--storage") from exc
+        resolved = getattr(state, "resolved", None)
+        if resolved is not None and resolved.workspace is not None:
+            return resolved.workspace.root
+        return None
 
-    def required_storage_root_for_write(
-        self,
-        resolved_state: ResolvedConfigState,
-        *,
-        selector_context: ConfigSelectorContext | None = None,
-    ) -> Path:
-        """Return a writable active storage root or raise a CLI error."""
-        storage_root = self.active_storage_root_for_cli(
-            resolved_state,
-            selector_context=selector_context,
-        )
-        if storage_root is None:
-            raise typer.BadParameter(
-                f"No active {self.apprc.schema.display_name} storage root. Run "
-                f"`{self.config_command_text('setup --yes --storage-root /absolute/path/to/storage')}` "
-                "or pass --storage NAME_OR_PATH.",
-                param_hint="--storage",
-            )
-        return self.validate_storage_root_for_write(storage_root)
-
-    def validate_storage_root_for_write(self, storage_root: Path) -> Path:
-        """Reject writes when the active storage root no longer exists."""
-        root = Path(storage_root).expanduser()
-        if not root.is_dir():
-            raise typer.BadParameter(
-                f"Active storage root does not exist: {root}",
-                param_hint="--storage",
-            )
-        return root
-
-    def best_effort_active_storage_root_from_env(
-        self,
-        *,
-        storage_registry: StorageRegistry | None,
-        selector_context: ConfigSelectorContext | None = None,
-    ) -> Path | None:
-        """Return the env-selected storage root, suppressing selector errors."""
-        context = selector_context or _empty_selector_context()
-        try:
-            storage_root = active_storage_root_from_env(
-                self.apprc,
-                registry=storage_registry,
-                explicit_values=context.explicit_values,
-                env_file_overrides_os_environ=(
-                    context.env_file_overrides_os_environ
-                ),
-            )
-            return storage_root
-        except AppRCDirectoryError as exc:
-            raise self.apprc_dir_bad_parameter(exc) from exc
-        except (StorageSelectorError, ValueError):
-            selector_key = self.apprc.schema.require_storage_selector_env_key()
-            selected = select_storage_selector(
-                storage=None,
-                original_env=os.environ,
-                explicit_values=context.explicit_values,
-                env_file_overrides_os_environ=(
-                    context.env_file_overrides_os_environ
-                ),
-                storage_selector_env_key=selector_key,
-                selected_storage=None,
-            )
-            if selected is None or not storage_selector_is_path_like(
-                selected[1]
-            ):
-                return None
-            selection = resolve_storage_selector_value(
-                registry=None,
-                apprc_toml_path=AppFiles(
-                    self.apprc.schema
-                ).preferred_apprc_toml_path(context.proc_env),
-                raw_value=selected[1],
-                storage_selector_env_key=selector_key,
-                source=selected[0],
-            )
-            return selection.root
-
-    def active_storage_root_for_editor(
+    def active_workspace_root_for_editor(
         self,
         current_state: ResolvedConfigState | None,
         *,
         selector_context: ConfigSelectorContext | None = None,
     ) -> Path | None:
-        """Return the storage root selected for zero-write editor reads."""
-        if not self.apprc.schema.uses_storage():
+        """Return the workspace root selected for zero-write editor reads."""
+        if not self.apprc.schema.uses_workspaces():
             return None
-        context = selector_context or _empty_selector_context()
-        try:
-            if current_state is not None:
-                return self.active_storage_root_for_cli(
-                    current_state,
-                    selector_context=context,
-                )
-            return active_storage_root_from_env(
-                self.apprc,
-                explicit_values=context.explicit_values,
+        resolved = (
+            current_state.state.resolved if current_state is not None else None
+        )
+        if resolved is None:
+            context = selector_context or _empty_selector_context()
+            options = ResolveOptions(
+                workspace=context.workspace,
+                env_files=context.env_files,
                 env_file_overrides_os_environ=(
                     context.env_file_overrides_os_environ
                 ),
+                load_dotenv_layers=context.load_dotenv_layers,
+                layout=context.layout,
             )
-        except StorageSelectorError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=exc.param_hint,
-            ) from exc
-        except AppRCDirectoryError as exc:
-            raise self.apprc_dir_bad_parameter(exc) from exc
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc), param_hint="--storage") from exc
+            manager = (
+                self.apprc.manage(options, environment=context.environment)
+                if context.paths is None
+                else self.apprc._manage_with_paths(
+                    options, context.environment, context.paths
+                )
+            )
+            resolved = manager.resolve()
+        return (
+            resolved.workspace.root if resolved.workspace is not None else None
+        )
+
+    def cli_selector_context_empty(self) -> ConfigSelectorContext:
+        """Return an empty selector context for non-Typer callers."""
+        return _empty_selector_context()
 
     def default_runtime_payload(
         self,
         *,
-        storage_root: Path | None,
+        workspace_root: Path | None,
         resolved: ResolvedConfig,
     ) -> dict[str, Any]:
         """Return generic ``config show`` data when the app provides none."""
         return default_runtime_payload(
-            self.apprc, storage_root=storage_root, resolved=resolved
+            self.apprc, workspace_root=workspace_root, resolved=resolved
         )
 
     def launch_config_editor(
         self,
         *,
         current_state: ResolvedConfigState | None,
-        storage_registry: StorageRegistry | None,
-        storage_registry_error: str | None,
-        active_storage_root: Path | None,
-        storage_selector_issue: StorageSelectorIssue | None = None,
+        workspace_registry: WorkspaceRegistry | None,
+        workspace_registry_error: str | None,
+        active_workspace_root: Path | None,
+        workspace_selector_issue: WorkspaceSelectorIssue | None = None,
         selector_context: ConfigSelectorContext | None = None,
+        workspace_manager: WorkspaceManager | None = None,
     ) -> None:
         """Create and run the Textual config editor."""
         self.editor_launcher.launch(
             current_state=current_state,
-            storage_registry=storage_registry,
-            storage_registry_error=storage_registry_error,
-            active_storage_root=active_storage_root,
-            storage_selector_issue=storage_selector_issue,
+            workspace_registry=workspace_registry,
+            workspace_registry_error=workspace_registry_error,
+            active_workspace_root=active_workspace_root,
+            workspace_selector_issue=workspace_selector_issue,
             selector_context=selector_context,
+            workspace_manager=workspace_manager,
         )
 
-    def initial_storage_for_editor(
+    def initial_workspace_for_editor(
         self,
         resolved_state: ResolvedConfigState,
         *,
-        storage_registry: StorageRegistry | None,
+        workspace_registry: WorkspaceRegistry | None,
         selector_context: ConfigSelectorContext | None = None,
     ) -> str | None:
-        """Return the storage name the editor should select on startup."""
-        return self.editor_launcher.initial_storage(
+        """Return the workspace name the editor should select on startup."""
+        return self.editor_launcher.initial_workspace(
             resolved_state,
-            storage_registry=storage_registry,
+            workspace_registry=workspace_registry,
             selector_context=selector_context,
         )

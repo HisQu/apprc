@@ -21,38 +21,43 @@ def _process_env_app() -> rc.AppRC:
     )
 
 
-def test_direct_declaration_accepts_optional_storage() -> None:
-    """One constructor expresses process-only and storage applications."""
+def test_direct_declaration_accepts_independent_paths_and_workspaces() -> None:
     MyRC = rc.AppRC(
         app_id="haiu",
         display_name="HAIU",
         config_package="haiu.config",
-        storage=rc.Storage(selector_env_key="HAIU_STORAGE"),
+        paths=rc.Paths(config=True, appdata=True),
+        workspaces=rc.Workspaces(
+            selector_env_key="HAIU_WORKSPACE",
+            registry=False,
+        ),
     )
 
     assert MyRC.schema.app_id == "haiu"
     assert MyRC.schema.display_name == "HAIU"
-    assert MyRC.schema.storage_selector_env_key == "HAIU_STORAGE"
+    assert MyRC.schema.paths == rc.Paths(config=True, appdata=True)
+    assert MyRC.schema.workspace_selector_env_key == "HAIU_WORKSPACE"
     assert MyRC.schema.defaults_dotenv_filename == "apprc.defaults.env"
     assert MyRC.schema.user_dotenv_filename == "apprc.user.env"
-    assert MyRC.schema.storage_dotenv_filename == "apprc.storage.env"
+    assert MyRC.schema.workspace_dotenv_filename == "apprc.workspace.env"
     assert MyRC.schema.apprc_toml_filename == "apprc.toml"
 
 
 def test_direct_declaration_accepts_independent_user_dotenv() -> None:
     MyRC = rc.AppRC(
         app_id="demo",
-        config_package="demo.config",
+        paths=rc.Paths(config=True),
         user_dotenv=rc.UserDotenv(),
     )
 
     assert MyRC.schema.uses_user_dotenv() is True
-    assert MyRC.schema.uses_storage() is False
+    assert MyRC.schema.uses_workspaces() is False
 
 
 def test_direct_declaration_carries_setup_next_step_into_schema() -> None:
     MyRC = rc.AppRC(
         app_id="demo",
+        paths=rc.Paths(config=True),
         user_dotenv=rc.UserDotenv(),
         setup_next_step="demo run",
     )
@@ -82,22 +87,26 @@ def test_registers_env_backed_config_with_full_env_keys() -> None:
     assert MyRC.schema.envs == (LLMConfig,)
 
 
-def test_storage_dependent_section_requires_storage_capability() -> None:
+def test_workspace_dependent_section_requires_workspace_capability() -> None:
     app = _process_env_app()
 
-    with pytest.raises(ValueError, match="requires storage=rc.Storage"):
+    with pytest.raises(ValueError, match="requires workspaces"):
 
-        @app.config("data", prefix="DEMO_", requires_storage=True)
+        @app.config("data", prefix="DEMO_", requires_workspace=True)
         class DataSettings(rc.Config):
             value: str = rc.field("DEMO_VALUE", required=True)
 
 
-def test_storage_dependent_section_must_be_env_backed() -> None:
-    app = rc.AppRC(app_id="demo", storage=rc.Storage())
+def test_workspace_dependent_section_must_be_env_backed() -> None:
+    app = rc.AppRC(
+        app_id="demo",
+        paths=rc.Paths(config=True),
+        workspaces=rc.Workspaces(),
+    )
 
     with pytest.raises(ValueError, match="requires an rc.Config section"):
 
-        @app.config("data", requires_storage=True)
+        @app.config("data", requires_workspace=True)
         class DataSettings(rc.ConfigBase):
             value: str = "default"
 
@@ -596,39 +605,25 @@ def test_bundle_ignores_config_base_internal_fields() -> None:
     assert isinstance(config.storage, StorageConfig)
 
 
-def test_mount_cli_accepts_only_typer() -> None:
-    """The public mount method is Typer-specific."""
-    MyRC = _process_env_app()
+def test_mount_app_cli_returns_declared_groups_and_accepts_typer() -> None:
+    """The public mount exposes config and app paths through one Typer app."""
+    MyRC = rc.AppRC(
+        app_id="public-mounted-app",
+        paths=rc.Paths(config=True, appdata=True, cache=True, state=True),
+    )
     app = typer.Typer()
 
-    mounted = rc.cli.mount_config_cli(app, MyRC)
-    assert isinstance(mounted, typer.Typer)
+    groups = rc.cli.mount_app_cli(app, MyRC)
 
-    with pytest.raises(TypeError, match="typer.Typer instances only"):
-        rc.cli.mount_config_cli(object(), MyRC)  # type: ignore[arg-type]
-
-
-def test_mount_appdata_cli_is_public_and_accepts_plain_typer() -> None:
-    """The appdata mount is public and does not require a config mount."""
-    MyRC = _process_env_app()
-    app = typer.Typer()
-
-    mounted = rc.cli.mount_appdata_cli(app, MyRC)
-
-    assert isinstance(mounted, typer.Typer)
-    result = CliRunner().invoke(app, ["appdata", "paths", "--json"])
+    assert "config" in groups
+    result = CliRunner().invoke(app, ["paths", "--json"])
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output).keys() == {
-        "apprc_dir",
-        "managed_files",
-        "internal_storage_roots",
-        "external_storage_roots",
-        "stale_storage",
-        "stale_user_dotenv",
-    }
-
-    with pytest.raises(TypeError, match="typer.Typer instances only"):
-        rc.cli.mount_appdata_cli(object(), MyRC)  # type: ignore[arg-type]
+    payload = json.loads(result.output)
+    assert "paths" in payload
+    with pytest.raises(
+        TypeError, match="mount_app_cli supports typer.Typer instances only"
+    ):
+        rc.cli.mount_app_cli(object(), MyRC)  # type: ignore[arg-type]
 
 
 def test_explicit_resolution_constructs_registered_config(

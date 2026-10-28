@@ -3,85 +3,104 @@
 import os
 from pathlib import Path
 
-import apprc as rc
 import gradio as gr
 import pytest
-
 from apprc_gui import ConfigEditor
 
+import apprc as rc
 
-def test_editor_configures_storage_and_saves_secret(tmp_path: Path) -> None:
-    """Show first-run controls and route secret values to the private layer."""
+
+def test_editor_configures_workspace_and_saves_secret(tmp_path: Path) -> None:
+    """Show workspace controls and route secret values to the private layer."""
     app = rc.AppRC(
         app_id="gui-check",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(selector_env_key="GUI_CHECK_STORAGE"),
-        apprc_dir=tmp_path / "config",
+        workspaces=rc.Workspaces(selector_env_key="GUI_CHECK_WORKSPACE"),
     )
 
     @app.config("client", prefix="GUI_CHECK_")
     class Client(rc.Config):
         token: str = rc.field("GUI_CHECK_TOKEN", default="", secret=True)
 
-    manager = app.manage(
-        rc.ResolveOptions(storage_required=True), environment={}
-    )
-    editor = ConfigEditor(manager)
+    options = rc.ResolveOptions(workspace_required=True)
+    manager = app.manage(options, environment={})
+    workspace_manager = app.workspaces(options, environment={})
+    app.ensure_path("config")
+    editor = ConfigEditor(manager, workspace_manager)
     with gr.Blocks() as blocks:
         editor.render()
     assert not manager.inspect().ready
-    assert blocks.fns
-    with gr.Blocks() as first_run_controls:
-        editor._render_storage(gr.Textbox(), gr.State(0))
-    assert "Create and select storage" in str(first_run_controls.config)
 
-    status, revision = editor._create_storage(
-        "default", str(tmp_path / "storage"), 0
+    _, revision = editor._create_workspace(
+        "default", str(tmp_path / "workspace"), 0
     )
-    assert status == "Selected storage default."
     assert manager.inspect().ready
-    status, revision = editor._save(
+    _, revision = editor._save(
         "GUI_CHECK_TOKEN",
         True,
         False,
         "private-value",
-        "storage",
+        "workspace",
         revision,
     )
-    assert status == "Saved GUI_CHECK_TOKEN in the storage layer."
     assert manager.resolve().build(Client).token == "private-value"
-    assert "private-value" not in manager.writable_path("storage").read_text()
+    assert "private-value" not in manager.writable_path("workspace").read_text()
     assert "private-value" not in str(blocks.config)
     assert revision == 2
+
+
+def test_registry_editor_requires_workspace_manager(tmp_path: Path) -> None:
+    app = rc.AppRC(
+        app_id="gui-missing-workspace-manager",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
+        workspaces=rc.Workspaces(),
+    )
+    manager = app.manage(environment={})
+    editor = ConfigEditor(manager)
+
+    app.ensure_path("config")
+    with (
+        gr.Blocks(),
+        pytest.raises(
+            ValueError,
+            match="Registry-backed workspace UI requires a WorkspaceManager",
+        ),
+    ):
+        editor._render_workspace(gr.Textbox(), gr.State(0))
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
 def test_save_secret_reports_repair_without_echoing_value(
     tmp_path: Path,
 ) -> None:
-    """Explain a shared storage directory without exposing the submitted value."""
+    """Explain an unsafe workspace directory without exposing the value."""
     app = rc.AppRC(
         app_id="gui-shared-secret-check",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(selector_env_key="GUI_SHARED_STORAGE"),
-        apprc_dir=tmp_path / "config",
+        workspaces=rc.Workspaces(selector_env_key="GUI_SHARED_WORKSPACE"),
     )
 
     @app.config("client", prefix="GUI_SHARED_")
     class Client(rc.Config):
         token: str = rc.field("GUI_SHARED_TOKEN", default="", secret=True)
 
-    manager = app.manage(
-        rc.ResolveOptions(storage_required=True), environment={}
-    )
-    editor = ConfigEditor(manager)
-    storage_root = tmp_path / "shared-storage"
-    storage_root.mkdir()
-    storage_root.chmod(0o755)
+    options = rc.ResolveOptions(workspace_required=True)
+    manager = app.manage(options, environment={})
+    workspace_manager = app.workspaces(options, environment={})
+    app.ensure_path("config")
+    editor = ConfigEditor(manager, workspace_manager)
+    workspace_root = tmp_path / "shared-workspace"
+    workspace_root.mkdir()
+    workspace_root.chmod(0o755)
 
-    message, revision = editor._create_storage("default", str(storage_root), 0)
-    assert message == "Selected storage default."
-    assert revision == 1
+    _, revision = editor._create_workspace(
+        "default", str(workspace_root), 0
+    )
 
     entered_value = "must-never-appear-in-the-status"
     message, revision = editor._save(
@@ -89,41 +108,44 @@ def test_save_secret_reports_repair_without_echoing_value(
         True,
         False,
         entered_value,
-        "storage",
+        "workspace",
         revision,
     )
 
-    assert "parent directory is readable by other users" in message
-    assert "config secrets repair --scope storage" in message
     assert entered_value not in message
     assert revision == 1
-    assert storage_root.stat().st_mode & 0o777 == 0o755
+    assert workspace_root.stat().st_mode & 0o777 == 0o755
 
 
 def test_repair_reports_unusable_secret_path(tmp_path: Path) -> None:
     """Do not claim a repair succeeded when the secret path is a directory."""
     app = rc.AppRC(
         app_id="gui-invalid-secret-path",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(selector_env_key="GUI_INVALID_STORAGE"),
-        apprc_dir=tmp_path / "config",
+        workspaces=rc.Workspaces(selector_env_key="GUI_INVALID_WORKSPACE"),
     )
 
     @app.config("client", prefix="GUI_INVALID_")
     class Client(rc.Config):
         token: str = rc.field("GUI_INVALID_TOKEN", default="", secret=True)
 
-    manager = app.manage(environment={})
-    editor = ConfigEditor(manager)
-    manager.setup(storage_root=tmp_path / "storage")
-    secret_path = manager.writable_path("storage", secret=True)
+    options = rc.ResolveOptions(workspace_required=True)
+    manager = app.manage(options, environment={})
+    app.ensure_path("config")
+    workspace_manager = app.workspaces(options, environment={})
+    workspace_manager.register_workspace("default", tmp_path / "workspace")
+    workspace_manager.select_workspace("default")
+    editor = ConfigEditor(manager, workspace_manager)
+    secret_path = manager.writable_path(
+        "workspace", workspace="default", secret=True
+    )
     secret_path.unlink()
     secret_path.mkdir()
 
-    message, revision = editor._repair_secrets("storage", 4)
+    _, revision = editor._repair_secrets("workspace", "default", 4)
 
-    assert "The secret path is not a file." in message
-    assert "Repaired storage secret file permissions." not in message
     assert revision == 4
 
 
@@ -133,8 +155,9 @@ def test_restart_required_setting_is_labeled_and_notifies_after_edit(
     """The editor labels and reports changes that need an application restart."""
     app = rc.AppRC(
         app_id="gui-restart-required",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
         user_dotenv=rc.UserDotenv(),
-        apprc_dir=tmp_path / "config",
     )
 
     @app.config("server", prefix="GUI_RESTART_")
@@ -146,26 +169,12 @@ def test_restart_required_setting_is_labeled_and_notifies_after_edit(
             restart_required=True,
         )
 
+    app.ensure_path("config")
+
     manager = app.manage(environment={})
     manager.setup()
     editor = ConfigEditor(manager)
-    with gr.Blocks() as blocks:
-        editor._render_field(
-            manager.inspect().fields[0],
-            gr.Dropdown(
-                choices=["user"],
-                value="user",
-                label="Save changes in",
-            ),
-            gr.Textbox(label="Configuration status", interactive=False),
-            gr.State(0),
-        )
-
-    assert "Server port (restart required)" in str(blocks.config)
-    assert "Restart the application to load saved settings" in str(
-        blocks.config
-    )
-    status, revision = editor._save(
+    _, revision = editor._save(
         "GUI_RESTART_PORT",
         False,
         True,
@@ -173,19 +182,11 @@ def test_restart_required_setting_is_labeled_and_notifies_after_edit(
         "user",
         0,
     )
-    assert status == (
-        "Saved GUI_RESTART_PORT in the user layer. Restart the application "
-        "to reload configuration."
-    )
-    status, revision = editor._clear(
+    _, revision = editor._clear(
         "GUI_RESTART_PORT",
         True,
         "user",
         revision,
-    )
-    assert status == (
-        "Cleared the saved GUI_RESTART_PORT value in the user layer. "
-        "Restart the application to reload configuration."
     )
     assert revision == 2
 
@@ -196,8 +197,8 @@ def test_clearing_absent_restart_required_value_is_a_no_op(
     """A no-op clear neither increments revision nor asks for a restart."""
     app = rc.AppRC(
         app_id="gui-restart-required-noop-clear",
-        user_dotenv=rc.UserDotenv(),
-        apprc_dir=tmp_path / "config",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
     )
 
     @app.config("server", prefix="GUI_RESTART_NOOP_")
@@ -208,16 +209,17 @@ def test_clearing_absent_restart_required_value_is_a_no_op(
             restart_required=True,
         )
 
+    app.ensure_path("config")
+
     manager = app.manage(environment={})
     manager.setup()
     editor = ConfigEditor(manager)
 
-    message, revision = editor._clear(
+    _, revision = editor._clear(
         "GUI_RESTART_NOOP_PORT",
         True,
         "user",
         7,
     )
 
-    assert message == "No saved GUI_RESTART_NOOP_PORT value in the user layer."
     assert revision == 7

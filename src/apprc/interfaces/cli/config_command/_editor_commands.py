@@ -2,20 +2,14 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
-import os
-
 # == 3rd Party ===============================
 import typer
 
 # == Internal ================================
 from apprc.interfaces.cli.config_command._base import ConfigCommandBase
 from apprc.user_files.app_home.locations import AppRCDirectoryError
-from apprc.user_files.storage_roots.registry import StorageRegistry
-from apprc.user_files.storage_roots.selector import (
-    StorageSelectorIssue,
-    select_storage_selector_input,
-)
+from apprc.user_files.workspace_roots.model import WorkspaceRegistry
+from apprc.user_files.workspace_roots.selector import WorkspaceSelectorIssue
 
 
 class EditorConfigCommands(ConfigCommandBase):
@@ -25,82 +19,42 @@ class EditorConfigCommands(ConfigCommandBase):
         """Open the Textual editor for AppRC dotenv override files."""
         selector_context = self.cli_selector_context(ctx)
         current_state = self.resolved_config_state(ctx)
-        try:
-            storage_registry_error: str | None = None
+        workspace_registry: WorkspaceRegistry | None = None
+        workspace_registry_error: str | None = None
+        workspace_selector_issue: WorkspaceSelectorIssue | None = None
+        active_workspace_root = None
+        workspace_manager = None
+        if self.apprc.schema.uses_workspaces():
+            workspace_manager = self.workspace_manager(ctx)
+            if self.apprc.schema.require_workspaces().registry:
+                try:
+                    workspace_registry = workspace_manager.registry()
+                except (OSError, ValueError) as exc:
+                    workspace_registry_error = str(exc)
             try:
-                optional_registry = (
-                    self.load_storage_registry_or_empty(
-                        selector_context=selector_context,
-                    )
-                    if self.apprc.schema.uses_storage()
-                    else None
-                )
-            except typer.BadParameter as exc:
-                optional_registry = None
-                storage_registry_error = str(exc)
-
-            selector_issue: StorageSelectorIssue | None = None
-            try:
-                active_storage_root = self.active_storage_root_for_editor(
+                active_workspace_root = self.active_workspace_root_for_editor(
                     current_state,
                     selector_context=selector_context,
                 )
-            except typer.BadParameter as exc:
-                active_storage_root = (
-                    self.best_effort_active_storage_root_from_env(
-                        storage_registry=optional_registry,
-                        selector_context=selector_context,
-                    )
-                )
-                selector_issue = self._storage_selector_issue(
-                    ctx,
-                    registry=optional_registry,
+            except (OSError, ValueError) as exc:
+                workspace_selector_issue = WorkspaceSelectorIssue(
+                    selector=None,
                     message=str(exc),
+                    configured_workspace=(
+                        workspace_registry.selected_workspace
+                        if workspace_registry is not None
+                        else None
+                    ),
                 )
+        try:
             self.launch_config_editor(
                 current_state=current_state,
-                storage_registry=optional_registry,
-                storage_registry_error=storage_registry_error,
-                active_storage_root=active_storage_root,
-                storage_selector_issue=selector_issue,
+                workspace_registry=workspace_registry,
+                workspace_registry_error=workspace_registry_error,
+                active_workspace_root=active_workspace_root,
+                workspace_selector_issue=workspace_selector_issue,
                 selector_context=selector_context,
+                workspace_manager=workspace_manager,
             )
         except AppRCDirectoryError as exc:
-            raise self.apprc_dir_bad_parameter(exc) from exc
-
-    def _storage_selector_issue(
-        self,
-        ctx: typer.Context,
-        *,
-        registry: StorageRegistry | None,
-        message: str,
-    ) -> StorageSelectorIssue:
-        """Retain the selector layer that prevented editor startup.
-
-        :param ctx: Active generated config command context.
-        :param registry: Readable registry, when one exists.
-        :param message: Selector-resolution failure.
-        :return: Structured issue for the Textual editor.
-        """
-        selector_context = self.cli_selector_context(ctx)
-        selector_key = self.apprc.schema.require_storage_selector_env_key()
-        raw_storage = self.cli_context_param(ctx, "storage")
-        selector = select_storage_selector_input(
-            storage=raw_storage if isinstance(raw_storage, str) else None,
-            original_env=os.environ,
-            explicit_values=selector_context.explicit_values,
-            env_file_overrides_os_environ=(
-                selector_context.env_file_overrides_os_environ
-            ),
-            storage_selector_env_key=selector_key,
-            selected_storage=(
-                registry.selected_storage if registry is not None else None
-            ),
-        )
-        return StorageSelectorIssue(
-            selector=selector,
-            message=message,
-            configured_storage=(
-                registry.selected_storage if registry is not None else None
-            ),
-        )
+            raise self.app_path_bad_parameter(exc) from exc

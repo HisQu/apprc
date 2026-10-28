@@ -6,20 +6,22 @@
   - [Public namespaces](#public-namespaces)
   - [Declarations](#declarations)
   - [Config fields](#config-fields)
+  - [Application paths](#application-paths)
+  - [Layout bootstrap](#layout-bootstrap)
+  - [Resolution](#resolution)
+  - [Workspace selection](#workspace-selection)
   - [Config bundles](#config-bundles)
   - [Dependency config imports](#dependency-config-imports)
-  - [Resolution](#resolution)
 - [Value sources and files](#value-sources-and-files)
   - [Source precedence](#source-precedence)
-  - [Storage selection](#storage-selection)
   - [Managed files](#managed-files)
 - [Management and lifecycle](#management-and-lifecycle)
-  - [Management](#management)
-  - [Storage operations](#storage-operations)
+  - [ConfigManager](#configmanager)
+  - [WorkspaceManager](#workspacemanager)
+  - [Maintenance](#maintenance)
   - [Provenance and lifecycle](#provenance-and-lifecycle)
 - [Commands and errors](#commands-and-errors)
   - [Terminal commands](#terminal-commands)
-  - [Application-data commands](#application-data-commands)
   - [Errors and write guarantees](#errors-and-write-guarantees)
 
 <br>
@@ -28,391 +30,336 @@
 
 ## Public namespaces
 
-Examples use `import apprc as rc`. These names belong to the public API:
+Examples use `import apprc as rc`.
 
 | Import | Purpose |
 | --- | --- |
-| [`rc.AppRC`](Explanations.md#apprc) | Declare the application and register config sections. |
-| [`rc.Config`, `rc.ConfigBase`, `rc.field`](Explanations.md#config-sections-and-fields) | [Define typed settings](How-To-User-Guides.md#read-typed-settings) and their documentation. |
-| [`rc.UserDotenv`](Explanations.md#user-dotenv-and-the-apprc-directory) | Enable saved user overrides. |
-| [`rc.Storage`](Explanations.md#storage) | Enable named persistent data directories. |
-| [`rc.ResolveOptions`, `rc.ResolvedConfig`](Explanations.md#resolvedconfig) | Choose configuration inputs and build settings from them. |
-| `rc.schema` | Read registered section and field metadata, including `owner_for()`. |
-| [`rc.provenance`](Explanations.md#provenance) | Read field origin records and format them for inspection. |
-| `rc.files` | Read dotenv files and access file result and error types. |
-| `rc.storage` | Read registry and selection records; mutations go through [ConfigManager](Explanations.md#configmanager). |
-| [`rc.cli`](Explanations.md#config-cli) | Add Typer commands, CLI state, and diagnostic output. |
-| [`rc.tui`](Explanations.md#config-editor) | `ConfigEditorApp` and `ConfigSetupApp` terminal interfaces. |
-| [`apprc_gui.ConfigEditor`](Explanations.md#gradio-editor) | Optional Gradio editor for [browser settings pages](How-To-User-Guides.md#add-a-gradio-settings-page). |
-| `apprc.scaffold` | `ConfigScaffoldRequest` and `scaffold_config_package()` for [generating a config package](How-To-User-Guides.md#generate-a-config-package). |
+| `rc.AppRC` | Declare an application and register config sections. |
+| `rc.Config`, `rc.ConfigBase`, `rc.field` | Define typed settings and field documentation. |
+| `rc.Paths`, `rc.Layout`, `rc.AppPaths` | Declare, choose, and inspect independent filesystem paths. |
+| `rc.UserDotenv` | Enable saved user preferences; requires config enabled. |
+| `rc.Workspaces`, `rc.WorkspaceManager` | Declare and manage selectable working directories. |
+| `rc.ResolveOptions`, `rc.ResolvedConfig` | Choose inputs and construct settings from a snapshot. |
+| `rc.MaintenanceHandlers`, `rc.RemovalPlan`, `rc.RemovalResult` | Supply and report supported category operations. |
+| `rc.schema`, `rc.provenance`, `rc.files` | Inspect declaration metadata, provenance, and dotenv parsing. |
+| `rc.workspaces` | Read workspace records and registry helpers. |
+| `rc.cli`, `rc.tui` | Typer adapters and Textual interfaces. |
+| `apprc_gui.ConfigEditor` | Optional Gradio editor. |
+| `apprc.scaffold` | `ConfigScaffoldRequest` and `scaffold_config_package()`. |
 
-`apprc-core` owns the Python modules, including lazily imported terminal modules.
-Using terminal implementations requires the `apprc` distribution's dependencies.
-`apprc.interfaces` remains a compatibility import; new code should use `rc.cli`
-or `rc.tui`. The [package explanation](Explanations.md#installed-packages-and-installer-builds)
-describes why both distributions use the same import name.
+`apprc-core` owns the `apprc` modules; terminal use requires the `apprc`
+distribution. `apprc-gui` provides `apprc_gui`. New code uses the public
+`rc.cli` and `rc.tui` namespaces.
 
 ## Declarations
 
-[`rc.AppRC`](Explanations.md#apprc) takes keyword arguments:
+`rc.AppRC` accepts keyword arguments:
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
-| `app_id` | Required | Application identity used for the default directory and derived environment keys. |
-| `display_name` | `app_id` | Human-readable application name. |
-| `command_name` | `app_id` | Executable name printed in terminal instructions. |
-| `config_package` | `None` | Import package containing optional [packaged defaults](How-To-User-Guides.md#ship-defaults-with-the-application). |
-| `user_dotenv` | `None` | `UserDotenv()` enables the [user dotenv](Explanations.md#user-dotenv-and-the-apprc-directory). |
-| `storage` | `None` | `Storage()` enables [storage](Explanations.md#storage). |
-| `setup_next_step` | `None` | Text printed after successful explicit CLI setup, following doctor guidance. |
-| `apprc_dir` | `None` | Explicit application default for the [AppRC directory](#managed-files). |
-| `apprc_dir_env_key` | Derived | Override the environment key used to relocate the AppRC directory. |
-| `legacy_app_ids` | `()` | Previous application identities accepted by [migration](How-To-User-Guides.md#migrate-existing-applications). |
+| `app_id` | Required | Must fully match `[A-Za-z0-9][A-Za-z0-9_.-]*`; `.` and `..` are invalid. Also derives environment prefixes. |
+| `display_name`, `command_name` | `app_id` | Human-facing name and executable label. |
+| `paths` | `Paths()` | Independently enable `config`, `appdata`, `cache`, and `state`. |
+| `layout` | `None` | Declared `Layout`; `None` means default native layout. |
+| `bootstrap_env_prefix` | Derived from normalized `app_id` | Prefix for layout/root bootstrap controls. |
+| `user_dotenv` | `None` | `UserDotenv()` enables saved user config; requires `paths.config=True`. |
+| `workspaces` | `None` | `Workspaces(selector_env_key=None, registry=True)` enables workspace selection. Registry mode requires config enabled. |
+| `config_package` | `None` | Package containing optional `apprc.defaults.env`. |
+| `setup_next_step` | `None` | Text printed after successful explicit config setup. |
 
-`Storage(selector_env_key="DEMO_STORAGE")` overrides the derived storage key.
-Neither `Storage` nor `UserDotenv` takes `required`. Require storage for a run
-through [ResolveOptions](#resolution). Directory overrides on the declaration
-require at least one of `UserDotenv()` or `Storage()`.
+`Paths(config=False, appdata=False, cache=False, state=False)` is a declaration.
+`Layout` is `Layout(mode="native", root=None)`, `Layout.native()`, or
+`Layout.single_root(root)`. `AppRC.paths(options=None, *, environment=None)`
+returns a read-only `AppPaths`. `AppRC.ensure_path(kind, options=None, *,
+environment=None, adopt=False)` creates and owns only the requested enabled
+path. `kind` is one of `config`, `appdata`, `cache`, `state`, or subordinate
+`logs`. `AppPaths.require(kind)` returns its `Path` or raises
+`ValueError("AppRC path component '<kind>' is not enabled.")`.
 
-`@MyRC.config("client", prefix="DEMO_", title="Client", rc_path=("client",))`
-registers a [config section](Explanations.md#config-sections-and-fields).
-`prefix` is required for an environment-backed section, and each field's full
-environment key must use that prefix. Import sections before resolving.
-`MyRC.schema` contains immutable metadata for the current registrations, including
-`owners`, `envs`, application identity, enabled features, and fixed filenames.
-Reading the schema does not load configuration values or write files.
-`requires_storage=True` marks an environment-backed section whose fields are
-inactive until storage is selected. It requires `storage=rc.Storage()` on the
-declaration. It affects inspection, including `config doctor`, rather than the
-runtime storage requirement in [`ResolveOptions`](#resolution).
-
-The explicit `config setup` command prints `setup_next_step` once after
-required-field prompts finish. With `--yes`, it prints the same next-step block
-after the existing doctor guidance. Runtime first-run setup omits the block and
-retries the command that triggered setup. Omitting `setup_next_step` keeps the
-default output.
+`@MyRC.config(key, prefix=..., title=None, rc_path=None)` registers a config
+section. `requires_workspace=True` marks fields inactive until a workspace is
+selected; the declaration must enable `workspaces`. Schema inspection does not
+read values or create files. Config sections and field semantics are described
+in [Explanations](Explanations.md#config-sections-and-fields).
 
 ## Config fields
 
-[`rc.field()`](Explanations.md#config-sections-and-fields) declares one field in a
-`Config` section. Python annotations determine conversion and validation.
+`rc.field(env_key, ...)` declares one field on a registered `Config` section.
+The Python annotation controls conversion and validation.
 
 | Argument | Meaning |
 | --- | --- |
-| First positional argument | Complete environment key, for example `DEMO_TIMEOUT`. |
-| `default` / `default_factory` | Python fallback when no source supplies a value. Use only one. |
-| `required` | Require a value. A field without a fallback is required by default; `required=True` cannot be combined with a Python fallback. |
-| `choices` | Accepted string values, supplied as a sequence. |
-| `title` | Human-readable field label. |
-| `description` | Shared fallback text for short and long explanations. |
-| `explanation_short` | Compact explanation used in tables. |
-| `explanation_long` | Longer explanation used in the editor; falls back to `description`, then the short explanation. |
-| `editable` | Whether the standard editor permits direct edits; defaults to `True`. |
-| [`restart_required`](Explanations.md#config-sections-and-fields) | Mark this setting as requiring an application restart after a saved change; defaults to `False`. Editors show the marker and a restart notice, but AppRC never restarts the application. |
-| `secret` | Redact display values and route managed writes to a [secret companion](Explanations.md#secret-companions); defaults to `False`. Does not encrypt persisted values. |
-| `packaged_default` | Metadata describing an expected packaged default; does not supply the runtime value. |
+| `env_key` | Complete environment key, for example `DEMO_TIMEOUT`. |
+| `default` / `default_factory` | Python fallback; use only one. |
+| `required` | Require an input; a field without a fallback is required by default. |
+| `choices` | Accepted string values. |
+| `title`, `description` | Human-readable field label and shared explanatory text. |
+| `explanation_short`, `explanation_long` | Compact table text and longer editor guidance. |
+| `editable` | Whether the standard editor permits direct edits; defaults to true. |
+| `restart_required` | Mark that the saved change takes effect only after application restart. |
+| `secret` | Redact display output and use the private layer companion; does not encrypt values. |
+| `packaged_default` | Metadata describing an expected packaged default; does not supply the value. |
 
-The [typed-settings guide](How-To-User-Guides.md#read-typed-settings) demonstrates
-conversion, and the [API-key guide](How-To-User-Guides.md#declare-an-api-key)
-demonstrates required and secret fields. Required values are checked by
-`ResolvedConfig.build()`; [inspection](#management) can report missing fields
-before settings objects can be constructed.
+Required values are checked by `ResolvedConfig.build()`. Read-only inspection
+can report missing values before application settings are constructed.
+
+## Application paths
+
+`AppPaths` is a frozen snapshot with `layout`, `source` (`invocation`,
+`environment`, `declaration`, or `default`), and `config_dir`, `appdata_dir`,
+`cache_dir`, `state_dir`, and `logs_dir`. Disabled locations are `None`; disabled
+state also means disabled logs. `ResolvedConfig.paths` always contains this
+record, including all-`None` records.
+
+Native mode uses platformdirs user locations and accesses only enabled category
+properties. Linux uses the selected config/data/cache/state/log properties
+directly. Windows and macOS append app-specific config, appdata, and state
+directories to their category bases; cache and logs use their native properties.
+Disabled state means neither state nor log properties are accessed.
+Single-root mode maps enabled categories to `root/config`, `root/appdata`,
+`root/cache`, and `root/state`; logs are `root/state/logs`.
+`Layout.single_root` expands `~` and resolves relative roots against invocation
+current working directory once. It never uses package location.
+
+Path inspection creates no directories and repairs no ownership. Initialization
+uses `.apprc-owner.json` with exactly `schema_version: 1`, `app_id`, and
+`category`. Mutation refuses links/reparse points, overlapping managed roots,
+mismatched markers, and nonempty unowned directories unless explicit adoption
+is requested. Adoption claims contents; it does not move or delete them. Config
+setup uses the same initializer, and `config init --adopt` explicitly adopts an
+existing nonempty config root. Ordinary edits never silently adopt. `ensure_path("state")`
+does not initialize logs; `ensure_path("logs")` does. State maintenance returns
+separate plans for distinct state/log roots and deduplicates nested roots.
+
+No old location is scanned as a fallback. A path declaration does not enable
+UserDotenv, Workspaces, or a maintenance provider. AppRC does not move or delete
+old user files during upgrades.
+
+## Layout bootstrap
+
+Controls are `<PREFIX>_LAYOUT` and `<PREFIX>_ROOT`; `<PREFIX>` is normalized
+`app_id` unless `bootstrap_env_prefix` overrides it. Invocation `Layout` wins.
+Otherwise AppRC selects the highest raw input layer containing either nonblank
+control, then interprets that layer's pair as a unit. Root alone means
+single-root; `native` plus root in that selected layer is an error; higher-layer
+`native` ignores a lower-layer root. Declaration layout and then default native
+are fallback layers.
+
+Process environment normally outranks explicit dotenv files, considered in
+reverse argument order; `env_file_overrides_os_environ=True` reverses this
+precedence. Each explicit file is its own raw layer. Scalar config/workspace
+selection uses merged `selection_env`; the layout pair does not. Managed dotenv
+cannot relocate itself. `AppPaths.source` records the selected layer. Imported
+dependency resolution excludes that dependency's bootstrap and workspace keys.
+
+## Resolution
+
+`MyRC.resolve(options=None, *, environment=None)` returns a `ResolvedConfig`.
+`environment=None` captures process environment; an explicit mapping replaces
+it, and `{}` excludes process variables. Options are frozen and normalize
+`env_files` to a tuple of paths.
+
+| `ResolveOptions` field | Default | Behavior |
+| --- | --- | --- |
+| `workspace` | `None` | Invocation workspace name or direct directory path. |
+| `workspace_required` | `False` | Reject an invocation without a selected workspace. |
+| `layout` | `None` | Invocation override for the complete layout selection; `--layout` and `--app-root` are CLI forms. |
+| `env_files` | `()` | Explicit dotenv layers, read in argument order. |
+| `env_file_overrides_os_environ` | `False` | Put explicit files above process environment, for scalar inputs and bootstrap-layer precedence. |
+| `load_dotenv_layers` | `True` | Load dotenv values as settings; explicit files still participate in selectors. |
+
+`ResolvedConfig` contains `schema`, `options`, immutable `values`, `source`,
+`layers`, `paths: AppPaths`, `workspace`, and `workspace_issues`, plus
+`build(Type, **overrides)` and `export_environment()`. `build()` rejects types
+not registered in that snapshot and never rereads inputs. Invalid ordinary
+fields can be reported by inspection without preventing path inspection or
+category-only maintenance. Refreshing settings retains the originally captured
+paths and their provenance.
+
+## Workspace selection
+
+`Workspaces(selector_env_key=None, registry=True)` uses
+`<PREFIX>_WORKSPACE` by default. Registry mode requires config enabled and reads
+`apprc.toml` with `schema_version = 1`, `selected_workspace`,
+`[workspaces.NAME] root = ...`, and archive records under
+`[archived_workspaces.NAME]`. Old `storages` keys are rejected, not upgraded.
+
+Selection priority is invocation `ResolveOptions.workspace`/CLI `--workspace`,
+then selector in the winning scalar environment/file inputs, then saved
+Workspace dotenv cannot select itself. In direct mode, relative paths supplied
+as workspace selectors resolve against invocation current working directory; a
+bare selector name raises `ValueError("Named workspaces require a registry.")`.
+`WorkspaceManager.initialize_workspace(root)` accepts an explicit path argument,
+including a bare relative `Path("demo-workspace")`, to create the workspace's
+`apprc.workspace.env`; it does not write config or registry files, or create a
+secret companion. `workspace init PATH` exposes this operation in the CLI.
+Selection changes workspace overlay/root only, never `AppPaths`.
+
+Direct mode does not persist registration.
 
 ## Config bundles
 
-A [config bundle](Explanations.md#config-bundles) is a keyword-only dataclass
-registered with `@MyRC.bundle`. Place `@dataclass(kw_only=True)` immediately below
-`@MyRC.bundle`. Declare each child with its registered config-section type and
-`field(default_factory=SectionType)`.
 
-`resolved.build(BundleType)` constructs those section factories from the same
-`ResolvedConfig`. Unregistered section types are rejected. Normal Python-only
-factories and dataclass post-init hooks retain their ordinary behavior. For a
-custom factory that constructs an environment-backed section, pass the child
-explicitly as `resolved.build(BundleType, client=resolved.build(ClientSettings))`
-so it receives the intended configuration sources.
-
-The [bundle guide](How-To-User-Guides.md#pass-several-settings-sections-together)
-provides a complete two-section example. The [larger example](EXAMPLES.md#several-sections-and-temporary-overrides)
-also exercises section overrides and reloads.
+A config bundle is a keyword-only dataclass registered with `@MyRC.bundle`.
+Place `@dataclass(kw_only=True)` immediately beneath that decorator. Its fields
+use registered config section types and `field(default_factory=SectionType)`.
+`resolved.build(BundleType)` builds registered children from the same snapshot.
+For an environment-backed custom child factory, pass the child explicitly:
+`resolved.build(BundleType, client=resolved.build(ClientSettings))`. Unregistered
+section types are rejected. Normal Python-only factories and dataclass
+post-init hooks retain ordinary behavior.
 
 ## Dependency config imports
 
 `MyRC.import_dependency_config(dependency, ConfigType, *, key, prefix, fields,
 field_targets=None, title=None, rc_path=None, include_packaged_defaults=False)`
-imports one registered `rc.Config` section from another `AppRC`. It returns an
-immutable [`rc.ImportedConfig`](Explanations.md#imported-dependency-settings)
-binding scoped to this parent declaration.
+binds one registered dependency section to parent-owned fields.
 
-| Argument | Meaning |
-| --- | --- |
-| `dependency` | The `AppRC` that registered the dependency section. |
-| `ConfigType` | One leaf subclass of `rc.Config` registered on `dependency`. If its section requires storage, the parent must declare `storage=rc.Storage()`. |
-| `key`, `prefix` | Parent-owned schema key and required parent environment prefix. |
-| `fields` | Non-empty mapping of parent field names to `rc.field(...)` declarations. These fields own defaults, validation metadata, documentation, and secrets. |
-| `field_targets` | Mapping of selected dependency field names to parent field names. When omitted, names must match and every dependency field is selected. Repeated parent names explicitly alias compatible fields. |
-| `title`, `rc_path` | Optional parent-facing metadata; default to a title derived from `key` and `(key,)`. |
-| `include_packaged_defaults` | Opt in to selected dependency package defaults, loaded below parent package defaults. Defaults to `False`. |
+The parent owns defaults, validation, docs, and secret metadata. `fields` maps
+parent field names to `rc.field(...)`; `field_targets` maps dependency field
+names to parent field names. Omitted dependency fields retain their Python
+defaults and are not registered in the parent schema. Every parent field must
+be used, mapped types must match, and dependency secrets must remain secret.
+Dependency packaged defaults are excluded unless explicitly opted in.
 
-Every parent field must be used by at least one mapping. A dependency field may
-be omitted only when it has a Python default; omitted fields keep those defaults
-and are not included in the parent schema. Mapped fields use only parent
-defaults, parent sources, and explicit Python overrides. A required parent field
-does not inherit a dependency default. Aliased dependency fields must have the
-same Python type and their selected packaged defaults must agree when both are
-present. A parent field must match the dependency field type. A dependency
-secret must remain secret in the parent declaration. Prefix, owner-key, and
-environment-key collisions raise an error when the import is declared. Every
-mapped dependency field must be a dataclass field with `init=True`; otherwise
-the import declaration raises `TypeError` before registering parent state.
-
-The imported section uses only parent-resolved settings. AppRC excludes
-dependency namespace environment variables, explicit dotenv keys, dependency
-user dotenv files, and dependency storage files. If the dependency section
-requires storage, the parent must enable storage and select a valid parent
-storage before building the section; inspection marks its fields inactive until
-then. The parent's selected storage layer may supply mapped values. Dependency
-storage selectors, registries, user files, and storage files remain excluded.
-The dependency still receives storage paths separately from its host. AppRC
-never imports dependency bundles or lifecycle. Dependency packaged defaults are
-ignored unless opted in; when enabled, only mapped keys participate and the
-parent package has higher priority. Parent field metadata and the resulting
-provenance use parent names.
-
-Build with `resolved.build(binding)` to use the binding captured by that exact
-snapshot. Building with `resolved.build(ConfigType)` also works when that
-dependency section has one import binding. If a parent imports the same section
-more than once, pass the chosen handle because its mappings may differ. A bundle
-may declare the imported section class as a child, and AppRC injects that child
-from the bundle's resolved snapshot. If the bundle uses a custom child factory,
-pass an explicitly built child to `resolved.build(BundleType, child=value)`.
-Calling the bundle constructor without that snapshot raises `TypeError` and
-directs the caller to build it with `resolved.build(BundleType)`.
-See the [dependency-import guide](How-To-User-Guides.md#import-settings-from-a-dependency)
-for a complete example.
-
-## Resolution
-
-`MyRC.resolve(options=None, *, environment=None)` returns a
-[`ResolvedConfig`](Explanations.md#resolvedconfig). `environment=None` captures
-`os.environ` once; an explicit mapping replaces that input. `{}` excludes the
-process environment. Later changes to the caller's mapping do not change the result.
-An [importable client](How-To-User-Guides.md#use-apprc-inside-an-importable-client)
-can call `resolve().build(ClientSettings)` inside its constructor.
-
-| `ResolveOptions` field | Default | Behavior |
-| --- | --- | --- |
-| `storage` | `None` | Invocation's storage name or directory path; [selection rules](#storage-selection) apply. |
-| `storage_required` | `False` | Reject a run without selected storage. |
-| `env_files` | `()` | Explicit dotenv files, read in order; demonstrated in the [dotenv guide](How-To-User-Guides.md#load-dotenv-files). |
-| `env_file_overrides_os_environ` | `False` | Put explicit files above process environment values. |
-| `load_dotenv_layers` | `True` | Load dotenv values into settings. When false, explicit files still supply directory and storage selection inputs. |
-| `apprc_dir` | `None` | Invocation override for the AppRC directory. |
-
-Options are frozen; `env_files` is normalized to a tuple of `Path` objects.
-
-| `ResolvedConfig` member | Meaning |
-| --- | --- |
-| `schema` | Declaration metadata captured for this result. |
-| `options` | Resolution options used. |
-| `values` | Immutable mapping of effective source values; may contain secrets. |
-| `source` | Effective source values with origin records. |
-| `layers` | Individual source records retained for inspection. |
-| `paths` | Managed file locations for this run, or `None` without managed-file features. |
-| `selection` | Selected storage record, or `None`; includes `root`, `storage_name`, `raw_value`, `selector_kind`, and `source`. |
-| `storage_count` | Number of registered storages read during resolution. |
-| `build(Type, **overrides)` | Construct a fresh registered section or bundle; convert and validate its fields. |
-| `export_environment()` | [Write selected values to the process environment](How-To-User-Guides.md#supply-settings-to-environment-only-code). |
-
-`build()` rejects types unknown to this result, including types registered after
-resolution. It does not reread files. Constructor overrides affect that object
-only. The [basic example](EXAMPLES.md#settings-without-managed-files) demonstrates
-independent results.
-
+The dependency's ambient environment, explicit dotenv keys, user files,
+workspace files, workspace selector, registry, and layout bootstrap keys are
+excluded. If the imported section requires a workspace, the parent must declare
+and select one before building it. `resolved.build(binding)` uses the binding
+captured by that exact snapshot. A bundle may declare the imported section as a
+child; AppRC injects that child from the parent's snapshot. See the
+[dependency-import guide](How-To-User-Guides.md#import-settings-from-a-dependency).
 <br>
 
 # Value sources and files
 
 ## Source precedence
 
-[Configuration layers](Explanations.md#configuration-layers) apply in increasing
-priority, with later values replacing earlier assignments:
+Setting values apply in increasing priority:
 
-1. Python field fallback, when no source supplies the key.
-2. Packaged `apprc.defaults.env`, if `config_package` is declared.
-3. `apprc.user.env`, if user overrides are declared.
-4. `apprc.user.secret.env` for declared secret fields.
-5. Selected storage's `apprc.storage.env`.
-6. Selected storage's `apprc.storage.secret.env` for declared secret fields.
-7. Explicit `env_files`, in argument order.
+1. Python field fallback.
+2. Packaged `apprc.defaults.env`.
+3. User `apprc.user.env`.
+4. User `apprc.user.secret.env` for declared secret fields.
+5. Selected workspace `apprc.workspace.env`.
+6. Selected workspace `apprc.workspace.secret.env` for declared secret fields.
+7. Explicit `env_files` in argument order.
 8. Captured process environment.
 
-`env_file_overrides_os_environ=True` swaps the last two priorities. Constructor
-arguments override source values for that object. AppRC records the selected
-storage root in the result's storage selector key after merging. The
-[precedence example](EXAMPLES.md#explicit-dotenv-precedence) shows both priority orders.
-
-Each dotenv file interpolates against its earlier assignments and the captured
-environment. `${NAME}` and `${NAME:-fallback}` are supported. A bare key supplies
-no value; `KEY=` supplies an empty string. Parsing never swaps `os.environ`.
-Missing explicit files are errors. Missing optional user or packaged-default
-files contribute no values. `load_dotenv_layers=False` still reads explicit files
-for directory and storage selection, while excluding their setting values.
-
-## Storage selection
-
-The [storage registry](Explanations.md#storage-registry) records available names
-and the saved default. Selection priority is:
-
-1. `ResolveOptions.storage`, or CLI `--storage`.
-2. Captured storage environment key, such as `DEMO_STORAGE`.
-3. That key in explicit dotenv files.
-4. `selected_storage` in `apprc.toml`.
-
-The explicit-file override option swaps items 2 and 3. Packaged defaults, user
-dotenv, and storage dotenv do not choose storage. A selector can be a registered
-name or directory path. The selected directory must exist and contain a readable
-`apprc.storage.env`. An initialized direct path can work without a valid registry.
-Relative selector paths resolve relative to the registry's directory.
-
-No selection is allowed by default. `storage_required=True` rejects absence;
-an invalid supplied selector always fails. A required config field representing
-the storage path can independently prevent construction even when the invocation
-does not require storage.
-
-[Browsing, invocation selection, and the saved default](Explanations.md#storage-registry)
-have different effects. The [switching guide](How-To-User-Guides.md#register-and-switch-data-directories)
-demonstrates the distinction with assertions.
+`env_file_overrides_os_environ=True` swaps the final two priorities. Constructor
+arguments override source values for the constructed settings object. Dotenv
+interpolation supports `${NAME}` and `${NAME:-fallback}`; a bare key supplies no
+value, while `KEY=` supplies an empty value. Parsing does not mutate
+`os.environ`. Missing explicit files are errors; absent optional managed files
+contribute no values.
 
 ## Managed files
 
 | File | Location and purpose |
 | --- | --- |
-| `apprc.defaults.env` | Inside `config_package`; [ship application defaults](How-To-User-Guides.md#ship-defaults-with-the-application). |
-| `apprc.user.env` | In the [AppRC directory](Explanations.md#user-dotenv-and-the-apprc-directory); [save user preferences](How-To-User-Guides.md#save-a-user-preference). |
-| `apprc.user.secret.env` | In the AppRC directory; [save declared secret fields](How-To-User-Guides.md#save-and-migrate-secret-settings) for this user. |
-| `apprc.toml` | In the AppRC directory; [storage registry](Explanations.md#storage-registry). |
-| `apprc.storage.env` | In each [storage](Explanations.md#storage); overrides and initialization marker. |
-| `apprc.storage.secret.env` | In each storage; private companion omitted from ordinary storage archives. |
+| `apprc.defaults.env` | Package data for optional application defaults. |
+| `.apprc-owner.json` | Ownership marker inside an initialized category root; category-specific, not secret content. |
+| `apprc.user.env` | Enabled config root; saved user overrides. |
+| `apprc.user.secret.env` | Enabled config root; private user secrets. |
+| `apprc.toml` | Enabled config root; workspace registry. |
+| `apprc.workspace.env` | Selected workspace root; workspace overrides. |
+| `apprc.workspace.secret.env` | Workspace root; private workspace secrets. |
 
-The default AppRC directory is `~/.local/share/<app_id>` on supported platforms.
-Priority is invocation `apprc_dir`, then the directory environment key in captured
-inputs, then declaration `apprc_dir`, then the default. Explicit-file/environment
-priority follows `env_file_overrides_os_environ`. For `app_id="demo-app"`, the
-derived keys are `DEMO_APP_APPRC_DIR` and `DEMO_APP_STORAGE`.
-
-Managed filenames are fixed. The registry uses `selected_storage`,
-`[storages.NAME]` entries with `root`, and archive records. An existing file cannot
-enable an undeclared feature. The [combined example](EXAMPLES.md#user-settings-and-storage)
-shows how user and storage files coexist.
+The workspace TOML schema is `schema_version = 1`, `selected_workspace`,
+`[workspaces.NAME] root = ...`, and `[archived_workspaces.NAME]` archive/source
+root records. AppRC does not interpret or upgrade old `storages` schema or
+`apprc.storage.*` files. Historical files stay untouched unless their owner
+separately handles them.
 
 <br>
 
 # Management and lifecycle
 
-## Management
+## ConfigManager
 
-`MyRC.manage(options=None, *, environment=None)` creates a
-[`ConfigManager`](Explanations.md#configmanager) without writing. Each operation
-reads current files; previous `ResolvedConfig` objects remain unchanged.
+`MyRC.manage(options=None, *, environment=None)` returns a `ConfigManager`
+without writing. It reads settings, inspects fields, performs user config setup,
+secret status/repair, and creates edit/removal plans. `setup(*, adopt=False)`
+initializes only enabled user config. Workspace registration belongs to
+`WorkspaceManager`, not config setup.
 
-| Operation | Result or effect |
+| Operation | Behavior |
 | --- | --- |
-| `paths` | Managed file locations without creating directories. |
-| `resolve()` | Strict configuration resolution using the manager's options and environment. |
-| `inspect(storage=None, include_storage=True)` | `ConfigInspection` with `fields`, `issues`, and `ready`; [diagnose incomplete settings](How-To-User-Guides.md#troubleshoot-configuration). |
-| `registry()` / `inspect_registry()` | Current registry or its readiness report. |
-| `writable_path(scope, storage=None, secret=False)` | Ordinary or secret-companion target path for a declared write scope. |
-| `secret_status(scope, storage=None)` | Report whether a layer can safely save declared secret fields. |
-| `repair_secret_permissions(scope, storage=None)` | Explicitly restrict the layer's parent and companion permissions. |
-| `plan_secret_migration(scope, storage=None)` / `apply_secret_migration(plan)` | [Move legacy secret assignments](How-To-User-Guides.md#save-and-migrate-secret-settings) out of an ordinary layer. |
-| `writable_scopes()` / `resolve_write_scope(requested=None)` | Initialized scopes; reject an ambiguous automatic choice. |
-| `plan_update(reference, raw_value, scope=..., storage=None)` | Validated `EnvFileEditPlan` with target revision. |
-| `plan_removal(reference, scope=..., storage=None)` | Removal plan, or `None` if the assignment is absent. |
-| `preview_edit(plan, storage=None)` | Candidate inspection without writing; [preview a saved override](How-To-User-Guides.md#edit-or-remove-a-saved-override). |
-| `apply_edit(plan)` | Write an edit after checking its revision. |
-| `setup(storage_root=None, storage_name="default")` | Initialize declared files; storage declarations require a root. |
-| `setup_user_dotenv()` | Initialize just the user dotenv, even when storage is also enabled. |
-| `plan_migration(...)` / `apply_migration(plan)` | Review and apply supported legacy-file migration. |
-| `plan_purge()` / `apply_purge(plan)` | Review and remove managed files and registered internal storage data. |
+| `inspect()` | Field inspections, issues, and readiness without application state factories. |
+| `writable_path(scope, secret=False)` | Path for `user` or selected `workspace` managed settings. |
+| `plan_update(reference, raw_value, scope=...)` / `plan_removal(...)` | Validate a proposed write and capture the target file revision. |
+| `preview_edit(plan)` | Show candidate settings without writing. |
+| `apply_edit(plan)` | Apply only if the captured file revision still matches. |
+| `setup(adopt=False)` | Initialize enabled user config and companions. |
+| `secret_status(scope)` / `repair_secret_permissions(scope)` | Inspect or explicitly repair current secret permissions. |
 
-A field reference can be a dotted registered path, an unambiguous field name,
-or the complete environment key. Write scope is `"user"` or `"storage"`.
-Explicit user edits can create a missing user dotenv; storage edits require an
-initialized storage. Setup preserves existing files and does not recreate a
-missing registered storage root or repoint an existing name.
+A reference may be a dotted registered path, unambiguous field name, or complete
+environment key. Write scopes are `user` and `workspace`. Edit plans reject a
+changed file under the managed write lock. Ordinary config editing never adopts
+an unrelated nonempty root.
 
-`FieldInspection` exposes `owner`, `field`, `value`, `origin`, `issue`, and
-`active`. Its `display_value` redacts secrets. Without selected storage, fields
-in a [storage-dependent section](Explanations.md#storage) have `active=False`,
-`value=None`, `display_value=None`, and `issue=None`. Inspection reports field
-conversion and source problems without constructing every runtime object; it does not execute
-application post-init validation. The [saved-preference guide](How-To-User-Guides.md#save-a-user-preference)
-provides a complete setup and editing sequence.
+## WorkspaceManager
 
-Purge removes fixed AppRC files, including secret companions, and registered data directories strictly inside
-the AppRC directory. For external storages it removes the marker dotenv and
-retains application data. It does not follow symlinks. Review the purge plan
-before applying it.
+`MyRC.workspaces(options=None, *, environment=None)` returns a `WorkspaceManager`
+when Workspaces is declared. Workspace methods are explicitly named:
+`registry_path()`, `registry()`, `inspect_registry()`, `register_workspace()`,
+`select_workspace()`, `rename_workspace()`, `repoint_workspace()`,
+`remove_workspace()`, `remove_archive_record()`, `move_workspace()`,
+`archive_workspace()`, and `restore_workspace()`. Unregistering retains payloads.
+`initialize_workspace(root)` initializes the explicit root's `apprc.workspace.env`
+without writing config or registry files; it creates no secret companion.
+Archive/restore validates traversal and secret exclusions and stages restore
+before registration. New registered roots may not overlap AppRC-managed roots.
+Direct-path mode does not offer registry mutations.
 
-## Storage operations
+## Maintenance
 
-All methods belong to [`ConfigManager`](Explanations.md#configmanager).
-The [directory-switching guide](How-To-User-Guides.md#register-and-switch-data-directories)
-and [storage-lifecycle guide](How-To-User-Guides.md#move-reconnect-or-archive-storage)
-provide independent runnable examples.
+Public records are frozen/slotted. `RemovalPlan(category, root, targets, revision,
+warnings=())` carries an exact plan; `RemovalResult(removed, skipped=(),
+warnings=())` reports application. `RemovalOperation(plan, apply)` pairs operations.
+`AppDataOperations`, `CacheOperations`, and `StateOperations` expose named
+callables; `MaintenanceHandlers(appdata=None, cache=None, state=None)` groups
+them. Provider declarations for disabled components are errors.
 
-| Method | Data effect |
-| --- | --- |
-| `register_storage(name, root)` | Create or register a root and its storage dotenv and secret companion. |
-| `select_storage(name)` | Change the registry's saved default for future runs. |
-| `rename_storage(current_name, name)` | Change the registered name. |
-| `repoint_storage(name, root)` | Record an existing initialized directory; move no data. |
-| `move_storage(name, destination)` | Move data to a new or empty destination with preflight checks and rollback. |
-| `remove_storage(name)` | Unregister and retain the directory contents. |
-| `remove_storage(name, delete_content=True)` | Unregister and then delete the directory contents. |
-| `archive_storage(name, archive_path)` | Create and record an archive without the storage secret companion; refuse legacy secrets in the ordinary file. |
-| `restore_storage(name, archive_path, destination)` | Extract and register; create an empty secret companion and roll back extraction if registration fails. |
-| `remove_archive_record(name)` | Forget the record; retain the archive file. |
+`MyRC.maintain(options=None, *, environment=None, handlers=...)` returns a
+`MaintenanceManager`. Its common operations are `info(kind)`,
+`plan_purge(scopes: tuple[ResourceKind, ...])`, and
+`apply_purge(plans: tuple[RemovalPlan, ...])`. Named provider-backed wrappers
+are `backup_appdata(destination)` / `restore_appdata(source)`,
+`plan_cache_prune()` / `apply_cache_prune(plans)`, corresponding cache clear,
+state prune, and state reset pairs. Every plan returns a tuple of plans and every
+apply returns a tuple of results. State operations address state and external
+logs roots separately, deduplicating nested locations.
 
-Archive filenames must end in `.apprc.tar.xz`.
+Purge validates every requested category before mutating any. Explicit disabled
+scope is an error; `--all` means declared components only. A missing directory
+has an empty plan and does not get initialized. Unknown resources, unsafe links,
+nonempty unowned roots, mismatched markers, changed revisions, and out-of-root
+targets refuse deletion. AppRC plans exact files and empty directories rather
+than recursive instructions. Providers repeat freshness and lease checks under
+their own coordination. A single-root parent and workspace payloads are never
+purge targets. Multi-root apply is not atomic; partial results are reported.
+Provider info values must be JSON-compatible values, not arbitrary objects.
 
-These are not complete filesystem transactions. Directory deletion can fail after
-unregistration; inspect the remaining directory and registry before retrying.
+Backup requires a new destination outside source appdata. Restore requires an
+existing source and refuses nonempty appdata except its owner marker. Formats are
+application-owned; AppRC does not convert data or export config/secrets.
 
 ## Provenance and lifecycle
 
-[`settings.provenance_of("timeout")`](Explanations.md#provenance) returns
-`ConfigProvenance`. The [inspection guide](How-To-User-Guides.md#find-where-a-value-came-from)
-checks a file origin directly.
-
-| Field | Meaning |
-| --- | --- |
-| `field_name` | Python field name. |
-| `source` | `"python"` or `"shell"`; dotenv origins also use `"shell"`. |
-| `origin` | Exact origin identifier, such as `shell_dotenv_user` or `python_constructor_argument`. |
-| `value` / `display_value` | Actual value / redacted display value. |
-| `secret` | Whether the field is declared secret. |
-| `env_key` | Environment key, when applicable. |
-| `path` | Durable source-file path, when applicable. |
-| `resource` | Package and resource name for packaged defaults. |
-
-Shell origin identifiers are `shell_export_variable`, `shell_dotenv_defaults`,
-`shell_dotenv_user`, `shell_dotenv_storage`, `shell_dotenv_explicit`, and
-`shell_storage_selector`. Python origins distinguish config and Python-only
-defaults, constructor arguments, runtime assignments, scoped overrides, and
-process-environment mutations.
-
-Packaged defaults retain `resource=(package_name, "apprc.defaults.env")`.
-An archive resource has no extracted temporary path. A direct constructor after
-explicit environment export sees environment provenance rather than its original
-file source.
+`settings.provenance_of("timeout")` returns field origin information. Fields
+include `field_name`, `source`, `origin`, `value`, redacted `display_value`,
+`secret`, `env_key`, `path`, and packaged `resource`. File provenance records
+its path. Current origin identifiers distinguish defaults, user dotenv,
+workspace dotenv, explicit dotenv, process environment, constructor arguments,
+assignments, and scoped overrides.
 
 `reload_from(resolved, override_python_values=False)` validates before changing
-the object. By default, constructor arguments, assignments, and scoped overrides
-remain authoritative. `reload()` and `bind_from_env()` read the live process
-environment. Copies and [`scoped()` overrides](How-To-User-Guides.md#reload-settings-or-use-temporary-overrides)
-retain per-object provenance.
+the settings object. Python overrides remain authoritative by default. A
+resolved snapshot's `AppPaths` does not change during settings refresh.
+`reload()` and `bind_from_env()` use live process environment. `scoped()` makes
+an isolated override; `export_environment()` explicitly changes process
+environment and is not part of normal resolution.
 
 <br>
 
@@ -420,111 +367,52 @@ retain per-object provenance.
 
 ## Terminal commands
 
-The [`config CLI`](Explanations.md#config-cli) is mounted with
-`rc.cli.mount_config_cli(app, MyRC)` or `CliRuntime.mount_config_group(app)`.
-The standalone `apprc` executable provides `scaffold config`.
+`rc.cli.mount_app_cli(app, MyRC, *, handlers=..., maintenance_help_panel="Maintenance", ...)`
+mounts the high-level route and returns `dict[str, typer.Typer]` for mounted
+category subgroups. It owns the callback and rejects callback replacement.
+Applications with their own callback use `CliRuntime.prepare()` and the
+`CliRuntime.mount_app_groups()` method. Fixed groups are mounted only when their
+declaration/capability exists. `build_config_typer_app` remains a config-only
+advanced builder.
 
-| Application command | Availability and behavior |
+| Command | Availability and behavior |
 | --- | --- |
-| `config paths [--json]` | Always; report locations without writing. |
-| `config doctor [--json]` | Always; report readiness and [repair guidance](How-To-User-Guides.md#troubleshoot-configuration). |
-| `config show [--json]` | Show runtime configuration; an application serializer can read `state.resolved`. |
-| `config setup` | Declared persistence; [initialize files](How-To-User-Guides.md#save-a-user-preference) interactively or with `--yes`, then print optional [`setup_next_step`](#declarations) guidance. |
-| `config set KEY VALUE [--scope user\|storage]` | Edit a declared writable layer. |
-| `config secrets migrate --scope user\|storage [--yes]` | [Move old secret values](How-To-User-Guides.md#save-and-migrate-secret-settings) from an ordinary layer into its private companion. |
-| `config secrets repair --scope user\|storage [--yes]` | Restrict a layer's directory and secret file permissions after review. |
-| `config edit` | Open the [config editor](Explanations.md#config-editor) for declared persistence. |
-| `config migrate [--dry-run] [--yes]` | Migrate supported legacy files explicitly. |
-| `config storage list/add/select/rename/repoint/move/remove` | Manage registered storages when storage is declared. |
+| `paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. No category lists all paths; category prints only its absolute path. Disabled category and invalid `--open` combinations exit 2. `--open` launches an existing directory and never creates it. |
+| `doctor [--json]` | Always. Local/read-only config and declared-path diagnostics; no application factories or external services. JSON has `status` and `checks`, statuses `ok`, `warning`, or `error`. |
+| `config init [--adopt]` | Config enabled; initialize user config and explicitly adopt nonempty unowned config when requested. |
+| `config setup` | UserDotenv enabled; interactive setup and preference prompts. |
+| `config show`, `set`, `edit`, config `doctor` | Typed schema available. Set scopes are `user` and `workspace`. |
+| `config secrets ...` | Current config secret operations only; these do not migrate layouts or old registry formats. |
+| `workspace add/list/select/rename/repoint/move/remove/archive/restore` | Registry mode (`registry=True`); registration and registry mutations require config enabled. |
+| `workspace init PATH`, `workspace info PATH` | Direct mode (`registry=False`); initialize or inspect an explicit workspace path without a config/registry. |
+| `<category> info [--json]`, `<category> init [--adopt]` | Enabled appdata/cache/state. `state init --logs` initializes logs only. |
+| `appdata backup/restore` | Mounted only when corresponding handlers exist; restore confirms unless `--yes`. |
+| `cache prune/clear`, `state prune/reset` | Mounted only when the corresponding provider operation exists; support dry-run/confirmation/JSON. |
+| `purge --scope CATEGORY...` or `purge --all` | Always. Scope forms are mutually exclusive and required; preview/apply options described below. |
 
-Root options precede the subcommand: `--env-file`,
-`--env-file-overrides-os-environ`, `--skip-dotenv-layers`, `--storage` when enabled,
-and `--log-level`. Use the application's `--help` for each command's arguments.
-The [Typer guide](How-To-User-Guides.md#add-configuration-commands-to-typer)
-shows mounting and retrieving state; the [custom-callback example](EXAMPLES.md#an-application-owned-cli-callback)
-shows `CliRuntime` integration.
+Root selectors include `--workspace`, `--layout native\|single-root`, and
+`--app-root PATH`; they are captured before business-state setup is skipped.
+Root `--env-file` and `--env-file-overrides-os-environ` preserve dotenv behavior.
+No layout migration command exists.
 
-`ConfigDoctorStatus` values are `runnable`, `config_invalid`,
-`storage_not_selected`, `storage_not_ready`, `user_dotenv_not_ready`, and
-`storage_registry_not_ready`. Doctor JSON includes `writes="none"` and source
-paths. `user_dotenv_required` remains a report field with value `False`.
+For `paths --json` without a category, JSON is
+`{layout, root, source, paths: {config, appdata, cache, state, logs}, exists: {config, appdata, cache, state, logs}}`. Disabled path and existence entries are `null`; a missing enabled directory has `exists=false`. Category JSON is `{category,path,exists}`. `--open` with JSON or without a category exits 2.
 
-## Application-data commands
-
-The [application-data CLI](Explanations.md#application-data-cli) is an explicit,
-separate mount:
-`rc.cli.mount_appdata_cli(app: typer.Typer, apprc: AppRC) -> typer.Typer`.
-It returns the child group, requires a Typer host, and rejects an existing
-`appdata` command or group before registration. It does not install or replace
-a host callback. Neither `mount_config_cli` nor `CliRuntime.mount_config_group`
-mounts it automatically. The
-[cleanup guide](How-To-User-Guides.md#preview-and-clean-managed-application-data)
-shows the runtime-independent action-prefix declaration needed when the host
-prepares runtime state.
-
-| Application command | Behavior |
-| --- | --- |
-| `appdata paths [--apprc-dir PATH] [--json]` | Plan and print cleanup locations and retention scope without creating files. |
-| `appdata clean [--apprc-dir PATH] [--dry-run] [--yes / -y]` | Preview exact targets, then confirm and apply the existing manager purge plan. `--dry-run` never applies it; `--yes` bypasses confirmation. |
-
-These commands call `MyRC.manage()` without resolving application settings.
-Without `--apprc-dir`, the declaration and process environment select the
-AppRC directory. `--apprc-dir PATH` selects a different managed registry for
-this action only. Root `--env-file`, `--storage`, and other runtime selectors
-do not retarget cleanup. Invalid ordinary setting values and missing runtime
-storage are irrelevant, but malformed registry data stops both commands before
-deletion; no fallback target is chosen. Missing managed files are harmless.
-
-Text `paths` uses `apprc_dir`, `managed_file`, `internal_storage_root`, and
-`keep_external_storage_data` keys. `paths --json` emits one object on stdout:
-
-| JSON key | Type | Meaning |
-| --- | --- | --- |
-| `apprc_dir` | string | Selected AppRC directory. |
-| `managed_files` | array of strings | Fixed managed-file targets, including secret companions. |
-| `internal_storage_roots` | array of strings | Registered storage roots strictly inside the AppRC directory, eligible for recursive deletion. |
-| `external_storage_roots` | array of strings | Registered roots whose application payloads are retained. |
-| `stale_storage` | boolean | Registry records exist although storage is no longer declared. |
-| `stale_user_dotenv` | boolean | A user dotenv exists although that capability is no longer declared. |
-
-This is the structured `ConfigPurgePlan` inventory, not a list limited to
-currently existing files. Diagnostics go to stderr. Use it rather than parsing
-human preview wording when checking deletion boundaries.
-
-`clean` reports `would_remove` and `would_remove_tree` in dry-run, or `remove`
-and `remove_tree` before applying. It also reports retained external roots,
-`removed_entries`, unsafe skipped targets as `skipped_unsafe_target`, and
-remaining AppRC-directory contents as `remaining_unmanaged_data` when relevant.
-Its confirmation is `Remove these AppRC-managed files and internal storage
-roots?`; declining exits 1 without applying the plan. Planning or apply errors
-exit nonzero with the invoked `appdata paths` or `appdata clean` parameter hint.
-
-Cleanup retains external payloads and unrelated files, does not follow symlinks,
-and does not discover arbitrary logs, caches, outputs, or databases outside the
-managed roots. It does not remove installed packages. The
-[manager API](#management), including `plan_purge()` and `apply_purge(plan)`,
-remains available for Python callers.
+Purge JSON is `{plans:[{category,root,targets,revision,warnings}], results:[{category,root,removed,skipped,warnings}]}`. Preview returns `results: []`. It prints paths and revisions, never marker or secret contents. Confirmation is prompted once; JSON prompts go to stderr. Noninteractive apply needs `--yes`/`-y`. Exit 0 means successful preview/apply or empty `--all`; exit 1 means cancellation, partial result, or failure; exit 2 means invalid/unsafe preflight. There is no `appdata clean`, `appdata paths`, or `config purge` command.
 
 ## Errors and write guarantees
 
-| Error | Meaning and recovery |
+| Error | Meaning |
 | --- | --- |
-| `StorageSelectorError` | Supplied selector cannot resolve; check the [selection rules](#storage-selection). |
-| `MissingStorageSelectorError` | This invocation requires storage but none is selected; [register or select one](How-To-User-Guides.md#register-and-switch-data-directories). |
-| `StorageNotInitializedError` | Selected directory lacks initialization; inspect it before setup. |
-| `StaleEditError` | File revision changed; [make a fresh edit plan](How-To-User-Guides.md#edit-or-remove-a-saved-override). |
-| `ConfigSetupError`, `ConfigMigrationError`, `ConfigPurgeError` | Operation-specific preflight or execution failure; inspect the reported paths and remaining files. |
+| Disabled path `ValueError` | Requested component was not declared. |
+| Ownership/boundary refusal | Unsafe link, mismatched marker, overlap, unowned contents without adoption, or target outside its root. |
+| Workspace selector error | Unknown registered name or named selector in direct mode; explicit invalid input is not replaced by a fallback. |
+| Stale edit/maintenance plan | File or resource revision changed; inspect again and create a new plan. |
+| Partial removal result | Some validated targets were skipped or failed; command exits nonzero and does not promise rollback. |
 
-`StaleEditError` exposes `path`, `expected_revision`, and `actual_revision`.
-Absence is a revision too: a file created after planning is a conflict.
-Writes use unique same-directory temporary files and atomic replacement, with
-cleanup after failure. File locks serialize managed writes across processes that
-use AppRC's manager. Edit plans reject changed files after acquiring the lock.
-Moving a secret between two files writes the private copy first; a failure
-before removing the old assignment leaves the old file for a retry. Directory
-deletion and multi-file writes are not filesystem transactions.
-
-A failed resolution or field conversion does not change files or process state.
-Application factories and post-init hooks are application code and can have their
-own effects. The [ConfigManager explanation](Explanations.md#configmanager)
-separates inspection, planning, and application of a change.
+Managed writes use atomic same-directory replacement and locks. Plan/apply
+operations compare revisions under their coordination boundary. Provider actions
+must hold their own application locks/leases and revalidate freshness. Filesystem
+operations across multiple roots are not transactions. Application callbacks,
+settings factories, and SQLite operations can have application-specific effects;
+local doctor and path inspection do not run those factories.

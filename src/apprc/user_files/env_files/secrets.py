@@ -29,7 +29,7 @@ class SecretFileStatus:
 
 
 def secret_companion_path(dotenv_path: Path) -> Path:
-    """Place a secret file beside its user or storage dotenv layer.
+    """Place a secret file beside its user or workspace dotenv layer.
 
     :param dotenv_path: Existing managed layer path.
     :return: Path ending in ``.secret.env``.

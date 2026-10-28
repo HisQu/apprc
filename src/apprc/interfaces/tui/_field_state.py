@@ -7,11 +7,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
-# == Internal ================================
-from apprc.user_files.env_files.values import stringify_env_value
-from apprc.runtime.resolution import ResolvedConfig
 from apprc.definition.env_config.lookup import find_field_by_env_key
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.runtime.resolution import ResolvedConfig
+
+# == Internal ================================
+from apprc.user_files.env_files.values import stringify_env_value
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,12 +24,12 @@ class SelectedField:
 
 
 type EditableConfigValueSourceKey = Literal[
-    "effective", "shell", "explicit", "user", "storage", "defaults"
+    "effective", "shell", "explicit", "user", "workspace", "defaults"
 ]
 type ConfigResolvedSourceKey = Literal[
-    "shell", "explicit", "user", "storage", "defaults"
+    "shell", "explicit", "user", "workspace", "defaults"
 ]
-type ConfigWriteScope = Literal["user", "storage"]
+type ConfigWriteScope = Literal["user", "workspace"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,30 +87,30 @@ def config_value_sources(
     env_key: str,
     resolved: ResolvedConfig,
     include_user_dotenv: bool,
-    include_storage: bool,
+    include_workspace: bool,
 ) -> tuple[EditableConfigValueSource, ...]:
     """Present captured sources without implementing precedence in the UI.
 
     :param spec: Selected field declaration.
     :param env_key: Full field environment key.
-    :param resolved: Shared runtime resolution for the inspected storage.
+    :param resolved: Shared runtime resolution for the inspected workspace.
     :param include_user_dotenv: Whether to show the user layer.
-    :param include_storage: Whether to show the storage layer.
+    :param include_workspace: Whether to show the workspace layer.
     :return: Copyable effective value and individual source rows.
     """
     source_keys: dict[str, ConfigResolvedSourceKey] = {
         "shell_export_variable": "shell",
         "shell_dotenv_explicit": "explicit",
         "shell_dotenv_user": "user",
-        "shell_dotenv_storage": "storage",
+        "shell_dotenv_workspace": "workspace",
         "shell_dotenv_defaults": "defaults",
-        "shell_storage_selector": "shell",
+        "shell_workspace_selector": "shell",
     }
     values: dict[ConfigResolvedSourceKey, str | None] = {
         "shell": None,
         "explicit": None,
         "user": None,
-        "storage": None,
+        "workspace": None,
         "defaults": stringify_env_value(spec.resolve_default())
         if spec.has_default()
         else None,
@@ -133,7 +134,9 @@ def config_value_sources(
         )
     if include_user_dotenv:
         sources.append(EditableConfigValueSource("user", values["user"]))
-    if include_storage:
-        sources.append(EditableConfigValueSource("storage", values["storage"]))
+    if include_workspace:
+        sources.append(
+            EditableConfigValueSource("workspace", values["workspace"])
+        )
     sources.append(EditableConfigValueSource("defaults", values["defaults"]))
     return tuple(sources)

@@ -2,7 +2,7 @@
 
 Applications declare config fields once through :mod:`apprc.definition.env_config.schema`.
 This module turns those declarations into a terminal UI that inspects shell,
-user dotenv, storage dotenv, and packaged-default layers without writing files
+user dotenv, workspace dotenv, and packaged-default layers without writing files
 on open.
 
 Rendering rules for table cells live in :mod:`apprc.interfaces.tui._rendering` so
@@ -11,9 +11,6 @@ persistence.
 """
 
 from __future__ import annotations
-
-from apprc.services.manager import ConfigManager
-from apprc.runtime.resolution import ResolvedConfig
 
 # == Standard Library ========================
 from collections.abc import Awaitable, Callable
@@ -34,57 +31,54 @@ from textual.widgets import (
     Static,
 )
 
-# == Internal ================================
-from apprc.user_files.env_files.updates import (
-    EnvFileEditPlan,
-)
-from apprc.user_files.app_home.locations import AppRCDirectoryError
-from apprc.user_files.storage_roots.paths import StorageRootPathError
-from apprc.user_files.storage_roots.registry import (
-    StorageRegistry,
-    suggested_storage_name,
-)
-from apprc.user_files.storage_roots.selector import StorageSelectorIssue
-from apprc.user_files.storage_roots.selector import (
-    storage_selector_is_path_like,
-)
-from apprc.interfaces.tui.modals import (
-    ConfigValueEditScreen,
-    ValueEditResult,
-)
-from apprc.interfaces.tui._primitives import ConfirmScreen
-from apprc.interfaces.tui._rendering import (
-    active_storage_title,
-    archived_storage_title,
-    build_field_table_rows,
-    field_table_columns,
-    live_storage_title,
-    missing_storage_title,
-)
 from apprc.interfaces.tui._field_state import (
     ConfigWriteScope,
     SelectedField,
     config_value_sources,
     selected_field_for_row,
 )
-from apprc.interfaces.tui.storage.entries import (
-    ordered_storage_entries,
-    storage_entry_index,
-    storage_entry_label,
-    suggest_storage_name,
-)
-from apprc.interfaces.tui.storage.selection import (
-    ActivePathStorageSelection,
-    ArchivedStorageSelection,
-    EditorStorageSelection,
-    LiveStorageSelection,
-    MissingStorageSelection,
-    NoStorageSelection,
-)
-from apprc.interfaces.tui.editor.workflows import (
-    ConfigEditorStorageWorkflows,
+from apprc.interfaces.tui._primitives import ConfirmScreen
+from apprc.interfaces.tui._rendering import (
+    active_workspace_title,
+    archived_workspace_title,
+    build_field_table_rows,
+    field_table_columns,
+    live_workspace_title,
+    missing_workspace_title,
 )
 from apprc.interfaces.tui.editor.setup import ConfigEditorSetupWorkflow
+from apprc.interfaces.tui.editor.workflows import ConfigEditorWorkspaceWorkflows
+from apprc.interfaces.tui.modals import (
+    ConfigValueEditScreen,
+    ValueEditResult,
+)
+from apprc.interfaces.tui.workspaces import (
+    ActivePathWorkspaceSelection,
+    ArchivedWorkspaceSelection,
+    EditorWorkspaceSelection,
+    LiveWorkspaceSelection,
+    MissingWorkspaceSelection,
+    NoWorkspaceSelection,
+    ordered_workspace_entries,
+    suggest_workspace_name,
+    workspace_entry_index,
+    workspace_entry_label,
+)
+from apprc.runtime.resolution import ResolvedConfig
+from apprc.services.manager import ConfigManager
+from apprc.services.workspaces import WorkspaceManager
+from apprc.user_files.app_home.application import AppFiles
+
+# == Internal ================================
+from apprc.user_files.env_files.updates import (
+    EnvFileEditPlan,
+)
+from apprc.user_files.workspace_roots.model import WorkspaceRegistry
+from apprc.user_files.workspace_roots.paths import WorkspaceRootPathError
+from apprc.user_files.workspace_roots.selector import (
+    WorkspaceSelectorIssue,
+    workspace_selector_is_path_like,
+)
 
 if TYPE_CHECKING:
     from apprc.public.app_rc import AppRC
@@ -94,7 +88,7 @@ class ConfigEditorApp(App[None]):
     """Small terminal UI for editing AppRC dotenv override files."""
 
     CSS = """
-    #storage-list {
+    #workspace-list {
         width: 28;
         border: solid $primary;
     }
@@ -132,80 +126,101 @@ class ConfigEditorApp(App[None]):
         self,
         *,
         apprc: AppRC,
-        storage_registry: StorageRegistry | None = None,
+        workspace_manager: WorkspaceManager | None = None,
         manager: ConfigManager | None = None,
-        storage_registry_error: str | None = None,
-        storage_selector_issue: StorageSelectorIssue | None = None,
-        initial_storage: str | None = None,
-        active_storage_root: Path | None = None,
+        workspace_registry_error: str | None = None,
+        workspace_selector_issue: WorkspaceSelectorIssue | None = None,
+        initial_workspace: str | None = None,
+        active_workspace_root: Path | None = None,
         config_group_name: str = "config",
     ) -> None:
-        """Keep storage table and field metadata while editing dotenv state.
+        """Keep workspace table and field metadata while editing dotenv state.
 
         :param apprc: Application config facade.
         :param manager: Captured invocation inputs, including explicit dotenv files.
-        :param storage_registry: Optional AppRC TOML registry shown by the
-            editor.
-        :param storage_registry_error: Read failure that prevents named-storage
-            writes while direct-path editing remains available.
-        :param storage_selector_issue: Active selector failure kept separate
+        :param workspace_manager: Workspace operations supplied by the caller.
+        :param workspace_registry_error: Read failure that prevents
+            registry-backed workspace actions.
+        :param workspace_selector_issue: Active selector failure kept separate
             from managed-file readiness.
-        :param initial_storage: Optional storage entry selected on startup.
-        :param active_storage_root: Optional path-backed storage selected by
-            the current CLI invocation.
+        :param initial_workspace: Optional workspace entry selected on startup.
+        :param active_workspace_root: Optional path-backed workspace selected by
+            the current invocation.
         :param config_group_name: Config command group name used in generated
             guidance.
         """
         super().__init__()
         self.apprc = apprc
         self.manager = manager or apprc.manage()
-        self.storage_registry = storage_registry
-        self.storage_registry_error = storage_registry_error
-        self.storage_selector_issue = storage_selector_issue
+        self.paths = self.manager.paths
+        self.files = AppFiles(apprc.schema, self.paths)
+        self.workspace_enabled = apprc.schema.uses_workspaces()
+        self.registry_enabled = (
+            self.workspace_enabled
+            and apprc.schema.require_workspaces().registry
+        )
+        if self.workspace_enabled and workspace_manager is None:
+            raise ValueError("Workspace controls require a WorkspaceManager.")
+        if (
+            workspace_manager is not None
+            and workspace_manager.app_paths != self.paths
+        ):
+            raise ValueError(
+                "ConfigManager and WorkspaceManager must share captured AppPaths."
+            )
+        self.workspace_manager = workspace_manager
+        self.workspace_registry_error = workspace_registry_error
+        self.workspace_selector_issue = workspace_selector_issue
+        self.workspace_registry = (
+            workspace_manager.registry()
+            if self.registry_enabled
+            and workspace_manager is not None
+            and workspace_registry_error is None
+            else None
+        )
         self.owners = apprc.schema.owners
-        self.initial_storage = initial_storage
+        self.initial_workspace = initial_workspace
         self.config_group_name = config_group_name
-        self.storage_enabled = apprc.schema.uses_storage()
         self.user_dotenv_enabled = apprc.schema.uses_user_dotenv()
         self.init_command = (
-            f"{apprc.schema.config_command_name()} "
-            f"{config_group_name} storage add NAME PATH"
+            f"{apprc.schema.config_command_name()} workspace add NAME PATH"
+            if self.registry_enabled
+            else f"{apprc.schema.config_command_name()} workspace init PATH"
         )
         self.apprc_toml_label = apprc.schema.apprc_toml_filename
         self.hidden_env_keys = (
-            frozenset({apprc.schema.storage_selector_env_key})
-            if apprc.schema.storage_selector_env_key is not None
+            frozenset({apprc.schema.workspace_selector_env_key})
+            if apprc.schema.workspace_selector_env_key is not None
             else frozenset()
         )
-        if active_storage_root is not None and self.storage_enabled:
-            self.active_storage_root = (
-                Path(active_storage_root).expanduser().resolve()
-            )
-        else:
-            self.active_storage_root = None
+        self.active_workspace_root = (
+            Path(active_workspace_root).expanduser().resolve()
+            if active_workspace_root is not None
+            else None
+        )
         self.user_dotenv_active = self._user_dotenv_is_active()
-        self.storage_entries = (
-            ordered_storage_entries(storage_registry)
-            if storage_registry is not None
+        self.workspace_entries = (
+            ordered_workspace_entries(self.workspace_registry)
+            if self.workspace_registry is not None
             else []
         )
-        self.selection: EditorStorageSelection = NoStorageSelection()
+        self.selection: EditorWorkspaceSelection = NoWorkspaceSelection()
         self.row_env_keys: list[str | None] = []
         self._config_action_in_progress = False
-        self.storage_workflows = ConfigEditorStorageWorkflows(self)
+        self.workspace_workflows = ConfigEditorWorkspaceWorkflows(self)
         self.setup_workflow = ConfigEditorSetupWorkflow(self)
 
     def compose(self) -> ComposeResult:
-        """Compose the storage list and field editor."""
+        """Compose the workspace list and field editor."""
         yield Header()
-        if self.storage_selector_issue is not None:
+        if self.workspace_selector_issue is not None:
             yield Static(
-                self._storage_selector_issue_message(),
+                self._workspace_selector_issue_message(),
                 id="selector-status",
             )
         with Horizontal():
-            if self.storage_enabled:
-                yield ListView(id="storage-list")
+            if self.registry_enabled:
+                yield ListView(id="workspace-list")
             with Vertical(id="editor-pane"):
                 yield Static("", id="scope-title")
                 with HorizontalScroll(id="config-action-row"):
@@ -215,39 +230,39 @@ class ConfigEditorApp(App[None]):
                             variant="primary",
                             id="config-setup",
                         )
-                    if self.storage_enabled:
+                    if self.registry_enabled:
                         yield Button(
                             "New",
-                            id="storage-new",
+                            id="workspace-new",
                         )
                         yield Button(
                             "Register",
-                            id="storage-register-active",
+                            id="workspace-register-active",
                             disabled=True,
                         )
                         yield Button(
                             "Rename",
-                            id="storage-rename",
+                            id="workspace-rename",
                             disabled=True,
                         )
                         yield Button(
                             "Reconnect",
-                            id="storage-location",
+                            id="workspace-location",
                             disabled=True,
                         )
                         yield Button(
                             "Move",
-                            id="storage-move",
+                            id="workspace-move",
                             disabled=True,
                         )
                         yield Button(
                             "Archive",
-                            id="storage-archive",
+                            id="workspace-archive",
                             disabled=True,
                         )
                         yield Button(
-                            "Delete",
-                            id="storage-delete",
+                            "Unregister",
+                            id="workspace-delete",
                             disabled=True,
                         )
                 yield DataTable(id="field-table")
@@ -255,10 +270,10 @@ class ConfigEditorApp(App[None]):
 
     async def on_mount(self) -> None:
         """Populate selectable sources and select the active one."""
-        await self._refresh_storage_list(select_name=self.initial_storage)
-        if self.storage_registry_error is not None:
+        await self._refresh_workspace_list(select_name=self.initial_workspace)
+        if self.workspace_registry_error is not None:
             self.notify(
-                self.storage_registry_error,
+                self.workspace_registry_error,
                 severity="error",
                 markup=False,
             )
@@ -274,23 +289,25 @@ class ConfigEditorApp(App[None]):
         await super().action_quit()
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Switch the edited dotenv file when a storage is selected."""
+        """Switch the edited dotenv file when a workspace is selected."""
         if self._config_action_in_progress:
             return
         index = event.list_view.index
-        if index is None or index >= len(self.storage_entries):
+        if index is None or index >= len(self.workspace_entries):
             return
-        entry = self.storage_entries[index]
+        entry = self.workspace_entries[index]
         if entry.kind == "live":
-            self._select_storage(entry.name)
+            self._select_workspace(entry.name)
             return
         if entry.kind == "missing":
-            self._select_missing_storage(entry.name)
+            self._select_missing_workspace(entry.name)
             return
-        self._select_archived_storage(entry.name)
+        self._select_archived_workspace(entry.name)
         self._start_config_action(
-            lambda: self.storage_workflows.restore_or_prune_archived_storage(
-                entry.name
+            lambda: (
+                self.workspace_workflows.restore_or_prune_archived_workspace(
+                    entry.name
+                )
             )
         )
 
@@ -324,7 +341,7 @@ class ConfigEditorApp(App[None]):
                     env_key=env_key,
                     resolved=self._inspected_resolution(),
                     include_user_dotenv=self.user_dotenv_active,
-                    include_storage=self._storage_scope_is_active(),
+                    include_workspace=self._workspace_scope_is_active(),
                 ),
                 writable_scopes=self._writable_scopes(),
             ),
@@ -336,40 +353,51 @@ class ConfigEditorApp(App[None]):
         if event.button.id == "config-setup":
             self._start_config_action(self.setup_workflow.open_setup_flow)
             return
-        if event.button.id == "storage-new":
+        if event.button.id == "workspace-new":
             self._start_config_action(
-                self.storage_workflows.open_new_storage_flow
+                self.workspace_workflows.open_new_workspace_flow
             )
             return
-        if event.button.id == "storage-register-active":
+        if event.button.id == "workspace-register-active":
             self._start_config_action(
-                self.storage_workflows.register_active_storage_flow
+                self.workspace_workflows.register_active_workspace_flow
             )
             return
-        if event.button.id == "storage-rename":
+        if event.button.id == "workspace-rename":
             self._start_config_action(
-                self.storage_workflows.open_rename_storage_flow
+                self.workspace_workflows.open_rename_workspace_flow
             )
             return
-        if event.button.id == "storage-location":
+        if event.button.id == "workspace-location":
             self._start_config_action(
-                self.storage_workflows.open_storage_reconnect_flow
+                self.workspace_workflows.open_workspace_reconnect_flow
             )
             return
-        if event.button.id == "storage-move":
+        if event.button.id == "workspace-move":
             self._start_config_action(
-                self.storage_workflows.open_move_storage_flow
+                self.workspace_workflows.open_move_workspace_flow
             )
             return
-        if event.button.id == "storage-delete":
+        if event.button.id == "workspace-delete":
             self._start_config_action(
-                self.storage_workflows.open_delete_storage_flow
+                self.workspace_workflows.open_delete_workspace_flow
             )
             return
-        if event.button.id == "storage-archive":
+        if event.button.id == "workspace-archive":
             self._start_config_action(
-                self.storage_workflows.open_archive_storage_flow
+                self.workspace_workflows.open_archive_workspace_flow
             )
+            return
+
+    def _require_workspace_registry(self) -> WorkspaceRegistry | None:
+        """Return the registry needed by named-workspace actions."""
+        if self.workspace_registry is None:
+            message = self.workspace_registry_error or (
+                "This workspace declaration does not use a registry."
+            )
+            self.notify(message, severity="error", markup=False)
+            return None
+        return self.workspace_registry
 
     def _start_config_action(
         self,
@@ -406,8 +434,8 @@ class ConfigEditorApp(App[None]):
         finally:
             self._config_action_in_progress = False
             await self.clear_resolved_selector_issue()
-            await self._refresh_storage_list(
-                select_name=self._selected_storage_name()
+            await self._refresh_workspace_list(
+                select_name=self._selected_workspace_name()
             )
 
     def _disable_config_action_controls(self) -> None:
@@ -415,17 +443,17 @@ class ConfigEditorApp(App[None]):
         self.query_one("#field-table", DataTable).disabled = True
         for button in self.query("#config-setup"):
             button.disabled = True
-        if not self.storage_enabled:
+        if not self.registry_enabled:
             return
-        self.query_one("#storage-list", ListView).disabled = True
+        self.query_one("#workspace-list", ListView).disabled = True
         for button_id in (
-            "storage-new",
-            "storage-register-active",
-            "storage-rename",
-            "storage-location",
-            "storage-move",
-            "storage-archive",
-            "storage-delete",
+            "workspace-new",
+            "workspace-register-active",
+            "workspace-rename",
+            "workspace-location",
+            "workspace-move",
+            "workspace-archive",
+            "workspace-delete",
         ):
             self.query_one(f"#{button_id}", Button).disabled = True
 
@@ -445,23 +473,6 @@ class ConfigEditorApp(App[None]):
             scope=result.scope,
         )
 
-    def _require_storage_registry(self) -> StorageRegistry | None:
-        """Return the storage table required for multi-storage editor actions."""
-        if self.storage_registry is None:
-            if self.storage_registry_error is not None:
-                self.notify(
-                    self.storage_registry_error,
-                    severity="error",
-                    markup=False,
-                )
-                return None
-            self.notify(
-                "Storage management requires an AppRC TOML registry.",
-                severity="error",
-            )
-            return None
-        return self.storage_registry
-
     async def _save_env_key(
         self,
         env_key: str,
@@ -469,7 +480,7 @@ class ConfigEditorApp(App[None]):
         *,
         scope: ConfigWriteScope,
     ) -> None:
-        """Validate, confirm, and persist one app or storage env value."""
+        """Validate, confirm, and persist one user or workspace env value."""
         if scope == "user" and not self.user_dotenv_active:
             self.notify(
                 "Set up the user dotenv before writing user-scoped values.",
@@ -481,12 +492,11 @@ class ConfigEditorApp(App[None]):
                 env_key,
                 raw_value,
                 scope=scope,
-                storage=self._inspected_storage_selector(),
+                workspace=self._inspected_workspace_selector(),
             )
         except (
-            AppRCDirectoryError,
             OSError,
-            StorageRootPathError,
+            WorkspaceRootPathError,
             TypeError,
             ValueError,
         ) as exc:
@@ -496,7 +506,7 @@ class ConfigEditorApp(App[None]):
             return
         try:
             update = self.manager.apply_edit(plan)
-        except (AppRCDirectoryError, OSError, ValueError) as exc:
+        except (OSError, ValueError) as exc:
             self.notify(str(exc), severity="error", markup=False)
             return
         self.user_dotenv_active = self._user_dotenv_is_active()
@@ -531,7 +541,7 @@ class ConfigEditorApp(App[None]):
         *,
         scope: ConfigWriteScope,
     ) -> None:
-        """Remove one key from an app or storage env file."""
+        """Remove one key from a user or workspace env file."""
         if scope == "user" and not self.user_dotenv_active:
             self.notify(
                 "Set up the user dotenv before clearing user-scoped values.",
@@ -542,13 +552,12 @@ class ConfigEditorApp(App[None]):
             plan = self.manager.plan_removal(
                 env_key,
                 scope=scope,
-                storage=self._inspected_storage_selector(),
+                workspace=self._inspected_workspace_selector(),
             )
             update = self.manager.apply_edit(plan) if plan is not None else None
         except (
-            AppRCDirectoryError,
             OSError,
-            StorageRootPathError,
+            WorkspaceRootPathError,
             ValueError,
         ) as exc:
             self.notify(str(exc), severity="error", markup=False)
@@ -576,69 +585,74 @@ class ConfigEditorApp(App[None]):
             for spec in owner.fields
         )
 
-    async def _refresh_storage_list(
+    async def _refresh_workspace_list(
         self,
         *,
         select_name: str | None = None,
     ) -> None:
-        """Reload storage rows and select the requested storage."""
-        registry = self.storage_registry if self.storage_enabled else None
-        self.storage_entries = (
-            ordered_storage_entries(registry) if registry is not None else []
+        """Reload workspace rows and select the requested workspace."""
+        registry = self.workspace_registry if self.registry_enabled else None
+        self.workspace_entries = (
+            ordered_workspace_entries(registry) if registry is not None else []
         )
-        if not self.storage_enabled:
-            self._select_user_dotenv()
+        if not self.registry_enabled:
+            if self.active_workspace_root is not None:
+                self._select_active_workspace()
+            else:
+                self._select_user_dotenv()
             return
-        storage_list = self.query_one("#storage-list", ListView)
-        await storage_list.clear()
-        if not self.storage_entries:
-            if self.active_storage_root is not None:
-                self._select_active_storage()
+        workspace_list = self.query_one("#workspace-list", ListView)
+        await workspace_list.clear()
+        if not self.workspace_entries:
+            if self.active_workspace_root is not None:
+                self._select_active_workspace()
                 return
             self._select_user_dotenv()
             return
-        for entry in self.storage_entries:
+        for entry in self.workspace_entries:
             if registry is None:
                 return
-            await storage_list.append(
-                ListItem(Label(storage_entry_label(registry, entry)))
+            await workspace_list.append(
+                ListItem(Label(workspace_entry_label(registry, entry)))
             )
 
-        selected_index = storage_entry_index(self.storage_entries, select_name)
+        selected_index = workspace_entry_index(
+            self.workspace_entries, select_name
+        )
         if selected_index is None:
-            active_name = self._registered_active_storage_name()
-            if active_name is None and self.active_storage_root is not None:
-                self._select_active_storage()
+            active_name = self._registered_active_workspace_name()
+            if active_name is None and self.active_workspace_root is not None:
+                self._select_active_workspace()
                 return
-            selected_index = storage_entry_index(
-                self.storage_entries, active_name
+            selected_index = workspace_entry_index(
+                self.workspace_entries, active_name
             )
         if selected_index is None:
             selected_index = 0
-        storage_list.index = selected_index
-        entry = self.storage_entries[selected_index]
+        workspace_list.index = selected_index
+        entry = self.workspace_entries[selected_index]
         if entry.kind == "live":
-            self._select_storage(entry.name)
+            self._select_workspace(entry.name)
             return
         if entry.kind == "missing":
-            self._select_missing_storage(entry.name)
+            self._select_missing_workspace(entry.name)
             return
-        self._select_archived_storage(entry.name)
+        self._select_archived_workspace(entry.name)
 
-    def _select_active_storage(self) -> None:
+    def _select_active_workspace(self) -> None:
         """Load the env-selected active path without requiring a named row."""
-        root = self.active_storage_root
+        root = self.active_workspace_root
         if root is None:
             return
-        self.selection = ActivePathStorageSelection(root=root)
+        self.selection = ActivePathWorkspaceSelection(root=root)
         path = self._env_file_path_for_root(root)
         if not path.is_file():
             self.query_one("#scope-title", Static).update(
-                f"Storage path: {root}\nMissing AppRC marker: {path}. "
-                "Initialize storage config before editing storage values."
+                f"Workspace path: {root}\nMissing AppRC marker: {path}. "
+                "Initialize workspace config before editing workspace values."
             )
             self._clear_field_table()
-            self._set_storage_controls_enabled(
+            self._set_workspace_controls_enabled(
                 fields=False,
                 register_active=False,
                 rename=False,
@@ -649,12 +663,12 @@ class ConfigEditorApp(App[None]):
             )
             return
         self.query_one("#scope-title", Static).update(
-            active_storage_title(root, path)
+            active_workspace_title(root, path)
         )
         self._populate_field_table()
-        self._set_storage_controls_enabled(
+        self._set_workspace_controls_enabled(
             fields=bool(self._writable_scopes()),
-            register_active=self.storage_registry is not None,
+            register_active=self.workspace_registry is not None,
             rename=False,
             location=False,
             move=False,
@@ -662,22 +676,22 @@ class ConfigEditorApp(App[None]):
             archive=False,
         )
 
-    def _select_storage(self, name: str) -> None:
-        """Load one storage env file and refresh the field table."""
-        registry = self._require_storage_registry()
+    def _select_workspace(self, name: str) -> None:
+        """Load one workspace env file and refresh the field table."""
+        registry = self._require_workspace_registry()
         if registry is None:
             return
         record = registry.selected(name)
-        self.selection = LiveStorageSelection(record=record)
+        self.selection = LiveWorkspaceSelection(record=record)
         path = self._env_file_path_for_root(record.root)
         if not path.is_file():
             self.query_one("#scope-title", Static).update(
-                f"Storage {name!r}: {record.root}\n"
-                f"Missing AppRC marker: {path}. Initialize storage config "
-                "before editing storage values."
+                f"Workspace {name!r}: {record.root}\n"
+                f"Missing AppRC marker: {path}. Initialize workspace config "
+                "before editing workspace values."
             )
             self._clear_field_table()
-            self._set_storage_controls_enabled(
+            self._set_workspace_controls_enabled(
                 fields=False,
                 register_active=False,
                 rename=True,
@@ -688,7 +702,7 @@ class ConfigEditorApp(App[None]):
             )
             return
         self.query_one("#scope-title", Static).update(
-            live_storage_title(record, path)
+            live_workspace_title(record, path)
         )
         self._populate_field_table()
         self._set_live_controls_enabled(True)
@@ -704,27 +718,29 @@ class ConfigEditorApp(App[None]):
 
     async def clear_resolved_selector_issue(self) -> None:
         """Remove the selector warning after its name becomes registered."""
-        issue = self.storage_selector_issue
-        registry = self.storage_registry
+        issue = self.workspace_selector_issue
+        registry = self.workspace_registry
         if issue is None or issue.selector is None or registry is None:
             return
-        if issue.selector.raw_value.strip() not in registry.storages:
+        if issue.selector.raw_value.strip() not in registry.workspaces:
             return
-        self.storage_selector_issue = None
+        self.workspace_selector_issue = None
         for status in self.query("#selector-status"):
             await status.remove()
 
-    def _storage_marker_setup_target(self) -> tuple[str, Path] | None:
+    def _workspace_marker_setup_target(self) -> tuple[str, Path] | None:
         """Return a registered live root whose marker must be initialized."""
         selection = self.selection
-        if isinstance(selection, LiveStorageSelection):
+        if isinstance(selection, LiveWorkspaceSelection):
             record = selection.record
         else:
-            registry = self.storage_registry
-            if registry is None or not registry.storages:
+            registry = self.workspace_registry
+            if registry is None or not registry.workspaces:
                 return None
-            name = registry.selected_storage or next(iter(registry.storages))
-            record = registry.storages.get(name)
+            name = registry.selected_workspace or next(
+                iter(registry.workspaces)
+            )
+            record = registry.workspaces.get(name)
             if record is None:
                 return None
         if not record.root.is_dir():
@@ -733,28 +749,28 @@ class ConfigEditorApp(App[None]):
             return None
         return record.name, record.root
 
-    def _requested_storage_name(self) -> str | None:
+    def _requested_workspace_name(self) -> str | None:
         """Return a bare failed selector that setup can register by name."""
-        issue = self.storage_selector_issue
+        issue = self.workspace_selector_issue
         if issue is None or issue.selector is None:
             return None
         value = issue.selector.raw_value.strip()
-        if not value or storage_selector_is_path_like(value):
+        if not value or workspace_selector_is_path_like(value):
             return None
         return value
 
-    def _select_missing_storage(self, name: str) -> None:
-        """Show a registered storage whose root no longer exists."""
-        registry = self._require_storage_registry()
+    def _select_missing_workspace(self, name: str) -> None:
+        """Show a registered workspace whose root no longer exists."""
+        registry = self._require_workspace_registry()
         if registry is None:
             return
         record = registry.selected(name)
-        self.selection = MissingStorageSelection(record=record)
+        self.selection = MissingWorkspaceSelection(record=record)
         self.query_one("#scope-title", Static).update(
-            missing_storage_title(record)
+            missing_workspace_title(record)
         )
         self._clear_field_table()
-        self._set_storage_controls_enabled(
+        self._set_workspace_controls_enabled(
             fields=False,
             register_active=False,
             rename=True,
@@ -764,27 +780,27 @@ class ConfigEditorApp(App[None]):
             archive=False,
         )
 
-    def _select_archived_storage(self, name: str) -> None:
+    def _select_archived_workspace(self, name: str) -> None:
         """Show archived metadata without enabling field editing."""
-        registry = self._require_storage_registry()
+        registry = self._require_workspace_registry()
         if registry is None:
             return
-        record = registry.archived_storages[name]
-        self.selection = ArchivedStorageSelection(record=record)
+        record = registry.archived_workspaces[name]
+        self.selection = ArchivedWorkspaceSelection(record=record)
         self.query_one("#scope-title", Static).update(
-            archived_storage_title(record)
+            archived_workspace_title(record)
         )
         self._clear_field_table()
         self._set_live_controls_enabled(False)
 
     def _select_user_dotenv(self) -> None:
-        """Show app, shell, and default sources without selected storage."""
+        """Show user, shell, and default sources without a selected workspace."""
         self._clear_selection()
         self.query_one("#scope-title", Static).update(
-            self._no_storage_message()
+            self._no_workspace_message()
         )
         self._populate_field_table()
-        self._set_storage_controls_enabled(
+        self._set_workspace_controls_enabled(
             fields=True,
             register_active=False,
             rename=False,
@@ -795,14 +811,14 @@ class ConfigEditorApp(App[None]):
         )
 
     def _populate_field_table(self) -> None:
-        """Render every known config field for the active storage."""
+        """Render every known config field for the active workspace."""
         table = self.query_one("#field-table", DataTable)
         table.clear(columns=True)
         table.cursor_type = "row"
         table.add_columns(
             *field_table_columns(
                 include_user_dotenv=self.user_dotenv_enabled,
-                include_storage=self.storage_enabled,
+                include_workspace=self.workspace_enabled,
                 include_explicit=bool(self.manager.options.env_files),
             )
         )
@@ -810,7 +826,7 @@ class ConfigEditorApp(App[None]):
         for row in build_field_table_rows(
             resolved=self._inspected_resolution(),
             include_user_dotenv=self.user_dotenv_enabled,
-            include_storage=self.storage_enabled,
+            include_workspace=self.workspace_enabled,
             hidden_env_keys=self.hidden_env_keys,
         ):
             if row.height is None:
@@ -820,7 +836,7 @@ class ConfigEditorApp(App[None]):
             self.row_env_keys.append(row.env_key)
 
     def _clear_field_table(self) -> None:
-        """Clear the field table when no live storage is selected."""
+        """Clear the field table when no live workspace is selected."""
         table = self.query_one("#field-table", DataTable)
         table.clear(columns=True)
         self.row_env_keys = []
@@ -834,36 +850,33 @@ class ConfigEditorApp(App[None]):
             row_index=table.cursor_row,
         )
 
-    def _inspected_storage_selector(self) -> str | None:
+    def _inspected_workspace_selector(self) -> str | None:
         """Return the browsed root independently of the runtime selection."""
-        if isinstance(self.selection, ActivePathStorageSelection):
+        if isinstance(self.selection, ActivePathWorkspaceSelection):
             return str(self.selection.root)
-        if isinstance(self.selection, LiveStorageSelection):
+        if isinstance(self.selection, LiveWorkspaceSelection):
             return str(self.selection.record.root)
         return None
 
     def _inspected_resolution(self) -> ResolvedConfig:
         """Read current sources through shared management inspection."""
-        storage = self._inspected_storage_selector()
+        workspace = self._inspected_workspace_selector()
         return self.manager.inspect(
-            storage=storage, include_storage=storage is not None
+            workspace=workspace, include_workspace=workspace is not None
         ).resolved
 
-    def _current_storage_root(self) -> Path:
-        """Return the selected editable storage root."""
+    def _current_workspace_root(self) -> Path:
+        """Return the selected editable workspace root."""
         selection = self.selection
-        if isinstance(selection, ActivePathStorageSelection):
+        if isinstance(selection, ActivePathWorkspaceSelection):
             return selection.root
-        if isinstance(selection, LiveStorageSelection):
+        if isinstance(selection, LiveWorkspaceSelection):
             return selection.record.root
-        raise RuntimeError("No editable storage is selected.")
+        raise RuntimeError("No editable workspace is selected.")
 
     def _env_file_path_for_root(self, root: Path) -> Path:
         """Return the editable dotenv path below one current root."""
-        return (
-            Path(root).expanduser().resolve()
-            / self.apprc.schema.storage_dotenv_filename
-        )
+        return self.files.workspace_dotenv_path(root.expanduser().resolve())
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable editor controls."""
@@ -874,8 +887,8 @@ class ConfigEditorApp(App[None]):
             button.disabled = self._config_action_in_progress
 
     def _set_live_controls_enabled(self, enabled: bool) -> None:
-        """Enable storage-specific controls only for live storages."""
-        self._set_storage_controls_enabled(
+        """Enable workspace-specific controls only for live workspaces."""
+        self._set_workspace_controls_enabled(
             fields=enabled,
             register_active=False,
             rename=enabled,
@@ -885,7 +898,7 @@ class ConfigEditorApp(App[None]):
             archive=enabled,
         )
 
-    def _set_storage_controls_enabled(
+    def _set_workspace_controls_enabled(
         self,
         *,
         fields: bool,
@@ -896,56 +909,56 @@ class ConfigEditorApp(App[None]):
         delete: bool,
         archive: bool,
     ) -> None:
-        """Enable or disable each storage-scoped editor control.
+        """Enable or disable each workspace-scoped editor control.
 
         :param fields: Whether config field rows may be edited.
         :param register_active: Whether the active path may be registered.
-        :param rename: Whether the selected named storage may be renamed.
-        :param location: Whether the selected named storage may be repointed.
-        :param move: Whether the selected storage directory may be moved.
-        :param delete: Whether the current named storage may be removed.
-        :param archive: Whether the current storage directory may be archived.
+        :param rename: Whether the selected named workspace may be renamed.
+        :param location: Whether the selected named workspace may be repointed.
+        :param move: Whether the selected workspace directory may be moved.
+        :param delete: Whether the current named workspace may be unregistered.
+        :param archive: Whether the current workspace directory may be archived.
         """
         self._set_controls_enabled(fields)
-        if not self.storage_enabled:
+        if not self.registry_enabled:
             return
         self.query_one(
-            "#storage-list", ListView
+            "#workspace-list", ListView
         ).disabled = self._config_action_in_progress
-        self.query_one("#storage-new", Button).disabled = (
-            self._config_action_in_progress or self.storage_registry is None
+        self.query_one("#workspace-new", Button).disabled = (
+            self._config_action_in_progress or self.workspace_registry is None
         )
-        self.query_one("#storage-register-active", Button).disabled = (
+        self.query_one("#workspace-register-active", Button).disabled = (
             self._config_action_in_progress or not register_active
         )
-        self.query_one("#storage-rename", Button).disabled = (
+        self.query_one("#workspace-rename", Button).disabled = (
             self._config_action_in_progress or not rename
         )
-        self.query_one("#storage-location", Button).disabled = (
+        self.query_one("#workspace-location", Button).disabled = (
             self._config_action_in_progress or not location
         )
-        self.query_one("#storage-move", Button).disabled = (
+        self.query_one("#workspace-move", Button).disabled = (
             self._config_action_in_progress or not move
         )
-        self.query_one("#storage-delete", Button).disabled = (
+        self.query_one("#workspace-delete", Button).disabled = (
             self._config_action_in_progress or not delete
         )
-        self.query_one("#storage-archive", Button).disabled = (
+        self.query_one("#workspace-archive", Button).disabled = (
             self._config_action_in_progress or not archive
         )
 
     def _clear_selection(self) -> None:
-        """Clear storage selection and storage values."""
-        self.selection = NoStorageSelection()
+        """Clear workspace selection and workspace values."""
+        self.selection = NoWorkspaceSelection()
 
-    def _selected_storage_name(self) -> str | None:
+    def _selected_workspace_name(self) -> str | None:
         """Return the current named row for control-state restoration."""
         selection = self.selection
         if isinstance(
             selection,
-            LiveStorageSelection
-            | MissingStorageSelection
-            | ArchivedStorageSelection,
+            LiveWorkspaceSelection
+            | MissingWorkspaceSelection
+            | ArchivedWorkspaceSelection,
         ):
             return selection.record.name
         return None
@@ -953,76 +966,77 @@ class ConfigEditorApp(App[None]):
     def _user_dotenv_is_active(self) -> bool:
         """Return whether the user dotenv source should be visible."""
         return (
-            self.user_dotenv_enabled
-            and self.manager.paths.user_dotenv.is_file()
+            self.user_dotenv_enabled and self.files.user_dotenv_path().is_file()
         )
 
-    def _storage_scope_is_active(self) -> bool:
-        """Return whether the current selection can read/write storage env."""
-        return isinstance(
-            self.selection,
-            ActivePathStorageSelection | LiveStorageSelection,
+    def _workspace_scope_is_active(self) -> bool:
+        """Return whether the selection has an initialized workspace env."""
+        return (
+            isinstance(
+                self.selection,
+                ActivePathWorkspaceSelection | LiveWorkspaceSelection,
+            )
+            and self._env_file_path_for_root(
+                self._current_workspace_root()
+            ).is_file()
         )
 
     def _writable_scopes(self) -> tuple[ConfigWriteScope, ...]:
         """Return write scopes currently available for the selected field."""
         return self.manager.writable_scopes(
-            storage=self._inspected_storage_selector(),
-            include_storage=self._storage_scope_is_active(),
+            workspace=self._inspected_workspace_selector(),
+            include_workspace=self._workspace_scope_is_active(),
         )
 
-    def _registered_active_storage_name(self) -> str | None:
-        """Return the named storage that matches the active path, if any."""
-        if self.active_storage_root is None or self.storage_registry is None:
+    def _registered_active_workspace_name(self) -> str | None:
+        """Return the named workspace that matches the active path, if any."""
+        if (
+            self.active_workspace_root is None
+            or self.workspace_registry is None
+        ):
             return None
-        for name in sorted(self.storage_registry.storages):
-            record = self.storage_registry.storages[name]
+        for name in sorted(self.workspace_registry.workspaces):
+            record = self.workspace_registry.workspaces[name]
             record_root = Path(record.root).expanduser().resolve()
-            if record_root == self.active_storage_root:
+            if record_root == self.active_workspace_root:
                 return name
         return None
 
-    def _suggest_storage_name(self, path: Path) -> str:
-        """Return a simple storage-name suggestion from a path."""
-        return suggest_storage_name(
+    def _suggest_workspace_name(self, path: Path) -> str:
+        """Return a simple workspace-name suggestion from a path."""
+        return suggest_workspace_name(
             path,
-            fallback_name=self._fallback_storage_name(),
+            fallback_name=self.apprc.schema.app_id,
         )
 
-    def _fallback_storage_name(self) -> str:
-        """Return a storage selector when no path name is available."""
-        return suggested_storage_name(self.apprc.schema.app_id)
-
-    def _no_storage_message(self) -> str:
-        """Return guidance when no storage row or path is selected."""
-        if not self.storage_enabled:
+    def _no_workspace_message(self) -> str:
+        """Return guidance when no workspace row or path is selected."""
+        if not self.workspace_enabled:
             return self._user_dotenv_message()
-        if self.user_dotenv_active and self.active_storage_root is None:
-            return f"{self._user_dotenv_message()}\n\nNo storage is selected."
-        storage_selector_env_key = (
-            self.apprc.schema.require_storage_selector_env_key()
+        if self.user_dotenv_active and self.active_workspace_root is None:
+            return f"{self._user_dotenv_message()}\n\nNo workspace is selected."
+        selector_env_key = (
+            self.apprc.schema.require_workspace_selector_env_key()
         )
-        if self.storage_registry is not None:
+        if self.workspace_registry is not None:
             return (
-                "No storages are registered. Use New to add one, or set "
-                f"{storage_selector_env_key} to a registered name or "
-                "initialized path.\n"
+                "No workspaces are registered. Use New to add one, or set "
+                f"{selector_env_key} to a registered name or initialized path.\n"
                 f"CLI: {self.init_command}"
             )
         return (
-            "No storage is selected. Set "
-            f"{storage_selector_env_key} to a registered name or initialized "
-            "path."
+            "No workspace is selected. Set "
+            f"{selector_env_key} to an initialized directory path."
         )
 
     def _user_dotenv_message(self) -> str:
         """Return source guidance for the per-user dotenv."""
         if self.user_dotenv_active:
-            return f"User dotenv:\n{self.manager.paths.user_dotenv}"
+            return f"User dotenv:\n{self.files.user_dotenv_path()}"
         if self.user_dotenv_enabled:
             return (
                 "The user dotenv is not set up.\n"
-                f"Proposed path: {self.manager.paths.user_dotenv}\n"
+                f"Proposed path: {self.files.user_dotenv_path()}\n"
                 f"Run {self.apprc.schema.config_command_name()} "
                 f"{self.config_group_name} setup or choose Set up user "
                 "dotenv."
@@ -1035,31 +1049,31 @@ class ConfigEditorApp(App[None]):
     def _setup_needed(self) -> bool:
         """Return whether a declared managed feature needs initialization."""
         user_missing = self.user_dotenv_enabled and not self.user_dotenv_active
-        return user_missing or self._storage_setup_needed()
+        return user_missing or self._workspace_setup_needed()
 
-    def _storage_setup_needed(self) -> bool:
-        """Return whether the declared storage feature needs initialization."""
-        if not self.storage_enabled:
+    def _workspace_setup_needed(self) -> bool:
+        """Return whether the declared workspace feature needs initialization."""
+        if not self.workspace_enabled:
             return False
-        if self.storage_registry_error is not None:
+        if self.workspace_registry_error is not None:
             return False
-        registry = self.storage_registry
-        if self.active_storage_root is not None:
+        registry = self.workspace_registry
+        if self.active_workspace_root is not None:
             registered = registry is not None and any(
-                record.root.expanduser().resolve() == self.active_storage_root
-                for record in registry.storages.values()
+                record.root.expanduser().resolve() == self.active_workspace_root
+                for record in registry.workspaces.values()
             )
-            if registered and not self.active_storage_root.is_dir():
+            if registered and not self.active_workspace_root.is_dir():
                 return False
             return not self._env_file_path_for_root(
-                self.active_storage_root
+                self.active_workspace_root
             ).is_file()
-        if registry is None or not registry.storages:
+        if registry is None or not registry.workspaces:
             return True
-        selected_name = registry.selected_storage or next(
-            iter(registry.storages)
+        selected_name = registry.selected_workspace or next(
+            iter(registry.workspaces)
         )
-        record = registry.storages.get(selected_name)
+        record = registry.workspaces.get(selected_name)
         if record is None or not record.root.is_dir():
             return False
         return not self._env_file_path_for_root(record.root).is_file()
@@ -1067,57 +1081,57 @@ class ConfigEditorApp(App[None]):
     def _setup_button_label(self) -> str:
         """Return a setup action that names the missing capability."""
         user_missing = self.user_dotenv_enabled and not self.user_dotenv_active
-        storage_missing = self._storage_setup_needed()
-        if user_missing and storage_missing:
-            return "Set up user dotenv and storage..."
+        workspace_missing = self._workspace_setup_needed()
+        if user_missing and workspace_missing:
+            return "Set up user dotenv and workspace..."
         if user_missing:
             return "Set up user dotenv..."
-        if storage_missing:
-            if self.storage_registry and self.storage_registry.storages:
-                return "Initialize storage config..."
-            return "Set up storage..."
+        if workspace_missing:
+            if self.workspace_registry and self.workspace_registry.workspaces:
+                return "Initialize workspace config..."
+            return "Set up workspace..."
         return "Finish setup..."
 
-    def _storage_selector_issue_message(self) -> str:
+    def _workspace_selector_issue_message(self) -> str:
         """Explain one selector failure without claiming setup is damaged."""
-        issue = self.storage_selector_issue
+        issue = self.workspace_selector_issue
         if issue is None:
             return ""
         selector = issue.selector
-        lines = ["Storage selection needs attention:", issue.message]
+        lines = ["Workspace selection needs attention:", issue.message]
         if selector is not None:
             source_labels = {
-                "cli": "command-line --storage",
+                "cli": "command-line --workspace",
                 "process_environment": (
                     f"{selector.source} from the process environment"
                 ),
                 "explicit_dotenv": (
                     f"{selector.source} from an explicit dotenv file"
                 ),
-                "registry": "apprc.toml selected_storage",
+                "registry": "apprc.toml selected_workspace",
             }
             lines.append(f"Source: {source_labels[selector.source_kind]}.")
             if (
                 selector.source_kind != "registry"
-                and issue.configured_storage is not None
+                and issue.configured_workspace is not None
             ):
                 lines.append(
-                    f"This value overrides selected_storage="
-                    f"{issue.configured_storage!r}."
+                    f"This value overrides selected_workspace="
+                    f"{issue.configured_workspace!r}."
                 )
-        registry = self.storage_registry
-        if registry is not None and registry.storages:
+        registry = self.workspace_registry
+        if registry is not None and registry.workspaces:
             lines.append(
-                "Registered storages: "
-                + ", ".join(sorted(registry.storages))
+                "Registered workspaces: "
+                + ", ".join(sorted(registry.workspaces))
                 + "."
             )
             lines.append(
-                "Select a registered storage below to inspect it. This does "
+                "Select a registered workspace below to inspect it. This does "
                 "not change the runtime selector."
             )
         lines.append(
-            "Register or rename the requested storage, or change/unset the "
+            "Register or rename the requested workspace, or change/unset the "
             "selector at its source. Setup is not a selector repair."
         )
         return "\n".join(lines)

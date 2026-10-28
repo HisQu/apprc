@@ -5,6 +5,7 @@ from __future__ import annotations
 # == Standard Library ========================
 import dataclasses
 import logging
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -21,29 +22,37 @@ from typing import (
 )
 
 # == 3rd Party ===============================
-
 # == Internal ================================
 import apprc.utils as ut
-from apprc.services.manager import ConfigManager
 from apprc.definition.app_config.spec import AppConfigSpec
-from apprc.definition.resolution import (
-    BundleFieldSpec as _BundleFieldSpec,
-    ImportedConfig,
-    ResolveOptions,
-)
-from apprc.runtime.resolution import ResolvedConfig, resolve_config
-from apprc.definition.app_config.storage import Storage
 from apprc.definition.app_config.user_dotenv import UserDotenv
+from apprc.definition.app_config.workspaces import Workspaces
 from apprc.definition.env_config._validation import (
     validate_config_owner,
     validate_config_owner_inventory,
 )
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
+from apprc.definition.maintenance import MaintenanceHandlers
+from apprc.definition.paths import AppPaths, Layout, PathKind, Paths
+from apprc.definition.resolution import (
+    BundleFieldSpec as _BundleFieldSpec,
+)
+from apprc.definition.resolution import (
+    ImportedConfig,
+    ResolveOptions,
+    dependency_environment_exclusions,
+)
 from apprc.public.config import Config, ConfigBase
 from apprc.public.field import (
     _FIELD_DECLARATION_METADATA_KEY,
     _FieldDeclaration,
 )
+from apprc.runtime.resolution import ResolvedConfig, resolve_config
+from apprc.services.maintenance import MaintenanceManager
+from apprc.services.manager import ConfigManager
+from apprc.services.workspaces import WorkspaceManager
+from apprc.user_files.app_home.layouts import resolve_app_paths
+from apprc.user_files.app_home.ownership import ensure_owned_path
 
 ConfigClassT = TypeVar("ConfigClassT", bound=type[ConfigBase])
 ConfigInstanceT = TypeVar("ConfigInstanceT", bound=ConfigBase)
@@ -76,41 +85,27 @@ class RegisteredConfig:
 
 @dataclass(frozen=True, slots=True)
 class _AppRCDeclaration:
-    """Typed values shared by every rebuild of one public facade.
-
-    :param app_id: Stable application identity.
-    :param display_name: Human-readable application name.
-    :param config_package: Package that may contain managed defaults.
-    :param command_name: Executable name used in guidance.
-    :param user_dotenv: Optional user-wide dotenv declaration.
-    :param storage: Optional persistent-storage declaration.
-    :param setup_next_step: Optional command or instruction printed after
-        explicit CLI setup.
-    :param apprc_dir: Optional application-declared AppRC directory.
-    :param apprc_dir_env_key: Explicit directory override key.
-    :param legacy_app_ids: Released 0.19 identities accepted by migration.
-    """
+    """Typed declarations preserved when registered configuration is rebuilt."""
 
     app_id: str
     display_name: str
     config_package: str | None
     command_name: str | None
     user_dotenv: UserDotenv | None
-    storage: Storage | None
+    paths: Paths
+    layout: Layout | None
+    bootstrap_env_prefix: str | None
+    workspaces: Workspaces | None
     setup_next_step: str | None
-    apprc_dir: Path | None
-    apprc_dir_env_key: str | None
-    legacy_app_ids: tuple[str, ...]
 
 
 class AppRC:
     """Public facade for one application's AppRC integration.
 
-    App authors create one ``AppRC`` object, add :class:`UserDotenv` when the
-    app needs persistent user overrides, add :class:`Storage` when the app
-    writes persistent data, register config classes through
-    ``@MyRC.config(...)``, and load inputs with :meth:`resolve`.
-    :meth:`manage` provides noninteractive setup and editing.
+    Declare independent paths and optional preference/workspace capabilities,
+    register sections through ``@MyRC.config(...)``, and capture inputs with
+    :meth:`resolve`. Path inspection is read-only; :meth:`ensure_path` creates
+    only the requested enabled location.
     """
 
     def __init__(
@@ -121,11 +116,11 @@ class AppRC:
         display_name: str | None = None,
         command_name: str | None = None,
         user_dotenv: UserDotenv | None = None,
-        storage: Storage | None = None,
+        paths: Paths = Paths(),
+        layout: Layout | None = None,
+        bootstrap_env_prefix: str | None = None,
+        workspaces: Workspaces | None = None,
         setup_next_step: str | None = None,
-        apprc_dir: Path | None = None,
-        apprc_dir_env_key: str | None = None,
-        legacy_app_ids: tuple[str, ...] = (),
     ) -> None:
         """Build an application declaration with optional writable features.
 
@@ -136,12 +131,12 @@ class AppRC:
         :param command_name: Executable name shown in generated instructions.
         :param user_dotenv: User dotenv declaration, or ``None`` to avoid that
             persistent layer.
-        :param storage: Storage declaration, or ``None`` for storage-free apps.
+        :param paths: Independently enabled configuration/data/cache/state paths.
+        :param layout: Declared layout fallback, native when omitted.
+        :param bootstrap_env_prefix: Optional layout/root/workspace key prefix.
+        :param workspaces: Optional direct or registered workspace selection.
         :param setup_next_step: Optional command or instruction shown after
             successful explicit CLI setup.
-        :param apprc_dir: Optional application-declared AppRC directory.
-        :param apprc_dir_env_key: Explicit directory override key.
-        :param legacy_app_ids: Released 0.19 identities accepted by migration.
         """
         self._declaration = _AppRCDeclaration(
             app_id=app_id,
@@ -149,11 +144,11 @@ class AppRC:
             config_package=config_package,
             command_name=command_name,
             user_dotenv=user_dotenv,
-            storage=storage,
+            paths=paths,
+            layout=layout,
+            bootstrap_env_prefix=bootstrap_env_prefix,
+            workspaces=workspaces,
             setup_next_step=setup_next_step,
-            apprc_dir=apprc_dir,
-            apprc_dir_env_key=apprc_dir_env_key,
-            legacy_app_ids=legacy_app_ids,
         )
         self._registered_by_key: dict[str, RegisteredConfig] = {}
         self._registered_by_type: dict[type[ConfigBase], RegisteredConfig] = {}
@@ -213,6 +208,129 @@ class AppRC:
             environment=environment,
         )
 
+    def paths(
+        self,
+        options: ResolveOptions | None = None,
+        *,
+        environment: Mapping[str, str] | None = None,
+    ) -> AppPaths:
+        """Resolve enabled locations without creating or reading settings files.
+
+        :param options: Invocation placement and explicit bootstrap files.
+        :param environment: Captured environment, or the process environment.
+        :return: Immutable paths with their original layout provenance.
+        """
+        excluded_keys, excluded_prefixes = dependency_environment_exclusions(
+            tuple(self._imported_configs)
+        )
+        return resolve_app_paths(
+            self.schema,
+            options or ResolveOptions(),
+            dict(os.environ if environment is None else environment),
+            excluded_env_keys=excluded_keys,
+            excluded_env_prefixes=excluded_prefixes,
+        )
+
+    def ensure_path(
+        self,
+        kind: PathKind,
+        options: ResolveOptions | None = None,
+        *,
+        environment: Mapping[str, str] | None = None,
+        adopt: bool = False,
+    ) -> Path:
+        """Privately initialize one declared location and its ownership marker.
+
+        :param kind: Enabled component or subordinate logs location.
+        :param options: Invocation layout and bootstrap inputs.
+        :param environment: Explicit environment, or the process environment.
+        :param adopt: Explicitly accept an existing nonempty unowned directory.
+        :return: Initialized directory.
+        """
+        return ensure_owned_path(
+            self.schema,
+            self.paths(options, environment=environment),
+            kind,
+            adopt=adopt,
+        )
+
+    def _resolve_with_paths(
+        self,
+        options: ResolveOptions,
+        environment: Mapping[str, str],
+        paths: AppPaths,
+    ) -> ResolvedConfig:
+        """Resolve settings while retaining an adapter's bootstrap snapshot."""
+        return resolve_config(
+            self.schema,
+            registered_types=tuple(self._registered_by_type),
+            bundles=self._bundles,
+            imported_configs=tuple(self._imported_configs),
+            options=options,
+            environment=environment,
+            app_paths=paths,
+        )
+
+    def _manage_with_paths(
+        self,
+        options: ResolveOptions,
+        environment: Mapping[str, str],
+        paths: AppPaths,
+    ) -> ConfigManager:
+        """Build a settings manager against captured placement and environment."""
+        return ConfigManager(
+            self.schema,
+            registered_types=tuple(self._registered_by_type),
+            bundles=self._bundles,
+            imported_configs=tuple(self._imported_configs),
+            options=options,
+            environment=environment,
+            app_paths=paths,
+        )
+
+    def workspaces(
+        self,
+        options: ResolveOptions | None = None,
+        *,
+        environment: Mapping[str, str] | None = None,
+    ) -> WorkspaceManager:
+        """Return explicit workspace operations without changing payloads.
+
+        :param options: Invocation workspace and bootstrap inputs.
+        :param environment: Explicit environment, or the process environment.
+        :return: Workspace manager bound to one captured path snapshot.
+        """
+        captured = dict(os.environ if environment is None else environment)
+        return WorkspaceManager(
+            self.schema,
+            options=options,
+            environment=captured,
+            app_paths=self.paths(options, environment=captured),
+        )
+
+    def maintain(
+        self,
+        options: ResolveOptions | None = None,
+        *,
+        environment: Mapping[str, str] | None = None,
+        handlers: MaintenanceHandlers = MaintenanceHandlers(),
+    ) -> MaintenanceManager:
+        """Return logical resource operations without loading business settings.
+
+        :param options: Invocation placement and bootstrap inputs.
+        :param environment: Explicit environment, or the process environment.
+        :param handlers: Explicit application-owned semantic operations.
+        :return: Manager bound to the captured paths and handlers.
+        """
+        captured = dict(os.environ if environment is None else environment)
+        return MaintenanceManager(
+            self.schema,
+            options=options,
+            environment=captured,
+            handlers=handlers,
+            app_paths=self.paths(options, environment=captured),
+        )
+
     def import_dependency_config(
         self,
         dependency: AppRC,
@@ -234,9 +352,9 @@ class AppRC:
         Every mapped dependency field must be a dataclass field with
         ``init=True`` so parent values can be supplied during construction.
         This method records the dependency schema and adds its parent-owned
-        fields to this AppRC. It does not load dependency user files, storage
-        files, or environment values. If the section requires storage, the
-        parent must declare storage and select a valid parent storage before
+        fields to this AppRC. It does not load dependency user or workspace
+        files, or dependency environment values. If the section requires a
+        workspace, the parent must declare and select its own workspace before
         building the imported config.
 
         :param dependency: AppRC that registered ``config_type``.
@@ -281,12 +399,12 @@ class AppRC:
                 "the parent AppRC; import it through a separate config class."
             )
         if (
-            dependency_owner.requires_storage
-            and self._declaration.storage is None
+            dependency_owner.requires_workspace
+            and self._declaration.workspaces is None
         ):
             raise ValueError(
-                f"{config_type.__name__} requires storage; the parent AppRC "
-                "must declare storage=rc.Storage()."
+                f"{config_type.__name__} requires a workspace; the parent "
+                "AppRC must declare workspaces=rc.Workspaces()."
             )
         if (
             include_packaged_defaults
@@ -367,7 +485,7 @@ class AppRC:
             declared_fields=normalized_fields,
             targets=targets,
             dependency_owner=dependency_owner,
-            requires_storage=dependency_owner.requires_storage,
+            requires_workspace=dependency_owner.requires_workspace,
         )
         imported_source_keys = {
             dependency_owner.env_key(name) for name in targets
@@ -385,9 +503,9 @@ class AppRC:
         dependency_control_env_keys = tuple(
             key
             for key in (
-                dependency.schema.storage_selector_env_key,
-                dependency.schema.apprc_dir_env_key,
-                *dependency.schema.legacy_apprc_toml_env_keys(),
+                dependency.schema.workspace_selector_env_key,
+                dependency.schema.layout_env_key,
+                dependency.schema.root_env_key,
             )
             if key is not None
         )
@@ -395,9 +513,9 @@ class AppRC:
         parent_control_keys = {
             key
             for key in (
-                self.schema.storage_selector_env_key,
-                self.schema.apprc_dir_env_key,
-                *self.schema.legacy_apprc_toml_env_keys(),
+                self.schema.workspace_selector_env_key,
+                self.schema.layout_env_key,
+                self.schema.root_env_key,
             )
             if key is not None
         }
@@ -509,7 +627,7 @@ class AppRC:
         declared_fields: Mapping[str, _FieldDeclaration],
         targets: Mapping[str, str],
         dependency_owner: ConfigOwner,
-        requires_storage: bool,
+        requires_workspace: bool,
     ) -> ConfigOwner:
         """Build and validate parent-owned fields for an imported section."""
         if not prefix:
@@ -582,7 +700,7 @@ class AppRC:
             env_prefix=prefix,
             rc_path=rc_path,
             fields=tuple(fields),
-            requires_storage=requires_storage,
+            requires_workspace=requires_workspace,
         )
         validate_config_owner(owner)
         _validate_prefix(
@@ -601,7 +719,7 @@ class AppRC:
         prefix: str | None = None,
         title: str | None = None,
         rc_path: tuple[str, ...] | None = None,
-        requires_storage: bool = False,
+        requires_workspace: bool = False,
     ) -> Callable[[ConfigClassT], ConfigClassT]:
         """Return the public config registration decorator.
 
@@ -610,8 +728,8 @@ class AppRC:
         :param title: Optional display title. AppRC derives one from ``key``
             when omitted.
         :param rc_path: Optional runtime config path. Defaults to ``(key,)``.
-        :param requires_storage: Skip inspection of this section until storage
-            is selected. Requires a storage declaration and ``rc.Config``.
+        :param requires_workspace: Skip inspection until a workspace is selected.
+            Requires a Workspaces declaration and ``rc.Config``.
         :return: Decorator that registers a ``rc.Config`` or ``rc.ConfigBase``
             subclass.
         :raises TypeError: If ``key`` is missing or not a string.
@@ -633,7 +751,7 @@ class AppRC:
                 prefix=prefix,
                 title=title,
                 rc_path=rc_path,
-                requires_storage=requires_storage,
+                requires_workspace=requires_workspace,
             )
 
         return decorator
@@ -690,12 +808,12 @@ class AppRC:
                 item.parent_owner for item in self._imported_configs
             ),
             user_dotenv=declaration.user_dotenv,
-            storage=declaration.storage,
+            paths=declaration.paths,
+            layout=declaration.layout,
+            bootstrap_env_prefix=declaration.bootstrap_env_prefix,
+            workspaces=declaration.workspaces,
             setup_next_step=declaration.setup_next_step,
             command_name=declaration.command_name,
-            apprc_dir=declaration.apprc_dir,
-            apprc_dir_env_key=declaration.apprc_dir_env_key,
-            legacy_app_ids=declaration.legacy_app_ids,
         )
 
     def _register_config(
@@ -706,7 +824,7 @@ class AppRC:
         prefix: str | None,
         title: str | None,
         rc_path: tuple[str, ...] | None,
-        requires_storage: bool,
+        requires_workspace: bool,
     ) -> ConfigClassT:
         """Validate and register one config class."""
         _validate_config_class(config_type)
@@ -722,13 +840,13 @@ class AppRC:
             raise ValueError(f'AppRC owner key "{key}" is already in use.')
 
         resolved_type = self._ensure_dataclass(config_type)
-        if requires_storage and self.schema.storage is None:
+        if requires_workspace and self.schema.workspaces is None:
             raise ValueError(
-                "requires_storage=True requires storage=rc.Storage()."
+                "requires_workspace=True requires workspaces=rc.Workspaces()."
             )
-        if requires_storage and not _is_env_config(resolved_type):
+        if requires_workspace and not _is_env_config(resolved_type):
             raise ValueError(
-                "requires_storage=True requires an rc.Config section."
+                "requires_workspace=True requires an rc.Config section."
             )
         resolved_title = title or _humanize_title(key)
         resolved_rc_path = rc_path or (key,)
@@ -743,7 +861,7 @@ class AppRC:
                 prefix=prefix,
                 rc_path=resolved_rc_path,
                 declared_fields=declared_fields,
-                requires_storage=requires_storage,
+                requires_workspace=requires_workspace,
             )
             self._validate_unique_env_keys(resolved_type, declared_fields)
             validate_config_owner_inventory((*self.schema.owners, owner))
@@ -783,7 +901,7 @@ class AppRC:
         prefix: str | None,
         rc_path: tuple[str, ...],
         declared_fields: Mapping[str, _FieldDeclaration],
-        requires_storage: bool,
+        requires_workspace: bool,
     ) -> ConfigOwner:
         """Build an internal owner from registered field declarations."""
         if prefix is None or not prefix:
@@ -807,7 +925,7 @@ class AppRC:
                 prefix=prefix,
                 declared_fields=declared_fields,
             ),
-            requires_storage=requires_storage,
+            requires_workspace=requires_workspace,
         )
         validate_config_owner(owner)
         return owner
@@ -1208,7 +1326,7 @@ def _dependency_runtime_owner(
         env_prefix="",
         rc_path=parent_owner.rc_path,
         fields=tuple(dependency_fields),
-        requires_storage=parent_owner.requires_storage,
+        requires_workspace=parent_owner.requires_workspace,
     )
 
 

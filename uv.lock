@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "apprc"
-version = "0.29.0"
+version = "0.30.0"
 source = { editable = "src/apprc_dev/packaging/terminal" }
 dependencies = [
     { name = "apprc-core" },
@@ -83,10 +83,11 @@ requires-dist = [
 
 [[package]]
 name = "apprc-core"
-version = "0.29.0"
+version = "0.30.0"
 source = { editable = "." }
 dependencies = [
     { name = "filelock" },
+    { name = "platformdirs" },
     { name = "python-dotenv" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "typed-settings", extra = ["dotenv"] },
@@ -120,6 +121,7 @@ gui-test = [
 [package.metadata]
 requires-dist = [
     { name = "filelock", specifier = ">=3.20,<4" },
+    { name = "platformdirs", specifier = ">=4,<5" },
     { name = "python-dotenv" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=311" },
     { name = "typed-settings", extras = ["dotenv"] },
@@ -156,14 +158,14 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "apprc", specifier = ">=0.29.0,<0.30" },
-    { name = "apprc-gui", marker = "extra == 'desktop'", specifier = ">=0.29.0,<0.30" },
+    { name = "apprc", specifier = ">=0.30.0,<0.31" },
+    { name = "apprc-gui", marker = "extra == 'desktop'", specifier = ">=0.30.0,<0.31" },
 ]
 provides-extras = ["desktop"]
 
 [[package]]
 name = "apprc-gui"
-version = "0.29.0"
+version = "0.30.0"
 source = { editable = "src/apprc_dev/packaging/gui" }
 dependencies = [
     { name = "apprc-core" },

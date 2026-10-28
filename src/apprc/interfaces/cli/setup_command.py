@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from apprc.user_files.app_home.application import AppFiles
-
 # == Standard Library ========================
 import os
 import sys
-from pathlib import Path
 
 # == 3rd Party ===============================
 import typer
@@ -15,124 +12,72 @@ from prompt_toolkit import prompt
 from rich.console import Console
 
 # == Internal ================================
+from apprc.definition.resolution import ResolveOptions
+from apprc.interfaces._setup_text import setup_finish_text
+from apprc.interfaces.cli._errors import app_path_bad_parameter
 from apprc.public.app_rc import AppRC
 from apprc.services.manager import ConfigManager, WriteScope
-from apprc.interfaces.cli._interactive_setup import (
-    prompt_apprc_setup_dir,
-    prompt_storage_setup_root,
-)
-from apprc.user_files.app_home.locations import normalize_apprc_dir
+from apprc.user_files.app_home.locations import AppRCDirectoryError
 from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupResult
-from apprc.definition.resolution import ResolveOptions
-from apprc.interfaces._setup_text import shell_export_commands
-from apprc.user_files.storage_roots.paths import (
-    StorageRootPathError,
-    normalize_storage_root_path,
-)
-from apprc.user_files.storage_roots._io import load_storage_registry_or_empty
-from apprc.user_files.storage_roots.selector import (
-    storage_selector_is_path_like,
-)
-from apprc.interfaces._terminal_styles import (
-    PATH_STYLE,
-    style_literals,
-)
 
 
 def run_config_setup(
     apprc: AppRC,
     *,
     assume_yes: bool = False,
-    apprc_dir: str | Path | None = None,
-    storage_root: str | Path | None = None,
+    adopt: bool = False,
+    manager: ConfigManager | None = None,
     allow_interactive_secret_repair: bool = False,
     config_group_name: str = "config",
     show_next_step: bool = False,
 ) -> None:
-    """Configure files required by the AppRC declaration.
+    """Initialize the declared config directory and user dotenv.
+
+    Workspace roots are initialized separately by workspace commands; config
+    setup never asks the user to choose or create a workspace.
 
     :param apprc: Application config facade mounted by the host CLI.
-    :param assume_yes: Whether to run without prompts.
-    :param apprc_dir: Optional AppRC directory for this setup run.
-    :param storage_root: Optional active storage root.
-    :param allow_interactive_secret_repair: Whether a caller that already
-        collected interactive setup choices may still offer permission repair.
-    :param config_group_name: Config command group name used in generated
-        guidance.
-    :param show_next_step: Whether to print the declaration's next step after
-        explicit setup.
-    :raises typer.Exit: If the user cancels.
-    :raises typer.BadParameter: If setup inputs are invalid.
+    :param assume_yes: Whether to skip setup's optional field prompts.
+    :param adopt: Whether to accept an existing unowned config directory.
+    :param manager: Invocation-bound manager supplied by the config command.
+    :param allow_interactive_secret_repair: Whether to offer confirmed
+        permission repair for an unsafe user-secret directory.
+    :param config_group_name: Config command group name used in guidance.
+    :param show_next_step: Whether to print the declaration's next step.
+    :raises typer.BadParameter: If setup inputs or managed files are invalid.
     """
-    if not apprc.schema.uses_managed_files():
+    if not apprc.schema.paths.config:
         raise typer.BadParameter(
-            f"{apprc.schema.display_name} declares no managed files.",
+            f"{apprc.schema.display_name} declares no configuration directory.",
             param_hint="setup",
         )
-    selected_apprc_dir = _select_apprc_dir(
-        apprc,
-        apprc_dir=apprc_dir,
-        assume_yes=assume_yes,
-    )
-    manager = apprc.manage(ResolveOptions(apprc_dir=selected_apprc_dir))
-    if not apprc.schema.uses_storage():
-        if storage_root is not None:
-            raise typer.BadParameter(
-                f"{apprc.schema.display_name} does not use AppRC storage.",
-                param_hint="--storage-root",
-            )
-        try:
-            result = _run_setup_with_user_secret_repair(
-                manager,
-                assume_yes=assume_yes,
-                allow_interactive_secret_repair=allow_interactive_secret_repair,
-            )
-        except ConfigSetupError as exc:
-            raise typer.BadParameter(
-                str(exc),
-                param_hint=exc.param_hint,
-            ) from exc
-        if not assume_yes:
-            _prompt_required_fields(manager)
-        _print_app_setup(
-            apprc,
-            apprc_dir=result.apprc_dir,
-            user_dotenv=result.user_dotenv,
-            config_group_name=config_group_name,
-        )
-        if show_next_step:
-            _print_setup_next_step(apprc)
-        return
-
-    root, storage_name = _select_storage_root(
-        apprc,
-        apprc_dir=selected_apprc_dir,
-        storage_root=storage_root,
-        assume_yes=assume_yes,
-    )
+    active_manager = manager or apprc.manage(ResolveOptions())
     try:
         result = _run_setup_with_user_secret_repair(
-            manager,
+            active_manager,
             assume_yes=assume_yes,
             allow_interactive_secret_repair=allow_interactive_secret_repair,
-            storage_root=root,
-            storage_name=storage_name,
+            adopt=adopt,
         )
     except ConfigSetupError as exc:
         raise typer.BadParameter(
             str(exc),
-            param_hint=exc.param_hint or "--storage-root",
+            param_hint=exc.param_hint,
         ) from exc
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, AppRCDirectoryError):
+            raise app_path_bad_parameter(exc) from exc
+        raise typer.BadParameter(str(exc), param_hint="setup") from exc
     if not assume_yes:
-        _prompt_required_fields(manager)
-    _print_storage_setup(
-        apprc,
-        apprc_dir=result.apprc_dir,
-        storage_name=storage_name,
-        storage_root=result.active_storage_root,
-        storage_dotenv=result.storage_dotenv,
-        app_path=result.user_dotenv,
-        config_group_name=config_group_name,
+        _prompt_required_fields(active_manager)
+    paths = active_manager.paths
+    Console(soft_wrap=True).print(
+        setup_finish_text(
+            apprc,
+            paths=paths,
+            user_dotenv=result.user_dotenv,
+            config_group_name=config_group_name,
+        )
     )
     if show_next_step:
         _print_setup_next_step(apprc)
@@ -143,27 +88,22 @@ def _run_setup_with_user_secret_repair(
     *,
     assume_yes: bool,
     allow_interactive_secret_repair: bool,
-    storage_root: Path | None = None,
-    storage_name: str = "default",
+    adopt: bool,
 ) -> ConfigSetupResult:
-    """Offer one confirmed repair for an unsafe user secret directory.
+    """Offer one confirmed repair for an unsafe user-secret directory.
 
-    :param manager: Manager bound to the selected AppRC directory.
+    :param manager: Manager bound to the selected AppRC path snapshot.
     :param assume_yes: Whether setup should skip its own prompts.
     :param allow_interactive_secret_repair: Whether an interactive caller
         selected setup inputs before invoking this operation.
-    :param storage_root: Selected storage root, when storage is enabled.
-    :param storage_name: Selected storage registry name.
+    :param adopt: Whether setup may adopt an existing unowned config directory.
     :return: Paths initialized by setup.
     """
     try:
-        return manager.setup(
-            storage_root=storage_root,
-            storage_name=storage_name,
-        )
+        return manager.setup(adopt=adopt)
     except ConfigSetupError as setup_error:
         if (
-            setup_error.param_hint != "--apprc-dir"
+            setup_error.param_hint != "config"
             or (assume_yes and not allow_interactive_secret_repair)
             or not sys.stdin.isatty()
             or not sys.stdout.isatty()
@@ -189,7 +129,7 @@ def _run_setup_with_user_secret_repair(
         except (OSError, ValueError) as exc:
             raise ConfigSetupError(
                 f"Could not repair user secret permissions: {exc}",
-                param_hint="--apprc-dir",
+                param_hint="config",
             ) from exc
         if not repaired.available:
             issue = (
@@ -197,12 +137,9 @@ def _run_setup_with_user_secret_repair(
             )
             raise ConfigSetupError(
                 f"Could not repair user secret permissions: {issue}",
-                param_hint="--apprc-dir",
+                param_hint="config",
             )
-        return manager.setup(
-            storage_root=storage_root,
-            storage_name=storage_name,
-        )
+        return manager.setup(adopt=adopt)
 
 
 def _print_setup_next_step(apprc: AppRC) -> None:
@@ -220,22 +157,23 @@ def _prompt_required_fields(manager: ConfigManager) -> None:
 
     :param manager: Manager bound to the location initialized by setup.
     """
-    for item in manager.inspect().fields:
+    for item in manager.inspect(include_workspace=False).fields:
         if (
             not item.active
+            or item.owner.requires_workspace
             or item.issue is None
             or not item.issue.startswith("Missing required setting:")
             or not item.field.editable
         ):
             continue
         key = item.owner.env_key(item.field.name)
-        scopes = manager.writable_scopes()
+        scopes = manager.writable_scopes(include_workspace=False)
         scope: WriteScope = (
-            "storage"
-            if item.owner.requires_storage and "storage" in scopes
+            "workspace"
+            if item.owner.requires_workspace and "workspace" in scopes
             else "user"
             if "user" in scopes
-            else "storage"
+            else "workspace"
         )
         typer.echo(item.issue)
         while True:
@@ -266,217 +204,3 @@ def _prompt_required_fields(manager: ConfigManager) -> None:
                     else str(exc),
                     err=True,
                 )
-
-
-def _select_apprc_dir(
-    apprc: AppRC,
-    *,
-    apprc_dir: str | Path | None,
-    assume_yes: bool,
-) -> Path:
-    """Return the AppRC directory approved for this setup run.
-
-    :param apprc: Application declaration whose files will be created.
-    :param apprc_dir: Optional command-provided directory.
-    :param assume_yes: Whether to accept the resolved suggestion directly.
-    :return: Absolute user-expanded directory path.
-    :raises typer.Exit: If interactive selection is canceled.
-    """
-    selected = apprc_dir
-    suggested = AppFiles(apprc.schema).apprc_dir()
-    if selected is None:
-        if assume_yes:
-            selected = suggested
-        else:
-            selected = prompt_apprc_setup_dir(suggested=suggested)
-            if selected is None:
-                typer.echo("No files were changed.", err=True)
-                raise typer.Exit(code=1)
-    return normalize_apprc_dir(selected)
-
-
-def _select_storage_root(
-    apprc: AppRC,
-    *,
-    apprc_dir: Path,
-    storage_root: str | Path | None,
-    assume_yes: bool,
-) -> tuple[Path, str]:
-    """Return the storage root and registry name selected for setup.
-
-    :param apprc: Application config facade.
-    :param apprc_dir: AppRC directory selected earlier in this setup run.
-    :param storage_root: Optional CLI-provided root.
-    :param assume_yes: Whether setup may run without prompts.
-    :return: Normalized storage root and registry name.
-    :raises typer.Exit: If the user cancels.
-    :raises typer.BadParameter: If the path cannot be used as a directory.
-    """
-    selected = storage_root
-    suggested = apprc_dir / "storage"
-    proc_env = {**os.environ, apprc.schema.apprc_dir_env_key: str(apprc_dir)}
-    registry_path = AppFiles(apprc.schema).preferred_apprc_toml_path(proc_env)
-    try:
-        registry = load_storage_registry_or_empty(registry_path)
-    except (OSError, ValueError) as exc:
-        raise typer.BadParameter(str(exc), param_hint="--apprc-dir") from exc
-    selected_record = (
-        registry.storages.get(registry.selected_storage)
-        if registry.selected_storage is not None
-        else None
-    )
-    if selected_record is not None:
-        suggested = selected_record.root
-        if storage_root is None and not selected_record.root.is_dir():
-            raise typer.BadParameter(
-                f"Registered storage {selected_record.name!r} points to a "
-                f"missing directory: {selected_record.root}. If the files "
-                "were moved manually, use `config storage repoint` with the "
-                "existing directory. Setup will not recreate a missing "
-                "registered root.",
-                param_hint="--storage-root",
-            )
-    if selected is None:
-        if assume_yes:
-            selected = suggested
-        else:
-            selected = prompt_storage_setup_root(suggested=suggested)
-            if selected is None:
-                typer.echo("No files were changed.", err=True)
-                raise typer.Exit(code=1)
-    if Path(selected) == Path("."):
-        raise typer.BadParameter(
-            "--storage-root must not be empty or the current directory.",
-            param_hint="--storage-root",
-        )
-    try:
-        root = normalize_storage_root_path(selected)
-    except StorageRootPathError as exc:
-        raise typer.BadParameter(
-            str(exc),
-            param_hint="--storage-root",
-        ) from exc
-    if root.exists() and not root.is_dir():
-        raise typer.BadParameter(
-            f"Storage root exists but is not a directory: {root}",
-            param_hint="--storage-root",
-        )
-    if root.exists() and any(root.iterdir()) and not assume_yes:
-        if not typer.confirm(
-            f"Reuse non-empty storage root for {apprc.schema.display_name}?"
-        ):
-            raise typer.Exit(code=1)
-    matching_names = [
-        name
-        for name, record in registry.storages.items()
-        if record.root.expanduser().resolve() == root.expanduser().resolve()
-    ]
-    if len(matching_names) == 1:
-        storage_name = matching_names[0]
-    elif selected_record is not None:
-        storage_name = selected_record.name
-    elif registry.storages:
-        storage_name = next(iter(registry.storages))
-    else:
-        selector_key = apprc.schema.require_storage_selector_env_key()
-        requested_name = os.environ.get(selector_key, "").strip()
-        storage_name = (
-            requested_name
-            if requested_name
-            and not storage_selector_is_path_like(requested_name)
-            else "default"
-        )
-    return root, storage_name
-
-
-def _print_app_setup(
-    apprc: AppRC,
-    *,
-    apprc_dir: Path,
-    user_dotenv: Path | None,
-    config_group_name: str,
-) -> None:
-    """Print setup completion for the per-user dotenv file."""
-    if user_dotenv is None:
-        raise typer.BadParameter("User dotenv setup returned no dotenv file.")
-    lines = [
-        f"{apprc.schema.display_name} user dotenv is ready.",
-        "",
-        f"apprc_dir: {apprc_dir}",
-        f"user_dotenv: {user_dotenv}",
-    ]
-    lines.extend(shell_export_commands(apprc, apprc_dir))
-    lines.extend(
-        (
-            "",
-            "Then verify:",
-            f"  {apprc.schema.config_command_name()} {config_group_name} doctor",
-        )
-    )
-    text = "\n".join(lines)
-    Console(soft_wrap=True).print(
-        style_literals(
-            text,
-            {
-                str(apprc_dir): PATH_STYLE,
-                str(user_dotenv): PATH_STYLE,
-            },
-        )
-    )
-
-
-def _print_storage_setup(
-    apprc: AppRC,
-    *,
-    apprc_dir: Path,
-    storage_name: str,
-    storage_root: Path | None,
-    storage_dotenv: Path | None,
-    app_path: Path | None,
-    config_group_name: str,
-) -> None:
-    """Print setup completion for storage-capable integrations.
-
-    :param apprc: Application config facade.
-    :param apprc_dir: Directory containing central AppRC files.
-    :param storage_name: Registered storage initialized by setup.
-    :param storage_root: Initialized storage directory.
-    :param storage_dotenv: Storage-local dotenv created by setup.
-    :param app_path: Per-user dotenv created by setup, when declared.
-    :param config_group_name: Generated config command group name.
-    """
-    if storage_root is None or storage_dotenv is None:
-        raise typer.BadParameter("Storage setup did not create a dotenv file.")
-    lines = [
-        f"{apprc.schema.display_name} AppRC files are ready.",
-        "",
-        f"apprc_dir: {apprc_dir}",
-        f"storage_root: {storage_root}",
-        f"storage_dotenv: {storage_dotenv}",
-    ]
-    if app_path is not None:
-        lines.append(f"user_dotenv: {app_path}")
-    lines.extend(("", f"selected_storage: {storage_name}"))
-    lines.extend(shell_export_commands(apprc, apprc_dir))
-    lines.extend(
-        (
-            "",
-            "Then verify:",
-            f"  {apprc.schema.config_command_name()} {config_group_name} doctor",
-        )
-    )
-    paths = {
-        str(apprc_dir): PATH_STYLE,
-        str(storage_root): PATH_STYLE,
-        str(storage_dotenv): PATH_STYLE,
-    }
-    if app_path is not None:
-        paths[str(app_path)] = PATH_STYLE
-    Console(soft_wrap=True).print(
-        style_literals(
-            "\n".join(lines),
-            {
-                **paths,
-            },
-        )
-    )

@@ -1,291 +1,110 @@
 from __future__ import annotations
 
-from apprc.user_files.app_home.application import AppFiles
-
-import os
-import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 import typer
 from typer.core import TyperCommand
 
-import apprc.interfaces.cli.runtime as runtime_module
-from tests.support_declaration import app_from_envs
-from apprc.definition.app_config.storage import Storage
-from apprc.definition.app_config.user_dotenv import UserDotenv
+import apprc as rc
+from apprc.definition.paths import Layout, Paths
+from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli.context import CliRuntimeOptions
 from apprc.interfaces.cli.runtime import CliRuntime, DefaultConfigCliState
-from apprc.user_files.storage_roots.registry import (
-    load_storage_registry_or_empty,
-)
-
-
-class _TTYProxy:
-    """Delegate stream operations while reporting an interactive terminal."""
-
-    def __init__(self, stream: Any) -> None:
-        """Store the captured stream used by pytest."""
-        self._stream = stream
-
-    def isatty(self) -> bool:
-        """Report that first-run prompting is safe."""
-        return True
-
-    def __getattr__(self, name: str) -> Any:
-        """Delegate stream methods needed by Click and Rich."""
-        return getattr(self._stream, name)
+from apprc.user_files.app_home.application import AppFiles
 
 
 def _runtime(
     tmp_path: Path,
-    *,
-    runtime_required: bool = True,
-    setup_next_step: str | None = None,
-    user_dotenv: bool = False,
 ) -> CliRuntime[CliRuntimeOptions, DefaultConfigCliState]:
-    """Return a storage runtime with the first-run prompt enabled."""
-    kit = app_from_envs(
-        app_id="first_run_demo",
-        display_name="First Run Demo",
-        config_package="storage.config",
-        user_dotenv=UserDotenv() if user_dotenv else None,
-        storage=Storage(
-            selector_env_key="FIRST_RUN_DEMO_STORAGE",
-        ),
-        setup_next_step=setup_next_step,
-        apprc_dir=tmp_path / "apprc",
+    app_rc = rc.AppRC(
+        app_id="runtime_first_use",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        workspaces=rc.Workspaces(registry=False),
     )
     return CliRuntime(
-        kit,
+        app_rc,
         args_provider=lambda: ["run"],
-        storage_required=runtime_required,
+        workspace_required=True,
     )
 
 
-def _context() -> typer.Context:
-    """Return a root context that represents a runtime command."""
-    context = typer.Context(TyperCommand(name="first-run-demo"))
-    context.invoked_subcommand = "run"
+def _context(command: str = "run") -> typer.Context:
+    context = typer.Context(TyperCommand(name="runtime-first-use"))
+    context.invoked_subcommand = command
     return context
 
 
-def _enable_tty(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make the runtime see pytest's captured streams as interactive."""
-    monkeypatch.setattr(runtime_module.sys, "stdin", _TTYProxy(sys.stdin))
-    monkeypatch.setattr(runtime_module.sys, "stdout", _TTYProxy(sys.stdout))
-
-
-def test_first_runtime_use_accepts_suggested_storage(
-    monkeypatch: pytest.MonkeyPatch,
+def test_missing_required_workspace_has_no_implicit_first_use_writes(
     tmp_path: Path,
 ) -> None:
-    """An accepted TTY prompt prepares storage, persists it, and retries."""
-    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
-    _enable_tty(monkeypatch)
-    runtime = _runtime(tmp_path)
-    suggested = tmp_path / "apprc" / "storage"
-    monkeypatch.setattr(
-        runtime_module,
-        "prompt_storage_setup_root",
-        lambda *, suggested: suggested,
-    )
-
-    session = runtime.prepare(_context(), CliRuntimeOptions())
-
-    assert session.state is not None
-    assert session.apprc_context.resolved is not None
-    assert session.apprc_context.resolved.selection is not None
-    assert session.apprc_context.resolved.selection.root == suggested
-    assert (suggested / "apprc.storage.env").is_file()
-    assert not AppFiles(runtime.apprc.schema).user_dotenv_path().exists()
-    assert AppFiles(runtime.apprc.schema).preferred_apprc_toml_path().is_file()
-
-
-def test_implicit_first_run_keeps_doctor_guidance_without_app_next_step(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
-    _enable_tty(monkeypatch)
-    runtime = _runtime(tmp_path, setup_next_step="pdb serve")
-    monkeypatch.setattr(
-        runtime_module,
-        "prompt_storage_setup_root",
-        lambda *, suggested: suggested,
-    )
-
-    runtime.prepare(_context(), CliRuntimeOptions())
-
-    output = capsys.readouterr().out
-    assert "Then verify:" in output
-    assert "config doctor" in output
-    assert "Next step:" not in output
-    assert "pdb serve" not in output
-
-
-def test_first_runtime_use_decline_leaves_no_files(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """A declined TTY prompt reports the custom-path command without writes."""
-    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
-    _enable_tty(monkeypatch)
-    monkeypatch.setattr(
-        runtime_module,
-        "prompt_storage_setup_root",
-        lambda *, suggested: None,
-    )
     runtime = _runtime(tmp_path)
 
-    with pytest.raises(typer.Exit):
-        runtime.prepare(_context(), CliRuntimeOptions())
+    with pytest.raises(typer.BadParameter, match="workspace"):
+        runtime.prepare(
+            _context(),
+            CliRuntimeOptions(layout=Layout.single_root(tmp_path / "home")),
+        )
 
-    captured = capsys.readouterr()
-    assert "No files were changed." in captured.err
-    assert "setup --storage-root PATH" in captured.err
-    assert not (tmp_path / "data-home" / "first_run_demo").exists()
-    assert not AppFiles(runtime.apprc.schema).user_dotenv_path().exists()
+    config_dir = runtime.apprc.paths(environment={}).require("config")
+    assert not config_dir.exists()
+    assert not (tmp_path / "home" / "workspace").exists()
 
 
-def test_first_runtime_use_accepts_custom_storage_path(
-    monkeypatch: pytest.MonkeyPatch,
+def test_initialized_direct_workspace_resolves_without_registry_or_config_writes(
     tmp_path: Path,
 ) -> None:
-    """The first-run prompt may choose a completed filesystem path.
-
-    :param monkeypatch: Process and prompt mutation fixture.
-    :param tmp_path: Isolated AppRC and storage parent.
-    """
-    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
-    _enable_tty(monkeypatch)
     runtime = _runtime(tmp_path)
-    custom_root = tmp_path / "custom-storage"
-    monkeypatch.setattr(
-        runtime_module,
-        "prompt_storage_setup_root",
-        lambda *, suggested: custom_root,
-    )
-
-    session = runtime.prepare(_context(), CliRuntimeOptions())
-
-    assert session.apprc_context.resolved is not None
-    assert session.apprc_context.resolved.selection is not None
-    assert session.apprc_context.resolved.selection.root == custom_root
-    assert (custom_root / "apprc.storage.env").is_file()
-
-
-@pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
-def test_interactive_runtime_setup_offers_user_secret_repair(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """First-run setup may repair permissions after selecting storage."""
-    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
-    monkeypatch.setenv("APPRC_EXAMPLE_STORAGE_API_TOKEN", "test-token")
-    _enable_tty(monkeypatch)
-    runtime = _runtime(tmp_path, user_dotenv=True)
-    apprc_dir = tmp_path / "apprc"
-    apprc_dir.mkdir()
-    apprc_dir.chmod(0o755)
-    selected_root = tmp_path / "selected-storage"
-    monkeypatch.setattr(
-        runtime_module,
-        "prompt_storage_setup_root",
-        lambda *, suggested: selected_root,
-    )
-    monkeypatch.setattr(typer, "confirm", lambda _: True)
-
-    session = runtime.prepare(_context(), CliRuntimeOptions())
-
-    assert session.apprc_context.resolved is not None
-    assert session.apprc_context.resolved.selection is not None
-    assert session.apprc_context.resolved.selection.root == selected_root
-    assert apprc_dir.stat().st_mode & 0o777 == 0o700
-    assert (apprc_dir / "apprc.user.secret.env").is_file()
-    assert (selected_root / "apprc.storage.env").is_file()
-
-
-def test_noninteractive_required_runtime_prints_exact_setup_command(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """A strict boundary gives scripts one zero-write recovery command."""
-    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
-    runtime = _runtime(
-        tmp_path,
-        runtime_required=True,
-    )
-
-    with pytest.raises(typer.BadParameter) as exc_info:
-        runtime.prepare(_context(), CliRuntimeOptions())
-
-    assert "`first_run_demo config setup --yes`" in str(exc_info.value)
-    assert not AppFiles(runtime.apprc.schema).apprc_dir().exists()
-
-
-def test_interactive_direct_path_can_be_registered(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """An initialized direct path becomes named only after consent.
-
-    :param monkeypatch: Process and prompt mutation fixture.
-    :param tmp_path: Isolated AppRC and storage parent.
-    """
-    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
-    _enable_tty(monkeypatch)
-    runtime = _runtime(tmp_path)
-    root = tmp_path / "direct"
-    root.mkdir()
-    (root / "apprc.storage.env").write_text("", encoding="utf-8")
-    monkeypatch.setattr(typer, "confirm", lambda _: True)
-    monkeypatch.setattr(
-        runtime_module,
-        "prompt_storage_registration_name",
-        lambda *, suggested: "work",
-    )
-
+    workspace_root = tmp_path / "prepared"
+    workspace_root.mkdir()
+    marker = AppFiles(
+        runtime.apprc.schema,
+        runtime.apprc.paths(environment={}),
+    ).workspace_dotenv_path(workspace_root)
+    marker.write_text("", encoding="utf-8")
     session = runtime.prepare(
         _context(),
-        CliRuntimeOptions(storage=str(root)),
+        CliRuntimeOptions(
+            workspace=str(workspace_root),
+            layout=Layout.single_root(tmp_path / "home"),
+        ),
     )
-
     assert session.apprc_context.resolved is not None
-    assert session.apprc_context.resolved.selection is not None
-    assert session.apprc_context.resolved.selection.storage_name == "work"
-    registry = load_storage_registry_or_empty(
-        AppFiles(runtime.apprc.schema).preferred_apprc_toml_path()
-    )
-    assert registry.selected("work").root == root
+    assert session.apprc_context.resolved.workspace is not None
+    assert session.apprc_context.resolved.workspace.root == workspace_root
+    assert not runtime.apprc.paths(environment={}).require("config").exists()
 
 
-def test_noninteractive_direct_path_is_used_without_registry_writes(
+def test_skipped_runtime_keeps_environment_layout_snapshot_for_refresh(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A script may use an initialized path without persistent registration.
-
-    :param monkeypatch: Process environment fixture.
-    :param tmp_path: Isolated AppRC and storage parent.
-    """
-    monkeypatch.delenv("FIRST_RUN_DEMO_STORAGE", raising=False)
-    runtime = _runtime(tmp_path)
-    root = tmp_path / "direct"
-    root.mkdir()
-    (root / "apprc.storage.env").write_text("", encoding="utf-8")
-
+    app_rc = rc.AppRC(
+        app_id="captured_bootstrap",
+        paths=Paths(config=True),
+        workspaces=rc.Workspaces(registry=False),
+    )
+    layout_key = app_rc.schema.layout_env_key
+    root_key = app_rc.schema.root_env_key
+    captured_root = tmp_path / "captured"
+    monkeypatch.setenv(layout_key, "single-root")
+    monkeypatch.setenv(root_key, str(captured_root))
+    runtime = CliRuntime(app_rc, args_provider=lambda: ["paths"])
     session = runtime.prepare(
-        _context(),
-        CliRuntimeOptions(storage=str(root)),
+        _context("paths"),
+        CliRuntimeOptions(load_dotenv_layers=False),
+    )
+    context = session.apprc_context
+    monkeypatch.setenv(root_key, str(tmp_path / "later"))
+    refreshed = app_rc.manage(
+        ResolveOptions(
+            layout=context.runtime_options.layout,
+            load_dotenv_layers=context.runtime_options.load_dotenv_layers,
+        ),
+        environment=context.environment,
     )
 
-    assert session.apprc_context.resolved is not None
-    assert session.apprc_context.resolved.selection is not None
-    assert session.apprc_context.resolved.selection.storage_name is None
-    assert (
-        not AppFiles(runtime.apprc.schema).preferred_apprc_toml_path().exists()
-    )
+    assert context.runtime_setup_skipped
+    assert context.paths.require("config") == captured_root / "config"
+    assert refreshed.paths.require("config") == captured_root / "config"

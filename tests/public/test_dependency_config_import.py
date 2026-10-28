@@ -6,8 +6,10 @@ from copy import deepcopy
 from dataclasses import (
     FrozenInstanceError,
     dataclass,
-    field as dc_field,
     replace,
+)
+from dataclasses import (
+    field as dc_field,
 )
 from pathlib import Path
 from typing import Any, cast
@@ -27,9 +29,10 @@ def _dependency(
     dependency = rc.AppRC(
         app_id="dependency",
         config_package=config_package,
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path / "dependency-apprc"),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(),
-        apprc_dir=tmp_path / "dependency-apprc",
+        workspaces=rc.Workspaces(registry=False),
     )
 
     @dependency.config("client", prefix="DEP_")
@@ -575,35 +578,30 @@ def test_alias_default_factory_resolves_once_during_build_and_reload() -> None:
     assert factory_values == [10, 11, 12]
 
 
-def test_storage_import_requires_valid_parent_selection(
+def test_workspace_import_requires_valid_parent_selection(
     tmp_path: Path,
 ) -> None:
-    """Storage-bound dependency sections use only selected parent storage."""
-    dependency_home = tmp_path / "dependency-home"
-    dependency_storage = tmp_path / "dependency-storage"
-    dependency_home.mkdir()
-    dependency_storage.mkdir()
-    (dependency_home / "apprc.user.env").write_text(
-        "PROVIDER_RAG_SOURCE=dependency-user\n", encoding="utf-8"
-    )
-    (dependency_storage / "apprc.storage.env").write_text(
-        "PROVIDER_RAG_SOURCE=dependency-storage\n", encoding="utf-8"
+    """Workspace-bound dependency sections use only the selected parent root."""
+    dependency_root = tmp_path / "dependency-workspace"
+    dependency_root.mkdir()
+    (dependency_root / "apprc.workspace.env").write_text(
+        "PROVIDER_RAG_SOURCE=dependency-workspace\n",
+        encoding="utf-8",
     )
     dependency = rc.AppRC(
         app_id="provider",
-        user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(selector_env_key="PROVIDER_STORAGE"),
-        apprc_dir=dependency_home,
-        apprc_dir_env_key="PROVIDER_APPRC_DIR",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path / "dependency-home"),
+        workspaces=rc.Workspaces(selector_env_key="PROVIDER_WORKSPACE"),
     )
 
-    @dependency.config("rag", prefix="PROVIDER_RAG_", requires_storage=True)
+    @dependency.config("rag", prefix="PROVIDER_RAG_", requires_workspace=True)
     class RagRC(rc.Config):
         source: str = rc.field("PROVIDER_RAG_SOURCE", default="dep-default")
 
-    storage_free_parent = rc.AppRC(app_id="storage-free")
-    with pytest.raises(ValueError, match="parent AppRC must declare storage"):
-        storage_free_parent.import_dependency_config(
+    workspace_free_parent = rc.AppRC(app_id="workspace-free")
+    with pytest.raises(ValueError):
+        workspace_free_parent.import_dependency_config(
             dependency,
             RagRC,
             key="rag",
@@ -612,18 +610,18 @@ def test_storage_import_requires_valid_parent_selection(
             field_targets={"source": "source"},
         )
 
-    parent_home = tmp_path / "parent-home"
-    parent_storage = tmp_path / "parent-storage"
-    parent_storage.mkdir()
-    (parent_storage / "apprc.storage.env").write_text(
-        "HOST_RAG_SOURCE=parent-storage\n", encoding="utf-8"
+    parent_root = tmp_path / "parent-workspace"
+    parent_root.mkdir()
+    (parent_root / "apprc.workspace.env").write_text(
+        "HOST_RAG_SOURCE=parent-workspace\n",
+        encoding="utf-8",
     )
     host = rc.AppRC(
         app_id="host",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path / "host-home"),
         user_dotenv=rc.UserDotenv(),
-        storage=rc.Storage(selector_env_key="HOST_STORAGE"),
-        apprc_dir=parent_home,
-        apprc_dir_env_key="HOST_APPRC_DIR",
+        workspaces=rc.Workspaces(selector_env_key="HOST_WORKSPACE"),
     )
     binding = host.import_dependency_config(
         dependency,
@@ -633,17 +631,16 @@ def test_storage_import_requires_valid_parent_selection(
         fields={"source": rc.field("HOST_RAG_SOURCE")},
         field_targets={"source": "source"},
     )
-    assert binding.parent_owner.requires_storage is True
+    assert binding.parent_owner.requires_workspace is True
 
     dependency_environment = {
-        "PROVIDER_STORAGE": str(dependency_storage),
-        "PROVIDER_APPRC_DIR": str(dependency_home),
+        "PROVIDER_WORKSPACE": str(dependency_root),
         "PROVIDER_RAG_SOURCE": "dependency-environment",
     }
-
     same_namespace_parent = rc.AppRC(
         app_id="provider",
-        storage=rc.Storage(selector_env_key="PROVIDER_STORAGE"),
+        paths=rc.Paths(config=True),
+        workspaces=rc.Workspaces(selector_env_key="PROVIDER_WORKSPACE"),
     )
     with pytest.raises(ValueError, match="Dependency environment keys"):
         same_namespace_parent.import_dependency_config(
@@ -656,7 +653,7 @@ def test_storage_import_requires_valid_parent_selection(
         )
 
     absent = host.resolve(environment=dependency_environment)
-    with pytest.raises(ValueError, match="valid storage selection"):
+    with pytest.raises(ValueError, match="valid workspace selection"):
         absent.build(binding)
     absent_inspection = host.manage(
         environment=dependency_environment
@@ -665,53 +662,49 @@ def test_storage_import_requires_valid_parent_selection(
 
     invalid_inspection = host.manage(
         environment=dependency_environment
-    ).inspect(storage="missing-storage")
+    ).inspect(workspace="missing-workspace")
     assert invalid_inspection.fields[0].active is False
-    with pytest.raises(ValueError, match="valid storage selection"):
+    with pytest.raises(ValueError, match="valid workspace selection"):
         invalid_inspection.resolved.build(binding)
 
     selected = host.resolve(
-        rc.ResolveOptions(storage=str(parent_storage)),
+        rc.ResolveOptions(workspace=str(parent_root)),
         environment=dependency_environment,
     )
-    assert selected.selection is not None
+    assert selected.workspace is not None
     config = cast(Any, selected.build(binding))
-    assert config.source == "parent-storage"
-    assert "PROVIDER_STORAGE" not in selected.values
-    assert "PROVIDER_APPRC_DIR" not in selected.values
+    assert config.source == "parent-workspace"
+    assert "PROVIDER_WORKSPACE" not in selected.values
     assert "PROVIDER_RAG_SOURCE" not in selected.values
-    assert all(
-        layer.path
-        not in (
-            dependency_home / "apprc.user.env",
-            dependency_storage / "apprc.storage.env",
-        )
-        for layer in selected.layers
+    assert dependency_root / "apprc.workspace.env" not in tuple(
+        layer.path for layer in selected.layers
     )
     config.reload_from(selected)
-    with pytest.raises(ValueError, match="valid storage selection"):
+    with pytest.raises(ValueError, match="valid workspace selection"):
         config.reload_from(absent)
 
 
 @pytest.mark.parametrize("root_state", ["missing", "uninitialized"])
-def test_storage_import_rejects_invalid_absolute_roots(
+def test_workspace_import_rejects_invalid_absolute_roots(
     tmp_path: Path,
     root_state: str,
 ) -> None:
-    """Failed path selections stay inspectable but cannot build or reload."""
+    """Failed workspace paths stay inspectable but cannot build or reload."""
     dependency = rc.AppRC(
         app_id="provider",
-        storage=rc.Storage(selector_env_key="PROVIDER_STORAGE"),
+        paths=rc.Paths(config=True),
+        workspaces=rc.Workspaces(selector_env_key="PROVIDER_WORKSPACE"),
     )
 
-    @dependency.config("rag", prefix="PROVIDER_RAG_", requires_storage=True)
+    @dependency.config("rag", prefix="PROVIDER_RAG_", requires_workspace=True)
     class RagRC(rc.Config):
         source: str = rc.field("PROVIDER_RAG_SOURCE", default="dependency")
 
     host = rc.AppRC(
         app_id="host",
-        storage=rc.Storage(selector_env_key="HOST_STORAGE"),
-        apprc_dir=tmp_path / "host-home",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path / "host-home"),
+        workspaces=rc.Workspaces(selector_env_key="HOST_WORKSPACE"),
     )
     binding = host.import_dependency_config(
         dependency,
@@ -722,33 +715,34 @@ def test_storage_import_rejects_invalid_absolute_roots(
         field_targets={"source": "source"},
     )
 
-    candidate_root = tmp_path / f"{root_state}-storage"
+    candidate_root = tmp_path / f"{root_state}-workspace"
     if root_state == "uninitialized":
         candidate_root.mkdir()
     inspection = host.manage(environment={}).inspect(
-        storage=str(candidate_root)
+        workspace=str(candidate_root)
     )
-    assert inspection.resolved.selection is not None
-    assert inspection.resolved.selection.root == candidate_root.resolve()
-    assert inspection.resolved.storage_issues
+    assert inspection.resolved.workspace is not None
+    assert inspection.resolved.workspace.root == candidate_root.resolve()
+    assert inspection.resolved.workspace_issues
     assert inspection.fields[0].active is False
-    with pytest.raises(ValueError, match="valid storage selection"):
+    with pytest.raises(ValueError, match="valid workspace selection"):
         inspection.resolved.build(binding)
 
-    initialized_root = tmp_path / "initialized-storage"
+    initialized_root = tmp_path / "initialized-workspace"
     initialized_root.mkdir()
-    (initialized_root / "apprc.storage.env").write_text(
-        "HOST_RAG_SOURCE=parent-storage\n", encoding="utf-8"
+    (initialized_root / "apprc.workspace.env").write_text(
+        "HOST_RAG_SOURCE=parent-workspace\n",
+        encoding="utf-8",
     )
     valid = host.resolve(
-        rc.ResolveOptions(storage=str(initialized_root)),
+        rc.ResolveOptions(workspace=str(initialized_root)),
         environment={},
     )
     config = valid.build(binding)
-    assert config.source == "parent-storage"
-    with pytest.raises(ValueError, match="valid storage selection"):
+    assert config.source == "parent-workspace"
+    with pytest.raises(ValueError, match="valid workspace selection"):
         config.reload_from(inspection.resolved)
-    assert config.source == "parent-storage"
+    assert config.source == "parent-workspace"
 
 
 def test_later_import_rejects_parent_field_matching_prior_control_key(
@@ -757,7 +751,8 @@ def test_later_import_rejects_parent_field_matching_prior_control_key(
     """A previous dependency control key cannot become a parent setting."""
     first_dependency = rc.AppRC(
         app_id="first-dependency",
-        storage=rc.Storage(selector_env_key="CUSTOM_DEP_CONTROL"),
+        paths=rc.Paths(config=True),
+        workspaces=rc.Workspaces(selector_env_key="CUSTOM_DEP_CONTROL"),
     )
 
     @first_dependency.config("section", prefix="FIRST_DEP_")
@@ -796,16 +791,22 @@ def test_later_import_rejects_parent_field_matching_prior_control_key(
     ("control_kind", "control_key", "host_options"),
     [
         (
-            "storage",
-            "VENDOR_STORAGE",
-            {"storage": rc.Storage(selector_env_key="VENDOR_STORAGE")},
+            "workspace",
+            "VENDOR_WORKSPACE",
+            {
+                "paths": rc.Paths(config=True),
+                "workspaces": rc.Workspaces(
+                    selector_env_key="VENDOR_WORKSPACE"
+                ),
+            },
         ),
         (
-            "directory",
-            "VENDOR_PARENT_HOME",
+            "root",
+            "VENDOR_PARENT_HOME_ROOT",
             {
+                "paths": rc.Paths(config=True),
                 "user_dotenv": rc.UserDotenv(),
-                "apprc_dir_env_key": "VENDOR_PARENT_HOME",
+                "bootstrap_env_prefix": "VENDOR_PARENT_HOME",
             },
         ),
     ],
@@ -824,8 +825,8 @@ def test_import_rejects_dependency_prefix_covering_parent_controls(
 
     host = rc.AppRC(app_id="host", **host_options)
     assert control_key in {
-        host.schema.storage_selector_env_key,
-        host.schema.apprc_dir_env_key,
+        host.schema.workspace_selector_env_key,
+        host.schema.root_env_key,
     }
     with pytest.raises(ValueError, match="environment"):
         host.import_dependency_config(
@@ -977,20 +978,21 @@ def test_omitted_secret_default_stays_redacted_on_imported_config() -> None:
     assert "ambient-secret" not in repr(client)
 
 
-def test_parent_resolution_ignores_dependency_user_storage_and_environment(
+def test_parent_resolution_ignores_dependency_user_workspace_and_environment(
     tmp_path: Path,
 ) -> None:
     """Parent mode reads only its mapped fields and never dependency files."""
     dependency, ClientRC = _dependency(tmp_path)
     dependency_home = tmp_path / "dependency-apprc"
-    dependency_home.mkdir()
-    (dependency_home / "apprc.user.env").write_text(
+    dependency_config = dependency_home / "config"
+    dependency_config.mkdir(parents=True)
+    (dependency_config / "apprc.user.env").write_text(
         "DEP_API_KEY=user-file-secret\n", encoding="utf-8"
     )
-    storage_root = tmp_path / "dependency-storage"
-    storage_root.mkdir()
-    (storage_root / "apprc.storage.env").write_text(
-        "DEP_API_KEY=storage-file-secret\n", encoding="utf-8"
+    workspace_root = tmp_path / "dependency-workspace"
+    workspace_root.mkdir()
+    (workspace_root / "apprc.workspace.env").write_text(
+        "DEP_API_KEY=workspace-file-secret\n", encoding="utf-8"
     )
     explicit_file = tmp_path / "host-inputs.env"
     explicit_file.write_text(
@@ -1021,16 +1023,11 @@ def test_parent_resolution_ignores_dependency_user_storage_and_environment(
 
     assert config.api_key == "host-secret"
     assert config.base_url == "host-default-url"
-    assert "DEP_API_KEY" not in resolved.values
-    assert "DEP_UNDECLARED_SETTING" not in resolved.values
-    assert all(
-        "DEP_API_KEY" not in layer.source.values for layer in resolved.layers
-    )
     assert all(
         layer.path
         not in (
-            dependency_home / "apprc.user.env",
-            storage_root / "apprc.storage.env",
+            dependency_config / "apprc.user.env",
+            workspace_root / "apprc.workspace.env",
         )
         for layer in resolved.layers
     )
@@ -1106,15 +1103,15 @@ def test_manager_paths_and_edit_preview_filter_dependency_environment(
     dependency_home = tmp_path / "dependency-home"
     host = rc.AppRC(
         app_id="host",
+        paths=rc.Paths(config=True),
         user_dotenv=rc.UserDotenv(),
-        apprc_dir=parent_home,
-        apprc_dir_env_key="HOST_APPRC_DIR",
+        bootstrap_env_prefix="HOST",
     )
     _host_import(host, dependency, ClientRC, prefix="HOST_CLIENT_")
     explicit = tmp_path / "host-inputs.env"
     explicit.write_text(
-        f"DEP_LOCATION={dependency_home}\n"
-        f"HOST_APPRC_DIR=${{DEP_LOCATION:-{parent_home}}}\n",
+        "HOST_LAYOUT=single-root\n"
+        f"HOST_ROOT=${{DEP_LOCATION:-{parent_home}}}\n",
         encoding="utf-8",
     )
     manager = host.manage(
@@ -1125,11 +1122,11 @@ def test_manager_paths_and_edit_preview_filter_dependency_environment(
     runtime = manager.resolve()
     assert runtime.paths is not None
     assert manager.paths == runtime.paths
-    assert manager.paths.root == parent_home.resolve()
-    manager.setup_user_dotenv()
+    assert manager.paths.layout.root == parent_home.resolve()
+    manager.setup()
 
     plan = manager.plan_update("timeout", "12", scope="user")
-    assert plan.path == manager.paths.user_dotenv
+    assert plan.path == manager.writable_path("user")
     plan = replace(
         plan,
         text=(

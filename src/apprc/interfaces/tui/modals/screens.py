@@ -17,14 +17,13 @@ from textual.widgets import Button, Input, ProgressBar, Static
 
 # == Internal ================================
 from apprc.definition.env_config.schema import ConfigField
-from apprc.user_files.storage_roots.archive import StorageArchiveProgress
 from apprc.interfaces.tui._field_state import (
     ConfigWriteScope,
     EditableConfigValueSource,
     EditableConfigValueSourceKey,
 )
-from apprc.interfaces.tui._rendering import setting_title
 from apprc.interfaces.tui._primitives import PathSuggester
+from apprc.interfaces.tui._rendering import setting_title
 from apprc.interfaces.tui._styles import (
     LABEL_STYLE,
     MODAL_DIALOG_CLASS,
@@ -49,6 +48,7 @@ from apprc.interfaces.tui._value_modal_rendering import (
     source_value_text,
     target_input_classes,
 )
+from apprc.user_files.workspace_roots.archive import WorkspaceArchiveProgress
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +66,6 @@ class ArchiveOptionsResult:
     """Archive options selected by the user."""
 
     archive_path: Path
-    delete_source: bool
 
 
 class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
@@ -360,7 +359,7 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
             return
         if scope_count > 1:
             self.notify(
-                "Choose Save User or Save Storage.",
+                "Choose Save User or Save Workspace.",
                 severity="warning",
             )
             return
@@ -437,14 +436,14 @@ class ConfigValueEditScreen(ModalScreen[ValueEditResult | None]):
         """Return a validated write scope from widget id text."""
         if raw_scope in self.writable_scopes and raw_scope in {
             "user",
-            "storage",
+            "workspace",
         }:
             return raw_scope
         return None
 
 
 class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
-    """Modal for archive path and source deletion choice."""
+    """Modal for a workspace archive path."""
 
     CSS = (
         """
@@ -474,26 +473,25 @@ class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
     def __init__(
         self,
         *,
-        storage_name: str,
+        workspace_name: str,
         source_root: Path,
         default_archive: Path,
     ) -> None:
-        """Store archive defaults for the selected storage."""
+        """Store archive defaults for the selected workspace."""
         super().__init__()
-        self.storage_name = storage_name
+        self.workspace_name = workspace_name
         self.source_root = source_root
         self.default_archive = default_archive
-        self.delete_source = False
 
     def compose(self) -> ComposeResult:
-        """Compose the archive options dialog."""
+        """Compose the workspace archive dialog."""
         with Vertical(id="archive-dialog", classes=MODAL_DIALOG_CLASS):
-            yield Static(Text("Archive storage", style="bold"))
+            yield Static(
+                Text(f"Archive workspace {self.workspace_name}", style="bold")
+            )
             yield Static(
                 lines_text(
-                    "Compressing can take a while. The live storage is "
-                    "unchanged unless you choose to delete the source after "
-                    "compression.",
+                    "The live workspace remains unchanged.",
                     label_value_text("Source", path_text(self.source_root)),
                 ),
                 id="archive-message",
@@ -507,10 +505,6 @@ class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
             )
             with Horizontal(id="archive-button-row"):
                 yield Button("Archive", variant="primary", id="archive-run")
-                yield Button(
-                    "Delete source: no",
-                    id="archive-toggle-delete",
-                )
                 yield Button("Cancel", id="archive-cancel")
 
     def on_mount(self) -> None:
@@ -518,18 +512,9 @@ class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
         self.query_one("#archive-path-input", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle archive option buttons."""
+        """Handle archive and cancel buttons."""
         if event.button.id == "archive-run":
             self._run()
-            return
-        if event.button.id == "archive-toggle-delete":
-            self.delete_source = not self.delete_source
-            label = (
-                "Delete source: yes"
-                if self.delete_source
-                else "Delete source: no"
-            )
-            event.button.label = label
             return
         if event.button.id == "archive-cancel":
             self.action_cancel()
@@ -548,7 +533,6 @@ class ArchiveOptionsScreen(ModalScreen[ArchiveOptionsResult | None]):
         self.dismiss(
             ArchiveOptionsResult(
                 archive_path=Path(path_text),
-                delete_source=self.delete_source,
             )
         )
 
@@ -592,7 +576,7 @@ class ProgressScreen(ModalScreen[None]):
             yield ProgressBar(total=1, id="progress-bar")
             yield Static("", id="progress-path")
 
-    def update_progress(self, progress: StorageArchiveProgress) -> None:
+    def update_progress(self, progress: WorkspaceArchiveProgress) -> None:
         """Refresh the bar and current path label."""
         bar = self.query_one("#progress-bar", ProgressBar)
         total = max(progress.total, 1)

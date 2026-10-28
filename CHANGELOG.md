@@ -79,12 +79,49 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+- Breaking: Replaced `Storage`/`storage` and `ResolveOptions.storage` with
+  `Workspaces`/`workspace`, and replaced `ResolvedConfig.selection` with
+  `workspace`. Affected: applications declaring or selecting AppRC storage,
+  including section `requires_storage` declarations. Migration: declare
+  `Workspaces()` only when a workspace selector is needed; use `workspace=...`
+  and `workspace_required=True`; read `resolved.workspace` and
+  `resolved.workspace_issues`. Use `WorkspaceManager` for registry operations.
+  AppRC does not read or upgrade old `storages` TOML records or old storage
+  dotenv filenames.
+- Breaking: Replaced `apprc_dir`, `apprc_dir_env_key`, `legacy_app_ids`, and
+  storage-path resolution with `Paths`, `Layout`, `AppPaths`, `paths()`, and
+  `ensure_path()`. Affected: applications configuring managed directories or
+  relying on `*_APPRC_DIR`/old storage variables. Migration: independently
+  declare `Paths(config=True, appdata=True, cache=True, state=True)` for the
+  components actually used; choose `Layout.native()` or
+  `Layout.single_root(root)`; update users to the new `<PREFIX>_LAYOUT` and
+  `<PREFIX>_ROOT` pair. AppRC never moves, scans, renames, deletes, or
+  automatically upgrades old files.
+- Breaking: Replaced `mount_config_cli`, `mount_appdata_cli`, and
+  `mount_config_group` with grouped `mount_app_cli`/`mount_app_groups`.
+  Affected: Typer applications mounting prior commands. Migration: mount the
+  new grouped adapter and update `appdata clean`/`appdata paths` to root
+  `purge`/`paths`; provide explicit maintenance handlers for application-owned
+  operations. No compatibility aliases remain.
+- Breaking: Replaced the old `apprc.toml` storage registry schema and
+  `apprc.storage.env` / `apprc.storage.secret.env` layer names. Affected:
+  applications reading or editing those AppRC-owned files. Migration: create a
+  new workspace registry through `WorkspaceManager` and use the documented
+  `apprc.workspace.env` / `apprc.workspace.secret.env` names. Do not rename or
+  convert old files in place; manually preserve or separately export any data
+  users choose to retain.
 
 <br>
 
 ### ➕ Added
 
-
+- Added independent opt-in config, appdata, cache, and state paths using native
+  platform locations or an explicit single-root layout. Path inspection is
+  read-only; `ensure_path()` initializes only the requested enabled component
+  with an ownership marker.
+- Added explicit `WorkspaceManager` operations and category-specific maintenance
+  providers, plus grouped `paths`, `doctor`, category, workspace, and `purge`
+  commands. Unsupported provider operations are not mounted.
 <br>
 
 ### 💔 Changed
@@ -106,6 +143,7 @@ All notable changes to `AppRC` will be documented in this file.
 ### 🔒 Security
 
 <br>
+
 ---
 
 <br>

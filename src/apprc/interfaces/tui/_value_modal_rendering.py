@@ -37,14 +37,14 @@ SOURCE_LABELS: dict[EditableConfigValueSourceKey, str] = {
     "shell": "Shell",
     "explicit": "Explicit dotenv",
     "user": "User dotenv",
-    "storage": "Storage",
+    "workspace": "Workspace",
     "defaults": "Defaults",
 }
 SOURCE_ORIGIN_LABELS: dict[ConfigResolvedSourceKey, str] = {
     "shell": SOURCE_LABELS["shell"],
     "explicit": SOURCE_LABELS["explicit"],
     "user": SOURCE_LABELS["user"],
-    "storage": SOURCE_LABELS["storage"],
+    "workspace": SOURCE_LABELS["workspace"],
     "defaults": SOURCE_LABELS["defaults"],
 }
 
@@ -57,7 +57,12 @@ def config_value_source_key(value: str) -> EditableConfigValueSourceKey | None:
     """
     match value:
         case (
-            "effective" | "shell" | "explicit" | "user" | "storage" | "defaults"
+            "effective"
+            | "shell"
+            | "explicit"
+            | "user"
+            | "workspace"
+            | "defaults"
         ):
             return value
         case _:
@@ -186,7 +191,7 @@ def scope_label(scope: ConfigWriteScope) -> str:
     """Return the button label fragment for one writable scope."""
     if scope == "user":
         return "User dotenv"
-    return "Storage"
+    return "Workspace"
 
 
 def _source_style(

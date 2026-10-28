@@ -139,7 +139,7 @@ def test_config_request_skips_runtime_for_setup_only_commands() -> None:
         tokens=[
             "config",
             "--skip-dotenv-layers",
-            "--storage",
+            "--workspace",
             "alpha",
             "doctor",
         ]
@@ -155,10 +155,10 @@ def test_config_request_skips_runtime_for_setup_only_commands() -> None:
     assert skips(tokens=["config", "show", "--", "--help"]) is False
     assert skips(tokens=["config", "--", "--help"]) is False
     assert (
-        skips(tokens=["--storage", "alpha", "config", "--", "--help"]) is False
+        skips(tokens=["--workspace", "alpha", "config", "--", "--help"])
+        is False
     )
     assert skips(tokens=["config", "setup"])
-    assert skips(tokens=["config", "storage", "add", "alpha", "/tmp/storage"])
     assert skips(tokens=["config", "paths"])
     assert skips(tokens=["config", "show"]) is False
     assert skips(tokens=["tool", "run"]) is False

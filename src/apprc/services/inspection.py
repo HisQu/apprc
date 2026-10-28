@@ -1,14 +1,15 @@
 """Field inspection using the same resolved inputs as runtime construction."""
 
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
 from typed_settings.exceptions import InvalidSettingsError
 
 from apprc.definition.env_config._validation import validate_python_field_value
+from apprc.definition.env_config.conversion import parse_env_field_value
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.definition.provenance import ConfigOriginState
-from apprc.definition.env_config.conversion import parse_env_field_value
 from apprc.runtime.resolution import ResolvedConfig
 
 
@@ -43,7 +44,7 @@ class FieldInspection:
 class ConfigInspection:
     """Read-only readiness and per-field state for an application.
 
-    :param resolved: Captured layers and storage selection.
+    :param resolved: Captured layers and workspace selection.
     :param fields: Effective values and validation findings.
     :param issues: Failures that prevent the inspected runtime from starting.
     """
@@ -54,7 +55,7 @@ class ConfigInspection:
 
     @property
     def ready(self) -> bool:
-        """Return whether storage and declared field requirements are met."""
+        """Return whether workspace and declared field requirements are met."""
         return not self.issues
 
 
@@ -73,8 +74,8 @@ def inspect_resolved(resolved: ResolvedConfig) -> ConfigInspection:
                 key, ConfigOriginState("python_config_default", env_key=key)
             )
             if (
-                owner.requires_storage
-                and not resolved._has_valid_storage_selection
+                owner.requires_workspace
+                and not resolved._has_valid_workspace_selection
             ):
                 fields.append(
                     FieldInspection(owner, spec, None, origin, active=False)

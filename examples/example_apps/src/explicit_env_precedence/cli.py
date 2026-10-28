@@ -10,10 +10,10 @@ import typer
 
 # == Internal ===================================================
 import apprc as rc
+from explicit_env_precedence.config.app import MyRC
 from explicit_env_precedence.config.bundle import (
     ExplicitEnvPrecedenceExampleConfig,
 )
-from explicit_env_precedence.config.app import MyRC
 
 
 def build_app(
@@ -32,22 +32,13 @@ def build_app(
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
     )
-    rc.cli.mount_config_cli(
+    rc.cli.mount_app_cli(
         app,
         MyRC,
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
         runtime_payload=_runtime_payload,
-        runtime_policy=rc.cli.CliRuntimePolicy(
-            runtime_independent_commands={
-                "appdata": rc.cli.RuntimeIndependentCommand(
-                    action_prefixes={("paths",), ("clean",)},
-                    skip_empty=True,
-                ),
-            },
-        ),
     )
-    rc.cli.mount_appdata_cli(app, MyRC)
 
     @app.command("run")
     def run_cmd(ctx: typer.Context) -> None:
@@ -63,11 +54,11 @@ def _runtime_payload(
     """Return values that make the winning env layer visible."""
     assert state.resolved is not None
     config = state.resolved.build(ExplicitEnvPrecedenceExampleConfig).precedence
-    selection = state.resolved.selection if state.resolved is not None else None
+    selection = state.resolved.workspace if state.resolved is not None else None
     return {
         "app_id": MyRC.schema.app_id,
-        "storage_name": selection.storage_name if selection else None,
-        "storage_root": str(selection.root) if selection else None,
+        "workspace_name": selection.workspace_name if selection else None,
+        "workspace_root": str(selection.root) if selection else None,
         "label": config.label,
     }
 

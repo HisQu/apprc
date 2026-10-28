@@ -1,17 +1,13 @@
-"""Runtime readiness states reported by ``config doctor``."""
+"""Structured status values reported by AppRC diagnostics."""
 
 from __future__ import annotations
 
-# == Standard Library ========================
 from enum import StrEnum
 
 
 class ConfigDoctorStatus(StrEnum):
-    """Readiness status for one AppRC-backed application."""
+    """Aggregate status for one read-only configuration report."""
 
-    STORAGE_NOT_SELECTED = "storage_not_selected"
-    STORAGE_NOT_READY = "storage_not_ready"
-    USER_DOTENV_NOT_READY = "user_dotenv_not_ready"
-    STORAGE_REGISTRY_NOT_READY = "storage_registry_not_ready"
-    CONFIG_INVALID = "config_invalid"
-    RUNNABLE = "runnable"
+    OK = "ok"
+    WARNING = "warning"
+    ERROR = "error"

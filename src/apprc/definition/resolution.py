@@ -8,8 +8,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Generic, Self, TypeVar
 
-from apprc.definition.provenance import ConfigOriginState
 from apprc.definition.env_config.schema import ConfigOwner
+from apprc.definition.paths import Layout
+from apprc.definition.provenance import ConfigOriginState
 
 ConfigTypeT = TypeVar("ConfigTypeT")
 
@@ -28,7 +29,7 @@ class ImportedConfig(Generic[ConfigTypeT]):
     :param dependency_owner: Dependency schema captured at import time.
     :param runtime_owner: Instance owner used when building the dependency.
     :param field_targets: Dependency field name to parent field name mapping.
-    :param dependency_control_env_keys: Dependency storage and directory keys
+    :param dependency_control_env_keys: Dependency layout/root/workspace keys
         excluded from parent input.
     :param config_package: Optional dependency package for opted-in defaults.
     :param dependency_env_prefixes: Declared dependency field prefixes excluded
@@ -149,22 +150,22 @@ class BundleFieldSpec:
 class ResolveOptions:
     """Choose configuration sources for one invocation.
 
-    :param storage: Registered storage name or initialized directory path.
-    :param storage_required: Whether absence of a selection prevents loading.
+    :param workspace: Registered workspace name or initialized directory path.
+    :param workspace_required: Whether absence of a selection prevents loading.
     :param env_files: Explicit dotenv files, in increasing precedence order.
     :param env_file_overrides_os_environ: Whether explicit files beat the
         captured environment.
     :param load_dotenv_layers: Whether dotenv values participate in binding.
-        Explicit files still participate in structural storage selection.
-    :param apprc_dir: Invocation-local managed-directory override.
+        Explicit files still participate in structural workspace selection.
+    :param layout: Invocation-local placement override.
     """
 
-    storage: str | None = None
-    storage_required: bool = False
+    workspace: str | None = None
+    workspace_required: bool = False
     env_files: tuple[Path, ...] = ()
     env_file_overrides_os_environ: bool = False
     load_dotenv_layers: bool = True
-    apprc_dir: Path | None = None
+    layout: Layout | None = None
 
     def __post_init__(self) -> None:
         """Copy caller-owned sequences without reading any filesystem state."""

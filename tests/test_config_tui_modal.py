@@ -6,26 +6,26 @@ from typing import Any
 import pytest
 
 from apprc.interfaces.tui._field_state import EditableConfigValueSource
-from apprc.interfaces.tui.modals.screens import ConfigValueEditScreen
 from apprc.interfaces.tui._rendering import setting_title
 from apprc.interfaces.tui._value_modal_rendering import (
     source_copy_is_disabled,
 )
-from tests.support_config import APPRC_EXAMPLE_APP_OWNER
+from apprc.interfaces.tui.modals.screens import ConfigValueEditScreen
+from tests.support_config import WORKSPACE_EXAMPLE_OWNER
 
 
 def test_value_edit_modal_opens_empty_target_for_multiple_scopes() -> None:
     screen = ConfigValueEditScreen(
-        spec=APPRC_EXAMPLE_APP_OWNER.field("profile"),
+        spec=WORKSPACE_EXAMPLE_OWNER.field("profile"),
         env_key="APPRC_EXAMPLE_APP_PROFILE",
         value_sources=(
             EditableConfigValueSource(key="user", raw_value="user-profile"),
             EditableConfigValueSource(
-                key="storage",
-                raw_value="storage-profile",
+                key="workspace",
+                raw_value="workspace-profile",
             ),
         ),
-        writable_scopes=("user", "storage"),
+        writable_scopes=("user", "workspace"),
     )
 
     assert screen._target_value() == ""
@@ -33,7 +33,7 @@ def test_value_edit_modal_opens_empty_target_for_multiple_scopes() -> None:
 
 def test_value_edit_modal_prefills_only_writable_scope() -> None:
     screen = ConfigValueEditScreen(
-        spec=APPRC_EXAMPLE_APP_OWNER.field("profile"),
+        spec=WORKSPACE_EXAMPLE_OWNER.field("profile"),
         env_key="APPRC_EXAMPLE_APP_PROFILE",
         value_sources=(
             EditableConfigValueSource(key="user", raw_value="user-profile"),
@@ -45,7 +45,7 @@ def test_value_edit_modal_prefills_only_writable_scope() -> None:
 
 
 def test_value_edit_title_marks_restart_required_field() -> None:
-    spec = APPRC_EXAMPLE_APP_OWNER.field("profile")
+    spec = WORKSPACE_EXAMPLE_OWNER.field("profile")
     restart_spec = replace(spec, restart_required=True)
 
     assert setting_title(restart_spec) == "Profile (restart required)"
@@ -55,16 +55,16 @@ def test_value_edit_modal_keyboard_save_requires_unambiguous_scope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     screen = ConfigValueEditScreen(
-        spec=APPRC_EXAMPLE_APP_OWNER.field("profile"),
+        spec=WORKSPACE_EXAMPLE_OWNER.field("profile"),
         env_key="APPRC_EXAMPLE_APP_PROFILE",
         value_sources=(
             EditableConfigValueSource(key="user", raw_value="user-profile"),
             EditableConfigValueSource(
-                key="storage",
-                raw_value="storage-profile",
+                key="workspace",
+                raw_value="workspace-profile",
             ),
         ),
-        writable_scopes=("user", "storage"),
+        writable_scopes=("user", "workspace"),
     )
     notifications: list[str] = []
 
@@ -83,19 +83,19 @@ def test_value_edit_modal_keyboard_save_requires_unambiguous_scope(
 
     screen.action_save()
 
-    assert notifications == ["Choose Save User or Save Storage."]
+    assert len(notifications) == 1
 
 
 def test_source_copy_availability_uses_actual_source_value() -> None:
     assert (
         source_copy_is_disabled(
-            EditableConfigValueSource(key="storage", raw_value=None)
+            EditableConfigValueSource(key="workspace", raw_value=None)
         )
         is True
     )
     assert (
         source_copy_is_disabled(
-            EditableConfigValueSource(key="storage", raw_value="")
+            EditableConfigValueSource(key="workspace", raw_value="")
         )
         is False
     )

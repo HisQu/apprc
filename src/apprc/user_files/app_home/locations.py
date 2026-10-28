@@ -1,73 +1,16 @@
-"""Paths below one application's predictable AppRC directory."""
+"""Fixed managed-file derivation and private atomic filesystem I/O."""
 
 from __future__ import annotations
 
 # == Standard Library ===========================================
 import os
-from collections.abc import Mapping
-from dataclasses import dataclass
+import stat
 from pathlib import Path, PureWindowsPath
 from tempfile import NamedTemporaryFile
 
 
 class AppRCDirectoryError(ValueError):
     """An AppRC directory or managed file path is invalid."""
-
-
-@dataclass(frozen=True, slots=True)
-class AppRCDirectoryPaths:
-    """Resolved AppRC-managed paths for one application.
-
-    :param root: Application-owned AppRC directory.
-    :param user_dotenv: Per-user dotenv override file.
-    :param apprc_toml: Storage registry and AppRC metadata file.
-    """
-
-    root: Path
-    user_dotenv: Path
-    apprc_toml: Path
-
-
-def default_apprc_dir(app_id: str) -> Path:
-    """Return the same default AppRC directory on every operating system.
-
-    :param app_id: Stable application identity used as the directory name.
-    :return: ``~/.local/share/<app-id>`` below the current user's home.
-    """
-    return Path.home() / ".local" / "share" / app_id
-
-
-def normalize_apprc_dir(path: str | Path) -> Path:
-    """Return an absolute AppRC directory path without creating it.
-
-    :param path: Declared or user-provided directory.
-    :return: Absolute, user-expanded path.
-    """
-    return Path(path).expanduser().absolute()
-
-
-def resolve_apprc_dir(
-    *,
-    app_id: str,
-    declared_path: Path | None,
-    env_key: str,
-    proc_env: Mapping[str, str] | None = None,
-) -> Path:
-    """Resolve the environment, declaration, or default AppRC directory.
-
-    :param app_id: Stable application identity.
-    :param declared_path: Optional application-declared directory.
-    :param env_key: Environment key that may override the directory.
-    :param proc_env: Environment mapping used instead of ``os.environ``.
-    :return: Absolute AppRC directory path without filesystem writes.
-    """
-    env = os.environ if proc_env is None else proc_env
-    raw_path = env.get(env_key, "").strip()
-    if raw_path:
-        return normalize_apprc_dir(raw_path)
-    if declared_path is not None:
-        return normalize_apprc_dir(declared_path)
-    return default_apprc_dir(app_id)
 
 
 def apprc_file(apprc_dir: Path, filename: str) -> Path:
@@ -78,26 +21,6 @@ def apprc_file(apprc_dir: Path, filename: str) -> Path:
     :return: File path without creating it.
     """
     return apprc_dir / require_filename(filename, field_name="filename")
-
-
-def resolve_apprc_directory_paths(
-    *,
-    apprc_dir: Path,
-    user_dotenv_path: Path,
-    apprc_toml_path: Path,
-) -> AppRCDirectoryPaths:
-    """Return AppRC-managed paths without creating files.
-
-    :param apprc_dir: Resolved application directory.
-    :param user_dotenv_path: Per-user dotenv path.
-    :param apprc_toml_path: Storage registry path.
-    :return: Resolved AppRC directory paths.
-    """
-    return AppRCDirectoryPaths(
-        root=apprc_dir,
-        user_dotenv=user_dotenv_path,
-        apprc_toml=apprc_toml_path,
-    )
 
 
 def require_filename(filename: str, *, field_name: str) -> str:
@@ -123,6 +46,31 @@ def require_filename(filename: str, *, field_name: str) -> str:
     return filename
 
 
+def assert_no_links(path: Path) -> None:
+    """Reject parent traversal, symlinks and reparse points before mutations.
+
+    :param path: Target path, including ancestors that may not yet exist.
+    :raises AppRCDirectoryError: If traversal escapes or redirects the path.
+    """
+    if ".." in path.parts:
+        raise AppRCDirectoryError(
+            f"AppRC-managed paths must not contain parent traversal: {path}"
+        )
+    absolute = path.expanduser().absolute()
+    for candidate in (absolute, *absolute.parents):
+        try:
+            metadata = candidate.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(metadata.st_mode) or (
+            os.name == "nt"
+            and metadata.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        ):
+            raise AppRCDirectoryError(
+                f"AppRC-managed paths must not traverse links: {candidate}"
+            )
+
+
 def ensure_text_file(path: Path) -> Path:
     """Create an empty text file when it is missing.
 
@@ -130,8 +78,10 @@ def ensure_text_file(path: Path) -> Path:
     :return: Resolved file path.
     :raises AppRCDirectoryError: If the target or parent is incompatible.
     """
-    resolved = Path(path).expanduser().resolve()
+    resolved = Path(path).expanduser().absolute()
+    assert_no_links(resolved)
     _ensure_parent_dir(resolved)
+    assert_no_links(resolved)
     if resolved.exists() and not resolved.is_file():
         raise AppRCDirectoryError(
             f"AppRC-managed file path exists but is not a file: {resolved}"
@@ -179,12 +129,10 @@ def write_text_atomic(path: Path, text: str, *, private: bool = False) -> Path:
     :return: Resolved destination path.
     :raises AppRCDirectoryError: If the target or parent is incompatible.
     """
-    resolved = (
-        Path(path).expanduser().absolute()
-        if private
-        else Path(path).expanduser().resolve()
-    )
+    resolved = Path(path).expanduser().absolute()
+    assert_no_links(resolved)
     _ensure_parent_dir(resolved)
+    assert_no_links(resolved)
     if private:
         from apprc.user_files.env_files.secrets import inspect_secret_file
 

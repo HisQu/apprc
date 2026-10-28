@@ -31,10 +31,10 @@ def build_config_typer_app(
     *,
     state_type: type[StateT] | None = None,
     runtime_payload: Callable[[StateT], Mapping[str, Any]] | None = None,
-    active_storage_root_with_context: (
+    active_workspace_root_with_context: (
         Callable[[StateT, ConfigSelectorContext], Path | None] | None
     ) = None,
-    initial_storage_with_context: (
+    initial_workspace_with_context: (
         Callable[[StateT, ConfigSelectorContext], str | None] | None
     ) = None,
     editor_app_cls: type[ConfigEditorApp] | None = None,
@@ -49,13 +49,13 @@ def build_config_typer_app(
     :param state_type: Application CLI state type stored on ``ctx.obj``.
         When omitted, AppRC uses its default config state.
     :param runtime_payload: Optional serializer for ``config show``.
-    :param active_storage_root_with_context: Optional active storage resolver
+    :param active_workspace_root_with_context: Optional workspace-root resolver
         that receives explicit env-file selector context.
-    :param initial_storage_with_context: Optional editor initial-selection
+    :param initial_workspace_with_context: Optional editor initial-selection
         resolver that receives explicit env-file selector context.
     :param editor_app_cls: Optional Textual subclass.
     :param help: Optional command-group help.
-    :param setup_message: Optional setup text for missing storage.
+    :param setup_message: Optional setup text for missing config.
     :param runtime_error_param_hint: Parameter hint for runtime-payload
         validation errors.
     :param config_group_name: Config command group name used in generated
@@ -65,8 +65,8 @@ def build_config_typer_app(
     options = ConfigGroupOptions(
         state_type=state_type or DefaultConfigCliState,
         runtime_payload=runtime_payload,
-        active_storage_root_with_context=active_storage_root_with_context,
-        initial_storage_with_context=initial_storage_with_context,
+        active_workspace_root_with_context=active_workspace_root_with_context,
+        initial_workspace_with_context=initial_workspace_with_context,
         editor_app_cls=editor_app_cls,
         help=help,
         setup_message=setup_message,
@@ -94,13 +94,20 @@ def build_config_typer_app_from_options(
         no_args_is_help=False,
         pretty_exceptions_show_locals=False,
     )
-    storage_group = typer.Typer(help="Manage named storages.")
-    secrets_group = typer.Typer(help="Inspect and repair saved secret files.")
-    if apprc.schema.uses_managed_files():
+    secrets_group = typer.Typer(
+        help="Inspect and repair saved secret files, or migrate secret fields."
+    )
+    config_enabled = apprc.schema.paths.config
+    user_dotenv_enabled = apprc.schema.uses_user_dotenv()
+    has_secret_fields = any(
+        field.secret for owner in apprc.schema.owners for field in owner.fields
+    )
+    if (
+        config_enabled
+        and has_secret_fields
+        and (user_dotenv_enabled or apprc.schema.uses_workspaces())
+    ):
         app.add_typer(secrets_group, name="secrets")
-    if apprc.schema.uses_storage():
-        app.add_typer(storage_group, name="storage")
-
     handlers = ConfigCommandHandlers(
         apprc,
         options=options,
@@ -154,21 +161,29 @@ def build_config_typer_app_from_options(
         """Check AppRC config readiness and print suggested fixes."""
         handlers.doctor(ctx, json_output=json_output)
 
-    if apprc.schema.uses_managed_files():
+    if (
+        config_enabled
+        and has_secret_fields
+        and (user_dotenv_enabled or apprc.schema.uses_workspaces())
+    ):
 
         @secrets_group.command("migrate")
         def config_secrets_migrate_cmd(
             ctx: typer.Context,
             scope: Annotated[
                 str,
-                typer.Option("--scope", help="Move user or storage secrets."),
+                typer.Option(
+                    "--scope", help="Migrate user or workspace secrets."
+                ),
             ],
             assume_yes: Annotated[
                 bool,
-                typer.Option("--yes", "-y", help="Apply the shown move."),
+                typer.Option(
+                    "--yes", "-y", help="Apply the reviewed migration."
+                ),
             ] = False,
         ) -> None:
-            """Move legacy secret assignments into a private companion."""
+            """Move secret field assignments into the private secret companion."""
             handlers.secrets_migrate(ctx, scope=scope, assume_yes=assume_yes)
 
         @secrets_group.command("repair")
@@ -176,7 +191,9 @@ def build_config_typer_app_from_options(
             ctx: typer.Context,
             scope: Annotated[
                 str,
-                typer.Option("--scope", help="Repair user or storage secrets."),
+                typer.Option(
+                    "--scope", help="Repair user or workspace secrets."
+                ),
             ],
             assume_yes: Annotated[
                 bool,
@@ -186,156 +203,45 @@ def build_config_typer_app_from_options(
             """Restrict a selected layer and its secret companion."""
             handlers.secrets_repair(ctx, scope=scope, assume_yes=assume_yes)
 
-    if apprc.schema.uses_storage():
+    if config_enabled:
+
+        @app.command("init")
+        def config_init_cmd(
+            ctx: typer.Context,
+            adopt: Annotated[
+                bool,
+                typer.Option(
+                    "--adopt",
+                    help="Accept an existing unowned config directory.",
+                ),
+            ] = False,
+        ) -> None:
+            """Initialize the enabled config directory."""
+            handlers.setup(ctx, assume_yes=True, adopt=adopt)
+
+    if user_dotenv_enabled:
 
         @app.command("setup")
-        def config_storage_setup_cmd(
+        def config_setup_cmd(
             ctx: typer.Context,
             assume_yes: Annotated[
                 bool,
                 typer.Option(
-                    "--yes",
-                    "-y",
-                    help="Run setup non-interactively with the selected values.",
+                    "--yes", "-y", help="Run setup without interactive prompts."
                 ),
             ] = False,
-            apprc_dir: Annotated[
-                Path | None,
-                typer.Option(
-                    "--apprc-dir",
-                    help=(
-                        "Directory for AppRC-managed files. Shell path "
-                        "completion is enabled."
-                    ),
-                ),
-            ] = None,
-            storage_root: Annotated[
-                Path | None,
-                typer.Option(
-                    "--storage-root",
-                    help="Storage directory. Shell path completion is enabled.",
-                ),
-            ] = None,
-        ) -> None:
-            """Choose managed-file paths and initialize named storage."""
-            handlers.setup(
-                ctx,
-                assume_yes=assume_yes,
-                apprc_dir=apprc_dir,
-                storage_root=storage_root,
-            )
-
-    elif apprc.schema.uses_user_dotenv():
-
-        @app.command("setup")
-        def config_user_setup_cmd(
-            ctx: typer.Context,
-            assume_yes: Annotated[
+            adopt: Annotated[
                 bool,
                 typer.Option(
-                    "--yes",
-                    "-y",
-                    help="Create the user dotenv without prompting.",
-                ),
-            ] = False,
-            apprc_dir: Annotated[
-                Path | None,
-                typer.Option(
-                    "--apprc-dir",
-                    help=(
-                        "Directory for apprc.user.env. Shell path completion "
-                        "is enabled."
-                    ),
-                ),
-            ] = None,
-        ) -> None:
-            """Create the empty per-user dotenv file."""
-            handlers.setup(
-                ctx,
-                assume_yes=assume_yes,
-                apprc_dir=apprc_dir,
-                storage_root=None,
-            )
-
-    if apprc.schema.uses_storage():
-
-        @app.command("migrate")
-        def config_storage_migrate_cmd(
-            ctx: typer.Context,
-            dry_run: Annotated[
-                bool,
-                typer.Option(
-                    "--dry-run",
-                    help="Show legacy file moves without changing files.",
-                ),
-            ] = False,
-            assume_yes: Annotated[
-                bool,
-                typer.Option(
-                    "--yes",
-                    "-y",
-                    help="Apply all conflict-free moves without prompting.",
-                ),
-            ] = False,
-            storage_root: Annotated[
-                Path | None,
-                typer.Option(
-                    "--storage-root",
-                    help=(
-                        "Existing directory for an unregistered bare storage "
-                        "selector. Shell path completion is enabled."
-                    ),
-                ),
-            ] = None,
-            replace_storage: Annotated[
-                str | None,
-                typer.Option(
-                    "--replace-storage",
-                    help=(
-                        "Existing storage entry to rename and repoint to the "
-                        "unregistered selector."
-                    ),
-                ),
-            ] = None,
-        ) -> None:
-            """Move supported legacy files to their current filenames."""
-            handlers.migrate(
-                ctx,
-                dry_run=dry_run,
-                assume_yes=assume_yes,
-                storage_root=storage_root,
-                replace_storage=replace_storage,
-            )
-
-    elif apprc.schema.uses_managed_files():
-
-        @app.command("migrate")
-        def config_user_migrate_cmd(
-            ctx: typer.Context,
-            dry_run: Annotated[
-                bool,
-                typer.Option(
-                    "--dry-run",
-                    help="Show legacy file moves without changing files.",
-                ),
-            ] = False,
-            assume_yes: Annotated[
-                bool,
-                typer.Option(
-                    "--yes",
-                    "-y",
-                    help="Apply all conflict-free moves without prompting.",
+                    "--adopt",
+                    help="Accept an existing unowned config directory.",
                 ),
             ] = False,
         ) -> None:
-            """Move supported legacy files to their current filenames."""
-            handlers.migrate(
-                ctx,
-                dry_run=dry_run,
-                assume_yes=assume_yes,
-            )
+            """Initialize the declared user configuration files."""
+            handlers.setup(ctx, assume_yes=assume_yes, adopt=adopt)
 
-    if apprc.schema.uses_managed_files():
+    if apprc.schema.owners:
 
         @app.command("set")
         def config_set_cmd(
@@ -373,108 +279,5 @@ def build_config_typer_app_from_options(
         def config_edit_cmd(ctx: typer.Context) -> None:
             """Open the Textual editor for declared dotenv files."""
             handlers.edit(ctx)
-
-    @storage_group.command("add")
-    def config_storage_add_cmd(
-        ctx: typer.Context,
-        name: Annotated[
-            str,
-            typer.Argument(help="New storage selector name."),
-        ],
-        path: Annotated[
-            Path,
-            typer.Argument(help="Storage root directory for this name."),
-        ],
-        assume_yes: Annotated[
-            bool,
-            typer.Option(
-                "--yes",
-                "-y",
-                help="Reuse a non-empty existing storage root without prompting.",
-            ),
-        ] = False,
-    ) -> None:
-        """Create one named storage entry."""
-        handlers.storage_add(
-            ctx,
-            name=name,
-            path=path,
-            assume_yes=assume_yes,
-        )
-
-    @storage_group.command("list")
-    def config_storage_list_cmd(
-        ctx: typer.Context,
-        json_output: Annotated[
-            bool,
-            typer.Option("--json", help="Emit machine-readable JSON."),
-        ] = False,
-    ) -> None:
-        """List named storage entries."""
-        handlers.storage_list(ctx, json_output=json_output)
-
-    @storage_group.command("select")
-    def config_storage_select_cmd(
-        ctx: typer.Context,
-        name: Annotated[
-            str,
-            typer.Argument(help="Registered storage name to select."),
-        ],
-    ) -> None:
-        """Persist the selected storage name."""
-        handlers.storage_select(ctx, name=name)
-
-    @storage_group.command("rename")
-    def config_storage_rename_cmd(
-        ctx: typer.Context,
-        name: Annotated[str, typer.Argument(help="Current storage name.")],
-        new_name: Annotated[str, typer.Argument(help="New storage name.")],
-    ) -> None:
-        """Rename a registered storage without moving data."""
-        handlers.storage_rename(ctx, name=name, new_name=new_name)
-
-    @storage_group.command("repoint")
-    def config_storage_repoint_cmd(
-        ctx: typer.Context,
-        name: Annotated[str, typer.Argument(help="Registered storage name.")],
-        root: Annotated[
-            Path,
-            typer.Argument(help="New existing root; no data is moved."),
-        ],
-    ) -> None:
-        """Change only the registered root path."""
-        handlers.storage_repoint(ctx, name=name, root=root)
-
-    @storage_group.command("move")
-    def config_storage_move_cmd(
-        ctx: typer.Context,
-        name: Annotated[str, typer.Argument(help="Registered storage name.")],
-        destination: Annotated[
-            Path,
-            typer.Argument(help="New or empty destination directory."),
-        ],
-        assume_yes: Annotated[
-            bool,
-            typer.Option("--yes", "-y", help="Move without confirmation."),
-        ] = False,
-    ) -> None:
-        """Move the complete storage directory and update the registry."""
-        handlers.storage_move(
-            ctx,
-            name=name,
-            destination=destination,
-            assume_yes=assume_yes,
-        )
-
-    @storage_group.command("remove")
-    def config_storage_remove_cmd(
-        ctx: typer.Context,
-        name: Annotated[
-            str,
-            typer.Argument(help="Storage selector name to remove."),
-        ],
-    ) -> None:
-        """Remove one named storage entry."""
-        handlers.storage_remove(ctx, name=name)
 
     return app

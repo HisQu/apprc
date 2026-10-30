@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
 import pytest
 
 from apprc.definition.installation import (
+    InstallationError,
     InstallationIdentity,
     InstallationPlacement,
     InstallationSource,
@@ -29,7 +32,7 @@ from apprc.distribution.runtime.acquisition import (
     PreparedSource,
     prepare_source,
 )
-from apprc.distribution.runtime import installed_probe
+from apprc.distribution.runtime import bind_install_support, installed_probe
 from apprc.distribution.runtime.backend import (
     backend_environment,
     inspect_uv_tools,
@@ -50,7 +53,318 @@ from apprc.distribution.runtime.installation import (
 import apprc.distribution.runtime.installation as lifecycle_installation
 from apprc.distribution.runtime.probe import probe_installed_tool
 from apprc.user_files.installation.discovery import inspect_installation
+from apprc.user_files.app_home.permissions import (
+    create_private_directory_if_missing,
+)
 from apprc.user_files.installation.operations import plan_install, plan_repair
+
+
+def test_real_uv_legacy_migration_activates_publicly_bound_support(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uuid import uuid4
+
+    from apprc import AppRC
+    from apprc.definition.installation import (
+        InventoryEntry,
+        LegacyMigrationEvidence,
+        LegacyRunnable,
+        MigrationInventory,
+        OwnedOutput,
+    )
+    from apprc.distribution.runtime.backend import external_base_python
+    from apprc.distribution.runtime.legacy import stage_legacy_support
+    from apprc.user_files.app_home.writes import file_revision
+
+    uv = shutil.which("uv")
+    assert uv is not None
+    project = tmp_path / "migration source % ! café"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        """
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "apprc-migration-consumer"
+version = "1.0.0"
+requires-python = ">=3.12"
+[project.scripts]
+apprc-migration-consumer = "migration_consumer:main"
+[tool.setuptools]
+py-modules = ["migration_consumer"]
+""",
+        encoding="utf-8",
+    )
+    (project / "migration_consumer.py").write_text(
+        "import json\nimport os\nimport sys\n"
+        "def main():\n"
+        '    print(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}, ensure_ascii=False))\n',
+        encoding="utf-8",
+    )
+    identity = InstallationIdentity(
+        "migration-consumer",
+        "apprc-migration-consumer",
+        "migration_consumer",
+        None,
+        ("apprc-migration-consumer",),
+    )
+    source = InstallationSource("editable", str(project))
+    placement = InstallationPlacement(Layout.native())
+    environment = dict(os.environ)
+    environment.update(
+        UV_TOOL_DIR=str(tmp_path / "migration tools"),
+        UV_TOOL_BIN_DIR=str(tmp_path / "migration commands"),
+        UV_CACHE_DIR=str(tmp_path / "migration cache"),
+        LOCALAPPDATA=str(tmp_path / "Local AppData"),
+        USERPROFILE=str(tmp_path / "User Profile"),
+        HOME=str(tmp_path / "Home"),
+        XDG_DATA_HOME=str(tmp_path / "XDG Data"),
+    )
+    manager = AppRC(app_id=identity.app_id).installation(
+        environment=environment
+    )
+    directory = manager.directory
+    target = select_uv_target(
+        Path(uv), environment=environment, invocation_cwd=tmp_path
+    )
+    try:
+        install_uv_tool(
+            target,
+            source,
+            environment=environment,
+            python_requirement=">=3.12",
+        )
+        observed = probe_installed_tool(
+            target,
+            identity,
+            source,
+            placement,
+            probe_path=Path(installed_probe.__file__).absolute(),
+            environment=environment,
+        )
+        payload_root = tmp_path / "migration payload"
+        payload_package = payload_root / "app_lifecycle"
+        payload_package.mkdir(parents=True)
+        (payload_package / "__init__.py").write_text(
+            '"""Migration fixture payload."""\n', encoding="utf-8"
+        )
+        (payload_package / "install.py").write_text(
+            "import sys\nfrom pathlib import Path\n"
+            'def main(): Path(sys.argv[1]).write_text("configured", encoding="utf-8")\n'
+            'if __name__ == "__main__": main()\n',
+            encoding="utf-8",
+        )
+        (payload_package / "uninstall.py").write_text(
+            "import sys\nfrom pathlib import Path\n"
+            "def main(): Path(sys.argv[1]).unlink(missing_ok=True)\n"
+            'if __name__ == "__main__": main()\n',
+            encoding="utf-8",
+        )
+        spec = DistributionSpec(
+            ProjectMetadata(
+                project,
+                identity,
+                "1.0.0",
+                launcher_command=identity.commands[0],
+            )
+        )
+        payload = PayloadTree(
+            payload_root,
+            tuple(
+                PurePosixPath("app_lifecycle") / module
+                for module in ("__init__.py", "install.py", "uninstall.py")
+            ),
+        )
+        support_files = bind_install_support(
+            install_support_files(spec, payload),
+            observed,
+            directory,
+        )
+        if os.name == "nt":
+            assert {"launch.cmd", "uninstall.cmd"} <= {
+                path.name for path in support_files
+            }
+            assert not {"launch.sh", "uninstall.sh"} & {
+                path.name for path in support_files
+            }
+        else:
+            assert {"launch.sh", "uninstall.sh"} <= {
+                path.name for path in support_files
+            }
+            assert not {
+                "launch.cmd",
+                "launch.ps1",
+                "uninstall.cmd",
+                "uninstall.ps1",
+            } & {path.name for path in support_files}
+        legacy_root = tmp_path / "legacy distribution installation"
+        create_private_directory_if_missing(legacy_root)
+        receipt = legacy_root / "receipt.json"
+        receipt.write_bytes(b"validated legacy receipt")
+        controller = legacy_root / "lifecycle.py"
+        controller.write_bytes(b"legacy controller")
+        inert_controller = legacy_root / ".retired-lifecycle.py"
+        old_uninstall = legacy_root / (
+            "uninstall.cmd" if os.name == "nt" else "uninstall.sh"
+        )
+        old_uninstall.write_bytes(b"legacy uninstall frontend")
+        inert_uninstall = legacy_root / ".retired-uninstall"
+        generation_id = uuid4()
+        support_bytes = {
+            str(path): data for path, data in support_files.items()
+        }
+        if os.name != "nt":
+            original_chmod = Path.chmod
+            interrupted_frontend = (
+                directory
+                / "migration-staged"
+                / str(generation_id)
+                / "launch.sh"
+            )
+
+            def interrupt_executable_mode(
+                path: Path, mode: int, *, follow_symlinks: bool = True
+            ) -> None:
+                if path == interrupted_frontend and mode == 0o700:
+                    raise PermissionError(
+                        "Interrupted executable support staging."
+                    )
+                original_chmod(path, mode, follow_symlinks=follow_symlinks)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(Path, "chmod", interrupt_executable_mode)
+                with pytest.raises(
+                    PermissionError, match="Interrupted executable"
+                ):
+                    stage_legacy_support(
+                        directory,
+                        generation_id=generation_id,
+                        support_files=support_bytes,
+                    )
+        staged = stage_legacy_support(
+            directory,
+            generation_id=generation_id,
+            support_files=support_bytes,
+        )
+        owned_outputs = tuple(
+            OwnedOutput(
+                "support",
+                str(path),
+                hashlib.sha256(data).hexdigest(),
+            )
+            for path, data in sorted(
+                support_files.items(), key=lambda item: str(item[0])
+            )
+        )
+        observed = replace(observed, owned_outputs=owned_outputs)
+        evidence = LegacyMigrationEvidence(
+            InventoryEntry(receipt, "file", file_revision(receipt)),
+            identity.distribution,
+            identity.commands[0],
+            observed.version,
+            source.requirement,
+            target,
+            external_base_python(observed.prefix),
+            (
+                LegacyRunnable(
+                    controller,
+                    inert_controller,
+                    file_revision(controller) or "",
+                ),
+                LegacyRunnable(
+                    old_uninstall,
+                    inert_uninstall,
+                    file_revision(old_uninstall) or "",
+                ),
+            ),
+        )
+        result = manager.migrate_legacy(
+            evidence,
+            placement,
+            inventory=MigrationInventory(legacy_root, directory),
+            observed=observed,
+            quiescent=True,
+            staged_support=staged,
+            generation_id=generation_id,
+        )
+        assert result.status == "ready"
+        assert not receipt.exists()
+        assert not controller.exists()
+        assert not old_uninstall.exists()
+        assert not inert_controller.exists()
+        assert not inert_uninstall.exists()
+        saved = inspect_saved(directory)
+        assert saved.status == "ready"
+        assert prepare_uninstall(directory).can_execute
+        saved_controller = subprocess.run(
+            [
+                sys.executable,
+                str(directory / "uninstall.py"),
+                "--directory",
+                str(directory),
+                "--dry-run",
+            ],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        assert json.loads(saved_controller.stdout)["status"] == "ready"
+        app_configuration = tmp_path / "migration consumer configuration"
+        subprocess.run(
+            [
+                sys.executable,
+                str(directory / "repair-installer.py"),
+                str(app_configuration),
+            ],
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
+        assert app_configuration.read_text(encoding="utf-8") == "configured"
+        subprocess.run(
+            [
+                sys.executable,
+                str(directory / "app-uninstall.py"),
+                str(app_configuration),
+            ],
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
+        assert not app_configuration.exists()
+        caller_directory = tmp_path / "unrelated caller working directory"
+        caller_directory.mkdir()
+        launch = directory / ("launch.cmd" if os.name == "nt" else "launch.sh")
+        arguments = ("with space", "literal%20", "literal!bang", "snowman ☃")
+        command = (
+            [
+                os.environ.get("COMSPEC", "cmd.exe"),
+                "/d",
+                "/c",
+                f'"{launch}"',
+                *arguments,
+            ]
+            if os.name == "nt"
+            else [str(launch), *arguments]
+        )
+        launched = subprocess.run(
+            command,
+            cwd=caller_directory,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        launched_value = json.loads(launched.stdout)
+        assert launched_value == {
+            "argv": list(arguments),
+            "cwd": str(caller_directory),
+        }
+    finally:
+        remove_uv_tool(target, identity.distribution, environment=environment)
 
 
 def test_inventory_rejects_unknown_output_before_removal() -> None:
@@ -611,12 +925,70 @@ if __name__ == "__main__":
                 & support_names
             )
 
+        rebound = bind_install_support(
+            support_files,
+            installed.record.current,
+            directory,
+            installed.record.current.owned_outputs,
+        )
+        rebound_root = tmp_path / "bound public support"
+        for relative, content in rebound.items():
+            target_path = rebound_root.joinpath(*relative.parts)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(content)
+        rebound_arguments = ("with space", "literal%20", "snowman ☃")
+        rebound_launcher = rebound_root / (
+            "launch.cmd" if os.name == "nt" else "launch.sh"
+        )
+        if os.name == "nt":
+            rebound_result = subprocess.run(
+                [
+                    os.environ.get("COMSPEC", "cmd.exe"),
+                    "/d",
+                    "/c",
+                    f'"{rebound_launcher}"',
+                    *rebound_arguments,
+                ],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        else:
+            rebound_launcher.chmod(0o700)
+            rebound_result = subprocess.run(
+                [str(rebound_launcher), *rebound_arguments],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        assert rebound_result.returncode == 0, (
+            rebound_result.stdout + rebound_result.stderr
+        )
+        assert rebound_result.stdout.strip() == (
+            f"saved command executed {list(rebound_arguments)!r}"
+        )
         launcher_arguments = ("with space", "literal%20", "snowman ☃")
         launcher = invoke_root(root_launch, *launcher_arguments)
-        assert (
-            launcher.stdout.strip()
-            == f"saved command executed {list(launcher_arguments)!r}"
+        assert launcher.stdout.strip() == (
+            f"saved command executed {list(launcher_arguments)!r}"
         )
+        foreign_command = target.bin_dir / (
+            "foreign.exe" if os.name == "nt" else "foreign"
+        )
+        foreign_command.write_bytes(b"foreign command")
+        mismatched_observation = replace(
+            installed.record.current,
+            commands=(foreign_command,),
+        )
+        with pytest.raises(InstallationError, match="does not match"):
+            bind_install_support(
+                support_files,
+                mismatched_observation,
+                directory,
+                installed.record.current.owned_outputs,
+            )
 
         def run_saved_uninstall() -> None:
             invoke_root(root_uninstall)

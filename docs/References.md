@@ -257,6 +257,7 @@ These author-time APIs live under `apprc.distribution`:
 | `build_main_installer(spec, payload)` | Deterministic standalone installer from the explicit `PayloadTree`. |
 | `render_launcher(spec)` / `render_uninstaller(spec)` | Launcher/removal artifacts using the same runtime contract. |
 | `generate_artifacts(spec, payload)` | Convenience composition of the same generation primitives. |
+| `install_support_files(spec, payload)` | Flatten generated saved support into installation-relative files; machine addresses are bound separately at runtime. |
 | `write_artifacts(artifacts, check=False)` | Write exact bytes/modes; `check=True` reports named drift without writing. |
 
 `DistributionSpec` combines project identity, declared capabilities, source mode,
@@ -281,11 +282,19 @@ management scripts.
 
 Default `main-installer.py` is a PEP 723 script with a deterministic encoded
 archive of explicitly selected whole modules/resources. `main-installer.pyz`
-is an explicit alternative with a separate management dependency specification.
+is an explicit alternative with `main-installer-requirements.txt`.
 Both use the same implementation; neither imports the author's checkout,
 installed application or separately installed AppRC. Management requires Python
 `>=3.12`, `platformdirs==4.10.0`, `filelock==3.32.7`, and
 `pywin32==312` on Windows. These are direct dependency pins, not a transitive lock.
+
+Remote-mode `app-install.cmd` is self-contained: it carries the same rendered
+PowerShell bootstrap, runs an exclusively created temporary helper, forwards
+the original arguments and exit code, and removes that owned helper. It needs
+neither an adjacent `bootstrap.ps1` nor uv/Python beforehand. The separately
+emitted `bootstrap.ps1` also supports remote-mode downloaded-text invocation
+without a script directory. Checkout entries still require their local payload;
+a missing payload never silently selects remote code.
 
 Lifecycle primitives under `apprc.distribution.runtime` operate on frozen typed
 plans: `plan_install`, `plan_uninstall`, `plan_migration`, `begin_operation`,
@@ -320,6 +329,15 @@ the newly requested bytes. The installer binds support to actual executable
 addresses, validates existing destinations, and checkpoints the final digests
 before writing files. A matching repair can therefore resume interrupted
 publication; unknown or edited destinations remain errors.
+
+`bind_install_support(support_files, observed, directory, previous_outputs)`
+is the supported runtime boundary for authored installation and legacy cutover.
+It selects the current platform's support and binds the verified external Python
+and observed application command before support digests are staged. It returns
+bytes; it does not publish files, activate authority or replace the caller's
+coordination and revision checks. Supply only digest-proven previous ownership.
+Stage this bound output before `execute_migration(...)` can commit `ready`;
+reinstallation afterward is not a substitute for usable recovery at activation.
 
 Authored installer entries call `parse_source_arguments(spec, sys.argv[1:])`
 before parsing application options. It returns a `SourceSelection` and the

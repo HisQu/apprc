@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -45,6 +46,300 @@ from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
 from apprc.user_files.env_files.secrets import ensure_secret_file
+
+
+@pytest.mark.skipif(
+    os.name != "nt", reason="Requires native Windows PowerShell."
+)
+def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
+    tmp_path: Path,
+) -> None:
+    from apprc.distribution.rendering import standalone_script
+
+    project = tmp_path / "remote % ! café"
+    project.mkdir()
+    package_bytes = (
+        b"fixture source archive acquired through the release transport"
+    )
+    wheel_bytes = b"fixture wheel acquired through the release transport"
+    identity = InstallationIdentity(
+        "remote-app", "remote-app", "remote_app", None, ("remote-app",)
+    )
+    spec = DistributionSpec(
+        ProjectMetadata(project, identity, "1.2.3"),
+        source_mode="release",
+        repository_url="https://github.com/example/remote-app",
+        release_version="1.2.3",
+        release_commit="a" * 40,
+        release_asset="remote-app-1.2.3.tar.gz",
+        release_digest=hashlib.sha256(package_bytes).hexdigest(),
+        runtime_requirements=("platformdirs==4.10.0",),
+    )
+    payload_root = project / "payload"
+    package = payload_root / "app_lifecycle"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text(
+        '"""Remote release consumer."""\n', encoding="utf-8"
+    )
+    (package / "install.py").write_text(
+        "import json\nimport os\nimport sys\nfrom pathlib import Path\n"
+        "def main():\n"
+        '    Path(os.environ["APPRC_NATIVE_MARKER"]).write_text(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}, ensure_ascii=False), encoding="utf-8")\n'
+        '    if "--exit-37" in sys.argv: raise SystemExit(37)\n'
+        'if __name__ == "__main__": main()\n',
+        encoding="utf-8",
+    )
+    (package / "uninstall.py").write_text(
+        "import os\nfrom pathlib import Path\n"
+        "def main(): Path(os.environ['APPRC_NATIVE_MARKER']).unlink(missing_ok=True)\n"
+        'if __name__ == "__main__": main()\n',
+        encoding="utf-8",
+    )
+    payload = PayloadTree(
+        payload_root,
+        tuple(
+            PurePosixPath("app_lifecycle") / name
+            for name in ("__init__.py", "install.py", "uninstall.py")
+        ),
+    )
+    installer = standalone_script(spec, payload, entry=payload.entry_module)
+    artifacts = {
+        item.destination.name: item.content for item in render_bootstraps(spec)
+    }
+    files = {
+        "main-installer.py": installer,
+        "remote-app-1.2.3.tar.gz": package_bytes,
+        "remote-app-1.2.3-py3-none-any.whl": wheel_bytes,
+        "app-install.sh": artifacts["app-install.sh"],
+        "app-install.cmd": artifacts["app-install.cmd"],
+        "bootstrap.ps1": artifacts["bootstrap.ps1"],
+    }
+    manifest = {
+        "schema_version": 1,
+        "app_id": identity.app_id,
+        "distribution": identity.distribution,
+        "version": "1.2.3",
+        "commit": "a" * 40,
+        "payload_format": "script",
+        "assets": [
+            {
+                "filename": filename,
+                "size": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+            for filename, content in files.items()
+        ],
+    }
+    manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
+    release = {
+        "draft": False,
+        "tag_name": "v1.2.3",
+        "assets": [
+            {
+                "name": filename,
+                "size": len(content),
+                "browser_download_url": (
+                    "https://github.com/example/remote-app/releases/download/"
+                    f"v1.2.3/{filename}"
+                ),
+            }
+            for filename, content in (
+                *files.items(),
+                ("release-manifest.json", manifest_bytes),
+            )
+        ],
+    }
+    api_url = (
+        "https://api.github.com/repos/example/remote-app/releases/tags/v1.2.3"
+    )
+    manifest_url = (
+        "https://github.com/example/remote-app/releases/download/"
+        "v1.2.3/release-manifest.json"
+    )
+    responses = {
+        api_url: json.dumps(release).encode(),
+        **{
+            "https://github.com/example/remote-app/releases/download/"
+            f"v1.2.3/{filename}": content
+            for filename, content in files.items()
+        },
+        manifest_url: manifest_bytes,
+    }
+    transport_root = tmp_path / "transport fixture"
+    transport_root.mkdir()
+    for url, content in responses.items():
+        (transport_root / hashlib.sha256(url.encode()).hexdigest()).write_bytes(
+            content
+        )
+    response_path = transport_root / "responses.json"
+    response_path.write_text(
+        json.dumps(
+            {
+                url: str(
+                    transport_root / hashlib.sha256(url.encode()).hexdigest()
+                )
+                for url in responses
+            }
+        ),
+        encoding="utf-8",
+    )
+    (transport_root / "sitecustomize.py").write_text(
+        "import io, json, os, urllib.error, urllib.request\n"
+        "from pathlib import Path\n"
+        "responses = json.loads(Path(os.environ['APPRC_FIXTURE_RESPONSES']).read_text())\n"
+        "def _urlopen(request, timeout=60):\n"
+        "    url = request.full_url if hasattr(request, 'full_url') else request\n"
+        "    try: return io.BytesIO(Path(responses[url]).read_bytes())\n"
+        "    except KeyError as error: raise urllib.error.URLError('unmatched fixture URL') from error\n"
+        "urllib.request.urlopen = _urlopen\n",
+        encoding="utf-8",
+    )
+    helper = project / "downloaded bootstrap.ps1"
+    helper.write_bytes(artifacts["bootstrap.ps1"])
+    command_root = tmp_path / "command only % ! café"
+    command_root.mkdir()
+    command = command_root / "standalone app-install.cmd"
+    command.write_bytes(artifacts["app-install.cmd"])
+    temporary = tmp_path / "installer temp % ! café"
+    temporary.mkdir()
+    uv = shutil.which("uv")
+    powershell = shutil.which("powershell.exe")
+    assert uv is not None and powershell is not None
+    environment = dict(
+        os.environ,
+        APPRC_FIXTURE_RESPONSES=str(response_path),
+        PYTHONPATH=os.pathsep.join(
+            filter(
+                None, (str(transport_root), os.environ.get("PYTHONPATH", ""))
+            )
+        ),
+        TEMP=str(temporary),
+        TMP=str(temporary),
+        UV=str(uv),
+    )
+    arguments = ("with space", "literal%20", "literal!bang", "snowman ☃")
+    caller_directory = tmp_path / "unrelated caller directory"
+    caller_directory.mkdir()
+
+    def assert_payload_run(
+        result: subprocess.CompletedProcess[str],
+        marker: Path,
+        *,
+        exit_code: int,
+        suffix: tuple[str, ...],
+    ) -> None:
+        assert result.returncode == exit_code, result.stdout + result.stderr
+        value = json.loads(marker.read_text(encoding="utf-8"))
+        assert value["argv"][-len(suffix) :] == list(suffix)
+        assert value["cwd"] == str(caller_directory)
+        marker.unlink()
+
+    marker = tmp_path / "PowerShell file consumer"
+    environment["APPRC_NATIVE_MARKER"] = str(marker)
+    by_file = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-File",
+            str(helper),
+            "--version",
+            "1.2.3",
+            "--",
+            *arguments,
+        ],
+        env=environment,
+        cwd=caller_directory,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=180,
+    )
+    assert_payload_run(by_file, marker, exit_code=0, suffix=("--", *arguments))
+
+    environment["APPRC_NATIVE_MARKER"] = str(marker)
+    environment["APPRC_POWERSHELL_ARGS"] = json.dumps(
+        ["--version", "1.2.3", "--", *arguments, "--exit-37"]
+    )
+    scriptblock = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-Command",
+            "$argv = ConvertFrom-Json $env:APPRC_POWERSHELL_ARGS; "
+            "& ([ScriptBlock]::Create([IO.File]::ReadAllText($env:APPRC_HELPER_PATH))) @argv",
+        ],
+        env=dict(environment, APPRC_HELPER_PATH=str(helper)),
+        cwd=caller_directory,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=180,
+    )
+    assert_payload_run(
+        scriptblock,
+        marker,
+        exit_code=37,
+        suffix=("--", *arguments, "--exit-37"),
+    )
+
+    environment.pop("APPRC_POWERSHELL_ARGS")
+    environment["APPRC_NATIVE_MARKER"] = str(marker)
+    standalone = subprocess.run(
+        [
+            os.environ.get("COMSPEC", "cmd.exe"),
+            "/d",
+            "/c",
+            f'"{command}"',
+            "--version",
+            "1.2.3",
+            "--",
+            *arguments,
+            "--exit-37",
+        ],
+        env=environment,
+        cwd=caller_directory,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=180,
+    )
+    assert_payload_run(
+        standalone,
+        marker,
+        exit_code=37,
+        suffix=("--", *arguments, "--exit-37"),
+    )
+    assert not tuple(temporary.iterdir())
+
+    mismatched_manifest = dict(manifest, version="9.9.9")
+    bad_manifest = json.dumps(
+        mismatched_manifest, separators=(",", ":")
+    ).encode()
+    (
+        transport_root / hashlib.sha256(manifest_url.encode()).hexdigest()
+    ).write_bytes(bad_manifest)
+    environment["APPRC_NATIVE_MARKER"] = str(marker)
+    rejected = subprocess.run(
+        [
+            os.environ.get("COMSPEC", "cmd.exe"),
+            "/d",
+            "/c",
+            f'"{command}"',
+            "--version",
+            "1.2.3",
+            "--",
+            *arguments,
+        ],
+        cwd=caller_directory,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=180,
+    )
+    assert rejected.returncode != 0
+    assert not marker.exists()
+    assert not tuple(temporary.iterdir())
 
 
 def _legacy_receipt(root: Path) -> Path:

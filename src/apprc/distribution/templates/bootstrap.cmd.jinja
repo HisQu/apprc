@@ -1,0 +1,12 @@
+@echo off
+setlocal DisableDelayedExpansion
+set "APPRC_SELF=%~f0"
+set "APPRC_TEMP=%TEMP%\apprc-installer-%RANDOM%-%RANDOM%-%RANDOM%.ps1"
+powershell.exe -NoProfile -Command "$ErrorActionPreference='Stop'; $created=$false; try { $source=[IO.File]::ReadAllLines($env:APPRC_SELF); $encoded=($source | Where-Object { $_.StartsWith('rem APPRC:') } | ForEach-Object { $_.Substring(10) }) -join ''; $bytes=[Convert]::FromBase64String($encoded); $stream=[IO.File]::Open($env:APPRC_TEMP,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None); $created=$true; try { $stream.Write($bytes,0,$bytes.Length) } finally { $stream.Dispose() } } catch { if ($created) { [IO.File]::Delete($env:APPRC_TEMP) }; throw }"
+if errorlevel 1 exit /b %ERRORLEVEL%
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%APPRC_TEMP%" %*
+set "APPRC_EXIT=%ERRORLEVEL%"
+powershell.exe -NoProfile -Command "$source=[IO.File]::ReadAllLines($env:APPRC_SELF); $encoded=($source | Where-Object { $_.StartsWith('rem APPRC:') } | ForEach-Object { $_.Substring(10) }) -join ''; $expected=[Convert]::FromBase64String($encoded); $path=$env:APPRC_TEMP; if ([IO.File]::Exists($path) -and [Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -ceq [Convert]::ToBase64String($expected)) { [IO.File]::Delete($path) }"
+exit /b %APPRC_EXIT%
+{% for chunk in powershell_b64|batch(100, '') %}rem APPRC:{{ chunk|join('') }}
+{% endfor %}

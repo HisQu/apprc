@@ -7,7 +7,7 @@ try {
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
         $script:ChangedPolicy = $true
     }
-    $main = Join-Path $PSScriptRoot 'main-installer.{% if zipapp %}pyz{% else %}py{% endif %}'
+    $main = $null
     $selection = ''
     $selectorCount = 0
     $clientCount = 0
@@ -50,13 +50,20 @@ try {
 {% if not has_repository %}    if ($selection -eq 'main' -or $selection -eq 'release') {
         throw 'Remote source selection requires a configured GitHub repository.'
     }
-{% endif %}{% if source_mode == "checkout" %}    if ($selection -eq 'local' -and -not (Test-Path -LiteralPath $main -PathType Leaf)) {
-        throw 'Generated installer is missing. Run `just make-artifacts` in the checkout.'
+{% endif %}{% if source_mode == "checkout" %}    if ($selection -eq 'local') {
+        $main = Join-Path $PSScriptRoot 'main-installer.{% if zipapp %}pyz{% else %}py{% endif %}'
+        if (-not (Test-Path -LiteralPath $main -PathType Leaf)) {
+            throw 'Generated installer is missing. Run `just make-artifacts` in the checkout.'
+        }
     }
-{% elif source_mode not in ("release", "main") %}    if (-not (Test-Path -LiteralPath $main -PathType Leaf)) {
-        throw 'Selected standalone installer payload is missing beside this bootstrap.'
+{% elif source_mode not in ("release", "main") %}    if ($selection -eq 'local') {
+        $main = Join-Path $PSScriptRoot 'main-installer.{% if zipapp %}pyz{% else %}py{% endif %}'
+        if (-not (Test-Path -LiteralPath $main -PathType Leaf)) {
+            throw 'Selected standalone installer payload is missing beside this bootstrap.'
+        }
     }
-{% endif %}    $uvPath = $env:UV
+{% endif %}
+    $uvPath = $env:UV
     if ([string]::IsNullOrWhiteSpace($uvPath)) {
         foreach ($entry in ($env:PATH -split ';')) {
             if ([string]::IsNullOrEmpty($entry)) { $entry = (Get-Location).Path }

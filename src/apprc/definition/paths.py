@@ -5,11 +5,16 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from apprc.definition.installation import InstallationSnapshot
 
 ResourceKind = Literal["config", "appdata", "cache", "state"]
 PathKind = Literal["config", "appdata", "cache", "state", "logs"]
-LayoutSource = Literal["invocation", "environment", "declaration", "default"]
+LayoutSource = Literal[
+    "invocation", "environment", "installation", "declaration", "default"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +77,7 @@ class AppPaths:
     cache_dir: Path | None
     state_dir: Path | None
     logs_dir: Path | None
+    installation: InstallationSnapshot
 
     def require(self, kind: PathKind) -> Path:
         """Return an enabled location without creating it.

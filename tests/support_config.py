@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ from typer.testing import Result
 import apprc as rc
 from apprc import AppRC
 from apprc.definition.paths import AppPaths, Layout
+from apprc.definition.installation import InstallationSnapshot
 from apprc.definition.provenance import ConfigOriginState, ShellProvenanceOrigin
 from apprc.definition.resolution import ConfigSource
 from apprc.runtime.resolution import ResolvedConfig, ResolvedLayer, merge_layers
@@ -25,6 +27,21 @@ from apprc.user_files.workspace_roots.registry import (
     WorkspaceRegistry,
     record_archived_workspace,
 )
+
+
+def native_environment() -> dict[str, str]:
+    """Keep native test roots while excluding unrelated business variables."""
+    keys = (
+        "HOME",
+        "USERPROFILE",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_STATE_HOME",
+    )
+    return {key: os.environ[key] for key in keys if key in os.environ}
 
 
 def compact_cli_output(result: Result) -> str:
@@ -164,7 +181,14 @@ def example_resolution(
         source=merge_layers(layers),
         layers=layers,
         paths=AppPaths(
-            Layout.native(), "default", None, None, None, None, None
+            Layout.native(),
+            "default",
+            None,
+            None,
+            None,
+            None,
+            None,
+            InstallationSnapshot(Path("/unused/installation"), None, None),
         ),
         workspace=None,
         workspace_count=0,
@@ -270,10 +294,10 @@ def set_workspace_example_bootstrap(
     else:
         path = AppFiles(kit.schema, paths).config_file()
     root = workspace_root or tmp_path / "default-workspace"
-    kit.ensure_path("config", environment=dict(__import__("os").environ))
-    kit.workspaces(
-        environment=dict(__import__("os").environ)
-    ).register_workspace(name="default", root=root)
+    kit.ensure_path("config", environment=dict(os.environ))
+    kit.workspaces(environment=dict(os.environ)).register_workspace(
+        name="default", root=root
+    )
     monkeypatch.setenv("APPRC_EXAMPLE_APP_WORKSPACE", "default")
     return path, root
 
@@ -284,7 +308,8 @@ def workspace_example_app_state(
     """Return host CLI state resolved from an explicit workspace path."""
     return WorkspaceExampleState(
         resolved=kit.resolve(
-            rc.ResolveOptions(workspace=str(workspace_root)), environment={}
+            rc.ResolveOptions(workspace=str(workspace_root)),
+            environment=native_environment(),
         ),
         workspace="alpha",
     )
@@ -294,9 +319,12 @@ def register_workspace_for_app(
     kit: AppRC, *, name: str, root: Path
 ) -> WorkspaceRegistry:
     """Register a test workspace through the application's manager."""
-    kit.ensure_path("config", environment={})
-    registry = kit.workspaces(environment={}).register_workspace(name, root)
-    files = AppFiles(kit.schema, kit.paths(environment={}))
+    environment = native_environment()
+    kit.ensure_path("config", environment=environment)
+    registry = kit.workspaces(environment=environment).register_workspace(
+        name, root
+    )
+    files = AppFiles(kit.schema, kit.paths(environment=environment))
     repair_secret_file_permissions(
         files.workspace_secret_dotenv_path(root.resolve())
     )
@@ -311,7 +339,7 @@ def record_archived_workspace_for_kit(
     source_root: Path,
 ) -> WorkspaceRegistry:
     """Record an archived workspace through its application registry."""
-    manager = kit.workspaces(environment={})
+    manager = kit.workspaces(environment=native_environment())
     return record_archived_workspace(
         name=name,
         archive=archive,

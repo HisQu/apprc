@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.installation import (
+    InstallationWriteAuthority,
+    OperationContext,
+)
 from apprc.definition.paths import AppPaths, PathKind, ResourceKind
 from apprc.user_files.app_home.locations import (
     assert_no_links,
@@ -15,6 +19,9 @@ from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
 from apprc.user_files.app_home.writes import managed_write_lock
+
+if TYPE_CHECKING:
+    from apprc.definition.app_config.spec import AppConfigSpec
 
 _MARKER = ".apprc-owner.json"
 
@@ -64,6 +71,7 @@ def ensure_owned_path(
     kind: PathKind,
     *,
     adopt: bool = False,
+    context: OperationContext | None = None,
 ) -> Path:
     """Create and mark one captured component after strict boundary checks.
 
@@ -80,14 +88,26 @@ def ensure_owned_path(
     if kind == "logs" and paths.state_dir is not None:
         state_root = paths.state_dir.expanduser().absolute()
         if root != state_root and root.is_relative_to(state_root):
-            ensure_owned_path(spec, paths, "state", adopt=adopt)
+            ensure_owned_path(
+                spec, paths, "state", adopt=adopt, context=context
+            )
             assert_no_links(root)
-            with managed_write_lock(root):
+            with managed_write_lock(
+                root,
+                authority=InstallationWriteAuthority(
+                    spec.app_id, paths.installation, context
+                ),
+            ):
                 assert_no_links(root)
                 create_private_directory_if_missing(root)
             return root
     assert_no_links(root)
-    with managed_write_lock(root):
+    with managed_write_lock(
+        root,
+        authority=InstallationWriteAuthority(
+            spec.app_id, paths.installation, context
+        ),
+    ):
         assert_no_links(root)
         create_private_directory_if_missing(root)
         assert_no_links(root)
@@ -158,6 +178,10 @@ def validate_category_root_boundaries(
         paths.require(category)
         for root in _category_roots(paths, category):
             assert_no_links(root)
+            if _overlap(root, paths.installation.directory):
+                raise ValueError(
+                    "AppRC resource root overlaps durable installation metadata."
+                )
             roots.append((category, root))
     for index, (category, root) in enumerate(roots):
         for other_category, other_root in roots[index + 1 :]:

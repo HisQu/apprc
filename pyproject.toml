@@ -37,7 +37,7 @@ classifiers = [
 ]
 dependencies = [
     # > Core imports used by ordinary pip installations of this root project.
-    "filelock>=3.20,<4",
+    "filelock>=3.32.7,<4",
     "platformdirs>=4,<5",
     "python-dotenv",
     "pywin32>=311; sys_platform == 'win32'",

@@ -129,6 +129,19 @@ def write_text_atomic(path: Path, text: str, *, private: bool = False) -> Path:
     :return: Resolved destination path.
     :raises AppRCDirectoryError: If the target or parent is incompatible.
     """
+    return write_bytes_atomic(path, text.encode("utf-8"), private=private)
+
+
+def write_bytes_atomic(
+    path: Path, content: bytes, *, private: bool = False
+) -> Path:
+    """Replace bytes using the same managed-file safety and atomic move.
+
+    :param path: Destination file path.
+    :param content: Exact bytes, including generated archives.
+    :param private: Require an already private destination boundary.
+    :return: Absolute destination path.
+    """
     resolved = Path(path).expanduser().absolute()
     assert_no_links(resolved)
     _ensure_parent_dir(resolved)
@@ -146,16 +159,14 @@ def write_text_atomic(path: Path, text: str, *, private: bool = False) -> Path:
     temp_path: Path | None = None
     try:
         with NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            newline="",
+            mode="wb",
             dir=resolved.parent,
             prefix=f".{resolved.name}.",
             suffix=".tmp",
             delete=False,
         ) as stream:
             temp_path = Path(stream.name)
-            stream.write(text)
+            stream.write(content)
         temp_path.replace(resolved)
     except OSError as exc:
         raise AppRCDirectoryError(

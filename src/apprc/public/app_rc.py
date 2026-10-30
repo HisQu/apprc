@@ -33,6 +33,7 @@ from apprc.definition.env_config._validation import (
 )
 from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.definition.maintenance import MaintenanceHandlers
+from apprc.definition.installation import OperationContext
 from apprc.definition.paths import AppPaths, Layout, PathKind, Paths
 from apprc.definition.resolution import (
     BundleFieldSpec as _BundleFieldSpec,
@@ -48,6 +49,7 @@ from apprc.public.field import (
     _FieldDeclaration,
 )
 from apprc.runtime.resolution import ResolvedConfig, resolve_config
+from apprc.services.installation import InstallationManager
 from apprc.services.maintenance import MaintenanceManager
 from apprc.services.manager import ConfigManager
 from apprc.services.workspaces import WorkspaceManager
@@ -208,6 +210,16 @@ class AppRC:
             environment=environment,
         )
 
+    def installation(
+        self, *, environment: Mapping[str, str] | None = None
+    ) -> InstallationManager:
+        """Capture installation discovery independently of business settings.
+
+        :param environment: Explicit discovery inputs, or current environment.
+        :return: Read-only application-bound manager until mutation is requested.
+        """
+        return InstallationManager(self.schema, environment=environment)
+
     def paths(
         self,
         options: ResolveOptions | None = None,
@@ -314,12 +326,14 @@ class AppRC:
         *,
         environment: Mapping[str, str] | None = None,
         handlers: MaintenanceHandlers = MaintenanceHandlers(),
+        context: OperationContext | None = None,
     ) -> MaintenanceManager:
-        """Return logical resource operations without loading business settings.
+        """Return resource operations bound to captured paths or pending authority.
 
         :param options: Invocation placement and bootstrap inputs.
         :param environment: Explicit environment, or the process environment.
         :param handlers: Explicit application-owned semantic operations.
+        :param context: Exact pending operation authorization for staged mutations.
         :return: Manager bound to the captured paths and handlers.
         """
         captured = dict(os.environ if environment is None else environment)
@@ -327,8 +341,12 @@ class AppRC:
             self.schema,
             options=options,
             environment=captured,
-            handlers=handlers,
-            app_paths=self.paths(options, environment=captured),
+            operation_context=context,
+            app_paths=(
+                None
+                if context is not None
+                else self.paths(options, environment=captured)
+            ),
         )
 
     def import_dependency_config(

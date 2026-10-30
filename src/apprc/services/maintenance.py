@@ -8,6 +8,10 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.installation import (
+    InstallationWriteAuthority,
+    OperationContext,
+)
 from apprc.definition.maintenance import (
     AppDataOperations,
     CacheOperations,
@@ -67,6 +71,7 @@ class MaintenanceManager:
     :param environment: Captured environment snapshot.
     :param handlers: Explicit category-specific application operations.
     :param app_paths: Previously resolved paths to preserve invocation identity.
+    :param operation_context: Pending lifecycle permission for staged mutations.
     """
 
     def __init__(
@@ -77,15 +82,24 @@ class MaintenanceManager:
         environment: Mapping[str, str] | None = None,
         handlers: MaintenanceHandlers = MaintenanceHandlers(),
         app_paths: AppPaths | None = None,
+        operation_context: OperationContext | None = None,
     ) -> None:
         self.spec = spec
         self.options = options or ResolveOptions()
         self.handlers = handlers
+        self.operation_context = operation_context
         self.environment = dict(
             os.environ if environment is None else environment
         )
+        if operation_context is not None and app_paths is not None:
+            raise ValueError(
+                "Do not combine a pending operation context with pre-resolved paths."
+            )
         self.app_paths = app_paths or resolve_app_paths(
-            spec, self.options, self.environment
+            spec,
+            self.options,
+            self.environment,
+            operation_context=operation_context,
         )
         validate_category_root_boundaries(spec, self.app_paths)
         declared = {
@@ -210,31 +224,54 @@ class MaintenanceManager:
         results: list[RemovalResult] = []
         for plan in plans:
             try:
-                if plan.category == "config":
-                    if not plan.root.exists() and not plan.targets:
-                        result = RemovalResult(
-                            removed=(), warnings=plan.warnings
-                        )
-                    else:
-                        with managed_write_lock(plan.root):
+                provider = (
+                    self._handler(plan.category)
+                    if plan.category != "config"
+                    else None
+                )
+                operation = provider.purge if provider is not None else None
+                if (
+                    not plan.root.exists()
+                    and not plan.targets
+                    and operation is None
+                ):
+                    results.append(
+                        RemovalResult(removed=(), warnings=plan.warnings)
+                    )
+                    continue
+                with managed_write_lock(
+                    plan.root,
+                    authority=InstallationWriteAuthority(
+                        self.spec.app_id,
+                        self.app_paths.installation,
+                        self.operation_context,
+                    ),
+                ):
+                    if plan.category == "config":
+                        if not plan.root.exists() and not plan.targets:
+                            result = RemovalResult(
+                                removed=(), warnings=plan.warnings
+                            )
+                        else:
                             result = apply_config_purge(
                                 plan, self.spec, self.app_paths
                             )
-                else:
-                    provider = self._handler(plan.category)
-                    operation = provider.purge if provider is not None else None
-                    if operation is not None:
-                        if operation.plan(plan.root) != plan:
-                            raise ValueError(
-                                f"Provider purge plan is stale: {plan.root}"
-                            )
-                        result = operation.apply(plan)
-                    elif not plan.root.exists() and not plan.targets:
-                        result = RemovalResult(
-                            removed=(), warnings=plan.warnings
-                        )
                     else:
-                        with managed_write_lock(plan.root):
+                        provider = self._handler(plan.category)
+                        operation = (
+                            provider.purge if provider is not None else None
+                        )
+                        if operation is not None:
+                            if operation.plan(plan.root) != plan:
+                                raise ValueError(
+                                    f"Provider purge plan is stale: {plan.root}"
+                                )
+                            result = operation.apply(plan)
+                        elif not plan.root.exists() and not plan.targets:
+                            result = RemovalResult(
+                                removed=(), warnings=plan.warnings
+                            )
+                        else:
                             result = apply_removal(plan, self.spec.app_id)
             except Exception as exc:
                 raise _MaintenanceApplyError(tuple(results), plan) from exc
@@ -249,7 +286,13 @@ class MaintenanceManager:
         :return: The initialized captured root.
         :raises ValueError: If disabled, overlapping, linked, or unsafe.
         """
-        return ensure_owned_path(self.spec, self.app_paths, kind, adopt=adopt)
+        return ensure_owned_path(
+            self.spec,
+            self.app_paths,
+            kind,
+            adopt=adopt,
+            context=self.operation_context,
+        )
 
     def backup_appdata(self, destination: Path) -> Path:
         """Create a new application-owned backup outside the source root.
@@ -279,7 +322,15 @@ class MaintenanceManager:
                 "Backup destination must be new and outside AppData."
             )
         assert_no_links(root)
-        return provider.backup(root, destination)
+        with managed_write_lock(
+            root,
+            authority=InstallationWriteAuthority(
+                self.spec.app_id,
+                self.app_paths.installation,
+                self.operation_context,
+            ),
+        ):
+            return provider.backup(root, destination)
 
     def restore_appdata(self, source: Path) -> None:
         """Restore an existing backup only into an empty owned appdata root.
@@ -307,8 +358,18 @@ class MaintenanceManager:
             raise ValueError(
                 f"Refusing to restore into unowned AppData: {root}"
             )
-        ensure_owned_path(self.spec, self.app_paths, "appdata")
-        provider.restore(root, source)
+        ensure_owned_path(
+            self.spec, self.app_paths, "appdata", context=self.operation_context
+        )
+        with managed_write_lock(
+            root,
+            authority=InstallationWriteAuthority(
+                self.spec.app_id,
+                self.app_paths.installation,
+                self.operation_context,
+            ),
+        ):
+            provider.restore(root, source)
 
     def plan_cache_prune(self) -> tuple[RemovalPlan, ...]:
         """Plan provider pruning for each captured cache root.
@@ -458,8 +519,20 @@ class MaintenanceManager:
         results: list[RemovalResult] = []
         for plan in plans:
             try:
-                self._validate_plan_boundary(kind, plan)
-                results.append(operation.apply(plan))
+                with managed_write_lock(
+                    plan.root,
+                    authority=InstallationWriteAuthority(
+                        self.spec.app_id,
+                        self.app_paths.installation,
+                        self.operation_context,
+                    ),
+                ):
+                    self._validate_plan_boundary(kind, plan)
+                    if _provider_plan(operation, kind, plan.root) != plan:
+                        raise ValueError(
+                            f"{kind} maintenance plan is stale: {plan.root}"
+                        )
+                    results.append(operation.apply(plan))
             except Exception as exc:
                 raise _MaintenanceApplyError(tuple(results), plan) from exc
         return tuple(results)

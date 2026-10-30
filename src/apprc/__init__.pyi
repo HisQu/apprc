@@ -2,6 +2,18 @@
 
 from apprc.definition.app_config.user_dotenv import UserDotenv as UserDotenv
 from apprc.definition.app_config.workspaces import Workspaces as Workspaces
+from apprc.definition.installation import (
+    InstallationError as InstallationError,
+    InstallationInspection as InstallationInspection,
+    InstallationRecord as InstallationRecord,
+    InstallationSnapshot as InstallationSnapshot,
+)
+from apprc.services.installation import (
+    InstallationManager as InstallationManager,
+)
+from apprc.user_files.installation.discovery import (
+    installation_directory as installation_directory,
+)
 from apprc.definition.maintenance import (
     AppDataOperations as AppDataOperations,
 )
@@ -68,4 +80,5 @@ from . import (
 from . import (
     workspaces as workspaces,
 )
+
 __all__: list[str]

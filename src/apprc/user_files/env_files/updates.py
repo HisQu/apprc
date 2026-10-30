@@ -11,6 +11,7 @@ from typing import Iterable
 # == Internal ================================
 from apprc.definition.env_config.lookup import resolve_config_field_reference
 from apprc.definition.env_config.schema import ConfigOwner
+from apprc.definition.installation import InstallationWriteAuthority
 from apprc.user_files.app_home.locations import (
     AppRCDirectoryError,
     write_text_atomic,
@@ -77,6 +78,7 @@ class EnvFileEditPlan:
     warnings: tuple[str, ...] = ()
     duplicate_lines: tuple[int, ...] = ()
     private_directories: tuple[Path, ...] = ()
+    authority: InstallationWriteAuthority | None = None
 
 
 def set_workspace_dotenv_value(
@@ -227,6 +229,7 @@ def apply_env_file_edit(plan: EnvFileEditPlan) -> EnvFileUpdate:
     with managed_write_lock(
         *(plan.lock_roots or (plan.path.parent,)),
         private_directories=plan.private_directories,
+        authority=plan.authority,
     ):
         revision = file_revision(plan.path)
         if revision != plan.revision:

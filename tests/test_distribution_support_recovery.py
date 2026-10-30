@@ -51,7 +51,10 @@ def _scenario(
         backend,
         inspection=inspect_installation(directory, app_id=identity.app_id),
     )
-    command = tmp_path / "fixture-command"
+    backend.bin_dir.mkdir()
+    command = backend.bin_dir / (
+        "fixture-command.exe" if os.name == "nt" else "fixture-command"
+    )
     command.write_text("#!/bin/sh\n")
     command.chmod(0o700)
     snapshot = InstalledSnapshot(

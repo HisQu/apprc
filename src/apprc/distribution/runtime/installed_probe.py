@@ -52,7 +52,9 @@ def _record_digest(
     if len(records) != 1:
         return None
     try:
-        with Path(str(distribution.locate_file(records[0]))).open("rb") as stream:
+        with Path(str(distribution.locate_file(records[0]))).open(
+            "rb"
+        ) as stream:
             digest = hashlib.sha256()
             while chunk := stream.read(1024 * 1024):
                 digest.update(chunk)

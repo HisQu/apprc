@@ -115,7 +115,7 @@ def _encode(value: object) -> object:
                 raise InstallationError(
                     "Installation set members must encode as strings."
                 )
-            return sorted(items)
+            return sorted(item for item in items if isinstance(item, str))
         return items
     if value is None or type(value) in (str, bool, int):
         return value

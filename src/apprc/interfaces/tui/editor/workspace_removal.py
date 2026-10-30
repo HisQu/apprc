@@ -39,7 +39,7 @@ class WorkspaceRemovalWorkflows(WorkspaceWorkflowBase):
             "The named workspace entry will be removed. Its directory and "
             "files will remain untouched.",
         )
-        action = await self.editor.push_screen_wait(
+        action = await self.editor.app.push_screen_wait(
             ConfirmScreen(
                 title="Remove workspace",
                 message=message,

@@ -27,9 +27,10 @@ async def open_field_editor(
     :param env_key: Full environment key represented by a field-table row.
     :param pilot: Textual test pilot used to let the modal mount.
     """
+    screen = editor.editor_screen
     table = editor.query_one("#field-table", DataTable)
-    table.cursor_coordinate = Coordinate(editor.row_env_keys.index(env_key), 0)
-    editor._open_selected_field_editor()
+    table.cursor_coordinate = Coordinate(screen.row_env_keys.index(env_key), 0)
+    screen._open_selected_field_editor()
     await pilot.pause()
 
 

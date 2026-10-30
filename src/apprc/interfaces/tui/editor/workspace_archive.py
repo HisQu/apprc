@@ -86,15 +86,15 @@ class WorkspaceArchiveWorkflows(WorkspaceWorkflowBase):
         :return: Path returned by the workspace operation.
         """
         progress_screen = ProgressScreen(title=title)
-        await self.editor.push_screen(progress_screen)
+        await self.editor.app.push_screen(progress_screen)
 
         def progress(progress_update: WorkspaceArchiveProgress) -> None:
-            self.editor.call_from_thread(
+            self.editor.app.call_from_thread(
                 progress_screen.update_progress,
                 progress_update,
             )
 
-        worker = self.editor.run_worker(
+        worker = self.editor.app.run_worker(
             lambda: operation(progress),
             thread=True,
             exit_on_error=False,

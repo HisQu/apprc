@@ -27,10 +27,13 @@ from apprc.interfaces.cli.context import (
     CliRuntimeContext,
     CliRuntimeOptions,
     CliRuntimeOptionsProtocol,
+    InstallationCommandContext,
     cli_options_from,
     cli_runtime_context_from,
     cli_runtime_options_to_args,
+    installation_command_context_from,
     prepare_cli_runtime_context,
+    prepare_installation_command_context,
     resolve_cli_options,
 )
 from apprc.interfaces.cli.diagnostics.messages import (

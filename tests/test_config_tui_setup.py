@@ -29,6 +29,7 @@ async def test_config_only_editor_setup_initializes_only_user_configuration(
     options = ResolveOptions(layout=rc.Layout.single_root(tmp_path))
     manager = kit.manage(options=options, environment={})
     editor = ConfigEditorApp(apprc=kit, manager=manager)
+    screen = editor.editor_screen
     shown: list[object] = []
 
     async def respond(screen: object) -> object:
@@ -38,7 +39,7 @@ async def test_config_only_editor_setup_initializes_only_user_configuration(
     monkeypatch.setattr(editor, "push_screen_wait", respond)
     async with editor.run_test() as pilot:
         await pilot.pause()
-        await editor.setup_workflow.open_setup_flow()
+        await screen.setup_workflow.open_setup_flow()
 
     files = AppFiles(kit.schema, manager.paths)
     assert files.user_dotenv_path().is_file()
@@ -77,6 +78,7 @@ async def test_direct_workspace_setup_accepts_relative_path_without_registry_or_
         workspace_manager=workspace_manager,
         active_workspace_root=None,
     )
+    screen = editor.editor_screen
     monkeypatch.setattr(
         workspace_manager,
         "registry",
@@ -95,7 +97,7 @@ async def test_direct_workspace_setup_accepts_relative_path_without_registry_or_
     monkeypatch.setattr(editor, "push_screen_wait", respond)
     async with editor.run_test() as pilot:
         await pilot.pause()
-        await editor.setup_workflow.open_setup_flow()
+        await screen.setup_workflow.open_setup_flow()
 
     root = tmp_path / "relative-workspace"
     assert AppFiles(kit.schema, paths).workspace_dotenv_path(root).is_file()

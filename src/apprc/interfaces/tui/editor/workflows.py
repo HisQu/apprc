@@ -47,7 +47,7 @@ class ConfigEditorWorkspaceWorkflows(
         """Prompt for a workspace directory or archive to restore."""
         if self.editor._require_workspace_registry() is None:
             return
-        result = await self.editor.push_screen_wait(
+        result = await self.editor.app.push_screen_wait(
             PathInputScreen(
                 title="New workspace",
                 message="Enter a directory or an archived *.apprc.tar.xz.",
@@ -84,7 +84,7 @@ class ConfigEditorWorkspaceWorkflows(
         if registry is None:
             return
         proposed = default_name or workspace_root_name_from_archive(archive)
-        name_result = await self.editor.push_screen_wait(
+        name_result = await self.editor.app.push_screen_wait(
             WorkspaceNameScreen(
                 default_name=self.editor._suggest_workspace_name(
                     Path(proposed)
@@ -105,7 +105,7 @@ class ConfigEditorWorkspaceWorkflows(
             )
             return
         destination = default_destination or archive.parent / proposed
-        result = await self.editor.push_screen_wait(
+        result = await self.editor.app.push_screen_wait(
             PathInputScreen(
                 title="Restore archived workspace",
                 message="Enter destination directory for the restored workspace.",
@@ -122,7 +122,7 @@ class ConfigEditorWorkspaceWorkflows(
             self.editor.notify(str(exc), severity="error", markup=False)
             return
         if replace_existing:
-            action = await self.editor.push_screen_wait(
+            action = await self.editor.app.push_screen_wait(
                 ConfirmScreen(
                     title="Destination is not empty",
                     message=lines_text(
@@ -186,7 +186,7 @@ class ConfigEditorWorkspaceWorkflows(
         if not isinstance(selection, LiveWorkspaceSelection):
             return
         record = selection.record
-        options = await self.editor.push_screen_wait(
+        options = await self.editor.app.push_screen_wait(
             ArchiveOptionsScreen(
                 workspace_name=record.name,
                 source_root=record.root,

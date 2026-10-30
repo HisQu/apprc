@@ -47,7 +47,7 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         record = self._selected_editable_workspace()
         if registry is None or record is None:
             return
-        result = await self.editor.push_screen_wait(
+        result = await self.editor.app.push_screen_wait(
             WorkspaceNameScreen(
                 default_name=record.name,
                 message="Choose the workspace name used by --workspace.",
@@ -65,7 +65,7 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
                 markup=False,
             )
             return
-        action = await self.editor.push_screen_wait(
+        action = await self.editor.app.push_screen_wait(
             ConfirmScreen(
                 title="Rename workspace",
                 message=lines_text(
@@ -108,7 +108,7 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         record = self._selected_editable_workspace()
         if registry is None or record is None:
             return
-        result = await self.editor.push_screen_wait(
+        result = await self.editor.app.push_screen_wait(
             PathInputScreen(
                 title="Reconnect workspace",
                 message=(
@@ -125,7 +125,7 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         root = self._existing_workspace_directory(result.path)
         if root is None or root == record.root:
             return
-        action = await self.editor.push_screen_wait(
+        action = await self.editor.app.push_screen_wait(
             ConfirmScreen(
                 title="Reconnect workspace",
                 message=lines_text(
@@ -167,7 +167,7 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         ):
             return
         record = selection.record
-        result = await self.editor.push_screen_wait(
+        result = await self.editor.app.push_screen_wait(
             PathInputScreen(
                 title="Move workspace",
                 message=(
@@ -188,7 +188,7 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         except (OSError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
             return
-        action = await self.editor.push_screen_wait(
+        action = await self.editor.app.push_screen_wait(
             ConfirmScreen(
                 title="Move workspace",
                 message=lines_text(

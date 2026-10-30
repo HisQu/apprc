@@ -23,6 +23,10 @@ from apprc.interfaces.cli.context import (
     CliRuntimeContext,
     cli_runtime_context_from,
 )
+from apprc.interfaces.cli.installation_command import (
+    installation_context,
+    mount_installation_group,
+)
 from apprc.public.app_rc import AppRC
 from apprc.services.maintenance import (
     MaintenanceManager,
@@ -59,7 +63,7 @@ def mount_maintenance_groups(
 ) -> dict[str, typer.Typer]:
     """Mount fixed path/maintenance commands and declared resource groups."""
     names = _registered_names(app)
-    reserved = {"paths", "doctor", "purge"}
+    reserved = {"paths", "doctor", "purge", "installation"}
     reserved.update(
         kind
         for kind in ("appdata", "cache", "state")
@@ -74,6 +78,9 @@ def mount_maintenance_groups(
             "in use: " + ", ".join(sorted(collisions))
         )
     mounted: dict[str, typer.Typer] = {}
+    mounted["installation"] = mount_installation_group(
+        app, maintenance_help_panel=maintenance_help_panel
+    )
 
     @app.command("paths", rich_help_panel=maintenance_help_panel)
     def paths_command(
@@ -143,8 +150,56 @@ def mount_maintenance_groups(
         json_output: Annotated[bool, typer.Option("--json")] = False,
     ) -> None:
         """Check declared AppRC paths without initializing application data."""
+        diagnostic = installation_context(ctx)
+        if diagnostic is not None:
+            inspection = diagnostic.inspection
+            unusable = inspection.status in {
+                "invalid",
+                "provisional",
+                "incomplete",
+            }
+            failed = unusable or diagnostic.path_error is not None
+            diagnostics = [
+                {
+                    "code": item.code,
+                    "message": item.message,
+                    "recovery": item.recovery,
+                }
+                for item in inspection.diagnostics
+            ]
+            if diagnostic.path_error is not None and all(
+                item["message"] != diagnostic.path_error for item in diagnostics
+            ):
+                diagnostics.append(
+                    {
+                        "code": "path-resolution",
+                        "message": diagnostic.path_error,
+                        "recovery": "Inspect installation and reconcile placement or run explicit migration.",
+                    }
+                )
+            _emit(
+                {
+                    "status": inspection.status
+                    if unusable or not failed
+                    else "error",
+                    "installation": {
+                        "app_id": inspection.app_id,
+                        "status": inspection.status,
+                        "directory": str(inspection.directory),
+                        "revision": inspection.revision,
+                        "diagnostics": diagnostics,
+                    },
+                },
+                json_output,
+            )
+            if failed:
+                raise typer.Exit(code=1)
+            return
         runtime = _context(ctx)
-        checks: list[dict[str, str]] = []
+        checks: list[dict[str, str]] = [
+            {"name": "installation", "status": "error", "message": item.message}
+            for item in runtime.paths.installation.diagnostics
+        ]
         for key, path in _locations(runtime).items():
             if path is None:
                 continue

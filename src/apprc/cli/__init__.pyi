@@ -27,6 +27,9 @@ from apprc.interfaces.cli import (
     CliRuntimeContext as CliRuntimeContext,
 )
 from apprc.interfaces.cli import (
+    InstallationCommandContext as InstallationCommandContext,
+)
+from apprc.interfaces.cli import (
     CliRuntimeOptions as CliRuntimeOptions,
 )
 from apprc.interfaces.cli import (
@@ -120,6 +123,9 @@ from apprc.interfaces.cli import (
     initial_workspace_from_state as initial_workspace_from_state,
 )
 from apprc.interfaces.cli import (
+    installation_command_context_from as installation_command_context_from,
+)
+from apprc.interfaces.cli import (
     mount_app_cli as mount_app_cli,
 )
 from apprc.interfaces.cli import (
@@ -127,6 +133,9 @@ from apprc.interfaces.cli import (
 )
 from apprc.interfaces.cli import (
     prepare_cli_runtime_context as prepare_cli_runtime_context,
+)
+from apprc.interfaces.cli import (
+    prepare_installation_command_context as prepare_installation_command_context,
 )
 from apprc.interfaces.cli import (
     print_config_doctor as print_config_doctor,

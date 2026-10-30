@@ -148,6 +148,21 @@ def verify_artifacts(
                 "-m",
                 "pip",
                 "install",
+                f"{selected_core}[distribution]",
+                cwd=root,
+            )
+            run(
+                str(python),
+                str(SMOKE),
+                "--core-only",
+                "--distribution",
+                cwd=root,
+            )
+            run(
+                str(python),
+                "-m",
+                "pip",
+                "install",
                 str(selected_terminal),
                 cwd=root,
             )

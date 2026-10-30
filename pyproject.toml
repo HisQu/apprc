@@ -11,7 +11,7 @@ build-backend = "uv_build"
 
 [project]
 name        = "apprc-core"
-version     = "0.30.0"
+version     = "0.31.0"
 description = "Reusable runtime configuration and config CLI helpers for Python applications."
 authors     = [{ name = "markur4", email = "noreply@hisqu.de" }]
 readme      = { file = "README.pypi.md", content-type = "text/markdown" }
@@ -43,6 +43,9 @@ dependencies = [
     "pywin32>=311; sys_platform == 'win32'",
     "typed-settings[dotenv]",
 ]
+
+[project.optional-dependencies]
+distribution = ["Jinja2>=3.1.6,<4"]
 
 # Local-only dependency sources used by uv. These are not published as package
 # requirements in AppRC wheel metadata.

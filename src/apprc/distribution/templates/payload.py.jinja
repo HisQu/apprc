@@ -1,0 +1,97 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+{% for requirement in requirements %}#   {{ requirement | json }},
+{% endfor %}# ]
+# ///
+"""Generated self-contained management entry. Regenerate; do not hand-edit."""
+
+import base64
+import hashlib
+import io
+import json
+import os
+import re
+import runpy
+import sys
+import tempfile
+from pathlib import Path, PurePosixPath
+from zipfile import ZipFile
+
+_ARCHIVE = {{ archive | json }}
+_ENTRY = {{ entry | json }}
+# > Encode JSON as a Python string, then decode its null/boolean values as data.
+_RELEASE = json.loads({{ release_contract | json | json }})
+
+
+def _validate_release():
+    if _RELEASE is None:
+        return
+    payload = Path(sys.argv[0]).resolve()
+    manifest_path = payload.with_name("release-manifest.json")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"Matching release manifest is unavailable: {error}") from error
+    expected_identity = {
+        "schema_version": 1,
+        "app_id": _RELEASE["app_id"],
+        "distribution": _RELEASE["distribution"],
+        "version": _RELEASE["version"],
+        "commit": _RELEASE["commit"],
+        "payload_format": _RELEASE["payload_format"],
+    }
+    if (not isinstance(manifest, dict)
+            or type(manifest.get("schema_version")) is not int
+            or any(manifest.get(key) != value for key, value in expected_identity.items())):
+        raise RuntimeError("Release manifest identity differs from the selected source.")
+    assets = manifest.get("assets")
+    if not isinstance(assets, list):
+        raise RuntimeError("Release manifest has no asset inventory.")
+    by_name = {}
+    for asset in assets:
+        if (not isinstance(asset, dict) or set(asset) != {"filename", "size", "sha256"}
+                or not isinstance(asset["filename"], str) or not asset["filename"]
+                or "\\" in asset["filename"]
+                or PurePosixPath(asset["filename"]).name != asset["filename"]
+                or not isinstance(asset["size"], int) or isinstance(asset["size"], bool)
+                or not isinstance(asset["sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", asset["sha256"]) is None
+                or asset["filename"] in by_name):
+            raise RuntimeError("Release manifest contains an invalid or duplicate asset.")
+        by_name[asset["filename"]] = asset
+    payload_asset = by_name.get(_RELEASE["payload_filename"])
+    package_asset = by_name.get(_RELEASE["package_filename"])
+    if (payload.name != _RELEASE["payload_filename"] or payload_asset is None
+            or payload_asset["size"] != payload.stat().st_size
+            or payload_asset["sha256"] != hashlib.sha256(payload.read_bytes()).hexdigest()):
+        raise RuntimeError("Release installer payload differs from its selected manifest asset.")
+    if package_asset is None or package_asset["sha256"] != _RELEASE["package_digest"]:
+        raise RuntimeError("Release package asset differs from its selected manifest identity.")
+
+def main():
+    _validate_release()
+    if any(name == "apprc" or name.startswith("apprc.") for name in sys.modules):
+        raise RuntimeError("Management entry requires a clean interpreter, not an imported AppRC runtime.")
+    with tempfile.TemporaryDirectory(prefix="apprc-management-") as temporary:
+        root = Path(temporary)
+        os.chmod(root, 0o700)
+        with ZipFile(io.BytesIO(base64.b64decode(_ARCHIVE, validate=True))) as archive:
+            seen = set()
+            for info in archive.infolist():
+                relative = PurePosixPath(info.filename)
+                if (relative.is_absolute() or ".." in relative.parts or "\\" in info.filename
+                        or info.filename in seen or (info.external_attr >> 16) & 0o170000 == 0o120000):
+                    raise RuntimeError("Unsafe or duplicate management payload address.")
+                seen.add(info.filename)
+                destination = root.joinpath(*relative.parts)
+                destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                with destination.open("xb") as stream:
+                    stream.write(archive.read(info))
+        sys.path.insert(0, str(root))
+        runpy.run_module(_ENTRY, run_name="__main__")
+
+
+if __name__ == "__main__":
+    main()

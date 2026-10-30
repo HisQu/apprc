@@ -53,11 +53,15 @@ shell startup files or `PATH` to locate project tools; use `.venv/bin/<tool>`.
 | --- | --- |
 | `src/apprc/definition` | Validated metadata, path declarations, and shared records |
 | `src/apprc/runtime` | Explicit resolution, path snapshots, and config lifecycle |
-| `src/apprc/services` | Config, workspace, and maintenance services |
+| `src/apprc/services` | Config, workspace, maintenance and installation orchestration |
 | `src/apprc/user_files` | File parsing, ownership, persistence, workspace operations |
 | `src/apprc/interfaces` | Typer and Textual adapters |
 | `src/apprc/public` | Application declaration facade |
 | `src/apprc/scaffold` | Small generated application layout |
+| `src/apprc/distribution` | Author APIs, external templates and the explicit standalone module/resource closure |
+| `src/apprc/distribution/runtime` | Ordinary composable acquisition, probing, saved management and removal code; no Jinja dependency |
+| `src/apprc/user_files/installation` | Strict installation authority I/O, revision checks, locks and migration |
+| `src/apprc/interfaces/tui/launcher` | Optional single-event-loop management and foreground-command interface |
 | `src/apprc_dev/packaging` | Metadata generation, install checks, release helpers |
 | `src/apprc_dev/packaging/gui/src/apprc_gui` | Gradio presentation; no copy of the core's `apprc` modules |
 | `tests` | Behavior, architecture, and integration checks |
@@ -72,8 +76,18 @@ of an `apprc` module to that wrapper.
 Its `ConfigEditor` calls `ConfigManager`; it does not implement file writes.
 
 Production `__init__.py` files contain imports and module docstrings only.
-Architecture tests enforce declaration dependency direction. Keep installer
-manifests in consuming applications, outside AppRC runtime code.
+Architecture tests enforce declaration dependency direction. The installation
+schema belongs in `definition/installation.py`; filesystem authority and
+coordination belong in `user_files/installation`; application-bound orchestration
+belongs in `services/installation.py`. Do not put business configuration or
+generator dependencies into those lower layers.
+
+Application packaging/release manifests and business actions remain in the
+consuming repository. Its `_distr` generator and payload are author inputs,
+not installed application imports. Maintain substantial lifecycle logic as
+ordinary Python and serialize complete explicitly included files into standalone
+support. Never extract function source, rewrite Python, or create a second
+installer implementation as a large template.
 
 <br>
 

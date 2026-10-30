@@ -1,0 +1,139 @@
+#!/bin/sh
+set -eu
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+MAIN="$HERE/main-installer.{% if zipapp %}pyz{% else %}py{% endif %}"
+SELECTION=
+SELECTOR_COUNT=0
+AFTER_BOUNDARY=0
+CLIENT_COUNT=0
+NEED_CLIENT_VALUE=0
+NEED_VERSION_VALUE=0
+for ARGUMENT do
+    [ "$AFTER_BOUNDARY" -eq 0 ] || break
+    if [ "$NEED_CLIENT_VALUE" -eq 1 ]; then
+        if [ "$ARGUMENT" != gh ]; then printf '%s\n' '--github-client requires gh.' >&2; exit 2; fi
+        NEED_CLIENT_VALUE=0
+        continue
+    fi
+    if [ "$NEED_VERSION_VALUE" -eq 1 ]; then
+        case "$ARGUMENT" in
+            ''|.*|*.|*..*|*.*.*.*|*[!0-9.]*)
+                printf '%s\n' '--version requires an exact X.Y.Z version.' >&2
+                exit 2
+                ;;
+            *.*.*)
+                version_major=${ARGUMENT%%.*}
+                version_tail=${ARGUMENT#*.}
+                version_minor=${version_tail%%.*}
+                version_patch=${version_tail#*.}
+                case "$version_major" in 0|[1-9]*) ;; *) printf '%s\n' '--version requires an exact X.Y.Z version.' >&2; exit 2 ;; esac
+                case "$version_minor" in 0|[1-9]*) ;; *) printf '%s\n' '--version requires an exact X.Y.Z version.' >&2; exit 2 ;; esac
+                case "$version_patch" in 0|[1-9]*) ;; *) printf '%s\n' '--version requires an exact X.Y.Z version.' >&2; exit 2 ;; esac
+                NEED_VERSION_VALUE=0
+                continue
+                ;;
+            *) printf '%s\n' '--version requires an exact X.Y.Z version.' >&2; exit 2 ;;
+        esac
+    fi
+    case "$ARGUMENT" in
+        --) AFTER_BOUNDARY=1 ;;
+        --main) SELECTION=main; SELECTOR_COUNT=$((SELECTOR_COUNT + 1)) ;;
+        --version)
+            SELECTION=release
+            SELECTOR_COUNT=$((SELECTOR_COUNT + 1))
+            NEED_VERSION_VALUE=1
+            ;;
+        --github-client) CLIENT_COUNT=$((CLIENT_COUNT + 1)); NEED_CLIENT_VALUE=1 ;;
+        --main-ref|--main-commit|--release-version)
+            printf '%s\n' "$ARGUMENT is not a supported public selector." >&2
+            exit 2
+            ;;
+    esac
+done
+if [ "$NEED_CLIENT_VALUE" -eq 1 ]; then
+    printf '%s\n' '--github-client requires gh.' >&2
+    exit 2
+fi
+if [ "$NEED_VERSION_VALUE" -eq 1 ]; then
+    printf '%s\n' '--version requires an exact X.Y.Z version.' >&2
+    exit 2
+fi
+if [ "$CLIENT_COUNT" -gt 1 ]; then
+    printf '%s\n' 'Specify --github-client only once.' >&2
+    exit 2
+fi
+if [ "$SELECTOR_COUNT" -gt 1 ]; then
+    printf '%s\n' 'Specify only one of --version or --main.' >&2
+    exit 2
+fi
+if [ -z "$SELECTION" ]; then
+    SELECTION={% if source_mode == "release" %}release{% elif source_mode == "main" %}main{% else %}local{% endif %}
+fi
+{% if not has_repository %}if [ "$SELECTION" = main ] || [ "$SELECTION" = release ]; then
+    printf '%s\n' 'Remote source selection requires a configured GitHub repository.' >&2
+    exit 2
+fi
+{% endif %}{% if source_mode == "checkout" %}if [ "$SELECTION" = local ] && [ ! -f "$MAIN" ]; then
+    printf '%s\n' 'The generated installer is missing. Run `just make-artifacts` in the checkout.' >&2
+    exit 2
+fi
+{% elif source_mode not in ("release", "main") %}if [ ! -f "$MAIN" ]; then
+    printf '%s\n' 'The selected standalone installer payload is missing beside this bootstrap.' >&2
+    exit 2
+fi
+{% endif %}
+UV_PATH=${UV-}
+if [ -n "$UV_PATH" ]; then
+    case "$UV_PATH" in /*) ;; *) printf '%s\n' 'UV must be an absolute executable path.' >&2; exit 2 ;; esac
+    if [ ! -x "$UV_PATH" ]; then printf '%s\n' 'Selected uv executable is unavailable.' >&2; exit 2; fi
+else
+    path_entries=${PATH-}
+    while :; do
+        case "$path_entries" in
+            *:*)
+                directory=${path_entries%%:*}
+                path_entries=${path_entries#*:}
+                more=1
+                ;;
+            *)
+                directory=$path_entries
+                more=0
+                ;;
+        esac
+        [ -n "$directory" ] || directory=$PWD
+        case "$directory" in /*) ;; *) directory="$PWD/$directory" ;; esac
+        if [ -x "$directory/uv" ] && [ ! -d "$directory/uv" ]; then
+            UV_PATH="$directory/uv"
+            break
+        fi
+        [ "$more" -eq 1 ] || break
+    done
+    if [ -z "$UV_PATH" ]; then
+        if [ -z "${HOME-}" ]; then printf '%s\n' 'HOME is required to bootstrap uv.' >&2; exit 2; fi
+        sh -c "$(curl -LsSf https://astral.sh/uv/install.sh)"
+        UV_PATH="$HOME/.local/bin/uv"
+    fi
+    if [ ! -x "$UV_PATH" ] || [ -d "$UV_PATH" ]; then
+        printf '%s\n' 'The official uv bootstrap did not provide an executable at the expected path.' >&2
+        exit 2
+    fi
+fi
+if [ "$SELECTION" = main ] || [ "$SELECTION" = release ]; then
+    umask 077
+    FETCHER=$(mktemp "${TMPDIR:-/tmp}/apprc-bootstrap.XXXXXX")
+    trap 'rm -f "$FETCHER"' EXIT HUP INT TERM
+    if [ "$SELECTION" = main ]; then
+        cat >"$FETCHER" <<'APPRC_MAIN_BOOTSTRAP'
+{{ main_fetcher }}
+APPRC_MAIN_BOOTSTRAP
+    else
+        cat >"$FETCHER" <<'APPRC_RELEASE_BOOTSTRAP'
+{{ release_fetcher }}
+APPRC_RELEASE_BOOTSTRAP
+    fi
+    export APPRC_UV_PATH="$UV_PATH"
+    "$UV_PATH" run --no-project --python '>=3.12' --script "$FETCHER" "$@"
+else
+{% if zipapp %}    exec "$UV_PATH" run --no-project --python '>=3.12' --with-requirements "$HERE/main-installer-requirements.txt" python "$MAIN" "$@"
+{% else %}    exec "$UV_PATH" run --no-project --python '>=3.12' --script "$MAIN" "$@"
+{% endif %}fi

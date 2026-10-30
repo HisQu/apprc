@@ -14,6 +14,8 @@ from apprc.user_files.app_home.locations import assert_no_links
 STANDALONE_MODULES = (
     "definition/paths.py",
     "definition/installation.py",
+    "definition/maintenance.py",
+    "definition/config_filenames.py",
     "user_files/app_home/locations.py",
     "user_files/app_home/permissions.py",
     "user_files/app_home/writes.py",
@@ -26,6 +28,7 @@ STANDALONE_MODULES = (
     "user_files/installation/planning.py",
     "user_files/installation/operations.py",
     "user_files/installation/migration.py",
+    "user_files/purge.py",
     "distribution/models.py",
     "distribution/runtime/__init__.py",
     "distribution/runtime/installed_probe.py",
@@ -36,12 +39,14 @@ STANDALONE_MODULES = (
     "distribution/runtime/controllers.py",
     "distribution/runtime/inspection.py",
     "distribution/runtime/legacy.py",
+    "distribution/runtime/legacy_replacement.py",
     "distribution/runtime/removal.py",
 )
 
 MANAGEMENT_REQUIREMENTS = (
     "platformdirs==4.10.0",
     "filelock==3.32.7",
+    "packaging==26.2",
     "pywin32==312; sys_platform == 'win32'",
 )
 

@@ -1,5 +1,6 @@
 """Author inputs and generated artifact behavior, independent of installation."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -106,13 +107,25 @@ def _standalone_payload(root: Path) -> PayloadTree:
     (package / "install.py").write_text(
         """
 import importlib.metadata
+import json
 import sys
 from pathlib import Path
+from uuid import uuid4
 from apprc.distribution.runtime import (
-    InstallationIdentity, InstallationPlacement, InstallationSource, UvToolTarget,
-    begin_operation, plan_install,
+    InstallationIdentity,
+    InstallationPlacement,
+    InstallationSource,
+    UvToolTarget,
+    begin_operation,
+    plan_install,
 )
+from apprc.distribution.runtime.controllers import _default_owned_inventory
+from apprc.definition.installation import InstallationRecord
 from apprc.definition.paths import Layout
+from apprc.user_files.installation.coordination import (
+    installation_lock,
+    write_record,
+)
 from apprc.user_files.installation.discovery import inspect_installation
 
 try:
@@ -122,14 +135,64 @@ except importlib.metadata.PackageNotFoundError:
 else:
     raise RuntimeError("Test requires an environment without installed AppRC")
 root = Path(sys.argv[1])
-identity = InstallationIdentity("standalone-fixture", "standalone-fixture", "fixture", None, ())
+identity = InstallationIdentity(
+    "standalone-fixture", "standalone-fixture", "fixture", None, ()
+)
 plan = plan_install(
-    identity, InstallationSource("index", "standalone-fixture"),
+    identity,
+    InstallationSource("index", "standalone-fixture"),
     InstallationPlacement(Layout.native()),
     UvToolTarget(root / "uv", root / "tools", root / "bin"),
-    inspection=inspect_installation(root / "installation", app_id=identity.app_id),
+    inspection=inspect_installation(
+        root / "installation", app_id=identity.app_id
+    ),
 )
 begin_operation(plan)
+
+saved_directory = root / "saved-installation"
+saved_directory.mkdir()
+config_root = root / "saved-config"
+config_root.mkdir()
+(config_root / ".apprc-owner.json").write_text(
+    json.dumps(
+        {"schema_version": 1, "app_id": "saved-fixture", "category": "config"}
+    ),
+    encoding="utf-8",
+)
+secret = config_root / "apprc.user.secret.env"
+secret.write_text("TOKEN=private\\n", encoding="utf-8")
+unknown = config_root / "custom.ini"
+unknown.write_text("retain me\\n", encoding="utf-8")
+placement = InstallationPlacement(
+    Layout.native(),
+    config_dir=config_root,
+    capabilities=frozenset({"config"}),
+)
+record = InstallationRecord(
+    schema_version=1,
+    app_id="saved-fixture",
+    generation_id=uuid4(),
+    support_version="1",
+    placement=placement,
+    status="removed-retained",
+)
+with installation_lock(saved_directory):
+    write_record(saved_directory, record, expected_revision=None)
+saved = inspect_installation(saved_directory, app_id=record.app_id)
+inventory = _default_owned_inventory(
+    saved,
+    categories=frozenset({"config"}),
+    forget_retained=False,
+)
+observed = {
+    "entries": sorted(entry.path.name for entry in inventory.entries),
+    "retained": [entry.path.name for entry in inventory.retained],
+    "unknown_contents": unknown.read_text(encoding="utf-8"),
+}
+assert observed["entries"] == [".apprc-owner.json", "apprc.user.secret.env"]
+assert observed["retained"] == ["saved-config"]
+assert observed["unknown_contents"] == "retain me\\n"
+(root / "inventory.json").write_text(json.dumps(observed), encoding="utf-8")
 """,
         encoding="utf-8",
     )
@@ -149,8 +212,28 @@ begin_operation(plan)
     )
 
 
+def test_release_spec_accepts_empty_runtime_closure_but_not_blank_rows(
+    tmp_path: Path,
+) -> None:
+    identity = InstallationIdentity(
+        "dependency-free", "dependency-free", "fixture", None, ()
+    )
+    spec = DistributionSpec(
+        ProjectMetadata(tmp_path, identity, "1.0.0"),
+        source_mode="release",
+        repository_url="https://github.com/example/dependency-free",
+        release_version="1.0.0",
+        release_commit="a" * 40,
+        release_asset="https://github.com/example/dependency-free/archive.tar.gz",
+        release_digest="b" * 64,
+    )
+    assert spec.runtime_requirements == ()
+    with pytest.raises(ValueError, match="individual PEP 508"):
+        replace(spec, runtime_requirements=(" ",))
+
+
 @pytest.mark.parametrize("format", ("script", "zipapp"))
-def test_emitted_composition_runs_without_installed_apprc(
+def test_emitted_composition_runs_without_installed_apprc_with_saved_inventory(
     tmp_path: Path, format: Literal["script", "zipapp"]
 ) -> None:
     uv = shutil.which("uv")
@@ -202,6 +285,8 @@ def test_emitted_composition_runs_without_installed_apprc(
                 "filelock==3.32.7",
                 "--with",
                 "platformdirs==4.10.0",
+                "--with",
+                "packaging==26.2",
                 "python",
                 str(path),
                 str(output),
@@ -223,3 +308,11 @@ def test_emitted_composition_runs_without_installed_apprc(
     assert observed.status == "provisional"
     assert observed.record is not None and observed.record.operation is not None
     assert observed.record.operation.kind == "install"
+    inventory = json.loads(
+        (output / "inventory.json").read_text(encoding="utf-8")
+    )
+    assert inventory == {
+        "entries": [".apprc-owner.json", "apprc.user.secret.env"],
+        "retained": ["saved-config"],
+        "unknown_contents": "retain me\n",
+    }

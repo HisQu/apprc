@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -15,6 +16,7 @@ from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.request import Request
+from uuid import uuid4
 from zipfile import ZipFile, ZipInfo
 
 import pytest
@@ -46,6 +48,16 @@ from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
 from apprc.user_files.env_files.secrets import ensure_secret_file
+
+from apprc.distribution.runtime import controllers
+from apprc.distribution.runtime.controllers import prepare_uninstall
+from apprc.definition.installation import InstallationError, OperationStep
+from apprc.user_files.installation.discovery import inspect_installation
+from tests.test_distribution_support_recovery import (
+    _run as install_support_fixture,
+    _scenario as installation_scenario,
+    _stub_backend,
+)
 
 
 @pytest.mark.skipif(
@@ -1708,3 +1720,120 @@ def test_stdlib_final_worker_preserves_a_new_generation_record(
 
     assert authority.read_text(encoding="utf-8") == "new generation authority\n"
     assert directory.is_dir()
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="Requires Linux process-bound uninstall handoff.",
+)
+def test_failed_provider_cleanup_retries_same_uninstall_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory, install_plan, snapshot, environment = installation_scenario(
+        tmp_path
+    )
+    _stub_backend(monkeypatch, snapshot)
+    backend = snapshot.backend
+    tool_marker = backend.tool_dir / ".fixture-installed"
+    backend.tool_dir.mkdir(parents=True)
+    tool_marker.write_text("installed\n", encoding="utf-8")
+    backend.executable.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        f"marker = Path({str(tool_marker)!r})\n"
+        "if sys.argv[1:3] == ['tool', 'list']:\n"
+        f"    print({snapshot.identity.distribution!r} + ' v1.0' if marker.exists() else '')\n"
+        "elif sys.argv[1:3] == ['tool', 'uninstall']:\n"
+        "    marker.unlink(missing_ok=True)\n"
+        "else:\n"
+        "    raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    backend.executable.chmod(0o700)
+    installed = install_support_fixture(
+        install_plan,
+        environment,
+        {PurePosixPath("controller.py"): b"# saved controller\n"},
+    )
+    assert installed.status == "ready"
+    initial = prepare_uninstall(directory)
+    assert initial.plan is not None and initial.can_execute
+    calls = 0
+
+    def fail_once(_context) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("provider cleanup failed once")
+
+    with pytest.raises(RuntimeError, match="failed once"):
+        controllers.stage_uninstall(initial.plan, provider_cleanup=fail_once)
+
+    failed = prepare_uninstall(directory)
+    assert failed.plan is not None and failed.can_execute
+    assert failed.plan.operation_id == initial.plan.operation_id
+    assert failed.plan.inventory == initial.plan.inventory
+    with pytest.raises(InstallationError, match="Retry options differ"):
+        prepare_uninstall(directory, complete=True)
+    with pytest.raises(
+        InstallationError, match="different installation operation"
+    ):
+        controllers.stage_uninstall(
+            replace(failed.plan, expected_generation=uuid4()),
+            provider_cleanup=fail_once,
+        )
+
+    resumed = controllers.stage_uninstall(
+        failed.plan, provider_cleanup=fail_once
+    )
+    persisted = inspect_installation(directory, app_id="fixture")
+    assert calls == 2
+    assert persisted.record is not None
+    assert persisted.record.operation is not None
+    assert persisted.record.operation.operation_id == initial.plan.operation_id
+    assert OperationStep.PROVIDER_CLEANUP in persisted.record.operation.steps
+    assert resumed.expected_revision == persisted.revision
+
+    checkpointed = controllers.stage_uninstall(
+        failed.plan,
+        provider_cleanup=lambda _context: pytest.fail(
+            "successful cleanup checkpoint was replayed"
+        ),
+    )
+    assert checkpointed.expected_revision == persisted.revision
+
+    from apprc.distribution.runtime import removal
+    from apprc.distribution.runtime.backend import inspect_uv_tools
+    from tests.test_distribution_handoff_containment import (
+        _pending_receiver_handoff,
+    )
+    from tests.test_distribution_process_waiter import _owned_child
+
+    with _owned_child() as original:
+        handoff = _pending_receiver_handoff(
+            checkpointed,
+            tmp_path,
+            monkeypatch,
+            original.pid,
+        )
+        assert original.stdin is not None
+        original.stdin.write("exit\n")
+        original.stdin.flush()
+        original.wait(timeout=5)
+        monkeypatch.setattr(
+            removal,
+            "external_base_python",
+            lambda *_args, **_kwargs: Path(sys.executable),
+        )
+        monkeypatch.setattr(removal.sys, "stdin", io.StringIO())
+        removal.execute_handoff(handoff.plan_file)
+
+    assert snapshot.identity.distribution not in inspect_uv_tools(
+        backend, environment=environment
+    )
+    finished = inspect_installation(directory, app_id="fixture")
+    assert finished.status == "removed-retained"
+    assert finished.record is not None
+    assert finished.record.current is None
+    assert finished.record.operation is None

@@ -925,36 +925,47 @@ def execute_handoff(plan_file: Path) -> None:
                             encoding="utf-8",
                         )
 
-                remove_uv_tool(
-                    target.backend,
-                    target.identity.distribution,
-                    environment=dict(os.environ),
-                )
-                current = record_step(
-                    directory,
-                    operation_id=operation_id,
-                    expected_revision=latest_revision,
-                    step=OperationStep.PACKAGE_REMOVED,
-                )
-                latest_revision = current.revision
-                if latest_revision is None:
+                operation = current_record.operation
+                if (
+                    operation is None
+                    or operation.operation_id != operation_id
+                    or operation.kind != "uninstall"
+                ):
                     raise InstallationError(
-                        "Package removal checkpoint lacks a revision."
+                        "Pending uninstall checkpoint authority changed."
                     )
-
-                if complete:
-                    _remove_inventory(inventory.entries)
+                if OperationStep.PACKAGE_REMOVED not in operation.steps:
+                    remove_uv_tool(
+                        target.backend,
+                        target.identity.distribution,
+                        environment=dict(os.environ),
+                    )
                     current = record_step(
                         directory,
                         operation_id=operation_id,
                         expected_revision=latest_revision,
-                        step=OperationStep.DATA_REMOVED,
+                        step=OperationStep.PACKAGE_REMOVED,
                     )
                     latest_revision = current.revision
                     if latest_revision is None:
                         raise InstallationError(
-                            "Complete cleanup checkpoint lacks a revision."
+                            "Package removal checkpoint lacks a revision."
                         )
+
+                if complete:
+                    if OperationStep.DATA_REMOVED not in operation.steps:
+                        _remove_inventory(inventory.entries)
+                        current = record_step(
+                            directory,
+                            operation_id=operation_id,
+                            expected_revision=latest_revision,
+                            step=OperationStep.DATA_REMOVED,
+                        )
+                        latest_revision = current.revision
+                        if latest_revision is None:
+                            raise InstallationError(
+                                "Complete cleanup checkpoint lacks a revision."
+                            )
                     _remove_registry_outputs(
                         current_record, directory, registry_backup
                     )

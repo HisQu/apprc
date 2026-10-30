@@ -38,6 +38,9 @@ Learn the components in this order:
 6. Use a [config bundle](Explanations.md#config-bundles) for related settings
    sections and an [imported config binding](Explanations.md#imported-dependency-settings)
    when the parent application owns dependency settings.
+7. Add durable [installation](Explanations.md#installation) choices and saved
+   management support when shipping an application installer. This is optional:
+   normal pip installations do not need a bootstrap record.
 
 The [complete setups](EXAMPLES.md#choose-a-setup) show when to use each option.
 Guides in [How-to user guides](How-To-User-Guides.md) are independent. Existing
@@ -72,6 +75,7 @@ the Python name identifies its implementation.
 | [Paths](Explanations.md#application-paths) | `rc.Paths` | Declaration enabling config, appdata, cache, and state independently. |
 | [Layout](Explanations.md#layouts) | `rc.Layout` | Native or single-root mapping for enabled path components. |
 | [AppPaths](Explanations.md#application-paths) | `rc.AppPaths` | Read-only resolved locations; disabled components are `None`. |
+| [Installation](Explanations.md#installation) | `rc.InstallationManager`, `installation.json` | Fixed native metadata for saved placement, observed backend identity and recovery; independent of optional data paths. |
 | [Workspace](Explanations.md#workspaces) | `rc.Workspaces` | Optional named or direct working-directory selection, separate from `AppPaths`. |
 | [User dotenv](Explanations.md#user-dotenv) | `apprc.user.env` | Saved overrides enabled by `rc.UserDotenv()` with config enabled. |
 | [Secret companion](Explanations.md#secret-companions) | `apprc.user.secret.env` or `apprc.workspace.secret.env` | Private file for saved `secret=True` fields in that layer. |

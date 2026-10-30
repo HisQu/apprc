@@ -14,14 +14,14 @@ from apprc.interfaces.tui.editor.workspace_registration import (
 )
 
 if TYPE_CHECKING:
-    from apprc.interfaces.tui.editor.app import ConfigEditorApp
+    from apprc.interfaces.tui.editor.app import ConfigEditorScreen
 
 
 class ConfigEditorSetupWorkflow:
     """Initialize enabled user and workspace files without changing process state."""
 
-    def __init__(self, editor: ConfigEditorApp) -> None:
-        """Store the editor that owns setup controls."""
+    def __init__(self, editor: ConfigEditorScreen) -> None:
+        """Store the screen that owns setup controls."""
         self.editor = editor
 
     async def open_setup_flow(self) -> None:
@@ -30,7 +30,7 @@ class ConfigEditorSetupWorkflow:
         if editor.workspace_enabled:
             root = editor.active_workspace_root
             if root is None:
-                result = await editor.push_screen_wait(
+                result = await editor.app.push_screen_wait(
                     PathInputScreen(
                         title="Initialize workspace",
                         message="Choose an explicit workspace directory.",
@@ -74,7 +74,7 @@ class ConfigEditorSetupWorkflow:
             editor.user_dotenv_active = editor._user_dotenv_is_active()
             await editor._refresh_workspace_list()
         await editor.clear_setup_status()
-        await editor.push_screen_wait(
+        await editor.app.push_screen_wait(
             ConfirmScreen(
                 title="Setup complete",
                 message=lines_text(

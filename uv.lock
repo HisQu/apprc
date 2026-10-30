@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "apprc"
-version = "0.30.0"
+version = "0.31.0"
 source = { editable = "src/apprc_dev/packaging/terminal" }
 dependencies = [
     { name = "apprc-core" },
@@ -83,7 +83,7 @@ requires-dist = [
 
 [[package]]
 name = "apprc-core"
-version = "0.30.0"
+version = "0.31.0"
 source = { editable = "." }
 dependencies = [
     { name = "filelock" },
@@ -91,6 +91,11 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "typed-settings", extra = ["dotenv"] },
+]
+
+[package.optional-dependencies]
+distribution = [
+    { name = "jinja2" },
 ]
 
 [package.dev-dependencies]
@@ -120,12 +125,14 @@ gui-test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "filelock", specifier = ">=3.20,<4" },
+    { name = "filelock", specifier = ">=3.32.7,<4" },
+    { name = "jinja2", marker = "extra == 'distribution'", specifier = ">=3.1.6,<4" },
     { name = "platformdirs", specifier = ">=4,<5" },
     { name = "python-dotenv" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=311" },
     { name = "typed-settings", extras = ["dotenv"] },
 ]
+provides-extras = ["distribution"]
 
 [package.metadata.requires-dev]
 demo = [{ name = "apprc-example-apps", editable = "examples/example_apps" }]
@@ -158,14 +165,14 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "apprc", specifier = ">=0.30.0,<0.31" },
-    { name = "apprc-gui", marker = "extra == 'desktop'", specifier = ">=0.30.0,<0.31" },
+    { name = "apprc", specifier = ">=0.31.0,<0.32" },
+    { name = "apprc-gui", marker = "extra == 'desktop'", specifier = ">=0.31.0,<0.32" },
 ]
 provides-extras = ["desktop"]
 
 [[package]]
 name = "apprc-gui"
-version = "0.30.0"
+version = "0.31.0"
 source = { editable = "src/apprc_dev/packaging/gui" }
 dependencies = [
     { name = "apprc-core" },

@@ -10,9 +10,13 @@
   - [Persistent user preferences](#persistent-user-preferences)
   - [Importable client with saved preferences](#importable-client-with-saved-preferences)
 - [Independent paths and workspaces](#independent-paths-and-workspaces)
+  - [Inspect installation independently](#inspect-installation-independently)
   - [Cache-only application](#cache-only-application)
   - [Single-root application paths](#single-root-application-paths)
   - [User preferences and workspaces](#user-preferences-and-workspaces)
+- [Repository-owned installation composition](#repository-owned-installation-composition)
+  - [Default lifecycle](#default-lifecycle)
+  - [Customized ordering](#customized-ordering)
 - [Other application patterns](#other-application-patterns)
   - [Explicit dotenv precedence](#explicit-dotenv-precedence)
   - [Parent-owned dependency settings](#parent-owned-dependency-settings)
@@ -36,6 +40,7 @@ registry.
 | [Persistent user preferences](#persistent-user-preferences) | Config | `UserDotenv()` | Users save preferences, but the application needs no other managed resource. |
 | [Importable client with saved preferences](#importable-client-with-saved-preferences) | Config | User dotenv and packaged defaults | Callers construct a library client without declaring AppRC. |
 | [Cache-only application](#cache-only-application) | Cache | None | The application needs disposable cache and nothing else. |
+| [Inspect installation independently](#inspect-installation-independently) | None or any chosen subset | Read-only installation manager | A management command must inspect saved authority without business settings or enabling appdata. |
 | [Single-root application paths](#single-root-application-paths) | Any chosen subset | Explicit layout | The application wants enabled categories colocated beneath a caller-owned root. |
 | [User preferences and workspaces](#user-preferences-and-workspaces) | Config | User dotenv and registry-backed `Workspaces()` | Users share preferences and select named working directories. |
 | [Parent-owned dependency settings](#parent-owned-dependency-settings) | Parent's chosen paths | Imported config binding | The host owns dependency field names and values. |
@@ -110,6 +115,12 @@ The edit is saved in `apprc.user.env` beneath the config category root. The
 [Python preference guide](How-To-User-Guides.md#save-a-user-preference) shows the
 same operation through `ConfigManager`.
 
+`apprc-user-dotenv launcher` opens the same editor inside a single Textual event
+loop. Its **Print active configuration** action runs the actual example command
+in the foreground and resumes the launcher afterward. Captured selectors and
+the same Python environment's absolute command are retained; the
+[example CLI source](../examples/example_apps/src/user_dotenv/cli.py) owns this spec.
+
 ## Importable client with saved preferences
 
 The [`library_client` package](../examples/example_apps/src/library_client/README.md)
@@ -130,6 +141,41 @@ This keeps library construction read-only while making preferences opt-in.
 <br>
 
 # Independent paths and workspaces
+
+## Inspect installation independently
+
+Inspection does not require a resource declaration or resolved business settings:
+
+```python
+import apprc as rc
+
+MyRC = rc.AppRC(app_id="demo")
+inspection = MyRC.installation().inspect()
+print(inspection.status)
+print(inspection.directory)
+for diagnostic in inspection.diagnostics:
+    print(diagnostic.code, diagnostic.message)
+```
+
+This reads only the fixed native address. It does not initialize appdata or
+another resource, execute uv, or create an installation record. `"missing"` is
+normal for an unmanaged editable pip installation; an invalid record remains
+inspectable rather than selecting a different data location.
+
+The existing cache-only CLI exposes the same management route:
+
+```shell
+apprc-examples-lab cache-only
+cd "$APPRC_EXAMPLE_LAB_ROOT"
+apprc-cache-only installation show --json
+apprc-cache-only installation doctor --json
+```
+
+Declaring cache does not enable config/appdata/state. Managed installation
+support, when deliberately installed, is independent of that declaration and
+is not a cache cleanup target. See the
+[recovery guide](How-To-User-Guides.md#install-and-recover-managed-applications)
+and [record reference](References.md#installationmanager).
 
 ## Cache-only application
 
@@ -158,8 +204,8 @@ apprc-cache-only paths cache --json
 `paths --json` reports the declared locations and existence without creating
 any directory. `cache init` initializes only cache and its owner marker; config,
 appdata, state, logs, and workspace locations remain disabled. The grouped help
-contains paths, doctor, cache info/init, and purge, but no config, workspace,
-appdata, or state groups. Cache data initialization belongs at the application's
+contains paths, doctor, installation, cache info/init, and purge, but no config,
+workspace, appdata, or state groups. Cache data initialization belongs at the application's
 actual write boundary, not matcher/service construction.
 
 ## Single-root application paths
@@ -222,6 +268,54 @@ layout bootstrap, `<PREFIX>_LAYOUT` and `<PREFIX>_ROOT` are interpreted as one
 pair from one highest-priority raw input layer. Root alone means single-root;
 `native` plus root in that layer is invalid. The [layout reference](References.md#layout-bootstrap)
 describes priority, including explicit-file precedence.
+
+<br>
+
+# Repository-owned installation composition
+
+These maintained examples are ordinary composition functions for a repository
+payload, not standalone console installers. Include the chosen modules/resources
+in a `PayloadTree` and generate runnable entries through
+[`apprc.distribution`](References.md#distribution-generation). They need no
+Buildben inheritance or global hook registry.
+
+## Default lifecycle
+
+The [default install function](../examples/example_apps/src/distribution_default/install.py)
+accepts the captured plan and explicit `SourceSelection`, acquires it in private
+staging, then calls `install_prepared_application(...)` with the target probe,
+support bytes and Python requirement. The shared transaction owns the safety
+boundary: it validates source/backend, probes the actual installed target,
+publishes support and commits observed authority.
+
+The [default removal function](../examples/example_apps/src/distribution_default/uninstall.py)
+uses `prepare_uninstall(...)`, rejects an unsafe preview, starts the independent
+handoff, waits for readiness and signals exit immediately before `SystemExit`.
+The calling application must obtain consent first. This function removes the
+program only; it does not interpret retention as permission to delete data.
+
+## Customized ordering
+
+The [custom install function](../examples/example_apps/src/distribution_custom/install.py)
+parses transport with `parse_source_arguments(...)` before application options
+and plans with the returned `selection.source`. It calls
+`selection.prepare(...)`, runs the repository's own project-setup function,
+then passes that exact `PreparedSource` to `install_prepared_application(...)`.
+The author controls this sequence without editing shared runtime or copying
+its transaction implementation.
+
+The [custom removal function](../examples/example_apps/src/distribution_custom/uninstall.py)
+supplies project cleanup to the shared handoff. Cleanup receives an explicit
+pending `OperationContext`; application maintenance can use
+`MyRC.maintain(context=context, handlers=...)` instead of fabricating a normal
+runtime context or ignoring an incomplete record. Cleanup must finish while
+required program/provider code remains available.
+
+Keep ownership inventories, process quiescence and consent explicit when
+adapting these examples. Closing a screen is not process exit, and successful
+program removal is not successful complete data/authority removal. See the
+[recovery guide](How-To-User-Guides.md#install-and-recover-managed-applications)
+for their user-facing distinction.
 
 <br>
 

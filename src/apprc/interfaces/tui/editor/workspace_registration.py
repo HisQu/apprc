@@ -64,7 +64,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
         )
         if guarded_root is None:
             return
-        name_result = await self.editor.push_screen_wait(
+        name_result = await self.editor.app.push_screen_wait(
             WorkspaceNameScreen(
                 default_name=default_name,
                 message="Choose the workspace name used by --workspace.",
@@ -110,7 +110,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
         if not root.exists():
             parent = root.parent
             if parent.exists():
-                action = await self.editor.push_screen_wait(
+                action = await self.editor.app.push_screen_wait(
                     ConfirmScreen(
                         title="Directory does not exist",
                         message=Text.assemble(
@@ -157,7 +157,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
                 f"{dotenv_filename}?",
                 path_text(resolved_root),
             )
-        action = await self.editor.push_screen_wait(
+        action = await self.editor.app.push_screen_wait(
             ConfirmScreen(
                 title="Confirm workspace directory",
                 message=message,

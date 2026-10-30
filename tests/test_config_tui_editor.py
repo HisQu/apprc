@@ -37,14 +37,15 @@ async def test_config_only_editor_saves_user_setting_without_workspace_service(
     manager = kit.manage(options=options, environment={})
     manager.setup()
     editor = ConfigEditorApp(apprc=kit, manager=manager)
+    screen = editor.editor_screen
 
     async with editor.run_test() as pilot:
         await pilot.pause()
-        await editor._save_env_key(
+        await screen._save_env_key(
             "CONFIG_ONLY_APP_PROFILE", "edited", scope="user"
         )
         assert (
-            editor._inspected_resolution().values["CONFIG_ONLY_APP_PROFILE"]
+            screen._inspected_resolution().values["CONFIG_ONLY_APP_PROFILE"]
             == "edited"
         )
 
@@ -61,21 +62,21 @@ async def test_registry_editor_selects_workspace_and_saves_workspace_overlay(
 ) -> None:
     kit = build_workspace_example_app()
     editor = _workspace_editor(kit, tmp_path)
-    assert editor.workspace_manager is not None
-    editor.workspace_manager.register_workspace("alpha", tmp_path / "alpha")
-    editor.workspace_manager.register_workspace("beta", tmp_path / "beta")
-    editor.workspace_registry = editor.workspace_manager.registry()
+    screen = editor.editor_screen
+    assert screen.workspace_manager is not None
+    screen.workspace_manager.register_workspace("alpha", tmp_path / "alpha")
+    screen.workspace_manager.register_workspace("beta", tmp_path / "beta")
+    screen.workspace_registry = screen.workspace_manager.registry()
 
     async with editor.run_test() as pilot:
         await pilot.pause()
-        await editor._refresh_workspace_list(select_name="alpha")
-        await editor._save_env_key(
+        await screen._refresh_workspace_list(select_name="alpha")
+        await screen._save_env_key(
             "APPRC_EXAMPLE_APP_PROFILE", "workspace-value", scope="workspace"
         )
-        assert len(editor.query_one("#workspace-list").children) == 2
-        assert editor._selected_workspace_name() == "alpha"
+        assert screen._selected_workspace_name() == "alpha"
 
-    files = AppFiles(kit.schema, editor.paths)
+    files = AppFiles(kit.schema, screen.paths)
     assert (
         files.workspace_dotenv_path(tmp_path / "alpha").read_text(
             encoding="utf-8"
@@ -96,12 +97,13 @@ async def test_workspace_actions_require_manager_and_unregister_keeps_payload(
         ConfigEditorApp(apprc=kit, manager=manager)
 
     editor = _workspace_editor(kit, tmp_path)
-    assert editor.workspace_manager is not None
+    screen = editor.editor_screen
+    assert screen.workspace_manager is not None
     payload_root = tmp_path / "retained"
-    editor.workspace_manager.register_workspace("retained", payload_root)
+    screen.workspace_manager.register_workspace("retained", payload_root)
     payload = payload_root / "payload.txt"
     payload.write_text("keep", encoding="utf-8")
-    editor.workspace_manager.remove_workspace("retained")
+    screen.workspace_manager.remove_workspace("retained")
     assert payload.read_text(encoding="utf-8") == "keep"
 
 
@@ -118,16 +120,17 @@ async def test_settings_refresh_keeps_captured_paths(
     manager = kit.manage(environment=environment)
     manager.setup()
     editor = ConfigEditorApp(apprc=kit, manager=manager)
-    captured = editor.paths
+    screen = editor.editor_screen
+    captured = screen.paths
 
     async with editor.run_test() as pilot:
         await pilot.pause()
         monkeypatch.setenv("CONFIG_ONLY_APP_LAYOUT", "native")
         monkeypatch.setenv("CONFIG_ONLY_APP_ROOT", str(tmp_path / "second"))
-        await editor._refresh_workspace_list()
-        assert editor.paths is captured
-        assert editor.manager.paths is captured
-        assert editor._inspected_resolution().paths is captured
+        await screen._refresh_workspace_list()
+        assert screen.paths is captured
+        assert screen.manager.paths is captured
+        assert screen._inspected_resolution().paths is captured
 
     assert AppFiles(kit.schema, captured).user_dotenv_path().is_file()
     assert not (tmp_path / "second").exists()

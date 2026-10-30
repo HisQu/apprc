@@ -1,0 +1,192 @@
+"""Resolve one remote-main ref and use its full commit for every input."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path, PurePosixPath
+
+REPOSITORY_URL = {{ repository_url | json }}
+INSTALLER_PATH = {{ installer_path | json }}
+PAYLOAD_FORMAT = {{ payload_format | json }}
+
+
+def _repository() -> tuple[str, str]:
+    address = urllib.parse.urlsplit(REPOSITORY_URL)
+    parts = [part for part in address.path.split("/") if part]
+    if (address.scheme != "https" or address.hostname != "github.com"
+            or address.username is not None or address.password is not None
+            or address.query or address.fragment or len(parts) != 2):
+        raise RuntimeError("Remote-main requires a credential-free GitHub repository URL.")
+    owner, repository = parts[0], parts[1].removesuffix(".git")
+    if not owner or not repository:
+        raise RuntimeError("Remote-main repository identity is incomplete.")
+    return owner, repository
+
+
+def _read_url(address: str, *, client: str, limit: int = 4 * 1024 * 1024) -> bytes:
+    parsed = urllib.parse.urlsplit(address)
+    if client == "gh":
+        endpoint = parsed.path.lstrip("/") + (("?" + parsed.query) if parsed.query else "")
+        result = subprocess.run(
+            ["gh", "api", endpoint], check=True, capture_output=True
+        )
+        data = result.stdout
+    else:
+        request = urllib.request.Request(
+            address, headers={"Accept": "application/vnd.github+json", "User-Agent": "AppRC distribution"},
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = response.read(limit + 1)
+    if len(data) > limit:
+        raise RuntimeError("Remote-main response exceeds its supported size limit.")
+    return data
+
+
+def _arguments() -> tuple[str, list[str]]:
+    selected = False
+    client = "public"
+    forwarded: list[str] = []
+    arguments = iter(sys.argv[1:])
+    for argument in arguments:
+        if argument == "--":
+            forwarded.extend([argument, *arguments])
+            break
+        if argument == "--main":
+            if selected:
+                raise RuntimeError("Specify --main only once.")
+            selected = True
+        elif argument == "--github-client":
+            if client != "public":
+                raise RuntimeError("Specify --github-client only once.")
+            client = next(arguments, "")
+            if client != "gh":
+                raise RuntimeError("--github-client only supports gh.")
+        elif argument in {"--main-ref", "--main-commit", "--release-version"}:
+            raise RuntimeError(f"{argument} is not a supported public selector.")
+        elif argument in {"--source-mode", "--source-repository", "--source-commit", "--source-package"}:
+            raise RuntimeError("Source identity arguments are reserved for the remote-main transport.")
+        else:
+            forwarded.append(argument)
+    return client, forwarded
+
+
+def _resolve_commit(owner: str, repository: str, reference: str, client: str) -> str:
+    endpoint = (
+        f"https://api.github.com/repos/{owner}/{repository}/commits/"
+        f"{urllib.parse.quote(reference, safe='')}"
+    )
+    value = json.loads(_read_url(endpoint, client=client))
+    commit = value.get("sha") if isinstance(value, dict) else None
+    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise RuntimeError("Remote-main ref did not resolve to a full immutable Git commit.")
+    return commit
+
+
+def _download(address: str, destination: Path, client: str) -> None:
+    if client == "gh":
+        parsed = urllib.parse.urlsplit(address)
+        if parsed.hostname == "raw.githubusercontent.com":
+            owner, repository, reference, *path = parsed.path.strip("/").split("/")
+            endpoint = (
+                f"repos/{owner}/{repository}/contents/"
+                + "/".join(
+                    urllib.parse.quote(
+                        urllib.parse.unquote(part), safe=""
+                    )
+                    for part in path
+                )
+                + "?ref=" + urllib.parse.quote(reference, safe="")
+            )
+            command = [
+                "gh", "api", endpoint, "-H", "Accept: application/vnd.github.raw"
+            ]
+        else:
+            endpoint = parsed.path.lstrip("/")
+            if parsed.query:
+                endpoint += "?" + parsed.query
+            command = ["gh", "api", endpoint]
+        with destination.open("xb") as output:
+            subprocess.run(command, check=True, stdout=output)
+    else:
+        request = urllib.request.Request(
+            address, headers={"User-Agent": "AppRC distribution"}
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            with destination.open("xb") as output:
+                while chunk := response.read(1024 * 1024):
+                    output.write(chunk)
+    if not destination.is_file() or destination.stat().st_size == 0:
+        raise RuntimeError("Remote-main download is empty.")
+    if destination.stat().st_size > 256 * 1024 * 1024:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError("Remote-main download exceeds its supported size limit.")
+
+
+def main() -> int:
+    try:
+        client, forwarded = _arguments()
+        owner, repository = _repository()
+        commit = _resolve_commit(owner, repository, "main", client)
+        relative = PurePosixPath(INSTALLER_PATH)
+        if (relative.is_absolute() or ".." in relative.parts or "\\" in INSTALLER_PATH
+                or not relative.parts):
+            raise RuntimeError("Remote-main installer path is unsafe.")
+        raw = f"https://raw.githubusercontent.com/{owner}/{repository}/{commit}"
+        address = raw + "/" + "/".join(urllib.parse.quote(part, safe="") for part in relative.parts)
+        with tempfile.TemporaryDirectory(prefix="apprc-main-") as temporary:
+            root = Path(temporary)
+            os.chmod(root, 0o700)
+            payload = root / ("main-installer.pyz" if PAYLOAD_FORMAT == "zipapp" else "main-installer.py")
+            _download(address, payload, client)
+            package = root / "source.tar.gz"
+            _download(
+                f"https://api.github.com/repos/{owner}/{repository}/tarball/{commit}",
+                package,
+                client,
+            )
+            uv = Path(os.environ.get("APPRC_UV_PATH", ""))
+            if not uv.is_absolute() or not uv.is_file():
+                raise RuntimeError("The bootstrap's absolute uv executable is unavailable.")
+            transport = [
+                "--source-mode", "main", "--source-repository", REPOSITORY_URL,
+                "--source-commit", commit, "--source-package", str(package),
+            ]
+            if client == "gh":
+                transport.extend(["--github-client", "gh"])
+            environment = dict(os.environ)
+            environment["APPRC_UV_PATH"] = str(uv)
+            if PAYLOAD_FORMAT == "script":
+                command = [str(uv), "run", "--no-project", "--python", ">=3.12",
+                           "--script", str(payload), *transport, *forwarded]
+            else:
+                requirements = root / "main-installer-requirements.txt"
+                requirements_path = relative.parent / "main-installer-requirements.txt"
+                requirements_url = raw + "/" + "/".join(
+                    urllib.parse.quote(part, safe="") for part in requirements_path.parts
+                )
+                _download(requirements_url, requirements, client)
+                command = [str(uv), "run", "--no-project", "--python", ">=3.12",
+                           "--with-requirements", str(requirements), "python", str(payload),
+                           *transport, *forwarded]
+            return subprocess.run(command, env=environment, check=False).returncode
+    except (
+        OSError,
+        ValueError,
+        RuntimeError,
+        urllib.error.URLError,
+        subprocess.CalledProcessError,
+    ) as error:
+        print(f"AppRC remote-main bootstrap failed: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.installation import InstallationSnapshot
 from apprc.definition.paths import AppPaths, Layout, Paths
 from apprc.user_files.app_home.ownership import ensure_owned_path
 from apprc.user_files.env_files.secrets import secret_companion_path
@@ -20,6 +21,7 @@ def _config_paths(root: Path) -> AppPaths:
         cache_dir=None,
         state_dir=None,
         logs_dir=None,
+        installation=InstallationSnapshot(root / "installation", None, None),
     )
 
 

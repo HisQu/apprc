@@ -9,7 +9,7 @@ from typer.core import TyperCommand
 import apprc as rc
 from apprc.definition.paths import Layout, Paths
 from apprc.definition.resolution import ResolveOptions
-from apprc.interfaces.cli.context import CliRuntimeOptions
+from apprc.interfaces.cli.context import CliRuntimeContext, CliRuntimeOptions
 from apprc.interfaces.cli.runtime import CliRuntime, DefaultConfigCliState
 from apprc.user_files.app_home.application import AppFiles
 
@@ -63,13 +63,16 @@ def test_initialized_direct_workspace_resolves_without_registry_or_config_writes
         runtime.apprc.paths(environment={}),
     ).workspace_dotenv_path(workspace_root)
     marker.write_text("", encoding="utf-8")
+    command_context = _context()
     session = runtime.prepare(
-        _context(),
+        command_context,
         CliRuntimeOptions(
             workspace=str(workspace_root),
             layout=Layout.single_root(tmp_path / "home"),
         ),
     )
+    assert isinstance(session.apprc_context, CliRuntimeContext)
+    assert not session.apprc_context.runtime_setup_skipped
     assert session.apprc_context.resolved is not None
     assert session.apprc_context.resolved.workspace is not None
     assert session.apprc_context.resolved.workspace.root == workspace_root
@@ -91,10 +94,12 @@ def test_skipped_runtime_keeps_environment_layout_snapshot_for_refresh(
     monkeypatch.setenv(layout_key, "single-root")
     monkeypatch.setenv(root_key, str(captured_root))
     runtime = CliRuntime(app_rc, args_provider=lambda: ["paths"])
+    command_context = _context("paths")
     session = runtime.prepare(
-        _context("paths"),
+        command_context,
         CliRuntimeOptions(load_dotenv_layers=False),
     )
+    assert isinstance(session.apprc_context, CliRuntimeContext)
     context = session.apprc_context
     monkeypatch.setenv(root_key, str(tmp_path / "later"))
     refreshed = app_rc.manage(

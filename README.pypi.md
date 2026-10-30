@@ -91,6 +91,13 @@ locations as `None`; `ensure_path(kind)` initializes only the requested
 component. See [path declarations](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#application-paths) and
 the [path reference](https://github.com/HisQu/apprc/blob/main/docs/References.md#application-paths).
 
+Managed installers preserve the selected layout in a durable
+[installation record](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#installation). Reinstallation reuses
+that choice; an invocation override does not rewrite it. Single-root groups the
+enabled application resource directories, not the Python environment or fixed
+native installation support. Plain `pip install -e .` remains independent of
+this optional installation workflow.
+
 Applications that need selectable named working directories declare
 `Workspaces()`. A [`WorkspaceManager`](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#workspaces) manages
 the registry and archive operations separately from `AppPaths`; selecting a

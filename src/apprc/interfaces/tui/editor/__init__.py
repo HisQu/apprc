@@ -2,7 +2,10 @@
 
 # ruff: noqa: F401
 
-from apprc.interfaces.tui.editor.app import ConfigEditorApp
+from apprc.interfaces.tui.editor.app import (
+    ConfigEditorApp,
+    ConfigEditorScreen,
+)
 from apprc.interfaces.tui.editor.workflows import (
     ConfigEditorWorkspaceWorkflows,
 )

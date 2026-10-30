@@ -30,6 +30,7 @@ from apprc.user_files.app_home.application import AppFiles
 from apprc.user_files.app_home.layouts import resolve_app_paths
 from apprc.user_files.app_home.ownership import ensure_owned_path
 from apprc.user_files.app_home.writes import managed_write_lock
+from apprc.definition.installation import InstallationWriteAuthority
 from apprc.user_files.env_files._parsing import (
     parse_dotenv_file,
     parse_dotenv_text,
@@ -153,7 +154,13 @@ class ConfigManager:
         :return: The initialized config directory and optional user dotenv.
         """
         config_dir = self.paths.require("config")
-        with managed_write_lock(config_dir, private_directories=(config_dir,)):
+        with managed_write_lock(
+            config_dir,
+            private_directories=(config_dir,),
+            authority=InstallationWriteAuthority(
+                self.schema.app_id, self.paths.installation
+            ),
+        ):
             ensure_owned_path(self.schema, self.paths, "config", adopt=adopt)
             user_dotenv = (
                 AppFiles(self.schema, self.paths).ensure_user_dotenv()
@@ -207,7 +214,12 @@ class ConfigManager:
     ) -> SecretFileStatus:
         """Apply an explicitly requested privacy repair to one layer."""
         path = self.writable_path(scope, workspace=workspace, secret=True)
-        with managed_write_lock(path.parent):
+        with managed_write_lock(
+            path.parent,
+            authority=InstallationWriteAuthority(
+                self.schema.app_id, self.paths.installation
+            ),
+        ):
             return repair_secret_file_permissions(path)
 
     def plan_secret_migration(
@@ -233,6 +245,9 @@ class ConfigManager:
                 regular, secret_companion_path(regular), secret_keys
             ),
             lock_roots=roots,
+            authority=InstallationWriteAuthority(
+                self.schema.app_id, self.paths.installation
+            ),
         )
 
     def apply_secret_migration(self, plan: SecretMigrationPlan) -> None:
@@ -310,6 +325,9 @@ class ConfigManager:
                 private=spec.secret,
             ),
             lock_roots=lock_roots,
+            authority=InstallationWriteAuthority(
+                self.schema.app_id, self.paths.installation
+            ),
             private_directories=(
                 (config_root,)
                 if scope == "user" and config_root is not None
@@ -354,6 +372,9 @@ class ConfigManager:
             else replace(
                 plan,
                 lock_roots=lock_roots,
+                authority=InstallationWriteAuthority(
+                    self.schema.app_id, self.paths.installation
+                ),
                 private_directories=(
                     (config_root,)
                     if scope == "user" and config_root is not None

@@ -153,7 +153,7 @@ def _ensure_mount_names(
     app: typer.Typer, apprc: AppRC, config_group_name: str
 ) -> None:
     """Reject fixed command collisions before callbacks or groups are added."""
-    reserved = {"paths", "doctor", "purge"}
+    reserved = {"paths", "doctor", "purge", "installation"}
     reserved.update(
         kind
         for kind in ("appdata", "cache", "state")

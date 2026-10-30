@@ -1,0 +1,130 @@
+$ErrorActionPreference = 'Stop'
+$script:SavedPolicy = Get-ExecutionPolicy -Scope Process
+$script:ChangedPolicy = $false
+$script:ExitCode = 0
+try {
+    if ($script:SavedPolicy -eq 'Restricted' -or $script:SavedPolicy -eq 'AllSigned') {
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+        $script:ChangedPolicy = $true
+    }
+    $main = Join-Path $PSScriptRoot 'main-installer.{% if zipapp %}pyz{% else %}py{% endif %}'
+    $selection = ''
+    $selectorCount = 0
+    $clientCount = 0
+    $argumentIndex = 0
+    while ($argumentIndex -lt $args.Count) {
+        $argument = $args[$argumentIndex]
+        if ($argument -eq '--') { break }
+        if ($argument -in @('--main-ref', '--main-commit', '--release-version')) {
+            throw "$argument is not a supported public selector."
+        }
+        if ($argument -eq '--github-client') {
+            $clientCount++
+            if ($clientCount -gt 1) { throw 'Specify --github-client only once.' }
+            if ($argumentIndex + 1 -ge $args.Count -or $args[$argumentIndex + 1] -ne 'gh') {
+                throw '--github-client requires gh.'
+            }
+            $argumentIndex += 2
+            continue
+        }
+        if ($argument -eq '--main') {
+            $selection = 'main'
+            $selectorCount++
+        } elseif ($argument -eq '--version') {
+            $selection = 'release'
+            $selectorCount++
+            if ($argumentIndex + 1 -ge $args.Count -or
+                $args[$argumentIndex + 1] -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+                throw '--version requires an exact X.Y.Z version.'
+            }
+            $argumentIndex++
+        }
+        $argumentIndex++
+    }
+    if ($selectorCount -gt 1) {
+        throw 'Specify only one of --version or --main.'
+    }
+    if ([string]::IsNullOrEmpty($selection)) {
+        $selection = '{% if source_mode == "release" %}release{% elif source_mode == "main" %}main{% else %}local{% endif %}'
+    }
+{% if not has_repository %}    if ($selection -eq 'main' -or $selection -eq 'release') {
+        throw 'Remote source selection requires a configured GitHub repository.'
+    }
+{% endif %}{% if source_mode == "checkout" %}    if ($selection -eq 'local' -and -not (Test-Path -LiteralPath $main -PathType Leaf)) {
+        throw 'Generated installer is missing. Run `just make-artifacts` in the checkout.'
+    }
+{% elif source_mode not in ("release", "main") %}    if (-not (Test-Path -LiteralPath $main -PathType Leaf)) {
+        throw 'Selected standalone installer payload is missing beside this bootstrap.'
+    }
+{% endif %}    $uvPath = $env:UV
+    if ([string]::IsNullOrWhiteSpace($uvPath)) {
+        foreach ($entry in ($env:PATH -split ';')) {
+            if ([string]::IsNullOrEmpty($entry)) { $entry = (Get-Location).Path }
+            if (-not [System.IO.Path]::IsPathRooted($entry)) {
+                $entry = Join-Path (Get-Location).Path $entry
+            }
+            $candidate = [System.IO.Path]::GetFullPath((Join-Path $entry 'uv.exe'))
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                $uvPath = $candidate
+                break
+            }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($uvPath)) {
+        $candidate = Join-Path $HOME '.local\bin\uv.exe'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $uvPath = $candidate }
+    }
+    if ([string]::IsNullOrWhiteSpace($uvPath)) {
+        $installer = Join-Path $env:TEMP ('uv-install-' + [guid]::NewGuid().ToString('N') + '.ps1')
+        try {
+            Invoke-WebRequest https://astral.sh/uv/install.ps1 -OutFile $installer
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer
+            if ($LASTEXITCODE -ne 0) { throw 'Official uv installer failed.' }
+        } finally { Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue }
+        $uvPath = Join-Path $HOME '.local\bin\uv.exe'
+    }
+    if (-not [System.IO.Path]::IsPathRooted($uvPath) -or
+        -not (Test-Path -LiteralPath $uvPath -PathType Leaf)) {
+        throw 'Selected uv executable must be an available absolute application path.'
+    }
+    if ($selection -eq 'main' -or $selection -eq 'release') {
+        $fetcher = Join-Path $env:TEMP ('apprc-bootstrap-' + [guid]::NewGuid().ToString('N') + '.py')
+        $previousBootstrapUv = $env:APPRC_UV_PATH
+        try {
+            if ($selection -eq 'main') {
+                $fetcherContents = @'
+{{ main_fetcher }}
+'@
+            } else {
+                $fetcherContents = @'
+{{ release_fetcher }}
+'@
+            }
+            [System.IO.File]::WriteAllText(
+                $fetcher, $fetcherContents, [System.Text.UTF8Encoding]::new($false)
+            )
+            $env:APPRC_UV_PATH = $uvPath
+            & $uvPath run --no-project --python '>=3.12' --script $fetcher @args
+            $script:ExitCode = $LASTEXITCODE
+        } finally {
+            Remove-Item -LiteralPath $fetcher -Force -ErrorAction SilentlyContinue
+            if ($null -eq $previousBootstrapUv) {
+                Remove-Item Env:APPRC_UV_PATH -ErrorAction SilentlyContinue
+            } else {
+                $env:APPRC_UV_PATH = $previousBootstrapUv
+            }
+        }
+    } elseif ($selection -eq 'local' -and {% if zipapp %}$true{% else %}$false{% endif %}) {
+        $requirements = Join-Path $PSScriptRoot 'main-installer-requirements.txt'
+        & $uvPath run --no-project --python '>=3.12' --with-requirements $requirements python $main @args
+        $script:ExitCode = $LASTEXITCODE
+    } else {
+        & $uvPath run --no-project --python '>=3.12' --script $main @args
+        $script:ExitCode = $LASTEXITCODE
+    }
+} finally {
+    if ($script:ChangedPolicy) {
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy $script:SavedPolicy -Force
+    }
+}
+exit $script:ExitCode

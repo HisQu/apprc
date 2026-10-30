@@ -9,6 +9,7 @@ from pathlib import Path
 
 from dotenv.parser import parse_stream
 
+from apprc.definition.installation import InstallationWriteAuthority
 from apprc.user_files.app_home.locations import write_text_atomic
 from apprc.user_files.app_home.writes import (
     StaleEditError,
@@ -43,6 +44,7 @@ class SecretMigrationPlan:
     ordinary_text: str = field(repr=False)
     secret_text: str = field(repr=False)
     lock_roots: tuple[Path, ...] = ()
+    authority: InstallationWriteAuthority | None = None
 
 
 def plan_secret_migration(
@@ -112,7 +114,10 @@ def apply_secret_migration(plan: SecretMigrationPlan) -> None:
     """
     if not plan.keys:
         return
-    with managed_write_lock(*(plan.lock_roots or (plan.ordinary_path.parent,))):
+    with managed_write_lock(
+        *(plan.lock_roots or (plan.ordinary_path.parent,)),
+        authority=plan.authority,
+    ):
         for path, revision in (
             (plan.ordinary_path, plan.ordinary_revision),
             (plan.secret_path, plan.secret_revision),

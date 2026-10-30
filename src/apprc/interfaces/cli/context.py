@@ -15,11 +15,14 @@ import typer
 
 # == Internal ================================
 from apprc.definition.paths import AppPaths, Layout
+from apprc.definition.installation import InstallationInspection
 from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli._resolution import resolve_cli_config
 from apprc.public.app_rc import AppRC
 from apprc.runtime.logging import ResolutionLogger
 from apprc.runtime.resolution import ResolvedConfig
+from apprc.services.installation import InstallationManager
+
 
 APPRC_CONTEXT_META_KEY = "apprc.interfaces.cli.runtime_context"
 OptionsT = TypeVar("OptionsT", bound="CliRuntimeOptionsProtocol")
@@ -115,6 +118,73 @@ class CliRuntimeOptions:
             layout=options.layout,
             log_level=options.log_level,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class InstallationCommandContext:
+    """Captured installation authority for recovery commands without paths.
+
+    :param runtime_options: Parsed invocation controls.
+    :param cli_options: Host-owned CLI options, preserved without storing them
+        in ``ctx.obj``.
+    :param environment: Immutable process environment captured at callback time.
+    :param inspection: Read-only installation inspection, including invalid or
+        pending authority diagnostics.
+    :param manager: Host-bound manager used for explicit recovery operations.
+    :param path_error: Original placement failure retained by diagnostic doctor.
+    """
+
+    runtime_options: CliRuntimeOptions
+    cli_options: Any
+    environment: Mapping[str, str]
+    inspection: InstallationInspection
+    manager: InstallationManager
+    runtime_setup_skipped: bool = True
+    path_error: str | None = None
+
+
+def installation_command_context_from(
+    ctx: typer.Context,
+) -> InstallationCommandContext | None:
+    """Return nearest diagnostic/recovery installation context."""
+    current: Any = ctx
+    while current is not None:
+        context = getattr(current, "meta", {}).get(APPRC_CONTEXT_META_KEY)
+        if isinstance(context, InstallationCommandContext):
+            return context
+        current = getattr(current, "parent", None)
+    return None
+
+
+def prepare_installation_command_context(
+    ctx: typer.Context,
+    apprc: AppRC,
+    options: CliRuntimeOptionsProtocol,
+    *,
+    path_error: str | None = None,
+) -> InstallationCommandContext:
+    """Capture host installation authority without resolving business paths.
+
+    :param ctx: Active Typer context receiving recovery metadata.
+    :param apprc: Host declaration, not resolved business settings.
+    :param options: Captured invocation controls.
+    :param path_error: Placement failure that caused diagnostic fallback.
+    :return: Installation-only context with the original failure preserved.
+    """
+
+    parsed = CliRuntimeOptions.from_options(options)
+    environment = MappingProxyType(dict(environ))
+    manager = apprc.installation(environment=environment)
+    context = InstallationCommandContext(
+        runtime_options=parsed,
+        cli_options=options,
+        environment=environment,
+        inspection=manager.inspect(),
+        manager=manager,
+        path_error=path_error,
+    )
+    _store_apprc_context(ctx, context)
+    return context
 
 
 @dataclass(slots=True)
@@ -258,7 +328,7 @@ def cli_runtime_options_to_args(
 
 def _store_apprc_context(
     ctx: typer.Context,
-    context: CliRuntimeContext[Any],
+    context: CliRuntimeContext[Any] | InstallationCommandContext,
 ) -> None:
     """Attach AppRC context to Typer metadata for this CLI run."""
     ctx.meta[APPRC_CONTEXT_META_KEY] = context

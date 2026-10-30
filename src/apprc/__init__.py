@@ -4,6 +4,12 @@
 
 from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.app_config.workspaces import Workspaces
+from apprc.definition.installation import (
+    InstallationError,
+    InstallationInspection,
+    InstallationRecord,
+    InstallationSnapshot,
+)
 from apprc.definition.maintenance import (
     AppDataOperations,
     CacheOperations,
@@ -25,6 +31,8 @@ from apprc.public.app_rc import AppRC
 from apprc.public.config import Config, ConfigBase
 from apprc.public.field import field
 from apprc.runtime.resolution import ResolvedConfig
+from apprc.services.installation import InstallationManager
+from apprc.user_files.installation.discovery import installation_directory
 
 from . import cli, files, provenance, schema, tui, workspaces
 from ._exports import PUBLIC_NAMES as __all__

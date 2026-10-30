@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from itertools import product
 from pathlib import Path
 
@@ -36,7 +38,9 @@ def test_paths_capture_only_enabled_components(
         if mode == "native"
         else Layout.single_root(tmp_path / "root")
     )
-    paths = app.paths(ResolveOptions(layout=layout), environment={})
+    paths = app.paths(
+        ResolveOptions(layout=layout), environment=dict(os.environ)
+    )
     root = tmp_path / "root"
     native = PlatformDirs(
         appname=app.schema.app_id,
@@ -47,10 +51,14 @@ def test_paths_capture_only_enabled_components(
     assert paths.layout == layout
     assert paths.source == "invocation"
     native_paths = {
-        "config": Path(native.user_config_path),
-        "appdata": Path(native.user_data_path),
+        "config": Path(native.user_config_path) / "config"
+        if sys.platform in {"win32", "darwin"}
+        else Path(native.user_config_path),
+        "appdata": Path(native.user_data_path) / "appdata",
         "cache": Path(native.user_cache_path),
-        "state": Path(native.user_state_path),
+        "state": Path(native.user_state_path) / "state"
+        if sys.platform in {"win32", "darwin"}
+        else Path(native.user_state_path),
     }
     for kind, enabled in zip(_CAPABILITIES, capabilities, strict=True):
         actual = getattr(paths, f"{kind}_dir")

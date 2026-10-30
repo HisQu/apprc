@@ -14,6 +14,7 @@
   - [Application paths](#application-paths)
   - [Workspaces](#workspaces)
   - [Layouts](#layouts)
+  - [Installation](#installation)
   - [Maintenance](#maintenance)
 - [Inspect and edit configuration](#inspect-and-edit-configuration)
   - [ConfigManager](#configmanager)
@@ -274,10 +275,10 @@ are subordinate to state, not a fifth enabled category. With all booleans false,
 path resolution still returns an `AppPaths` record whose locations are `None`.
 `AppPaths.require(kind)` raises `ValueError` for a disabled location.
 
-`AppPaths` captures the chosen layout, source, and absolute component locations
-for one invocation. `paths()` is read-only: it neither creates directories nor
-repairs ownership. `ensure_path(kind)` creates only the requested enabled root,
-privately, and writes a `.apprc-owner.json` marker containing
+`AppPaths` captures the chosen layout, source, absolute component locations, and
+an installation snapshot for one invocation. `paths()` is read-only: it neither
+creates directories nor repairs ownership. `ensure_path(kind)` creates only the
+requested enabled root, privately, and writes a `.apprc-owner.json` marker containing
 `schema_version: 1`, `app_id`, and category. `ensure_path("state")` does not
 create logs; `ensure_path("logs")` initializes only the log location, with state
 ownership initialized first when logs are nested within state.
@@ -348,9 +349,78 @@ pair: root alone means single-root; `native` with root in the same pair is an
 error; higher-layer `native` ignores lower-layer root. Process environment
 normally outranks explicit dotenv files in reverse argument order; setting
 `env_file_overrides_os_environ=True` reverses that layer precedence. A managed
-dotenv cannot relocate itself. `AppPaths.source` records invocation,
-environment, declaration, or default selection. See the complete
-[bootstrap reference](References.md#layout-bootstrap).
+dotenv cannot relocate itself. When no explicit layout control wins, valid saved
+installation placement outranks the source declaration and native fallback.
+`AppPaths.source` records invocation, environment, installation, declaration, or
+default selection. Invocation overrides do not rewrite the saved record. See the
+complete [bootstrap reference](References.md#layout-bootstrap).
+
+## Installation
+
+Installation metadata preserves the choices needed to reconnect application
+files, repair a managed program, and run its saved uninstaller. It is separate
+from disposable operational state and from the Python environment containing the
+program. Clearing logs or cache cannot erase those installation choices.
+
+The model separates these lifetimes:
+
+| Part | Owner and lifetime |
+| --- | --- |
+| Program and dependencies | The package environment, such as a uv tool environment or a developer's editable pip environment. |
+| Config | Application-managed preferences and separately protected secrets; preserved across upgrades. |
+| Appdata | Application-managed user work, such as databases and annotations; preserved and backed up. |
+| Cache | Regenerable data; safe cleanup still requires ownership-aware application behavior. |
+| State | Disposable operational history, logs, window positions, and similar state that can survive a reboot. |
+| Installation | Durable layout/backend identities, saved management support, operation progress and recovery information. |
+| Workspaces | User-controlled project inputs and outputs, outside installation and resource cleanup. |
+
+Single-root groups only the enabled config, appdata, cache and state components.
+It does not move the Python environment, and it does not make the installation
+fully portable. Installation support stays at one native per-user/app address:
+
+| Platform | Installation directory |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%/<app-id>/installation` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/<app-id>/installation` |
+| macOS | `~/Library/Application Support/<app-id>/installation` |
+
+`installation.json` is the only installation authority. `.apprc-owner.json`
+continues to identify resource ownership; it is not another receipt or locator.
+Installation is not a `Paths` boolean and does not enable appdata. An application
+can declare only cache, or no managed resources at all, while using installation
+support.
+
+`MyRC.installation().inspect()` reads this address without resolving business
+settings or creating files. A missing record means an unmanaged installation:
+ordinary `pip install -e .` remains usable without uv or a bootstrap record.
+Malformed, wrong-identity, unsupported or pending authority is instead an
+explicit recovery condition, not permission to silently select another store.
+The grouped installation show/doctor commands remain available for diagnosis.
+
+When saved placement wins, AppRC uses the recorded absolute locations—even for
+OS-native mode. Changing `XDG_CONFIG_HOME` or a cache base does not silently
+repoint that installation. Changing the installation discovery base itself, such
+as `XDG_DATA_HOME` or the OS profile, requires explicit relocation; AppRC does not
+search other profiles. A saved helper operates against its adjacent record.
+
+An installer offers the layout on first install and retains it on reinstall.
+An explicit switch records earlier owned locations as retired resources; it
+does not automatically move arbitrary databases or project data. Linux's old
+native appdata parent needs an explicit ownership-preserving migration before
+using the new `appdata/` child beside `installation/`.
+
+Program-only uninstall retains all resource categories and reconnectable
+installation support, including cache and state. Complete removal requires an
+exact preview and consent. Unknown content remains protected; incomplete cleanup
+retains recovery authority unless the user explicitly chooses to leave named
+resources unmanaged. Workspaces, editable checkouts, shared uv and shared Python
+are never implicit removal targets.
+
+Install, repair and removal serialize through the installation operation lock.
+Resource and shared-workspace writes keep their stable sibling locks, so two
+invocations addressing the same explicit root still coordinate even if their
+native discovery bases differ. An old process cannot recreate resources after
+its captured installation generation has been retired; it must restart.
 
 ## Maintenance
 
@@ -520,8 +590,29 @@ the same `apprc-core` version. The [installation instructions](../README.md#inst
 explain which distribution to choose; maintainers can inspect the
 [package ownership rules](Development.md#source-ownership).
 
-AppRC does not build installers. An application declares its browser launcher
-and CLI entry points and packages its own resources. It can build a Windows
-`Setup.exe` containing Python and locked wheels, as described in the
+The optional `apprc-core[distribution]` authoring extra provides
+`apprc.distribution`: metadata/capability inspection, strict external templates,
+and deterministic generation of native install, launch and uninstall entries.
+Its shared standalone runtime is bundled with the consuming repository's
+ordinary Python payload. Bootstrapping therefore does not require AppRC or the
+application to be installed first. Jinja belongs to author generation, not core
+runtime imports or the installed remover.
+
+The application owns `make_artifacts.py` and its `app_lifecycle.install`,
+`app_lifecycle.uninstall` and action modules. Those modules compose public
+planning, checkpoint and commit functions in ordinary Python. Adding a project
+prerequisite or cleanup action means making an explicit call at the right point,
+not subclassing a lifecycle framework or registering another hook system.
+Buildben seeds this structure; AppRC does not require Buildben.
+
+The app wheel excludes the author-only `<app>_distr` package. The checkout and
+sdist include its generator, payload, required artifacts and root wrappers.
+After author changes, regenerate once with `just make-artifacts`; CI uses the
+zero-write `just check-artifacts`. Generation never runs implicitly from a PEP
+517 build.
+
+These are uv-based bootstrap installers, not compiled Python-environment
+bundles. A project can independently build a Windows `Setup.exe` containing
+Python and locked wheels using the
 [Windows installer guide](How-To-User-Guides.md#build-a-windows-installer).
-The application controls its identity, shortcuts, and installed files.
+That project still owns its program identity, shortcuts and files.

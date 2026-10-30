@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 # == 3rd Party ===============================
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, HorizontalScroll, Vertical
+from textual.screen import Screen
 from textual.widgets import (
     Button,
     DataTable,
@@ -84,8 +85,8 @@ if TYPE_CHECKING:
     from apprc.public.app_rc import AppRC
 
 
-class ConfigEditorApp(App[None]):
-    """Small terminal UI for editing AppRC dotenv override files."""
+class ConfigEditorScreen(Screen[None]):
+    """Reusable config editor screen for standalone and launcher applications."""
 
     CSS = """
     #workspace-list {
@@ -133,6 +134,7 @@ class ConfigEditorApp(App[None]):
         initial_workspace: str | None = None,
         active_workspace_root: Path | None = None,
         config_group_name: str = "config",
+        on_exit: Callable[[], None] | None = None,
     ) -> None:
         """Keep workspace table and field metadata while editing dotenv state.
 
@@ -148,8 +150,10 @@ class ConfigEditorApp(App[None]):
             the current invocation.
         :param config_group_name: Config command group name used in generated
             guidance.
+        :param on_exit: Optional host callback used when the screen is dismissed.
         """
         super().__init__()
+        self._on_exit = on_exit
         self.apprc = apprc
         self.manager = manager or apprc.manage()
         self.paths = self.manager.paths
@@ -286,7 +290,10 @@ class ConfigEditorApp(App[None]):
                 severity="warning",
             )
             return
-        await super().action_quit()
+        if self._on_exit is not None:
+            self._on_exit()
+        else:
+            self.app.pop_screen()
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Switch the edited dotenv file when a workspace is selected."""
@@ -332,7 +339,7 @@ class ConfigEditorApp(App[None]):
             )
             return
         env_key = selected.owner.env_key(selected.spec.name)
-        self.push_screen(
+        self.app.push_screen(
             ConfigValueEditScreen(
                 spec=selected.spec,
                 env_key=env_key,
@@ -526,7 +533,7 @@ class ConfigEditorApp(App[None]):
         """
         if not plan.warnings:
             return True
-        action = await self.push_screen_wait(
+        action = await self.app.push_screen_wait(
             ConfirmScreen(
                 title="Duplicate dotenv assignments",
                 message=f"{plan.warnings[0]}\n\nProceed?",
@@ -1135,3 +1142,37 @@ class ConfigEditorApp(App[None]):
             "selector at its source. Setup is not a selector repair."
         )
         return "\n".join(lines)
+
+
+class ConfigEditorApp(App[None]):
+    """Standalone Textual host that runs the reusable editor screen."""
+
+    def __init__(
+        self,
+        *,
+        apprc: AppRC,
+        workspace_manager: WorkspaceManager | None = None,
+        manager: ConfigManager | None = None,
+        workspace_registry_error: str | None = None,
+        workspace_selector_issue: WorkspaceSelectorIssue | None = None,
+        initial_workspace: str | None = None,
+        active_workspace_root: Path | None = None,
+        config_group_name: str = "config",
+    ) -> None:
+        """Create the standalone host around one configured editor screen."""
+        super().__init__()
+        self.editor_screen = ConfigEditorScreen(
+            apprc=apprc,
+            workspace_manager=workspace_manager,
+            manager=manager,
+            workspace_registry_error=workspace_registry_error,
+            workspace_selector_issue=workspace_selector_issue,
+            initial_workspace=initial_workspace,
+            active_workspace_root=active_workspace_root,
+            config_group_name=config_group_name,
+            on_exit=self.exit,
+        )
+
+    def on_mount(self) -> None:
+        """Show the editor screen inside this application event loop."""
+        self.push_screen(self.editor_screen)

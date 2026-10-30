@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+from pathlib import Path
 
 import typer
 
@@ -39,6 +42,44 @@ def build_app(
     def run_cmd(ctx: typer.Context) -> None:
         """Print the config resolved for this process."""
         typer.echo(json.dumps(_runtime_payload(_state(ctx)), indent=2))
+
+    @app.command("launcher")
+    def launcher_cmd(ctx: typer.Context) -> None:
+        """Open management and the example command in one Textual event loop."""
+        context = rc.cli.installation_command_context_from(ctx)
+        if context is None:
+            raise RuntimeError("Launcher recovery context was not prepared.")
+        controls = context.runtime_options
+        command = Path(sys.executable).with_name(
+            "apprc-user-dotenv" + (".exe" if os.name == "nt" else "")
+        )
+        arguments = tuple(rc.cli.cli_runtime_options_to_args(controls))
+        rc.tui.run_launcher(
+            MyRC,
+            spec=rc.tui.LauncherSpec(
+                title="User preferences",
+                actions=(
+                    rc.tui.LauncherAction(
+                        id="run",
+                        label="Print active configuration",
+                        argv=lambda _context, _dry_run: (
+                            str(command),
+                            *arguments,
+                            "run",
+                        ),
+                        interactive=True,
+                    ),
+                ),
+            ),
+            options=rc.ResolveOptions(
+                workspace=controls.workspace,
+                layout=controls.layout,
+                env_files=controls.env_files,
+                env_file_overrides_os_environ=controls.env_file_overrides_os_environ,
+                load_dotenv_layers=controls.load_dotenv_layers,
+            ),
+            environment=context.environment,
+        )
 
     return app
 

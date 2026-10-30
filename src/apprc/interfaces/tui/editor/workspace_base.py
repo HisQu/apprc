@@ -5,18 +5,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from apprc.interfaces.tui import ConfigEditorApp
+    from apprc.interfaces.tui.editor.app import ConfigEditorScreen
     from apprc.services.workspaces import WorkspaceManager
 
 
 class WorkspaceWorkflowBase:
     """Store the editor and its workspace manager for TUI workflows.
 
-    :param editor: Mounted config editor app.
+    :param editor: Reusable config editor screen.
     """
 
-    def __init__(self, editor: "ConfigEditorApp") -> None:
-        """Capture the editor's explicitly configured workspace manager."""
+    def __init__(self, editor: "ConfigEditorScreen") -> None:
+        """Capture the editor screen's explicitly configured workspace manager."""
         self.editor = editor
 
     def require_workspace_manager(self) -> WorkspaceManager:

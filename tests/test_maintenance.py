@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.installation import InstallationSnapshot
 from apprc.definition.maintenance import (
     AppDataOperations,
     CacheOperations,
@@ -44,6 +45,7 @@ def _paths(root: Path, *, logs: Path | None = None) -> AppPaths:
         cache_dir=root / "cache",
         state_dir=root / "state",
         logs_dir=logs,
+        installation=InstallationSnapshot(root / "installation", None, None),
     )
 
 
@@ -91,6 +93,9 @@ def test_ownership_rejects_marker_mismatch_and_symlink_roots(
         cache_dir=link,
         state_dir=None,
         logs_dir=None,
+        installation=InstallationSnapshot(
+            tmp_path / "installation", None, None
+        ),
     )
     with pytest.raises(ValueError, match="link"):
         ensure_owned_path(spec, unsafe, "cache")
@@ -442,6 +447,9 @@ def test_manager_rejects_overlapping_enabled_category_roots(
         cache_dir=cache_root,
         state_dir=None,
         logs_dir=None,
+        installation=InstallationSnapshot(
+            tmp_path / "installation", None, None
+        ),
     )
     with pytest.raises(ValueError, match="category roots overlap"):
         MaintenanceManager(spec, app_paths=paths)
@@ -515,3 +523,89 @@ def test_config_purge_removes_only_complete_planned_inventory(
     assert result.warnings == ()
     assert not root.exists()
     assert managed_lock_path(root).is_file()
+
+
+@pytest.mark.parametrize("native_base_changed", [False, True])
+def test_pending_operation_context_initializes_captured_maintenance_paths(
+    tmp_path: Path,
+    native_base_changed: bool,
+) -> None:
+    from uuid import uuid4
+
+    from apprc import AppRC
+    from apprc.definition.installation import (
+        InstallationError,
+        InstallationIdentity,
+        InstallationPlacement,
+        InstallationSource,
+        OperationContext,
+        UvToolTarget,
+    )
+    from apprc.user_files.installation.operations import (
+        begin_operation,
+        plan_install,
+    )
+
+    environment = {
+        "HOME": str(tmp_path),
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+    }
+    app = AppRC(app_id="maintenance-context", paths=Paths(cache=True))
+    installation = app.installation(environment=environment)
+    placement = InstallationPlacement(
+        Layout.single_root(tmp_path / "application"),
+        cache_dir=tmp_path / "application" / "cache",
+        capabilities=frozenset({"cache"}),
+    )
+    identity = InstallationIdentity(
+        "maintenance-context",
+        "example-package",
+        "example_package",
+        None,
+        ("example-command",),
+    )
+    source = InstallationSource("editable", str(tmp_path / "project"))
+    backend = UvToolTarget(
+        tmp_path / "uv", tmp_path / "tools", tmp_path / "tool-bin"
+    )
+    plan = plan_install(
+        identity, source, placement, backend, inspection=installation.inspect()
+    )
+    begin_operation(plan)
+    context = OperationContext(
+        installation.directory, plan.operation_id, plan.generation_id, placement
+    )
+    provider_environment = dict(environment)
+    if native_base_changed:
+        provider_environment.update(
+            {
+                "HOME": str(tmp_path / "new-home"),
+                "USERPROFILE": str(tmp_path / "new-home"),
+                "LOCALAPPDATA": str(tmp_path / "new-local"),
+                "XDG_DATA_HOME": str(tmp_path / "new-data"),
+            }
+        )
+
+    manager = app.maintain(environment=provider_environment, context=context)
+    assert placement.cache_dir is not None
+    assert manager.app_paths.cache_dir == placement.cache_dir
+    assert manager.app_paths.installation.directory == installation.directory
+    assert manager.ensure_path("cache") == placement.cache_dir
+    assert (
+        inspect_ownership(placement.cache_dir, identity.app_id, "cache")
+        == "owned"
+    )
+    if native_base_changed:
+        new_discovery = app.installation(
+            environment=provider_environment
+        ).directory
+        assert new_discovery != installation.directory
+        assert not new_discovery.exists()
+
+    stale = OperationContext(
+        installation.directory, uuid4(), plan.generation_id, placement
+    )
+    with pytest.raises(
+        InstallationError, match="Pending operation authorization is stale"
+    ):
+        app.maintain(environment=provider_environment, context=stale)

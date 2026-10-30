@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.installation import InstallationWriteAuthority
 from apprc.definition.paths import AppPaths
 from apprc.user_files.app_home.locations import (
     AppRCDirectoryError,
@@ -14,6 +15,7 @@ from apprc.user_files.app_home.locations import (
     ensure_text_file,
 )
 from apprc.user_files.env_files.secrets import secret_companion_path
+from apprc.user_files.app_home.writes import managed_write_lock
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,4 +68,10 @@ class AppFiles:
                     "AppRC-managed file parent exists but is not a directory: "
                     f"{parent}"
                 )
-        return ensure_text_file(path)
+        with managed_write_lock(
+            path.parent,
+            authority=InstallationWriteAuthority(
+                self.spec.app_id, self.paths.installation
+            ),
+        ):
+            return ensure_text_file(path)

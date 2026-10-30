@@ -23,6 +23,11 @@
   - [Save and repair secret settings](#save-and-repair-secret-settings)
   - [Add a Gradio settings page](#add-a-gradio-settings-page)
   - [Build a Windows installer](#build-a-windows-installer)
+- [Install and recover managed applications](#install-and-recover-managed-applications)
+  - [Install from a checkout](#install-from-a-checkout)
+  - [Keep or switch the saved layout](#keep-or-switch-the-saved-layout)
+  - [Inspect or repair installation](#inspect-or-repair-installation)
+  - [Remove a managed program](#remove-a-managed-program)
 - [Use settings across application code](#use-settings-across-application-code)
   - [Pass several settings sections together](#pass-several-settings-sections-together)
   - [Import settings from a dependency](#import-settings-from-a-dependency)
@@ -573,6 +578,12 @@ these inputs. Explicit dotenv files are separate layers, and their ordering
 relative to process environment follows `env_file_overrides_os_environ`.
 `AppPaths.source` records which layer supplied the chosen layout.
 
+These are invocation controls, not a persistent layout setter. A valid saved
+installation record supplies placement when no invocation/environment control
+wins, before the source declaration. Use the application's
+[installer layout choice](#keep-or-switch-the-saved-layout) to persist a switch;
+do not put relocation controls into the managed user dotenv it would relocate.
+
 ## Supply application maintenance operations
 
 AppRC can describe basic information for each enabled path, but application
@@ -786,6 +797,161 @@ Start menu shortcut at `pythonw.exe -m my_app.desktop`. Test packaged
 resources, first-run setup, browser launch, and upgrade on a Windows account
 without Python or network access. AppRC supplies the editor and file rules;
 the application owns its installer and entry points.
+
+<br>
+
+# Install and recover managed applications
+
+These guides apply to an application shipping AppRC-generated root wrappers.
+Examples use `demo` as its installed command; use the actual application command
+and project paths. The [installation explanation](Explanations.md#installation)
+separates application resources, durable management metadata and the Python
+environment.
+
+> [!IMPORTANT]
+> The repository targets AppRC 0.31.0. A source version bump or `git pull` does
+> not publish that version. Use the project's verified development source pin
+> until matching packages are available; do not remove that pin merely because
+> the checkout's version changed.
+
+## Install from a checkout
+
+From the application repository, run the native entry:
+
+```shell
+./app-install.sh
+```
+
+On Windows, use:
+
+```powershell
+.\app-install.cmd
+```
+
+The first install offers OS-native locations or a single root and shows the
+resolved resource/installation paths. The choice controls enabled config,
+appdata, cache and state—not uv's Python environment or dependencies. Installation
+support remains at its fixed native address in either mode. Only declared
+components are initialized; a cache-only application does not acquire config or
+appdata directories.
+
+Checkout installation is genuinely editable: uv installs the current application
+project, including dirty source changes, rather than an archive of committed
+HEAD. `uv sync --locked` prepares the developer's project environment; it does
+not run this installer or choose a persistent resource layout. Plain
+`python -m pip install -e .` remains a supported unmanaged alternative and does
+not need an installation record.
+
+If tracked generated files are missing or stale, the author runs
+`just make-artifacts`. Installers do not silently fall back to remote code when
+the checkout payload is absent.
+
+## Keep or switch the saved layout
+
+Re-running the installer retains saved placement by default. To select OS-native
+locations explicitly:
+
+```shell
+./app-install.sh --layout native
+```
+
+To persist a single root:
+
+```shell
+./app-install.sh --layout single-root --root "/absolute/path/demo-files"
+```
+
+Windows uses the same arguments:
+
+```powershell
+.\app-install.cmd --layout single-root --root "D:\demo-files"
+```
+
+Do not combine `native` with `--root`; single-root requires an explicit root.
+Saved OS-native paths remain the absolute locations chosen at installation time,
+not a later recomputation from changed config/cache environment variables.
+
+A switch records previous owned locations as retired resources; it does not
+silently move a database, credentials or project files. Review an explicit
+application migration when those files should move. Changing the native
+installation discovery base or OS profile itself also requires explicit
+relocation rather than a search through other users' directories.
+
+## Inspect or repair installation
+
+The maintenance group is independent of missing business settings:
+
+```shell
+demo installation show --json
+demo installation doctor --json
+```
+
+Inspection does not initialize directories or repair invalid authority.
+An incomplete replacement reports observed live state and the last successful
+history separately; it must not claim the old program is still installed.
+Keep the record and recovery files while diagnosing a failure.
+
+Use `demo installation repair` for the matching saved repair procedure.
+When a matching installer must be supplied explicitly, pass
+`demo installation repair --installer src/demo_distr/artifacts/installer/main-installer.py`
+from the corresponding checkout. Repair does not silently download a newer
+application-specific remover. If the program itself is missing, re-run the
+matching root installer or the saved recovery command reported at failure.
+
+For recognized legacy layouts, stop old consumers and preview
+`demo installation migrate --dry-run` before applying migration. Unknown
+databases/payload need an inventory supplied by the owning application; generic
+migration does not treat every descendant as AppRC-owned.
+
+## Remove a managed program
+
+Preview program-only removal before confirming it:
+
+```shell
+demo installation uninstall --dry-run
+demo installation uninstall
+```
+
+This preserves all resource categories and reconnectable installation support,
+including cache and state. Once the console command is gone, use the saved
+uninstall entry or the checkout's `app-uninstall.sh`/`app-uninstall.cmd` for
+further inspection and cleanup.
+
+For a cache-only application with no other retired resources, preview and request
+complete removal through that remaining wrapper:
+
+```shell
+./app-uninstall.sh --dry-run --complete --category cache
+./app-uninstall.sh --complete --category cache
+```
+
+Select only the categories actually owned by the application, including any
+retired locations shown in the preview. Unattended removal additionally requires
+`--yes`; that flag is not implied by a previous dry-run.
+
+> [!CAUTION]
+> Complete removal can delete persistent configuration and appdata when those
+> categories are explicitly selected. Back up user work first. Unknown content,
+> unavailable provider inventories and stale ownership block unsafe deletion;
+> they are not treated as successful cleanup.
+
+An explicit `--forget-retained` decision leaves the named retained files
+unmanaged; it does not delete them. Review the preview before making that choice.
+Editable checkouts, user workspaces, other uv tools, shared uv and shared Python
+are never implicit cleanup targets. The independent controller waits for the
+actual installed caller/foreground children to exit before deleting its program
+environment.
+CLI and launcher removal use the verified saved application procedure, so
+repository-authored cleanup is not bypassed. A retained record can later complete
+independent cleanup even though its program has already been removed.
+
+The controller, its base Python, working directory and private temporary files
+must all remain outside the program and resource paths being removed. This is
+checked before cleanup and again before the controller signals readiness. If
+placement blocks removal, start from a surviving directory and use a temporary
+location outside the selected targets (`TMPDIR` on Linux/macOS, `TEMP`/`TMP` on
+Windows). Do not relocate shared uv or Python into the application's own data
+directories.
 
 <br>
 
@@ -1047,6 +1213,106 @@ checks. It does not run application state factories or contact external services
 
 ## Migrate existing applications
 
+### From AppRC 0.30
+
+Upgrade the application and regenerate its authored management artifacts.
+Installation is a separate durable component, not a subdirectory of disposable
+state. Existing OS-native Linux appdata at the parent requires explicit migration
+to the `appdata/` child before new initialization. Existing Buildben receipts
+require a validated cutover to `installation.json`, with old removal procedures
+quiescent and retired; never leave two active authorities.
+
+Saved placement outranks declared defaults. Use installer `--layout`/`--root`
+to persist an explicit switch, or invocation controls for a temporary override.
+Callers manually constructing `AppPaths` must now preserve its `installation`
+snapshot; prefer `MyRC.paths(...)` rather than constructing or rediscovering it
+inside adapters. Keep old files and receipt/recovery state until migration has
+completed and been verified.
+
+### Supply a project-owned migration inventory
+
+The generic `installation migrate --dry-run` recognizes AppRC-owned files, not
+your database or annotation format. If it reports unknown payload, add an
+application-owned migration command that supplies an exact `MigrationInventory`
+to `MyRC.installation().plan_migration(...)`. Do not solve the refusal by
+claiming every descendant, adopting the old parent as the new child, or calling
+`ensure_path("appdata")` first.
+
+> [!CAUTION]
+> Execution moves the selected files and retires the old ownership marker.
+> Stop all old consumers and back up the source before consent. A database
+> inventory must account for its transaction/checkpoint and journal files; moving
+> only the main file of a live database is not a safe migration.
+
+<details>
+<summary>Example: appdata-only Linux application with one owned JSON file</summary>
+
+This fragment belongs to the application that declares `MyRC`. It assumes only
+`Paths(appdata=True)`, the old native parent layout and the exact known file
+`annotations.json`. Other declarations/formats need their own complete inventory.
+Unknown children deliberately block this example rather than being adopted.
+
+```python
+from apprc.definition.installation import (
+    InstallationError,
+    InstallationPlacement,
+    InventoryEntry,
+    MigrationInventory,
+)
+from apprc.definition.paths import Layout
+from apprc.user_files.app_home.writes import file_revision
+
+manager = MyRC.installation()
+source = manager.directory.parent
+destination = source / "appdata"
+files = (source / "annotations.json", source / ".apprc-owner.json")
+entries = tuple(
+    InventoryEntry(path, "file", file_revision(path), "appdata")
+    for path in files
+)
+if any(entry.revision is None for entry in entries):
+    raise InstallationError("A required migration file is missing; inspect the source.")
+inventory = MigrationInventory(
+    source,
+    destination,
+    entries,
+    tuple(destination / path.name for path in files),
+    unknown=tuple(path for path in source.iterdir() if path not in files),
+)
+placement = InstallationPlacement(
+    Layout.native(),
+    appdata_dir=destination,
+    capabilities=frozenset({"appdata"}),
+)
+plan = manager.plan_migration(placement, inventory=inventory)
+print(plan)
+```
+
+Planning reads revisions but does not create directories, move files or acquire a
+managed backend. After the application command obtains explicit consent and
+confirms old consumers are stopped, execute that reviewed plan:
+
+```python
+result = manager.migrate(plan, quiescent=True)
+```
+
+The implementation takes old/new coordination locks, rechecks revisions, moves
+only enumerated files and activates placement. It does not recursively migrate
+everything below `source`. An unmanaged pip application stays unmanaged by uv;
+the migration's coordination record does not assert a tool environment exists.
+
+</details>
+
+After interruption, inspect again and use `manager.resume_migration(...)` with
+the saved migration operation UUID and the **current** record revision. Do not
+reuse a stale revision or restart old removal entries. Legacy Buildben conversion
+also requires verified package/backend evidence and staged replacement support;
+use the matching installer adapter rather than treating its receipt as appdata.
+An activated migration can have a usable record while exact inert-file cleanup
+is still pending: inspect `record.migration.cleanup_complete`, not only `status`.
+
+### From AppRC 0.29 and earlier
+
 AppRC 0.30 is a breaking API, CLI, environment, and config-format cutover.
 Update all callers and user-facing instructions before upgrading applications:
 
@@ -1065,12 +1331,12 @@ and registry-backed `Workspaces` both require `Paths(config=True)`. Use native
 or single-root locations deliberately. Update command scripts and CI invocations
 to the new grouped CLI and bootstrap controls.
 
-**There is no automatic data migration.** AppRC does not search old directories,
-move or rename user files, reinterpret the old registry, or delete old data.
-Do not rename old `apprc.storage.*` files or expect an old registry to be
-upgraded. Keep old files untouched. If users need their prior data, separately
-review and export it using the application that owns its format, then explicitly
-choose new paths and recreate registrations. Never place conversion in normal
+**There is no automatic migration of these pre-0.30 formats.** AppRC does not
+search old directories or reinterpret the old storage registry. Do not rename
+old `apprc.storage.*` files or expect an old registry to be upgraded. Keep those
+files untouched. If users need their prior data, separately review and export it
+using the application that owns its format, then explicitly choose new paths and
+recreate registrations. Never place conversion in normal
 startup or upgrade hooks. The current `config secrets` migration workflow is
 only for declared secret assignments and does not convert layouts, filenames,
 or registry schemas.

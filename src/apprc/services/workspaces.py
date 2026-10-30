@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from pathlib import Path
 from types import MappingProxyType
 
 from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.installation import InstallationWriteAuthority
 from apprc.definition.paths import AppPaths
 from apprc.definition.resolution import ResolveOptions
 from apprc.user_files.app_home.application import AppFiles
@@ -72,6 +74,20 @@ class WorkspaceManager:
         )
         self._files = AppFiles(spec, self.app_paths)
 
+    def _write_lock(
+        self,
+        *roots: Path,
+        private_directories: tuple[Path, ...] = (),
+    ) -> AbstractContextManager[None]:
+        """Revalidate this invocation after acquiring stable workspace locks."""
+        return managed_write_lock(
+            *roots,
+            private_directories=private_directories,
+            authority=InstallationWriteAuthority(
+                self.spec.app_id, self.app_paths.installation
+            ),
+        )
+
     def _require_registry(self) -> None:
         """Reject persistent registry operations for direct-only declarations."""
         if not self.spec.require_workspaces().registry:
@@ -114,9 +130,9 @@ class WorkspaceManager:
         resolved = resolve_workspace_root_path(root, base=Path.cwd())
         assert_no_links(resolved)
         self._reject_managed_overlap(resolved)
-        create_private_directory_if_missing(resolved)
         assert_no_links(resolved / self.spec.workspace_dotenv_filename)
-        with managed_write_lock(resolved):
+        with self._write_lock(resolved):
+            create_private_directory_if_missing(resolved)
             ensure_workspace_dotenv_file(
                 resolved, filename=self.spec.workspace_dotenv_filename
             )
@@ -130,7 +146,7 @@ class WorkspaceManager:
         resolved = resolve_workspace_root_path(root, base=base)
         assert_no_links(resolved)
         self._reject_managed_overlap(resolved)
-        with managed_write_lock(base, resolved, private_directories=(base,)):
+        with self._write_lock(base, resolved, private_directories=(base,)):
             ensure_owned_path(self.spec, self.app_paths, "config")
             current = workspace_registry.register_workspace(
                 name=name,
@@ -168,7 +184,7 @@ class WorkspaceManager:
             self._reject_managed_overlap(candidate)
             return candidate
         registry_path = self.registry_path()
-        with managed_write_lock(
+        with self._write_lock(
             registry_path.parent, private_directories=(registry_path.parent,)
         ):
             ensure_owned_path(self.spec, self.app_paths, "config")
@@ -180,9 +196,7 @@ class WorkspaceManager:
         """Rename a registry entry without moving workspace data."""
         self._require_registry()
         path = self.registry_path()
-        with managed_write_lock(
-            path.parent, private_directories=(path.parent,)
-        ):
+        with self._write_lock(path.parent, private_directories=(path.parent,)):
             ensure_owned_path(self.spec, self.app_paths, "config")
             return workspace_registry.rename_workspace(
                 current_name=old, name=new, path=path
@@ -199,7 +213,7 @@ class WorkspaceManager:
             raise ValueError(
                 f"Workspace root is not an existing directory: {resolved}"
             )
-        with managed_write_lock(
+        with self._write_lock(
             registry_path.parent,
             resolved,
             private_directories=(registry_path.parent,),
@@ -223,7 +237,7 @@ class WorkspaceManager:
             registry_path
         )
         root = current.selected(name).root
-        with managed_write_lock(
+        with self._write_lock(
             registry_path.parent,
             root,
             private_directories=(registry_path.parent,),
@@ -237,7 +251,7 @@ class WorkspaceManager:
         """Forget archive metadata without deleting the archive file."""
         self._require_registry()
         registry_path = self.registry_path()
-        with managed_write_lock(
+        with self._write_lock(
             registry_path.parent, private_directories=(registry_path.parent,)
         ):
             ensure_owned_path(self.spec, self.app_paths, "config")
@@ -260,7 +274,7 @@ class WorkspaceManager:
         self._reject_managed_overlap(destination)
         assert_no_links(source)
         self._reject_managed_overlap(source)
-        with managed_write_lock(registry_path.parent, source, destination):
+        with self._write_lock(registry_path.parent, source, destination):
             ensure_owned_path(self.spec, self.app_paths, "config")
             return move_workspace(
                 name=name, destination=destination, path=registry_path
@@ -294,7 +308,7 @@ class WorkspaceManager:
             raise ValueError(
                 "Workspace archive destination and root must not overlap."
             )
-        with managed_write_lock(registry_path.parent, root, archive.parent):
+        with self._write_lock(registry_path.parent, root, archive.parent):
             ensure_owned_path(self.spec, self.app_paths, "config")
             result = archive_workspace_directory(
                 source_root=root,
@@ -361,7 +375,7 @@ class WorkspaceManager:
                 workspace_dotenv_filename=self.spec.workspace_dotenv_filename,
             )
 
-        with managed_write_lock(
+        with self._write_lock(
             registry_path.parent,
             resolved,
             private_directories=(registry_path.parent,),

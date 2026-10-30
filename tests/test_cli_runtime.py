@@ -403,3 +403,35 @@ def test_config_policy_can_override_runtime_independent_actions() -> None:
 
 def _ctx(command_name: str | None) -> typer.Context:
     return cast(typer.Context, _FakeContext(command_name))
+
+
+def test_installation_recovery_preserves_app_owned_ctx_obj() -> None:
+    kit = build_config_only_example_app()
+    app = typer.Typer()
+    marker = {"application": "owned"}
+    args = ["installation", "show"]
+    runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](
+        kit,
+        args_provider=lambda: args,
+    )
+    sessions: list[CliRuntimeSession[ConfigOnlyExampleState]] = []
+    objects_after_prepare: list[object | None] = []
+
+    @app.callback()
+    def host_callback(ctx: typer.Context) -> None:
+        ctx.obj = marker
+        sessions.append(runtime.prepare(ctx, CliRuntimeOptions()))
+        objects_after_prepare.append(ctx.obj)
+
+    installation = typer.Typer()
+    app.add_typer(installation, name="installation")
+
+    @installation.command("show")
+    def show() -> None:
+        typer.echo("installation diagnostics available")
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert objects_after_prepare == [marker]
+    assert sessions[0].runtime_setup_skipped

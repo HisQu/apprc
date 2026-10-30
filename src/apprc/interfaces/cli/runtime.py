@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 # == 3rd Party ===============================
 import typer
 
+from apprc.definition.installation import InstallationError
 from apprc.definition.maintenance import MaintenanceHandlers
 from apprc.interfaces.cli._typer_utils import (
     args_after_cli_command,
@@ -22,15 +23,17 @@ from apprc.interfaces.cli._typer_utils import (
     run_typer_app,
     structural_help_requested,
 )
+from apprc.interfaces.cli.context import (
+    CliRuntimeContext,
+    CliRuntimeOptionsProtocol,
+    InstallationCommandContext,
+    prepare_cli_runtime_context,
+    prepare_installation_command_context,
+)
 from apprc.interfaces.cli.config_command.state import (
     DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS,
     ConfigRuntimePolicy,
     DefaultConfigCliState,
-)
-from apprc.interfaces.cli.context import (
-    CliRuntimeContext,
-    CliRuntimeOptionsProtocol,
-    prepare_cli_runtime_context,
 )
 from apprc.interfaces.cli.options import (
     COMMON_CLI_FLAG_OPTIONS,
@@ -38,6 +41,7 @@ from apprc.interfaces.cli.options import (
 )
 from apprc.public.app_rc import AppRC
 from apprc.runtime.logging import ResolutionLogger
+
 
 if TYPE_CHECKING:
     from apprc.interfaces.cli.config_command import ConfigSelectorContext
@@ -70,7 +74,7 @@ class CliRuntimeSession(Generic[StateT]):
         intentionally skipped.
     """
 
-    apprc_context: CliRuntimeContext[Any]
+    apprc_context: CliRuntimeContext[Any] | InstallationCommandContext
     state: StateT | None = None
 
     @property
@@ -382,16 +386,30 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :param options: CLI option object carrying AppRC-compatible fields.
         :return: Prepared session metadata and optional app state.
         """
+        if self._installation_command_requested(ctx):
+            diagnostic_context = prepare_installation_command_context(
+                ctx, self.apprc, options
+            )
+            return CliRuntimeSession(apprc_context=diagnostic_context)
         skip_runtime_setup = self._request_skips_runtime(ctx)
-        apprc_context = prepare_cli_runtime_context(
-            ctx,
-            self.apprc,
-            options,
-            skip_runtime_setup=skip_runtime_setup,
-            workspace_required=self.workspace_required,
-            setup_logging=self.setup_logging,
-            logger=self.logger,
-        )
+        try:
+            apprc_context = prepare_cli_runtime_context(
+                ctx,
+                self.apprc,
+                options,
+                skip_runtime_setup=skip_runtime_setup,
+                workspace_required=self.workspace_required,
+                setup_logging=self.setup_logging,
+                logger=self.logger,
+            )
+        except InstallationError as error:
+            if not self._root_doctor_requested(ctx):
+                raise
+            diagnostic_context = prepare_installation_command_context(
+                ctx, self.apprc, options, path_error=str(error)
+            )
+            return CliRuntimeSession(apprc_context=diagnostic_context)
+
         if apprc_context.runtime_setup_skipped:
             return CliRuntimeSession(apprc_context=apprc_context)
 
@@ -507,6 +525,27 @@ class CliRuntime(Generic[OptionsT, StateT]):
         if self.args_provider is not None:
             return self.args_provider()
         return sys.argv[1:]
+
+    def _installation_command_requested(self, ctx: typer.Context) -> bool:
+        """Select installation and launcher recovery before strict paths."""
+        if ctx.invoked_subcommand in {"installation", "launcher"}:
+            return True
+        tokens = self.current_args()
+        parsed = parse_leading_options(
+            tokens,
+            flag_options=COMMON_CLI_FLAG_OPTIONS,
+            value_options=COMMON_CLI_VALUE_OPTIONS,
+        )
+        return not parsed.separator_before_action and tuple(
+            parsed.action_tokens[:1]
+        ) in {
+            ("installation",),
+            ("launcher",),
+        }
+
+    def _root_doctor_requested(self, ctx: typer.Context) -> bool:
+        """Select only root doctor after installation path resolution fails."""
+        return ctx.invoked_subcommand == "doctor"
 
     @contextmanager
     def forwarded_args(self, args: Sequence[str]) -> Iterator[None]:

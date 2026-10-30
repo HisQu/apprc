@@ -31,6 +31,7 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
+3. [0.31.0 - 2026-10-29](#0310---2026-10-29)
 3. [0.29.0 - 2026-10-26](#0290---2026-10-26)
 3. [0.28.0 - 2026-10-02](#0280---2026-10-02)
 4. [0.27.4 - 2026-10-01](#0274---2026-10-01)
@@ -79,6 +80,58 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.31.0 - 2026-10-29
+
+<br>
+
+### 💥 Breaking changes
+
+- Breaking: Native Linux appdata now uses `<native-user-data>/<app-id>/appdata`,
+  beside durable `installation/`, instead of owning the whole app container.
+  Affected: applications and users with an existing native Linux appdata root.
+  Migration: stop old consumers, preview `installation migrate --dry-run`, and
+  execute an explicit ownership/provider-reviewed migration. Unknown payload
+  requires the owning application's inventory; startup never selects a new empty
+  store in place of a recognized legacy root.
+- Breaking: `AppPaths` now requires a captured `installation` snapshot and its
+  `source` can be `"installation"`. Affected: callers constructing `AppPaths`
+  directly or exhaustively handling layout provenance. Migration: prefer
+  `MyRC.paths(...)`; intentional manual construction must preserve the snapshot
+  from `MyRC.installation().inspect().snapshot`. Do not rediscover paths while
+  refreshing an existing invocation.
+
 - Breaking: Replaced `Storage`/`storage` and `ResolveOptions.storage` with
   `Workspaces`/`workspace`, and replaced `ResolvedConfig.selection` with
   `workspace`. Affected: applications declaring or selecting AppRC storage,
@@ -95,8 +148,9 @@ All notable changes to `AppRC` will be documented in this file.
   declare `Paths(config=True, appdata=True, cache=True, state=True)` for the
   components actually used; choose `Layout.native()` or
   `Layout.single_root(root)`; update users to the new `<PREFIX>_LAYOUT` and
-  `<PREFIX>_ROOT` pair. AppRC never moves, scans, renames, deletes, or
-  automatically upgrades old files.
+  `<PREFIX>_ROOT` pair. Normal startup never searches for or automatically
+  migrates legacy data; explicit migration is limited to reviewed supported
+  ownership/installation formats.
 - Breaking: Replaced `mount_config_cli`, `mount_appdata_cli`, and
   `mount_config_group` with grouped `mount_app_cli`/`mount_app_groups`.
   Affected: Typer applications mounting prior commands. Migration: mount the
@@ -122,27 +176,30 @@ All notable changes to `AppRC` will be documented in this file.
 - Added explicit `WorkspaceManager` operations and category-specific maintenance
   providers, plus grouped `paths`, `doctor`, category, workspace, and `purge`
   commands. Unsupported provider operations are not mounted.
+- Added fixed native `installation/installation.json` authority independent of
+  config, appdata, cache and disposable state. Saved absolute placement survives
+  upgrades and outranks declared defaults; invocation/environment overrides
+  remain local to that invocation. Unmanaged editable pip use needs no record.
+- Added typed installation inspection, revision/generation-checked operations,
+  explicit legacy migration, resumable repair, reconnectable program-only
+  removal and confirmed complete removal that preserves unknown content.
+- Added `apprc-core[distribution]` authoring APIs, strict external templates and
+  deterministic PEP 723/zipapp support bundling complete ordinary shared modules
+  with repository-owned install/uninstall composition. No lifecycle inheritance,
+  hook registry, installed-app bootstrap dependency or hidden AppRC download is
+  required; application-specific actions remain explicit Python calls.
+- Added verified immutable-main, release-sdist and explicit-wheel acquisition
+  with operation-owned source staging and observed installed `RECORD`
+  fingerprints. Saved source checks remain usable after temporary sources are
+  removed.
+- Added grouped `installation` management commands and an optional Textual
+  launcher with one reusable editor screen/event loop, foreground-child handling,
+  and actual-process removal handoff. CLI, launcher and wrappers share the saved
+  application-authored uninstaller, including its cleanup. Missing business
+  settings or invalid installation authority remain diagnosable without
+  manufacturing resource paths.
 <br>
 
-### 💔 Changed
-
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
-### 🔨 Fixed
-
-<br>
-
-### 🔒 Security
-
-<br>
 
 ---
 

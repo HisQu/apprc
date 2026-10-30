@@ -29,6 +29,10 @@ def _isolate_native_app_paths(
 ) -> None:
     """Keep platform-native AppRC locations inside each test's temporary home."""
     test_home = tmp_path / "data-home"
+    monkeypatch.setenv("HOME", str(test_home / "home"))
+    monkeypatch.setenv("USERPROFILE", str(test_home / "home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(test_home / "data"))
+    monkeypatch.setenv("APPDATA", str(test_home / "config"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(test_home / "config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(test_home / "data"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(test_home / "cache"))

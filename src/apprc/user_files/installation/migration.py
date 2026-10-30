@@ -545,6 +545,7 @@ def _cleanup_activated_migration(
                 for parent in item.source.parents
                 if parent == stage_root or parent.is_relative_to(stage_root)
             }
+            directories.add(stage_root.parent)
             for path in sorted(
                 directories, key=lambda item: len(item.parts), reverse=True
             ):

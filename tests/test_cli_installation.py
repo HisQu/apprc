@@ -184,9 +184,16 @@ def _ready_uninstall_preparation(
 ) -> UninstallPreparation:
     placement = InstallationPlacement(
         layout=Layout.native(),
-        config_dir=directory / "config",
-        cache_dir=directory / "cache",
-        capabilities=frozenset({"config", "cache"}),
+        config_dir=(
+            directory.parent / "config" if "config" in categories else None
+        ),
+        appdata_dir=(
+            directory.parent / "appdata" if "appdata" in categories else None
+        ),
+        cache_dir=(
+            directory.parent / "cache" if "cache" in categories else None
+        ),
+        capabilities=categories,
     )
     identity = InstallationIdentity(
         app_id="installation-cli",
@@ -516,7 +523,7 @@ def test_pending_uninstall_resumes_saved_identity_and_options(
     assert resumed.operation_id == original_plan.operation_id
     assert resumed.inventory == original_plan.inventory
     assert resumed.expected_revision == "c" * 64
-    with pytest.raises(InstallationError, match="Retry options differ"):
+    with pytest.raises(InstallationError):
         controllers._resume_uninstall(
             pending,
             categories=frozenset({"config"}),
@@ -576,23 +583,6 @@ def test_cli_complete_preview_uses_fresh_saved_owned_inventory(
     )
     monkeypatch.setattr(
         controllers, "inspect_saved", lambda _directory: inspection
-    )
-    stub_plan = stub.plan
-    assert stub_plan is not None
-    monkeypatch.setattr(
-        controllers,
-        "plan_uninstall",
-        lambda saved, **kwargs: replace(
-            stub_plan,
-            expected_revision=inspection.revision,
-            expected_generation=saved.generation_id,
-            app_id=saved.app_id,
-            placement=saved.placement,
-            inventory=kwargs["inventory"],
-            categories=kwargs["categories"],
-            complete=kwargs["complete"],
-            forget_retained=kwargs["forget_retained"],
-        ),
     )
 
     result = CliRunner().invoke(

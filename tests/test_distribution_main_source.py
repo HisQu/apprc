@@ -282,6 +282,13 @@ def test_preacquired_main_archive_installs_selected_project(
                 ("setuptools>=80",) if source_kind == "release-sdist" else ()
             ),
         )
+    else:
+        source = InstallationSource(
+            "wheel",
+            str(package_path),
+            version=_VERSION,
+            digest=digest,
+        )
     selection = SourceSelection(
         source,
         package_path=package_path,
@@ -390,7 +397,7 @@ def test_preacquired_main_archive_installs_selected_project(
                 _write_project(archive, wrapper, "0.0.1")
             _write_project(archive, project, _VERSION, "replacement")
         replacement_path = replacement_zip
-        if source_kind == "release-sdist":
+        if source_kind in {"release-sdist", "release-sdist-empty"}:
             replacement_path = package_directory / "replacement archive.tar.gz"
             _zip_as_sdist(replacement_zip, replacement_path)
         elif source_kind == "wheel":
@@ -407,14 +414,16 @@ def test_preacquired_main_archive_installs_selected_project(
                     replacement_path.read_bytes()
                 ).hexdigest(),
             )
-            if source_kind in {"release-sdist", "wheel"}
+            if source_kind in {"release-sdist", "release-sdist-empty", "wheel"}
             else selection.source
         )
+        replacement_staging = tmp_path / "replacement staging"
+        create_private_directory_if_missing(replacement_staging)
         replacement = SourceSelection(
             replacement_source,
             package_path=replacement_path,
             subdirectory=subdirectory,
-        ).prepare(tmp_path / "replacement staging")
+        ).prepare(replacement_staging)
         assert replacement.digest is not None
         assert replacement.source_root is not None
         if source_kind == "wheel":

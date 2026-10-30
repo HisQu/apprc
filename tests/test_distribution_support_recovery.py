@@ -6,9 +6,11 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -30,6 +32,7 @@ from apprc.distribution.models import (
     ProjectMetadata,
 )
 from apprc.distribution.rendering import render_saved_support
+from apprc.distribution.runtime import installed_probe
 from apprc.distribution.runtime.acquisition import (
     PreparedSource,
     prepare_source,
@@ -46,6 +49,7 @@ def _scenario(
     tmp_path: Path,
     *,
     source: InstallationSource | None = None,
+    native_backend: bool = False,
 ) -> tuple[Path, InstallPlan, InstalledSnapshot, dict[str, str]]:
     project = tmp_path / "project"
     project.mkdir()
@@ -56,7 +60,9 @@ def _scenario(
     )
     placement = InstallationPlacement(Layout.native())
     backend = UvToolTarget(
-        tmp_path / "uv", tmp_path / "tools", tmp_path / "bin"
+        Path(shutil.which("uv") or "uv"),
+        tmp_path / "tools",
+        tmp_path / "commands",
     )
     directory = tmp_path / "installation"
     plan = plan_install(
@@ -66,12 +72,13 @@ def _scenario(
         backend,
         inspection=inspect_installation(directory, app_id=identity.app_id),
     )
-    backend.bin_dir.mkdir()
+    create_private_directory_if_missing(backend.bin_dir)
     command = backend.bin_dir / (
         "fixture-command.exe" if os.name == "nt" else "fixture-command"
     )
-    command.write_text("#!/bin/sh\n")
-    command.chmod(0o700)
+    if not native_backend:
+        command.write_text("#!/bin/sh\n")
+        command.chmod(0o700)
     snapshot = InstalledSnapshot(
         identity,
         "1.0",
@@ -92,6 +99,7 @@ def _run(
     support: dict[PurePosixPath, bytes],
     *,
     prepared_source: PreparedSource | None = None,
+    python_requirement: str = ">=3.12",
 ) -> InstallationInspection:
     prepared = prepared_source or PreparedSource(
         plan.target.source.requirement, None, plan.target.source
@@ -99,9 +107,9 @@ def _run(
     return installation.install_application(
         plan,
         environment=environment,
-        probe_path=Path(__file__).absolute(),
+        probe_path=Path(installed_probe.__file__).absolute(),
         support_files=support,
-        python_requirement=">=3.12",
+        python_requirement=python_requirement,
         prepared_source=prepared,
     )
 
@@ -198,12 +206,30 @@ def test_repair_handles_interrupted_address_bound_support_publication(
 def test_saved_release_repair_recovers_owned_installation_outputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    uv = shutil.which("uv")
+    assert uv is not None
     source_archive = tmp_path / "fixture-1.0.tar.gz"
+    project = (
+        "[build-system]\n"
+        'requires = ["setuptools>=80"]\n'
+        'build-backend = "setuptools.build_meta"\n'
+        "[project]\n"
+        'name = "fixture"\n'
+        'version = "1.0"\n'
+        "[project.scripts]\n"
+        'fixture-command = "fixture:main"\n'
+        "[tool.setuptools]\n"
+        'py-modules = ["fixture"]\n'
+    ).encode()
+    module = b"def main():\n    return None\n"
     with tarfile.open(source_archive, "w:gz") as archive:
-        project_metadata = b"[project]\nname='fixture'\nversion='1.0'\n"
-        member = tarfile.TarInfo("fixture-1.0/pyproject.toml")
-        member.size = len(project_metadata)
-        archive.addfile(member, io.BytesIO(project_metadata))
+        for name, content in (
+            ("fixture-1.0/pyproject.toml", project),
+            ("fixture-1.0/fixture.py", module),
+        ):
+            member = tarfile.TarInfo(name)
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
     digest = hashlib.sha256(source_archive.read_bytes()).hexdigest()
     source = InstallationSource(
         "release-sdist",
@@ -215,8 +241,42 @@ def test_saved_release_repair_recovers_owned_installation_outputs(
     staging = tmp_path / "private source"
     create_private_directory_if_missing(staging)
     prepared = prepare_source(source, staging)
-    directory, plan, snapshot, environment = _scenario(tmp_path, source=source)
-    _stub_backend(monkeypatch, snapshot)
+    directory, plan, _, environment = _scenario(
+        tmp_path, source=source, native_backend=True
+    )
+    private_home = tmp_path / "test home ü %2F"
+    create_private_directory_if_missing(private_home)
+    environment = dict(os.environ)
+    environment["HOME"] = str(private_home)
+    environment["USERPROFILE"] = str(private_home)
+    environment.pop("PYTHONPATH", None)
+    environment.pop("PYTHONHOME", None)
+    for variable, name in (
+        ("UV_TOOL_DIR", "tools"),
+        ("UV_TOOL_BIN_DIR", "commands"),
+        ("UV_CACHE_DIR", "uv cache"),
+        ("UV_PYTHON_INSTALL_DIR", "uv python"),
+        ("UV_PYTHON_BIN_DIR", "python commands"),
+        ("UV_CONFIG_DIR", "uv config"),
+        ("TMPDIR", "temporary"),
+        ("TMP", "temporary"),
+        ("TEMP", "temporary"),
+    ):
+        root = tmp_path / name
+        create_private_directory_if_missing(root)
+        environment[variable] = str(root)
+    environment["UV_PYTHON_DOWNLOADS"] = "never"
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "temporary"))
+    monkeypatch.setattr(
+        installation,
+        "external_base_python",
+        lambda prefix, **kwargs: Path(sys.executable),
+    )
+    monkeypatch.setattr(
+        installation,
+        "_register_windows",
+        lambda *args, **kwargs: None,
+    )
 
     package = tmp_path / "payload" / "app_lifecycle"
     package.mkdir(parents=True)
@@ -287,10 +347,17 @@ def test_saved_release_repair_recovers_owned_installation_outputs(
         installation, "write_bytes_atomic", interrupt_after_saved_repair
     )
     with pytest.raises(RuntimeError, match="saved release repair"):
-        _run(plan, environment, support, prepared_source=prepared)
+        _run(
+            plan,
+            environment,
+            support,
+            prepared_source=prepared,
+            python_requirement=sys.executable,
+        )
 
     pending = inspect_installation(directory, app_id="fixture")
     assert pending.record is not None and pending.record.current is not None
+    assert pending.record.current.distribution_record_digest is not None
     assert pending.record.current.source == source
     repair_output = next(
         output
@@ -307,7 +374,13 @@ def test_saved_release_repair_recovers_owned_installation_outputs(
         plan.target.backend,
         inspection=pending,
     )
-    result = _run(resume, environment, support, prepared_source=prepared)
+    result = _run(
+        resume,
+        environment,
+        support,
+        prepared_source=prepared,
+        python_requirement=sys.executable,
+    )
     assert result.status == "ready"
     assert result.record is not None and result.record.current is not None
     assert result.record.current.source == source
@@ -343,6 +416,7 @@ def test_saved_release_repair_recovers_owned_installation_outputs(
             environment,
             support,
             prepared_source=prepared,
+            python_requirement=sys.executable,
         )
 
 

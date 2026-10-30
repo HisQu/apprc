@@ -150,9 +150,9 @@ plan = plan_install(
 begin_operation(plan)
 
 saved_directory = root / "saved-installation"
-saved_directory.mkdir()
+saved_directory.mkdir(mode=0o700)
 config_root = root / "saved-config"
-config_root.mkdir()
+config_root.mkdir(mode=0o700)
 (config_root / ".apprc-owner.json").write_text(
     json.dumps(
         {"schema_version": 1, "app_id": "saved-fixture", "category": "config"}

@@ -498,6 +498,23 @@ def test_legacy_receipt_cutover_resumes_at_every_authority_boundary(
     assert pending.revision is not None
     operation_id = pending.record.migration.operation_id
     assert operation_id is not None
+    unknown_staged = (
+        manager.directory / "migration-staged" / "newer-user-file.txt"
+    )
+    unknown_staged.write_bytes(b"preserve staged content")
+    with pytest.raises(InstallationError):
+        manager.resume_migration(
+            operation_id=operation_id, expected_revision=pending.revision
+        )
+    assert unknown_staged.read_bytes() == b"preserve staged content"
+    pending = manager.inspect()
+    assert pending.status == "ready"
+    assert pending.record is not None and pending.record.migration is not None
+    assert not pending.record.migration.cleanup_complete
+    assert pending.revision is not None
+    unknown_staged.unlink()
+    operation_id = pending.record.migration.operation_id
+    assert operation_id is not None
     result = manager.resume_migration(
         operation_id=operation_id, expected_revision=pending.revision
     )

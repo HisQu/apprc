@@ -1732,8 +1732,12 @@ def test_failed_provider_cleanup_retries_same_uninstall_checkpoint(
     directory, install_plan, snapshot, environment = installation_scenario(
         tmp_path
     )
+    backend = replace(snapshot.backend, executable=tmp_path / "fixture-uv")
+    snapshot = replace(snapshot, backend=backend)
+    install_plan = replace(
+        install_plan, target=replace(install_plan.target, backend=backend)
+    )
     _stub_backend(monkeypatch, snapshot)
-    backend = snapshot.backend
     tool_marker = backend.tool_dir / ".fixture-installed"
     backend.tool_dir.mkdir(parents=True)
     tool_marker.write_text("installed\n", encoding="utf-8")
@@ -1774,8 +1778,9 @@ def test_failed_provider_cleanup_retries_same_uninstall_checkpoint(
     assert failed.plan is not None and failed.can_execute
     assert failed.plan.operation_id == initial.plan.operation_id
     assert failed.plan.inventory == initial.plan.inventory
-    with pytest.raises(InstallationError, match="Retry options differ"):
-        prepare_uninstall(directory, complete=True)
+    conflicting = prepare_uninstall(directory, complete=True)
+    assert not conflicting.can_execute
+    assert conflicting.plan is None
     with pytest.raises(
         InstallationError, match="different installation operation"
     ):
@@ -1803,20 +1808,37 @@ def test_failed_provider_cleanup_retries_same_uninstall_checkpoint(
     )
     assert checkpointed.expected_revision == persisted.revision
 
+    from types import SimpleNamespace
+
     from apprc.distribution.runtime import removal
     from apprc.distribution.runtime.backend import inspect_uv_tools
-    from tests.test_distribution_handoff_containment import (
-        _pending_receiver_handoff,
-    )
     from tests.test_distribution_process_waiter import _owned_child
 
     with _owned_child() as original:
-        handoff = _pending_receiver_handoff(
-            checkpointed,
-            tmp_path,
-            monkeypatch,
-            original.pid,
-        )
+        safe_temp = tmp_path / "receiver-safe-temp"
+        safe_temp.mkdir()
+        process = SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO())
+        with monkeypatch.context() as launch:
+            launch.setattr(
+                controllers.tempfile, "gettempdir", lambda: str(safe_temp)
+            )
+            launch.setattr(
+                controllers,
+                "external_base_python",
+                lambda *_args, **_kwargs: Path(sys.executable),
+            )
+            launch.setattr(
+                controllers.subprocess,
+                "Popen",
+                lambda *_args, **_kwargs: process,
+            )
+            handoff = controllers.start_uninstall_handoff(
+                checkpointed,
+                original_pid=original.pid,
+                provider_cleanup=lambda _context: pytest.fail(
+                    "successful cleanup checkpoint was replayed"
+                ),
+            )
         assert original.stdin is not None
         original.stdin.write("exit\n")
         original.stdin.flush()

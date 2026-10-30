@@ -188,6 +188,9 @@ All notable changes to `AppRC` will be documented in this file.
   with repository-owned install/uninstall composition. No lifecycle inheritance,
   hook registry, installed-app bootstrap dependency or hidden AppRC download is
   required; application-specific actions remain explicit Python calls.
+- Added explicit typed re-exports from `apprc.distribution` and
+  `apprc.distribution.runtime`; consumers use the supported public facades rather
+  than implementation-module imports.
 - Added verified immutable-main, release-sdist and explicit-wheel acquisition
   with operation-owned source staging and observed installed `RECORD`
   fingerprints. Saved source checks remain usable after temporary sources are

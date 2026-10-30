@@ -561,9 +561,7 @@ def test_lifecycle_lock_honors_cancellation_before_creating_namespace(
     assert not directory.exists()
 
 
-def _hold_lifecycle_lock(
-    directory: Path, channel: _ConnectionBase
-) -> None:
+def _hold_lifecycle_lock(directory: Path, channel: _ConnectionBase) -> None:
     try:
         with installation_lock(directory):
             channel.send("holder-acquired")

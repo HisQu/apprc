@@ -46,7 +46,9 @@ def test_scaffold_config_package_generates_importable_standard_layout(
     assert config_module.MyRC.schema.uses_workspaces() is True
     assert config_module.MyRC.schema.uses_user_dotenv() is False
     assert config_module.MyRC.schema.owners[0].key == "app"
-    config_module.MyRC.workspaces().register_workspace("default", tmp_path / "workspace")
+    config_module.MyRC.workspaces().register_workspace(
+        "default", tmp_path / "workspace"
+    )
     generated_bundle = config_module.MyRC.resolve().build(
         bundle_module.DemoAppConfig
     )
@@ -135,12 +137,17 @@ def test_scaffold_config_package_renders_independent_capabilities(
             workspaces=workspaces,
         )
     )
-    generated = runpy.run_path(str(result.config_package_dir / "app.py"))["MyRC"]
+    generated = runpy.run_path(str(result.config_package_dir / "app.py"))[
+        "MyRC"
+    ]
     assert isinstance(generated, rc.AppRC)
     root = tmp_path / "application"
     options = rc.ResolveOptions(layout=rc.Layout.single_root(root))
     if user_dotenv or workspaces:
-        assert generated.ensure_path("config", options, environment={}) == root / "config"
+        assert (
+            generated.ensure_path("config", options, environment={})
+            == root / "config"
+        )
         assert (root / "config" / ".apprc-owner.json").is_file()
     else:
         with pytest.raises(ValueError):

@@ -98,9 +98,7 @@ def test_save_secret_reports_repair_without_echoing_value(
     workspace_root.mkdir()
     workspace_root.chmod(0o755)
 
-    _, revision = editor._create_workspace(
-        "default", str(workspace_root), 0
-    )
+    _, revision = editor._create_workspace("default", str(workspace_root), 0)
 
     entered_value = "must-never-appear-in-the-status"
     message, revision = editor._save(

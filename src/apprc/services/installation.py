@@ -537,9 +537,7 @@ class InstallationManager:
             ("cache", self.spec.paths.cache),
             ("state", self.spec.paths.state),
         )
-        declared = {
-            kind for kind, enabled in declared_capabilities if enabled
-        }
+        declared = {kind for kind, enabled in declared_capabilities if enabled}
         if declared != placement.capabilities:
             raise InstallationError(
                 "Installed declaration differs from intended capabilities."

@@ -174,7 +174,6 @@ def test_workspace_registration_refuses_nonempty_unowned_config(
     assert not root.exists()
 
 
-
 def test_secret_migration_moves_value_to_private_companion(
     tmp_path: Path,
 ) -> None:

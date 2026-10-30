@@ -300,8 +300,6 @@ def test_cli_runtime_status_bypasses_runtime_bootstrap(tmp_path: Path) -> None:
     assert result.output.strip() == "runtime_status: runtime-independent"
 
 
-
-
 def test_workspace_example_exercises_registry_lifecycle_and_path_selection(
     tmp_path: Path,
 ) -> None:

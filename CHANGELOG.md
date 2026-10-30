@@ -183,11 +183,17 @@ All notable changes to `AppRC` will be documented in this file.
 - Added typed installation inspection, revision/generation-checked operations,
   explicit legacy migration, resumable repair, reconnectable program-only
   removal and confirmed complete removal that preserves unknown content.
+- Added native-appdata validation that recognizes the exact persistent sibling
+  resource lock while retaining unknown-content and link checks. Reinstall and
+  retained repair preserve both user work and the existing coordination inode.
 - Added `apprc-core[distribution]` authoring APIs, strict external templates and
   deterministic PEP 723/zipapp support bundling complete ordinary shared modules
   with repository-owned install/uninstall composition. No lifecycle inheritance,
   hook registry, installed-app bootstrap dependency or hidden AppRC download is
   required; application-specific actions remain explicit Python calls.
+- Added explicit typed re-exports from `apprc.distribution` and
+  `apprc.distribution.runtime`; consumers use the supported public facades rather
+  than implementation-module imports.
 - Added verified immutable-main, release-sdist and explicit-wheel acquisition
   with operation-owned source staging and observed installed `RECORD`
   fingerprints. Saved source checks remain usable after temporary sources are

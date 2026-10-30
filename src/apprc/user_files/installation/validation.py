@@ -57,6 +57,7 @@ def check_native_appdata_container(container: Path, *, app_id: str) -> None:
     """
     from apprc.user_files.app_home.locations import assert_no_links
     from apprc.user_files.app_home.ownership import inspect_ownership
+    from apprc.user_files.app_home.writes import managed_lock_path
 
     assert_no_links(container)
     if not container.exists():
@@ -71,16 +72,20 @@ def check_native_appdata_container(container: Path, *, app_id: str) -> None:
         raise InstallationError(
             "Legacy native appdata requires explicit installation migrate; no empty store was selected."
         )
+    child = container / "appdata"
+    lock = managed_lock_path(child)
+    assert_no_links(lock)
+    if lock.exists() and not lock.is_file():
+        raise InstallationError("Native appdata lock is not a regular file.")
     unknown = [
         entry
         for entry in container.iterdir()
-        if entry.name not in {"installation", "appdata"}
+        if entry.name not in {"installation", "appdata", lock.name}
     ]
     if unknown:
         raise InstallationError(
             "Nonempty native appdata container requires project-owned migration or adoption."
         )
-    child = container / "appdata"
     if (
         child.exists()
         and inspect_ownership(child, app_id, "appdata") != "owned"

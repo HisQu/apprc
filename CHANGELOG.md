@@ -183,6 +183,9 @@ All notable changes to `AppRC` will be documented in this file.
 - Added typed installation inspection, revision/generation-checked operations,
   explicit legacy migration, resumable repair, reconnectable program-only
   removal and confirmed complete removal that preserves unknown content.
+- Added native-appdata validation that recognizes the exact persistent sibling
+  resource lock while retaining unknown-content and link checks. Reinstall and
+  retained repair preserve both user work and the existing coordination inode.
 - Added `apprc-core[distribution]` authoring APIs, strict external templates and
   deterministic PEP 723/zipapp support bundling complete ordinary shared modules
   with repository-owned install/uninstall composition. No lifecycle inheritance,

@@ -80,6 +80,57 @@ def test_paths_capture_only_enabled_components(
     assert not root.exists()
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="Linux native appdata layout."
+)
+def test_native_installation_reuses_owned_appdata_with_persistent_lock(
+    tmp_path: Path,
+) -> None:
+    from apprc.definition.installation import (
+        InstallationIdentity,
+        InstallationPlacement,
+        InstallationSource,
+        UvToolTarget,
+    )
+    from apprc.user_files.app_home.writes import managed_lock_path
+    from apprc.user_files.installation.operations import (
+        begin_operation,
+        plan_install,
+    )
+
+    app = _app((False, True, False, False))
+    environment = {
+        "HOME": str(tmp_path),
+        "XDG_DATA_HOME": str(tmp_path / "native-data"),
+    }
+    data = app.ensure_path("appdata", environment=environment)
+    retained = data / "user-work.db"
+    retained.write_bytes(b"retained work")
+    lock = managed_lock_path(data)
+    original_lock = lock.stat()
+    placement = InstallationPlacement(
+        Layout.native(), appdata_dir=data, capabilities=frozenset({"appdata"})
+    )
+    plan = plan_install(
+        InstallationIdentity(
+            app.schema.app_id,
+            "path-matrix-test",
+            "path_matrix_test",
+            None,
+            ("path-matrix-test",),
+        ),
+        InstallationSource("index", "path-matrix-test==1.0"),
+        placement,
+        UvToolTarget(tmp_path / "uv", tmp_path / "tools", tmp_path / "bin"),
+        inspection=app.installation(environment=environment).inspect(),
+    )
+    pending = begin_operation(plan)
+    assert pending.record is not None and pending.record.operation is not None
+    assert pending.record.placement.appdata_dir == data
+    assert retained.read_bytes() == b"retained work"
+    assert lock.stat().st_ino == original_lock.st_ino
+
+
 def test_path_bootstrap_environment_uses_one_layer_for_layout_and_root(
     tmp_path: Path,
 ) -> None:

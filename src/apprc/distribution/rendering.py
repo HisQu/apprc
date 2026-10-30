@@ -192,16 +192,20 @@ def render_bootstraps(spec: DistributionSpec) -> tuple[Artifact, ...]:
                 ("\n".join(MANAGEMENT_REQUIREMENTS) + "\n").encode(),
             ),
         )
-    windows_path = spec.metadata.distribution_path.as_posix().replace("%", "%%")
     if spec.source_mode in {"release", "main"}:
         app_shell = shell
         app_cmd = (
-            '@echo off\r\nsetlocal\r\nset "HERE=%~dp0"\r\n'
-            "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
-            '"%HERE%bootstrap.ps1" %*\r\nexit /b %ERRORLEVEL%\r\n'
+            environment.get_template("bootstrap.cmd.jinja")
+            .render(
+                powershell_b64=base64.b64encode(powershell).decode("ascii"),
+            )
+            .encode("ascii")
         )
         release_bootstrap = (_artifact(spec, "bootstrap.ps1", powershell),)
     else:
+        windows_path = spec.metadata.distribution_path.as_posix().replace(
+            "%", "%%"
+        )
         app_shell = (
             f'#!/bin/sh\nset -eu\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
             f'exec "$HERE/{_shell_double_quoted(spec.metadata.distribution_path.as_posix())}'
@@ -212,14 +216,14 @@ def render_bootstraps(spec: DistributionSpec) -> tuple[Artifact, ...]:
             "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
             f'"%HERE%{windows_path}\\artifacts\\installer\\bootstrap.ps1" %*\r\n'
             "exit /b %ERRORLEVEL%\r\n"
-        )
+        ).encode()
         release_bootstrap = ()
     return (
         *bootstrap,
         *requirements,
         *release_bootstrap,
         _artifact(spec, "app-install.sh", app_shell, executable=True),
-        _artifact(spec, "app-install.cmd", app_cmd.encode()),
+        _artifact(spec, "app-install.cmd", app_cmd),
     )
 
 

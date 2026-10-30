@@ -1306,8 +1306,13 @@ the migration's coordination record does not assert a tool environment exists.
 After interruption, inspect again and use `manager.resume_migration(...)` with
 the saved migration operation UUID and the **current** record revision. Do not
 reuse a stale revision or restart old removal entries. Legacy Buildben conversion
-also requires verified package/backend evidence and staged replacement support;
-use the matching installer adapter rather than treating its receipt as appdata.
+also requires verified package/backend evidence and staged replacement support.
+The matching installer adapter uses
+`apprc.distribution.runtime.bind_install_support(...)` to select and bind
+current-platform support before staging it and calling `execute_migration(...)`.
+Activation must leave runnable recovery support even if the later reinstall
+never occurs; unresolved Python/command markers are not a ready installation.
+Do not treat the old receipt as appdata or copy AppRC's private binder.
 An activated migration can have a usable record while exact inert-file cleanup
 is still pending: inspect `record.migration.cleanup_complete`, not only `status`.
 

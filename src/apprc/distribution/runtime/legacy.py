@@ -139,8 +139,14 @@ def stage_legacy_support(
                     f"Migration destination contains different bytes: {destination}."
                 )
             if destination_revision is None:
+                create_private_directory_if_missing(directory)
                 create_private_directory_if_missing(source.parent)
                 write_bytes_atomic(source, content, private=True)
+        if destination_revision is None and relative in {
+            PurePosixPath("launch.sh"),
+            PurePosixPath("uninstall.sh"),
+        }:
+            source.chmod(0o700)
         outputs.append(StagedSupportOutput(source, destination, digest))
     return tuple(outputs)
 

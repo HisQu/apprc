@@ -192,6 +192,10 @@ All notable changes to `AppRC` will be documented in this file.
   with operation-owned source staging and observed installed `RECORD`
   fingerprints. Saved source checks remain usable after temporary sources are
   removed.
+- Added public `bind_install_support()` composition for current-platform,
+  machine-bound recovery support before legacy activation. Remote Windows `.cmd`
+  entries carry the shared PowerShell bootstrap instead of requiring an adjacent
+  helper; remote PowerShell helpers also support downloaded-text invocation.
 - Added grouped `installation` management commands and an optional Textual
   launcher with one reusable editor screen/event loop, foreground-child handling,
   and actual-process removal handoff. CLI, launcher and wrappers share the saved

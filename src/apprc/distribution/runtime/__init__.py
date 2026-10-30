@@ -39,6 +39,7 @@ from apprc.distribution.runtime.controllers import (
     uninstall_saved,
 )
 from apprc.distribution.runtime.installation import (
+    bind_install_support,
     install_application,
     install_prepared_application,
 )

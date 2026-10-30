@@ -127,7 +127,6 @@ def _install_application_locked(
     :param python_requirement: Application's declared Python compatibility.
     :return: Final ready installation inspection.
     """
-    support_files = _current_platform_support(support_files)
     authority = inspect_installation(
         plan.directory, app_id=plan.target.identity.app_id
     )
@@ -374,11 +373,8 @@ def _install_application_locked(
         for item in previous_owner:
             if item.kind == "support" and item.digest is not None:
                 previous.setdefault(item.path, set()).add(item.digest)
-        support_files = _bind_install_addresses(
-            support_files,
-            observed,
-            plan.directory,
-            previous_owner,
+        support_files = bind_install_support(
+            support_files, observed, plan.directory, previous_owner
         )
         outputs: list[OwnedOutput] = []
         for relative, content in sorted(
@@ -800,14 +796,26 @@ def _current_platform_support(
     }
 
 
-def _bind_install_addresses(
+def bind_install_support(
     support_files: Mapping[PurePosixPath, bytes],
     observed: InstalledSnapshot,
     directory: Path,
-    previous_outputs: tuple[OwnedOutput, ...],
+    previous_outputs: tuple[OwnedOutput, ...] = (),
 ) -> dict[PurePosixPath, bytes]:
-    """Bind machine-specific executable addresses before journaling support digests."""
-    files = dict(support_files)
+    """Bind current-platform support bytes to one verified live installation.
+
+    This public staging primitive lets application-owned migrations publish
+    fully bound support before activating the new authority. It reuses a
+    digest-verified external base Python when available, and binds command
+    launchers only to the observed command inside the recorded uv bin directory.
+
+    :param support_files: Generated installation-relative support bytes.
+    :param observed: Validated live snapshot from the SDK probe.
+    :param directory: Installation directory containing prior owned support.
+    :param previous_outputs: Prior outputs whose digests authorize Python reuse.
+    :return: Current-platform support bytes with machine paths bound.
+    """
+    files = _current_platform_support(support_files)
     command_marker = PurePosixPath("launch-command.json")
     if command_marker not in files and not any(
         b"__APPRC_BASE_PYTHON__" in content
@@ -864,8 +872,16 @@ def _bind_install_addresses(
         raise InstallationError(
             "Recorded launcher command is not present in the live package probe."
         ) from error
-    if not command_path.is_absolute() or not command_path.is_file():
-        raise InstallationError("Recorded launcher executable is unavailable.")
+    expected_name = command_name + (".exe" if os.name == "nt" else "")
+    expected_command = observed.backend.bin_dir / expected_name
+    if (
+        not command_path.is_absolute()
+        or not command_path.is_file()
+        or command_path != expected_command
+    ):
+        raise InstallationError(
+            "Recorded launcher executable does not match the live backend command."
+        )
     bound = {}
     for path, content in files.items():
         if path == uninstall_path:

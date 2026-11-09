@@ -384,7 +384,6 @@ def test_cache_only_complete_preview_uses_provider_without_host_config(
     from types import SimpleNamespace
 
     from apprc.interfaces.cli import installation_command
-    from apprc.distribution.runtime.controllers import default_cleanup_inventory
 
     preparation = _ready_uninstall_preparation(
         tmp_path / "installation",
@@ -411,6 +410,8 @@ def test_cache_only_complete_preview_uses_provider_without_host_config(
     )
     sentinel = cache / "user-data.bin"
     sentinel.write_bytes(b"keep")
+    owned_cache = cache / "owned-cache.bin"
+    owned_cache.write_bytes(b"disposable")
     observed: list[frozenset[ResourceKind]] = []
 
     def inventory_provider(
@@ -420,10 +421,14 @@ def test_cache_only_complete_preview_uses_provider_without_host_config(
     ) -> CleanupInventory:
         observed.append(categories)
         assert not forget_retained
-        return default_cleanup_inventory(
-            selected_inspection,
-            categories=categories,
-            forget_retained=forget_retained,
+        return CleanupInventory(
+            entries=(
+                InventoryEntry(marker, "file", file_revision(marker), "cache"),
+                InventoryEntry(
+                    owned_cache, "file", file_revision(owned_cache), "cache"
+                ),
+            ),
+            retained=(InventoryEntry(cache, "directory", None, "cache"),),
         )
 
     monkeypatch.setattr(
@@ -450,7 +455,7 @@ def test_cache_only_complete_preview_uses_provider_without_host_config(
 
     assert result.exit_code == 0, result.output
     assert observed == [frozenset({"cache"})]
-    assert str(marker) in {
+    assert {str(marker), str(owned_cache)} <= {
         entry["path"] for entry in json.loads(result.stdout)["entries"]
     }
     assert sentinel.read_bytes() == b"keep"

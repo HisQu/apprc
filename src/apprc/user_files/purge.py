@@ -5,8 +5,12 @@ from __future__ import annotations
 import stat
 from hashlib import sha256
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from apprc.definition.app_config.spec import AppConfigSpec
+from apprc.definition.config_filenames import (
+    DEFAULT_APPRC_TOML_FILENAME,
+    DEFAULT_USER_DOTENV_FILENAME,
+)
 from apprc.definition.maintenance import RemovalPlan, RemovalResult
 from apprc.definition.paths import AppPaths
 from apprc.user_files.app_home.locations import assert_no_links
@@ -14,25 +18,35 @@ from apprc.user_files.app_home.ownership import inspect_ownership
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.env_files.secrets import secret_companion_path
 
+if TYPE_CHECKING:
+    from apprc.definition.app_config.spec import AppConfigSpec
 
-def plan_config_purge(spec: AppConfigSpec, paths: AppPaths) -> RemovalPlan:
-    """Plan deletion of only declared, known AppRC configuration files.
 
-    :param spec: Configuration declaration.
-    :param paths: Captured component locations.
-    :return: Revision-bound exact file plan.
+def plan_config_file_purge(
+    app_id: str,
+    root: Path,
+    *,
+    user_dotenv_filename: str = DEFAULT_USER_DOTENV_FILENAME,
+    apprc_toml_filename: str = DEFAULT_APPRC_TOML_FILENAME,
+) -> RemovalPlan:
+    """Plan exact removal without loading application settings.
+
+    :param app_id: Saved owner identity for the configuration root.
+    :param root: Captured configuration directory.
+    :param user_dotenv_filename: Declared user dotenv filename.
+    :param apprc_toml_filename: Declared AppRC TOML filename.
+    :return: Revision-bound targets; unknown files remain outside the plan.
     """
-    root = paths.require("config").expanduser().absolute()
-    owner = inspect_ownership(root, spec.app_id, "config")
+    root = root.expanduser().absolute()
+    owner = inspect_ownership(root, app_id, "config")
     if owner == "missing":
         return RemovalPlan("config", root, (), _revision(root, ()))
     if owner != "owned" and any(root.iterdir()):
         raise ValueError(f"Refusing to purge unowned AppRC config: {root}")
-    names = [spec.user_dotenv_filename, spec.apprc_toml_filename]
     known = tuple(
         dict.fromkeys(
             path
-            for name in names
+            for name in (user_dotenv_filename, apprc_toml_filename)
             for path in (root / name, secret_companion_path(root / name))
         )
     )
@@ -61,6 +75,16 @@ def plan_config_purge(spec: AppConfigSpec, paths: AppPaths) -> RemovalPlan:
     targets = tuple(existing)
     return RemovalPlan(
         "config", root, targets, _revision(root, targets), warnings
+    )
+
+
+def plan_config_purge(spec: AppConfigSpec, paths: AppPaths) -> RemovalPlan:
+    """Plan deletion of only declared, known AppRC configuration files."""
+    return plan_config_file_purge(
+        spec.app_id,
+        paths.require("config"),
+        user_dotenv_filename=spec.user_dotenv_filename,
+        apprc_toml_filename=spec.apprc_toml_filename,
     )
 
 

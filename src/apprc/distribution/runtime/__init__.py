@@ -48,6 +48,13 @@ from apprc.distribution.runtime.legacy import (
     migrate_legacy_receipt as migrate_legacy_receipt,
     stage_legacy_support as stage_legacy_support,
 )
+from apprc.distribution.runtime.legacy_replacement import (
+    LegacyReplacementPlan as LegacyReplacementPlan,
+    execute_legacy_replacement as execute_legacy_replacement,
+    is_pending_legacy_replacement as is_pending_legacy_replacement,
+    plan_legacy_replacement as plan_legacy_replacement,
+    resume_legacy_replacement as resume_legacy_replacement,
+)
 from apprc.user_files.installation.migration import (
     execute_migration as execute_migration,
     resume_migration as resume_migration,

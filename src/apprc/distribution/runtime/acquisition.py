@@ -909,12 +909,8 @@ def prepare_source(source: InstallationSource, staging: Path) -> PreparedSource:
         assert_no_links(project / "pyproject.toml")
         requirement = str(project)
     elif source.kind in {"release-sdist", "wheel"}:
-        if not source.version or (
-            source.kind == "release-sdist" and not source.runtime_requirements
-        ):
-            raise InstallationError(
-                "Release assets require exact versions; sdists require runtime constraints."
-            )
+        if not source.version:
+            raise InstallationError("Release assets require exact versions.")
         if (
             not source.digest
             or re.fullmatch(r"[0-9a-f]{64}", source.digest) is None

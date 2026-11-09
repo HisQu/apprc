@@ -43,23 +43,30 @@ def _environment() -> Environment:
 
 
 def standalone_script(
-    spec: DistributionSpec, payload: PayloadTree, *, entry: str
+    spec: DistributionSpec,
+    payload: PayloadTree,
+    *,
+    entry: str,
+    public_entry: bool = True,
 ) -> bytes:
     """Render the small loader around the same explicit ordinary-module tree.
+
+    Application runtime constraints remain in the bundled source contract;
+    they must not constrain the independent management-loader environment.
 
     :param spec: Portable author inputs.
     :param payload: Explicit module/resource inclusion tree.
     :param entry: Selected bundled entry module.
+    :param public_entry: Validate the public release asset rather than saved support.
     :return: UTF-8 PEP 723 executable script bytes.
     """
     archive = base64.b64encode(payload_archive(spec, payload)).decode("ascii")
-    requirements: list[str] = list(MANAGEMENT_REQUIREMENTS)
-    if entry in {payload.entry_module, payload.uninstall_entry_module}:
-        requirements.extend(
-            (*spec.runtime_requirements, *spec.runtime_overrides)
-        )
     release_contract = None
-    if entry == payload.entry_module and spec.source_mode == "release":
+    if (
+        public_entry
+        and entry == payload.entry_module
+        and spec.source_mode == "release"
+    ):
         source_path = urllib.parse.urlsplit(spec.release_asset or "").path
         release_contract = {
             "app_id": spec.metadata.identity.app_id,
@@ -79,7 +86,7 @@ def standalone_script(
         .render(
             archive=archive,
             entry=entry,
-            requirements=tuple(dict.fromkeys(requirements)),
+            requirements=MANAGEMENT_REQUIREMENTS,
             release_contract=release_contract,
         )
         .encode("utf-8")
@@ -319,7 +326,9 @@ def render_saved_support(
         _artifact(
             spec,
             f"{base}/installer/repair-installer.py",
-            standalone_script(spec, payload, entry=payload.entry_module),
+            standalone_script(
+                spec, payload, entry=payload.entry_module, public_entry=False
+            ),
         ),
         _artifact(
             spec,

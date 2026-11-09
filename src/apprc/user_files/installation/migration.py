@@ -367,22 +367,19 @@ def _resume_migration(
         ):
             raise InstallationError("No matching migration is pending.")
         inventory = migration.inventory
+        legacy = migration.legacy
         validate_migration_inventory(
             inventory,
             directory=directory,
             allow_empty_same_root=migration.legacy is not None,
         )
-        roots = [inventory.source_root, inventory.destination_root]
-        legacy = migration.legacy
-        if legacy is not None:
-            roots.append(legacy.receipt.path.parent)
-            roots.extend(item.path.parent for item in legacy.runnables)
-            roots.extend(
-                item.source.parent for item in migration.staged_support
-            )
-            roots.extend(
-                item.destination.parent for item in migration.staged_support
-            )
+        roots = (
+            [inventory.source_root, inventory.destination_root]
+            if inventory.entries
+            else []
+        )
+        # > Metadata-only legacy inventories have no payload roots to lock.
+        # > Support/staging share the held installation lock; payload roots still lock.
         with managed_write_lock(*roots):
             if legacy is not None:
                 _validate_legacy_namespace(
@@ -522,60 +519,51 @@ def _cleanup_activated_migration(
         runnables = {
             item.inert_path: item for item in migration.legacy.runnables
         }
-        if not set(migration.retired_files).issubset(runnables):
-            raise InstallationError(
-                "Retired cleanup list contains an unknown path."
+        # > The held installation lock protects inert-controller and staging cleanup.
+        _validate_legacy_namespace(
+            migration.legacy,
+            latest.owned_outputs,
+            staged_support=migration.staged_support,
+            directory=directory,
+        )
+        for path in migration.retired_files:
+            runnable = runnables[path]
+            assert_no_links(path)
+            revision = file_revision(path)
+            if revision is None:
+                continue
+            if revision != runnable.revision:
+                raise InstallationError(f"Retired controller changed: {path}.")
+            path.unlink()
+        if migration.staged_support:
+            stage_root = (
+                directory / "migration-staged" / str(latest.generation_id)
             )
-        roots = [item.path.parent for item in migration.legacy.runnables]
-        roots.extend(item.source.parent for item in migration.staged_support)
-        with managed_write_lock(*roots):
-            _validate_legacy_namespace(
-                migration.legacy,
-                latest.owned_outputs,
-                staged_support=migration.staged_support,
-                directory=directory,
-            )
-            for path in migration.retired_files:
-                runnable = runnables[path]
-                assert_no_links(path)
-                revision = file_revision(path)
-                if revision is None:
-                    continue
-                if revision != runnable.revision:
-                    raise InstallationError(
-                        f"Retired controller changed: {path}."
-                    )
-                path.unlink()
-            if migration.staged_support:
-                stage_root = (
-                    directory / "migration-staged" / str(latest.generation_id)
-                )
-                directories = {
-                    parent
-                    for item in migration.staged_support
-                    for parent in item.source.parents
-                    if parent == stage_root or parent.is_relative_to(stage_root)
-                }
-                for path in sorted(
-                    directories, key=lambda item: len(item.parts), reverse=True
-                ):
-                    if path.exists() or path.is_symlink():
-                        assert_no_links(path)
-                        try:
-                            path.rmdir()
-                        except OSError as error:
-                            raise InstallationError(
-                                f"Staging directory is not empty: {path}."
-                            ) from error
-            cleared = replace(
-                latest,
-                migration=replace(
-                    migration, retired_files=(), cleanup_complete=True
-                ),
-            )
-            write_record(
-                directory, cleared, expected_revision=expected_revision
-            )
+            directories = {
+                parent
+                for item in migration.staged_support
+                for parent in item.source.parents
+                if parent == stage_root or parent.is_relative_to(stage_root)
+            }
+            directories.add(stage_root.parent)
+            for path in sorted(
+                directories, key=lambda item: len(item.parts), reverse=True
+            ):
+                if path.exists() or path.is_symlink():
+                    assert_no_links(path)
+                    try:
+                        path.rmdir()
+                    except OSError as error:
+                        raise InstallationError(
+                            f"Staging directory is not empty: {path}."
+                        ) from error
+        cleared = replace(
+            latest,
+            migration=replace(
+                migration, retired_files=(), cleanup_complete=True
+            ),
+        )
+        write_record(directory, cleared, expected_revision=expected_revision)
         return inspect_installation(directory, app_id=record.app_id)
 
 

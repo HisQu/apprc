@@ -16,7 +16,7 @@ from apprc.definition.paths import Layout
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
-from apprc.user_files.app_home.writes import file_revision
+from apprc.user_files.app_home.writes import file_revision, managed_lock_path
 from apprc.user_files.installation.migration import (
     execute_migration,
     resume_migration,
@@ -111,6 +111,9 @@ def test_resume_matches_moved_file_and_preserves_unknown_content(
     assert resumed.status == "removed-retained"
     assert unknown.read_text() == "leave this alone"
     assert inventory.destinations[0].read_bytes() == b"persistent user work"
+    # > Payload and marker moves retain locks on their actual resource roots.
+    assert managed_lock_path(inventory.source_root).is_file()
+    assert managed_lock_path(inventory.destination_root).is_file()
 
 
 def test_destination_conflict_keeps_incomplete_authority_and_source(
@@ -495,6 +498,23 @@ def test_legacy_receipt_cutover_resumes_at_every_authority_boundary(
     assert pending.revision is not None
     operation_id = pending.record.migration.operation_id
     assert operation_id is not None
+    unknown_staged = (
+        manager.directory / "migration-staged" / "newer-user-file.txt"
+    )
+    unknown_staged.write_bytes(b"preserve staged content")
+    with pytest.raises(InstallationError):
+        manager.resume_migration(
+            operation_id=operation_id, expected_revision=pending.revision
+        )
+    assert unknown_staged.read_bytes() == b"preserve staged content"
+    pending = manager.inspect()
+    assert pending.status == "ready"
+    assert pending.record is not None and pending.record.migration is not None
+    assert not pending.record.migration.cleanup_complete
+    assert pending.revision is not None
+    unknown_staged.unlink()
+    operation_id = pending.record.migration.operation_id
+    assert operation_id is not None
     result = manager.resume_migration(
         operation_id=operation_id, expected_revision=pending.revision
     )
@@ -512,6 +532,10 @@ def test_legacy_receipt_cutover_resumes_at_every_authority_boundary(
     assert not inert_second_controller.exists()
     assert support.read_bytes() == b"validated replacement support"
     assert not staged_support_path.parent.exists()
+    # > Receipt, controller, and staging metadata share the installation operation lock.
+    assert not managed_lock_path(manager.directory).exists()
+    assert not managed_lock_path(legacy_root).exists()
+    assert not (manager.directory / "migration-staged").exists()
 
 
 def test_appdata_preview_migration_is_read_only_until_explicit_execution(

@@ -17,10 +17,12 @@ from apprc.definition.env_config._validation import (
 from apprc.definition.env_config.schema import ConfigOwner, owner_for
 from apprc.definition.paths import Layout, Paths
 
-DEFAULT_DEFAULTS_DOTENV_FILENAME = "apprc.defaults.env"
-DEFAULT_USER_DOTENV_FILENAME = "apprc.user.env"
-DEFAULT_WORKSPACE_DOTENV_FILENAME = "apprc.workspace.env"
-DEFAULT_APPRC_TOML_FILENAME = "apprc.toml"
+from apprc.definition.config_filenames import (
+    DEFAULT_APPRC_TOML_FILENAME,
+    DEFAULT_DEFAULTS_DOTENV_FILENAME,
+    DEFAULT_USER_DOTENV_FILENAME,
+    DEFAULT_WORKSPACE_DOTENV_FILENAME,
+)
 
 
 @dataclass(frozen=True, slots=True, init=False)

@@ -285,7 +285,7 @@ archive of explicitly selected whole modules/resources. `main-installer.pyz`
 is an explicit alternative with `main-installer-requirements.txt`.
 Both use the same implementation; neither imports the author's checkout,
 installed application or separately installed AppRC. Management requires Python
-`>=3.12`, `platformdirs==4.10.0`, `filelock==3.32.7`, and
+`>=3.12`, `platformdirs==4.10.0`, `filelock==3.32.7`, `packaging==26.2`, and
 `pywin32==312` on Windows. These are direct dependency pins, not a transitive lock.
 
 Remote-mode `app-install.cmd` is self-contained: it carries the same rendered
@@ -303,6 +303,12 @@ Planning is read-only; mutation revalidates revision/generation under coordinati
 Repository-owned payload functions choose their order and application actions.
 There is no required lifecycle base class, hook registry, function extraction or
 source-code rewriting.
+
+Authored installers must also accept `--repair --directory PATH`. Resolve that
+explicit saved address, verify its installation identity, and use `plan_repair`
+with the saved source, placement and backend rather than planning a new install
+from ambient defaults. Saved `repair-installer.py` uses owned-support digests and
+recorded source identity; it does not need the public release manifest beside it.
 
 `uninstall_saved(...)` returns the verified adjacent authored uninstaller's argv,
 carrying `original_pid`, `expected_revision`, selected categories, `complete`
@@ -348,6 +354,11 @@ main commit or release identity, staged package, runtime constraints, and
 explicit GitHub client through installation. Recomputing
 `installation_source(spec)` afterward would discard the transport selection.
 
+The standalone loader installs only `MANAGEMENT_REQUIREMENTS`. Application
+`runtime_requirements` and `runtime_overrides` remain in the bundled source
+contract for the uv-tool environment; they do not constrain the independent
+loader. An application with no runtime dependencies has a valid empty closure.
+
 For verified immutable-main and release-sdist inputs,
 `InstalledSnapshot.source.digest` retains the original acquired archive SHA-256.
 Immutable main also retains its original repository/full-commit requirement.
@@ -362,6 +373,24 @@ including after temporary source deletion. A different installed package with
 the same name/version does not satisfy that proof. The `RECORD` fingerprint
 binds the installed observation; it does not reconstruct the original archive
 or turn an opaque uv URL into a cryptographic attestation.
+
+For a historical program whose deleted arbitrary staging cannot prove its source,
+explicit replacement is separate from adoption. `plan_legacy_replacement(...)`
+takes the inspected `LegacyReceiptInspection`, independently observed old RECORD
+digest, new immutable source and placement. Its empty `MigrationInventory` uses
+the installation directory as both roots; it does not move data or workspaces.
+`execute_legacy_replacement(...)` persists pending authority before replacing the
+program, then uses the ordinary strict probe before retiring old controllers and
+activating bound support. It never fabricates a source-proven historical snapshot.
+
+Authored recovery first calls `is_pending_legacy_replacement(inspection)`, before
+generic migration recovery. If true, call `resume_legacy_replacement(...)` with
+the exact operation UUID, current revision and fresh explicit quiescence.
+Omit optional `prepared` and `support_files` so the SDK loads its digest-verified
+retained inputs; do not require the vanished checkout/archive before calling it.
+Do not inspect private discriminator fields, reselect ambient tools or call
+`plan_install` over that pending authority. Once the operation becomes ordinary
+`migrate`, existing `resume_migration(...)` finishes the recorded cutover.
 
 `InstallationSource.matches_observation(observed)` allows only this supported
 digest enrichment; all other acquisition inputs remain exact, and a specified

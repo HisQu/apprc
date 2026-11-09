@@ -3,22 +3,27 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 import typer
 from typer.testing import CliRunner
 
 import apprc as rc
 from apprc.definition.installation import (
     CleanupInventory,
+    InstallationError,
     InstallationIdentity,
     InstallationInspection,
+    InstallationOperation,
     InstallationPlacement,
     InstallationRecord,
     InstallationSource,
     InstalledSnapshot,
     InventoryEntry,
+    OperationStep,
     UninstallPlan,
     UvToolTarget,
 )
@@ -179,9 +184,16 @@ def _ready_uninstall_preparation(
 ) -> UninstallPreparation:
     placement = InstallationPlacement(
         layout=Layout.native(),
-        config_dir=directory / "config",
-        cache_dir=directory / "cache",
-        capabilities=frozenset({"config", "cache"}),
+        config_dir=(
+            directory.parent / "config" if "config" in categories else None
+        ),
+        appdata_dir=(
+            directory.parent / "appdata" if "appdata" in categories else None
+        ),
+        cache_dir=(
+            directory.parent / "cache" if "cache" in categories else None
+        ),
+        capabilities=categories,
     )
     identity = InstallationIdentity(
         app_id="installation-cli",
@@ -304,3 +316,293 @@ def test_installation_uninstall_preview_preserves_categories_and_requires_consen
         entry["resource"] for entry in json.loads(preview.stdout)["entries"]
     } == {"config", "cache"}
     assert no_consent.exit_code != 0
+
+
+def test_default_owned_inventory_tracks_only_selected_owned_roots(
+    tmp_path: Path,
+) -> None:
+    from apprc.distribution.runtime.controllers import _default_owned_inventory
+
+    preparation = _ready_uninstall_preparation(
+        tmp_path / "installation",
+        categories=frozenset({"config", "cache"}),
+        complete=True,
+        forget_retained=True,
+    )
+    inspection = preparation.inspection
+    record = inspection.record
+    assert record is not None
+    config = record.placement.config_dir
+    cache = record.placement.cache_dir
+    assert config is not None and cache is not None
+    for root, category in ((config, "config"), (cache, "cache")):
+        root.mkdir(parents=True)
+        (root / ".apprc-owner.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "app_id": record.app_id,
+                    "category": category,
+                }
+            ),
+            encoding="utf-8",
+        )
+    (config / "apprc.user.env").write_text("VALUE=1\n", encoding="utf-8")
+
+    inventory = _default_owned_inventory(
+        inspection,
+        categories=frozenset({"config"}),
+        forget_retained=True,
+    )
+
+    assert {entry.path for entry in inventory.entries} == {
+        config / ".apprc-owner.json",
+        config / "apprc.user.env",
+        config,
+    }
+    assert inventory.retained == (
+        InventoryEntry(cache, "directory", None, "cache"),
+    )
+
+
+def test_saved_config_inventory_includes_secret_file_and_retains_unknown(
+    tmp_path: Path,
+) -> None:
+    from apprc.distribution.runtime.controllers import _default_owned_inventory
+
+    preparation = _ready_uninstall_preparation(
+        tmp_path / "installation",
+        categories=frozenset({"config"}),
+        complete=True,
+        forget_retained=False,
+    )
+    inspection = preparation.inspection
+    record = inspection.record
+    assert record is not None and record.placement.config_dir is not None
+    root = record.placement.config_dir
+    root.mkdir(parents=True)
+    (root / ".apprc-owner.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "app_id": record.app_id,
+                "category": "config",
+            }
+        ),
+        encoding="utf-8",
+    )
+    secret = root / "apprc.user.secret.env"
+    secret.write_text("TOKEN=private\n", encoding="utf-8")
+    unknown = root / "custom.ini"
+    unknown.write_text("retain me\n", encoding="utf-8")
+
+    inventory = _default_owned_inventory(
+        inspection,
+        categories=frozenset({"config"}),
+        forget_retained=False,
+    )
+
+    assert {entry.path for entry in inventory.entries} == {
+        root / ".apprc-owner.json",
+        secret,
+    }
+    assert inventory.retained == (
+        InventoryEntry(root, "directory", None, "config"),
+    )
+    assert unknown.read_text(encoding="utf-8") == "retain me\n"
+
+
+def test_default_config_inventory_retains_unknown_files_when_forgotten(
+    tmp_path: Path,
+) -> None:
+    from apprc.distribution.runtime.controllers import _default_owned_inventory
+
+    preparation = _ready_uninstall_preparation(
+        tmp_path / "installation",
+        categories=frozenset({"config"}),
+        complete=True,
+        forget_retained=True,
+    )
+    inspection = preparation.inspection
+    record = inspection.record
+    assert record is not None and record.placement.config_dir is not None
+    root = record.placement.config_dir
+    root.mkdir(parents=True)
+    (root / ".apprc-owner.json").write_text(
+        '{"schema_version":1,"app_id":"installation-cli","category":"config"}\n',
+        encoding="utf-8",
+    )
+    unknown = root / "unknown.db"
+    unknown.write_text("application payload\n", encoding="utf-8")
+
+    inventory = _default_owned_inventory(
+        inspection,
+        categories=frozenset({"config"}),
+        forget_retained=True,
+    )
+
+    assert inventory.retained == (
+        InventoryEntry(root, "directory", None, "config"),
+    )
+    assert unknown not in {entry.path for entry in inventory.entries}
+
+
+def test_default_owned_inventory_rejects_mismatched_root_marker(
+    tmp_path: Path,
+) -> None:
+    from apprc.distribution.runtime.controllers import _default_owned_inventory
+
+    preparation = _ready_uninstall_preparation(
+        tmp_path / "installation",
+        categories=frozenset({"config"}),
+        complete=True,
+        forget_retained=False,
+    )
+    inspection = preparation.inspection
+    record = inspection.record
+    assert record is not None and record.placement.config_dir is not None
+    root = record.placement.config_dir
+    root.mkdir(parents=True)
+    (root / ".apprc-owner.json").write_text(
+        '{"schema_version":1,"app_id":"other","category":"config"}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Mismatched AppRC ownership marker"):
+        _default_owned_inventory(
+            inspection,
+            categories=frozenset({"config"}),
+            forget_retained=False,
+        )
+
+
+def test_pending_uninstall_resumes_saved_identity_and_options(
+    tmp_path: Path,
+) -> None:
+    preparation = _ready_uninstall_preparation(
+        tmp_path / "installation",
+        categories=frozenset(),
+        complete=False,
+        forget_retained=False,
+    )
+    saved = preparation.inspection
+    assert saved.record is not None
+    original_plan = preparation.plan
+    assert original_plan is not None
+    operation = InstallationOperation(
+        operation_id=original_plan.operation_id,
+        kind="uninstall",
+        phase="failed",
+        intended=None,
+        placement=saved.record.placement,
+        steps=(OperationStep.PROVIDER_CLEANUP,),
+        inventory=original_plan.inventory,
+        categories=original_plan.categories,
+        complete=original_plan.complete,
+        forget_retained=original_plan.forget_retained,
+    )
+    pending_record = replace(
+        saved.record, status="incomplete", operation=operation
+    )
+    pending = replace(
+        saved,
+        status="incomplete",
+        revision="c" * 64,
+        record=pending_record,
+    )
+
+    resumed = controllers._resume_uninstall(
+        pending,
+        categories=frozenset(),
+        complete=False,
+        forget_retained=False,
+        inventory=None,
+    )
+
+    assert resumed is not None
+    assert resumed.operation_id == original_plan.operation_id
+    assert resumed.inventory == original_plan.inventory
+    assert resumed.expected_revision == "c" * 64
+    with pytest.raises(InstallationError):
+        controllers._resume_uninstall(
+            pending,
+            categories=frozenset({"config"}),
+            complete=False,
+            forget_retained=False,
+            inventory=None,
+        )
+
+
+def test_cli_complete_preview_uses_fresh_saved_owned_inventory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from types import SimpleNamespace
+
+    from apprc.interfaces.cli import installation_command
+
+    stub = _ready_uninstall_preparation(
+        tmp_path / "installation",
+        categories=frozenset({"config", "appdata"}),
+        complete=True,
+        forget_retained=False,
+    )
+    assert stub.plan is not None
+    base_record = stub.inspection.record
+    assert base_record is not None
+    placement = replace(
+        base_record.placement,
+        appdata_dir=tmp_path / "appdata",
+        cache_dir=None,
+        capabilities=frozenset({"config", "appdata"}),
+    )
+    record = replace(base_record, placement=placement)
+    inspection = replace(stub.inspection, record=record)
+    for root, category in (
+        (placement.config_dir, "config"),
+        (placement.appdata_dir, "appdata"),
+    ):
+        assert root is not None
+        root.mkdir(parents=True)
+        (root / ".apprc-owner.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "app_id": record.app_id,
+                    "category": category,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        installation_command,
+        "installation_context",
+        lambda _ctx: SimpleNamespace(
+            inspection=SimpleNamespace(directory=inspection.directory)
+        ),
+    )
+    monkeypatch.setattr(
+        controllers, "inspect_saved", lambda _directory: inspection
+    )
+
+    result = CliRunner().invoke(
+        _app(),
+        [
+            "installation",
+            "uninstall",
+            "--dry-run",
+            "--complete",
+            "--category",
+            "config",
+            "--category",
+            "appdata",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert {entry["resource"] for entry in payload["entries"]} == {
+        "config",
+        "appdata",
+    }

@@ -104,10 +104,6 @@ class DistributionSpec:
                 raise ValueError(
                     "Release asset digest must be lowercase SHA-256."
                 )
-        if self.source_mode == "release" and not self.runtime_requirements:
-            raise ValueError(
-                "Release sdist sources require exact runtime constraints."
-            )
         if self.source_mode == "release" and (
             not self.repository_url
             or not self.release_commit

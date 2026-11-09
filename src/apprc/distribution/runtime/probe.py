@@ -31,6 +31,25 @@ from apprc.distribution.runtime.backend import (
 from apprc.user_files.app_home.writes import file_revision
 
 
+def _validate_command_ownership(entry: Path, owned: Path) -> None:
+    """Require the exposed command to remain owned by this environment.
+
+    :param entry: Command file exposed in the backend's bin directory.
+    :param owned: Corresponding file inside the exact tool environment.
+    """
+    if not entry.is_file() or not owned.is_file():
+        raise InstallationError("Installed console command is missing.")
+    if entry.is_symlink():
+        if entry.resolve() != owned.resolve():
+            raise InstallationError(
+                "Console command points outside the recorded tool environment."
+            )
+    elif file_revision(entry) != file_revision(owned):
+        raise InstallationError(
+            "Console command differs from its installed package executable."
+        )
+
+
 def _repository_identity(
     address: str,
 ) -> tuple[str, str, int | None, str] | None:
@@ -188,7 +207,7 @@ def probe_installed_tool(
     if (
         not isinstance(value["distribution"], str)
         or re.sub(r"[-_.]+", "-", value["distribution"]).lower()
-        != identity.distribution
+        != re.sub(r"[-_.]+", "-", identity.distribution).lower()
     ):
         raise InstallationError(
             "Installed distribution identity differs from intended package."
@@ -470,17 +489,7 @@ def probe_installed_tool(
             / ("Scripts" if os.name == "nt" else "bin")
             / (command + suffix)
         )
-        if not entry.is_file() or not owned.is_file():
-            raise InstallationError("Installed console command is missing.")
-        if entry.is_symlink():
-            if entry.resolve() != owned.resolve():
-                raise InstallationError(
-                    "Console command points outside the recorded tool environment."
-                )
-        elif file_revision(entry) != file_revision(owned):
-            raise InstallationError(
-                "Console command differs from its installed package executable."
-            )
+        _validate_command_ownership(entry, owned)
         observed_commands.append(entry)
     return InstalledSnapshot(
         identity,

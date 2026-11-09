@@ -917,6 +917,12 @@ including cache and state. Once the console command is gone, use the saved
 uninstall entry or the checkout's `app-uninstall.sh`/`app-uninstall.cmd` for
 further inspection and cleanup.
 
+If application cleanup fails, rerun the same removal command with the same
+`--complete`, `--category` and `--forget-retained` choices. The saved operation
+keeps its checkpoints; successful package/data steps are not repeated. A
+conflicting request or a different installation generation is rejected rather
+than treated as a retry.
+
 For a cache-only application with no other retired resources, preview and request
 complete removal through that remaining wrapper:
 
@@ -928,6 +934,12 @@ complete removal through that remaining wrapper:
 Select only the categories actually owned by the application, including any
 retired locations shown in the preview. Unattended removal additionally requires
 `--yes`; that flag is not implied by a previous dry-run.
+
+The default preview recognizes matching resource ownership markers and standard
+AppRC config files. It does not infer ownership of custom config filenames,
+databases or arbitrary descendants. Those need an application-supplied
+`CleanupInventory`, or an explicit decision to leave retained files unmanaged;
+selecting a category alone does not make unknown files safe to delete.
 
 > [!CAUTION]
 > Complete removal can delete persistent configuration and appdata when those

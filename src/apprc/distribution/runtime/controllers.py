@@ -17,6 +17,10 @@ from pathlib import Path
 from typing import IO, Callable
 from uuid import uuid4
 
+from apprc.definition.config_filenames import (
+    DEFAULT_APPRC_TOML_FILENAME,
+    DEFAULT_USER_DOTENV_FILENAME,
+)
 from apprc.definition.installation import (
     CleanupInventory,
     InstallationDiagnostic,
@@ -28,9 +32,9 @@ from apprc.definition.installation import (
     InventoryEntry,
     OperationContext,
     OperationStep,
-    ResourceKind,
     UninstallPlan,
 )
+from apprc.definition.paths import ResourceKind
 from apprc.distribution.runtime.backend import (
     backend_environment,
     external_base_python,
@@ -44,6 +48,7 @@ from apprc.user_files.app_home.permissions import (
     set_windows_private_acl,
     windows_acl_is_private,
 )
+from apprc.user_files.app_home.ownership import inspect_ownership
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
@@ -54,6 +59,7 @@ from apprc.user_files.installation.operations import (
     record_step,
 )
 from apprc.user_files.installation.planning import resource_roots
+from apprc.user_files.purge import plan_config_file_purge
 
 
 def _handoff_removal_roots(
@@ -275,6 +281,114 @@ def _support_inventory(
     return tuple(entries), tuple(dict.fromkeys(diagnostics))
 
 
+def _default_owned_inventory(
+    inspection: InstallationInspection,
+    *,
+    categories: frozenset[ResourceKind],
+    forget_retained: bool,
+) -> CleanupInventory:
+    """Capture declared roots and known config files without importing app code."""
+    record = inspection.record
+    if record is None:
+        raise InstallationError("Default inventory requires saved authority.")
+    entries: list[InventoryEntry] = []
+    retained: list[InventoryEntry] = []
+    for category, root in resource_roots(record.placement):
+        ownership = inspect_ownership(root, record.app_id, category)
+        if ownership == "missing":
+            if category not in categories:
+                retained.append(
+                    InventoryEntry(root, "directory", None, category)
+                )
+            continue
+        if ownership != "owned":
+            raise InstallationError(
+                f"Refusing default removal of unowned {category} root: {root}"
+            )
+        if category not in categories:
+            retained.append(InventoryEntry(root, "directory", None, category))
+            continue
+        if category == "config":
+            config_plan = plan_config_file_purge(
+                record.app_id,
+                root,
+                user_dotenv_filename=DEFAULT_USER_DOTENV_FILENAME,
+                apprc_toml_filename=DEFAULT_APPRC_TOML_FILENAME,
+            )
+            for target in config_plan.targets:
+                if target == root:
+                    entries.append(
+                        InventoryEntry(root, "directory", None, category)
+                    )
+                else:
+                    entries.append(
+                        InventoryEntry(
+                            target, "file", file_revision(target), category
+                        )
+                    )
+            if root.exists() and root not in config_plan.targets:
+                retained.append(
+                    InventoryEntry(root, "directory", None, category)
+                )
+            continue
+        marker = root / ".apprc-owner.json"
+        entries.append(
+            InventoryEntry(marker, "file", file_revision(marker), category)
+        )
+        if any(path != marker for path in root.iterdir()):
+            if not forget_retained:
+                raise InstallationError(
+                    f"Unknown {category} contents require explicit inventory: {root}"
+                )
+            retained.append(InventoryEntry(root, "directory", None, category))
+        else:
+            entries.append(InventoryEntry(root, "directory", None, category))
+    return CleanupInventory(tuple(entries), tuple(retained))
+
+
+def _resume_uninstall(
+    inspection: InstallationInspection,
+    *,
+    categories: frozenset[ResourceKind],
+    complete: bool,
+    forget_retained: bool,
+    inventory: CleanupInventory | None,
+) -> UninstallPlan | None:
+    """Rebuild only the matching persisted uninstall at the current revision."""
+    record = inspection.record
+    operation = record.operation if record is not None else None
+    if (
+        record is None
+        or inspection.status != "incomplete"
+        or operation is None
+        or operation.kind != "uninstall"
+    ):
+        return None
+    if (
+        operation.categories != categories
+        or operation.complete != complete
+        or operation.forget_retained != forget_retained
+        or (inventory is not None and operation.inventory != inventory)
+    ):
+        raise InstallationError(
+            "Retry options or inventory differ from the pending uninstall."
+        )
+    if inspection.revision is None:
+        raise InstallationError("Pending uninstall authority has no revision.")
+    return UninstallPlan(
+        inspection.directory,
+        inspection.revision,
+        record.generation_id,
+        record.app_id,
+        operation.operation_id,
+        record.placement,
+        operation.inventory,
+        operation.categories,
+        operation.complete,
+        operation.forget_retained,
+    )
+
+
 def prepare_uninstall(
     directory: Path,
     *,
@@ -283,27 +397,73 @@ def prepare_uninstall(
     forget_retained: bool = False,
     inventory: CleanupInventory | None = None,
 ) -> UninstallPreparation:
-    """Build a read-only uninstall plan from caller-enumerated exact ownership.
+    """Build a read-only uninstall plan from saved or caller-enumerated ownership.
 
     :param directory: Explicit installation address.
     :param categories: Resource categories selected for complete removal.
-    :param complete: Whether support/authority retirement is requested.
-    :param forget_retained: Explicit consent for named, inventoried retained roots.
-    :param inventory: Application/provider enumeration; no generic recursive walk occurs.
+    :param complete: Whether support and installation authority are retired.
+    :param forget_retained: Whether named unselected roots may remain unmanaged.
+    :param inventory: Exact provider enumeration; defaults cover owned markers only.
     :return: Exact preview or diagnostics explaining why planning is unsafe.
     """
     inspection = inspect_saved(directory)
-    if inspection.record is None or inspection.status not in {
-        "ready",
-        "removed-retained",
-    }:
+    record = inspection.record
+    if record is None:
         return UninstallPreparation(
             None, inspection, (), inspection.diagnostics, False
         )
-    if complete:
-        support_entries, support_errors = _support_inventory(
-            inspection.record, directory
+    try:
+        resumed = _resume_uninstall(
+            inspection,
+            categories=categories,
+            complete=complete,
+            forget_retained=forget_retained,
+            inventory=inventory,
         )
+    except InstallationError as error:
+        diagnostic = InstallationDiagnostic(
+            "uninstall-retry-conflict",
+            str(error),
+            "Use the persisted options and generation.",
+        )
+        return UninstallPreparation(
+            None, inspection, (), (*inspection.diagnostics, diagnostic), False
+        )
+    if resumed is not None:
+        return UninstallPreparation(
+            resumed,
+            inspection,
+            (*resumed.inventory.entries, *resumed.inventory.retained),
+            inspection.diagnostics,
+            True,
+        )
+    if inspection.status not in {"ready", "removed-retained"}:
+        return UninstallPreparation(
+            None, inspection, (), inspection.diagnostics, False
+        )
+    try:
+        selected_inventory = inventory
+        if selected_inventory is None:
+            selected_inventory = (
+                _default_owned_inventory(
+                    inspection,
+                    categories=categories,
+                    forget_retained=forget_retained,
+                )
+                if complete
+                else CleanupInventory()
+            )
+    except (InstallationError, OSError, ValueError) as error:
+        diagnostic = InstallationDiagnostic(
+            "uninstall-owned-inventory",
+            str(error),
+            "Provide exact provider inventory for data not represented by owned markers.",
+        )
+        return UninstallPreparation(
+            None, inspection, (), (*inspection.diagnostics, diagnostic), False
+        )
+    if complete:
+        support_entries, support_errors = _support_inventory(record, directory)
         if support_errors:
             diagnostics = tuple(
                 InstallationDiagnostic(
@@ -322,9 +482,6 @@ def prepare_uninstall(
             )
     else:
         support_entries = ()
-    selected_inventory = (
-        inventory if inventory is not None else CleanupInventory()
-    )
     combined = {
         entry.path: entry
         for entry in (*selected_inventory.entries, *support_entries)
@@ -333,7 +490,7 @@ def prepare_uninstall(
         diagnostic = InstallationDiagnostic(
             "uninstall-inventory-overlap",
             "Provider and saved-support inventories overlap.",
-            "Pass resource entries only; saved support is enumerated from recorded output digests.",
+            "Pass resource entries only; saved support uses recorded output digests.",
         )
         return UninstallPreparation(
             None,
@@ -348,7 +505,7 @@ def prepare_uninstall(
     entries = (*selected_inventory.entries, *selected_inventory.retained)
     try:
         plan = plan_uninstall(
-            inspection.record,
+            record,
             directory=directory,
             revision=inspection.revision or "",
             categories=categories,
@@ -360,14 +517,14 @@ def prepare_uninstall(
         diagnostic = InstallationDiagnostic(
             "uninstall-preview-unavailable",
             str(error),
-            "Supply an exact provider inventory and resolve the named safety issue before removal.",
+            "Supply exact provider inventory and resolve the named safety issue.",
         )
         return UninstallPreparation(
-            plan=None,
-            inspection=inspection,
-            entries=tuple(entries),
-            diagnostics=(*inspection.diagnostics, diagnostic),
-            can_execute=False,
+            None,
+            inspection,
+            tuple(entries),
+            (*inspection.diagnostics, diagnostic),
+            False,
         )
     return UninstallPreparation(
         plan, inspection, tuple(entries), inspection.diagnostics, True
@@ -592,6 +749,10 @@ def stage_uninstall(
                 operation.kind != "uninstall"
                 or operation.operation_id != plan.operation_id
                 or record.generation_id != plan.expected_generation
+                or operation.inventory != plan.inventory
+                or operation.categories != plan.categories
+                or operation.complete != plan.complete
+                or operation.forget_retained != plan.forget_retained
             ):
                 raise InstallationError(
                     "A different installation operation is pending."

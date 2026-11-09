@@ -8,6 +8,7 @@
 - [Verify and update changes](#verify-and-update-changes)
   - [Checks](#checks)
   - [Documentation checks](#documentation-checks)
+  - [README maintenance](#readme-maintenance)
   - [Generated files](#generated-files)
 - [Build and release AppRC](#build-and-release-apprc)
   - [Build the three distributions](#build-the-three-distributions)
@@ -141,6 +142,37 @@ values, file effects, and prerequisites whenever changing an example.
 Keep complete application sources in `examples`; link to those sources from
 Examples. The HTML `example-file` comments in guides associate code blocks with
 files for execution tests and are hidden in rendered Markdown.
+
+## README maintenance
+
+The root README follows BuildBen's
+[`_README.md` design](https://github.com/HisQu/buildben/blob/main/src/buildben/_templates_proj/_README.md).
+Read the complete README before editing it. Adapt it in place: preserve the
+centered header, badges, graphical abstract, heading hierarchy, spacing,
+numbered table of contents, and audience-grouped documentation navigation.
+Never replace it with a generic README or drop useful content just to shorten
+a rewrite. Update facts and navigation within the chosen design.
+
+When an API or usage change invalidates the overview, update its producer,
+generated SVG, caption, and affected prose/examples together. Do not leave a
+stale picture or remove the picture instead of maintaining it. Diagram scripts
+are canonical; generated SVGs and package READMEs must not be hand-edited.
+
+Regenerate the overview alone, then both package descriptions:
+
+```shell
+.venv/bin/python docs/assets/apprc_abstract_configuration_overview.py
+.venv/bin/python src/apprc_dev/packaging/pypi_readme.py
+.venv/bin/python src/apprc_dev/packaging/terminal_metadata.py
+```
+
+Run the [documentation checks](#documentation-checks), the existing
+`tests/test_pypi_readme.py` tests, and
+`.venv/bin/python src/apprc_dev/packaging/terminal_metadata.py --check`.
+Keep incoming links synchronized when headings change. Link and generated-content
+checks do not establish visual fidelity or diagram meaning: inspect the rendered
+README and SVG against the template and current
+[component definitions](README.md#component-names).
 
 ## Generated files
 

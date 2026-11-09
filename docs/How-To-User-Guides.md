@@ -38,7 +38,7 @@
   - [Troubleshoot configuration](#troubleshoot-configuration)
   - [Migrate existing applications](#migrate-existing-applications)
 
-Each guide is independent. Install AppRC using the [installation instructions](../README.md#install).
+Each guide is independent. Install AppRC using the [installation instructions](../README.md#installation).
 The Python examples run on Python 3.12 or newer. Examples using temporary
 directories remove their files when they finish. CLI guides explicitly identify
 the files they keep in the working directory.

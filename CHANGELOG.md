@@ -191,9 +191,10 @@ All notable changes to `AppRC` will be documented in this file.
   retained repair preserve both user work and the existing coordination inode.
 - Added explicit verified-source legacy replacement with independent historical
   RECORD observation, preserved recorded interpreter/backend, a read-only pending
-  predicate and resumable pre-mutation authority. New source and saved support
-  are verified before old controllers retire; historical source provenance is
-  never fabricated.
+  predicate and resumable pre-mutation authority. Recovery inputs and an owned
+  recovery entry precede initial pending-authority publication; strict new-source
+  observation precedes old-controller retirement. Historical source provenance
+  is never fabricated.
 - Added `apprc-core[distribution]` authoring APIs, strict external templates and
   deterministic PEP 723/zipapp support bundling complete ordinary shared modules
   with repository-owned install/uninstall composition. No lifecycle inheritance,

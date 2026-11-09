@@ -60,9 +60,9 @@ also acquire configuration files or a workspace registry.
 
 <br>
 
-| ![AppRC configuration, application paths, and settings tools](https://raw.githubusercontent.com/HisQu/apprc/main/docs/assets/apprc-abstract-configuration-overview.svg) |
+| ![AppRC setting layers, optional workspaces, and application code](https://raw.githubusercontent.com/HisQu/apprc/main/docs/assets/apprc-abstract-configuration-overview.svg) |
 |:--:|
-| **Fig. 1 - Graphical Abstract:** AppRC resolves declared setting sources into typed settings, keeps application paths separate from optional workspaces, and exposes reviewed settings management through ConfigManager and optional user interfaces. |
+| **Fig. 1 - Graphical Abstract:** AppRC resolves typed settings from layered sources, applies optional workspace overrides, and shares one declaration across application code and configuration tools. |
 
 <br>
 

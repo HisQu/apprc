@@ -6,7 +6,7 @@
 <!-- Title: apprc_abstract_configuration_overview Pages: 1 -->
 <svg width="1080px" height="721.328413px"
  viewBox="0 0 1084 724" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-<g id="graph0" class="graph" transform="scale(1.12612 1.12612) rotate(0) translate(11.52 631.39)">
+<g id="graph0" class="graph" transform="scale(1.12612 1.12612) rotate(0) translate(11.52 631.4)">
 <title>apprc_abstract_configuration_overview</title>
 <g id="clust1" class="cluster">
 <title>cluster_application</title>
@@ -15,14 +15,14 @@
 <!-- developer_benefits -->
 <g id="node1" class="node">
 <title>developer_benefits</title>
-<text xml:space="preserve" text-anchor="start" x="342.75" y="-602.62" font-family="sans-serif" font-size="13.00" fill="#ee220c">FOR DEVELOPERS</text>
-<text xml:space="preserve" text-anchor="start" x="342.75" y="-578.87" font-family="sans-serif" font-weight="bold" font-size="15.00" fill="#ee220c">Declare and document once.</text>
+<text xml:space="preserve" text-anchor="start" x="342.75" y="-602.63" font-family="sans-serif" font-size="13.00" fill="#ee220c">FOR DEVELOPERS</text>
+<text xml:space="preserve" text-anchor="start" x="342.75" y="-578.88" font-family="sans-serif" font-weight="bold" font-size="15.00" fill="#ee220c">Declare and document once.</text>
 </g>
 <!-- user_benefits -->
 <g id="node2" class="node">
 <title>user_benefits</title>
-<text xml:space="preserve" text-anchor="start" x="668.7" y="-602.62" font-family="sans-serif" font-size="13.00" fill="#ee220c">FOR APP USERS</text>
-<text xml:space="preserve" text-anchor="start" x="668.7" y="-578.87" font-family="sans-serif" font-weight="bold" font-size="15.00" fill="#ee220c">Understand and edit settings.</text>
+<text xml:space="preserve" text-anchor="start" x="668.7" y="-602.63" font-family="sans-serif" font-size="13.00" fill="#ee220c">FOR APP USERS</text>
+<text xml:space="preserve" text-anchor="start" x="668.7" y="-578.88" font-family="sans-serif" font-weight="bold" font-size="15.00" fill="#ee220c">Understand and edit settings.</text>
 </g>
 <!-- app_top_left -->
 <!-- app_bottom_right -->
@@ -44,10 +44,10 @@
 <!-- resolved -->
 <g id="node8" class="node">
 <title>resolved</title>
-<path fill="#cccccc" fill-opacity="0.400000" stroke="none" d="M394.65,-377.87C394.65,-377.87 534.15,-377.87 534.15,-377.87 540.15,-377.87 546.15,-383.87 546.15,-389.87 546.15,-389.87 546.15,-438.12 546.15,-438.12 546.15,-444.12 540.15,-450.12 534.15,-450.12 534.15,-450.12 394.65,-450.12 394.65,-450.12 388.65,-450.12 382.65,-444.12 382.65,-438.12 382.65,-438.12 382.65,-389.87 382.65,-389.87 382.65,-383.87 388.65,-377.87 394.65,-377.87"/>
-<path fill="none" stroke="#00a2ff" d="M394.65,-377.87C394.65,-377.87 534.15,-377.87 534.15,-377.87 540.15,-377.87 546.15,-383.87 546.15,-389.87 546.15,-389.87 546.15,-438.12 546.15,-438.12 546.15,-444.12 540.15,-450.12 534.15,-450.12 534.15,-450.12 394.65,-450.12 394.65,-450.12 388.65,-450.12 382.65,-444.12 382.65,-438.12 382.65,-438.12 382.65,-389.87 382.65,-389.87 382.65,-383.87 388.65,-377.87 394.65,-377.87"/>
-<text xml:space="preserve" text-anchor="start" x="410.03" y="-428.82" font-family="sans-serif" font-weight="bold" font-size="14.00" fill="#00a2ff">ResolvedConfig</text>
-<text xml:space="preserve" text-anchor="start" x="391.65" y="-391.37" font-family="sans-serif" font-size="13.00" fill="#00a2ff">Snapshot + provenance</text>
+<path fill="#cccccc" fill-opacity="0.400000" stroke="none" d="M394.65,-377.88C394.65,-377.88 534.15,-377.88 534.15,-377.88 540.15,-377.88 546.15,-383.88 546.15,-389.88 546.15,-389.88 546.15,-438.13 546.15,-438.13 546.15,-444.13 540.15,-450.13 534.15,-450.13 534.15,-450.13 394.65,-450.13 394.65,-450.13 388.65,-450.13 382.65,-444.13 382.65,-438.13 382.65,-438.13 382.65,-389.88 382.65,-389.88 382.65,-383.88 388.65,-377.88 394.65,-377.88"/>
+<path fill="none" stroke="#00a2ff" d="M394.65,-377.88C394.65,-377.88 534.15,-377.88 534.15,-377.88 540.15,-377.88 546.15,-383.88 546.15,-389.88 546.15,-389.88 546.15,-438.13 546.15,-438.13 546.15,-444.13 540.15,-450.13 534.15,-450.13 534.15,-450.13 394.65,-450.13 394.65,-450.13 388.65,-450.13 382.65,-444.13 382.65,-438.13 382.65,-438.13 382.65,-389.88 382.65,-389.88 382.65,-383.88 388.65,-377.88 394.65,-377.88"/>
+<text xml:space="preserve" text-anchor="start" x="410.03" y="-428.83" font-family="sans-serif" font-weight="bold" font-size="14.00" fill="#00a2ff">ResolvedConfig</text>
+<text xml:space="preserve" text-anchor="start" x="391.65" y="-391.38" font-family="sans-serif" font-size="13.00" fill="#00a2ff">Snapshot + provenance</text>
 </g>
 <!-- paths -->
 <g id="node9" class="node">
@@ -70,28 +70,28 @@
 <!-- management -->
 <g id="node11" class="node">
 <title>management</title>
-<path fill="#cccccc" fill-opacity="0.400000" stroke="none" d="M378.15,-118.67C378.15,-118.67 550.65,-118.67 550.65,-118.67 556.65,-118.67 562.65,-124.67 562.65,-130.67 562.65,-130.67 562.65,-178.92 562.65,-178.92 562.65,-184.92 556.65,-190.92 550.65,-190.92 550.65,-190.92 378.15,-190.92 378.15,-190.92 372.15,-190.92 366.15,-184.92 366.15,-178.92 366.15,-178.92 366.15,-130.67 366.15,-130.67 366.15,-124.67 372.15,-118.67 378.15,-118.67"/>
-<path fill="none" stroke="#f4a261" d="M378.15,-118.67C378.15,-118.67 550.65,-118.67 550.65,-118.67 556.65,-118.67 562.65,-124.67 562.65,-130.67 562.65,-130.67 562.65,-178.92 562.65,-178.92 562.65,-184.92 556.65,-190.92 550.65,-190.92 550.65,-190.92 378.15,-190.92 378.15,-190.92 372.15,-190.92 366.15,-184.92 366.15,-178.92 366.15,-178.92 366.15,-130.67 366.15,-130.67 366.15,-124.67 372.15,-118.67 378.15,-118.67"/>
-<text xml:space="preserve" text-anchor="start" x="410.4" y="-169.62" font-family="sans-serif" font-weight="bold" font-size="14.00" fill="#f4a261">ConfigManager</text>
-<text xml:space="preserve" text-anchor="start" x="375.15" y="-132.17" font-family="sans-serif" font-size="13.00" fill="#f4a261">Reviewed settings operations</text>
+<path fill="#cccccc" fill-opacity="0.400000" stroke="none" d="M378.15,-118.68C378.15,-118.68 550.65,-118.68 550.65,-118.68 556.65,-118.68 562.65,-124.68 562.65,-130.68 562.65,-130.68 562.65,-178.93 562.65,-178.93 562.65,-184.93 556.65,-190.93 550.65,-190.93 550.65,-190.93 378.15,-190.93 378.15,-190.93 372.15,-190.93 366.15,-184.93 366.15,-178.93 366.15,-178.93 366.15,-130.68 366.15,-130.68 366.15,-124.68 372.15,-118.68 378.15,-118.68"/>
+<path fill="none" stroke="#f4a261" d="M378.15,-118.68C378.15,-118.68 550.65,-118.68 550.65,-118.68 556.65,-118.68 562.65,-124.68 562.65,-130.68 562.65,-130.68 562.65,-178.93 562.65,-178.93 562.65,-184.93 556.65,-190.93 550.65,-190.93 550.65,-190.93 378.15,-190.93 378.15,-190.93 372.15,-190.93 366.15,-184.93 366.15,-178.93 366.15,-178.93 366.15,-130.68 366.15,-130.68 366.15,-124.68 372.15,-118.68 378.15,-118.68"/>
+<text xml:space="preserve" text-anchor="start" x="410.4" y="-169.63" font-family="sans-serif" font-weight="bold" font-size="14.00" fill="#f4a261">ConfigManager</text>
+<text xml:space="preserve" text-anchor="start" x="375.15" y="-132.18" font-family="sans-serif" font-size="13.00" fill="#f4a261">Reviewed settings operations</text>
 </g>
 <!-- app_code -->
 <g id="node12" class="node">
 <title>app_code</title>
-<path fill="#444444" fill-opacity="0.098039" stroke="none" d="M670.05,-230.77C670.05,-230.77 899.55,-230.77 899.55,-230.77 905.55,-230.77 911.55,-236.77 911.55,-242.77 911.55,-242.77 911.55,-362.02 911.55,-362.02 911.55,-368.02 905.55,-374.02 899.55,-374.02 899.55,-374.02 670.05,-374.02 670.05,-374.02 664.05,-374.02 658.05,-368.02 658.05,-362.02 658.05,-362.02 658.05,-242.77 658.05,-242.77 658.05,-236.77 664.05,-230.77 670.05,-230.77"/>
-<path fill="none" stroke="#666666" d="M670.05,-230.77C670.05,-230.77 899.55,-230.77 899.55,-230.77 905.55,-230.77 911.55,-236.77 911.55,-242.77 911.55,-242.77 911.55,-362.02 911.55,-362.02 911.55,-368.02 905.55,-374.02 899.55,-374.02 899.55,-374.02 670.05,-374.02 670.05,-374.02 664.05,-374.02 658.05,-368.02 658.05,-362.02 658.05,-362.02 658.05,-242.77 658.05,-242.77 658.05,-236.77 664.05,-230.77 670.05,-230.77"/>
-<text xml:space="preserve" text-anchor="start" x="731.18" y="-351.77" font-family="sans-serif" font-weight="bold" font-size="15.00" fill="#666666">Your app code</text>
-<text xml:space="preserve" text-anchor="start" x="667.05" y="-313.77" font-family="sans-serif" font-size="13.00" fill="#666666">• Typed settings</text>
-<text xml:space="preserve" text-anchor="start" x="667.05" y="-279.02" font-family="sans-serif" font-size="13.00" fill="#666666">• AppPaths: enabled locations or None</text>
-<text xml:space="preserve" text-anchor="start" x="667.05" y="-244.27" font-family="sans-serif" font-size="13.00" fill="#666666">• Workspace selection (optional)</text>
+<path fill="#444444" fill-opacity="0.098039" stroke="none" d="M670.05,-230.78C670.05,-230.78 899.55,-230.78 899.55,-230.78 905.55,-230.78 911.55,-236.78 911.55,-242.78 911.55,-242.78 911.55,-362.03 911.55,-362.03 911.55,-368.03 905.55,-374.03 899.55,-374.03 899.55,-374.03 670.05,-374.03 670.05,-374.03 664.05,-374.03 658.05,-368.03 658.05,-362.03 658.05,-362.03 658.05,-242.78 658.05,-242.78 658.05,-236.78 664.05,-230.78 670.05,-230.78"/>
+<path fill="none" stroke="#666666" d="M670.05,-230.78C670.05,-230.78 899.55,-230.78 899.55,-230.78 905.55,-230.78 911.55,-236.78 911.55,-242.78 911.55,-242.78 911.55,-362.03 911.55,-362.03 911.55,-368.03 905.55,-374.03 899.55,-374.03 899.55,-374.03 670.05,-374.03 670.05,-374.03 664.05,-374.03 658.05,-368.03 658.05,-362.03 658.05,-362.03 658.05,-242.78 658.05,-242.78 658.05,-236.78 664.05,-230.78 670.05,-230.78"/>
+<text xml:space="preserve" text-anchor="start" x="731.18" y="-351.78" font-family="sans-serif" font-weight="bold" font-size="15.00" fill="#666666">Your app code</text>
+<text xml:space="preserve" text-anchor="start" x="667.05" y="-313.78" font-family="sans-serif" font-size="13.00" fill="#666666">• Typed settings</text>
+<text xml:space="preserve" text-anchor="start" x="667.05" y="-279.03" font-family="sans-serif" font-size="13.00" fill="#666666">• AppPaths: enabled locations or None</text>
+<text xml:space="preserve" text-anchor="start" x="667.05" y="-244.28" font-family="sans-serif" font-size="13.00" fill="#666666">• Workspace selection (optional)</text>
 </g>
 <!-- sources -->
 <g id="node13" class="node">
 <title>sources</title>
 <path fill="#00a2ff" fill-opacity="0.098039" stroke="#00a2ff" stroke-width="1.7" d="M218.4,-446.4C218.4,-446.4 12,-446.4 12,-446.4 6,-446.4 0,-440.4 0,-434.4 0,-434.4 0,-393.6 0,-393.6 0,-387.6 6,-381.6 12,-381.6 12,-381.6 218.4,-381.6 218.4,-381.6 224.4,-381.6 230.4,-387.6 230.4,-393.6 230.4,-393.6 230.4,-434.4 230.4,-434.4 230.4,-440.4 224.4,-446.4 218.4,-446.4"/>
-<text xml:space="preserve" text-anchor="start" x="42.08" y="-427.87" font-family="sans-serif" font-size="13.00" fill="#00a2ff">Enabled setting sources</text>
-<text xml:space="preserve" text-anchor="start" x="31.95" y="-409.12" font-family="sans-serif" font-size="13.00" fill="#00a2ff">Packaged defaults · dotenv</text>
-<text xml:space="preserve" text-anchor="start" x="75.83" y="-390.37" font-family="sans-serif" font-size="13.00" fill="#00a2ff">Environment</text>
+<text xml:space="preserve" text-anchor="start" x="42.08" y="-427.88" font-family="sans-serif" font-size="13.00" fill="#00a2ff">Enabled setting sources</text>
+<text xml:space="preserve" text-anchor="start" x="31.95" y="-409.13" font-family="sans-serif" font-size="13.00" fill="#00a2ff">Packaged defaults · dotenv</text>
+<text xml:space="preserve" text-anchor="start" x="75.83" y="-390.38" font-family="sans-serif" font-size="13.00" fill="#00a2ff">Environment</text>
 </g>
 <!-- preferences -->
 <g id="node14" class="node">
@@ -110,9 +110,9 @@
 <!-- sources_edge_label -->
 <g id="node16" class="node">
 <title>sources_edge_label</title>
-<polygon fill="#00a2ff" stroke="none" points="251.92,-427.57 251.92,-450.82 309.67,-450.82 309.67,-427.57 251.92,-427.57"/>
-<polygon fill="none" stroke="#00a2ff" points="251.92,-427.57 251.92,-450.82 309.67,-450.82 309.67,-427.57 251.92,-427.57"/>
-<text xml:space="preserve" text-anchor="start" x="254.92" y="-437.42" font-family="sans-serif" font-weight="bold" font-size="12.00" fill="#ffffff">resolve()</text>
+<polygon fill="#00a2ff" stroke="none" points="251.92,-427.58 251.92,-450.83 309.67,-450.83 309.67,-427.58 251.92,-427.58"/>
+<polygon fill="none" stroke="#00a2ff" points="251.92,-427.58 251.92,-450.83 309.67,-450.83 309.67,-427.58 251.92,-427.58"/>
+<text xml:space="preserve" text-anchor="start" x="254.92" y="-437.43" font-family="sans-serif" font-weight="bold" font-size="12.00" fill="#ffffff">resolve()</text>
 </g>
 <!-- resolved_edge_label -->
 <g id="node17" class="node">
@@ -124,16 +124,16 @@
 <!-- paths_edge_label -->
 <g id="node18" class="node">
 <title>paths_edge_label</title>
-<polygon fill="#32bc00" stroke="none" points="617.17,-333.97 617.17,-357.22 664.42,-357.22 664.42,-333.97 617.17,-333.97"/>
-<polygon fill="none" stroke="#32bc00" points="617.17,-333.97 617.17,-357.22 664.42,-357.22 664.42,-333.97 617.17,-333.97"/>
-<text xml:space="preserve" text-anchor="start" x="620.17" y="-343.82" font-family="sans-serif" font-weight="bold" font-size="12.00" fill="#ffffff">paths()</text>
+<polygon fill="#32bc00" stroke="none" points="617.17,-355.57 617.17,-378.82 664.42,-378.82 664.42,-355.57 617.17,-355.57"/>
+<polygon fill="none" stroke="#32bc00" points="617.17,-355.57 617.17,-378.82 664.42,-378.82 664.42,-355.57 617.17,-355.57"/>
+<text xml:space="preserve" text-anchor="start" x="620.17" y="-365.42" font-family="sans-serif" font-weight="bold" font-size="12.00" fill="#ffffff">paths()</text>
 </g>
 <!-- workspaces_edge_label -->
 <g id="node19" class="node">
 <title>workspaces_edge_label</title>
-<polygon fill="#32bc00" stroke="none" points="592.42,-211.57 592.42,-234.82 689.17,-234.82 689.17,-211.57 592.42,-211.57"/>
-<polygon fill="none" stroke="#32bc00" points="592.42,-211.57 592.42,-234.82 689.17,-234.82 689.17,-211.57 592.42,-211.57"/>
-<text xml:space="preserve" text-anchor="start" x="595.42" y="-221.42" font-family="sans-serif" font-weight="bold" font-size="12.00" fill="#ffffff">select / inspect</text>
+<polygon fill="#32bc00" stroke="none" points="592.42,-211.58 592.42,-234.83 689.17,-234.83 689.17,-211.58 592.42,-211.58"/>
+<polygon fill="none" stroke="#32bc00" points="592.42,-211.58 592.42,-234.83 689.17,-234.83 689.17,-211.58 592.42,-211.58"/>
+<text xml:space="preserve" text-anchor="start" x="595.42" y="-221.43" font-family="sans-serif" font-weight="bold" font-size="12.00" fill="#ffffff">select / inspect</text>
 </g>
 <!-- interfaces_edge_label -->
 <g id="node20" class="node">

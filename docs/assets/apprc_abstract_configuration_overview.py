@@ -245,7 +245,7 @@ def build_graph() -> Digraph:
             3.45,
             gg.BLUE,
         ),
-        ("paths:e", "app_code:paths:w", "paths()", 9.0, 2.25, gg.GREEN),
+        ("paths:e", "app_code:paths:w", "paths()", 9.0, 2.55, gg.GREEN),
         (
             "workspaces:e",
             "app_code:workspace:w",

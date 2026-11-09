@@ -21,7 +21,8 @@ from apprc.definition.maintenance import (
     RemovalPlan,
     RemovalResult,
 )
-from apprc.definition.paths import ResourceKind
+from apprc.definition.paths import PathKind, ResourceKind
+from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli.context import (
     CliRuntimeContext,
     cli_runtime_context_from,

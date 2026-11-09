@@ -371,6 +371,8 @@ def test_installation_uninstall_preview_uses_real_owned_inventory_and_requires_c
         entry["resource"] for entry in json.loads(preview.stdout)["entries"]
     } == {"config", "cache"}
     assert no_consent.exit_code != 0
+    assert record.placement.config_dir is not None
+    assert record.placement.cache_dir is not None
     assert (record.placement.config_dir / ".apprc-owner.json").is_file()
     assert (record.placement.cache_dir / ".apprc-owner.json").is_file()
 
@@ -864,6 +866,7 @@ def test_complete_preview_rejects_stale_host_file_revision(
     record = inspection.record
     assert record is not None
     config = record.placement.config_dir
+    assert config is not None
     config.mkdir(parents=True)
     target = config / "settings.toml"
     target.write_text("old", encoding="utf-8")

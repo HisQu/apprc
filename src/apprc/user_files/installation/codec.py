@@ -16,6 +16,7 @@ from typing import Literal, Union, get_args, get_origin, get_type_hints
 from uuid import UUID
 
 from apprc.definition.installation import (
+    CleanupInventory,
     InstallationError,
     InstallationRecord,
     OperationContext,
@@ -249,3 +250,31 @@ def decode_operation_context(content: bytes) -> OperationContext:
     if not isinstance(context, OperationContext):
         raise InstallationError("Invalid operation context.")
     return context
+
+
+def encode_cleanup_inventory(inventory: CleanupInventory) -> bytes:
+    """Serialize exact cleanup targets for a private saved-controller handoff.
+
+    :param inventory: Exact host-selected owned entries.
+    :return: Deterministic UTF-8 inventory bytes.
+    """
+    return (
+        json.dumps(_encode(inventory), ensure_ascii=False, sort_keys=True)
+        + "\n"
+    ).encode("utf-8")
+
+
+def decode_cleanup_inventory(content: bytes) -> CleanupInventory:
+    """Decode only the fixed cleanup-inventory dataclass structure.
+
+    :param content: Private controller-supplied inventory bytes.
+    :return: Typed inventory requiring live scope and revision validation.
+    """
+    try:
+        value = json.loads(content.decode("utf-8"), object_pairs_hook=_pairs)
+        inventory = _decode(value, CleanupInventory, "cleanup-inventory")
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as error:
+        raise InstallationError("Invalid cleanup inventory JSON.") from error
+    if not isinstance(inventory, CleanupInventory):
+        raise InstallationError("Invalid cleanup inventory.")
+    return inventory

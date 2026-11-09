@@ -15,8 +15,13 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 # == 3rd Party ===============================
 import typer
 
-from apprc.definition.installation import InstallationError
+from apprc.definition.installation import (
+    CleanupInventory,
+    InstallationError,
+    InstallationInspection,
+)
 from apprc.definition.maintenance import MaintenanceHandlers
+from apprc.definition.paths import ResourceKind
 from apprc.interfaces.cli._typer_utils import (
     args_after_cli_command,
     parse_leading_options,
@@ -51,6 +56,11 @@ OptionsT = TypeVar("OptionsT", bound=CliRuntimeOptionsProtocol)
 StateT = TypeVar("StateT")
 
 type CliArgvProvider = Callable[[], Sequence[str]]
+
+type InstallationInventoryProvider = Callable[
+    [InstallationInspection, frozenset[ResourceKind], bool],
+    CleanupInventory,
+]
 type MountCliRuntimeStateFactory[StateT] = Callable[
     [CliRuntimeContext[Any]],
     StateT,
@@ -441,6 +451,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
         *,
         handlers: MaintenanceHandlers = MaintenanceHandlers(),
         maintenance_help_panel: str = "Maintenance",
+        installation_inventory: InstallationInventoryProvider | None = None,
     ) -> dict[str, typer.Typer]:
         """Mount fixed AppRC command groups without replacing the host callback."""
         from apprc.interfaces.cli.config_command.app import (
@@ -461,6 +472,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             self.apprc,
             handlers=handlers,
             maintenance_help_panel=maintenance_help_panel,
+            installation_inventory=installation_inventory,
         )
         if (
             self.apprc.schema.paths.config

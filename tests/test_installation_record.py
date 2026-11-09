@@ -11,12 +11,19 @@ import pytest
 
 from apprc import AppRC, Paths, ResolveOptions
 from apprc.definition.installation import (
+    CleanupInventory,
     InstallationError,
     InstallationPlacement,
     InstallationRecord,
+    InventoryEntry,
 )
 from apprc.definition.paths import Layout
-from apprc.user_files.installation.codec import decode_record, encode_record
+from apprc.user_files.installation.codec import (
+    decode_cleanup_inventory,
+    decode_record,
+    encode_cleanup_inventory,
+    encode_record,
+)
 from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
@@ -228,3 +235,30 @@ def test_captured_resource_writer_rejects_retired_generation(
         ensure_owned_path(app.schema, paths, "cache")
     assert not paths.require("cache").exists()
     assert not paths.require("cache").parent.exists()
+
+
+def test_cleanup_inventory_codec_round_trip_and_rejects_unknown_fields(
+    tmp_path: Path,
+) -> None:
+    inventory = CleanupInventory(
+        entries=(
+            InventoryEntry(
+                tmp_path / "owned.txt",
+                "file",
+                "a" * 64,
+                "config",
+            ),
+        ),
+        retained=(
+            InventoryEntry(tmp_path / "retained", "directory", None, "cache"),
+        ),
+    )
+    content = encode_cleanup_inventory(inventory)
+    assert decode_cleanup_inventory(content) == inventory
+    assert (
+        encode_cleanup_inventory(decode_cleanup_inventory(content)) == content
+    )
+    malformed = json.loads(content)
+    malformed["extra"] = 1
+    with pytest.raises(InstallationError):
+        decode_cleanup_inventory(json.dumps(malformed).encode("utf-8"))

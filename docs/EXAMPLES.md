@@ -294,6 +294,23 @@ handoff, waits for readiness and signals exit immediately before `SystemExit`.
 The calling application must obtain consent first. This function removes the
 program only; it does not interpret retention as permission to delete data.
 
+The optional `installation_inventory` callback mounted by `mount_app_cli(...)`
+has contract
+`(InstallationInspection, frozenset[ResourceKind], bool) -> CleanupInventory`;
+the boolean is `forget_retained`. A provider can call
+`apprc.distribution.runtime.default_cleanup_inventory(inspection,
+categories=categories, forget_retained=forget_retained)` to obtain default
+marker-backed targets before composing its exact application payload. The
+strict handoff codec is
+`apprc.user_files.installation.codec.encode_cleanup_inventory` and
+`decode_cleanup_inventory`.
+
+For complete removal, the host may pass its accepted inventory to the saved
+authored controller with `--inventory PATH`. This is not a public
+`installation uninstall` CLI option. The controller decodes strict
+cleanup-inventory JSON and revalidates target scope and file revisions before
+staging removal; it must not replace a supplied inventory with a fresh scan.
+
 ## Customized ordering
 
 The [custom install function](../examples/example_apps/src/distribution_custom/install.py)

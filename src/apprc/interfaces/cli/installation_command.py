@@ -6,12 +6,14 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Callable
 
 import typer
 
 from apprc.definition.installation import (
+    CleanupInventory,
     InstallationInspection,
     InstallationRecord,
     MigrationPlan,
@@ -33,6 +35,11 @@ def mount_installation_group(
     app: typer.Typer,
     *,
     maintenance_help_panel: str = "Maintenance",
+    installation_inventory: Callable[
+        [InstallationInspection, frozenset[ResourceKind], bool],
+        CleanupInventory,
+    ]
+    | None = None,
 ) -> typer.Typer:
     """Mount installation recovery under the existing maintenance panel."""
     child = typer.Typer(help="Inspect and recover the saved installation.")
@@ -126,8 +133,38 @@ def mount_installation_group(
         )
         if forget_retained and not complete:
             raise typer.BadParameter("--forget-retained requires --complete.")
-        directory = _inspection(ctx).inspection.directory
+        inspection = _inspection(ctx).inspection
+        directory = inspection.directory
+        record = inspection.record
+        if complete and not requested and record is not None:
+            selected = record.placement.capabilities
+        pending = (
+            record.operation
+            if record is not None
+            and record.operation is not None
+            and record.operation.kind == "uninstall"
+            else None
+        )
+        inventory = None
         try:
+            if (
+                complete
+                and bool(selected)
+                and installation_inventory is not None
+                and pending is None
+                and record is not None
+                and inspection.status in {"ready", "removed-retained"}
+                and selected
+                <= (
+                    record.placement.capabilities
+                    | frozenset(
+                        resource.kind for resource in record.placement.retired
+                    )
+                )
+            ):
+                inventory = installation_inventory(
+                    inspection, selected, forget_retained
+                )
             from apprc.distribution.runtime import controllers
 
             preparation = controllers.prepare_uninstall(
@@ -135,6 +172,7 @@ def mount_installation_group(
                 categories=selected,
                 complete=complete,
                 forget_retained=forget_retained,
+                inventory=inventory,
             )
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc)) from exc
@@ -152,7 +190,21 @@ def mount_installation_group(
         ):
             raise typer.Abort()
 
+        inventory_path: Path | None = None
         try:
+            if inventory is not None:
+                descriptor, name = tempfile.mkstemp(prefix="apprc-cleanup-")
+                inventory_path = Path(name)
+                with os.fdopen(descriptor, "wb") as stream:
+                    if os.name != "nt":
+                        os.fchmod(stream.fileno(), 0o600)
+                    from apprc.user_files.installation.codec import (
+                        encode_cleanup_inventory,
+                    )
+
+                    stream.write(
+                        encode_cleanup_inventory(preparation.plan.inventory)
+                    )
             argv = controllers.uninstall_saved(
                 directory,
                 original_pid=os.getpid(),
@@ -160,12 +212,16 @@ def mount_installation_group(
                 categories=selected,
                 complete=complete,
                 forget_retained=forget_retained,
+                inventory_file=inventory_path,
             )
             completed = subprocess.run(argv, check=False)
             if completed.returncode:
                 raise typer.Exit(code=completed.returncode)
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc)) from exc
+        finally:
+            if inventory_path is not None:
+                inventory_path.unlink(missing_ok=True)
         raise SystemExit(0)
 
     app.add_typer(

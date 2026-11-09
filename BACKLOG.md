@@ -73,12 +73,26 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-09-04](#2026-09-04)
+2. [2026-11-09](#2026-11-09)
+   1. [P2 / E1 \[Tooling\] - *Windows and macOS installation CI fails*](#p2--e1-tooling---windows-and-macos-installation-ci-fails)
+3. [2026-09-04](#2026-09-04)
    1. [P3 / E1 \[Code smell\] - *Multi-file updates can stop between replacements*](#p3--e1-code-smell---multi-file-updates-can-stop-between-replacements)
    1. [P3 / E1 \[Code smell\] - *CLI and editor composition remain monolithic*](#p3--e1-code-smell---cli-and-editor-composition-remain-monolithic)
-3. [2026-07-14](#2026-07-14)
+4. [2026-07-14](#2026-07-14)
    1. [P3 / E3 \[Tooling\] - *Stale bytecode recreates removed package namespaces*](#p3--e3-tooling---stale-bytecode-recreates-removed-package-namespaces)
 
+
+<br>
+
+# 2026-11-09
+
+## P2 / E1 [Tooling] - *Windows and macOS installation CI fails*
+- **Area:** `src/apprc/distribution/runtime`, `src/apprc/user_files/app_home/locations.py`, `src/apprc/interfaces/tui`, and their native tests.
+- **Observed while:** Inspecting automatic [push CI run 42605623620](https://github.com/HisQu/apprc/actions/runs/42605623620) for `661738`.
+- **Why not fixed now:** Execution was scoped to Linux proof with an explicit native-proof main-merge waiver. Native remediation needs a focused follow-up; that waiver does not establish release readiness.
+- **Evidence:** Windows core/GUI and macOS core jobs failed while Ubuntu core Python 3.12/3.13/3.14 and Ubuntu GUI passed. Representative failures include Windows private staging ACL rejection, missing `ntsecuritycon` in standalone execution, macOS temporary-address link rejection, and native secret persistence/editor workflows.
+- **Context:** These are observed failed tests, not unrun checks. The logs do not yet separate production incompatibilities from fixture/platform assumptions, interpreter prerequisites, newline expectations, or shell setup. Permission rejection alone is not evidence of a security vulnerability.
+- **Suggested next step:** Use the existing native procedures to isolate installation/ACL and standalone dependency failures first, then macOS path/interpreter handling and secret/UI workflows. Correct unsupported platform-specific fixtures without weakening containment or private-permission contracts. Resolve and review native results before release authorization; do not add runners or change billing/security as an implicit fix.
 
 <br>
 

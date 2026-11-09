@@ -48,11 +48,10 @@ def edge_badge(label: str, color: str) -> str:
 
 
 def build_graph() -> Digraph:
-    """Place precedence on the left and connect managed files to directories.
+    """Connect settings resolution, optional capabilities, and reviewed edits.
 
-    Upward arrows mean the upper source overrides the lower source. Dashed
-    lines locate files on disk. Text and frames share Graphigs semantic colors;
-    light group fills keep the labels readable.
+    Paths and workspace selection remain separate. Source reads do not create
+    directories; explicit settings management writes enabled preference files.
 
     :return: Pinned diagram with transparent canvas and themed components.
     """
@@ -79,18 +78,16 @@ def build_graph() -> Digraph:
             graph,
             node_id,
             f'''<
-            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"
-              CELLPADDING="3">
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
               <TR><TD ALIGN="LEFT"><FONT COLOR="{gg.RED}"
                 POINT-SIZE="{SMALL_TEXT_FONT_SIZE}">{audience}</FONT></TD></TR>
               <TR><TD ALIGN="LEFT"><FONT COLOR="{gg.RED}"
-                POINT-SIZE="{gg.TITLE_FONT_SIZE}"
-                ><B>{benefit}</B></FONT></TD></TR>
+                POINT-SIZE="{gg.TITLE_FONT_SIZE}"><B>{benefit}</B></FONT></TD></TR>
             </TABLE>>''',
-            pos=gv.fixed_position(x, 5.25),
+            pos=gv.fixed_position(x, 5.7),
         )
 
-    # == AppRC sits inside the application boundary
+    # == Separate AppRC capabilities inside the application
     application = gv.add_fixed_panel_cluster(
         "application",
         "",
@@ -99,8 +96,8 @@ def build_graph() -> Digraph:
         penwidth="2.6",
     )
     for node_id, x, y in (
-        ("app_top_left", 4.40, 4.60),
-        ("app_bottom_right", 12.70, 0.10),
+        ("app_top_left", 4.2, 5.35),
+        ("app_bottom_right", 13.15, -1.35),
     ):
         gv.add_fixed_frame_guard(
             application, node_id, pos=gv.fixed_position(x, y)
@@ -109,21 +106,19 @@ def build_graph() -> Digraph:
         application,
         "application_title",
         f'<<FONT COLOR="{gg.NEUTRAL_STROKE}" '
-        f'POINT-SIZE="{gg.TITLE_FONT_SIZE}">'
-        "<B>Your application</B></FONT>>",
-        pos=gv.fixed_position(5.72, 4.25),
+        f'POINT-SIZE="{gg.TITLE_FONT_SIZE}"><B>Your application</B></FONT>>',
+        pos=gv.fixed_position(5.85, 4.95),
     )
-
-    # > A pinned group backdrop retains the inner boundary in neato renders.
+    # > A pinned backdrop keeps the inner boundary visible in neato output.
     gv.add_fixed_node(
         application,
         "apprc_component",
         "",
-        pos=gv.fixed_position(6.55, 2.23),
+        pos=gv.fixed_position(6.55, 1.65),
         shape="box",
         style="rounded,filled",
-        width="3.55",
-        height="3.60",
+        width="3.7",
+        height="5.6",
         border_color=gg.BLUE,
         fill_color=gg.BLUE_GROUP_FILL,
         penwidth="1.8",
@@ -132,24 +127,55 @@ def build_graph() -> Digraph:
         application,
         "apprc_title",
         f'<<FONT COLOR="{gg.BLUE}" POINT-SIZE="22"><B>AppRC</B></FONT>>',
-        pos=gv.fixed_position(6.55, 3.66),
+        pos=gv.fixed_position(6.55, 4.1),
     )
-    for node_id, title, y, color in (
-        ("settings", "Layered settings", 2.68, gg.BLUE),
-        ("storage_selection", "Named storage", 1.78, gg.GREEN),
-        ("terminal", "CLI + terminal editor", 0.86, gg.ORANGE),
+    for node_id, title, detail, y, color in (
+        ("resolved", "ResolvedConfig", "Snapshot + provenance", 3.2, gg.BLUE),
+        (
+            "paths",
+            "Paths + Layout",
+            "Optional config · appdata<BR/>cache · state",
+            2.0,
+            gg.GREEN,
+        ),
+        (
+            "workspaces",
+            "WorkspaceManager",
+            "Optional registry / direct<BR/>workspaces",
+            0.8,
+            gg.GREEN,
+        ),
+        (
+            "management",
+            "ConfigManager",
+            "Reviewed settings operations",
+            -0.4,
+            gg.ORANGE,
+        ),
     ):
-        application.attr("node", fontcolor=color)
-        gv.add_fixed_text_box(
+        gv.add_fixed_html_node(
             application,
             node_id,
-            title,
+            f'''<
+            <TABLE BORDER="1" COLOR="{color}" BGCOLOR="{FEATURE_BOX_FILL}"
+              CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" STYLE="rounded">
+              <TR><TD><FONT COLOR="{color}" POINT-SIZE="14"
+                ><B>{title}</B></FONT></TD></TR>
+              <TR><TD><FONT COLOR="{color}" POINT-SIZE="{SMALL_TEXT_FONT_SIZE}"
+                >{detail}</FONT></TD></TR>
+            </TABLE>>''',
             pos=gv.fixed_position(6.55, y),
-            border_color=color,
-            fill_color=FEATURE_BOX_FILL,
-            title_font_size="14",
         )
-    application.attr("node", fontcolor=gg.NEUTRAL_STROKE)
+    app_rows = "".join(
+        f'<TR><TD PORT="{port}" ALIGN="LEFT"><FONT '
+        f'COLOR="{gg.NEUTRAL_STROKE}" POINT-SIZE="{SMALL_TEXT_FONT_SIZE}"'
+        f">• {label}</FONT></TD></TR>"
+        for port, label in (
+            ("settings", "Typed settings"),
+            ("paths", "AppPaths: enabled locations or None"),
+            ("workspace", "Workspace selection (optional)"),
+        )
+    )
     gv.add_fixed_html_node(
         application,
         "app_code",
@@ -159,242 +185,125 @@ def build_graph() -> Digraph:
           CELLSPACING="0" CELLPADDING="8" STYLE="rounded">
           <TR><TD><FONT POINT-SIZE="{gg.TITLE_FONT_SIZE}"
             ><B>Your app code</B></FONT></TD></TR>
-          <TR><TD PORT="settings" ALIGN="LEFT"><FONT COLOR="{gg.NEUTRAL_STROKE}"
-            POINT-SIZE="{SMALL_TEXT_FONT_SIZE}"
-            >• Typed settings</FONT></TD></TR>
-          <TR><TD PORT="root" ALIGN="LEFT"><FONT COLOR="{gg.NEUTRAL_STROKE}"
-            POINT-SIZE="{SMALL_TEXT_FONT_SIZE}"
-            >• Persistent data</FONT></TD></TR>
+          {app_rows}
         </TABLE>>''',
-        pos=gv.fixed_position(10.95, 2.32),
+        pos=gv.fixed_position(11.0, 1.65),
     )
     graph.subgraph(application)
 
-    gv.connect_fixed_arrow(
-        graph,
-        "storage_selection:n",
-        "settings:s",
-        color=gg.BLUE,
-        penwidth="1.7",
-    )
-    for tail, head, label, x, y in (
+    # == Source inputs and optional settings interfaces
+    for node_id, label, x, y, color, fill in (
         (
-            "settings:e",
-            "app_code:settings:w",
-            "values + sources",
-            9.20,
-            2.92,
-        ),
-        (
-            "storage_selection:e",
-            "app_code:root:w",
-            "data root",
-            9.20,
-            2.04,
-        ),
-    ):
-        gv.connect_fixed_arrow(
-            graph,
-            tail,
-            head,
-            color=gg.NEUTRAL_STROKE,
-            penwidth="1.7",
-        )
-        gv.add_fixed_html_node(
-            graph,
-            f"{tail.split(':')[0]}_output_label",
-            edge_badge(label, color=gg.NEUTRAL_STROKE),
-            pos=gv.fixed_position(x, y),
-        )
-
-    # == Settings sources ordered from lowest to highest priority
-    gv.add_fixed_label(
-        graph,
-        "precedence_heading",
-        "Settings precedence",
-        pos=gv.fixed_position(1.50, 5.05),
-        font_size=gg.TITLE_FONT_SIZE,
-        color=gg.NEUTRAL_STROKE,
-    )
-    layers = (
-        (
-            "defaults_file",
-            "apprc.defaults.env",
-            0.25,
+            "sources",
+            "Enabled setting sources\nPackaged defaults · dotenv\nEnvironment",
+            1.7,
+            3.2,
             gg.BLUE,
             gg.BLUE_GROUP_FILL,
-            "note",
         ),
         (
-            "user_file",
-            "apprc.user.env",
-            1.25,
+            "preferences",
+            "Enabled preference files\nUser / workspace, opt-in",
+            1.7,
+            -2.1,
             gg.ORANGE,
             gg.ORANGE_GROUP_FILL,
-            "note",
         ),
         (
-            "storage_file",
-            "apprc.storage.env",
-            2.25,
-            gg.GREEN,
-            gg.GREEN_GROUP_FILL,
-            "note",
+            "interfaces",
+            "Optional settings interfaces\nCLI · Textual · Gradio",
+            6.55,
+            -2.1,
+            gg.ORANGE,
+            gg.ORANGE_GROUP_FILL,
         ),
-        (
-            "explicit_files",
-            "Extra .env files",
-            3.25,
-            gg.PURPLE,
-            gg.PURPLE_GROUP_FILL,
-            "note",
-        ),
-        (
-            "environment",
-            "Shell environment",
-            4.25,
-            gg.PURPLE,
-            gg.PURPLE_GROUP_FILL,
-            "box",
-        ),
-    )
-    for node_id, label, y, color, fill, shape in layers:
+    ):
         gv.add_fixed_node(
             graph,
             node_id,
             label,
-            pos=gv.fixed_position(1.50, y),
-            shape=shape,
-            width="2.60",
-            height="0.56",
+            pos=gv.fixed_position(x, y),
+            shape="box",
+            style="rounded,filled",
+            width="3.2",
+            height="0.9",
             border_color=color,
             fill_color=fill,
             font_color=color,
             font_size=SMALL_TEXT_FONT_SIZE,
-            penwidth="2" if node_id == "environment" else "1.3",
-        )
-    # > Precedence arrows and badges inherit the lower source's color.
-    for lower, upper in zip(layers, layers[1:]):
-        gv.connect_fixed_arrow(
-            graph,
-            f"{lower[0]}:n",
-            f"{upper[0]}:s",
-            color=lower[3],
             penwidth="1.7",
         )
+
+    # == Reads, independent outputs, and explicit writes
+    for tail, head, label, x, y, color in (
+        ("sources:e", "resolved:w", "resolve()", 4.0, 3.55, gg.BLUE),
+        (
+            "resolved:e",
+            "app_code:settings:w",
+            "build(Settings)",
+            9.0,
+            3.45,
+            gg.BLUE,
+        ),
+        ("paths:e", "app_code:paths:w", "paths()", 9.0, 2.25, gg.GREEN),
+        (
+            "workspaces:e",
+            "app_code:workspace:w",
+            "select / inspect",
+            9.0,
+            0.55,
+            gg.GREEN,
+        ),
+        (
+            "interfaces:n",
+            "management:s",
+            "inspect / edit",
+            7.5,
+            -1.55,
+            gg.ORANGE,
+        ),
+        ("preferences:n", "sources:s", "when enabled", 1.7, 0.3, gg.BLUE),
+    ):
+        gv.connect_fixed_arrow(graph, tail, head, color=color, penwidth="1.7")
         gv.add_fixed_html_node(
             graph,
-            f"{lower[0]}_precedence_label",
-            edge_badge("overridden by", color=lower[3]),
-            pos=gv.fixed_position(2.24, (lower[2] + upper[2]) / 2),
+            f"{tail.split(':')[0]}_edge_label",
+            edge_badge(label, color=color),
+            pos=gv.fixed_position(x, y),
+        )
+    # > Keep the write route outside the frame and away from the read outputs.
+    for node_id, x, y in (
+        ("save_exit", 4.05, -0.4),
+        ("save_turn", 4.05, -2.1),
+    ):
+        gv.add_fixed_frame_guard(graph, node_id, pos=gv.fixed_position(x, y))
+    for tail, head in (
+        ("management:w", "save_exit"),
+        ("save_exit", "save_turn"),
+    ):
+        gv.connect_fixed_line(
+            graph, tail, head, color=gg.ORANGE, penwidth="1.7"
         )
     gv.connect_fixed_arrow(
         graph,
-        "environment:e",
-        "settings:w",
-        color=gg.BLUE,
+        "save_turn",
+        "preferences:e",
+        color=gg.ORANGE,
         penwidth="1.7",
     )
     gv.add_fixed_html_node(
         graph,
-        "resolution_label",
-        edge_badge("resolve", color=gg.BLUE),
-        pos=gv.fixed_position(4.07, 3.88),
+        "save_label",
+        edge_badge("reviewed save", color=gg.ORANGE),
+        pos=gv.fixed_position(3.5, -1.1),
     )
-
-    # == Directories use the same semantic colors as their config files
-    for node_id, label, x, color, fill in (
-        (
-            "app_package",
-            "App package\nInstalled code",
-            1.50,
-            gg.BLUE,
-            gg.BLUE_GROUP_FILL,
-        ),
-        (
-            "apprc_directory",
-            "AppRC directory\napprc.toml",
-            5.40,
-            gg.ORANGE,
-            gg.ORANGE_GROUP_FILL,
-        ),
-        (
-            "selected_storage",
-            "Selected storage\nApp data",
-            10.65,
-            gg.GREEN,
-            gg.GREEN_GROUP_FILL,
-        ),
-    ):
-        gv.add_fixed_node(
-            graph,
-            node_id,
-            label,
-            pos=gv.fixed_position(x, -1.55),
-            shape="folder",
-            width="2.70",
-            height="0.90",
-            border_color=color,
-            fill_color=fill,
-            font_color=color,
-            font_size=SMALL_TEXT_FONT_SIZE,
-            penwidth="2",
-        )
-
-    # > Nested routes keep file-location links out of the application frame.
-    routes = (
-        (
-            "defaults_file:s",
-            "app_package:n",
-            gg.BLUE,
-            (),
-        ),
-        (
-            "user_file:e",
-            "apprc_directory:n",
-            gg.ORANGE,
-            ((3.30, 1.25), (3.30, -0.55), (5.40, -0.55)),
-        ),
-        (
-            "storage_file:e",
-            "selected_storage:w",
-            gg.GREEN,
-            ((3.85, 2.25), (3.85, -0.25), (9.05, -0.25), (9.05, -1.55)),
-        ),
-    )
-    for source, target, color, bends in routes:
-        route_nodes = []
-        for i, (x, y) in enumerate(bends):
-            node_id = f"{source.split(':')[0]}_location_{i}"
-            gv.add_fixed_frame_guard(
-                graph, node_id, pos=gv.fixed_position(x, y)
-            )
-            route_nodes.append(node_id)
-        path = (source, *route_nodes, target)
-        for tail, head in zip(path, path[1:]):
-            gv.connect_fixed_line(
-                graph,
-                tail,
-                head,
-                color=color,
-                penwidth="1.4",
-                style="dashed",
-            )
     gv.add_fixed_label(
         graph,
-        "location_legend",
-        "Dashed lines: stored in",
-        pos=gv.fixed_position(5.50, -2.32),
+        "read_only_note",
+        "resolve() / paths()\ndo not create directories.",
+        pos=gv.fixed_position(11.0, -1.95),
         font_size=SMALL_TEXT_FONT_SIZE,
         color=gg.NEUTRAL_STROKE,
-    )
-    gv.connect_fixed_arrow(
-        graph,
-        "app_code:s",
-        "selected_storage:n",
-        color=gg.GREEN,
-        direction="both",
-        penwidth="1.7",
     )
     return graph
 

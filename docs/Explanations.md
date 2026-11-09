@@ -586,7 +586,7 @@ It changes the process environment. Normal `resolve()` and `build()` calls do no
 `apprc-core` provides the configuration and noninteractive management code.
 `apprc` installs the matching core plus the dependencies for the CLI and Textual
 editor. Both use `import apprc`. `apprc-gui` owns the Gradio editor and depends on
-the same `apprc-core` version. The [installation instructions](../README.md#install)
+the same `apprc-core` version. The [installation instructions](../README.md#installation)
 explain which distribution to choose; maintainers can inspect the
 [package ownership rules](Development.md#source-ownership).
 

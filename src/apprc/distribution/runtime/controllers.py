@@ -281,13 +281,23 @@ def _support_inventory(
     return tuple(entries), tuple(dict.fromkeys(diagnostics))
 
 
-def _default_owned_inventory(
+def default_cleanup_inventory(
     inspection: InstallationInspection,
     *,
     categories: frozenset[ResourceKind],
     forget_retained: bool,
 ) -> CleanupInventory:
-    """Capture declared roots and known config files without importing app code."""
+    """Capture owned markers and known config files without importing app code.
+
+    Application providers compose this inventory with exact payload targets.
+    Unknown payload is never recursively claimed; ``forget_retained`` allows
+    its root to remain unmanaged instead of rejecting the default preview.
+
+    :param inspection: Captured saved installation authority and placement.
+    :param categories: Resource categories selected for complete removal.
+    :param forget_retained: Whether unknown payload may remain in retained roots.
+    :return: Exact default targets and roots that must be retained.
+    """
     record = inspection.record
     if record is None:
         raise InstallationError("Default inventory requires saved authority.")
@@ -445,7 +455,7 @@ def prepare_uninstall(
         selected_inventory = inventory
         if selected_inventory is None:
             selected_inventory = (
-                _default_owned_inventory(
+                default_cleanup_inventory(
                     inspection,
                     categories=categories,
                     forget_retained=forget_retained,
@@ -482,11 +492,41 @@ def prepare_uninstall(
             )
     else:
         support_entries = ()
-    combined = {
-        entry.path: entry
-        for entry in (*selected_inventory.entries, *support_entries)
-    }
-    if len(combined) != len(selected_inventory.entries) + len(support_entries):
+    accepted_inventory_has_support = False
+    if inventory is not None and complete:
+        accepted_support = tuple(
+            entry for entry in inventory.entries if entry.resource is None
+        )
+        if accepted_support and set(accepted_support) != set(support_entries):
+            return UninstallPreparation(
+                None,
+                inspection,
+                (*inventory.entries, *inventory.retained),
+                (
+                    *inspection.diagnostics,
+                    InstallationDiagnostic(
+                        "uninstall-support-inventory",
+                        "Accepted saved-support inventory changed.",
+                        "Repeat preview before removing saved support.",
+                    ),
+                ),
+                False,
+            )
+        accepted_inventory_has_support = bool(accepted_support)
+        if accepted_inventory_has_support:
+            selected_inventory = inventory
+    all_entries = (
+        selected_inventory.entries
+        if accepted_inventory_has_support
+        else (*selected_inventory.entries, *support_entries)
+    )
+    for entry in all_entries:
+        if entry.kind == "file" and file_revision(entry.path) != entry.revision:
+            raise InstallationError(
+                f"Cleanup target changed after inventory preview: {entry.path}"
+            )
+    combined = {entry.path: entry for entry in all_entries}
+    if len(combined) != len(all_entries):
         diagnostic = InstallationDiagnostic(
             "uninstall-inventory-overlap",
             "Provider and saved-support inventories overlap.",
@@ -499,9 +539,10 @@ def prepare_uninstall(
             (*inspection.diagnostics, diagnostic),
             False,
         )
-    selected_inventory = CleanupInventory(
-        tuple(combined.values()), selected_inventory.retained
-    )
+    if not accepted_inventory_has_support:
+        selected_inventory = CleanupInventory(
+            tuple(combined.values()), selected_inventory.retained
+        )
     entries = (*selected_inventory.entries, *selected_inventory.retained)
     try:
         plan = plan_uninstall(
@@ -641,6 +682,7 @@ def uninstall_saved(
     categories: frozenset[ResourceKind] = frozenset(),
     complete: bool = False,
     forget_retained: bool = False,
+    inventory_file: Path | None = None,
 ) -> tuple[str, ...]:
     """Return verified adjacent authored uninstall argv, preserving the real caller.
 
@@ -654,6 +696,7 @@ def uninstall_saved(
     :param categories: Exact user-selected resource categories.
     :param complete: Whether to remove selected data and saved support.
     :param forget_retained: Explicit consent to forget retained ownership.
+    :param inventory_file: Private exact inventory accepted during preview.
     :return: External management argv; the caller must propagate failure and exit on success.
     """
     if original_pid <= 0 or not expected_revision:
@@ -707,6 +750,16 @@ def uninstall_saved(
         arguments.append("--complete")
     for category in sorted(categories):
         arguments.extend(("--category", category))
+    if inventory_file is not None:
+        if (
+            not inventory_file.is_absolute()
+            or inventory_file.is_symlink()
+            or not inventory_file.is_file()
+        ):
+            raise InstallationError(
+                "Accepted cleanup inventory file is unavailable or unsafe."
+            )
+        arguments.extend(("--inventory", str(inventory_file)))
     if forget_retained:
         arguments.append("--forget-retained")
     return _saved_management_argv(directory, target, selected, tuple(arguments))
@@ -768,6 +821,14 @@ def stage_uninstall(
                 raise InstallationError(
                     "Installation changed after uninstall preview."
                 )
+            for entry in plan.inventory.entries:
+                if (
+                    entry.kind == "file"
+                    and file_revision(entry.path) != entry.revision
+                ):
+                    raise InstallationError(
+                        f"Accepted cleanup target changed: {entry.path}"
+                    )
             current = begin_operation(plan)
         revision = current.revision
         if revision is None:

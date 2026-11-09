@@ -341,6 +341,7 @@ class AppRC:
             self.schema,
             options=options,
             environment=captured,
+            handlers=handlers,
             operation_context=context,
             app_paths=(
                 None

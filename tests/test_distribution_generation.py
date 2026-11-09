@@ -119,7 +119,7 @@ from apprc.distribution.runtime import (
     begin_operation,
     plan_install,
 )
-from apprc.distribution.runtime.controllers import _default_owned_inventory
+from apprc.distribution.runtime.controllers import default_cleanup_inventory
 from apprc.definition.installation import InstallationRecord
 from apprc.definition.paths import Layout
 from apprc.user_files.installation.coordination import (
@@ -179,7 +179,7 @@ record = InstallationRecord(
 with installation_lock(saved_directory):
     write_record(saved_directory, record, expected_revision=None)
 saved = inspect_installation(saved_directory, app_id=record.app_id)
-inventory = _default_owned_inventory(
+inventory = default_cleanup_inventory(
     saved,
     categories=frozenset({"config"}),
     forget_retained=False,

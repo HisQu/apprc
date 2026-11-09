@@ -13,6 +13,7 @@ from apprc.distribution.runtime.controllers import (
     prepare_uninstall,
     start_uninstall_handoff,
 )
+from apprc.user_files.installation.codec import decode_cleanup_inventory
 
 
 def uninstall_default(
@@ -50,14 +51,21 @@ def main(argv: list[str] | None = None) -> NoReturn:
         choices=("config", "appdata", "cache", "state"),
     )
     parser.add_argument("--forget-retained", action="store_true")
+    parser.add_argument("--inventory", type=Path)
     args = parser.parse_args(forwarded)
     if args.forget_retained and not args.complete:
         parser.error("--forget-retained requires --complete")
+    inventory = (
+        decode_cleanup_inventory(args.inventory.read_bytes())
+        if args.inventory is not None
+        else None
+    )
     preparation = prepare_uninstall(
         args.directory,
         categories=frozenset(args.category or ()),
         complete=args.complete,
         forget_retained=args.forget_retained,
+        inventory=inventory,
     )
     if expected_revision is not None and (
         preparation.plan is None

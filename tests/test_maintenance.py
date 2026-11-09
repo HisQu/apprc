@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from apprc.public.app_rc import AppRC
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.installation import InstallationSnapshot
 from apprc.definition.maintenance import (
@@ -609,3 +610,44 @@ def test_pending_operation_context_initializes_captured_maintenance_paths(
         InstallationError, match="Pending operation authorization is stale"
     ):
         app.maintain(environment=provider_environment, context=stale)
+
+
+def test_app_rc_maintain_applies_host_provider_cleanup(
+    tmp_path: Path,
+) -> None:
+    environment = {
+        "HOME": str(tmp_path),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+    }
+    apprc = AppRC(app_id="maintain-provider-test", paths=Paths(appdata=True))
+    root = apprc.ensure_path("appdata", environment=environment)
+    payload = root / "known.db"
+    payload.write_bytes(b"remove")
+    unknown = root / "unknown"
+    unknown.write_bytes(b"keep")
+
+    def plan(selected_root: Path) -> RemovalPlan:
+        return RemovalPlan(
+            "appdata", selected_root, (payload,), "provider-revision"
+        )
+
+    def apply(selected: RemovalPlan) -> RemovalResult:
+        for target in selected.targets:
+            target.unlink()
+        return RemovalResult(selected.targets)
+
+    manager = apprc.maintain(
+        environment=environment,
+        handlers=MaintenanceHandlers(
+            appdata=AppDataOperations(
+                purge=RemovalOperation(plan=plan, apply=apply)
+            )
+        ),
+    )
+    plans = manager.plan_purge(("appdata",))
+    (result,) = manager.apply_purge(plans)
+
+    assert result.removed == (payload,)
+    assert not payload.exists()
+    assert unknown.read_bytes() == b"keep"
+    assert (root / ".apprc-owner.json").is_file()

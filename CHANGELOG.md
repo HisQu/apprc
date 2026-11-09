@@ -84,6 +84,14 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+- Added optional `installation_inventory` callbacks to the application CLI for
+  exact provider-owned cleanup previews. Confirmed removal transports the
+  accepted inventory to the saved controller; dry-run remains read-only, and
+  retries reuse the inventory persisted in the pending operation.
+- Added `default_cleanup_inventory()`, `encode_cleanup_inventory()`, and
+  `decode_cleanup_inventory()` for composing application-owned cleanup with
+  AppRC's default inventory and strict installation JSON transport.
+
 <br>
 
 ### 💔 Changed
@@ -99,6 +107,9 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+- `AppRC.maintain(handlers=...)` now preserves application-supplied maintenance
+  providers so preview and execution use the declared cleanup behavior.
 
 <br>
 

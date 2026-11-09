@@ -625,6 +625,24 @@ The recovery type, `installation_command_context_from(ctx)` and
 `prepare_installation_command_context(...)` are exposed through `rc.cli` for
 advanced adapters.
 
+`mount_app_cli(..., installation_inventory=provider)` optionally supplies
+complete-removal ownership. The callable contract is
+`(InstallationInspection, frozenset[ResourceKind], bool) -> CleanupInventory`;
+the boolean is `forget_retained`. The host receives normalized selected
+categories (an omitted category list on `--complete` means all enabled
+resources), and the provider should return only application-owned resource
+entries. It runs only for selected complete removal, including cache-only
+selection, not help, diagnostics, program-only removal, or a zero-resource
+selection. A pending uninstall reuses its persisted inventory without calling
+the provider again. No business configuration is required.
+
+Providers can compose the default marker-based inventory by calling
+`apprc.distribution.runtime.default_cleanup_inventory(inspection,
+categories=categories, forget_retained=forget_retained)`. Strict transport
+encoding/decoding is exposed as
+`apprc.user_files.installation.codec.encode_cleanup_inventory` and
+`decode_cleanup_inventory`.
+
 | Command | Availability and behavior |
 | --- | --- |
 | `paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. No category lists all paths; category prints only its absolute path. Disabled category and invalid `--open` combinations exit 2. `--open` launches an existing directory and never creates it. |
@@ -643,6 +661,21 @@ advanced adapters.
 | `appdata backup/restore` | Mounted only when corresponding handlers exist; restore confirms unless `--yes`. |
 | `cache prune/clear`, `state prune/reset` | Mounted only when the corresponding provider operation exists; support dry-run/confirmation/JSON. |
 | `purge --scope CATEGORY...` or `purge --all` | Always. Scope forms are mutually exclusive and required; preview/apply options described below. |
+
+Authored saved uninstall controllers may accept optional `--inventory PATH`.
+This private host-to-controller handoff is strict cleanup-inventory JSON, not
+an option on the public `installation uninstall` command. When a host supplies
+inventory, the CLI writes the exact accepted inventory after confirmation to a
+private temporary file and
+passes it through `uninstall_saved(..., inventory_file=path)`. The file remains
+available until the saved controller returns; dry-run creates no transport file
+or management environment.
+
+The controller decodes the file with `decode_cleanup_inventory()`, passes the
+inventory to `prepare_uninstall()`, and checks the private expected record
+revision before staging intent. Preparation validates target scope, file
+revisions, and recorded support. The accepted inventory is persisted in the
+operation record; the controller must not replace it with a fresh scan.
 
 Root selectors include `--workspace`, `--layout native\|single-root`, and
 `--app-root PATH`; they are captured before business-state setup is skipped.

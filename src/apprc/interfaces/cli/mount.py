@@ -30,6 +30,7 @@ from apprc.interfaces.cli.runtime import (
     CliArgvProvider,
     CliRuntime,
     CliRuntimePolicy,
+    InstallationInventoryProvider,
     MountCliRuntimeStateFactory,
 )
 from apprc.public.app_rc import AppRC
@@ -48,6 +49,7 @@ def mount_app_cli(
     workspace_required: bool = False,
     handlers: MaintenanceHandlers = MaintenanceHandlers(),
     maintenance_help_panel: str = "Maintenance",
+    installation_inventory: InstallationInventoryProvider | None = None,
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None,
     active_workspace_root_with_context: Callable[..., Path | None]
     | None = None,
@@ -70,6 +72,7 @@ def mount_app_cli(
     :param runtime_policy: Optional policy for skipping host business setup.
     :param workspace_required: Whether business commands require a workspace.
     :param handlers: Explicit application maintenance operations.
+    :param installation_inventory: Optional exact owned-resource inventory provider for complete uninstall previews.
     :param maintenance_help_panel: Rich help panel for AppRC maintenance groups.
     :param runtime_payload: Optional serializer for config show.
     :param active_workspace_root_with_context: Optional workspace root resolver.
@@ -146,6 +149,7 @@ def mount_app_cli(
         app,
         handlers=handlers,
         maintenance_help_panel=maintenance_help_panel,
+        installation_inventory=installation_inventory,
     )
 
 

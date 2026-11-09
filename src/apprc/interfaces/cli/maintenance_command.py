@@ -6,12 +6,16 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Callable, cast
 
 # == 3rd Party ===============================
 import typer
 
 # == Internal ================================
+from apprc.definition.installation import (
+    CleanupInventory,
+    InstallationInspection,
+)
 from apprc.definition.maintenance import (
     MaintenanceHandlers,
     RemovalPlan,
@@ -60,6 +64,11 @@ def mount_maintenance_groups(
     *,
     handlers: MaintenanceHandlers = MaintenanceHandlers(),
     maintenance_help_panel: str = "Maintenance",
+    installation_inventory: Callable[
+        [InstallationInspection, frozenset[ResourceKind], bool],
+        CleanupInventory,
+    ]
+    | None = None,
 ) -> dict[str, typer.Typer]:
     """Mount fixed path/maintenance commands and declared resource groups."""
     names = _registered_names(app)
@@ -79,7 +88,9 @@ def mount_maintenance_groups(
         )
     mounted: dict[str, typer.Typer] = {}
     mounted["installation"] = mount_installation_group(
-        app, maintenance_help_panel=maintenance_help_panel
+        app,
+        maintenance_help_panel=maintenance_help_panel,
+        installation_inventory=installation_inventory,
     )
 
     @app.command("paths", rich_help_panel=maintenance_help_panel)

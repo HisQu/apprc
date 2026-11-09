@@ -379,9 +379,22 @@ explicit replacement is separate from adoption. `plan_legacy_replacement(...)`
 takes the inspected `LegacyReceiptInspection`, independently observed old RECORD
 digest, new immutable source and placement. Its empty `MigrationInventory` uses
 the installation directory as both roots; it does not move data or workspaces.
-`execute_legacy_replacement(...)` persists pending authority before replacing the
-program, then uses the ordinary strict probe before retiring old controllers and
-activating bound support. It never fabricates a source-proven historical snapshot.
+`execute_legacy_replacement(...)` first persists digest-bound recovery inputs and
+an owned recovery entry, then publishes initial pending authority before any
+backend replacement. An interruption immediately after authority publication can
+therefore resume from retained inputs. The ordinary strict probe precedes old
+controller retirement and bound-support activation; historical source provenance
+is never fabricated.
+
+The support mapping must provide a nonempty `repair-installer.py` or
+`legacy-recovery.py` root entry. AppRC checks the retained byte identity; the
+application author remains responsible for that entry's recovery behavior.
+
+> [!WARNING]
+> A hard stop before initial authority publication can leave unclaimed
+> preparation files for manual inspection. The old program is still untouched.
+> Caught failures roll back only unchanged files created by that invocation;
+> unknown or changed files are not adopted or deleted automatically.
 
 Authored recovery first calls `is_pending_legacy_replacement(inspection)`, before
 generic migration recovery. If true, call `resume_legacy_replacement(...)` with

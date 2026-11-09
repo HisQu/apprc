@@ -878,12 +878,24 @@ def _write_initial_pending(
     support_files: Mapping[PurePosixPath, bytes],
     prepared: PreparedSource,
 ) -> InstallationInspection:
-    """Claim authored recovery bytes and acquisition before publishing them."""
+    """Prepare every recovery claim before publishing its pending authority."""
     install = plan.install
     support = _support_evidence(install.directory, support_files)
+    recovery_paths = tuple(
+        PurePosixPath(name)
+        for name in ("repair-installer.py", "legacy-recovery.py")
+        if PurePosixPath(name) in support_files
+    )
+    if not recovery_paths or any(
+        not support_files[path] for path in recovery_paths
+    ):
+        raise InstallationError(
+            "Replacement requires a nonempty authored recovery entry."
+        )
     input_root = (
         install.directory / "migration-staged" / str(install.generation_id)
     )
+    staging_root = input_root.parent
     assert_no_links(input_root)
     if input_root.exists() and (
         not input_root.is_dir() or any(input_root.iterdir())
@@ -905,14 +917,17 @@ def _write_initial_pending(
         raise InstallationError(
             "Replacement has no retained, digest-verified acquisition archive."
         )
+    archive_bytes = prepared.archive.read_bytes()
+    if hashlib.sha256(archive_bytes).hexdigest() != prepared.digest:
+        raise InstallationError(
+            "Replacement acquisition changed while preparing recovery."
+        )
     acquisition_path = (
         input_root / f"acquisition-{prepared.digest}-{prepared.archive.name}"
     )
-    input_files[acquisition_path] = prepared.archive.read_bytes()
+    input_files[acquisition_path] = archive_bytes
     recovery_entries = tuple(
-        install.directory / name
-        for name in ("repair-installer.py", "legacy-recovery.py")
-        if PurePosixPath(name) in support_files
+        install.directory / path.name for path in recovery_paths
     )
     for recovery_entry in recovery_entries:
         input_files[recovery_entry] = support_files[
@@ -957,17 +972,67 @@ def _write_initial_pending(
         "incomplete",
         operation=operation,
     )
-    write_record(
-        install.directory, record, expected_revision=install.expected_revision
-    )
-    for path, content in input_files.items():
+
+    # > Reject every occupied destination before creating any claimed output.
+    for path in input_files:
         assert_no_links(path)
         if file_revision(path) is not None:
             raise InstallationError(
                 f"Replacement recovery claim is already occupied: {path}."
             )
-        create_private_directory_if_missing(path.parent)
-        write_bytes_atomic(path, content, private=True)
+
+    input_root_created = not input_root.exists()
+    staging_root_created = not staging_root.exists()
+    attempted: list[tuple[Path, bytes]] = []
+    try:
+        for path, content in input_files.items():
+            assert_no_links(path)
+            if file_revision(path) is not None:
+                raise InstallationError(
+                    f"Replacement recovery claim is already occupied: {path}."
+                )
+            create_private_directory_if_missing(path.parent)
+            attempted.append((path, content))
+            write_bytes_atomic(path, content, private=True)
+        write_record(
+            install.directory,
+            record,
+            expected_revision=install.expected_revision,
+        )
+    except Exception:
+        # > An after-replace failure may follow a successful record write.
+        # > Inspect authority before cleanup; retain bytes if the missing
+        # > state is uncertain.
+        published = inspect_installation(
+            install.directory, app_id=install.target.identity.app_id
+        )
+        if (
+            install.expected_revision is not None
+            or published.status != "missing"
+            or published.record is not None
+            or published.revision is not None
+        ):
+            raise
+        for path, content in reversed(attempted):
+            try:
+                assert_no_links(path)
+                if file_revision(path) == hashlib.sha256(content).hexdigest():
+                    path.unlink()
+            except (OSError, ValueError):
+                pass
+        if input_root_created:
+            try:
+                assert_no_links(input_root)
+                input_root.rmdir()
+            except (OSError, ValueError):
+                pass
+        if staging_root_created:
+            try:
+                assert_no_links(staging_root)
+                staging_root.rmdir()
+            except (OSError, ValueError):
+                pass
+        raise
     return inspect_installation(
         install.directory, app_id=install.target.identity.app_id
     )

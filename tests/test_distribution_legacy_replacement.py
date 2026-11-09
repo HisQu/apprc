@@ -881,6 +881,54 @@ def test_incompatible_recorded_base_python_is_rejected_before_pending_authority(
     )
 
 
+@pytest.mark.parametrize("recovery_content", (None, b""))
+def test_replacement_requires_a_nonempty_authored_recovery_entry(
+    tmp_path: Path,
+    recovery_content: bytes | None,
+) -> None:
+    scenario = _scenario(tmp_path)
+    support_files = {
+        path: content
+        for path, content in scenario["support_files"].items()
+        if path.name not in {"repair-installer.py", "legacy-recovery.py"}
+    }
+    if recovery_content is not None:
+        support_files[PurePosixPath("legacy-recovery.py")] = recovery_content
+
+    with pytest.raises(
+        InstallationError, match="nonempty authored recovery entry"
+    ):
+        execute_legacy_replacement(
+            scenario["plan"],
+            scenario["prepared"],
+            environment=scenario["environment"],
+            probe_path=Path(installed_probe.__file__).absolute(),
+            support_files=support_files,
+            python_requirement=">=3.12",
+        )
+
+    inspection = inspect_installation(
+        scenario["directory"], app_id=_IDENTITY.app_id
+    )
+    assert inspection.record is None
+    assert _legacy_receipt_path(scenario).is_file()
+    assert scenario["plan"].record_entry.path.is_file()
+    assert (
+        hashlib.sha256(
+            scenario["plan"].record_entry.path.read_bytes()
+        ).hexdigest()
+        == scenario["plan"].expected_record_digest
+    )
+    old_output = subprocess.run(
+        [str(scenario["backend"].bin_dir / _COMMAND)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=scenario["environment"],
+    )
+    assert old_output.stdout == "1.0.0\n"
+
+
 @pytest.mark.parametrize(
     "barrier",
     (
@@ -1029,7 +1077,8 @@ def test_real_uv_replacement_resumes_recorded_interruption(
 
 
 @pytest.mark.parametrize(
-    "interruption", ("after-backend", "during-final-staging")
+    "interruption",
+    ("after-backend", "during-final-staging", "after-initial-authority"),
 )
 def test_authored_recovery_entry_resumes_after_deleted_inputs(
     tmp_path: Path,
@@ -1037,10 +1086,32 @@ def test_authored_recovery_entry_resumes_after_deleted_inputs(
     interruption: str,
 ) -> None:
     scenario = _scenario(tmp_path)
+    payload = scenario["directory"].parent / "appdata" / "workspace.txt"
+    payload.parent.mkdir()
+    payload.write_text("keep", encoding="utf-8")
     support_root = tmp_path / "authored recovery support"
     _write_recovery_support(scenario, support_root)
     interrupted = False
-    if interruption == "after-backend":
+    if interruption == "after-initial-authority":
+        original_write_record = legacy_replacement.write_record
+
+        def fail_after_initial_authority(*args, **kwargs):
+            nonlocal interrupted
+            result = original_write_record(*args, **kwargs)
+            record = args[1]
+            if (
+                record.operation is not None
+                and record.operation.kind == "replace"
+                and not interrupted
+            ):
+                interrupted = True
+                raise RuntimeError("interrupted after initial authority write")
+            return result
+
+        monkeypatch.setattr(
+            legacy_replacement, "write_record", fail_after_initial_authority
+        )
+    elif interruption == "after-backend":
         original_install = legacy_replacement.install_uv_tool
 
         def fail_after_backend_replacement(*args, **kwargs):
@@ -1087,11 +1158,27 @@ def test_authored_recovery_entry_resumes_after_deleted_inputs(
     assert (
         pending.record.generation_id == scenario["plan"].install.generation_id
     )
+    assert _legacy_receipt_path(scenario).is_file()
     if interruption == "after-backend":
         assert pending.record.current is None
-    else:
+    elif interruption == "during-final-staging":
         assert pending.record.current is not None
         assert pending.record.current.version == "2.0.0"
+    else:
+        assert pending.record.current is None
+        assert (
+            pending.record.operation.intended == scenario["plan"].install.target
+        )
+    if interruption == "after-initial-authority":
+        old_command = scenario["backend"].bin_dir / _COMMAND
+        old_output = subprocess.run(
+            [str(old_command)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=scenario["environment"],
+        )
+        assert old_output.stdout == "1.0.0\n"
 
     prepared = scenario["prepared"]
     if prepared.archive is not None:
@@ -1137,6 +1224,29 @@ def test_authored_recovery_entry_resumes_after_deleted_inputs(
         recovered.record.generation_id == scenario["plan"].install.generation_id
     )
     assert recovered.record.current is not None
+    assert recovered.record.current.source == scenario["source"]
+    assert recovered.record.current.backend == scenario["backend"]
+    assert (
+        recovered.record.current.placement
+        == scenario["plan"].install.target.placement
+    )
+    assert recovered.record.current.distribution_record_digest is not None
+    verified = probe_installed_tool(
+        scenario["backend"],
+        _IDENTITY,
+        scenario["source"],
+        scenario["plan"].install.target.placement,
+        probe_path=Path(installed_probe.__file__).absolute(),
+        environment=scenario["environment"],
+        expected_record_digest=(
+            recovered.record.current.distribution_record_digest
+        ),
+    )
+    assert (
+        recovered.record.current.distribution_record_digest
+        == verified.distribution_record_digest
+    )
+    assert payload.read_text(encoding="utf-8") == "keep"
     commands = recovered.record.current.commands
     assert len(commands) == 1
     launched = subprocess.run(
@@ -1152,6 +1262,60 @@ def test_authored_recovery_entry_resumes_after_deleted_inputs(
     )
     assert _legacy_receipt_path(scenario).exists() is False
     assert interrupted
+
+
+def test_interrupted_initial_recovery_entry_publication_preserves_legacy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = _scenario(tmp_path)
+    support_root = tmp_path / "authored recovery support"
+    _write_recovery_support(scenario, support_root)
+    original_write = legacy_replacement.write_bytes_atomic
+    interrupted = False
+
+    def fail_after_recovery_entry_write(path, content, **kwargs):
+        nonlocal interrupted
+        result = original_write(path, content, **kwargs)
+        if Path(path).name == "legacy-recovery.py" and not interrupted:
+            interrupted = True
+            raise RuntimeError("interrupted after initial recovery entry write")
+        return result
+
+    monkeypatch.setattr(
+        legacy_replacement,
+        "write_bytes_atomic",
+        fail_after_recovery_entry_write,
+    )
+    with pytest.raises(Exception, match="initial recovery entry"):
+        _run(scenario)
+
+    inspection = inspect_installation(
+        scenario["directory"], app_id=_IDENTITY.app_id
+    )
+    assert inspection.record is None
+    assert inspection.status == "missing"
+    assert _legacy_receipt_path(scenario).is_file()
+    assert scenario["plan"].record_entry.path.is_file()
+    assert (
+        hashlib.sha256(
+            scenario["plan"].record_entry.path.read_bytes()
+        ).hexdigest()
+        == scenario["plan"].expected_record_digest
+    )
+    assert not (scenario["directory"] / "legacy-recovery.py").exists()
+    assert not (
+        scenario["directory"]
+        / "migration-staged"
+        / str(scenario["plan"].install.generation_id)
+    ).exists()
+    assert not (scenario["directory"] / "migration-staged").exists()
+    assert interrupted
+    assert (scenario["directory"] / "locks" / "operation.lock").is_file()
+    retried = _run(scenario)
+    assert retried.record is not None
+    assert retried.record.status == "ready"
+    assert _legacy_receipt_path(scenario).exists() is False
 
 
 @pytest.mark.parametrize(

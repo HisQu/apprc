@@ -662,6 +662,49 @@ if __name__ == "__main__":
         assert launcher.stdout.strip() == (
             f"saved command executed {list(launcher_arguments)!r}"
         )
+        management = directory / "management.py"
+        management_launch = subprocess.run(
+            [
+                sys.executable,
+                str(management),
+                "launch",
+                "--directory",
+                str(directory),
+                *launcher_arguments,
+            ],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert management_launch.returncode == 0, (
+            management_launch.stdout + management_launch.stderr
+        )
+        assert management_launch.stdout.strip() == (
+            f"saved command executed {list(launcher_arguments)!r}"
+        )
+        authority_before_preview = (
+            directory / "installation.json"
+        ).read_bytes()
+        preview = subprocess.run(
+            [
+                sys.executable,
+                str(management),
+                "uninstall",
+                "--directory",
+                str(directory),
+                "--dry-run",
+            ],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert preview.returncode == 0, preview.stdout + preview.stderr
+        assert (directory / "installation.json").read_bytes() == (
+            authority_before_preview
+        )
+        assert inspect_saved(directory).status == "ready"
         foreign_command = target.bin_dir / (
             "foreign.exe" if os.name == "nt" else "foreign"
         )

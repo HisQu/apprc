@@ -3,17 +3,28 @@
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Literal
+from uuid import uuid4
 
 import pytest
 
 from apprc import AppRC, Paths
-from apprc.definition.installation import InstallationIdentity
+from apprc.definition.installation import (
+    InstallationIdentity,
+    InstallationPlacement,
+    InstallationRecord,
+    InstallationSource,
+    InstalledSnapshot,
+    OwnedOutput,
+    UvToolTarget,
+)
+from apprc.definition.paths import Layout
 from apprc.distribution.artifacts import write_artifacts
 from apprc.distribution.metadata import (
     inspect_capabilities,
@@ -29,6 +40,7 @@ from apprc.distribution.rendering import (
     build_main_installer,
     install_support_files,
 )
+from apprc.user_files.installation.codec import encode_record
 from apprc.user_files.installation.discovery import inspect_installation
 
 
@@ -326,11 +338,36 @@ def test_emitted_composition_runs_without_installed_apprc_with_saved_inventory(
     }
 
 
-@pytest.mark.parametrize("schema_version", (1, 3, 2.0))
-@pytest.mark.parametrize("program", ("launcher", "uninstaller"))
-def test_generated_management_programs_reject_non_schema_two_authority(
-    tmp_path: Path, schema_version: int | float, program: str
-) -> None:
+def _write_invalid_interpreter(path: Path, marker: Path, prefix: Path) -> None:
+    """Write a marker-producing wrapper that reports an in-target interpreter.
+
+    :param path: Executable path of the shell wrapper.
+    :param marker: Side-effect file proving that the wrapper ran.
+    :param prefix: Application prefix reported as both live prefixes.
+    """
+    identity = json.dumps([str(prefix), str(prefix)])
+    path.write_text(
+        "#!/bin/sh\n"
+        f"printf 'ran' > {shlex.quote(str(marker))}\n"
+        f"printf '%s\\n' {shlex.quote(identity)}\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o700)
+
+
+def _saved_management_authority_fixture(
+    tmp_path: Path, base_python: Path
+) -> tuple[Path, Path, bytes, Path, Path]:
+    """Create complete schema-2 authority and owned support for saved actions.
+
+    :param tmp_path: Isolated test data root.
+    :param base_python: Bound interpreter path stored in management.json.
+    :return: Installation path, authority path/bytes, metadata path and app marker.
+    """
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("Saved management consumer scenario requires uv.")
+
     payload = _standalone_payload(tmp_path / "payload")
     identity = InstallationIdentity(
         "generation-fixture",
@@ -345,93 +382,120 @@ def test_generated_management_programs_reject_non_schema_two_authority(
     support_files = install_support_files(spec, payload)
     directory = tmp_path / "saved-installation"
     directory.mkdir()
-    authority = directory / "installation.json"
-    side_effect = tmp_path / f"{program}-side-effect"
-    application = tmp_path / "recorded-application"
+    application_marker = tmp_path / "application-side-effect"
+    application = tmp_path / "bin" / "fixture"
+    application.parent.mkdir()
     application.write_text(
         f"#!{sys.executable}\nfrom pathlib import Path\n"
-        f"Path({str(side_effect)!r}).write_text('ran')\n",
+        f"Path({str(application_marker)!r}).write_text('ran')\n",
         encoding="utf-8",
     )
     application.chmod(0o700)
 
-    if program == "launcher":
-        support_path = PurePosixPath("launcher.py")
-        support_data = support_files[support_path]
-        owned_outputs = [
-            {
-                "kind": "support",
-                "path": support_path.as_posix(),
-                "digest": hashlib.sha256(support_data).hexdigest(),
-            }
-        ]
-        executable = directory / support_path.name
-        executable.write_bytes(support_data)
-        arguments = [
-            sys.executable,
-            str(executable),
-            "--directory",
-            str(directory),
-            "--command",
-            "fixture",
-        ]
-        current = {
-            "identity": {"commands": ["fixture"]},
-            "commands": [str(application)],
-            "owned_outputs": owned_outputs,
-        }
-    else:
-        inspection_path = PurePosixPath("inspection.py")
-        inspection_data = (
-            f"from pathlib import Path\n"
-            f"Path({str(side_effect)!r}).write_text('inspection ran')\n"
-            "print('{}')\n"
-        ).encode()
-        uninstaller_path = PurePosixPath("uninstall.py")
-        uninstaller_data = support_files[uninstaller_path].replace(
-            b'BASE_PYTHON = "__APPRC_BASE_PYTHON__"',
-            f"BASE_PYTHON = {sys.executable!r}".encode(),
-        )
-        for relative, data in (
-            (inspection_path, inspection_data),
-            (uninstaller_path, uninstaller_data),
-        ):
-            (directory / relative.name).write_bytes(data)
-        owned_outputs = [
-            {
-                "kind": "support",
-                "path": relative.as_posix(),
-                "digest": hashlib.sha256(data).hexdigest(),
-            }
-            for relative, data in (
-                (inspection_path, inspection_data),
-                (uninstaller_path, uninstaller_data),
-            )
-        ]
-        arguments = [
-            sys.executable,
-            str(directory / uninstaller_path.name),
-            "--directory",
-            str(directory),
-            "--dry-run",
-        ]
-        current = {"owned_outputs": owned_outputs}
-
-    original_authority = json.dumps(
+    management_path = PurePosixPath("management.py")
+    metadata_path = PurePosixPath("management.json")
+    inspection_path = PurePosixPath("inspection.py")
+    uninstall_path = PurePosixPath("app-uninstall.py")
+    management = support_files[management_path]
+    metadata = json.dumps(
         {
-            "schema_version": schema_version,
             "app_id": identity.app_id,
-            "status": "ready",
-            "operation": None,
-            "current": current,
-            "last_successful": None,
+            "command": "fixture",
+            "base_python": str(base_python),
         },
         sort_keys=True,
     ).encode()
-    authority.write_bytes(original_authority)
+    inspection = support_files[inspection_path]
+    uninstall = support_files[uninstall_path]
+    for relative, content in (
+        (management_path, management),
+        (metadata_path, metadata),
+        (inspection_path, inspection),
+        (uninstall_path, uninstall),
+    ):
+        (directory / relative.name).write_bytes(content)
+    owned_outputs = tuple(
+        OwnedOutput(
+            "support", relative.as_posix(), hashlib.sha256(content).hexdigest()
+        )
+        for relative, content in (
+            (management_path, management),
+            (metadata_path, metadata),
+            (inspection_path, inspection),
+            (uninstall_path, uninstall),
+        )
+    )
+    placement = InstallationPlacement(Layout.native())
+    backend = UvToolTarget(
+        Path(uv).resolve(), tmp_path / "tools", tmp_path / "bin"
+    )
+    prefix = tmp_path / "prefix"
+    prefix.mkdir()
+    snapshot = InstalledSnapshot(
+        identity,
+        "1.0",
+        InstallationSource("editable", "fixture"),
+        placement,
+        backend,
+        prefix,
+        Path(sys.executable),
+        (application,),
+        owned_outputs=owned_outputs,
+    )
+    record = InstallationRecord(
+        schema_version=2,
+        app_id=identity.app_id,
+        generation_id=uuid4(),
+        support_version="1",
+        placement=placement,
+        status="ready",
+        current=snapshot,
+        owned_outputs=owned_outputs,
+    )
+    authority = directory / "installation.json"
+    authority_bytes = encode_record(record)
+    authority.write_bytes(authority_bytes)
+    return (
+        directory,
+        authority,
+        authority_bytes,
+        directory / metadata_path.name,
+        application_marker,
+    )
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Sentinel interpreters use a POSIX shell wrapper."
+)
+@pytest.mark.parametrize("schema_version", (1, 3, 2.0, "2"))
+@pytest.mark.parametrize("action", ("launch", "uninstall"))
+def test_saved_management_rejects_non_schema_two_authority_before_side_effects(
+    tmp_path: Path, schema_version: int | float | str, action: str
+) -> None:
+    prefix = tmp_path / "prefix"
+    interpreter_marker = tmp_path / "interpreter-side-effect"
+    interpreter = tmp_path / "bound-interpreter"
+    _write_invalid_interpreter(interpreter, interpreter_marker, prefix)
+    (
+        directory,
+        authority,
+        _,
+        _metadata_path,
+        application_marker,
+    ) = _saved_management_authority_fixture(tmp_path, interpreter)
+    record = json.loads(authority.read_bytes())
+    record["schema_version"] = schema_version
+    invalid_authority = json.dumps(record, sort_keys=True).encode()
+    authority.write_bytes(invalid_authority)
 
     result = subprocess.run(
-        arguments,
+        [
+            sys.executable,
+            str(directory / "management.py"),
+            action,
+            "--directory",
+            str(directory),
+        ],
         text=True,
         capture_output=True,
         timeout=30,
@@ -439,5 +503,90 @@ def test_generated_management_programs_reject_non_schema_two_authority(
     )
 
     assert result.returncode != 0, result.stdout + result.stderr
-    assert not side_effect.exists()
-    assert authority.read_bytes() == original_authority
+    assert not interpreter_marker.exists()
+    assert not application_marker.exists()
+    assert authority.read_bytes() == invalid_authority
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Sentinel interpreters use a POSIX shell wrapper."
+)
+def test_tampered_bound_interpreter_is_rejected_before_interpreter_side_effect(
+    tmp_path: Path,
+) -> None:
+    prefix = tmp_path / "prefix"
+    authorized_marker = tmp_path / "authorized-interpreter-ran"
+    authorized_interpreter = tmp_path / "authorized-interpreter"
+    _write_invalid_interpreter(
+        authorized_interpreter, authorized_marker, prefix
+    )
+    (
+        directory,
+        authority,
+        authority_bytes,
+        metadata_path,
+        application_marker,
+    ) = _saved_management_authority_fixture(tmp_path, authorized_interpreter)
+    launch_control = subprocess.run(
+        [
+            sys.executable,
+            str(directory / "management.py"),
+            "launch",
+            "--directory",
+            str(directory),
+        ],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    assert launch_control.returncode == 0
+    assert application_marker.is_file()
+    application_marker.unlink()
+
+    control = subprocess.run(
+        [
+            sys.executable,
+            str(directory / "management.py"),
+            "uninstall",
+            "--directory",
+            str(directory),
+        ],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    assert control.returncode != 0
+    assert authorized_marker.is_file()
+    assert not application_marker.exists()
+    assert authority.read_bytes() == authority_bytes
+    authorized_marker.unlink()
+
+    tampered_marker = tmp_path / "tampered-interpreter-ran"
+    tampered_interpreter = tmp_path / "tampered-interpreter"
+    _write_invalid_interpreter(tampered_interpreter, tampered_marker, prefix)
+    metadata = json.loads(metadata_path.read_bytes())
+    metadata["base_python"] = str(tampered_interpreter)
+    metadata_path.write_text(
+        json.dumps(metadata, sort_keys=True), encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(directory / "management.py"),
+            "uninstall",
+            "--directory",
+            str(directory),
+        ],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not tampered_marker.exists()
+    assert not application_marker.exists()
+    assert authority.read_bytes() == authority_bytes

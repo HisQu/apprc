@@ -35,7 +35,6 @@ from apprc.distribution.models import (
 from apprc.distribution.rendering import (
     _environment,
     generate_artifacts,
-    install_support_files,
     render_bootstraps,
 )
 from apprc.distribution.runtime import controllers
@@ -1458,26 +1457,6 @@ def test_default_generated_composition_is_complete_and_author_root_independent(
         ),
         payload,
     )
-    support_files = install_support_files(spec, payload)
-    assert {
-        PurePosixPath(name)
-        for name in (
-            "repair-installer.py",
-            "app-uninstall.py",
-            "controller.py",
-            "inspection.py",
-            "final-worker.py",
-            "uninstall.py",
-            "launcher.py",
-            "launch-command.json",
-            "launch.sh",
-            "launch.ps1",
-            "launch.cmd",
-            "uninstall.sh",
-            "uninstall.ps1",
-            "uninstall.cmd",
-        )
-    } <= set(support_files)
     observed = {str(item.destination) for item in artifacts}
     assert {
         "app-install.sh",
@@ -1486,23 +1465,6 @@ def test_default_generated_composition_is_complete_and_author_root_independent(
         "app-launch.cmd",
         "app-uninstall.sh",
         "app-uninstall.cmd",
-        "src/fixture_distr/artifacts/installer/main-installer.py",
-        "src/fixture_distr/artifacts/installer/bootstrap.sh",
-        "src/fixture_distr/artifacts/installer/bootstrap.ps1",
-        "src/fixture_distr/artifacts/installer/repair-installer.py",
-        "src/fixture_distr/artifacts/installer/app-uninstall.py",
-        "src/fixture_distr/artifacts/uninstaller/controller.py",
-        "src/fixture_distr/artifacts/uninstaller/inspection.py",
-        "src/fixture_distr/artifacts/uninstaller/final-worker.py",
-        "src/fixture_distr/artifacts/uninstaller/uninstall.py",
-        "src/fixture_distr/artifacts/launcher/launcher.py",
-        "src/fixture_distr/artifacts/launcher/launch-command.json",
-        "src/fixture_distr/artifacts/launcher/launch.sh",
-        "src/fixture_distr/artifacts/launcher/launch.ps1",
-        "src/fixture_distr/artifacts/launcher/launch.cmd",
-        "src/fixture_distr/artifacts/uninstaller/uninstall.sh",
-        "src/fixture_distr/artifacts/uninstaller/uninstall.ps1",
-        "src/fixture_distr/artifacts/uninstaller/uninstall.cmd",
     }.issubset(observed)
     assert [(item.destination, item.content) for item in artifacts] == [
         (item.destination, item.content) for item in relocated

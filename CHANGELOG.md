@@ -89,6 +89,8 @@ All notable changes to `AppRC` will be documented in this file.
   Python-only field provenance when environment-backed settings are reloaded.
 - Documented fresh-plan recovery after an interrupted secret migration, including
   safe partial progress and rejection of the original stale plan.
+- Removed development import-path-absence and nonempty-facade assertions; supported
+  API and installed-distribution ownership checks remain.
 
 <br>
 

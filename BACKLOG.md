@@ -80,8 +80,6 @@ Treat this as the parking lot for actionable problems discovered while working b
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 4. [2026-09-04](#2026-09-04)
    1. [P3 / E1 \[Code smell\] - *Workspace presentation state has multiple owners*](#p3--e1-code-smell---workspace-presentation-state-has-multiple-owners)
-5. [2026-07-14](#2026-07-14)
-   1. [P3 / E3 \[Tooling\] - *Removed-module tests are sensitive to namespace-only remnants*](#p3--e3-tooling---removed-module-tests-are-sensitive-to-namespace-only-remnants)
 
 
 <br>
@@ -136,19 +134,5 @@ Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and rele
 - **Context:** The screen → workflow → screen cycle moves methods into other files without giving workspace state one owner. A maintainer must trace both layers to understand registry replacement, selection, and refresh ordering. Persistence already belongs to `ConfigManager`/`WorkspaceManager` and should stay there.
 - **Suggested next step:** Give workspace-pane state, selection, list refresh, and button availability one presentation owner. Let operations report results and desired selection instead of accepting the whole screen and mutating private state. Completion means one post-operation refresh boundary, without a generic UI framework. Keep shared `ConfigManager` planning/application for edits rather than restoring an alternate direct-write workflow.
 
-
-<br>
-
-# 2026-07-14
-
-<a id="p3--e3-tooling---stale-bytecode-recreates-removed-package-namespaces"></a>
-
-## P3 / E3 [Tooling] - *Removed-module tests are sensitive to namespace-only remnants*
-- **Area:** `tests/test_architecture_public_api.py` (`test_old_runtime_config_package_is_removed`, `test_logging_package_is_removed`)
-- **Observed while:** Historical post-migration test failures; rechecked the current removal assertions after `0.32.0`.
-- **Why not fixed now:** No active failure is observed in the current checkout. The remaining question is the intended removal-test contract, not a production repair or a request to delete local files.
-- **Evidence:** [The package-level removal tests](tests/test_architecture_public_api.py#L128-L140) still require `ModuleNotFoundError`. Namespace-only directories can make those package imports succeed even without legacy Python source. The historically implicated `src/apprc/runtime_config` and `src/apprc/logging` directories are absent from the current checkout, so their old failure must not be presented as current.
-- **Context:** Ignored bytecode is local development state, not retained production implementation. The separately observed `src/apprc/user_files/storage_roots/__pycache__` likewise does not establish a failure of these tests or a runtime defect.
-- **Suggested next step:** Clarify whether the guards require complete import-path absence or only removal of legacy APIs. If namespace-only remnants are acceptable, test API removal without rejecting them; otherwise document targeted developer-cache cleanup. No global cache deletion or new verification infrastructure is needed.
 
 <br>

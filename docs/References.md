@@ -536,6 +536,8 @@ initializes only enabled user config. Workspace registration belongs to
 | `apply_edit(plan)` | Apply only if the captured file revision still matches. |
 | `setup(adopt=False)` | Initialize enabled user config and companions. |
 | `secret_status(scope)` / `repair_secret_permissions(scope)` | Inspect or explicitly repair current secret permissions. |
+| `plan_secret_migration(scope)` | Capture both file revisions and a value-preserving move to the private companion. |
+| `apply_secret_migration(plan)` | Recheck both revisions under the managed lock, then write the companion before removing ordinary-file assignments. |
 
 A reference may be a dotted registered path, unambiguous field name, or complete
 environment key. Write scopes are `user` and `workspace`. Edit plans reject a
@@ -550,6 +552,15 @@ Secret-file status likewise separates display text from `reason`: `None`,
 `"parent_missing"`, `"parent_not_directory"`, `"parent_not_private"`,
 `"secret_not_file"`, or `"secret_not_private"`. Use these values for repair
 eligibility and recovery actions; an available secret location has no reason.
+
+> [!WARNING]
+> Secret migration replaces two files separately, not as one crash-atomic
+> transaction. An interruption after writing the private companion can leave
+> the original ordinary-file assignments in place. The private values remain
+> available, but migration is not finished. Reapplying the original plan raises
+> `StaleEditError` because its companion revision has changed. Create and review
+> a fresh plan with `plan_secret_migration(scope)`, then pass that plan to
+> `apply_secret_migration()` to remove the remaining ordinary-file copies.
 
 ## WorkspaceManager
 
@@ -613,6 +624,13 @@ resolved snapshot's `AppPaths` does not change during settings refresh.
 `reload()` and `bind_from_env()` use live process environment. `scoped()` makes
 an isolated override; `export_environment()` explicitly changes process
 environment and is not part of normal resolution.
+
+Provenance updates share one per-instance origin map for Python-only and
+environment-backed fields. `apprc.provenance.set_field_origin(instance,
+field_name, origin)` updates origin metadata on an existing instance; it does
+not assign the field's value. For a pure mapping copy, use ordinary Python such
+as `{**origins, field_name: origin}` rather than the removed `with_field_origin`
+utility.
 
 <br>
 

@@ -21,5 +21,4 @@ from apprc.runtime.provenance.python import (
     provenance_of,
     public_config_fields,
     set_field_origin,
-    with_field_origin,
 )

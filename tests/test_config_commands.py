@@ -5,12 +5,15 @@ from pathlib import Path
 
 import pytest
 import typer
+from dotenv import dotenv_values
 from typer.testing import CliRunner
 
 import apprc as rc
 from apprc.definition.paths import Layout, Paths
 from apprc.interfaces.cli.mount import mount_app_cli
 from apprc.user_files.app_home.application import AppFiles
+from apprc.user_files.app_home.writes import StaleEditError
+from apprc.user_files.env_files import secret_migration
 
 
 def _root_cli(app_rc: rc.AppRC) -> tuple[typer.Typer, dict[str, typer.Typer]]:
@@ -209,3 +212,98 @@ def test_secret_migration_moves_value_to_private_companion(
         manager.resolve().source.values["SECRET_MIGRATION_TOKEN"]
         == "private-value"
     )
+
+
+def test_secret_migration_recovers_with_fresh_plan_after_ordinary_write_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kit = rc.AppRC(
+        app_id="secret_migration_recovery",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        user_dotenv=rc.UserDotenv(),
+    )
+
+    @kit.config("credentials", prefix="SECRET_RECOVERY_")
+    class Credentials(rc.Config):
+        token: str = rc.field("SECRET_RECOVERY_TOKEN", secret=True)
+        password: str = rc.field("SECRET_RECOVERY_PASSWORD", secret=True)
+        retained_token: str = rc.field(
+            "SECRET_RECOVERY_RETAINED_TOKEN", secret=True
+        )
+        label: str = rc.field("SECRET_RECOVERY_LABEL")
+
+    manager = kit.manage(environment={})
+    manager.setup()
+    manager.apply_edit(
+        manager.plan_update(
+            "SECRET_RECOVERY_RETAINED_TOKEN", "existing-private", scope="user"
+        )
+    )
+    ordinary = manager.writable_path("user")
+    secret = manager.writable_path("user", secret=True)
+    retained_ordinary = (
+        '# Retain this setting.\nSECRET_RECOVERY_LABEL="saved"\n'
+    )
+    ordinary.write_text(
+        retained_ordinary
+        + 'SECRET_RECOVERY_TOKEN="migrating-token"\n'
+        + 'SECRET_RECOVERY_PASSWORD="migrating-password"\n',
+        encoding="utf-8",
+    )
+    ordinary_before = ordinary.read_bytes()
+    expected_secret = {
+        "SECRET_RECOVERY_RETAINED_TOKEN": "existing-private",
+        "SECRET_RECOVERY_TOKEN": "migrating-token",
+        "SECRET_RECOVERY_PASSWORD": "migrating-password",
+    }
+    plan = manager.plan_secret_migration("user")
+    write_text_atomic = secret_migration.write_text_atomic
+
+    def fail_ordinary_write(
+        path: Path, text: str, *, private: bool = False
+    ) -> Path:
+        if path == ordinary:
+            assert dotenv_values(secret) == expected_secret
+            assert ordinary.read_bytes() == ordinary_before
+            raise OSError("ordinary file write interrupted")
+        return write_text_atomic(path, text, private=private)
+
+    with monkeypatch.context() as interruption:
+        interruption.setattr(
+            secret_migration, "write_text_atomic", fail_ordinary_write
+        )
+        with pytest.raises(OSError):
+            manager.apply_secret_migration(plan)
+
+    assert ordinary.read_bytes() == ordinary_before
+    assert dotenv_values(secret) == expected_secret
+    partial_values = manager.resolve().source.values
+    for key, value in expected_secret.items():
+        assert partial_values[key] == value
+    assert partial_values["SECRET_RECOVERY_LABEL"] == "saved"
+    status = manager.secret_status("user")
+    assert status.available
+    assert status.reason is None
+
+    secret_after_interruption = secret.read_bytes()
+    with pytest.raises(StaleEditError) as stale:
+        manager.apply_secret_migration(plan)
+    assert stale.value.path == secret
+    assert ordinary.read_bytes() == ordinary_before
+    assert secret.read_bytes() == secret_after_interruption
+
+    fresh_plan = manager.plan_secret_migration("user")
+    manager.apply_secret_migration(fresh_plan)
+
+    assert ordinary.read_text(encoding="utf-8") == retained_ordinary
+    assert dotenv_values(ordinary) == {"SECRET_RECOVERY_LABEL": "saved"}
+    assert dotenv_values(secret) == expected_secret
+    recovered_values = manager.resolve().source.values
+    for key, value in expected_secret.items():
+        assert recovered_values[key] == value
+    assert recovered_values["SECRET_RECOVERY_LABEL"] == "saved"
+    status = manager.secret_status("user")
+    assert status.available
+    assert status.reason is None

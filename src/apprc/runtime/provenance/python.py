@@ -60,40 +60,20 @@ def constructor_field_origins(
     }
 
 
-def with_field_origin(
-    origins: Mapping[str, ConfigOriginState],
-    field_name: str,
-    origin: ConfigOriginState,
-) -> dict[str, ConfigOriginState]:
-    """Return a copied origin map with one updated field.
-
-    :param origins: Existing immutable-by-convention origin map.
-    :param field_name: Runtime dataclass field name.
-    :param origin: Replacement origin state.
-    :return: Copied field-origin mapping.
-    """
-    next_origins = dict(origins)
-    next_origins[field_name] = origin
-    return next_origins
-
-
 def set_field_origin(
     instance: Any,
     field_name: str,
     origin: ConfigOriginState,
 ) -> None:
-    """Record BaseConfig-level provenance for one field.
+    """Record one field's provenance in the shared per-instance origin map.
 
     :param instance: Config object whose internal origin map should be updated.
     :param field_name: Runtime dataclass field name.
     :param origin: Replacement origin state.
     """
-    origins = getattr(instance, "_apprc_provenance_origins", {})
-    object.__setattr__(
-        instance,
-        "_apprc_provenance_origins",
-        with_field_origin(origins, field_name, origin),
-    )
+    origins = getattr(instance, "_apprc_provenance_origins", {}).copy()
+    origins[field_name] = origin
+    object.__setattr__(instance, "_apprc_provenance_origins", origins)
 
 
 def base_config_provenance_of(

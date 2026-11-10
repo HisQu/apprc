@@ -88,6 +88,13 @@ coordination belong in `user_files/installation`; application-bound orchestratio
 belongs in `services/installation.py`. Do not put business configuration or
 generator dependencies into those lower layers.
 
+`ConfigEditorScreen` owns workspace presentation state and the single
+post-action refresh boundary. Workflows receive a fresh, read-only
+`WorkspaceActionContext` and return `WorkspaceActionResult`; they do not retain
+the screen or mutate its registry, selection, or controls. Persistent operations
+remain in `ConfigManager` and `WorkspaceManager`. A failed registry reload makes
+registry actions unavailable without locking valid user-config editing.
+
 Application packaging/release manifests and business actions remain in the
 consuming repository. Its `_distr` generator and payload are author inputs,
 not installed application imports. Maintain substantial lifecycle logic as
@@ -121,9 +128,14 @@ The GUI tests include a browser-level check and require the Chromium binary
 installed by `playwright install chromium`.
 
 `just lock` regenerates `uv.lock` and `pylock.toml`; `just sync` installs locked
-dependencies. `just clean` removes caches and build outputs. Obsolete empty
-namespace directories can survive historical in-place checkouts; the remaining
-cleanup question is tracked in [BACKLOG.md](../BACKLOG.md#backlog).
+dependencies. `just clean` removes caches and build outputs.
+
+Development checks verify supported APIs, not the complete absence of obsolete
+import paths. Empty directories left by historical checkouts can be importable
+as namespace packages without providing any legacy implementation. Do not
+globally delete caches to satisfy an import-absence assertion. Artifact-consumer
+checks still verify distribution ownership, supported imports, console commands,
+and preservation of the core when the terminal wrapper is removed.
 
 ## Documentation checks
 

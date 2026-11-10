@@ -48,6 +48,10 @@ from apprc.interfaces.tui._rendering import (
     missing_workspace_title,
 )
 from apprc.interfaces.tui.editor.setup import ConfigEditorSetupWorkflow
+from apprc.interfaces.tui.editor.workspace_base import (
+    WorkspaceActionContext,
+    WorkspaceActionResult,
+)
 from apprc.interfaces.tui.editor.workflows import ConfigEditorWorkspaceWorkflows
 from apprc.interfaces.tui.modals import (
     ConfigValueEditScreen,
@@ -61,7 +65,6 @@ from apprc.interfaces.tui.workspaces import (
     MissingWorkspaceSelection,
     NoWorkspaceSelection,
     ordered_workspace_entries,
-    suggest_workspace_name,
     workspace_entry_index,
     workspace_entry_label,
 )
@@ -78,7 +81,6 @@ from apprc.user_files.workspace_roots.model import WorkspaceRegistry
 from apprc.user_files.workspace_roots.paths import WorkspaceRootPathError
 from apprc.user_files.workspace_roots.selector import (
     WorkspaceSelectorIssue,
-    workspace_selector_is_path_like,
 )
 
 if TYPE_CHECKING:
@@ -211,8 +213,6 @@ class ConfigEditorScreen(Screen[None]):
         self.selection: EditorWorkspaceSelection = NoWorkspaceSelection()
         self.row_env_keys: list[str | None] = []
         self._config_action_in_progress = False
-        self.workspace_workflows = ConfigEditorWorkspaceWorkflows(self)
-        self.setup_workflow = ConfigEditorSetupWorkflow(self)
 
     def compose(self) -> ComposeResult:
         """Compose the workspace list and field editor."""
@@ -311,11 +311,9 @@ class ConfigEditorScreen(Screen[None]):
             return
         self._select_archived_workspace(entry.name)
         self._start_config_action(
-            lambda: (
-                self.workspace_workflows.restore_or_prune_archived_workspace(
-                    entry.name
-                )
-            )
+            lambda: ConfigEditorWorkspaceWorkflows(
+                self._workspace_action_context()
+            ).restore_or_prune_archived_workspace(entry.name)
         )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -358,41 +356,59 @@ class ConfigEditorScreen(Screen[None]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle config action button clicks."""
         if event.button.id == "config-setup":
-            self._start_config_action(self.setup_workflow.open_setup_flow)
+            self._start_config_action(
+                lambda: ConfigEditorSetupWorkflow(
+                    self._workspace_action_context()
+                ).open_setup_flow()
+            )
             return
         if event.button.id == "workspace-new":
             self._start_config_action(
-                self.workspace_workflows.open_new_workspace_flow
+                lambda: ConfigEditorWorkspaceWorkflows(
+                    self._workspace_action_context()
+                ).open_new_workspace_flow()
             )
             return
         if event.button.id == "workspace-register-active":
             self._start_config_action(
-                self.workspace_workflows.register_active_workspace_flow
+                lambda: ConfigEditorWorkspaceWorkflows(
+                    self._workspace_action_context()
+                ).register_active_workspace_flow()
             )
             return
         if event.button.id == "workspace-rename":
             self._start_config_action(
-                self.workspace_workflows.open_rename_workspace_flow
+                lambda: ConfigEditorWorkspaceWorkflows(
+                    self._workspace_action_context()
+                ).open_rename_workspace_flow()
             )
             return
         if event.button.id == "workspace-location":
             self._start_config_action(
-                self.workspace_workflows.open_workspace_reconnect_flow
+                lambda: ConfigEditorWorkspaceWorkflows(
+                    self._workspace_action_context()
+                ).open_workspace_reconnect_flow()
             )
             return
         if event.button.id == "workspace-move":
             self._start_config_action(
-                self.workspace_workflows.open_move_workspace_flow
+                lambda: ConfigEditorWorkspaceWorkflows(
+                    self._workspace_action_context()
+                ).open_move_workspace_flow()
             )
             return
         if event.button.id == "workspace-delete":
             self._start_config_action(
-                self.workspace_workflows.open_delete_workspace_flow
+                lambda: ConfigEditorWorkspaceWorkflows(
+                    self._workspace_action_context()
+                ).open_delete_workspace_flow()
             )
             return
         if event.button.id == "workspace-archive":
             self._start_config_action(
-                self.workspace_workflows.open_archive_workspace_flow
+                lambda: ConfigEditorWorkspaceWorkflows(
+                    self._workspace_action_context()
+                ).open_archive_workspace_flow()
             )
             return
 
@@ -406,9 +422,25 @@ class ConfigEditorScreen(Screen[None]):
             return None
         return self.workspace_registry
 
+    def _workspace_action_context(self) -> WorkspaceActionContext:
+        """Capture current presentation and service inputs for one action."""
+        return WorkspaceActionContext(
+            app=self.app,
+            manager=self.manager,
+            workspace_manager=self.workspace_manager,
+            registry=self.workspace_registry,
+            registry_error=self.workspace_registry_error,
+            selection=self.selection,
+            active_workspace_root=self.active_workspace_root,
+            workspace_enabled=self.workspace_enabled,
+            registry_enabled=self.registry_enabled,
+            user_dotenv_enabled=self.user_dotenv_enabled,
+            user_dotenv_active=self.user_dotenv_active,
+        )
+
     def _start_config_action(
         self,
-        workflow: Callable[[], Awaitable[None]],
+        workflow: Callable[[], Awaitable[WorkspaceActionResult | None]],
     ) -> None:
         """Run one config workflow while preventing conflicting edits.
 
@@ -430,20 +462,47 @@ class ConfigEditorScreen(Screen[None]):
 
     async def _run_config_action(
         self,
-        workflow: Callable[[], Awaitable[None]],
+        workflow: Callable[[], Awaitable[WorkspaceActionResult | None]],
     ) -> None:
-        """Complete a locked workflow and restore controls from selection.
+        """Apply one completed workflow result at the presentation boundary.
 
-        :param workflow: Async config operation that owns the active lock.
+        A canceled or failed workflow returns ``None`` and retains the current
+        selection. Successful results may choose a named workspace, adopt a
+        direct root, or request the normal fallback selection.
         """
+        result: WorkspaceActionResult | None = None
         try:
-            await workflow()
+            result = await workflow()
         finally:
             self._config_action_in_progress = False
+            select_name = self._selected_workspace_name()
+            if result is not None:
+                if result.active_root is not None:
+                    self.active_workspace_root = result.active_root
+                if self.registry_enabled and self.workspace_manager is not None:
+                    try:
+                        self.workspace_registry = (
+                            self.workspace_manager.registry()
+                        )
+                    except (OSError, ValueError) as exc:
+                        self.workspace_registry = None
+                        self.workspace_registry_error = str(exc)
+                        select_name = None
+                        self.notify(
+                            f"Workspace registry is unavailable: {exc}",
+                            severity="error",
+                            markup=False,
+                        )
+                    else:
+                        self.workspace_registry_error = None
+                self.user_dotenv_active = self._user_dotenv_is_active()
+                if result.use_fallback or result.active_root is not None:
+                    select_name = None
+                elif result.select_name is not None:
+                    select_name = result.select_name
             await self.clear_resolved_selector_issue()
-            await self._refresh_workspace_list(
-                select_name=self._selected_workspace_name()
-            )
+            await self.clear_setup_status()
+            await self._refresh_workspace_list(select_name=select_name)
 
     def _disable_config_action_controls(self) -> None:
         """Block controls that could conflict with a config action."""
@@ -735,37 +794,6 @@ class ConfigEditorScreen(Screen[None]):
         for status in self.query("#selector-status"):
             await status.remove()
 
-    def _workspace_marker_setup_target(self) -> tuple[str, Path] | None:
-        """Return a registered live root whose marker must be initialized."""
-        selection = self.selection
-        if isinstance(selection, LiveWorkspaceSelection):
-            record = selection.record
-        else:
-            registry = self.workspace_registry
-            if registry is None or not registry.workspaces:
-                return None
-            name = registry.selected_workspace or next(
-                iter(registry.workspaces)
-            )
-            record = registry.workspaces.get(name)
-            if record is None:
-                return None
-        if not record.root.is_dir():
-            return None
-        if self._env_file_path_for_root(record.root).is_file():
-            return None
-        return record.name, record.root
-
-    def _requested_workspace_name(self) -> str | None:
-        """Return a bare failed selector that setup can register by name."""
-        issue = self.workspace_selector_issue
-        if issue is None or issue.selector is None:
-            return None
-        value = issue.selector.raw_value.strip()
-        if not value or workspace_selector_is_path_like(value):
-            return None
-        return value
-
     def _select_missing_workspace(self, name: str) -> None:
         """Show a registered workspace whose root no longer exists."""
         registry = self._require_workspace_registry()
@@ -1008,13 +1036,6 @@ class ConfigEditorScreen(Screen[None]):
             if record_root == self.active_workspace_root:
                 return name
         return None
-
-    def _suggest_workspace_name(self, path: Path) -> str:
-        """Return a simple workspace-name suggestion from a path."""
-        return suggest_workspace_name(
-            path,
-            fallback_name=self.apprc.schema.app_id,
-        )
 
     def _no_workspace_message(self) -> str:
         """Return guidance when no workspace row or path is selected."""

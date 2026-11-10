@@ -292,6 +292,13 @@ def test_import_metadata_is_available_during_dependency_post_init() -> None:
         "HOST_CLIENT_API_ENDPOINT": "parent-source",
     }
     assert hook_mappings == [(expected, {"API_ENDPOINT": "parent-source"})]
+
+    imported.local_label = "python-only"
+    imported.reload_from(resolved)
+    assert imported.local_label == "python-only"
+    assert imported.provenance_of("local_label").origin == (
+        "python_runtime_assignment"
+    )
     assert imported.current_env_mapping() == expected
     assert imported.endpoint == "parent-source"
     with pytest.raises(TypeError, match="resolution state is reserved"):

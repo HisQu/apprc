@@ -15,5 +15,4 @@ PUBLIC_NAMES = [
     "public_config_fields",
     "set_field_origin",
     "source_for_origin",
-    "with_field_origin",
 ]

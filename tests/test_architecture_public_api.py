@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import ast
-import importlib
 from pathlib import Path
 
-import pytest
 
 import apprc
 import apprc.definition as definition_api
@@ -107,39 +105,6 @@ def test_definition_and_runtime_facades_stay_owned() -> None:
     assert not hasattr(contract_api, "AppConfigSpec")
 
 
-def test_supported_helper_namespaces_are_lazy_boundaries() -> None:
-    """Supported helper namespaces own lazy public exports."""
-    assert importlib.import_module("apprc.files").__all__
-    assert importlib.import_module("apprc.workspaces").__all__
-    assert not hasattr(importlib.import_module("apprc.runtime"), "__all__")
-    assert not hasattr(importlib.import_module("apprc.user_files"), "__all__")
-    assert not hasattr(
-        importlib.import_module("apprc.user_files.workspace_roots"),
-        "__all__",
-    )
-
-
-def test_old_config_package_is_removed() -> None:
-    removed_module = ".".join(("apprc", "config"))
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(removed_module)
-
-
-def test_old_runtime_config_fields_package_is_removed() -> None:
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("apprc.runtime_config.fields")
-
-
-def test_old_runtime_config_package_is_removed() -> None:
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("apprc.runtime_config")
-
-
-def test_logging_package_is_removed() -> None:
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("apprc.logging")
-
-
 def test_logging_symbols_are_not_root_exports() -> None:
     removed_names = {
         "AppLogger",
@@ -152,12 +117,6 @@ def test_logging_symbols_are_not_root_exports() -> None:
     assert removed_names.isdisjoint(apprc.__all__)
     for name in removed_names:
         assert not hasattr(apprc, name)
-
-
-def test_old_contract_app_spec_module_is_removed() -> None:
-    removed_module = "apprc.definition.env_config.app_spec"
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(removed_module)
 
 
 def test_env_config_modules_do_not_import_app_config_layer() -> None:

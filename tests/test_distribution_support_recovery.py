@@ -16,13 +16,13 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from apprc.definition.installation import (
-    InstallPlan,
     InstallationError,
     InstallationIdentity,
     InstallationInspection,
     InstallationPlacement,
     InstallationSource,
     InstalledSnapshot,
+    InstallPlan,
     UvToolTarget,
 )
 from apprc.definition.paths import Layout
@@ -32,12 +32,12 @@ from apprc.distribution.models import (
     ProjectMetadata,
 )
 from apprc.distribution.rendering import render_saved_support
-from apprc.distribution.runtime import installed_probe
+from apprc.distribution.runtime import installation, installed_probe
 from apprc.distribution.runtime.acquisition import (
     PreparedSource,
     prepare_source,
 )
-from apprc.distribution.runtime import installation
+from apprc.distribution.runtime.backend import external_base_python
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
@@ -154,17 +154,23 @@ def test_repair_handles_interrupted_address_bound_support_publication(
 ) -> None:
     directory, plan, snapshot, environment = _scenario(tmp_path)
     _stub_backend(monkeypatch, snapshot)
+    monkeypatch.setattr(
+        installation, "external_base_python", external_base_python
+    )
     support = {
-        PurePosixPath("launch-command.json"): b'{"command":"fixture-command"}',
-        PurePosixPath("uninstall.py"): (
-            b'BASE_PYTHON = "__APPRC_BASE_PYTHON__"\n'
-        ),
+        PurePosixPath("management.json"): json.dumps(
+            {
+                "app_id": "fixture",
+                "command": "fixture-command",
+                "base_python": None,
+            }
+        ).encode(),
     }
     original_write = installation.write_bytes_atomic
 
     def publish_then_interrupt(path: Path, content: bytes, *, private: bool):
         original_write(path, content, private=private)
-        if path.name == "uninstall.py":
+        if path.name == "management.json":
             raise RuntimeError(
                 "interrupted after address-bound support publication"
             )
@@ -184,23 +190,82 @@ def test_repair_handles_interrupted_address_bound_support_publication(
         plan.target.backend,
         inspection=pending,
     )
-    uninstall = directory / "uninstall.py"
+    binding = directory / "management.json"
     if edit_after_interruption:
-        uninstall.write_bytes(b"edited uninstall helper")
-        with pytest.raises(InstallationError, match="unowned support output"):
+        binding.write_bytes(b"edited management binding")
+        with pytest.raises(InstallationError):
             _run(repair, environment, support)
-        assert uninstall.read_bytes() == b"edited uninstall helper"
+        assert binding.read_bytes() == b"edited management binding"
         return
 
     monkeypatch.setattr(installation, "write_bytes_atomic", original_write)
-    result = _run(repair, environment, support)
-    expected = (
-        "BASE_PYTHON = "
-        + json.dumps(str(Path(sys.executable)), ensure_ascii=True)
-        + "\n"
-    ).encode("ascii")
-    assert result.status == "ready"
-    assert uninstall.read_bytes() == expected
+    repaired = _run(repair, environment, support)
+    assert repaired.status == "ready"
+    interpreter = Path(json.loads(binding.read_bytes())["base_python"])
+    assert not interpreter.resolve().is_relative_to(snapshot.prefix.resolve())
+    probe = subprocess.run(
+        [
+            str(interpreter),
+            "-I",
+            "-c",
+            "import sys; raise SystemExit(sys.prefix != sys.base_prefix)",
+        ],
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+    assert probe.returncode == 0, probe.stdout + probe.stderr
+
+
+@pytest.mark.parametrize("authorized_bound_input", (True, False))
+def test_saved_repair_reuses_only_owned_bound_management_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    authorized_bound_input: bool,
+) -> None:
+    directory, plan, snapshot, environment = _scenario(tmp_path)
+    _stub_backend(monkeypatch, snapshot)
+    monkeypatch.setattr(
+        installation, "external_base_python", external_base_python
+    )
+    support = {
+        PurePosixPath("management.json"): json.dumps(
+            {
+                "app_id": "fixture",
+                "command": "fixture-command",
+                "base_python": None,
+            }
+        ).encode(),
+    }
+    installed = _run(plan, environment, support)
+    assert installed.status == "ready"
+    bound_path = directory / "management.json"
+    authorized_bytes = bound_path.read_bytes()
+    binding = json.loads(authorized_bytes)
+    assert Path(binding["base_python"]).is_absolute()
+
+    repair = plan_repair(
+        plan.target.identity,
+        plan.target.source,
+        plan.target.placement,
+        plan.target.backend,
+        inspection=installed,
+    )
+    repair_support = dict(support)
+    repair_support[PurePosixPath("management.json")] = (
+        authorized_bytes
+        if authorized_bound_input
+        else json.dumps(binding, indent=2).encode()
+    )
+    if authorized_bound_input:
+        repaired = _run(repair, environment, repair_support)
+        assert repaired.status == "ready"
+        assert bound_path.read_bytes() == authorized_bytes
+    else:
+        with pytest.raises(InstallationError):
+            _run(repair, environment, repair_support)
+        assert bound_path.read_bytes() == authorized_bytes
 
 
 def test_saved_release_repair_recovers_owned_installation_outputs(
@@ -328,11 +393,14 @@ def test_saved_release_repair_recovers_owned_installation_outputs(
         if artifact.destination.name == "repair-installer.py"
     )
     support = {
-        PurePosixPath("launch-command.json"): b'{"command":"fixture-command"}',
+        PurePosixPath("management.json"): json.dumps(
+            {
+                "app_id": "fixture",
+                "command": "fixture-command",
+                "base_python": None,
+            }
+        ).encode(),
         PurePosixPath("repair-installer.py"): repair.content,
-        PurePosixPath("uninstall.py"): (
-            b'BASE_PYTHON = "__APPRC_BASE_PYTHON__"\n'
-        ),
     }
     original_write = installation.write_bytes_atomic
 

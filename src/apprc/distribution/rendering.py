@@ -349,13 +349,26 @@ def render_saved_support(
             spec, f"{base}/uninstaller/final-worker.py", _stdlib_worker()
         ),
         _artifact(
-            spec, f"{base}/uninstaller/uninstall.py", _uninstaller_script(spec)
+            spec,
+            f"{base}/management/management.py",
+            files("apprc.distribution")
+            .joinpath("runtime", "saved_management.py")
+            .read_bytes(),
         ),
-        _artifact(spec, f"{base}/launcher/launcher.py", _launcher_script(spec)),
         _artifact(
             spec,
-            f"{base}/launcher/launch-command.json",
-            (json.dumps({"command": command}, sort_keys=True) + "\n").encode(),
+            f"{base}/management/management.json",
+            (
+                json.dumps(
+                    {
+                        "app_id": spec.metadata.identity.app_id,
+                        "command": command,
+                        "base_python": None,
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode(),
         ),
         _artifact(
             spec,
@@ -404,7 +417,12 @@ def install_support_files(
     result = {}
     for artifact in artifacts:
         relative = artifact.destination.relative_to(root)
-        if relative.parts[0] in {"installer", "launcher", "uninstaller"}:
+        if relative.parts[0] in {
+            "installer",
+            "launcher",
+            "uninstaller",
+            "management",
+        }:
             relative = PurePosixPath(*relative.parts[1:])
         result[relative] = artifact.content
     if len(result) != len(artifacts):
@@ -412,234 +430,6 @@ def install_support_files(
             "Saved support artifacts contain duplicate install paths."
         )
     return result
-
-
-_NATIVE_INSTALLATION_DIRECTORY = """def _installation_directory(app_id):
-    import re
-    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", app_id) is None:
-        raise ValueError("Invalid application identity.")
-    home = Path(os.environ.get("USERPROFILE" if os.name == "nt" else "HOME") or Path.home())
-    if not home.is_absolute():
-        raise ValueError("Native home path must be absolute.")
-    if os.name == "nt":
-        local = Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
-        return local / app_id / "installation"
-    if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / app_id / "installation"
-    data = Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share")
-    if not data.is_absolute():
-        data = home / ".local" / "share"
-    return data / app_id / "installation"
-"""
-
-
-def _launcher_script(spec: DistributionSpec) -> bytes:
-    """Render a stdlib launcher that dispatches from checkout to fixed native state."""
-    command = (
-        spec.metadata.launcher_command or spec.metadata.identity.commands[0]
-    )
-    app_id = spec.metadata.identity.app_id
-    return f"""#!/usr/bin/env python3
-import argparse
-import hashlib
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
-
-{_NATIVE_INSTALLATION_DIRECTORY}
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--directory", type=Path)
-    parser.add_argument("--app-id", default={app_id!r})
-    parser.add_argument("--command", default={command!r})
-    parser.add_argument("arguments", nargs=argparse.REMAINDER)
-    args = parser.parse_args()
-    directory = args.directory or _installation_directory(args.app_id)
-    saved = directory / "launcher.py"
-    if Path(__file__).resolve() != saved.resolve(strict=False):
-        if saved.is_symlink() or not saved.is_file():
-            print("Saved launcher is unavailable; repair the installation.", file=sys.stderr)
-            return 2
-        return subprocess.run(
-            [sys.executable, str(saved), "--directory", str(directory),
-             "--command", args.command, *args.arguments],
-            check=False,
-        ).returncode
-    try:
-        record = json.loads((directory / "installation.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        print(f"Installation metadata is unavailable: {{error}}", file=sys.stderr)
-        return 2
-    if (not isinstance(record, dict)
-            or type(record.get("schema_version")) is not int
-            or record["schema_version"] != 2):
-        print("Saved installation authority requires schema 2.", file=sys.stderr)
-        return 2
-    current = record.get("current")
-    identity = current.get("identity") if isinstance(current, dict) else None
-    commands = identity.get("commands") if isinstance(identity, dict) else None
-    entries = current.get("commands") if isinstance(current, dict) else None
-    outputs = current.get("owned_outputs") if isinstance(current, dict) else None
-    if record.get("status") != "ready" or record.get("operation") is not None:
-        print("Application is not installed; use the saved installer to repair it.", file=sys.stderr)
-        return 2
-    if not isinstance(outputs, list):
-        print("Saved launcher ownership is unavailable.", file=sys.stderr)
-        return 2
-    digest = next((item.get("digest") for item in outputs
-                   if isinstance(item, dict) and item.get("kind") == "support"
-                   and item.get("path") == "launcher.py"), None)
-    if not isinstance(digest, str) or hashlib.sha256(Path(__file__).read_bytes()).hexdigest() != digest:
-        print("Saved launcher differs from recorded support.", file=sys.stderr)
-        return 2
-    if not isinstance(commands, list) or not isinstance(entries, list) or args.command not in commands:
-        print("Recorded application command is unavailable.", file=sys.stderr)
-        return 2
-    executable = Path(entries[commands.index(args.command)])
-    if not executable.is_absolute() or not executable.is_file():
-        print("Recorded application command is missing; repair the installation.", file=sys.stderr)
-        return 2
-    return subprocess.run([str(executable), *args.arguments], check=False).returncode
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-""".encode()
-
-
-def _uninstaller_script(spec: DistributionSpec) -> bytes:
-    """Render a stdlib dispatcher with a no-provisioning inspection path."""
-    app_id = spec.metadata.identity.app_id
-    return f'''#!/usr/bin/env python3
-"""Dispatch saved uninstall without consulting ambient uv or provisioning on preview."""
-import argparse
-import hashlib
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
-
-{_NATIVE_INSTALLATION_DIRECTORY}
-
-BASE_PYTHON = "__APPRC_BASE_PYTHON__"
-
-def _base_python(target_prefix):
-    executable = Path(BASE_PYTHON)
-    target = Path(target_prefix).resolve()
-    try:
-        executable.resolve().relative_to(target)
-    except ValueError:
-        pass
-    else:
-        raise RuntimeError("An external base Python interpreter is required.")
-    if not executable.is_absolute() or not executable.is_file():
-        raise RuntimeError("The saved base Python interpreter is unavailable.")
-    try:
-        result = subprocess.run(
-            [str(executable), "-I", "-c",
-             "import json,sys; print(json.dumps([sys.prefix,sys.base_prefix]))"],
-            check=True, capture_output=True, text=True,
-        )
-        prefix, base = json.loads(result.stdout)
-        prefix, base = Path(prefix).resolve(), Path(base).resolve()
-    except (OSError, ValueError, subprocess.CalledProcessError) as error:
-        raise RuntimeError("The saved base Python interpreter could not be validated.") from error
-    if prefix != base or prefix.is_relative_to(target):
-        raise RuntimeError("The saved interpreter is not an independent base Python.")
-    return executable
-
-def _inspection(directory, app_id):
-    authority = directory / "installation.json"
-    if directory.is_symlink() or authority.is_symlink() or not authority.is_file():
-        raise RuntimeError("Saved installation authority is unavailable or unsafe.")
-    raw = json.loads(authority.read_text(encoding="utf-8"))
-    if (not isinstance(raw, dict)
-            or type(raw.get("schema_version")) is not int
-            or raw["schema_version"] != 2):
-        raise ValueError("Saved installation authority requires schema 2.")
-    target = raw.get("current") or raw.get("last_successful")
-    outputs = target.get("owned_outputs") if isinstance(target, dict) else None
-    for name in ("inspection.py", "uninstall.py"):
-        expected = next((item.get("digest") for item in outputs
-                         if isinstance(item, dict) and item.get("kind") == "support"
-                         and item.get("path") == name), None) if isinstance(outputs, list) else None
-        path = directory / name
-        if (not isinstance(expected, str) or path.is_symlink() or not path.is_file()
-                or hashlib.sha256(path.read_bytes()).hexdigest() != expected):
-            raise RuntimeError(f"Saved {{name}} differs from recorded support.")
-    result = subprocess.run(
-        [BASE_PYTHON, str(directory / "inspection.py"), "--directory", str(directory),
-         "--app-id", app_id],
-        check=True, capture_output=True, text=True,
-    )
-    return json.loads(result.stdout)
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--directory", type=Path)
-    parser.add_argument("--app-id", default={app_id!r})
-    parser.add_argument("--dry-run", action="store_true")
-    args, forwarded = parser.parse_known_args()
-    directory = args.directory or _installation_directory(args.app_id)
-    saved = directory / "uninstall.py"
-    if Path(__file__).resolve() != saved.resolve(strict=False):
-        if saved.is_symlink() or not saved.is_file():
-            print("Saved uninstaller is unavailable.", file=sys.stderr)
-            return 2
-        dispatch = [BASE_PYTHON, str(saved), "--directory", str(directory)]
-        if args.dry_run:
-            dispatch.append("--dry-run")
-        return subprocess.run([*dispatch, *forwarded], check=False).returncode
-    try:
-        inspection = _inspection(directory, args.app_id)
-    except (OSError, ValueError, subprocess.CalledProcessError) as error:
-        print(f"Saved installation inspection failed: {{error}}", file=sys.stderr)
-        return 2
-    if args.dry_run:
-        print(json.dumps(inspection, ensure_ascii=False, sort_keys=True))
-        return 0
-    record = inspection.get("record")
-    target = (record.get("current") or record.get("last_successful")) if isinstance(record, dict) else None
-    if not isinstance(target, dict):
-        print("Saved backend identity is unavailable.", file=sys.stderr)
-        return 2
-    backend = target.get("backend")
-    if not isinstance(backend, dict):
-        print("Saved uv backend identity is unavailable.", file=sys.stderr)
-        return 2
-    uv = Path(backend.get("executable", ""))
-    if not uv.is_absolute() or not uv.is_file():
-        print("Recorded uv executable is unavailable.", file=sys.stderr)
-        return 2
-    outputs = target.get("owned_outputs")
-    digest = next((item.get("digest") for item in outputs
-                   if isinstance(item, dict) and item.get("kind") == "support"
-                   and item.get("path") == "app-uninstall.py"), None) if isinstance(outputs, list) else None
-    uninstall = directory / "app-uninstall.py"
-    if (not isinstance(digest, str) or uninstall.is_symlink() or not uninstall.is_file()
-            or hashlib.sha256(uninstall.read_bytes()).hexdigest() != digest):
-        print("Saved application uninstaller differs from recorded support.", file=sys.stderr)
-        return 2
-    try:
-        python = _base_python(target["prefix"])
-    except (OSError, RuntimeError, KeyError, TypeError) as error:
-        print(str(error), file=sys.stderr)
-        return 2
-    environment = dict(os.environ)
-    environment["UV_TOOL_DIR"] = backend["tool_dir"]
-    environment["UV_TOOL_BIN_DIR"] = backend["bin_dir"]
-    return subprocess.run(
-        [str(uv), "run", "--no-config", "--no-project", "--python", str(python),
-         "--script", str(uninstall), "--directory", str(directory), *forwarded],
-        env=environment, check=False,
-    ).returncode
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-'''.encode()
 
 
 def _saved_frontend(
@@ -667,17 +457,17 @@ def _saved_frontend(
     if platform == "sh":
         return (
             "#!/bin/sh\nset -eu\n"
-            'exec __APPRC_BASE_PYTHON__ "$(dirname -- "$0")/uninstall.py" '
+            'exec __APPRC_BASE_PYTHON__ "$(dirname -- "$0")/management.py" uninstall '
             '--directory "$(dirname -- "$0")" "$@"\n'
         ).encode()
     if platform == "ps1":
         return (
             "$ErrorActionPreference = 'Stop'\n"
-            "& __APPRC_BASE_PYTHON__ (Join-Path $PSScriptRoot 'uninstall.py') "
+            "& __APPRC_BASE_PYTHON__ (Join-Path $PSScriptRoot 'management.py') uninstall "
             "--directory $PSScriptRoot @args\nexit $LASTEXITCODE\n"
         ).encode()
     return (
-        '@echo off\r\n__APPRC_BASE_PYTHON__ "%~dp0uninstall.py" '
+        '@echo off\r\n__APPRC_BASE_PYTHON__ "%~dp0management.py" uninstall '
         '--directory "%~dp0" %*\r\nexit /b %ERRORLEVEL%\r\n'
     ).encode()
 

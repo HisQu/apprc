@@ -81,6 +81,13 @@ All notable changes to `AppRC` will be documented in this file.
   Affected: installer authors and direct callers of those APIs.
   Migration: remove legacy receipt cutover code and use a fresh current-format
   installation; current resource/layout migration remains supported.
+- Breaking: Saved Python management support now uses canonical `management.py`
+  and owned `management.json` binding data instead of generated launcher/uninstall
+  policy and interpreter assignments in Python source.
+  Affected: installer authors consuming private support filenames or parsing
+  saved helpers. Migration: regenerate the complete support set through
+  `install_support_files()` and remove old filename/source-shape assumptions.
+  Public root launch/uninstall wrappers remain unchanged.
 
 <br>
 

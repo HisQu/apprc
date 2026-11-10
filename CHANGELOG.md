@@ -103,7 +103,8 @@ All notable changes to `AppRC` will be documented in this file.
 - Centralized immutable GitHub source identity parsing while retaining separate
   archive, installed RECORD, and filesystem verification.
 - Gave shared uninstall process-identity and containment mechanics a leaf owner,
-  removing the controller/removal dependency cycle.
+  removing the controller/removal dependency cycle while preserving the typed
+  public runtime facade.
 - Unified configuration origin tracking, preserving explicit overrides and
   Python-only field provenance when environment-backed settings are reloaded.
 - Documented fresh-plan recovery after an interrupted secret migration, including

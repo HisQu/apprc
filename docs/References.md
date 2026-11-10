@@ -317,9 +317,10 @@ bypassing application cleanup with a generic controller. The initiating process
 waits for saved preparation, then exits; the receiver still waits for its actual
 OS termination before removal.
 
-Authored uninstaller entries call `parse_uninstall_handoff_args(...)` before
-their ordinary argument parser. Its result is `(original_pid, expected_revision,
-remaining)`. Revalidate that revision against fresh `prepare_uninstall(...)`,
+Authored uninstaller entries import `parse_uninstall_handoff_args(...)` from
+`apprc.distribution.runtime` and call it before their ordinary argument parser.
+Its result is `(original_pid, expected_revision, remaining)`. Revalidate that
+revision against fresh `prepare_uninstall(...)`,
 then pass the original PID to `start_uninstall_handoff(...)`. Return success only
 after `wait_ready()` and `signal_exit()`. These reserved routing arguments are
 `--apprc-original-pid` and `--apprc-expected-revision`, not application options.

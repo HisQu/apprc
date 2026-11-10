@@ -82,12 +82,12 @@ Treat this as the parking lot for actionable problems discovered while working b
    1. [P3 / E2 \[Code smell\] - *Config instances maintain overlapping provenance stores*](#p3--e2-code-smell---config-instances-maintain-overlapping-provenance-stores)
    1. [P3 / E2 \[Code smell\] - *Unused dotenv editing APIs duplicate the manager workflow*](#p3--e2-code-smell---unused-dotenv-editing-apis-duplicate-the-manager-workflow)
 3. [2026-11-09](#2026-11-09)
-   1. [P2 / E1 \[Tooling\] - *Windows and macOS installation CI fails*](#p2--e1-tooling---windows-and-macos-installation-ci-fails)
+   1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 4. [2026-09-04](#2026-09-04)
    1. [P3 / E1 \[Code smell\] - *Multi-file updates can stop between replacements*](#p3--e1-code-smell---multi-file-updates-can-stop-between-replacements)
    1. [P3 / E1 \[Code smell\] - *Workspace presentation state has multiple owners*](#p3--e1-code-smell---workspace-presentation-state-has-multiple-owners)
 5. [2026-07-14](#2026-07-14)
-   1. [P3 / E3 \[Tooling\] - *Stale bytecode recreates removed package namespaces*](#p3--e3-tooling---stale-bytecode-recreates-removed-package-namespaces)
+   1. [P3 / E3 \[Tooling\] - *Removed-module tests are sensitive to namespace-only remnants*](#p3--e3-tooling---removed-module-tests-are-sensitive-to-namespace-only-remnants)
 
 
 <br>
@@ -156,13 +156,15 @@ Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and rele
 
 # 2026-11-09
 
-## P2 / E1 [Tooling] - *Windows and macOS installation CI fails*
+<a id="p2--e1-tooling---windows-and-macos-installation-ci-fails"></a>
+
+## P3 / E1 [Tooling] - *Windows and macOS installation validation is deferred*
 - **Area:** `src/apprc/distribution/runtime`, `src/apprc/user_files/app_home/locations.py`, `src/apprc/interfaces/tui`, and their native tests.
 - **Observed while:** Inspecting automatic [push CI run 42605623620](https://github.com/HisQu/apprc/actions/runs/42605623620) for `661738`.
-- **Why not fixed now:** This review is scoped to maintainability, not native-platform remediation. The `0.32.0` release deliberately uses Linux-only CI under explicit user authorization; that policy does not establish Windows or macOS compatibility.
+- **Why not fixed now:** Explicitly deferred by the user. Keep CI Linux-only; native remediation is not a prerequisite for Linux releases or the current maintainability work.
 - **Evidence:** Windows core/GUI and macOS core jobs failed while Ubuntu core Python 3.12/3.13/3.14 and Ubuntu GUI passed. Representative failures include Windows private staging ACL rejection, missing `ntsecuritycon` in standalone execution, macOS temporary-address link rejection, and native secret persistence/editor workflows.
-- **Context:** These are observed failed tests, not merely unrun checks. Disabling the native jobs for `0.32.0` did not resolve them. The logs do not yet separate production incompatibilities from fixture/platform assumptions, interpreter prerequisites, newline expectations, or shell setup. Permission rejection alone is not evidence of a security vulnerability.
-- **Suggested next step:** Use the existing native procedures to isolate installation/ACL and standalone dependency failures first, then macOS path/interpreter handling and secret/UI workflows. Correct unsupported platform-specific fixtures without weakening containment or private-permission contracts. Resolve and review native results before claiming Windows/macOS compatibility or re-enabling those checks; do not add runners or change billing/security as an implicit fix.
+- **Context:** The historical native failures remain unresolved; disabling their jobs did not fix them or establish compatibility. Their causes have not yet been separated into production defects, fixture/platform assumptions, interpreter prerequisites, newline expectations, or shell setup. Permission rejection alone is not evidence of a security vulnerability.
+- **Suggested next step:** Leave the native jobs disabled while this work is deferred. Revisit when Windows/macOS validation is explicitly back in scope, starting with the recorded installation/ACL and standalone dependency failures, then path/interpreter and secret/UI workflows. Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
 
 <br>
 
@@ -170,12 +172,12 @@ Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and rele
 
 
 ## P3 / E1 [Code smell] - *Multi-file updates can stop between replacements*
-- **Area:** `src/apprc/user_files/app_home/writes.py`, `src/apprc/user_files/env_files/updates.py`, `src/apprc/services/manager.py`
-- **Observed while:** Implementing explicit resolution and shared management.
-- **Why not fixed now:** Cross-process locks and revision checks now serialize managed writes, but a lock cannot make two file replacements atomic after a process crash.
-- **Evidence:** Secret migration writes the private companion before removing its ordinary assignment. A crash between those writes leaves both assignments; a retry remains possible, and resolution favors the private copy within that layer.
-- **Context:** The same lock covers CLI and GUI writes. A two-file migration can still be interrupted; no journal or recovery protocol exists.
-- **Suggested next step:** If interrupted migrations prove common, add a small recovery journal and a crash-injection test. Preserve the current value-first ordering until then.
+- **Area:** `src/apprc/user_files/env_files/secret_migration.py`, `src/apprc/user_files/app_home/{writes,locations}.py`, `src/apprc/services/manager.py`
+- **Observed while:** Implementing explicit resolution/shared management; rechecked against the post-`0.32.0` source.
+- **Why not fixed now:** Locks and revision checks serialize managed writes, but do not make two replacements crash-atomic. Recovery-policy changes are outside this backlog review.
+- **Evidence:** [`apply_secret_migration()`](src/apprc/user_files/env_files/secret_migration.py#L105-L129) checks both revisions under the managed lock, writes the private companion, then replaces the ordinary dotenv. Each replacement is atomic individually. An interruption between them can leave both assignments; the private copy wins within that layer.
+- **Context:** The limitation is still current, but saying there is no recovery protocol was too broad: migration can be replanned after interruption. Replaying the original plan fails its revision check. Existing successful-migration and write-lock coverage does not inject failure between these two replacements.
+- **Suggested next step:** Preserve the value-first ordering. Add focused failure-between-writes coverage in the existing suite and document fresh-plan recovery before considering more machinery. Introduce a recovery journal only if automatic crash recovery becomes a requirement; do not treat writer locking as a two-file transaction.
 
 
 <a id="p3--e1-code-smell---cli-and-editor-composition-remain-monolithic"></a>
@@ -193,12 +195,14 @@ Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and rele
 
 # 2026-07-14
 
-## P3 / E3 [Tooling] - *Stale bytecode recreates removed package namespaces*
-- **Area:** `src/apprc/runtime_config`, `src/apprc/logging`, `src/apprc/user_files/storage_roots`, `tests/test_architecture_public_api.py`
-- **Observed while:** Running the full test suite after the named-storage TUI pass.
-- **Why not fixed now:** The stale ignored directories predate this feature and cleaning or redesigning legacy-package checks is outside the storage-editor scope.
-- **Evidence:** Old `__pycache__` files leave the removed `runtime_config` and `logging` directories on the source path, so Python discovers them as namespace packages and two historical removal assertions fail. The `0.32.0` maintainability review also found a bytecode-only `src/apprc/user_files/storage_roots` directory; no remaining Python source was present there.
-- **Context:** A clean source tree has no legacy Python source files, but an in-place development checkout can retain ignored bytecode after the package-layout migration.
-- **Suggested next step:** Decide whether local cleanup should remove obsolete cache directories or architecture tests should explicitly distinguish namespace-only remnants from importable legacy APIs.
+<a id="p3--e3-tooling---stale-bytecode-recreates-removed-package-namespaces"></a>
+
+## P3 / E3 [Tooling] - *Removed-module tests are sensitive to namespace-only remnants*
+- **Area:** `tests/test_architecture_public_api.py` (`test_old_runtime_config_package_is_removed`, `test_logging_package_is_removed`)
+- **Observed while:** Historical post-migration test failures; rechecked the current removal assertions after `0.32.0`.
+- **Why not fixed now:** No active failure is observed in the current checkout. The remaining question is the intended removal-test contract, not a production repair or a request to delete local files.
+- **Evidence:** [The package-level removal tests](tests/test_architecture_public_api.py#L128-L140) still require `ModuleNotFoundError`. Namespace-only directories can make those package imports succeed even without legacy Python source. The historically implicated `src/apprc/runtime_config` and `src/apprc/logging` directories are absent from the current checkout, so their old failure must not be presented as current.
+- **Context:** Ignored bytecode is local development state, not retained production implementation. The separately observed `src/apprc/user_files/storage_roots/__pycache__` likewise does not establish a failure of these tests or a runtime defect.
+- **Suggested next step:** Clarify whether the guards require complete import-path absence or only removal of legacy APIs. If namespace-only remnants are acceptable, test API removal without rejecting them; otherwise document targeted developer-cache cleanup. No global cache deletion or new verification infrastructure is needed.
 
 <br>

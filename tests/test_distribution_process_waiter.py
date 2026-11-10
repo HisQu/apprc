@@ -13,7 +13,6 @@ import pytest
 
 from apprc.distribution.runtime import _handoff, removal
 
-
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"), reason="Linux pidfd process waiters"
 )

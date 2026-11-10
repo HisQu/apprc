@@ -11,9 +11,8 @@ from dataclasses import replace
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from urllib.request import url2pathname
-from apprc.distribution.runtime.acquisition import (
-    _validate_content_addressed_origin,
-)
+
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import (
     InstallationError,
     InstallationIdentity,
@@ -22,13 +21,14 @@ from apprc.definition.installation import (
     InstalledSnapshot,
     UvToolTarget,
 )
-from apprc.definition._source_identity import parse_immutable_github_source
-from apprc.user_files.app_home.locations import assert_no_links
-
+from apprc.distribution.runtime.acquisition import (
+    _validate_content_addressed_origin,
+)
 from apprc.distribution.runtime.backend import (
     backend_environment,
     tool_interpreter,
 )
+from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.writes import file_revision
 
 

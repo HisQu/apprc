@@ -6,16 +6,17 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
-import sys
 import subprocess
+import sys
 import tempfile
-import shlex
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import (
     InstallationDiagnostic,
     InstallationError,
@@ -26,14 +27,13 @@ from apprc.definition.installation import (
     OperationStep,
     OwnedOutput,
 )
-from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.distribution.runtime.acquisition import (
     PreparedSource,
     _archive_inputs,
     _materialized_source_paths,
     _selected_project,
-    _source_subdirectory,
     _sha256_file,
+    _source_subdirectory,
     _validate_content_addressed_origin,
     prepare_source,
     validate_requirement,
@@ -221,9 +221,7 @@ def _install_application_locked(
         } or (
             prepared.digest is not None
             and plan.target.source.kind == "index"
-            and parse_immutable_github_source(
-                plan.target.source.requirement
-            )
+            and parse_immutable_github_source(plan.target.source.requirement)
             is not None
         )
         if (

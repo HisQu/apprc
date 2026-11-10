@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
 import hashlib
 import json
 import os
@@ -12,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO, Callable
@@ -26,7 +26,6 @@ from apprc.definition.installation import (
     InstallationDiagnostic,
     InstallationError,
     InstallationInspection,
-    InstallationRecord,
     InstallationTarget,
     InstalledSnapshot,
     InventoryEntry,
@@ -35,6 +34,7 @@ from apprc.definition.installation import (
     UninstallPlan,
 )
 from apprc.definition.paths import ResourceKind
+from apprc.distribution.runtime import _handoff
 from apprc.distribution.runtime.backend import (
     backend_environment,
     external_base_python,
@@ -43,12 +43,12 @@ from apprc.user_files.app_home.locations import (
     assert_no_links,
     write_bytes_atomic,
 )
+from apprc.user_files.app_home.ownership import inspect_ownership
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
     set_windows_private_acl,
     windows_acl_is_private,
 )
-from apprc.user_files.app_home.ownership import inspect_ownership
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
@@ -60,9 +60,6 @@ from apprc.user_files.installation.operations import (
 )
 from apprc.user_files.installation.planning import resource_roots
 from apprc.user_files.purge import plan_config_file_purge
-
-
-from apprc.distribution.runtime import _handoff
 
 
 def _assert_private_directory(directory: Path) -> None:

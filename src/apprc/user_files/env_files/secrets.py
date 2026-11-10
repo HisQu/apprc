@@ -14,7 +14,6 @@ from apprc.user_files.app_home.permissions import (
     windows_acl_is_private,
 )
 
-
 type SecretFileReason = Literal[
     "parent_missing",
     "parent_not_directory",
@@ -68,7 +67,9 @@ def inspect_secret_file(path: Path) -> SecretFileStatus:
             False,
             issue,
             reason=(
-                "parent_not_directory" if path.parent.exists() else "parent_missing"
+                "parent_not_directory"
+                if path.parent.exists()
+                else "parent_missing"
             ),
         )
     if not _private_path(path.parent):

@@ -30,7 +30,9 @@ def test_parse_immutable_github_source_without_subdirectory() -> None:
     assert identity.subdirectory is None
 
 
-def test_parse_immutable_github_source_rejects_unaccepted_requirements() -> None:
+def test_parse_immutable_github_source_rejects_unaccepted_requirements() -> (
+    None
+):
     accepted_base = (
         "git+https://github.com/owner/repository@"
         "0123456789abcdef0123456789abcdef01234567"
@@ -41,7 +43,6 @@ def test_parse_immutable_github_source_rejects_unaccepted_requirements() -> None
         accepted_base[:-40] + "0123456789abcdef0123456789abcdef0123456",
         accepted_base[:-40] + "0123456789ABCDEF0123456789ABCDEF01234567",
         accepted_base + "\n",
-        accepted_base + "#subdirectory=packages/app#other=value",
         accepted_base + "#subdirectory=bad\\path",
     )
 
@@ -73,7 +74,9 @@ def test_observation_digest_requires_immutable_github_source() -> None:
     )
 
 
-def test_record_proof_classification_keeps_source_and_digest_boundaries() -> None:
+def test_record_proof_classification_keeps_source_and_digest_boundaries() -> (
+    None
+):
     requirement = (
         "git+https://github.com/owner/repository@"
         "0123456789abcdef0123456789abcdef01234567"

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import ctypes
 import os
-import sys
 import subprocess
+import sys
 from ctypes import wintypes
 from pathlib import Path
 
@@ -91,7 +91,10 @@ def _windows_process_token(handle, pid: int) -> str:
     """Return the creation time tied to an already-open process handle."""
     kernel32, FileTime = _windows_api()
     created, exited, kernel, user = (
-        FileTime(), FileTime(), FileTime(), FileTime()
+        FileTime(),
+        FileTime(),
+        FileTime(),
+        FileTime(),
     )
     if not kernel32.GetProcessTimes(
         handle,

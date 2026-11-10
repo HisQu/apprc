@@ -12,7 +12,6 @@ from apprc.definition.env_config.schema import ConfigField, ConfigOwner
 from apprc.definition.provenance import ConfigOriginState
 from apprc.runtime.resolution import ResolvedConfig
 
-
 type FieldInspectionReason = Literal["missing", "invalid"]
 
 
@@ -105,7 +104,9 @@ def inspect_resolved(resolved: ResolvedConfig) -> ConfigInspection:
                     f"Invalid value for {key}; expected {spec.python_type!s}."
                 )
             fields.append(
-                FieldInspection(owner, spec, value, origin, issue, reason=reason)
+                FieldInspection(
+                    owner, spec, value, origin, issue, reason=reason
+                )
             )
             if issue is not None:
                 issues.append(issue)

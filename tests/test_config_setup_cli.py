@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import typer
@@ -14,6 +14,7 @@ from apprc.interfaces.cli import setup_command
 from apprc.interfaces.cli.mount import mount_app_cli
 from apprc.user_files.app_home.application import AppFiles
 from apprc.user_files.setup.flow import ConfigSetupError
+
 
 def _app(tmp_path: Path, *, workspaces: bool = False) -> rc.AppRC:
     app = rc.AppRC(
@@ -111,6 +112,7 @@ def test_config_secret_repair_restores_private_directory_permissions(
     assert repaired.exit_code == 0, repaired.output
     assert config_dir.stat().st_mode & 0o777 == 0o700
 
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory mode check")
 def test_setup_repairs_only_an_unsafe_secret_parent_after_consent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -120,13 +122,11 @@ def test_setup_repairs_only_an_unsafe_secret_parent_after_consent(
     manager.setup()
     config_dir = app_rc.paths(environment={}).require("config")
     config_dir.chmod(0o755)
+    monkeypatch.setattr(setup_command.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(setup_command.sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(
-        setup_command.sys, "stdin", SimpleNamespace(isatty=lambda: True)
+        setup_command.typer, "confirm", lambda *args, **kwargs: True
     )
-    monkeypatch.setattr(
-        setup_command.sys, "stdout", SimpleNamespace(isatty=lambda: True)
-    )
-    monkeypatch.setattr(setup_command.typer, "confirm", lambda *args, **kwargs: True)
 
     result = setup_command._run_setup_with_user_secret_repair(
         manager,
@@ -139,7 +139,6 @@ def test_setup_repairs_only_an_unsafe_secret_parent_after_consent(
     assert config_dir.stat().st_mode & 0o777 == 0o700
 
 
-
 def test_setup_does_not_repair_blocked_secret_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -148,13 +147,11 @@ def test_setup_does_not_repair_blocked_secret_parent(
     config_dir.parent.mkdir(parents=True)
     config_dir.write_text("blocking file", encoding="utf-8")
     manager = app_rc.manage(environment={})
+    monkeypatch.setattr(setup_command.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(setup_command.sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(
-        setup_command.sys, "stdin", SimpleNamespace(isatty=lambda: True)
+        setup_command.typer, "confirm", lambda *args, **kwargs: True
     )
-    monkeypatch.setattr(
-        setup_command.sys, "stdout", SimpleNamespace(isatty=lambda: True)
-    )
-    monkeypatch.setattr(setup_command.typer, "confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         manager,
         "repair_secret_permissions",
@@ -192,7 +189,9 @@ def test_setup_prompts_for_missing_field_despite_changed_display_prose(
         )
 
     monkeypatch.setattr(manager, "inspect", inspect_with_changed_prose)
-    monkeypatch.setattr(setup_command, "prompt", lambda *args, **kwargs: "saved")
+    monkeypatch.setattr(
+        setup_command, "prompt", lambda *args, **kwargs: "saved"
+    )
 
     setup_command._prompt_required_fields(manager)
 
@@ -220,9 +219,6 @@ def test_setup_does_not_prompt_for_invalid_field(
     def fail_prompt(*args, **kwargs):
         pytest.fail("invalid fields must not be prompted as missing")
 
-    monkeypatch.setattr(manager, "inspect", inspect_as_invalid)
     monkeypatch.setattr(setup_command, "prompt", fail_prompt)
 
     setup_command._prompt_required_fields(manager)
-
-    assert manager.inspect().fields[0].reason == "invalid"

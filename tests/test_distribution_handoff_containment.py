@@ -23,13 +23,20 @@ from apprc.definition.installation import (
 from apprc.definition.paths import Layout
 from apprc.distribution.runtime import _handoff, controllers, removal
 from apprc.distribution.runtime.backend import external_base_python
-from apprc.distribution.runtime.controllers import UninstallHandoff, prepare_uninstall
+from apprc.distribution.runtime.controllers import (
+    UninstallHandoff,
+    prepare_uninstall,
+)
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.discovery import inspect_installation
 from tests.test_distribution_process_waiter import _owned_child
 from tests.test_distribution_support_recovery import (
     _run as install_fixture,
+)
+from tests.test_distribution_support_recovery import (
     _scenario as install_scenario,
+)
+from tests.test_distribution_support_recovery import (
     _stub_backend,
 )
 
@@ -490,7 +497,9 @@ def test_actual_selected_and_retained_roots_and_program_only_plan(
 
     program_only = prepare_uninstall(directory)
     assert program_only.can_execute and program_only.plan is not None
-    program_roots = _handoff.handoff_removal_roots(program_only.plan, inspection.record)
+    program_roots = _handoff.handoff_removal_roots(
+        program_only.plan, inspection.record
+    )
     _handoff.assert_outside_removal(directory, program_roots)
     _handoff.assert_outside_removal(cache_root, program_roots)
     _handoff.assert_outside_removal(retained_root, program_roots)

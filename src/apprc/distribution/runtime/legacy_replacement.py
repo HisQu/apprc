@@ -23,6 +23,7 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping
 from uuid import UUID, uuid4
 
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import (
     CleanupInventory,
     InstallationDiagnostic,
@@ -35,8 +36,8 @@ from apprc.definition.installation import (
     InstallationRecord,
     InstallationSource,
     InstallationTarget,
-    InstallPlan,
     InstalledSnapshot,
+    InstallPlan,
     InventoryEntry,
     LegacyMigrationEvidence,
     MigrationInventory,
@@ -45,7 +46,6 @@ from apprc.definition.installation import (
     OwnedOutput,
     StagedSupportOutput,
 )
-from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.distribution.runtime.acquisition import (
     PreparedSource,
     _assert_private_staging,
@@ -86,13 +86,13 @@ from apprc.user_files.installation.coordination import (
 )
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.migration import resume_migration
-from apprc.user_files.installation.planning import validate_placement
 from apprc.user_files.installation.operations import (
     SUPPORT_VERSION,
     _pending,
     fail_operation,
     record_step,
 )
+from apprc.user_files.installation.planning import validate_placement
 
 
 @dataclass(frozen=True, slots=True)

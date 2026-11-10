@@ -405,8 +405,6 @@ def _materialize_archive(
     )
 
 
-
-
 @dataclass(frozen=True, slots=True)
 class SourceSelection:
     """Explicit source identity and optional GitHub transport client."""
@@ -433,7 +431,9 @@ class SourceSelection:
                 raise InstallationError(
                     "Bootstrap package archive is unavailable."
                 )
-            main_identity = parse_immutable_github_source(self.source.requirement)
+            main_identity = parse_immutable_github_source(
+                self.source.requirement
+            )
             if self.source.kind == "index":
                 if (
                     main_identity is None
@@ -475,7 +475,8 @@ class SourceSelection:
             )
         if (
             self.source.kind == "index"
-            and parse_immutable_github_source(self.source.requirement) is not None
+            and parse_immutable_github_source(self.source.requirement)
+            is not None
         ):
             return _prepare_main_archive(self, staging)
         if self.github_client == "gh" and self.source.kind in {

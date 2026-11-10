@@ -14,7 +14,7 @@ import subprocess
 import sys
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Literal, TypeGuard, TypedDict
+from typing import Literal, TypedDict, TypeGuard
 from uuid import UUID
 
 from apprc.definition.installation import (
@@ -30,11 +30,11 @@ from apprc.definition.installation import (
     UninstallPlan,
 )
 from apprc.distribution.models import relative_destination
+from apprc.distribution.runtime import _handoff
 from apprc.distribution.runtime.backend import (
     external_base_python,
     remove_uv_tool,
 )
-from apprc.distribution.runtime import _handoff
 from apprc.user_files.app_home.locations import (
     assert_no_links,
     write_bytes_atomic,
@@ -206,6 +206,7 @@ def _wait_open_process(waiter) -> None:
             handle.control(None, 1, None)
         finally:
             handle.close()
+
 
 def _parse_plan(path: Path) -> HandoffPlan:
     """Read the private exact handoff envelope without ambient discovery."""

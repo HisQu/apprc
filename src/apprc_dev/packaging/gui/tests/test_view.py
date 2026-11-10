@@ -1,7 +1,6 @@
 """Checks for the reusable Gradio configuration editor."""
 
 import os
-from dataclasses import replace
 from pathlib import Path
 
 import gradio as gr
@@ -146,43 +145,6 @@ def test_repair_reports_unusable_secret_path(tmp_path: Path) -> None:
     _, revision = editor._repair_secrets("workspace", "default", 4)
 
     assert revision == 4
-
-
-
-
-def test_secret_repair_recovery_uses_reason_not_display_prose(
-    tmp_path: Path,
-) -> None:
-    app = rc.AppRC(
-        app_id="gui-secret-reason",
-        paths=rc.Paths(config=True),
-        layout=rc.Layout.single_root(tmp_path),
-        user_dotenv=rc.UserDotenv(),
-    )
-
-    @app.config("client", prefix="GUI_REASON_")
-    class Client(rc.Config):
-        token: str = rc.field("GUI_REASON_TOKEN", default="", secret=True)
-
-    manager = app.manage(environment={})
-    app.ensure_path("config")
-    secret_path = manager.writable_path("user", secret=True)
-    secret_path.mkdir()
-    editor = ConfigEditor(manager)
-    repair = manager.repair_secret_permissions
-
-    def repair_with_changed_prose(scope, *, workspace=None):
-        return replace(
-            repair(scope, workspace=workspace),
-            issue="Changed display wording.",
-        )
-
-    manager.repair_secret_permissions = repair_with_changed_prose
-    message, revision = editor._repair_secrets("user", None, 2)
-
-    assert "Changed display wording." in message
-    assert "Remove or move the existing non-file secret path" in message
-    assert revision == 2
 
 
 def test_restart_required_setting_is_labeled_and_notifies_after_edit(

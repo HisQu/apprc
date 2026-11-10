@@ -44,6 +44,10 @@ from apprc.distribution.runtime.backend import (
     install_uv_tool,
 )
 from apprc.distribution.runtime.probe import probe_installed_tool
+from apprc.distribution.runtime.saved_management import (
+    ManagementBinding,
+    decode_management_binding,
+)
 from apprc.user_files.app_home.locations import (
     assert_no_links,
     write_bytes_atomic,
@@ -797,78 +801,100 @@ def bind_install_support(
     directory: Path,
     previous_outputs: tuple[OwnedOutput, ...] = (),
 ) -> dict[PurePosixPath, bytes]:
-    """Bind current-platform support bytes to one verified live installation.
-
-    This public staging primitive lets application-owned migrations publish
-    fully bound support before activating the new authority. It reuses a
-    digest-verified external base Python when available, and binds command
-    launchers only to the observed command inside the recorded uv bin directory.
+    """Bind owned support metadata and native launch frontends to a live snapshot.
 
     :param support_files: Generated installation-relative support bytes.
     :param observed: Validated live snapshot from the SDK probe.
     :param directory: Installation directory containing prior owned support.
-    :param previous_outputs: Prior outputs whose digests authorize Python reuse.
-    :return: Current-platform support bytes with machine paths bound.
+    :param previous_outputs: Prior outputs authorizing interpreter reuse.
+    :return: Current-platform support bytes with host-bound data.
     """
     files = _current_platform_support(support_files)
-    command_marker = PurePosixPath("launch-command.json")
-    if command_marker not in files and not any(
-        b"__APPRC_BASE_PYTHON__" in content
-        or b"__APPRC_COMMAND_PATH__" in content
-        for content in files.values()
-    ):
+    management_path = PurePosixPath("management.json")
+    if management_path not in files:
+        if any(
+            b"__APPRC_BASE_PYTHON__" in content
+            or b"__APPRC_COMMAND_PATH__" in content
+            for content in files.values()
+        ):
+            raise InstallationError(
+                "Native support bindings require management.json."
+            )
         return files
-    uninstall_path = PurePosixPath("uninstall.py")
-    uninstall = directory / uninstall_path
-    expected = {
+    try:
+        incoming_binding = decode_management_binding(files[management_path])
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise InstallationError(
+            "Management binding data is malformed."
+        ) from error
+    if (
+        incoming_binding.app_id != observed.identity.app_id
+        or incoming_binding.command not in observed.identity.commands
+    ):
+        raise InstallationError(
+            "Management identity does not match the live installation."
+        )
+    authorized = {
         item.digest
         for item in previous_outputs
         if item.kind == "support"
-        and item.path == str(uninstall_path)
+        and item.path == str(management_path)
         and item.digest is not None
     }
-    base_python = None
-    if uninstall.is_file() and not uninstall.is_symlink():
-        existing = uninstall.read_bytes()
-        if hashlib.sha256(existing).hexdigest() in expected:
-            for line in existing.decode("utf-8").splitlines():
-                if line.startswith("BASE_PYTHON = "):
-                    try:
-                        candidate = Path(
-                            json.loads(line.partition("=")[2].strip())
-                        )
-                        base_python = external_base_python(
-                            observed.prefix,
-                            executable=candidate,
-                        )
-                    except (
-                        OSError,
-                        ValueError,
-                        InstallationError,
-                        json.JSONDecodeError,
-                        subprocess.CalledProcessError,
-                    ):
-                        pass
-                    break
+    base_python: Path | None = None
+    prior = directory / management_path
+    assert_no_links(prior)
+    if incoming_binding.base_python is not None:
+        content_digest = hashlib.sha256(files[management_path]).hexdigest()
+        if (
+            content_digest not in authorized
+            or not prior.is_file()
+            or prior.read_bytes() != files[management_path]
+        ):
+            raise InstallationError(
+                "Host-bound management data is not authorized by prior support."
+            )
+        try:
+            base_python = external_base_python(
+                observed.prefix,
+                executable=Path(incoming_binding.base_python),
+            )
+        except (
+            OSError,
+            ValueError,
+            InstallationError,
+            subprocess.CalledProcessError,
+        ):
+            base_python = None
+    elif prior.is_file():
+        previous = prior.read_bytes()
+        if hashlib.sha256(previous).hexdigest() in authorized:
+            try:
+                previous_binding = decode_management_binding(previous)
+                if (
+                    previous_binding.app_id == incoming_binding.app_id
+                    and previous_binding.command == incoming_binding.command
+                    and previous_binding.base_python is not None
+                ):
+                    base_python = external_base_python(
+                        observed.prefix,
+                        executable=Path(previous_binding.base_python),
+                    )
+            except (
+                OSError,
+                ValueError,
+                InstallationError,
+                json.JSONDecodeError,
+                subprocess.CalledProcessError,
+            ):
+                pass
     if base_python is None:
         base_python = external_base_python(observed.prefix)
-    try:
-        command_data = files[command_marker]
-        command_name = json.loads(command_data.decode("utf-8"))["command"]
-        command_index = observed.identity.commands.index(command_name)
-        command_path = observed.commands[command_index]
-    except (
-        UnicodeDecodeError,
-        ValueError,
-        KeyError,
-        TypeError,
-        IndexError,
-    ) as error:
-        raise InstallationError(
-            "Recorded launcher command is not present in the live package probe."
-        ) from error
-    expected_name = command_name + (".exe" if os.name == "nt" else "")
-    expected_command = observed.backend.bin_dir / expected_name
+    command_index = observed.identity.commands.index(incoming_binding.command)
+    command_path = observed.commands[command_index]
+    expected_command = observed.backend.bin_dir / (
+        incoming_binding.command + (".exe" if os.name == "nt" else "")
+    )
     if (
         not command_path.is_absolute()
         or not command_path.is_file()
@@ -877,13 +903,14 @@ def bind_install_support(
         raise InstallationError(
             "Recorded launcher executable does not match the live backend command."
         )
-    bound = {}
+    bound: dict[PurePosixPath, bytes] = {}
     for path, content in files.items():
-        if path == uninstall_path:
-            content = content.replace(
-                b'"__APPRC_BASE_PYTHON__"',
-                json.dumps(str(base_python), ensure_ascii=True).encode("ascii"),
-            )
+        if path == management_path:
+            content = ManagementBinding(
+                incoming_binding.app_id,
+                incoming_binding.command,
+                str(base_python),
+            ).encode()
         elif path.name in {
             "launch.sh",
             "launch.ps1",
@@ -911,10 +938,7 @@ def bind_install_support(
                 )
             content = content.replace(
                 b"__APPRC_COMMAND_PATH__", command_value.encode("utf-8")
-            )
-            content = content.replace(
-                b"__APPRC_BASE_PYTHON__", python_value.encode("utf-8")
-            )
+            ).replace(b"__APPRC_BASE_PYTHON__", python_value.encode("utf-8"))
         bound[path] = content
     return bound
 

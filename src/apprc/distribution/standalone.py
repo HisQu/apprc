@@ -37,6 +37,7 @@ STANDALONE_MODULES = (
     "distribution/runtime/backend.py",
     "distribution/runtime/probe.py",
     "distribution/runtime/acquisition.py",
+    "distribution/runtime/saved_management.py",
     "distribution/runtime/installation.py",
     "distribution/runtime/controllers.py",
     "distribution/runtime/inspection.py",

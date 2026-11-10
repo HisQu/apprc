@@ -13,6 +13,7 @@ from apprc.user_files.app_home.locations import assert_no_links
 
 STANDALONE_MODULES = (
     "definition/paths.py",
+    "definition/_source_identity.py",
     "definition/installation.py",
     "definition/maintenance.py",
     "definition/config_filenames.py",
@@ -31,6 +32,7 @@ STANDALONE_MODULES = (
     "user_files/purge.py",
     "distribution/models.py",
     "distribution/runtime/__init__.py",
+    "distribution/runtime/_handoff.py",
     "distribution/runtime/installed_probe.py",
     "distribution/runtime/backend.py",
     "distribution/runtime/probe.py",
@@ -144,6 +146,7 @@ def inspection_archive() -> bytes:
     package = files("apprc")
     for module in (
         "definition/paths.py",
+        "definition/_source_identity.py",
         "definition/installation.py",
         "user_files/installation/codec.py",
         "user_files/installation/discovery.py",

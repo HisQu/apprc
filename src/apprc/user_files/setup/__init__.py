@@ -2,4 +2,4 @@
 
 # ruff: noqa: F401
 
-from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupResult
+from apprc.user_files.setup.flow import ConfigSetupResult

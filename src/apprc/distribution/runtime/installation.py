@@ -6,16 +6,17 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
-import sys
 import subprocess
+import sys
 import tempfile
-import shlex
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import (
     InstallationDiagnostic,
     InstallationError,
@@ -31,8 +32,8 @@ from apprc.distribution.runtime.acquisition import (
     _archive_inputs,
     _materialized_source_paths,
     _selected_project,
-    _source_subdirectory,
     _sha256_file,
+    _source_subdirectory,
     _validate_content_addressed_origin,
     prepare_source,
     validate_requirement,
@@ -220,10 +221,7 @@ def _install_application_locked(
         } or (
             prepared.digest is not None
             and plan.target.source.kind == "index"
-            and re.fullmatch(
-                r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-                plan.target.source.requirement,
-            )
+            and parse_immutable_github_source(plan.target.source.requirement)
             is not None
         )
         if (
@@ -632,10 +630,7 @@ def _validate_prepared_source(
     elif source.kind == "release-sdist" or (
         source.kind == "index"
         and prepared.archive is not None
-        and re.fullmatch(
-            r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-            source.requirement,
-        )
+        and parse_immutable_github_source(source.requirement) is not None
     ):
         archive = prepared.archive
         if (

@@ -52,13 +52,27 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+- Breaking: Removed the unused `apprc.files.ConfigSetupError` export and
+  `run_config_setup(..., allow_interactive_secret_repair=...)` plumbing.
+  Affected: callers importing that error type or passing that setup parameter.
+  Migration: handle setup's existing `ValueError`/`OSError` failures and use
+  explicit `config secrets repair` for permission changes.
+
 <br>
 
 ### ➕ Added
 
+- Added explicit `reason` values to field inspection and secret-file status.
+  CLI and GUI decisions no longer depend on the wording of display diagnostics.
+
 <br>
 
 ### 💔 Changed
+
+- Centralized immutable GitHub source identity parsing while retaining separate
+  archive, installed RECORD, and filesystem verification.
+- Gave shared uninstall process-identity and containment mechanics a leaf owner,
+  removing the controller/removal dependency cycle.
 
 <br>
 

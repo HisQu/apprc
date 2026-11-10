@@ -62,3 +62,27 @@ def test_disabled_workspace_component_is_rejected_by_spec() -> None:
             display_name="No Config",
             user_dotenv=UserDotenv(),
         )
+
+
+def test_inspection_distinguishes_missing_and_invalid_fields(
+    tmp_path: Path,
+) -> None:
+    app = rc.AppRC(
+        app_id="field-reasons",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "app"),
+    )
+
+    @app.config("settings", prefix="FIELD_REASONS_")
+    class Settings(rc.Config):
+        count: int = rc.field("FIELD_REASONS_COUNT", required=True)
+
+    manager = app.manage(environment={"FIELD_REASONS_COUNT": "wrong"})
+    inspected = manager.inspect()
+
+    assert inspected.fields[0].reason == "invalid"
+    assert inspected.fields[0].issue is not None
+    assert inspected.fields[0].issue != "FIELD_REASONS_COUNT"
+
+    missing = app.manage(environment={}).inspect().fields[0]
+    assert missing.reason == "missing"

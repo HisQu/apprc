@@ -6,12 +6,21 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
     set_windows_private_acl,
     windows_acl_is_private,
 )
+
+type SecretFileReason = Literal[
+    "parent_missing",
+    "parent_not_directory",
+    "parent_not_private",
+    "secret_not_file",
+    "secret_not_private",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,12 +29,14 @@ class SecretFileStatus:
 
     :param path: Companion path beside an ordinary managed dotenv file.
     :param available: Whether the parent and existing companion are private.
-    :param issue: Reason an unavailable companion cannot be written.
+    :param issue: Display-only explanation of an unavailable companion.
+    :param reason: Path or privacy failure classification, independent of prose.
     """
 
     path: Path
     available: bool
     issue: str | None = None
+    reason: SecretFileReason | None = None
 
 
 def secret_companion_path(dotenv_path: Path) -> Path:
@@ -51,16 +62,35 @@ def inspect_secret_file(path: Path) -> SecretFileStatus:
             if path.parent.exists()
             else "The parent directory is missing."
         )
-        return SecretFileStatus(path, False, issue)
+        return SecretFileStatus(
+            path,
+            False,
+            issue,
+            reason=(
+                "parent_not_directory"
+                if path.parent.exists()
+                else "parent_missing"
+            ),
+        )
     if not _private_path(path.parent):
         return SecretFileStatus(
-            path, False, "The parent directory is readable by other users."
+            path,
+            False,
+            "The parent directory is readable by other users.",
+            reason="parent_not_private",
         )
     if path.is_symlink() or (
         path.exists() and (not path.is_file() or not _private_path(path))
     ):
         return SecretFileStatus(
-            path, False, "The secret file is readable by other users."
+            path,
+            False,
+            "The secret file is readable by other users.",
+            reason=(
+                "secret_not_file"
+                if path.is_symlink() or not path.is_file()
+                else "secret_not_private"
+            ),
         )
     return SecretFileStatus(path, True)
 
@@ -97,7 +127,12 @@ def repair_secret_file_permissions(path: Path) -> SecretFileStatus:
     if not path.exists():
         return ensure_secret_file(path)
     if path.is_symlink() or not path.is_file():
-        return SecretFileStatus(path, False, "The secret path is not a file.")
+        return SecretFileStatus(
+            path,
+            False,
+            "The secret path is not a file.",
+            reason="secret_not_file",
+        )
     if os.name == "nt":
         set_windows_private_acl(path)
     else:

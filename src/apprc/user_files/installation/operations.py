@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import (
     CleanupInventory,
     InstallationDiagnostic,
@@ -26,11 +27,11 @@ from apprc.definition.installation import (
     InstalledSnapshot,
     InstallPlan,
     LegacyMigrationEvidence,
-    StagedSupportOutput,
     MigrationInventory,
     MigrationPlan,
     OperationPlan,
     OperationStep,
+    StagedSupportOutput,
     UninstallCommit,
     UninstallPlan,
     UvToolTarget,
@@ -41,7 +42,6 @@ from apprc.user_files.installation.coordination import (
     write_record,
 )
 from apprc.user_files.installation.discovery import inspect_installation
-
 from apprc.user_files.installation.planning import (
     validate_cleanup,
     validate_placement,
@@ -81,11 +81,7 @@ def _requires_record_proof(source: InstallationSource) -> bool:
     return source.kind == "release-sdist" or (
         source.kind == "index"
         and source.digest is not None
-        and re.fullmatch(
-            r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-            source.requirement,
-        )
-        is not None
+        and parse_immutable_github_source(source.requirement) is not None
     )
 
 
@@ -114,6 +110,7 @@ def plan_install(
     validate_placement(placement, directory=inspection.directory)
     if placement.layout.mode == "native" and placement.appdata_dir is not None:
         import sys
+
         from apprc.user_files.installation.validation import (
             check_native_appdata_container,
         )
@@ -580,9 +577,10 @@ def _pending(
     *,
     require_operation: bool = True,
 ) -> InstallationRecord:
-    from apprc.user_files.installation.codec import decode_record
-    from hashlib import sha256
     import json
+    from hashlib import sha256
+
+    from apprc.user_files.installation.codec import decode_record
 
     content = (directory / "installation.json").read_bytes()
     if sha256(content).hexdigest() != revision:

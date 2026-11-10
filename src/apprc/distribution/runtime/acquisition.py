@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import IO
 from zipfile import ZipFile, is_zipfile
 
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import InstallationError, InstallationSource
 from apprc.distribution.models import DistributionSpec, relative_destination
 from apprc.user_files.app_home.locations import assert_no_links
@@ -263,15 +264,12 @@ def _source_subdirectory(source: InstallationSource) -> str | None:
         raise InstallationError(
             "Source is not a materialized immutable archive."
         )
-    match = re.fullmatch(
-        r"git\+https://github\.com/[^/]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=([^\\\x00\r\n]+))?",
-        source.requirement,
-    )
-    if match is None:
+    identity = parse_immutable_github_source(source.requirement)
+    if identity is None:
         raise InstallationError(
             "Main source must name one immutable GitHub commit."
         )
-    subdirectory = match.group(1)
+    subdirectory = identity.subdirectory
     if subdirectory is not None:
         try:
             relative_destination(subdirectory)
@@ -407,20 +405,6 @@ def _materialize_archive(
     )
 
 
-def _main_source_identity(
-    source: InstallationSource,
-) -> tuple[str, str, str | None] | None:
-    """Return repository, full commit and raw project fragment for immutable main."""
-    match = re.fullmatch(
-        r"git\+https://github\.com/([^/]+)/([^/@]+)@([0-9a-f]{40})(?:#subdirectory=([^\\\x00\r\n]+))?",
-        source.requirement,
-    )
-    if match is None:
-        return None
-    owner, repository, commit, subdirectory = match.groups()
-    return f"https://github.com/{owner}/{repository}", commit, subdirectory
-
-
 @dataclass(frozen=True, slots=True)
 class SourceSelection:
     """Explicit source identity and optional GitHub transport client."""
@@ -447,11 +431,13 @@ class SourceSelection:
                 raise InstallationError(
                     "Bootstrap package archive is unavailable."
                 )
-            main_identity = _main_source_identity(self.source)
+            main_identity = parse_immutable_github_source(
+                self.source.requirement
+            )
             if self.source.kind == "index":
                 if (
                     main_identity is None
-                    or main_identity[2] != self.subdirectory
+                    or main_identity.subdirectory != self.subdirectory
                 ):
                     raise InstallationError(
                         "Bootstrap package does not match its immutable main identity."
@@ -487,8 +473,10 @@ class SourceSelection:
             return _materialize_archive(
                 self.source, real_package, staging, digest
             )
-        if self.source.kind == "index" and self.source.requirement.startswith(
-            "git+https://github.com/"
+        if (
+            self.source.kind == "index"
+            and parse_immutable_github_source(self.source.requirement)
+            is not None
         ):
             return _prepare_main_archive(self, staging)
         if self.github_client == "gh" and self.source.kind in {
@@ -601,16 +589,16 @@ def _prepare_main_archive(
     :return: Local archive input with digest and retained source identity.
     """
     source = selection.source
-    match = re.fullmatch(
-        r"git\+https://github\.com/([^/]+)/([^/@]+)@([0-9a-f]{40})(?:#subdirectory=([^\\\x00\r\n]+))?",
-        source.requirement,
-    )
-    if match is None:
+    identity = parse_immutable_github_source(source.requirement)
+    if identity is None:
         raise InstallationError(
             "Main source must name one immutable GitHub commit."
         )
-    owner, repository, commit, _ = match.groups()
-    repository = repository.removesuffix(".git")
+    owner, repository, commit = (
+        identity.owner,
+        identity.repository.removesuffix(".git"),
+        identity.commit,
+    )
     _assert_private_staging(staging)
     target = staging / "source.tar.gz"
     assert_no_links(target)

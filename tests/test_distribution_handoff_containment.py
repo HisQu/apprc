@@ -21,13 +21,10 @@ from apprc.definition.installation import (
     UninstallPlan,
 )
 from apprc.definition.paths import Layout
-from apprc.distribution.runtime import controllers, removal
+from apprc.distribution.runtime import _handoff, controllers, removal
 from apprc.distribution.runtime.backend import external_base_python
 from apprc.distribution.runtime.controllers import (
     UninstallHandoff,
-    _assert_outside_removal,
-    _assert_private_directory,
-    _handoff_removal_roots,
     prepare_uninstall,
 )
 from apprc.user_files.app_home.writes import file_revision
@@ -35,7 +32,11 @@ from apprc.user_files.installation.discovery import inspect_installation
 from tests.test_distribution_process_waiter import _owned_child
 from tests.test_distribution_support_recovery import (
     _run as install_fixture,
+)
+from tests.test_distribution_support_recovery import (
     _scenario as install_scenario,
+)
+from tests.test_distribution_support_recovery import (
     _stub_backend,
 )
 
@@ -170,7 +171,7 @@ def _pending_receiver_handoff(
     assert envelope["generation_id"] == str(pending.record.generation_id)
     assert envelope["app_id"] == pending.record.app_id == plan.app_id
     assert envelope["original_pid"] == original_pid
-    assert envelope["original_start"] == removal.process_start_token(
+    assert envelope["original_start"] == _handoff.process_start_token(
         original_pid
     )
     assert (
@@ -190,9 +191,9 @@ def _pending_receiver_handoff(
         and operation.complete == envelope["complete"]
         and operation.forget_retained == envelope["forget_retained"]
     )
-    _assert_private_directory(handoff.plan_file.parent)
+    controllers._assert_private_directory(handoff.plan_file.parent)
     recovery = handoff.plan_file.parent / "recovery"
-    _assert_private_directory(recovery)
+    controllers._assert_private_directory(recovery)
     assert (recovery / "controller.py").is_file()
     return handoff
 
@@ -481,25 +482,27 @@ def test_actual_selected_and_retained_roots_and_program_only_plan(
     plan = preparation.plan
     inspection = preparation.inspection
     assert plan is not None and inspection.record is not None
-    roots = _handoff_removal_roots(plan, inspection.record)
+    roots = _handoff.handoff_removal_roots(plan, inspection.record)
 
     with pytest.raises(InstallationError, match="removal target"):
-        _assert_outside_removal(absent_cache_root, roots)
+        _handoff.assert_outside_removal(absent_cache_root, roots)
     with pytest.raises(InstallationError, match="removal target"):
-        _assert_outside_removal(cache_root, roots)
+        _handoff.assert_outside_removal(cache_root, roots)
     with pytest.raises(InstallationError, match="removal target"):
-        _assert_outside_removal(directory, roots)
-    _assert_outside_removal(retained_root, roots)
+        _handoff.assert_outside_removal(directory, roots)
+    _handoff.assert_outside_removal(retained_root, roots)
     assert program_prefix in roots
     assert inspection.record.current is not None
     assert set(inspection.record.current.commands).issubset(roots)
 
     program_only = prepare_uninstall(directory)
     assert program_only.can_execute and program_only.plan is not None
-    program_roots = _handoff_removal_roots(program_only.plan, inspection.record)
-    _assert_outside_removal(directory, program_roots)
-    _assert_outside_removal(cache_root, program_roots)
-    _assert_outside_removal(retained_root, program_roots)
+    program_roots = _handoff.handoff_removal_roots(
+        program_only.plan, inspection.record
+    )
+    _handoff.assert_outside_removal(directory, program_roots)
+    _handoff.assert_outside_removal(cache_root, program_roots)
+    _handoff.assert_outside_removal(retained_root, program_roots)
 
     explicitly_retained = prepare_uninstall(
         directory,
@@ -515,12 +518,12 @@ def test_actual_selected_and_retained_roots_and_program_only_plan(
     )
     assert explicitly_retained.can_execute
     assert explicitly_retained.plan is not None
-    retained_roots = _handoff_removal_roots(
+    retained_roots = _handoff.handoff_removal_roots(
         explicitly_retained.plan, inspection.record
     )
-    _assert_outside_removal(cache_root, retained_roots)
+    _handoff.assert_outside_removal(cache_root, retained_roots)
     with pytest.raises(InstallationError, match="removal target"):
-        _assert_outside_removal(absent_cache_root, retained_roots)
+        _handoff.assert_outside_removal(absent_cache_root, retained_roots)
 
 
 def test_zero_capability_install_only_excludes_program_and_commands(
@@ -537,7 +540,7 @@ def test_zero_capability_install_only_excludes_program_and_commands(
     assert installed is not None
     assert installed.placement.capabilities == frozenset()
 
-    roots = _handoff_removal_roots(
+    roots = _handoff.handoff_removal_roots(
         preparation.plan, preparation.inspection.record
     )
     expected_roots = {
@@ -548,8 +551,8 @@ def test_zero_capability_install_only_excludes_program_and_commands(
         ),
     }
     assert set(roots) == expected_roots
-    _assert_outside_removal(directory, roots)
-    _assert_outside_removal(tmp_path / "unselected-cache", roots)
+    _handoff.assert_outside_removal(directory, roots)
+    _handoff.assert_outside_removal(tmp_path / "unselected-cache", roots)
 
 
 def test_external_base_python_rejects_managed_executable_before_probe(

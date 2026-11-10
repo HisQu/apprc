@@ -412,6 +412,11 @@ archive verification. Matching ready or pending repair plans preserve the
 recorded digest rather than discard it when the caller supplies an unhashed
 immutable source requirement.
 
+`InstallationSource(kind="index", ...)` represents a general package requirement,
+including an immutable GitHub commit requirement; the name does not imply only
+a package-index lookup. Source identity parsing does not replace archive,
+installed RECORD, or filesystem verification.
+
 Native entries accept `--main`, `--version X.Y.Z`, and `--github-client gh`.
 Checkout defaults stay local; release defaults use the authored version or
 resolve latest once. Source/client selectors are consumed before application
@@ -536,6 +541,15 @@ A reference may be a dotted registered path, unambiguous field name, or complete
 environment key. Write scopes are `user` and `workspace`. Edit plans reject a
 changed file under the managed write lock. Ordinary config editing never adopts
 an unrelated nonempty root.
+
+Field inspections expose `reason` as `None`, `"missing"`, or `"invalid"`.
+`issue` is display text; consumers must use `reason`, not parse its wording,
+when deciding whether to prompt for a missing value.
+
+Secret-file status likewise separates display text from `reason`: `None`,
+`"parent_missing"`, `"parent_not_directory"`, `"parent_not_private"`,
+`"secret_not_file"`, or `"secret_not_private"`. Use these values for repair
+eligibility and recovery actions; an available secret location has no reason.
 
 ## WorkspaceManager
 

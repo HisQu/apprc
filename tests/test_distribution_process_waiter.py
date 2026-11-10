@@ -11,8 +11,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from apprc.distribution.runtime import removal
-
+from apprc.distribution.runtime import _handoff, removal
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"), reason="Linux pidfd process waiters"
@@ -50,7 +49,7 @@ def test_libc_pidfd_waits_for_owned_child_without_python_wrapper(
 ) -> None:
     _without_python_pidfd(monkeypatch)
     with _owned_child() as process:
-        expected = removal.process_start_token(process.pid)
+        expected = _handoff.process_start_token(process.pid)
         waiter = removal._open_process_waiter(process.pid, expected)
         assert waiter[0] == "pidfd"
         fd = waiter[1]
@@ -115,7 +114,7 @@ def test_pidfd_closes_when_process_exits_during_identity_validation(
     monkeypatch.setattr(removal, "_linux_pidfd_open", track_pidfd)
     try:
         with _owned_child() as process:
-            original_token = removal._linux_process_token
+            original_token = _handoff._linux_process_token
             observed: list[int] = []
 
             def exit_before_token_read(pid: int) -> str:
@@ -128,7 +127,7 @@ def test_pidfd_closes_when_process_exits_during_identity_validation(
                 return original_token(pid)
 
             monkeypatch.setattr(
-                removal, "_linux_process_token", exit_before_token_read
+                _handoff, "_linux_process_token", exit_before_token_read
             )
             waiter = removal._open_process_waiter(process.pid, "unused")
             assert observed == [process.pid]

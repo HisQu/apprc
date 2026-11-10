@@ -87,6 +87,8 @@ All notable changes to `AppRC` will be documented in this file.
   removing the controller/removal dependency cycle.
 - Unified configuration origin tracking, preserving explicit overrides and
   Python-only field provenance when environment-backed settings are reloaded.
+- Documented fresh-plan recovery after an interrupted secret migration, including
+  safe partial progress and rejection of the original stale plan.
 
 <br>
 

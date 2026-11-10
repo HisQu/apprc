@@ -76,12 +76,9 @@ Treat this as the parking lot for actionable problems discovered while working b
 2. [2026-11-10](#2026-11-10)
    1. [P2 / E1 \[Code smell\] - *Legacy replacement recovery has an implicit filename schema*](#p2--e1-code-smell---legacy-replacement-recovery-has-an-implicit-filename-schema)
    1. [P3 / E1 \[Code smell\] - *Saved management code doubles as installation configuration*](#p3--e1-code-smell---saved-management-code-doubles-as-installation-configuration)
-   1. [P3 / E2 \[Code smell\] - *Config instances maintain overlapping provenance stores*](#p3--e2-code-smell---config-instances-maintain-overlapping-provenance-stores)
-   1. [P3 / E2 \[Code smell\] - *Unused dotenv editing APIs duplicate the manager workflow*](#p3--e2-code-smell---unused-dotenv-editing-apis-duplicate-the-manager-workflow)
 3. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 4. [2026-09-04](#2026-09-04)
-   1. [P3 / E1 \[Code smell\] - *Multi-file updates can stop between replacements*](#p3--e1-code-smell---multi-file-updates-can-stop-between-replacements)
    1. [P3 / E1 \[Code smell\] - *Workspace presentation state has multiple owners*](#p3--e1-code-smell---workspace-presentation-state-has-multiple-owners)
 5. [2026-07-14](#2026-07-14)
    1. [P3 / E3 \[Tooling\] - *Removed-module tests are sensitive to namespace-only remnants*](#p3--e3-tooling---removed-module-tests-are-sensitive-to-namespace-only-remnants)
@@ -109,22 +106,6 @@ Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and rele
 - **Context:** Executable syntax is also a data protocol, so a harmless-looking rendering change can require changes in runtime binding. The apparently natural launcher module is not the shipped implementation. The stdlib-only bootstrap boundary is justified; hiding that boundary inside generated strings is not required by it.
 - **Suggested next step:** Use canonical stdlib-only source files for saved management programs, following the existing `namespace_finalizer.py` approach. Keep interpreter settings as explicit owned, digest-covered support data rather than parsing Python source. Adopt or remove the unused launcher so one implementation remains. Preserve interpreter validation, saved backend selection, and previews that do not provision anything. Coordinate retained support inputs with [legacy replacement recovery](#p2--e1-code-smell---legacy-replacement-recovery-has-an-implicit-filename-schema).
 
-## P3 / E2 [Code smell] - *Config instances maintain overlapping provenance stores*
-- **Area:** `src/apprc/runtime/config/{base,config,_origins}.py`, `src/apprc/runtime/provenance/python.py`
-- **Observed while:** Following constructor, assignment, provenance inspection, and reload behavior.
-- **Why not fixed now:** Consolidation must preserve constructor protection, Python-only fields, owner metadata, and existing provenance behavior.
-- **Evidence:** [`BaseConfig`](src/apprc/runtime/config/base.py#L52-L80) initializes `_apprc_provenance_origins`; [`Config`](src/apprc/runtime/config/config.py#L95-L100) adds `_apprc_field_origins` and [captures constructor fields again](src/apprc/runtime/config/config.py#L150-L173). [Assignment](src/apprc/runtime/config/config.py#L460-L483) first updates the base store and then the owner-backed store. [Provenance reads](src/apprc/runtime/config/config.py#L347-L377) choose between them, while [reload protection](src/apprc/runtime/config/config.py#L289-L299) consults the latter.
-- **Context:** Owner-backed fields participate in two instance maps keyed by the same Python field names and holding the same origin-state type. Maintainers must know which map each lifecycle operation treats as authoritative. Different metadata/default origins for Python-only and environment-backed fields are legitimate, but do not inherently require overlapping storage.
-- **Suggested next step:** Use one instance provenance map and one update helper, with `Config` enriching records with owner/environment metadata. Completion means construction, assignment, scoped overrides, binding, inspection, and reload use that store without changing public origin reporting or override protection.
-
-## P3 / E2 [Code smell] - *Unused dotenv editing APIs duplicate the manager workflow*
-- **Area:** `src/apprc/user_files/env_files/updates.py`, `src/apprc/user_files/env_files/__init__.py`, `tests/test_env_file.py`
-- **Observed while:** Tracing maintained callers of settings-editing entry points.
-- **Why not fixed now:** Removal must move meaningful behavior coverage onto maintained primitives; this request does not authorize code deletion.
-- **Evidence:** [`updates.py`](src/apprc/user_files/env_files/updates.py#L84-L174) retains `set_workspace_dotenv_value`, `set_env_file_value`, and `plan_workspace_dotenv_value_update`, plus [two clear wrappers](src/apprc/user_files/env_files/updates.py#L248-L306). Searches across production, packaging, examples, and tests found calls only inside those wrappers and `tests/test_env_file.py`. Maintained CLI/TUI/Gradio consumers instead use [`ConfigManager` planning/application](src/apprc/services/manager.py#L293-L415); supported-facade tests exclude the old helpers.
-- **Context:** The internal package still presents a second complete editing workflow with its own workspace validation and exception translation. Relearning settings writes requires separating live orchestration from a convenience route retained by tests. Its low-level document-preservation tests are meaningful and must not simply be discarded.
-- **Suggested next step:** Remove the five unused wrappers and their aggregate re-exports. Keep the plan/apply primitives used by `ConfigManager`, move parsing/newline/duplicate-assignment/zero-write assertions onto those primitives, and keep application policy in manager tests. Preserve the same manager boundary when simplifying [workspace presentation ownership](#p3--e1-code-smell---workspace-presentation-state-has-multiple-owners).
-
 <br>
 
 # 2026-11-09
@@ -144,14 +125,6 @@ Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and rele
 # 2026-09-04
 
 
-## P3 / E1 [Code smell] - *Multi-file updates can stop between replacements*
-- **Area:** `src/apprc/user_files/env_files/secret_migration.py`, `src/apprc/user_files/app_home/{writes,locations}.py`, `src/apprc/services/manager.py`
-- **Observed while:** Implementing explicit resolution/shared management; rechecked against the post-`0.32.0` source.
-- **Why not fixed now:** Locks and revision checks serialize managed writes, but do not make two replacements crash-atomic. Recovery-policy changes are outside this backlog review.
-- **Evidence:** [`apply_secret_migration()`](src/apprc/user_files/env_files/secret_migration.py#L105-L129) checks both revisions under the managed lock, writes the private companion, then replaces the ordinary dotenv. Each replacement is atomic individually. An interruption between them can leave both assignments; the private copy wins within that layer.
-- **Context:** The limitation is still current, but saying there is no recovery protocol was too broad: migration can be replanned after interruption. Replaying the original plan fails its revision check. Existing successful-migration and write-lock coverage does not inject failure between these two replacements.
-- **Suggested next step:** Preserve the value-first ordering. Add focused failure-between-writes coverage in the existing suite and document fresh-plan recovery before considering more machinery. Introduce a recovery journal only if automatic crash recovery becomes a requirement; do not treat writer locking as a two-file transaction.
-
 
 <a id="p3--e1-code-smell---cli-and-editor-composition-remain-monolithic"></a>
 
@@ -161,7 +134,7 @@ Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and rele
 - **Why not fixed now:** The remaining problem is presentation-state ownership, not persistence. Changing workspace interaction is outside this analysis-only request.
 - **Evidence:** [`WorkspaceWorkflowBase`](src/apprc/interfaces/tui/editor/workspace_base.py#L12-L31) retains the concrete `ConfigEditorScreen`. [Editing workflows](src/apprc/interfaces/tui/editor/workspace_editing.py#L94-L103) assign its registry and call private refresh methods; the screen's [outer action runner](src/apprc/interfaces/tui/editor/app.py#L431-L446) refreshes again after workflows complete. The screen also owns selection restoration and button availability. `ConfigEditorApp` is now a thin host, and CLI handlers already delegate execution; nested Typer declarations alone are not a separate finding.
 - **Context:** The screen → workflow → screen cycle moves methods into other files without giving workspace state one owner. A maintainer must trace both layers to understand registry replacement, selection, and refresh ordering. Persistence already belongs to `ConfigManager`/`WorkspaceManager` and should stay there.
-- **Suggested next step:** Give workspace-pane state, selection, list refresh, and button availability one presentation owner. Let operations report results and desired selection instead of accepting the whole screen and mutating private state. Completion means one post-operation refresh boundary, without a generic UI framework. Keep shared manager editing rather than the [unused direct dotenv workflow](#p3--e2-code-smell---unused-dotenv-editing-apis-duplicate-the-manager-workflow).
+- **Suggested next step:** Give workspace-pane state, selection, list refresh, and button availability one presentation owner. Let operations report results and desired selection instead of accepting the whole screen and mutating private state. Completion means one post-operation refresh boundary, without a generic UI framework. Keep shared `ConfigManager` planning/application for edits rather than restoring an alternate direct-write workflow.
 
 
 <br>

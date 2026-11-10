@@ -73,25 +73,9 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-10](#2026-11-10)
-   1. [P3 / E1 \[Code smell\] - *Saved management code doubles as installation configuration*](#p3--e1-code-smell---saved-management-code-doubles-as-installation-configuration)
-3. [2026-11-09](#2026-11-09)
+2. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 
-
-<br>
-
-# 2026-11-10
-
-Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and relearning cost, not confirmed runtime failures. Follow-up work must preserve independent optional capabilities and the existing ownership, revision, permission, and recovery guarantees.
-
-## P3 / E1 [Code smell] - *Saved management code doubles as installation configuration*
-- **Area:** `src/apprc/distribution/rendering.py`, `src/apprc/distribution/runtime/installation.py`, `src/apprc/distribution/runtime/launcher.py`, `src/apprc/distribution/standalone.py`
-- **Observed while:** Following generated launch/uninstall support into runtime binding.
-- **Why not fixed now:** This changes the saved-support format and bootstrap boundary, not just presentation or naming.
-- **Evidence:** [`_launcher_script()` and `_uninstaller_script()`](src/apprc/distribution/rendering.py#L436-L634) embed executable management policy in strings. [`bind_install_support()`](src/apprc/distribution/runtime/installation.py#L826-L859) recovers the interpreter by scanning saved Python for `BASE_PYTHON = `, then [binds new output](src/apprc/distribution/runtime/installation.py#L885-L891) by replacing an exact quoted placeholder. [`runtime/launcher.py`](src/apprc/distribution/runtime/launcher.py) implements another launcher, but is absent from the [standalone closure](src/apprc/distribution/standalone.py#L14-L44); repository searches found no caller outside its own entry point.
-- **Context:** Executable syntax is also a data protocol, so a harmless-looking rendering change can require changes in runtime binding. The apparently natural launcher module is not the shipped implementation. The stdlib-only bootstrap boundary is justified; hiding that boundary inside generated strings is not required by it.
-- **Suggested next step:** Use canonical stdlib-only source files for saved management programs, following the existing `namespace_finalizer.py` approach. Keep interpreter settings as explicit owned, digest-covered support data rather than parsing Python source. Adopt or remove the unused launcher so one implementation remains. Preserve interpreter validation, saved backend selection, and previews that do not provision anything. Installation records remain the sole authority; owned support data must not become a second authority.
 
 <br>
 

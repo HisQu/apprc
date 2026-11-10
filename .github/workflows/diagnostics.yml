@@ -1,0 +1,41 @@
+name: Diagnostics
+
+run-name: Artifact round-trip / ${{ github.actor }} / attempt ${{ github.run_attempt }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - diagnostics/artifact-upload
+    paths:
+      - .github/workflows/diagnostics.yml
+
+permissions:
+  contents: read
+
+jobs:
+  artifact-roundtrip:
+    name: Actions artifact round-trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create diagnostic payload
+        run: printf '%s\n' 'GitHub Actions artifact round-trip' > diagnostic.txt
+
+      - name: Upload diagnostic artifact
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: diagnostic.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Download the exact uploaded artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.upload.outputs.artifact-id }}
+          path: downloaded
+
+      - name: Verify unchanged payload
+        run: cmp diagnostic.txt downloaded/diagnostic.txt

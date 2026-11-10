@@ -8,6 +8,7 @@
 - [Verify and update changes](#verify-and-update-changes)
   - [Checks](#checks)
   - [Documentation checks](#documentation-checks)
+  - [Actions artifact diagnostic](#actions-artifact-diagnostic)
   - [README maintenance](#readme-maintenance)
   - [Generated files](#generated-files)
 - [Build and release AppRC](#build-and-release-apprc)
@@ -142,6 +143,43 @@ values, file effects, and prerequisites whenever changing an example.
 Keep complete application sources in `examples`; link to those sources from
 Examples. The HTML `example-file` comments in guides associate code blocks with
 files for execution tests and are hidden in rendered Markdown.
+
+## Actions artifact diagnostic
+
+The separate [Diagnostics workflow](../.github/workflows/diagnostics.yml)
+uploads a tiny text artifact, downloads that exact artifact by ID, and compares
+the payload byte-for-byte. It needs no checkout, Python installation, configured
+secrets, or repository-write permission. It runs independently of normal CI and
+application tests.
+A successful run proves that Actions artifact round-trip for that run only,
+not application correctness, GitHub Release uploads, PyPI publication, every
+quota type, or future quota availability.
+
+Once the workflow exists on default `main`, invoke it manually from the
+repository root with the GitHub CLI. Replace `<branch>` with the ref to run:
+
+```shell
+gh workflow run diagnostics.yml --ref <branch>
+```
+
+Before it exists on default `main`, the initial feature-branch invocation is a
+push to `diagnostics/artifact-upload` that changes
+`.github/workflows/diagnostics.yml`. Both the branch and changed path must match;
+ordinary later use is manual.
+
+The artifact is named `diagnostic-RUN_ID-RUN_ATTEMPT` and has one-day fallback
+retention; the workflow does not delete it immediately. After inspecting the
+accepted run, find its artifact ID and delete only that artifact. Replace
+`OWNER`, `REPO`, and `RUN_ID` with the repository and accepted run, then use the
+returned `id` for `ARTIFACT_ID`:
+
+```shell
+gh api repos/OWNER/REPO/actions/runs/RUN_ID/artifacts --jq '.artifacts[] | {id, name}'
+gh api --method DELETE repos/OWNER/REPO/actions/artifacts/ARTIFACT_ID
+```
+
+This cleanup concerns Actions artifact storage, not GitHub Release assets or
+PyPI files.
 
 ## README maintenance
 

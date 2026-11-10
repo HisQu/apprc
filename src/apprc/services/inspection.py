@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import Any
+from typing import Any, Literal
 
 from typed_settings.exceptions import InvalidSettingsError
 
@@ -13,6 +13,9 @@ from apprc.definition.provenance import ConfigOriginState
 from apprc.runtime.resolution import ResolvedConfig
 
 
+type FieldInspectionReason = Literal["missing", "invalid"]
+
+
 @dataclass(frozen=True, slots=True)
 class FieldInspection:
     """Effective field state, including incomplete or invalid configuration.
@@ -21,7 +24,8 @@ class FieldInspection:
     :param field: Field metadata used for validation and editing.
     :param value: Parsed effective value, excluded from debug output.
     :param origin: Winning source, or the Python fallback.
-    :param issue: Validation failure without raw input values.
+    :param issue: Display-only validation failure without raw input values.
+    :param reason: Missing or invalid value classification, independent of prose.
     :param active: Whether this field belongs to the selected runtime.
     """
 
@@ -31,6 +35,7 @@ class FieldInspection:
     origin: ConfigOriginState
     issue: str | None = None
     active: bool = True
+    reason: FieldInspectionReason | None = None
 
     @property
     def display_value(self) -> Any:
@@ -82,6 +87,7 @@ def inspect_resolved(resolved: ResolvedConfig) -> ConfigInspection:
                 )
                 continue
             issue = None
+            reason: FieldInspectionReason | None = None
             value = None
             try:
                 if key in resolved.values:
@@ -90,13 +96,17 @@ def inspect_resolved(resolved: ResolvedConfig) -> ConfigInspection:
                     value = spec.resolve_default()
                 else:
                     issue = f"Missing required setting: {key}."
-                if issue is None:
+                    reason = "missing"
+                if reason is None:
                     validate_python_field_value(spec, value)
             except (ValueError, TypeError, InvalidSettingsError):
+                reason = "invalid"
                 issue = (
                     f"Invalid value for {key}; expected {spec.python_type!s}."
                 )
-            fields.append(FieldInspection(owner, spec, value, origin, issue))
+            fields.append(
+                FieldInspection(owner, spec, value, origin, issue, reason=reason)
+            )
             if issue is not None:
                 issues.append(issue)
     return ConfigInspection(resolved, tuple(fields), tuple(issues))

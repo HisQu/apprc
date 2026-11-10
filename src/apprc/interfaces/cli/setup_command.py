@@ -111,7 +111,7 @@ def _run_setup_with_user_secret_repair(
         ):
             raise
         status = manager.secret_status("user")
-        if status.issue != "The parent directory is readable by other users.":
+        if status.reason != "parent_not_private":
             raise
         allowed_principals = (
             "this user, SYSTEM, and Administrators"
@@ -161,8 +161,7 @@ def _prompt_required_fields(manager: ConfigManager) -> None:
         if (
             not item.active
             or item.owner.requires_workspace
-            or item.issue is None
-            or not item.issue.startswith("Missing required setting:")
+            or item.reason != "missing"
             or not item.field.editable
         ):
             continue

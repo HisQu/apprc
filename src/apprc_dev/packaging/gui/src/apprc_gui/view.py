@@ -291,7 +291,7 @@ class ConfigEditor:
                 next_step = (
                     "Move or remove the file blocking the layer directory, "
                     "then run setup again."
-                    if issue == "The parent path exists but is not a directory."
+                    if secret_status.reason == "parent_not_directory"
                     else f"Review the directory permissions, then run `config "
                     f"secrets repair --scope {scope}`."
                 )
@@ -431,7 +431,7 @@ class ConfigEditor:
             )
             next_step = (
                 "Remove or move the existing non-file secret path, then try again."
-                if issue == "The secret path is not a file."
+                if secret_status.reason == "secret_not_file"
                 else "Review the reported directory or file permissions, then try again."
             )
             return (

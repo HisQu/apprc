@@ -17,7 +17,6 @@ from apprc.runtime.provenance import (
     public_config_fields,
     set_field_origin,
     source_for_origin,
-    with_field_origin,
 )
 
 from ._exports import PUBLIC_NAMES as __all__

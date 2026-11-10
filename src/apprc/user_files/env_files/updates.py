@@ -1,4 +1,4 @@
-"""Validated set and clear operations for AppRC dotenv files."""
+"""Revision-checked dotenv edit planning and application for ConfigManager."""
 
 from __future__ import annotations
 
@@ -12,10 +12,7 @@ from typing import Iterable
 from apprc.definition.env_config.lookup import resolve_config_field_reference
 from apprc.definition.env_config.schema import ConfigOwner
 from apprc.definition.installation import InstallationWriteAuthority
-from apprc.user_files.app_home.locations import (
-    AppRCDirectoryError,
-    write_text_atomic,
-)
+from apprc.user_files.app_home.locations import write_text_atomic
 from apprc.user_files.app_home.writes import (
     StaleEditError,
     file_revision,
@@ -25,12 +22,7 @@ from apprc.user_files.env_files._document import (
     clear_dotenv_document_value,
     set_dotenv_document_value,
 )
-from apprc.user_files.env_files.files import (
-    require_existing_workspace_root,
-    workspace_dotenv_path,
-)
 from apprc.user_files.env_files.values import normalize_env_value
-from apprc.user_files.workspace_roots.paths import WorkspaceRootPathError
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,95 +71,6 @@ class EnvFileEditPlan:
     duplicate_lines: tuple[int, ...] = ()
     private_directories: tuple[Path, ...] = ()
     authority: InstallationWriteAuthority | None = None
-
-
-def set_workspace_dotenv_value(
-    *,
-    workspace_root: Path,
-    reference: str,
-    raw_value: str,
-    owners: Iterable[ConfigOwner],
-    workspace_dotenv_filename: str = "apprc.workspace.env",
-) -> EnvFileUpdate:
-    """Set one value in a workspace dotenv file.
-
-    :param workspace_root: Active workspace root from the application selector.
-    :param reference: Full env key, dotted config path, or unique field name.
-    :param raw_value: User-provided value before type validation.
-    :param owners: Config owners to search.
-    :param workspace_dotenv_filename: Workspace dotenv filename.
-    :return: Written file, key, and normalized value.
-    :raises ValueError: If the key is unknown, read-only, or invalid.
-    :raises WorkspaceRootPathError: If the workspace root cannot be used.
-    """
-    try:
-        plan = plan_workspace_dotenv_value_update(
-            workspace_root=workspace_root,
-            reference=reference,
-            raw_value=raw_value,
-            owners=owners,
-            workspace_dotenv_filename=workspace_dotenv_filename,
-        )
-        return apply_env_file_edit(plan)
-    except (AppRCDirectoryError, OSError) as exc:
-        raise WorkspaceRootPathError(str(exc)) from exc
-
-
-def set_env_file_value(
-    *,
-    path: Path,
-    reference: str,
-    raw_value: str,
-    owners: Iterable[ConfigOwner],
-    layer_name: str,
-) -> EnvFileUpdate:
-    """Set one override value in an AppRC dotenv file.
-
-    :param path: Dotenv file to update.
-    :param reference: Full env key, dotted config path, or unique field name.
-    :param raw_value: User-provided value before type validation.
-    :param owners: Config owners to search.
-    :param layer_name: Human-readable layer name for read-only errors.
-    :return: Written file, key, and normalized value.
-    :raises ValueError: If the key is unknown, read-only, or invalid.
-    """
-    plan = plan_env_file_value_update(
-        path=path,
-        reference=reference,
-        raw_value=raw_value,
-        owners=owners,
-        layer_name=layer_name,
-    )
-    return apply_env_file_edit(plan)
-
-
-def plan_workspace_dotenv_value_update(
-    *,
-    workspace_root: Path,
-    reference: str,
-    raw_value: str,
-    owners: Iterable[ConfigOwner],
-    workspace_dotenv_filename: str = "apprc.workspace.env",
-) -> EnvFileEditPlan:
-    """Prepare a workspace dotenv edit without writing it.
-
-    :param workspace_root: Active workspace root from the application selector.
-    :param reference: Full env key, config path, or unique field name.
-    :param raw_value: User-provided value before type validation.
-    :param owners: Config owners to search.
-    :param workspace_dotenv_filename: Workspace dotenv filename.
-    :return: Validated edit ready to apply.
-    :raises WorkspaceRootPathError: If the workspace root cannot be used.
-    """
-    root = require_existing_workspace_root(workspace_root)
-    path = workspace_dotenv_path(root, filename=workspace_dotenv_filename)
-    return plan_env_file_value_update(
-        path=path,
-        reference=reference,
-        raw_value=raw_value,
-        owners=owners,
-        layer_name=workspace_dotenv_filename,
-    )
 
 
 def plan_env_file_value_update(
@@ -243,58 +146,6 @@ def apply_env_file_edit(plan: EnvFileEditPlan) -> EnvFileUpdate:
         value=plan.value,
         warnings=plan.warnings,
     )
-
-
-def clear_workspace_dotenv_value(
-    *,
-    workspace_root: Path,
-    reference: str,
-    owners: Iterable[ConfigOwner],
-    workspace_dotenv_filename: str = "apprc.workspace.env",
-) -> EnvFileUpdate | None:
-    """Remove one override value from a workspace dotenv file.
-
-    :param workspace_root: Active workspace root from the application selector.
-    :param reference: Full env key, dotted config path, or unique field name.
-    :param owners: Config owners to search.
-    :param workspace_dotenv_filename: Workspace dotenv filename.
-    :return: Written file and removed key, or ``None`` when the key was absent.
-    :raises ValueError: If the key is unknown or read-only.
-    :raises WorkspaceRootPathError: If the workspace root cannot be used.
-    """
-    root = require_existing_workspace_root(workspace_root)
-    path = workspace_dotenv_path(root, filename=workspace_dotenv_filename)
-    try:
-        return clear_env_file_value(
-            path=path,
-            reference=reference,
-            owners=owners,
-            layer_name=workspace_dotenv_filename,
-        )
-    except (AppRCDirectoryError, OSError) as exc:
-        raise WorkspaceRootPathError(str(exc)) from exc
-
-
-def clear_env_file_value(
-    *,
-    path: Path,
-    reference: str,
-    owners: Iterable[ConfigOwner],
-    layer_name: str,
-) -> EnvFileUpdate | None:
-    """Remove one override value from an AppRC dotenv file.
-
-    :param path: Dotenv file to update.
-    :param reference: Full env key, dotted config path, or unique field name.
-    :param owners: Config owners to search.
-    :param layer_name: Human-readable layer name for read-only errors.
-    :return: Written file and removed key, or ``None`` when the key was absent.
-    :raises ValueError: If the key is unknown or read-only.
-    """
-    plan = plan_env_file_value_removal(
-        path=path, reference=reference, owners=owners, layer_name=layer_name
-    )
-    return apply_env_file_edit(plan) if plan is not None else None
 
 
 def plan_env_file_value_removal(

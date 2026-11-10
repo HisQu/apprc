@@ -23,11 +23,7 @@ from apprc.runtime.config._defaults import (
 from apprc.runtime.config._loading import (
     owner_env_mapping,
 )
-from apprc.runtime.config._origins import (
-    origin_for_field,
-    python_constructor_field_names,
-    with_field_origin,
-)
+from apprc.runtime.config._origins import origin_for_field
 from apprc.runtime.config._runtime_validation import (
     validate_all_owner_values,
     validate_owner_field_value,
@@ -44,6 +40,7 @@ from apprc.runtime.provenance import (
     ConfigProvenance,
     PythonProvenanceOrigin,
     source_for_origin,
+    set_field_origin,
 )
 
 LOG = logging.getLogger(__name__)
@@ -88,12 +85,6 @@ class Config(ConfigBase):
     _apprc_imported_binding: ImportedConfig[Any] | None = field(
         default=None,
         kw_only=True,
-        repr=False,
-        compare=False,
-        metadata={"internal": True},
-    )
-    _apprc_field_origins: dict[str, ConfigOriginState] = field(
-        init=False,
         repr=False,
         compare=False,
         metadata={"internal": True},
@@ -147,27 +138,21 @@ class Config(ConfigBase):
                 "Imported config owner state is reserved for "
                 "ResolvedConfig.build()."
             )
-        constructor_fields = python_constructor_field_names(
-            cls,
-            owner,
-            args,
-            kwargs,
-        )
-        if owner_override is not None:
-            constructor_fields -= frozenset(
-                field_name
-                for field_name, value in kwargs.items()
-                if value is ENV_FIELD_MISSING
-            )
+        owner_field_names = frozenset(spec.name for spec in owner.fields)
         object.__setattr__(
             self,
-            "_apprc_field_origins",
+            "_apprc_provenance_origins",
             {
-                field_name: ConfigOriginState(
-                    "python_constructor_argument",
-                    env_key=owner.env_key(field_name),
+                field_name: (
+                    replace(origin, env_key=owner.env_key(field_name))
+                    if field_name in owner_field_names
+                    else origin
                 )
-                for field_name in constructor_fields
+                for field_name, origin in self._apprc_provenance_origins.items()
+                if not (
+                    owner_override is not None
+                    and kwargs.get(field_name) is ENV_FIELD_MISSING
+                )
             },
         )
         return self
@@ -178,7 +163,7 @@ class Config(ConfigBase):
         validate_python_constructor_fields(
             self,
             self._config_owner(),
-            self._apprc_field_origins,
+            self._apprc_provenance_origins,
         )
         if self.bind_from_env_on_init:
             self._bind_from_env(
@@ -290,12 +275,13 @@ class Config(ConfigBase):
         protected = (
             frozenset()
             if override_python_values
-            else protected_field_names(self._apprc_field_origins)
+            else protected_field_names(self._apprc_provenance_origins)
         )
+        owner_field_names = frozenset(spec.name for spec in owner.fields)
         origins = {
             name: origin
-            for name, origin in self._apprc_field_origins.items()
-            if name in protected
+            for name, origin in self._apprc_provenance_origins.items()
+            if name not in owner_field_names or name in protected
         }
         resolved_defaults: dict[str, Any] = {}
         for spec in owner.fields:
@@ -311,7 +297,7 @@ class Config(ConfigBase):
             else:
                 value = ENV_FIELD_MISSING
             object.__setattr__(candidate, spec.name, value)
-        object.__setattr__(candidate, "_apprc_field_origins", origins)
+        object.__setattr__(candidate, "_apprc_provenance_origins", origins)
         candidate._bind_from_env(
             override_python_values=override_python_values,
             source=resolved.source,
@@ -321,7 +307,9 @@ class Config(ConfigBase):
         for spec in owner.fields:
             object.__setattr__(self, spec.name, getattr(candidate, spec.name))
         object.__setattr__(
-            self, "_apprc_field_origins", candidate._apprc_field_origins
+            self,
+            "_apprc_provenance_origins",
+            candidate._apprc_provenance_origins,
         )
         object.__setattr__(self, "_apprc_source", resolved.source)
 
@@ -335,13 +323,13 @@ class Config(ConfigBase):
         owner = self._config_owner()
         result = bind_owner_from_env(
             owner,
-            self._apprc_field_origins,
+            self._apprc_provenance_origins,
             override_python_values=override_python_values,
             source=source,
         )
         for item in result.bound_fields:
             object.__setattr__(self, item.name, item.value)
-            self._set_field_origin(item.name, item.origin)
+            set_field_origin(self, item.name, item.origin)
         return list(result.skipped_python_fields)
 
     def _build_config_provenance(
@@ -413,20 +401,8 @@ class Config(ConfigBase):
         """Return the recorded origin state or the implicit config default."""
         return origin_for_field(
             self._config_owner(),
-            self._apprc_field_origins,
+            self._apprc_provenance_origins,
             field_name,
-        )
-
-    def _set_field_origin(
-        self,
-        field_name: str,
-        origin: ConfigOriginState,
-    ) -> None:
-        """Record provenance for one owner-backed field."""
-        object.__setattr__(
-            self,
-            "_apprc_field_origins",
-            with_field_origin(self._apprc_field_origins, field_name, origin),
         )
 
     def _resolve_owner_defaults(self) -> None:
@@ -442,11 +418,11 @@ class Config(ConfigBase):
                     object.__setattr__(self, spec.name, ENV_FIELD_MISSING)
         object.__setattr__(
             self,
-            "_apprc_field_origins",
+            "_apprc_provenance_origins",
             resolve_instance_owner_defaults(
                 self,
                 owner,
-                field_origins=self._apprc_field_origins,
+                field_origins=self._apprc_provenance_origins,
                 copy_value=state_transfer.deepcopy_state_value,
             ),
         )
@@ -457,30 +433,25 @@ class Config(ConfigBase):
             return
         validate_owner_field_value(self._config_owner(), key, value)
 
-    def _after_existing_assignment(
+    def _python_field_origin(
         self,
-        key: str,
-        value: Any,
-        *,
+        field_name: str,
         origin: PythonProvenanceOrigin,
-    ) -> None:
-        """Record owner-backed assignment provenance after storing it."""
+    ) -> ConfigOriginState:
+        """Enrich Python assignment origins with environment-owner metadata.
+
+        :param field_name: Public runtime dataclass field name.
+        :param origin: Python lifecycle event owning the field value.
+        :return: Owner-aware origin, or the Python-only origin for other fields.
+        """
+        if field_name in self._owner_field_names():
+            return ConfigOriginState(
+                origin,
+                env_key=self._config_owner().env_key(field_name),
+            )
         # !! Keep two-argument super(): slotted dataclass inheritance on
         # !! Python 3.12/3.13 breaks zero-argument super().
-        super(Config, self)._after_existing_assignment(
-            key,
-            value,
-            origin=origin,
-        )
-        if key not in self._owner_field_names():
-            return
-        self._set_field_origin(
-            key,
-            ConfigOriginState(
-                origin,
-                env_key=self._config_owner().env_key(key),
-            ),
-        )
+        return super(Config, self)._python_field_origin(field_name, origin)
 
     def _warn_skipped_python_fields(self, field_names: list[str]) -> None:
         """Warn when env binding leaves Python-owned fields untouched."""

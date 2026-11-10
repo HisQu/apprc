@@ -57,6 +57,18 @@ All notable changes to `AppRC` will be documented in this file.
   Affected: callers importing that error type or passing that setup parameter.
   Migration: handle setup's existing `ValueError`/`OSError` failures and use
   explicit `config secrets repair` for permission changes.
+- Breaking: Removed `apprc.provenance.with_field_origin`.
+  Affected: callers using that pure mapping-copy helper.
+  Migration: use `{**origins, field_name: origin}` for a new mapping.
+  `set_field_origin(instance, field_name, origin)` remains available for
+  updating an existing configuration instance's origin metadata.
+- Breaking: Removed the unused direct-dotenv helpers
+  `set_workspace_dotenv_value`, `set_env_file_value`,
+  `plan_workspace_dotenv_value_update`, `clear_workspace_dotenv_value`, and
+  `clear_env_file_value` from `apprc.user_files.env_files` and its `updates`
+  module. Affected: callers importing these low-level helpers.
+  Migration: use `ConfigManager.plan_update()` or `plan_removal()`, then
+  `apply_edit()`; the shared low-level plan/apply primitives remain available.
 
 <br>
 
@@ -73,6 +85,8 @@ All notable changes to `AppRC` will be documented in this file.
   archive, installed RECORD, and filesystem verification.
 - Gave shared uninstall process-identity and containment mechanics a leaf owner,
   removing the controller/removal dependency cycle.
+- Unified configuration origin tracking, preserving explicit overrides and
+  Python-only field provenance when environment-backed settings are reloaded.
 
 <br>
 

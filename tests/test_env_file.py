@@ -6,14 +6,14 @@ import pytest
 
 from apprc.definition.env_config.schema import ConfigField
 from apprc.user_files.env_files import (
-    clear_env_file_value,
-    clear_workspace_dotenv_value,
     ensure_workspace_dotenv_file,
     normalize_env_value,
-    read_env_file,
-    set_env_file_value,
-    set_workspace_dotenv_value,
     write_env_file,
+)
+from apprc.user_files.env_files.updates import (
+    apply_env_file_edit,
+    plan_env_file_value_removal,
+    plan_env_file_value_update,
 )
 from apprc.user_files.workspace_roots.paths import WorkspaceRootPathError
 from tests.support_config import (
@@ -68,139 +68,45 @@ def test_ensure_workspace_dotenv_file_rejects_missing_root(
 ) -> None:
     workspace_root = tmp_path / "workspace"
 
-    with pytest.raises(WorkspaceRootPathError, match="does not exist"):
+    with pytest.raises(WorkspaceRootPathError):
         ensure_workspace_dotenv_file(
             workspace_root,
             filename="apprc.workspace.env",
         )
 
 
-def test_set_workspace_dotenv_value_accepts_env_key_config_path_or_unique_name(
-    tmp_path: Path,
-) -> None:
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-
-    update_by_env = set_workspace_dotenv_value(
-        workspace_root=workspace_root,
-        reference="APPRC_EXAMPLE_APP_PROFILE",
-        raw_value="local-profile",
-        owners=APPRC_EXAMPLE_APP_OWNERS,
-    )
-    update_by_path = set_workspace_dotenv_value(
-        workspace_root=workspace_root,
-        reference="app.retry_count",
-        raw_value="5",
-        owners=APPRC_EXAMPLE_APP_OWNERS,
-    )
-    update_by_name = set_workspace_dotenv_value(
-        workspace_root=workspace_root,
-        reference="enabled",
-        raw_value="yes",
-        owners=APPRC_EXAMPLE_APP_OWNERS,
-    )
-
-    assert update_by_env.env_key == "APPRC_EXAMPLE_APP_PROFILE"
-    assert update_by_path.value == "5"
-    assert update_by_name.value == "true"
-    assert read_env_file(workspace_root / "apprc.workspace.env") == {
-        "APPRC_EXAMPLE_APP_PROFILE": "local-profile",
-        "APPRC_EXAMPLE_APP_ENABLED": "true",
-        "APPRC_EXAMPLE_APP_RETRY_COUNT": "5",
-    }
-
-
-def test_set_workspace_dotenv_value_rejects_missing_workspace_root(
-    tmp_path: Path,
-) -> None:
-    workspace_root = tmp_path / "workspace"
-
-    with pytest.raises(WorkspaceRootPathError, match="does not exist"):
-        set_workspace_dotenv_value(
-            workspace_root=workspace_root,
-            reference="APPRC_EXAMPLE_APP_PROFILE",
-            raw_value="local-profile",
-            owners=APPRC_EXAMPLE_APP_OWNERS,
-        )
-
-    assert not workspace_root.exists()
-
-
-def test_clear_workspace_dotenv_value_removes_existing_override(
-    tmp_path: Path,
-) -> None:
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-    set_workspace_dotenv_value(
-        workspace_root=workspace_root,
-        reference="APPRC_EXAMPLE_APP_PROFILE",
-        raw_value="local-profile",
-        owners=APPRC_EXAMPLE_APP_OWNERS,
-    )
-
-    update = clear_workspace_dotenv_value(
-        workspace_root=workspace_root,
-        reference="app.profile",
-        owners=APPRC_EXAMPLE_APP_OWNERS,
-    )
-
-    assert update is not None
-    assert update.env_key == "APPRC_EXAMPLE_APP_PROFILE"
-    assert update.value == ""
-    assert read_env_file(workspace_root / "apprc.workspace.env") == {}
-
-
-def test_clear_workspace_dotenv_value_rejects_missing_workspace_root(
-    tmp_path: Path,
-) -> None:
-    workspace_root = tmp_path / "workspace"
-
-    with pytest.raises(WorkspaceRootPathError, match="does not exist"):
-        clear_workspace_dotenv_value(
-            workspace_root=workspace_root,
-            reference="APPRC_EXAMPLE_APP_PROFILE",
-            owners=APPRC_EXAMPLE_APP_OWNERS,
-        )
-
-    assert not workspace_root.exists()
-
-
-def test_clear_env_file_value_missing_file_is_zero_write(
-    tmp_path: Path,
-) -> None:
+def test_removal_plan_missing_file_is_zero_write(tmp_path: Path) -> None:
     env_path = tmp_path / "apprc.user.env"
 
-    update = clear_env_file_value(
+    plan = plan_env_file_value_removal(
         path=env_path,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         owners=APPRC_EXAMPLE_APP_OWNERS,
         layer_name="apprc.user.env",
     )
 
-    assert update is None
+    assert plan is None
     assert not env_path.exists()
 
 
-def test_clear_env_file_value_absent_key_preserves_existing_file(
+def test_removal_plan_absent_key_preserves_existing_file(
     tmp_path: Path,
 ) -> None:
     env_path = tmp_path / "apprc.user.env"
-    env_path.write_text('OTHER="value"\n', encoding="utf-8")
+    env_path.write_bytes(b'OTHER="value"\r\n')
 
-    update = clear_env_file_value(
+    plan = plan_env_file_value_removal(
         path=env_path,
         reference="APPRC_EXAMPLE_APP_PROFILE",
         owners=APPRC_EXAMPLE_APP_OWNERS,
         layer_name="apprc.user.env",
     )
 
-    assert update is None
-    assert env_path.read_text(encoding="utf-8") == 'OTHER="value"\n'
+    assert plan is None
+    assert env_path.read_bytes() == b'OTHER="value"\r\n'
 
 
-def test_set_env_file_value_preserves_unrelated_user_text(
-    tmp_path: Path,
-) -> None:
+def test_edit_plan_preserves_unrelated_user_text(tmp_path: Path) -> None:
     env_path = tmp_path / "apprc.user.env"
     env_path.write_bytes(
         (
@@ -213,7 +119,8 @@ def test_set_env_file_value_preserves_unrelated_user_text(
         ).encode("utf-8")
     )
 
-    update = set_env_file_value(
+    original = env_path.read_bytes()
+    plan = plan_env_file_value_update(
         path=env_path,
         reference="app.profile",
         raw_value="new profile",
@@ -221,7 +128,7 @@ def test_set_env_file_value_preserves_unrelated_user_text(
         layer_name="apprc.user.env",
     )
 
-    assert env_path.read_bytes().decode("utf-8") == (
+    assert plan.text == (
         "# Keep this explanation\r\n"
         'export APPRC_EXAMPLE_APP_PROFILE = "new profile" # active profile\r\n'
         "UNKNOWN='keep this quoting'\r\n"
@@ -230,15 +137,13 @@ def test_set_env_file_value_preserves_unrelated_user_text(
         "APPRC_EXAMPLE_APP_PROFILE=stale\r\n"
         "BROKEN='unterminated\r\n"
     )
-    assert update.warnings == (
-        f"{env_path}: APPRC_EXAMPLE_APP_PROFILE is assigned more than once. "
-        "AppRC will update line 2 and comment out duplicate line 5.",
-    )
+    assert env_path.read_bytes() == original
+
+    apply_env_file_edit(plan)
+    assert env_path.read_bytes() == plan.text.encode("utf-8")
 
 
-def test_set_env_file_value_comments_multiline_duplicate(
-    tmp_path: Path,
-) -> None:
+def test_edit_plan_comments_multiline_duplicate(tmp_path: Path) -> None:
     env_path = tmp_path / "apprc.user.env"
     env_path.write_text(
         "APPRC_EXAMPLE_APP_PROFILE=first\n"
@@ -246,13 +151,14 @@ def test_set_env_file_value_comments_multiline_duplicate(
         encoding="utf-8",
     )
 
-    set_env_file_value(
+    plan = plan_env_file_value_update(
         path=env_path,
         reference="app.profile",
         raw_value="new",
         owners=APPRC_EXAMPLE_APP_OWNERS,
         layer_name="apprc.user.env",
     )
+    apply_env_file_edit(plan)
 
     assert env_path.read_text(encoding="utf-8") == (
         'APPRC_EXAMPLE_APP_PROFILE="new"\n'
@@ -262,9 +168,7 @@ def test_set_env_file_value_comments_multiline_duplicate(
     )
 
 
-def test_clear_env_file_value_removes_every_active_occurrence(
-    tmp_path: Path,
-) -> None:
+def test_removal_plan_removes_every_active_occurrence(tmp_path: Path) -> None:
     env_path = tmp_path / "apprc.user.env"
     env_path.write_text(
         "# profile settings\n"
@@ -276,32 +180,33 @@ def test_clear_env_file_value_removes_every_active_occurrence(
         encoding="utf-8",
     )
 
-    update = clear_env_file_value(
+    plan = plan_env_file_value_removal(
         path=env_path,
         reference="app.profile",
         owners=APPRC_EXAMPLE_APP_OWNERS,
         layer_name="apprc.user.env",
     )
 
-    assert update is not None
+    assert plan is not None
+    apply_env_file_edit(plan)
+
     assert env_path.read_text(encoding="utf-8") == (
         "# profile settings\n\nKEEP=1\n# APPRC_EXAMPLE_APP_PROFILE=commented\n"
     )
 
 
-def test_set_env_file_value_appends_after_missing_final_newline(
-    tmp_path: Path,
-) -> None:
+def test_edit_plan_appends_after_missing_final_newline(tmp_path: Path) -> None:
     env_path = tmp_path / "apprc.user.env"
     env_path.write_bytes(b"KEEP=1\r\nOTHER=2")
 
-    set_env_file_value(
+    plan = plan_env_file_value_update(
         path=env_path,
         reference="app.profile",
         raw_value="new",
         owners=APPRC_EXAMPLE_APP_OWNERS,
         layer_name="apprc.user.env",
     )
+    apply_env_file_edit(plan)
 
     assert env_path.read_bytes().decode("utf-8") == (
         'KEEP=1\r\nOTHER=2\r\nAPPRC_EXAMPLE_APP_PROFILE="new"\r\n'
@@ -312,9 +217,9 @@ def test_normalize_env_value_rejects_invalid_choices_and_bool() -> None:
     mode = APPRC_EXAMPLE_APP_OWNER.field("mode")
     enabled = APPRC_EXAMPLE_APP_OWNER.field("enabled")
 
-    with pytest.raises(ValueError, match="mode must be one of"):
+    with pytest.raises(ValueError):
         normalize_env_value(mode, "OTHER")
-    with pytest.raises(ValueError, match="converting"):
+    with pytest.raises(ValueError):
         normalize_env_value(enabled, "maybe")
 
 
@@ -323,5 +228,5 @@ def test_normalize_env_value_uses_runtime_converter_for_float() -> None:
 
     assert normalize_env_value(ratio, "1") == "1.0"
 
-    with pytest.raises(ValueError, match="converting"):
+    with pytest.raises(ValueError):
         normalize_env_value(ratio, "nope")

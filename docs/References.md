@@ -614,6 +614,13 @@ resolved snapshot's `AppPaths` does not change during settings refresh.
 an isolated override; `export_environment()` explicitly changes process
 environment and is not part of normal resolution.
 
+Provenance updates share one per-instance origin map for Python-only and
+environment-backed fields. `apprc.provenance.set_field_origin(instance,
+field_name, origin)` updates origin metadata on an existing instance; it does
+not assign the field's value. For a pure mapping copy, use ordinary Python such
+as `{**origins, field_name: origin}` rather than the removed `with_field_origin`
+utility.
+
 <br>
 
 # Commands and errors

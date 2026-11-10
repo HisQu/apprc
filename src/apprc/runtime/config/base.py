@@ -182,8 +182,21 @@ class BaseConfig:
         provenance_api.set_field_origin(
             self,
             key,
-            provenance_api.ConfigOriginState(origin),
+            self._python_field_origin(key, origin),
         )
+
+    def _python_field_origin(
+        self,
+        field_name: str,
+        origin: provenance_api.PythonProvenanceOrigin,
+    ) -> provenance_api.ConfigOriginState:
+        """Build Python assignment provenance for the shared origin store.
+
+        :param field_name: Public runtime dataclass field name.
+        :param origin: Python lifecycle event owning the field value.
+        :return: Origin state, enriched by environment-backed subclasses.
+        """
+        return provenance_api.ConfigOriginState(origin)
 
     def _format_field_value_for_log(self, key: str, value: Any) -> str:
         """Return ``repr(value)`` unless the dataclass field is redacted."""

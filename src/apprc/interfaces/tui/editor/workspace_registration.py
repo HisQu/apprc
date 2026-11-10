@@ -31,18 +31,18 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
         self,
     ) -> WorkspaceActionResult | None:
         """Register the env-selected active workspace path by name."""
-        if self.editor._require_workspace_registry() is None:
+        if self.require_workspace_registry() is None:
             return None
-        selection = self.editor.selection
+        selection = self.context.selection
         if not isinstance(selection, ActivePathWorkspaceSelection):
-            self.editor.notify(
+            self.context.app.notify(
                 "No active workspace path is selected.",
                 severity="warning",
             )
             return None
         return await self.register_workspace_directory_flow(
             selection.root,
-            default_name=self.editor._suggest_workspace_name(selection.root),
+            default_name=self.suggest_workspace_name(selection.root),
         )
 
     async def register_workspace_directory_flow(
@@ -60,7 +60,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
             already confirmed that this directory is safe to reuse.
         :return: The requested selection, or ``None`` if canceled or failed.
         """
-        registry = self.editor._require_workspace_registry()
+        registry = self.require_workspace_registry()
         if registry is None:
             return None
         guarded_root = (
@@ -70,7 +70,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
         )
         if guarded_root is None:
             return None
-        name_result = await self.editor.app.push_screen_wait(
+        name_result = await self.context.app.push_screen_wait(
             WorkspaceNameScreen(
                 default_name=default_name,
                 message="Choose the workspace name used by --workspace.",
@@ -80,7 +80,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
             return None
         name = name_result.name
         if name in registry.workspaces or name in registry.archived_workspaces:
-            self.editor.notify(
+            self.context.app.notify(
                 f"Workspace name {name!r} is already in use.",
                 severity="error",
                 markup=False,
@@ -93,11 +93,11 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
                 root=guarded_root,
             )
         except (TypeError, ValueError, OSError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             for note in _exception_notes(exc):
-                self.editor.notify(note, severity="warning", markup=False)
+                self.context.app.notify(note, severity="warning", markup=False)
             return None
-        self.editor.notify(f"Registered workspace {name!r}")
+        self.context.app.notify(f"Registered workspace {name!r}")
         return WorkspaceActionResult(select_name=name)
 
     async def guard_workspace_directory(
@@ -111,12 +111,12 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
         try:
             root = normalize_workspace_root_path(workspace_root)
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
         if not root.exists():
             parent = root.parent
             if parent.exists():
-                action = await self.editor.app.push_screen_wait(
+                action = await self.context.app.push_screen_wait(
                     ConfirmScreen(
                         title="Directory does not exist",
                         message=Text.assemble(
@@ -129,14 +129,14 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
                     )
                 )
                 return root if action == "create" else None
-            self.editor.notify(
+            self.context.app.notify(
                 f"Path not found! {path_markup(parent)}",
                 severity="error",
             )
             return None
         resolved_root = root.resolve()
         if not resolved_root.is_dir():
-            self.editor.notify(
+            self.context.app.notify(
                 "Workspace path exists but is not a directory: "
                 f"{path_markup(resolved_root)}",
                 severity="error",
@@ -145,7 +145,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
         if not any(resolved_root.iterdir()):
             return resolved_root
 
-        dotenv_filename = self.editor.apprc.schema.workspace_dotenv_filename
+        dotenv_filename = self.context.manager.schema.workspace_dotenv_filename
         env_path = resolved_root / dotenv_filename
         if env_path.is_file():
             keys = list(read_env_file(env_path))[:10]
@@ -163,7 +163,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
                 f"{dotenv_filename}?",
                 path_text(resolved_root),
             )
-        action = await self.editor.app.push_screen_wait(
+        action = await self.context.app.push_screen_wait(
             ConfirmScreen(
                 title="Confirm workspace directory",
                 message=message,

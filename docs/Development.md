@@ -88,6 +88,13 @@ coordination belong in `user_files/installation`; application-bound orchestratio
 belongs in `services/installation.py`. Do not put business configuration or
 generator dependencies into those lower layers.
 
+`ConfigEditorScreen` owns workspace presentation state and the single
+post-action refresh boundary. Workflows receive a fresh, read-only
+`WorkspaceActionContext` and return `WorkspaceActionResult`; they do not retain
+the screen or mutate its registry, selection, or controls. Persistent operations
+remain in `ConfigManager` and `WorkspaceManager`. A failed registry reload makes
+registry actions unavailable without locking valid user-config editing.
+
 Application packaging/release manifests and business actions remain in the
 consuming repository. Its `_distr` generator and payload are author inputs,
 not installed application imports. Maintain substantial lifecycle logic as

@@ -16,7 +16,9 @@ from apprc.interfaces.tui._styles import lines_text, path_markup, path_text
 from apprc.interfaces.tui.editor.workspace_archive import (
     WorkspaceArchiveWorkflows,
 )
-from apprc.interfaces.tui.editor.workspace_base import WorkspaceActionResult
+from apprc.interfaces.tui.editor.workspace_base import (
+    WorkspaceActionResult,
+)
 from apprc.interfaces.tui.editor.workspace_editing import (
     WorkspaceEditingWorkflows,
 )
@@ -46,9 +48,9 @@ class ConfigEditorWorkspaceWorkflows(
 
     async def open_new_workspace_flow(self) -> WorkspaceActionResult | None:
         """Prompt for a workspace directory or archive to restore."""
-        if self.editor._require_workspace_registry() is None:
+        if self.require_workspace_registry() is None:
             return None
-        result = await self.editor.app.push_screen_wait(
+        result = await self.context.app.push_screen_wait(
             PathInputScreen(
                 title="New workspace",
                 message="Enter a directory or an archived *.apprc.tar.xz.",
@@ -62,7 +64,7 @@ class ConfigEditorWorkspaceWorkflows(
             return await self.open_workspace_archive_flow(path)
         return await self.register_workspace_directory_flow(
             path,
-            default_name=self.editor._suggest_workspace_name(path),
+            default_name=self.suggest_workspace_name(path),
         )
 
     async def open_workspace_archive_flow(
@@ -75,20 +77,18 @@ class ConfigEditorWorkspaceWorkflows(
         """Restore an archive and register its workspace destination."""
         archive = archive_path.expanduser()
         if not archive.is_file():
-            self.editor.notify(
+            self.context.app.notify(
                 f"Workspace archive does not exist: {path_markup(archive)}",
                 severity="error",
             )
             return None
-        registry = self.editor._require_workspace_registry()
+        registry = self.require_workspace_registry()
         if registry is None:
             return None
         proposed = default_name or workspace_root_name_from_archive(archive)
-        name_result = await self.editor.app.push_screen_wait(
+        name_result = await self.context.app.push_screen_wait(
             WorkspaceNameScreen(
-                default_name=self.editor._suggest_workspace_name(
-                    Path(proposed)
-                ),
+                default_name=self.suggest_workspace_name(Path(proposed)),
                 message="Choose the restored workspace name.",
             )
         )
@@ -98,14 +98,14 @@ class ConfigEditorWorkspaceWorkflows(
         if name in registry.workspaces or (
             name in registry.archived_workspaces and name != default_name
         ):
-            self.editor.notify(
+            self.context.app.notify(
                 f"Workspace name {name!r} is already in use.",
                 severity="error",
                 markup=False,
             )
             return None
         destination = default_destination or archive.parent / proposed
-        result = await self.editor.app.push_screen_wait(
+        result = await self.context.app.push_screen_wait(
             PathInputScreen(
                 title="Restore archived workspace",
                 message="Enter destination directory for the restored workspace.",
@@ -119,10 +119,10 @@ class ConfigEditorWorkspaceWorkflows(
             root = normalize_workspace_root_path(result.path).resolve()
             replace_existing = root.exists() and any(root.iterdir())
         except (OSError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
         if replace_existing:
-            action = await self.editor.app.push_screen_wait(
+            action = await self.context.app.push_screen_wait(
                 ConfirmScreen(
                     title="Destination is not empty",
                     message=lines_text(
@@ -145,9 +145,9 @@ class ConfigEditorWorkspaceWorkflows(
                 archived_name=default_name,
             )
         except (OSError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
-        self.editor.notify(f"Restored workspace {name!r}")
+        self.context.app.notify(f"Restored workspace {name!r}")
         return WorkspaceActionResult(select_name=name)
 
     async def restore_or_prune_archived_workspace(
@@ -155,7 +155,7 @@ class ConfigEditorWorkspaceWorkflows(
         name: str,
     ) -> WorkspaceActionResult | None:
         """Restore an archived row or remove metadata for a missing archive."""
-        registry = self.editor._require_workspace_registry()
+        registry = self.require_workspace_registry()
         if registry is None:
             return None
         record = registry.archived_workspaces.get(name)
@@ -168,9 +168,11 @@ class ConfigEditorWorkspaceWorkflows(
                     name=name,
                 )
             except (OSError, ValueError) as exc:
-                self.editor.notify(str(exc), severity="error", markup=False)
+                self.context.app.notify(
+                    str(exc), severity="error", markup=False
+                )
                 return None
-            self.editor.notify(
+            self.context.app.notify(
                 f"Removed stale archive entry {name!r}; file was not found.",
                 severity="warning",
             )
@@ -185,13 +187,13 @@ class ConfigEditorWorkspaceWorkflows(
         self,
     ) -> WorkspaceActionResult | None:
         """Prompt for archive options and compress the selected workspace."""
-        if self.editor._require_workspace_registry() is None:
+        if self.require_workspace_registry() is None:
             return None
-        selection = self.editor.selection
+        selection = self.context.selection
         if not isinstance(selection, LiveWorkspaceSelection):
             return None
         record = selection.record
-        options = await self.editor.app.push_screen_wait(
+        options = await self.context.app.push_screen_wait(
             ArchiveOptionsScreen(
                 workspace_name=record.name,
                 source_root=record.root,
@@ -206,9 +208,9 @@ class ConfigEditorWorkspaceWorkflows(
                 archive_path=options.archive_path,
             )
         except (OSError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
-        self.editor.notify(
+        self.context.app.notify(
             f"Archived workspace {record.name!r} to {path_markup(archive_path)}"
         )
         return WorkspaceActionResult(select_name=record.name)

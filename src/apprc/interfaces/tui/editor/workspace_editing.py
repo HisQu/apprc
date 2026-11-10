@@ -48,11 +48,11 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         workspace through ``--workspace`` or an environment variable continue
         to use the old selector until they are updated separately.
         """
-        registry = self.editor._require_workspace_registry()
+        registry = self.require_workspace_registry()
         record = self._selected_editable_workspace()
         if registry is None or record is None:
             return
-        result = await self.editor.app.push_screen_wait(
+        result = await self.context.app.push_screen_wait(
             WorkspaceNameScreen(
                 default_name=record.name,
                 message="Choose the workspace name used by --workspace.",
@@ -64,13 +64,13 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         if name == record.name:
             return
         if name in registry.workspaces or name in registry.archived_workspaces:
-            self.editor.notify(
+            self.context.app.notify(
                 f"Workspace name {name!r} is already in use.",
                 severity="error",
                 markup=False,
             )
             return
-        action = await self.editor.app.push_screen_wait(
+        action = await self.context.app.push_screen_wait(
             ConfirmScreen(
                 title="Rename workspace",
                 message=lines_text(
@@ -102,20 +102,22 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
                 new=name,
             )
         except (OSError, TypeError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
-        self.editor.notify(f"Renamed workspace {record.name!r} to {name!r}")
+        self.context.app.notify(
+            f"Renamed workspace {record.name!r} to {name!r}"
+        )
         return WorkspaceActionResult(select_name=name)
 
     async def open_workspace_reconnect_flow(
         self,
     ) -> WorkspaceActionResult | None:
         """Connect a named workspace to its existing directory."""
-        registry = self.editor._require_workspace_registry()
+        registry = self.require_workspace_registry()
         record = self._selected_editable_workspace()
         if registry is None or record is None:
             return
-        result = await self.editor.app.push_screen_wait(
+        result = await self.context.app.push_screen_wait(
             PathInputScreen(
                 title="Reconnect workspace",
                 message=(
@@ -132,7 +134,7 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         root = self._existing_workspace_directory(result.path)
         if root is None or root == record.root:
             return
-        action = await self.editor.app.push_screen_wait(
+        action = await self.context.app.push_screen_wait(
             ConfirmScreen(
                 title="Reconnect workspace",
                 message=lines_text(
@@ -160,23 +162,23 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
                 root=root,
             )
         except (OSError, TypeError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
-        self.editor.notify(f"Reconnected workspace {record.name!r}")
+        self.context.app.notify(f"Reconnected workspace {record.name!r}")
         return WorkspaceActionResult(select_name=record.name)
 
     async def open_move_workspace_flow(
         self,
     ) -> WorkspaceActionResult | None:
         """Move the selected workspace through the transactional service."""
-        registry = self.editor._require_workspace_registry()
-        selection = self.editor.selection
+        registry = self.require_workspace_registry()
+        selection = self.context.selection
         if registry is None or not isinstance(
             selection, LiveWorkspaceSelection
         ):
             return
         record = selection.record
-        result = await self.editor.app.push_screen_wait(
+        result = await self.context.app.push_screen_wait(
             PathInputScreen(
                 title="Move workspace",
                 message=(
@@ -195,9 +197,9 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
                 base=registry.path.parent,
             )
         except (OSError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return
-        action = await self.editor.app.push_screen_wait(
+        action = await self.context.app.push_screen_wait(
             ConfirmScreen(
                 title="Move workspace",
                 message=lines_text(
@@ -222,16 +224,16 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
                 root=destination,
             )
         except (OSError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
         for warning in move_result.warnings:
-            self.editor.notify(warning, severity="warning", markup=False)
-        self.editor.notify(f"Moved workspace {record.name!r}")
+            self.context.app.notify(warning, severity="warning", markup=False)
+        self.context.app.notify(f"Moved workspace {record.name!r}")
         return WorkspaceActionResult(select_name=record.name)
 
     def _selected_editable_workspace(self) -> WorkspaceRecord | None:
         """Return the selected live or missing workspace record."""
-        selection = self.editor.selection
+        selection = self.context.selection
         if isinstance(
             selection,
             LiveWorkspaceSelection | MissingWorkspaceSelection,
@@ -248,17 +250,17 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         try:
             root = normalize_workspace_root_path(candidate).resolve()
         except (OSError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
         if not root.exists():
-            self.editor.notify(
+            self.context.app.notify(
                 f"Workspace location does not exist: {root}",
                 severity="error",
                 markup=False,
             )
             return None
         if not root.is_dir():
-            self.editor.notify(
+            self.context.app.notify(
                 f"Workspace location is not a directory: {root}",
                 severity="error",
                 markup=False,

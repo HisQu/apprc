@@ -3,13 +3,23 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Static
+from textual.pilot import Pilot
+from textual.widgets import Button, DataTable, ListView, Static
 
 import apprc as rc
 from apprc.definition.resolution import ResolveOptions
-from apprc.interfaces.tui._primitives import WorkspaceNameResult
+from apprc.interfaces.tui._primitives import (
+    PathInputResult,
+    WorkspaceNameResult,
+)
 from apprc.interfaces.tui.editor import ConfigEditorApp
+from apprc.interfaces.tui.modals.screens import ArchiveOptionsResult
 from apprc.user_files.app_home.application import AppFiles
+from apprc.user_files.env_files import (
+    ensure_workspace_dotenv_file,
+    read_env_file,
+)
+from apprc.user_files.workspace_roots.model import WorkspaceRegistry
 from tests.support_config import (
     build_config_only_example_app,
     build_workspace_example_app,
@@ -114,6 +124,195 @@ async def test_registry_editor_selects_and_renames_workspace_through_action_boun
         == 'APPRC_EXAMPLE_APP_PROFILE="workspace-value"\n'
     )
     assert not files.user_dotenv_path().exists()
+
+
+@pytest.mark.asyncio
+async def test_workspace_action_context_tracks_sequential_operations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kit = build_workspace_example_app()
+    options = _single_root(tmp_path)
+    paths = kit.paths(options, environment={})
+    manager = kit._manage_with_paths(options, {}, paths)
+    manager.setup()
+    workspace_manager = kit.workspaces(options=options, environment={})
+    workspace_manager.register_workspace("alpha", tmp_path / "alpha")
+    editor = ConfigEditorApp(
+        apprc=kit,
+        manager=manager,
+        workspace_manager=workspace_manager,
+        initial_workspace="alpha",
+    )
+    screen = editor.editor_screen
+    reconnected_root = tmp_path / "reconnected"
+    reconnected_root.mkdir()
+    ensure_workspace_dotenv_file(
+        reconnected_root, filename=kit.schema.workspace_dotenv_filename
+    )
+    moved_root = tmp_path / "moved"
+    archive_path = tmp_path / "renamed.apprc.tar.xz"
+    restored_root = tmp_path / "restored"
+    responses: list[object] = [
+        None,
+        WorkspaceNameResult(name="renamed"),
+        "rename",
+        PathInputResult(path=reconnected_root),
+        "update",
+        PathInputResult(path=moved_root),
+        "move",
+        ArchiveOptionsResult(archive_path=archive_path),
+        "remove",
+        WorkspaceNameResult(name="renamed"),
+        PathInputResult(path=restored_root),
+        "remove",
+    ]
+
+    async def respond(_dialog: object) -> object:
+        return responses.pop(0)
+
+    async def click_action(pilot: Pilot[None], selector: str) -> None:
+        await pilot.click(selector)
+        await editor.workers.wait_for_complete(tuple(editor.workers))
+        await pilot.pause()
+
+    monkeypatch.setattr(editor, "push_screen_wait", respond)
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        await click_action(pilot, "#workspace-rename")
+        assert (
+            "alpha"
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
+        assert not screen.query_one("#workspace-rename", Button).disabled
+
+        await click_action(pilot, "#workspace-rename")
+        assert (
+            "renamed"
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
+        await click_action(pilot, "#workspace-location")
+        assert (
+            str(reconnected_root)
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
+        await click_action(pilot, "#workspace-move")
+        assert (
+            str(moved_root)
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
+        await click_action(pilot, "#workspace-archive")
+        assert archive_path.is_file()
+
+        await click_action(pilot, "#workspace-delete")
+        assert (
+            str(archive_path)
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
+        workspace_list = screen.query_one("#workspace-list", ListView)
+        await pilot.click(workspace_list.children[0])
+        await editor.workers.wait_for_complete(tuple(editor.workers))
+        await pilot.pause()
+        assert (
+            str(restored_root)
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
+
+        await click_action(pilot, "#workspace-delete")
+        assert screen.query_one("#workspace-rename", Button).disabled
+        assert not screen.query_one("#field-table", DataTable).disabled
+        await screen._save_env_key(
+            "APPRC_EXAMPLE_APP_PROFILE",
+            "user-after-removal",
+            scope="user",
+        )
+
+    files = AppFiles(kit.schema, paths)
+    assert files.workspace_dotenv_path(restored_root).is_file()
+    assert (
+        read_env_file(files.user_dotenv_path())["APPRC_EXAMPLE_APP_PROFILE"]
+        == "user-after-removal"
+    )
+    assert "renamed" not in workspace_manager.registry().workspaces
+
+
+@pytest.mark.asyncio
+async def test_registry_read_failure_after_rename_keeps_editor_usable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kit = build_workspace_example_app()
+    options = _single_root(tmp_path)
+    paths = kit.paths(options, environment={})
+    manager = kit._manage_with_paths(options, {}, paths)
+    manager.setup()
+    workspace_manager = kit.workspaces(options=options, environment={})
+    workspace_manager.register_workspace("alpha", tmp_path / "alpha")
+    editor = ConfigEditorApp(
+        apprc=kit,
+        manager=manager,
+        workspace_manager=workspace_manager,
+        initial_workspace="alpha",
+    )
+    screen = editor.editor_screen
+    read_registry = workspace_manager.registry
+    rename_finished = False
+    responses: list[object] = [
+        WorkspaceNameResult(name="renamed"),
+        "rename",
+    ]
+
+    async def respond(_dialog: object) -> object:
+        return responses.pop(0)
+
+    rename_workspace = workspace_manager.rename_workspace
+
+    def rename_then_fail_registry(
+        *,
+        old: str,
+        new: str,
+    ) -> WorkspaceRegistry:
+        nonlocal rename_finished
+        registry = rename_workspace(old=old, new=new)
+        rename_finished = True
+        return registry
+
+    def fail_registry() -> WorkspaceRegistry:
+        if rename_finished:
+            raise OSError("injected registry read failure")
+        return read_registry()
+
+    monkeypatch.setattr(editor, "push_screen_wait", respond)
+    monkeypatch.setattr(
+        workspace_manager,
+        "rename_workspace",
+        rename_then_fail_registry,
+    )
+    monkeypatch.setattr(workspace_manager, "registry", fail_registry)
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#workspace-rename")
+        await editor.workers.wait_for_complete(tuple(editor.workers))
+        await pilot.pause()
+
+        persisted = read_registry()
+        assert "renamed" in persisted.workspaces
+        assert "alpha" not in persisted.workspaces
+        assert screen.query_one("#workspace-new", Button).disabled
+        assert screen.query_one("#workspace-rename", Button).disabled
+        assert not screen.query_one("#field-table", DataTable).disabled
+        await screen._save_env_key(
+            "APPRC_EXAMPLE_APP_PROFILE",
+            "user-after-registry-failure",
+            scope="user",
+        )
+
+    files = AppFiles(kit.schema, paths)
+    assert (
+        read_env_file(files.user_dotenv_path())["APPRC_EXAMPLE_APP_PROFILE"]
+        == "user-after-registry-failure"
+    )
 
 
 @pytest.mark.asyncio

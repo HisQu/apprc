@@ -4,35 +4,34 @@ from __future__ import annotations
 
 # == Standard Library ========================
 import asyncio
-from typing import TYPE_CHECKING
 
 # == Internal ================================
 from apprc.interfaces.tui._primitives import ConfirmScreen, PathInputScreen
 from apprc.interfaces.tui._styles import lines_text, path_text
-from apprc.interfaces.tui.editor.workspace_base import WorkspaceActionResult
+from apprc.interfaces.tui.editor.workspace_base import (
+    WorkspaceActionContext,
+    WorkspaceActionResult,
+)
 from apprc.interfaces.tui.editor.workspace_registration import (
     WorkspaceRegistrationWorkflows,
 )
-
-if TYPE_CHECKING:
-    from apprc.interfaces.tui.editor.app import ConfigEditorScreen
 
 
 class ConfigEditorSetupWorkflow:
     """Initialize enabled user and workspace files without changing process state."""
 
-    def __init__(self, editor: ConfigEditorScreen) -> None:
-        """Store the screen that owns setup controls."""
-        self.editor = editor
+    def __init__(self, context: WorkspaceActionContext) -> None:
+        """Store the fresh service and selection inputs for one action."""
+        self.context = context
 
     async def open_setup_flow(self) -> WorkspaceActionResult | None:
         """Initialize a direct workspace, register one, or create user settings."""
-        editor = self.editor
+        context = self.context
         action_result = WorkspaceActionResult()
-        if editor.workspace_enabled:
-            root = editor.active_workspace_root
+        if context.workspace_enabled:
+            root = context.active_workspace_root
             if root is None:
-                result = await editor.app.push_screen_wait(
+                result = await context.app.push_screen_wait(
                     PathInputScreen(
                         title="Initialize workspace",
                         message="Choose an explicit workspace directory.",
@@ -42,21 +41,24 @@ class ConfigEditorSetupWorkflow:
                 if result is None:
                     return None
                 root = result.path
-            manager = editor.workspace_manager
+            manager = context.workspace_manager
             if manager is None:
-                editor.notify(
+                context.app.notify(
                     "Workspace setup requires a WorkspaceManager.",
                     severity="error",
                     markup=False,
                 )
                 return None
             try:
-                if editor.registry_enabled:
-                    registration_result = await WorkspaceRegistrationWorkflows(
-                        editor
-                    ).register_workspace_directory_flow(
-                        root,
-                        default_name=editor._suggest_workspace_name(root),
+                if context.registry_enabled:
+                    registration = WorkspaceRegistrationWorkflows(context)
+                    registration_result = (
+                        await registration.register_workspace_directory_flow(
+                            root,
+                            default_name=registration.suggest_workspace_name(
+                                root
+                            ),
+                        )
                     )
                     if registration_result is None:
                         return None
@@ -69,21 +71,21 @@ class ConfigEditorSetupWorkflow:
                         active_root=initialized
                     )
             except (OSError, TypeError, ValueError) as exc:
-                editor.notify(str(exc), severity="error", markup=False)
+                context.app.notify(str(exc), severity="error", markup=False)
                 return action_result
-        if editor.user_dotenv_enabled and not editor.user_dotenv_active:
+        if context.user_dotenv_enabled and not context.user_dotenv_active:
             try:
-                await asyncio.to_thread(editor.manager.setup)
+                await asyncio.to_thread(context.manager.setup)
             except (OSError, ValueError) as exc:
-                editor.notify(str(exc), severity="error", markup=False)
+                context.app.notify(str(exc), severity="error", markup=False)
                 return action_result
-        await editor.app.push_screen_wait(
+        await context.app.push_screen_wait(
             ConfirmScreen(
                 title="Setup complete",
                 message=lines_text(
                     "AppRC initialized the declared setup files.",
-                    path_text(editor.paths.config_dir)
-                    if editor.paths.config_dir is not None
+                    path_text(context.manager.paths.config_dir)
+                    if context.manager.paths.config_dir is not None
                     else "",
                 ),
                 actions=(("done", "Done", "primary"),),

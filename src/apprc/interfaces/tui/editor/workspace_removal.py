@@ -30,7 +30,7 @@ class WorkspaceRemovalWorkflows(WorkspaceWorkflowBase):
         self,
     ) -> WorkspaceActionResult | None:
         """Confirm removal of the named workspace entry."""
-        selection = self.editor.selection
+        selection = self.context.selection
         if not isinstance(
             selection,
             LiveWorkspaceSelection | MissingWorkspaceSelection,
@@ -44,7 +44,7 @@ class WorkspaceRemovalWorkflows(WorkspaceWorkflowBase):
             "The named workspace entry will be removed. Its directory and "
             "files will remain untouched.",
         )
-        action = await self.editor.app.push_screen_wait(
+        action = await self.context.app.push_screen_wait(
             ConfirmScreen(
                 title="Remove workspace",
                 message=message,
@@ -65,13 +65,13 @@ class WorkspaceRemovalWorkflows(WorkspaceWorkflowBase):
         :return: Fallback intent after removal/recovery, or ``None`` if no
             registry change occurred.
         """
-        registry = self.editor._require_workspace_registry()
+        registry = self.require_workspace_registry()
         if registry is None:
             return None
         try:
             registry.selected(name)
         except ValueError as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return None
         try:
             await asyncio.to_thread(
@@ -79,7 +79,7 @@ class WorkspaceRemovalWorkflows(WorkspaceWorkflowBase):
                 name=name,
             )
         except (OSError, ValueError) as exc:
-            self.editor.notify(str(exc), severity="error", markup=False)
+            self.context.app.notify(str(exc), severity="error", markup=False)
             return WorkspaceActionResult(use_fallback=True)
-        self.editor.notify(f"Removed workspace {name!r}")
+        self.context.app.notify(f"Removed workspace {name!r}")
         return WorkspaceActionResult(use_fallback=True)

@@ -91,6 +91,9 @@ All notable changes to `AppRC` will be documented in this file.
   safe partial progress and rejection of the original stale plan.
 - Removed development import-path-absence and nonempty-facade assertions; supported
   API and installed-distribution ownership checks remain.
+- Gave editor workspace presentation one post-action owner. Workflows use fresh
+  action inputs rather than capturing the screen, and a failed registry reload
+  no longer leaves stale workspace state editable or valid user editing locked.
 
 <br>
 

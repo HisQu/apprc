@@ -12,7 +12,6 @@ import select
 import shutil
 import subprocess
 import sys
-from ctypes import wintypes
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal, TypeGuard, TypedDict
@@ -35,10 +34,7 @@ from apprc.distribution.runtime.backend import (
     external_base_python,
     remove_uv_tool,
 )
-from apprc.distribution.runtime.controllers import (
-    _assert_outside_removal,
-    _handoff_removal_roots,
-)
+from apprc.distribution.runtime import _handoff
 from apprc.user_files.app_home.locations import (
     assert_no_links,
     write_bytes_atomic,
@@ -102,56 +98,6 @@ def _is_uuid(value: object) -> TypeGuard[str]:
     return True
 
 
-def _windows_api():
-    """Configure pointer-sized Win32 handle signatures before process operations."""
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
-    class FileTime(ctypes.Structure):
-        _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
-
-    kernel32.OpenProcess.argtypes = (
-        wintypes.DWORD,
-        wintypes.BOOL,
-        wintypes.DWORD,
-    )
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.GetProcessTimes.argtypes = (
-        wintypes.HANDLE,
-        ctypes.POINTER(FileTime),
-        ctypes.POINTER(FileTime),
-        ctypes.POINTER(FileTime),
-        ctypes.POINTER(FileTime),
-    )
-    kernel32.GetProcessTimes.restype = wintypes.BOOL
-    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-    kernel32.WaitForSingleObject.restype = wintypes.DWORD
-    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-    kernel32.CloseHandle.restype = wintypes.BOOL
-    return kernel32, FileTime
-
-
-def _windows_process_token(handle, pid: int) -> str:
-    """Return the creation time tied to an already-open process handle."""
-    kernel32, FileTime = _windows_api()
-    created, exited, kernel, user = (
-        FileTime(),
-        FileTime(),
-        FileTime(),
-        FileTime(),
-    )
-    if not kernel32.GetProcessTimes(
-        handle,
-        ctypes.byref(created),
-        ctypes.byref(exited),
-        ctypes.byref(kernel),
-        ctypes.byref(user),
-    ):
-        raise OSError(
-            ctypes.get_last_error(), "Could not read process creation time."
-        )
-    return f"windows:{pid}:{created.high:08x}{created.low:08x}"
-
-
 def _linux_pidfd_open(pid: int) -> int:
     """Open an OS-bound process handle even when Python omits its wrapper."""
     if hasattr(os, "pidfd_open"):
@@ -177,57 +123,10 @@ def _linux_pidfd_open(pid: int) -> int:
     return handle
 
 
-def _linux_process_token(pid: int) -> str:
-    """Read Linux process identity, distinguishing exit races from unsafe reads."""
-    try:
-        fields = (
-            Path(f"/proc/{pid}/stat")
-            .read_text(encoding="ascii")
-            .rsplit(")", 1)[1]
-            .split()
-        )
-        start_time = fields[19]
-    except FileNotFoundError:
-        raise
-    except (IndexError, UnicodeError) as error:
-        raise InstallationError(
-            "Could not validate the original Linux process identity."
-        ) from error
-    return f"linux:{pid}:{start_time}"
-
-
-def process_start_token(pid: int) -> str:
-    """Capture a process identity token while the caller is still alive."""
-    if sys.platform.startswith("linux"):
-        return _linux_process_token(pid)
-    if sys.platform == "darwin":
-        result = subprocess.run(
-            ["/bin/ps", "-o", "lstart=", "-p", str(pid)],
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        return f"darwin:{pid}:{result.stdout.strip()}"
-    if os.name == "nt":
-        kernel32, _ = _windows_api()
-        handle = kernel32.OpenProcess(0x1000, False, pid)
-        if not handle:
-            raise OSError(
-                ctypes.get_last_error(), "Could not open original process."
-            )
-        try:
-            return _windows_process_token(handle, pid)
-        finally:
-            kernel32.CloseHandle(handle)
-    raise InstallationError(
-        "This platform has no supported actual-process exit handshake."
-    )
-
-
 def _open_process_waiter(pid: int, expected: str):
-    """Create and verify the OS-bound waiter before advertising readiness."""
+    """Validate the original process before advertising receiver readiness."""
     if os.name == "nt":
-        kernel32, _ = _windows_api()
+        kernel32, _ = _handoff._windows_api()
         handle = kernel32.OpenProcess(0x00100000 | 0x1000, False, pid)
         if not handle:
             if ctypes.get_last_error() == 87:
@@ -236,7 +135,7 @@ def _open_process_waiter(pid: int, expected: str):
                 ctypes.get_last_error(),
                 "Could not open original process handle.",
             )
-        if _windows_process_token(handle, pid) != expected:
+        if _handoff._windows_process_token(handle, pid) != expected:
             kernel32.CloseHandle(handle)
             return "already-exited", None
         return "windows", handle
@@ -246,7 +145,7 @@ def _open_process_waiter(pid: int, expected: str):
         except ProcessLookupError:
             return "already-exited", None
         try:
-            token = _linux_process_token(pid)
+            token = _handoff._linux_process_token(pid)
         except FileNotFoundError:
             os.close(handle)
             return "already-exited", None
@@ -267,13 +166,13 @@ def _open_process_waiter(pid: int, expected: str):
                 fflags=select.KQ_NOTE_EXIT,
             )
             watcher.control([event], 0, 0)
-            if process_start_token(pid) != expected:
+            if _handoff.process_start_token(pid) != expected:
                 watcher.close()
                 return "already-exited", None
             return "kqueue", watcher
         except OSError:
             watcher.close()
-            if process_start_token(pid) != expected:
+            if _handoff.process_start_token(pid) != expected:
                 return "already-exited", None
             raise
     raise InstallationError(
@@ -287,7 +186,7 @@ def _wait_open_process(waiter) -> None:
     if kind == "already-exited":
         return
     if kind == "windows":
-        kernel32, _ = _windows_api()
+        kernel32, _ = _handoff._windows_api()
         try:
             result = kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
             if result != 0:
@@ -307,7 +206,6 @@ def _wait_open_process(waiter) -> None:
             handle.control(None, 1, None)
         finally:
             handle.close()
-
 
 def _parse_plan(path: Path) -> HandoffPlan:
     """Read the private exact handoff envelope without ambient discovery."""
@@ -692,7 +590,7 @@ def execute_handoff(plan_file: Path) -> None:
             finalization_plan,
         )
         for path in receiver_paths:
-            _assert_outside_removal(path, roots)
+            _handoff.assert_outside_removal(path, roots)
         for path in (
             plan_file.parent,
             plan_file,
@@ -781,7 +679,7 @@ def execute_handoff(plan_file: Path) -> None:
         operation.complete,
         operation.forget_retained,
     )
-    removal_roots = _handoff_removal_roots(persisted_plan, record)
+    removal_roots = _handoff.handoff_removal_roots(persisted_plan, record)
     command_roots = {
         Path(os.path.normpath(os.fspath(command))).absolute()
         for command in target.commands
@@ -806,7 +704,7 @@ def execute_handoff(plan_file: Path) -> None:
         finalization_plan,
     )
     for path in receiver_paths:
-        _assert_outside_removal(path, removal_roots)
+        _handoff.assert_outside_removal(path, removal_roots)
     for path in (
         plan_file.parent,
         plan_file,

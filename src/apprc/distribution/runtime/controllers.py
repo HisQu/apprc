@@ -62,50 +62,7 @@ from apprc.user_files.installation.planning import resource_roots
 from apprc.user_files.purge import plan_config_file_purge
 
 
-def _handoff_removal_roots(
-    plan: UninstallPlan, record: InstallationRecord
-) -> tuple[Path, ...]:
-    """Return only paths the pending uninstall can actually delete."""
-    target = record.current or record.last_successful
-    if target is None:
-        raise InstallationError(
-            "No recorded backend is available for an independent controller."
-        )
-    roots = [
-        Path(target.prefix).resolve(),
-        *(
-            Path(os.path.normpath(os.fspath(path))).absolute()
-            for path in target.commands
-        ),
-    ]
-    if plan.complete:
-        roots.append(plan.directory.resolve())
-        retained_roots = {
-            item.path.resolve() for item in plan.inventory.retained
-        }
-        roots.extend(
-            path.resolve()
-            for kind, path in resource_roots(plan.placement)
-            if (
-                kind in plan.categories and path.resolve() not in retained_roots
-            )
-        )
-        roots.extend(item.path.resolve() for item in plan.inventory.entries)
-    return tuple(dict.fromkeys(roots))
-
-
-def _assert_outside_removal(path: Path, roots: tuple[Path, ...]) -> None:
-    """Reject a location equal to or nested in an actual delete target."""
-    lexical = Path(os.path.normpath(os.fspath(path.expanduser().absolute())))
-    resolved = lexical.resolve()
-    if any(
-        candidate == root or candidate.is_relative_to(root)
-        for candidate in (lexical, resolved)
-        for root in roots
-    ):
-        raise InstallationError(
-            "Uninstall handoff location overlaps a removal target."
-        )
+from apprc.distribution.runtime import _handoff
 
 
 def _assert_private_directory(directory: Path) -> None:
@@ -125,7 +82,7 @@ def _assert_handoff_inputs_outside_removal(
 ) -> None:
     """Check exact staging, recovery and controller paths before mutation."""
     for path in paths:
-        _assert_outside_removal(path, roots)
+        _handoff.assert_outside_removal(path, roots)
         assert_no_links(path)
 
 
@@ -133,7 +90,7 @@ def _private_handoff_staging(parent: Path, roots: tuple[Path, ...]) -> Path:
     """Create private staging below a canonical safe temp parent."""
     staging = Path(tempfile.mkdtemp(prefix="apprc-uninstall-", dir=parent))
     try:
-        _assert_outside_removal(staging, roots)
+        _handoff.assert_outside_removal(staging, roots)
         if os.name == "nt":
             set_windows_private_acl(staging)
         _assert_private_directory(staging)
@@ -881,7 +838,6 @@ def _launch_uninstall_handoff(
     original_pid: int | None,
 ) -> UninstallHandoff:
     """Build and launch a checkpointed handoff, preserving its wire protocol."""
-    from apprc.distribution.runtime.removal import process_start_token
 
     directory = plan.directory
     recovery_directory = staging / "recovery"
@@ -908,7 +864,7 @@ def _launch_uninstall_handoff(
             "Persisted provider-cleanup authority is missing or changed."
         )
     pid = original_pid or os.getpid()
-    original_start = process_start_token(pid)
+    original_start = _handoff.process_start_token(pid)
     ready_token = uuid4().hex
     payload = {
         "directory": str(directory),
@@ -1042,9 +998,9 @@ def start_uninstall_handoff(
         raise InstallationError(
             "No recorded backend is available for an independent controller."
         )
-    removal_roots = _handoff_removal_roots(plan, record)
+    removal_roots = _handoff.handoff_removal_roots(plan, record)
     temp_parent = Path(tempfile.gettempdir()).resolve(strict=True)
-    _assert_outside_removal(temp_parent, removal_roots)
+    _handoff.assert_outside_removal(temp_parent, removal_roots)
     assert_no_links(temp_parent)
     command_roots = {
         Path(os.path.normpath(os.fspath(path))).absolute()
@@ -1056,7 +1012,7 @@ def start_uninstall_handoff(
     base_candidate = Path(sys.base_prefix) / (
         "python.exe" if os.name == "nt" else "bin/python"
     )
-    _assert_outside_removal(base_candidate, removal_roots)
+    _handoff.assert_outside_removal(base_candidate, removal_roots)
     python = external_base_python(
         target.prefix,
         executable=base_candidate,
@@ -1078,7 +1034,7 @@ def start_uninstall_handoff(
             selected_path = (
                 path if path.is_absolute() else invocation_cwd / path
             ).resolve()
-            _assert_outside_removal(selected_path, removal_roots)
+            _handoff.assert_outside_removal(selected_path, removal_roots)
             environment[key] = str(selected_path)
     current_operation = (
         observed.record.operation if observed.record is not None else None

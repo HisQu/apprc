@@ -32,6 +32,7 @@ STANDALONE_MODULES = (
     "user_files/purge.py",
     "distribution/models.py",
     "distribution/runtime/__init__.py",
+    "distribution/runtime/_handoff.py",
     "distribution/runtime/installed_probe.py",
     "distribution/runtime/backend.py",
     "distribution/runtime/probe.py",

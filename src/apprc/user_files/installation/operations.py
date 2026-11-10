@@ -7,6 +7,7 @@ calls reuse that lock and revalidate exact receipt revisions.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -26,11 +27,11 @@ from apprc.definition.installation import (
     InstalledSnapshot,
     InstallPlan,
     LegacyMigrationEvidence,
-    StagedSupportOutput,
     MigrationInventory,
     MigrationPlan,
     OperationPlan,
     OperationStep,
+    StagedSupportOutput,
     UninstallCommit,
     UninstallPlan,
     UvToolTarget,
@@ -41,7 +42,6 @@ from apprc.user_files.installation.coordination import (
     write_record,
 )
 from apprc.user_files.installation.discovery import inspect_installation
-
 from apprc.user_files.installation.planning import (
     validate_cleanup,
     validate_placement,
@@ -110,6 +110,7 @@ def plan_install(
     validate_placement(placement, directory=inspection.directory)
     if placement.layout.mode == "native" and placement.appdata_dir is not None:
         import sys
+
         from apprc.user_files.installation.validation import (
             check_native_appdata_container,
         )
@@ -576,9 +577,10 @@ def _pending(
     *,
     require_operation: bool = True,
 ) -> InstallationRecord:
-    from apprc.user_files.installation.codec import decode_record
-    from hashlib import sha256
     import json
+    from hashlib import sha256
+
+    from apprc.user_files.installation.codec import decode_record
 
     content = (directory / "installation.json").read_bytes()
     if sha256(content).hexdigest() != revision:

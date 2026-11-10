@@ -21,7 +21,11 @@
 
 ## Environment
 
-The repository supports Python 3.12 through 3.14 in CI on Linux and Windows.
+CI runs only on Ubuntu: core checks cover Python 3.12, 3.13, and 3.14, and
+GUI/browser checks cover Python 3.12. Windows and macOS runtime and installer
+code remain, but those platforms are unverified by this CI policy. Existing
+[native installation and UI test failures](../BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails)
+remain unresolved; a green Linux run does not establish native compatibility.
 `uv`, `direnv`, and `just` are conveniences. Runtime, builds, and pip development
 installs do not require their commands.
 
@@ -277,7 +281,8 @@ version, regenerates terminal metadata, syncs the GUI version and core pin,
 refreshes the locks, checks the release, and prepares a local commit and tag.
 `just release-push TAG` is the separate remote action.
 
-Tag CI keeps Linux/Windows and Python 3.12–3.14 coverage. The release workflow
+Tag CI reuses the same Ubuntu-only core and GUI/browser checks described in
+[Environment](#environment); it does not verify Windows or macOS. The release workflow
 attaches all six artifacts to GitHub, then publishes `apprc-core` before `apprc`
 and `apprc-gui`.
 Each project uses its own PyPI check URL so retries can skip already uploaded

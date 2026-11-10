@@ -11,7 +11,10 @@ from rich.text import Text
 
 from apprc.interfaces.tui._primitives import ConfirmScreen, WorkspaceNameScreen
 from apprc.interfaces.tui._styles import lines_text, path_markup, path_text
-from apprc.interfaces.tui.editor.workspace_base import WorkspaceWorkflowBase
+from apprc.interfaces.tui.editor.workspace_base import (
+    WorkspaceActionResult,
+    WorkspaceWorkflowBase,
+)
 from apprc.interfaces.tui.workspaces.selection import (
     ActivePathWorkspaceSelection,
 )
@@ -24,18 +27,20 @@ from apprc.user_files.workspace_roots.paths import normalize_workspace_root_path
 class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
     """Register directory-backed workspace roots in the editor."""
 
-    async def register_active_workspace_flow(self) -> None:
+    async def register_active_workspace_flow(
+        self,
+    ) -> WorkspaceActionResult | None:
         """Register the env-selected active workspace path by name."""
         if self.editor._require_workspace_registry() is None:
-            return
+            return None
         selection = self.editor.selection
         if not isinstance(selection, ActivePathWorkspaceSelection):
             self.editor.notify(
                 "No active workspace path is selected.",
                 severity="warning",
             )
-            return
-        await self.register_workspace_directory_flow(
+            return None
+        return await self.register_workspace_directory_flow(
             selection.root,
             default_name=self.editor._suggest_workspace_name(selection.root),
         )
@@ -46,24 +51,25 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
         *,
         default_name: str,
         directory_already_approved: bool = False,
-    ) -> None:
+    ) -> WorkspaceActionResult | None:
         """Prompt for confirmation and register one live workspace root.
 
         :param workspace_root: Directory selected by the user.
         :param default_name: Suggested workspace selector.
         :param directory_already_approved: Whether a preceding setup flow
             already confirmed that this directory is safe to reuse.
+        :return: The requested selection, or ``None`` if canceled or failed.
         """
         registry = self.editor._require_workspace_registry()
         if registry is None:
-            return
+            return None
         guarded_root = (
             normalize_workspace_root_path(workspace_root).resolve()
             if directory_already_approved
             else await self.guard_workspace_directory(workspace_root)
         )
         if guarded_root is None:
-            return
+            return None
         name_result = await self.editor.app.push_screen_wait(
             WorkspaceNameScreen(
                 default_name=default_name,
@@ -71,7 +77,7 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
             )
         )
         if name_result is None:
-            return
+            return None
         name = name_result.name
         if name in registry.workspaces or name in registry.archived_workspaces:
             self.editor.notify(
@@ -79,9 +85,9 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
                 severity="error",
                 markup=False,
             )
-            return
+            return None
         try:
-            self.editor.workspace_registry = await asyncio.to_thread(
+            await asyncio.to_thread(
                 self.require_workspace_manager().register_workspace,
                 name=name,
                 root=guarded_root,
@@ -90,9 +96,9 @@ class WorkspaceRegistrationWorkflows(WorkspaceWorkflowBase):
             self.editor.notify(str(exc), severity="error", markup=False)
             for note in _exception_notes(exc):
                 self.editor.notify(note, severity="warning", markup=False)
-            return
-        await self.editor._refresh_workspace_list(select_name=name)
+            return None
         self.editor.notify(f"Registered workspace {name!r}")
+        return WorkspaceActionResult(select_name=name)
 
     async def guard_workspace_directory(
         self, workspace_root: Path

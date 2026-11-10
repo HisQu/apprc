@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 # == Internal ================================
 from apprc.interfaces.tui._primitives import ConfirmScreen, PathInputScreen
 from apprc.interfaces.tui._styles import lines_text, path_text
+from apprc.interfaces.tui.editor.workspace_base import WorkspaceActionResult
 from apprc.interfaces.tui.editor.workspace_registration import (
     WorkspaceRegistrationWorkflows,
 )
@@ -24,9 +25,10 @@ class ConfigEditorSetupWorkflow:
         """Store the screen that owns setup controls."""
         self.editor = editor
 
-    async def open_setup_flow(self) -> None:
+    async def open_setup_flow(self) -> WorkspaceActionResult | None:
         """Initialize a direct workspace, register one, or create user settings."""
         editor = self.editor
+        action_result = WorkspaceActionResult()
         if editor.workspace_enabled:
             root = editor.active_workspace_root
             if root is None:
@@ -38,7 +40,7 @@ class ConfigEditorSetupWorkflow:
                     )
                 )
                 if result is None:
-                    return
+                    return None
                 root = result.path
             manager = editor.workspace_manager
             if manager is None:
@@ -47,33 +49,34 @@ class ConfigEditorSetupWorkflow:
                     severity="error",
                     markup=False,
                 )
-                return
+                return None
             try:
                 if editor.registry_enabled:
-                    await WorkspaceRegistrationWorkflows(
+                    registration_result = await WorkspaceRegistrationWorkflows(
                         editor
                     ).register_workspace_directory_flow(
                         root,
                         default_name=editor._suggest_workspace_name(root),
                     )
+                    if registration_result is None:
+                        return None
+                    action_result = registration_result
                 else:
                     initialized = await asyncio.to_thread(
                         manager.initialize_workspace, root
                     )
-                    editor.active_workspace_root = initialized
-                    await editor._refresh_workspace_list()
+                    action_result = WorkspaceActionResult(
+                        active_root=initialized
+                    )
             except (OSError, TypeError, ValueError) as exc:
                 editor.notify(str(exc), severity="error", markup=False)
-                return
+                return action_result
         if editor.user_dotenv_enabled and not editor.user_dotenv_active:
             try:
                 await asyncio.to_thread(editor.manager.setup)
             except (OSError, ValueError) as exc:
                 editor.notify(str(exc), severity="error", markup=False)
-                return
-            editor.user_dotenv_active = editor._user_dotenv_is_active()
-            await editor._refresh_workspace_list()
-        await editor.clear_setup_status()
+                return action_result
         await editor.app.push_screen_wait(
             ConfirmScreen(
                 title="Setup complete",
@@ -87,3 +90,4 @@ class ConfigEditorSetupWorkflow:
                 cancel_label=None,
             )
         )
+        return action_result

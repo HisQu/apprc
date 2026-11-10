@@ -13,7 +13,10 @@ from apprc.interfaces.tui._styles import (
     path_text,
     workspace_name_text,
 )
-from apprc.interfaces.tui.editor.workspace_base import WorkspaceWorkflowBase
+from apprc.interfaces.tui.editor.workspace_base import (
+    WorkspaceActionResult,
+    WorkspaceWorkflowBase,
+)
 from apprc.interfaces.tui.workspaces.selection import (
     LiveWorkspaceSelection,
     MissingWorkspaceSelection,
@@ -23,14 +26,16 @@ from apprc.interfaces.tui.workspaces.selection import (
 class WorkspaceRemovalWorkflows(WorkspaceWorkflowBase):
     """Unregister live or missing workspace entries from the editor."""
 
-    async def open_delete_workspace_flow(self) -> None:
+    async def open_delete_workspace_flow(
+        self,
+    ) -> WorkspaceActionResult | None:
         """Confirm removal of the named workspace entry."""
         selection = self.editor.selection
         if not isinstance(
             selection,
             LiveWorkspaceSelection | MissingWorkspaceSelection,
         ):
-            return
+            return None
         record = selection.record
         message = lines_text(
             label_value_text("Workspace", workspace_name_text(record.name)),
@@ -46,37 +51,35 @@ class WorkspaceRemovalWorkflows(WorkspaceWorkflowBase):
                 actions=(("remove", "Remove", "warning"),),
             )
         )
-        if action == "remove":
-            await self.remove_live_workspace(record.name)
+        if action != "remove":
+            return None
+        return await self.remove_live_workspace(record.name)
 
-    async def remove_live_workspace(self, name: str) -> bool:
+    async def remove_live_workspace(
+        self,
+        name: str,
+    ) -> WorkspaceActionResult | None:
         """Remove one live named-workspace registry row.
 
         :param name: Workspace selector to remove.
-        :return: Whether the removal completed.
+        :return: Fallback intent after removal/recovery, or ``None`` if no
+            registry change occurred.
         """
         registry = self.editor._require_workspace_registry()
         if registry is None:
-            return False
+            return None
         try:
             registry.selected(name)
         except ValueError as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
-            return False
+            return None
         try:
-            self.editor.workspace_registry = await asyncio.to_thread(
+            await asyncio.to_thread(
                 self.require_workspace_manager().remove_workspace,
                 name=name,
             )
         except (OSError, ValueError) as exc:
-            self.editor.workspace_registry = (
-                self.require_workspace_manager().registry()
-            )
-            await self.editor._refresh_workspace_list()
             self.editor.notify(str(exc), severity="error", markup=False)
-            return False
-        await self.editor._refresh_workspace_list(
-            select_name=self.editor._registered_active_workspace_name()
-        )
+            return WorkspaceActionResult(use_fallback=True)
         self.editor.notify(f"Removed workspace {name!r}")
-        return True
+        return WorkspaceActionResult(use_fallback=True)

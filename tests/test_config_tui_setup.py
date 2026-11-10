@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from textual.widgets import Static
 
 import apprc as rc
 from apprc.definition.resolution import ResolveOptions
@@ -18,6 +19,7 @@ from tests.support_config import (
     WorkspaceExampleEnv,
     build_config_only_example_app,
 )
+from tests.support_tui import static_text
 
 
 @pytest.mark.asyncio
@@ -39,7 +41,10 @@ async def test_config_only_editor_setup_initializes_only_user_configuration(
     monkeypatch.setattr(editor, "push_screen_wait", respond)
     async with editor.run_test() as pilot:
         await pilot.pause()
-        await screen.setup_workflow.open_setup_flow()
+        await pilot.click("#config-setup")
+        await editor.workers.wait_for_complete(tuple(editor.workers))
+        await pilot.pause()
+        assert len(screen.query("#config-setup")) == 0
 
     files = AppFiles(kit.schema, manager.paths)
     assert files.user_dotenv_path().is_file()
@@ -95,11 +100,17 @@ async def test_direct_workspace_setup_accepts_relative_path_without_registry_or_
         return responses.pop(0)
 
     monkeypatch.setattr(editor, "push_screen_wait", respond)
+    root = tmp_path / "relative-workspace"
     async with editor.run_test() as pilot:
         await pilot.pause()
-        await screen.setup_workflow.open_setup_flow()
+        await pilot.click("#config-setup")
+        await editor.workers.wait_for_complete(tuple(editor.workers))
+        await pilot.pause()
+        assert (
+            str(root)
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
 
-    root = tmp_path / "relative-workspace"
     assert AppFiles(kit.schema, paths).workspace_dotenv_path(root).is_file()
     assert AppFiles(kit.schema, paths).user_dotenv_path().is_file()
     assert not AppFiles(kit.schema, paths).config_file().exists()

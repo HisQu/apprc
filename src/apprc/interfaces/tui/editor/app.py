@@ -48,6 +48,7 @@ from apprc.interfaces.tui._rendering import (
     missing_workspace_title,
 )
 from apprc.interfaces.tui.editor.setup import ConfigEditorSetupWorkflow
+from apprc.interfaces.tui.editor.workspace_base import WorkspaceActionResult
 from apprc.interfaces.tui.editor.workflows import ConfigEditorWorkspaceWorkflows
 from apprc.interfaces.tui.modals import (
     ConfigValueEditScreen,
@@ -408,7 +409,7 @@ class ConfigEditorScreen(Screen[None]):
 
     def _start_config_action(
         self,
-        workflow: Callable[[], Awaitable[None]],
+        workflow: Callable[[], Awaitable[WorkspaceActionResult | None]],
     ) -> None:
         """Run one config workflow while preventing conflicting edits.
 
@@ -430,20 +431,34 @@ class ConfigEditorScreen(Screen[None]):
 
     async def _run_config_action(
         self,
-        workflow: Callable[[], Awaitable[None]],
+        workflow: Callable[[], Awaitable[WorkspaceActionResult | None]],
     ) -> None:
-        """Complete a locked workflow and restore controls from selection.
+        """Apply one completed workflow result at the presentation boundary.
 
-        :param workflow: Async config operation that owns the active lock.
+        A canceled or failed workflow returns ``None`` and retains the current
+        selection. Successful results may choose a named workspace, adopt a
+        direct root, or request the normal fallback selection.
         """
+        result: WorkspaceActionResult | None = None
         try:
-            await workflow()
+            result = await workflow()
         finally:
             self._config_action_in_progress = False
+            if result is not None:
+                if result.active_root is not None:
+                    self.active_workspace_root = result.active_root
+                if self.registry_enabled and self.workspace_manager is not None:
+                    self.workspace_registry = self.workspace_manager.registry()
+                self.user_dotenv_active = self._user_dotenv_is_active()
             await self.clear_resolved_selector_issue()
-            await self._refresh_workspace_list(
-                select_name=self._selected_workspace_name()
-            )
+            await self.clear_setup_status()
+            select_name = self._selected_workspace_name()
+            if result is not None:
+                if result.use_fallback or result.active_root is not None:
+                    select_name = None
+                elif result.select_name is not None:
+                    select_name = result.select_name
+            await self._refresh_workspace_list(select_name=select_name)
 
     def _disable_config_action_controls(self) -> None:
         """Block controls that could conflict with a config action."""

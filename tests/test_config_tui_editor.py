@@ -3,15 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from textual.widgets import Button, Static
 
 import apprc as rc
 from apprc.definition.resolution import ResolveOptions
+from apprc.interfaces.tui._primitives import WorkspaceNameResult
 from apprc.interfaces.tui.editor import ConfigEditorApp
 from apprc.user_files.app_home.application import AppFiles
 from tests.support_config import (
     build_config_only_example_app,
     build_workspace_example_app,
 )
+from tests.support_tui import static_text
 
 
 def _single_root(root: Path) -> ResolveOptions:
@@ -57,26 +60,53 @@ async def test_config_only_editor_saves_user_setting_without_workspace_service(
 
 
 @pytest.mark.asyncio
-async def test_registry_editor_selects_workspace_and_saves_workspace_overlay(
+async def test_registry_editor_selects_and_renames_workspace_through_action_boundary(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     kit = build_workspace_example_app()
-    editor = _workspace_editor(kit, tmp_path)
+    options = _single_root(tmp_path)
+    paths = kit.paths(options, environment={})
+    manager = kit._manage_with_paths(options, {}, paths)
+    workspace_manager = kit.workspaces(options=options, environment={})
+    workspace_manager.register_workspace("alpha", tmp_path / "alpha")
+    workspace_manager.register_workspace("beta", tmp_path / "beta")
+    editor = ConfigEditorApp(
+        apprc=kit,
+        manager=manager,
+        workspace_manager=workspace_manager,
+        initial_workspace="alpha",
+    )
     screen = editor.editor_screen
-    assert screen.workspace_manager is not None
-    screen.workspace_manager.register_workspace("alpha", tmp_path / "alpha")
-    screen.workspace_manager.register_workspace("beta", tmp_path / "beta")
-    screen.workspace_registry = screen.workspace_manager.registry()
+    responses: list[object] = [
+        WorkspaceNameResult(name="renamed"),
+        "rename",
+    ]
 
+    async def respond(_dialog: object) -> object:
+        return responses.pop(0)
+
+    monkeypatch.setattr(editor, "push_screen_wait", respond)
     async with editor.run_test() as pilot:
         await pilot.pause()
-        await screen._refresh_workspace_list(select_name="alpha")
+        assert not screen.query_one("#workspace-rename", Button).disabled
+        assert (
+            "alpha"
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
         await screen._save_env_key(
             "APPRC_EXAMPLE_APP_PROFILE", "workspace-value", scope="workspace"
         )
-        assert screen._selected_workspace_name() == "alpha"
+        await pilot.click("#workspace-rename")
+        await editor.workers.wait_for_complete(tuple(editor.workers))
+        await pilot.pause()
+        assert (
+            "renamed"
+            in static_text(screen.query_one("#scope-title", Static)).plain
+        )
+        assert not screen.query_one("#workspace-rename", Button).disabled
 
-    files = AppFiles(kit.schema, screen.paths)
+    files = AppFiles(kit.schema, paths)
     assert (
         files.workspace_dotenv_path(tmp_path / "alpha").read_text(
             encoding="utf-8"
@@ -108,7 +138,7 @@ async def test_workspace_actions_require_manager_and_unregister_keeps_payload(
 
 
 @pytest.mark.asyncio
-async def test_settings_refresh_keeps_captured_paths(
+async def test_editor_keeps_captured_paths_after_process_environment_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     kit = build_config_only_example_app()
@@ -127,7 +157,6 @@ async def test_settings_refresh_keeps_captured_paths(
         await pilot.pause()
         monkeypatch.setenv("CONFIG_ONLY_APP_LAYOUT", "native")
         monkeypatch.setenv("CONFIG_ONLY_APP_ROOT", str(tmp_path / "second"))
-        await screen._refresh_workspace_list()
         assert screen.paths is captured
         assert screen.manager.paths is captured
         assert screen._inspected_resolution().paths is captured

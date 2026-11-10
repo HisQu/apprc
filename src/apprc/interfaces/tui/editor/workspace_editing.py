@@ -21,7 +21,10 @@ from apprc.interfaces.tui._styles import (
     path_text,
     workspace_name_text,
 )
-from apprc.interfaces.tui.editor.workspace_base import WorkspaceWorkflowBase
+from apprc.interfaces.tui.editor.workspace_base import (
+    WorkspaceActionResult,
+    WorkspaceWorkflowBase,
+)
 from apprc.interfaces.tui.workspaces.selection import (
     LiveWorkspaceSelection,
     MissingWorkspaceSelection,
@@ -36,7 +39,9 @@ from apprc.user_files.workspace_roots.paths import (
 class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
     """Edit workspace metadata and relocate live workspace directories."""
 
-    async def open_rename_workspace_flow(self) -> None:
+    async def open_rename_workspace_flow(
+        self,
+    ) -> WorkspaceActionResult | None:
         """Prompt for a new selector and confirm its external migration.
 
         Renaming changes only registry metadata. Callers that select the
@@ -91,18 +96,20 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
         if action != "rename":
             return
         try:
-            self.editor.workspace_registry = await asyncio.to_thread(
+            await asyncio.to_thread(
                 self.require_workspace_manager().rename_workspace,
                 old=record.name,
                 new=name,
             )
         except (OSError, TypeError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
-            return
-        await self.editor._refresh_workspace_list(select_name=name)
+            return None
         self.editor.notify(f"Renamed workspace {record.name!r} to {name!r}")
+        return WorkspaceActionResult(select_name=name)
 
-    async def open_workspace_reconnect_flow(self) -> None:
+    async def open_workspace_reconnect_flow(
+        self,
+    ) -> WorkspaceActionResult | None:
         """Connect a named workspace to its existing directory."""
         registry = self.editor._require_workspace_registry()
         record = self._selected_editable_workspace()
@@ -145,20 +152,22 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
             )
         )
         if action != "update":
-            return
+            return None
         try:
-            self.editor.workspace_registry = await asyncio.to_thread(
+            await asyncio.to_thread(
                 self.require_workspace_manager().repoint_workspace,
                 name=record.name,
                 root=root,
             )
         except (OSError, TypeError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
-            return
-        await self.editor._refresh_workspace_list(select_name=record.name)
+            return None
         self.editor.notify(f"Reconnected workspace {record.name!r}")
+        return WorkspaceActionResult(select_name=record.name)
 
-    async def open_move_workspace_flow(self) -> None:
+    async def open_move_workspace_flow(
+        self,
+    ) -> WorkspaceActionResult | None:
         """Move the selected workspace through the transactional service."""
         registry = self.editor._require_workspace_registry()
         selection = self.editor.selection
@@ -205,7 +214,7 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
             )
         )
         if action != "move":
-            return
+            return None
         try:
             move_result = await asyncio.to_thread(
                 self.require_workspace_manager().move_workspace,
@@ -214,14 +223,11 @@ class WorkspaceEditingWorkflows(WorkspaceWorkflowBase):
             )
         except (OSError, ValueError) as exc:
             self.editor.notify(str(exc), severity="error", markup=False)
-            return
-        self.editor.workspace_registry = (
-            self.require_workspace_manager().registry()
-        )
-        await self.editor._refresh_workspace_list(select_name=record.name)
+            return None
         for warning in move_result.warnings:
             self.editor.notify(warning, severity="warning", markup=False)
         self.editor.notify(f"Moved workspace {record.name!r}")
+        return WorkspaceActionResult(select_name=record.name)
 
     def _selected_editable_workspace(self) -> WorkspaceRecord | None:
         """Return the selected live or missing workspace record."""

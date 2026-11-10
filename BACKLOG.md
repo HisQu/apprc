@@ -78,8 +78,6 @@ Treat this as the parking lot for actionable problems discovered while working b
    1. [P3 / E1 \[Code smell\] - *Saved management code doubles as installation configuration*](#p3--e1-code-smell---saved-management-code-doubles-as-installation-configuration)
 3. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
-4. [2026-09-04](#2026-09-04)
-   1. [P3 / E1 \[Code smell\] - *Workspace presentation state has multiple owners*](#p3--e1-code-smell---workspace-presentation-state-has-multiple-owners)
 
 
 <br>
@@ -117,22 +115,5 @@ Reviewed AppRC `0.32.0` at `aaeefe`. These findings concern maintenance and rele
 - **Evidence:** Windows core/GUI and macOS core jobs failed while Ubuntu core Python 3.12/3.13/3.14 and Ubuntu GUI passed. Representative failures include Windows private staging ACL rejection, missing `ntsecuritycon` in standalone execution, macOS temporary-address link rejection, and native secret persistence/editor workflows.
 - **Context:** The historical native failures remain unresolved; disabling their jobs did not fix them or establish compatibility. Their causes have not yet been separated into production defects, fixture/platform assumptions, interpreter prerequisites, newline expectations, or shell setup. Permission rejection alone is not evidence of a security vulnerability.
 - **Suggested next step:** Leave the native jobs disabled while this work is deferred. Revisit when Windows/macOS validation is explicitly back in scope, starting with the recorded installation/ACL and standalone dependency failures, then path/interpreter and secret/UI workflows. Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
-
-<br>
-
-# 2026-09-04
-
-
-
-<a id="p3--e1-code-smell---cli-and-editor-composition-remain-monolithic"></a>
-
-## P3 / E1 [Code smell] - *Workspace presentation state has multiple owners*
-- **Area:** `src/apprc/interfaces/tui/editor/{app,workspace_base,workspace_editing,setup}.py`
-- **Observed while:** Originally moving loading/persistence into shared operations; revisited in the post-`0.32.0` maintainability review.
-- **Why not fixed now:** The remaining problem is presentation-state ownership, not persistence. Changing workspace interaction is outside this analysis-only request.
-- **Evidence:** [`WorkspaceWorkflowBase`](src/apprc/interfaces/tui/editor/workspace_base.py#L12-L31) retains the concrete `ConfigEditorScreen`. [Editing workflows](src/apprc/interfaces/tui/editor/workspace_editing.py#L94-L103) assign its registry and call private refresh methods; the screen's [outer action runner](src/apprc/interfaces/tui/editor/app.py#L431-L446) refreshes again after workflows complete. The screen also owns selection restoration and button availability. `ConfigEditorApp` is now a thin host, and CLI handlers already delegate execution; nested Typer declarations alone are not a separate finding.
-- **Context:** The screen → workflow → screen cycle moves methods into other files without giving workspace state one owner. A maintainer must trace both layers to understand registry replacement, selection, and refresh ordering. Persistence already belongs to `ConfigManager`/`WorkspaceManager` and should stay there.
-- **Suggested next step:** Give workspace-pane state, selection, list refresh, and button availability one presentation owner. Let operations report results and desired selection instead of accepting the whole screen and mutating private state. Completion means one post-operation refresh boundary, without a generic UI framework. Keep shared `ConfigManager` planning/application for edits rather than restoring an alternate direct-write workflow.
-
 
 <br>

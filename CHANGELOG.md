@@ -84,6 +84,9 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+- Added a separate Actions artifact round-trip diagnostic with manual invocation,
+  a narrowly scoped initial feature-branch push trigger, one-day retention, and
+  documented exact-artifact cleanup.
 - Added optional `installation_inventory` callbacks to the application CLI for
   exact provider-owned cleanup previews. Confirmed removal transports the
   accepted inventory to the saved controller; dry-run remains read-only, and

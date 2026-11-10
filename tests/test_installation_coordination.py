@@ -37,7 +37,7 @@ from apprc.user_files.installation.discovery import inspect_installation
 
 def _record() -> InstallationRecord:
     return InstallationRecord(
-        1,
+        2,
         "coordination-fixture",
         uuid4(),
         "0.31.0",

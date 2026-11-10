@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import sys
 from collections.abc import Mapping
 from dataclasses import replace
@@ -15,25 +14,23 @@ from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.installation import (
     CleanupInventory,
     InitializationReport,
-    InstalledSnapshot,
     InstallationDiagnostic,
     InstallationError,
     InstallationIdentity,
     InstallationInspection,
     InstallationPlacement,
     InstallationSource,
+    InstalledSnapshot,
+    InstallPlan,
     InventoryEntry,
-    LegacyMigrationEvidence,
     MigrationInventory,
     MigrationPlan,
     OperationContext,
     OperationPlan,
     OperationStep,
-    UvToolTarget,
-    StagedSupportOutput,
-    InstallPlan,
     UninstallCommit,
     UninstallPlan,
+    UvToolTarget,
 )
 from apprc.definition.paths import AppPaths, Layout, PathKind, ResourceKind
 from apprc.user_files.installation.discovery import (
@@ -41,68 +38,6 @@ from apprc.user_files.installation.discovery import (
     installation_directory,
     native_user_directories,
 )
-
-
-def _legacy_state_root(
-    evidence: LegacyMigrationEvidence,
-    environment: Mapping[str, str],
-    *,
-    platform: str,
-) -> Path:
-    """Resolve only the documented native Buildben receipt address.
-
-    :param evidence: Strict receipt identities and known helper paths.
-    :param environment: Detached native address inputs.
-    :param platform: Host platform name used for the legacy address rule.
-    :return: The one recognized legacy installation directory.
-    """
-    distribution = re.sub(r"[-_.]+", "-", evidence.distribution).lower()
-    if not distribution or any(
-        character not in "abcdefghijklmnopqrstuvwxyz0123456789-"
-        for character in distribution
-    ):
-        raise InstallationError("Legacy distribution identity is invalid.")
-    if platform == "win32":
-        base_value = environment.get("LOCALAPPDATA")
-        if not base_value:
-            raise InstallationError(
-                "Captured LOCALAPPDATA is required for legacy migration."
-            )
-        base = Path(base_value)
-    else:
-        base_value = environment.get("XDG_STATE_HOME")
-        if base_value:
-            base = Path(base_value)
-        else:
-            home = environment.get("HOME")
-            if not home:
-                raise InstallationError(
-                    "Captured HOME is required for legacy migration."
-                )
-            base = Path(home) / ".local" / "state"
-    root = base / distribution / "installation"
-    if evidence.receipt.path != root / "receipt.json":
-        raise InstallationError(
-            "Legacy receipt is outside its fixed distribution state address."
-        )
-    known = {
-        "lifecycle.py",
-        "uninstall.sh",
-        "uninstall.cmd",
-        "uninstall.ps1",
-        "prepare-powershell-windows.cmd",
-    }
-    if any(
-        item.path.parent != root
-        or item.path.name not in known
-        or item.inert_path.parent != root
-        or item.inert_path.name != f".retired-{item.path.name}"
-        for item in evidence.runnables
-    ):
-        raise InstallationError(
-            "Legacy controller inventory contains an unknown path."
-        )
-    return root
 
 
 class InstallationManager:
@@ -430,84 +365,13 @@ class InstallationManager:
         :param expected_revision: Exact current authority revision.
         :return: Updated installation authority.
         """
-        from apprc.user_files.installation.migration import (
-            _validate_legacy_namespace,
-            resume_migration,
-        )
+        from apprc.user_files.installation.migration import resume_migration
 
-        inspection = self.inspect()
-        record = inspection.record
-        if (
-            record is not None
-            and record.migration is not None
-            and record.migration.operation_id == operation_id
-            and record.migration.legacy is not None
-        ):
-            evidence = record.migration.legacy
-            _legacy_state_root(
-                evidence, self.environment, platform=sys.platform
-            )
-            _validate_legacy_namespace(
-                evidence,
-                record.owned_outputs,
-                staged_support=record.migration.staged_support,
-                directory=self.directory,
-            )
         return resume_migration(
             self.directory,
             operation_id=operation_id,
             expected_revision=expected_revision,
         )
-
-    def migrate_legacy(
-        self,
-        evidence: LegacyMigrationEvidence,
-        placement: InstallationPlacement,
-        *,
-        inventory: MigrationInventory,
-        observed: InstalledSnapshot,
-        quiescent: bool,
-        staged_support: tuple[StagedSupportOutput, ...],
-        generation_id: UUID,
-    ) -> InstallationInspection:
-        """Cut over validated Buildben authority after replacement support is ready.
-
-        :param evidence: Distribution-validated receipt and known controller files.
-        :param placement: Explicit chosen resource placement, never inferred from receipt flags.
-        :param inventory: Exact app/provider-owned resource movement, if any.
-        :param observed: Live verified package identity and backend state.
-        :param quiescent: Explicit confirmation that legacy consumers are stopped.
-        :param staged_support: Exact replacement support staged in the generation namespace.
-        :param generation_id: Generation UUID used by the staged support directory.
-        :return: Activated authority or an incomplete record that can be resumed.
-        """
-        from apprc.user_files.installation.migration import (
-            _validate_legacy_namespace,
-            execute_migration,
-        )
-        from apprc.user_files.installation.operations import plan_migration
-
-        if not quiescent:
-            raise InstallationError(
-                "Stop legacy consumers before executing migration."
-            )
-        _validate_legacy_namespace(
-            evidence,
-            observed.owned_outputs,
-            staged_support=staged_support,
-            directory=self.directory,
-        )
-        plan = plan_migration(
-            self.inspect(),
-            placement,
-            inventory=inventory,
-            quiescent=True,
-            observed=observed,
-            legacy=evidence,
-            staged_support=staged_support,
-            generation_id=generation_id,
-        )
-        return execute_migration(plan)
 
     def initialize(self, *, context: OperationContext) -> InitializationReport:
         """Initialize declared resources under explicit pending authorization.

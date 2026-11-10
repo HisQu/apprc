@@ -235,7 +235,7 @@ def _ready_uninstall_preparation(
         commands=(directory / "bin" / "installation-cli",),
     )
     record = InstallationRecord(
-        schema_version=1,
+        schema_version=2,
         app_id="installation-cli",
         generation_id=uuid4(),
         support_version="1",

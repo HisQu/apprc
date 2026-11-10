@@ -65,28 +65,6 @@ class OwnedOutput:
 
 
 @dataclass(frozen=True, slots=True)
-class StagedSupportOutput:
-    """Verified new support bytes awaiting promotion over a legacy controller."""
-
-    source: Path
-    destination: Path
-    digest: str
-
-    def __post_init__(self) -> None:
-        """Require exact absolute addresses and a SHA-256 staged revision."""
-        import re
-
-        if (
-            not self.source.is_absolute()
-            or not self.destination.is_absolute()
-            or re.fullmatch(r"[0-9a-f]{64}", self.digest) is None
-        ):
-            raise InstallationError(
-                "Staged support requires absolute paths and a SHA-256 digest."
-            )
-
-
-@dataclass(frozen=True, slots=True)
 class RetiredResource:
     """An earlier location retained until explicitly migrated or removed."""
 
@@ -247,69 +225,6 @@ class InventoryEntry:
 
 
 @dataclass(frozen=True, slots=True)
-class LegacyRunnable:
-    """One verified legacy launcher/helper and its inert retirement address."""
-
-    path: Path
-    inert_path: Path
-    revision: str
-
-
-@dataclass(frozen=True, slots=True)
-class LegacyMigrationEvidence:
-    """Distribution-validated receipt facts needed for a resumable cutover."""
-
-    receipt: InventoryEntry
-    distribution: str
-    command: str
-    version: str
-    source_ref: str
-    backend: UvToolTarget
-    python: Path
-    runnables: tuple[LegacyRunnable, ...]
-
-    def __post_init__(self) -> None:
-        """Reject incomplete or overlapping legacy evidence before persistence."""
-        import re
-
-        if (
-            self.receipt.kind != "file"
-            or self.receipt.revision is None
-            or not self.receipt.path.is_absolute()
-            or not self.python.is_absolute()
-        ):
-            raise InstallationError(
-                "Legacy receipt evidence must use exact absolute file identities."
-            )
-        if not all(
-            (self.distribution, self.command, self.version, self.source_ref)
-        ):
-            raise InstallationError(
-                "Legacy receipt identity fields must be nonempty."
-            )
-        if re.fullmatch(r"[0-9a-f]{64}", self.receipt.revision) is None or any(
-            not item.path.is_absolute()
-            or not item.inert_path.is_absolute()
-            or re.fullmatch(r"[0-9a-f]{64}", item.revision) is None
-            for item in self.runnables
-        ):
-            raise InstallationError(
-                "Legacy file evidence requires exact SHA-256 revisions."
-            )
-        sources = [self.receipt.path, *(item.path for item in self.runnables)]
-        inert = [item.inert_path for item in self.runnables]
-        if (
-            len(set(sources)) != len(sources)
-            or len(set(inert)) != len(inert)
-            or set(sources) & set(inert)
-            or any(item.path == item.inert_path for item in self.runnables)
-        ):
-            raise InstallationError(
-                "Legacy runnable evidence has unsafe or duplicate paths."
-            )
-
-
-@dataclass(frozen=True, slots=True)
 class CleanupInventory:
     """Exact removable entries and known targets that cannot yet be removed."""
 
@@ -342,49 +257,12 @@ class MigrationInventory:
 
 @dataclass(frozen=True, slots=True)
 class InstallationMigration:
-    """Durable cutover progress; old receipts are never an alternate authority."""
+    """Durable progress for an explicit resource placement migration."""
 
     source: Path
     destination: Path
-    phase: Literal["staged", "retired", "moved", "activated"]
+    phase: Literal["staged", "activated"]
     inventory: MigrationInventory
-    retired_files: tuple[Path, ...] = ()
-    legacy: LegacyMigrationEvidence | None = None
-    staged_support: tuple[StagedSupportOutput, ...] = ()
-    operation_id: UUID | None = None
-    cleanup_complete: bool = False
-
-    def __post_init__(self) -> None:
-        """Keep the durable phase consistent with cleanup authority."""
-        if self.legacy is None:
-            if self.staged_support or self.retired_files:
-                raise InstallationError(
-                    "Legacy-only migration fields lack receipt evidence."
-                )
-            if self.phase == "activated" and not self.cleanup_complete:
-                raise InstallationError(
-                    "Non-legacy migration activation is already complete."
-                )
-        else:
-            if not self.staged_support:
-                raise InstallationError(
-                    "Legacy migration requires staged replacement support."
-                )
-            expected = tuple(item.inert_path for item in self.legacy.runnables)
-            if self.phase != "activated":
-                if self.retired_files or self.cleanup_complete:
-                    raise InstallationError(
-                        "Retired-file cleanup requires activated migration."
-                    )
-            elif self.cleanup_complete:
-                if self.retired_files:
-                    raise InstallationError(
-                        "Completed migration cleanup cannot retain retired paths."
-                    )
-            elif self.retired_files != expected:
-                raise InstallationError(
-                    "Activated migration must retain its exact cleanup inventory."
-                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -408,7 +286,7 @@ class InstallationOperation:
 class InstallationRecord:
     """The single durable authority for one managed application generation."""
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     app_id: str
     generation_id: UUID
     support_version: str
@@ -549,9 +427,6 @@ class MigrationPlan:
     placement: InstallationPlacement
     inventory: MigrationInventory
     quiescent: bool
-    observed: InstalledSnapshot | None = None
-    legacy: LegacyMigrationEvidence | None = None
-    staged_support: tuple[StagedSupportOutput, ...] = ()
 
 
 OperationPlan = InstallPlan | UninstallPlan | MigrationPlan

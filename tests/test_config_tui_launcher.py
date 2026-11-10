@@ -250,7 +250,7 @@ async def test_launcher_uninstall_cancellation_does_not_start_handoff(
 ) -> None:
     context = _launcher_context(tmp_path)
     record = InstallationRecord(
-        schema_version=1,
+        schema_version=2,
         app_id=context.apprc.schema.app_id,
         generation_id=uuid4(),
         support_version="0.31.0",
@@ -425,7 +425,7 @@ def test_launcher_reports_unusable_placement_without_invalidating_record(
     apprc = rc.AppRC(app_id="launcher-path-error", paths=rc.Paths(cache=True))
     manager = apprc.installation(environment=environment)
     record = rc.InstallationRecord(
-        1,
+        2,
         apprc.schema.app_id,
         uuid4(),
         "0.31.0",

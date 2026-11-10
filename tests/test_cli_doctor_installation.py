@@ -19,6 +19,7 @@ from apprc.definition.paths import Layout, Paths
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
+from apprc.user_files.installation.codec import encode_record
 from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
@@ -72,6 +73,42 @@ def test_root_doctor_rejects_malformed_authority_without_initializing(
     assert set(directory.parent.iterdir()) == {directory}
 
 
+@pytest.mark.parametrize("schema_version", [1, 99])
+def test_root_doctor_diagnoses_unsupported_authority_without_mutation(
+    schema_version: int,
+) -> None:
+    environment = native_environment()
+    declaration = rc.AppRC(
+        app_id=f"doctor-schema-{schema_version}", paths=Paths()
+    )
+    directory = declaration.installation(environment=environment).directory
+    create_private_directory_if_missing(directory)
+    authority = directory / "installation.json"
+    record = InstallationRecord(
+        schema_version=2,
+        app_id=declaration.schema.app_id,
+        generation_id=uuid4(),
+        support_version="0.31.0",
+        status="removed-retained",
+        placement=InstallationPlacement(Layout.native()),
+    )
+    value = json.loads(encode_record(record))
+    value["schema_version"] = schema_version
+    content = json.dumps(value).encode("utf-8")
+    authority.write_bytes(content)
+    app = typer.Typer()
+    rc.cli.mount_app_cli(app, declaration)
+
+    result = CliRunner().invoke(app, ["doctor", "--json"], env=environment)
+
+    assert result.exit_code != 0, result.output
+    report = json.loads(result.stdout)
+    installation = report["installation"]
+    assert installation["status"] == "invalid"
+    assert authority.read_bytes() == content
+    assert set(directory.iterdir()) == {authority}
+
+
 def test_root_doctor_reports_missing_saved_capability_without_initializing() -> (
     None
 ):
@@ -84,7 +121,7 @@ def test_root_doctor_reports_missing_saved_capability_without_initializing() -> 
         rc.ResolveOptions(layout=Layout.native()), environment=environment
     ).require("cache")
     record = InstallationRecord(
-        schema_version=1,
+        schema_version=2,
         app_id=declaration.schema.app_id,
         generation_id=uuid4(),
         support_version="0.31.0",

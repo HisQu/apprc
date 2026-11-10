@@ -26,6 +26,7 @@ from apprc.definition.installation import (
     OperationStep,
     OwnedOutput,
 )
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.distribution.runtime.acquisition import (
     PreparedSource,
     _archive_inputs,
@@ -220,9 +221,8 @@ def _install_application_locked(
         } or (
             prepared.digest is not None
             and plan.target.source.kind == "index"
-            and re.fullmatch(
-                r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-                plan.target.source.requirement,
+            and parse_immutable_github_source(
+                plan.target.source.requirement
             )
             is not None
         )
@@ -632,10 +632,7 @@ def _validate_prepared_source(
     elif source.kind == "release-sdist" or (
         source.kind == "index"
         and prepared.archive is not None
-        and re.fullmatch(
-            r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-            source.requirement,
-        )
+        and parse_immutable_github_source(source.requirement) is not None
     ):
         archive = prepared.archive
         if (

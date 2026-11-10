@@ -22,6 +22,7 @@ from apprc.definition.installation import (
     InstalledSnapshot,
     UvToolTarget,
 )
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.user_files.app_home.locations import assert_no_links
 
 from apprc.distribution.runtime.backend import (
@@ -194,11 +195,7 @@ def probe_installed_tool(
             or acquisition_requirement is not None
             or acquisition_digest is not None
         )
-        and re.fullmatch(
-            r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-            source.requirement,
-        )
-        is not None
+        and parse_immutable_github_source(source.requirement) is not None
     )
     if archive_requires_record and record_digest is None:
         raise InstallationError(
@@ -288,10 +285,7 @@ def probe_installed_tool(
             )
     elif (
         source.kind == "index"
-        and re.fullmatch(
-            r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-            source.requirement,
-        )
+        and parse_immutable_github_source(source.requirement) is not None
         and (
             source.digest is not None
             or acquisition_requirement is not None

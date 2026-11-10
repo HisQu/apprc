@@ -45,6 +45,7 @@ from apprc.definition.installation import (
     OwnedOutput,
     StagedSupportOutput,
 )
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.distribution.runtime.acquisition import (
     PreparedSource,
     _assert_private_staging,
@@ -124,11 +125,7 @@ def _normalized(value: str) -> str:
 def _immutable_replacement_source(source: InstallationSource) -> bool:
     return source.kind in {"release-sdist", "wheel"} or (
         source.kind == "index"
-        and re.fullmatch(
-            r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-            source.requirement,
-        )
-        is not None
+        and parse_immutable_github_source(source.requirement) is not None
     )
 
 

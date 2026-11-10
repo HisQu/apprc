@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.paths import Layout, ResourceKind
 
 
@@ -138,7 +139,11 @@ class InstallationPlacement:
 
 @dataclass(frozen=True, slots=True)
 class InstallationSource:
-    """Exact package acquisition inputs; credentials must not be persisted."""
+    """Exact package acquisition inputs; credentials must not be persisted.
+
+    ``kind="index"`` describes general requirement-based sources, including
+    immutable GitHub requirements; it does not imply a package registry.
+    """
 
     kind: Literal["editable", "release-sdist", "wheel", "index"]
     requirement: str
@@ -172,12 +177,7 @@ class InstallationSource:
             return True
         return (
             self.kind == "index"
-            and re.fullmatch(
-                r"git\+https://github\.com/[^/@]+/[^/@]+@"
-                r"[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-                self.requirement,
-            )
-            is not None
+            and parse_immutable_github_source(self.requirement) is not None
             and re.fullmatch(r"[0-9a-f]{64}", observed.digest) is not None
         )
 

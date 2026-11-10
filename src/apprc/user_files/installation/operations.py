@@ -7,11 +7,11 @@ calls reuse that lock and revalidate exact receipt revisions.
 
 from __future__ import annotations
 
-import re
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import (
     CleanupInventory,
     InstallationDiagnostic,
@@ -81,11 +81,7 @@ def _requires_record_proof(source: InstallationSource) -> bool:
     return source.kind == "release-sdist" or (
         source.kind == "index"
         and source.digest is not None
-        and re.fullmatch(
-            r"git\+https://github\.com/[^/@]+/[^/@]+@[0-9a-f]{40}(?:#subdirectory=[^\\\x00\r\n]+)?",
-            source.requirement,
-        )
-        is not None
+        and parse_immutable_github_source(source.requirement) is not None
     )
 
 

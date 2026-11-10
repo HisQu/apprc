@@ -473,6 +473,11 @@ def main():
     except (OSError, ValueError) as error:
         print(f"Installation metadata is unavailable: {{error}}", file=sys.stderr)
         return 2
+    if (not isinstance(record, dict)
+            or type(record.get("schema_version")) is not int
+            or record["schema_version"] != 2):
+        print("Saved installation authority requires schema 2.", file=sys.stderr)
+        return 2
     current = record.get("current")
     identity = current.get("identity") if isinstance(current, dict) else None
     commands = identity.get("commands") if isinstance(identity, dict) else None
@@ -551,7 +556,11 @@ def _inspection(directory, app_id):
     if directory.is_symlink() or authority.is_symlink() or not authority.is_file():
         raise RuntimeError("Saved installation authority is unavailable or unsafe.")
     raw = json.loads(authority.read_text(encoding="utf-8"))
-    target = (raw.get("current") or raw.get("last_successful")) if isinstance(raw, dict) else None
+    if (not isinstance(raw, dict)
+            or type(raw.get("schema_version")) is not int
+            or raw["schema_version"] != 2):
+        raise ValueError("Saved installation authority requires schema 2.")
+    target = raw.get("current") or raw.get("last_successful")
     outputs = target.get("owned_outputs") if isinstance(target, dict) else None
     for name in ("inspection.py", "uninstall.py"):
         expected = next((item.get("digest") for item in outputs

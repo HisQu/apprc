@@ -88,6 +88,15 @@ coordination belong in `user_files/installation`; application-bound orchestratio
 belongs in `services/installation.py`. Do not put business configuration or
 generator dependencies into those lower layers.
 
+Current installation recovery resumes only operations represented by schema-2
+authority. Resource/layout migration still moves explicitly enumerated,
+revision-checked files and preserves unknown content; it is not receipt adoption.
+Validate the inventory before publishing pending authority and again when
+resuming it: decoded path types alone do not establish containment. Schema-1
+installation records require the explicit
+[reinstallation procedure](How-To-User-Guides.md#from-installation-record-schema-1),
+not a version-number edit or automatic conversion.
+
 `ConfigEditorScreen` owns workspace presentation state and the single
 post-action refresh boundary. Workflows receive a fresh, read-only
 `WorkspaceActionContext` and return `WorkspaceActionResult`; they do not retain

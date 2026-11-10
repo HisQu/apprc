@@ -2,7 +2,7 @@
 
 Backend and provider actions are deliberately outside this module. Callers hold
 one lifecycle lock around their ordinary Python composition; nested transition
-calls reuse that lock and revalidate exact receipt revisions.
+calls reuse that lock and revalidate exact authority revisions.
 """
 
 from __future__ import annotations
@@ -26,12 +26,10 @@ from apprc.definition.installation import (
     InstallationTarget,
     InstalledSnapshot,
     InstallPlan,
-    LegacyMigrationEvidence,
     MigrationInventory,
     MigrationPlan,
     OperationPlan,
     OperationStep,
-    StagedSupportOutput,
     UninstallCommit,
     UninstallPlan,
     UvToolTarget,
@@ -321,21 +319,13 @@ def plan_migration(
     *,
     inventory: MigrationInventory,
     quiescent: bool = False,
-    observed: InstalledSnapshot | None = None,
-    legacy: LegacyMigrationEvidence | None = None,
-    staged_support: tuple[StagedSupportOutput, ...] = (),
-    generation_id: UUID | None = None,
 ) -> MigrationPlan:
     """Plan only explicitly enumerated ownership-preserving movement.
 
     :param inspection: Host authority and exact revision.
     :param placement: Intended absolute resource locations.
     :param inventory: Repository/provider source/destination enumeration.
-    :param quiescent: Explicit confirmation that legacy consumers are stopped.
-    :param observed: Live package evidence for legacy receipt conversion.
-    :param legacy: Strict receipt and exact runnable revisions.
-    :param staged_support: Digest-checked replacement support staged beside authority.
-    :param generation_id: Chosen generation matching the stage namespace.
+    :param quiescent: Explicit confirmation that resource consumers are stopped.
     :return: Migration plan; execution still revalidates quiescence and targets.
     """
     record = inspection.require_usable()
@@ -348,68 +338,16 @@ def plan_migration(
         raise InstallationError(
             "Unknown payload requires a project-owned migration inventory."
         )
-    if (legacy is None) != (observed is None):
-        raise InstallationError(
-            "Legacy receipt migration requires live package evidence."
-        )
-    if legacy is not None and observed is not None:
-        if (
-            observed.identity.app_id != inspection.app_id
-            or observed.identity.distribution != legacy.distribution
-            or legacy.command not in observed.identity.commands
-            or observed.version != legacy.version
-            or observed.backend != legacy.backend
-            or observed.placement != placement
-        ):
-            raise InstallationError(
-                "Legacy receipt does not match the verified installed package."
-            )
-    generation = generation_id or uuid4()
-    if legacy is None:
-        if staged_support:
-            raise InstallationError(
-                "Staged support is only valid for legacy receipt migration."
-            )
-    else:
-        assert observed is not None
-        staging_root = (
-            inspection.directory / "migration-staged" / str(generation)
-        )
-        expected = {
-            inspection.directory / output.path: output.digest
-            for output in observed.owned_outputs
-            if output.kind == "support"
-        }
-        actual = {item.destination: item.digest for item in staged_support}
-        if (
-            not expected
-            or None in expected.values()
-            or actual != expected
-            or len(staged_support) != len(actual)
-            or len({item.source for item in staged_support})
-            != len(staged_support)
-            or any(
-                item.source == item.destination
-                or not item.source.is_relative_to(staging_root)
-                for item in staged_support
-            )
-        ):
-            raise InstallationError(
-                "Staged support does not exactly match the saved replacement outputs."
-            )
     return MigrationPlan(
         inspection.directory,
         inspection.revision,
         record.generation_id if record is not None else None,
         inspection.app_id,
         uuid4(),
-        generation,
+        uuid4(),
         placement,
         inventory,
         quiescent,
-        observed,
-        legacy,
-        staged_support,
     )
 
 
@@ -526,7 +464,7 @@ def begin_operation(plan: OperationPlan) -> InstallationInspection:
         )
         if previous is None:
             record = InstallationRecord(
-                1,
+                2,
                 _identity(plan),
                 generation,
                 SUPPORT_VERSION,
@@ -544,14 +482,6 @@ def begin_operation(plan: OperationPlan) -> InstallationInspection:
         if isinstance(plan, MigrationPlan):
             from apprc.definition.installation import InstallationMigration
 
-            if plan.observed is not None:
-                record = replace(
-                    record,
-                    status="incomplete",
-                    current=plan.observed,
-                    last_successful=plan.observed,
-                    owned_outputs=plan.observed.owned_outputs,
-                )
             record = replace(
                 record,
                 migration=InstallationMigration(
@@ -559,9 +489,6 @@ def begin_operation(plan: OperationPlan) -> InstallationInspection:
                     plan.inventory.destination_root,
                     "staged",
                     plan.inventory,
-                    legacy=plan.legacy,
-                    staged_support=plan.staged_support,
-                    operation_id=plan.operation_id,
                 ),
             )
         write_record(
@@ -574,8 +501,6 @@ def _pending(
     directory: Path,
     operation_id: UUID,
     revision: str,
-    *,
-    require_operation: bool = True,
 ) -> InstallationRecord:
     import json
     from hashlib import sha256
@@ -591,24 +516,11 @@ def _pending(
     if not isinstance(value, dict) or not isinstance(value.get("app_id"), str):
         raise InstallationError("Installation identity is invalid.")
     record = decode_record(content, app_id=value["app_id"])
-    if require_operation:
-        if (
-            record.operation is None
-            or record.operation.operation_id != operation_id
-        ):
-            raise InstallationError(
-                "Installation operation is no longer active."
-            )
-    elif (
-        record.operation is not None
-        and record.operation.operation_id != operation_id
+    if (
+        record.operation is None
+        or record.operation.operation_id != operation_id
     ):
-        raise InstallationError("Installation operation identifier changed.")
-    elif (
-        record.migration is None
-        or record.migration.operation_id != operation_id
-    ):
-        raise InstallationError("Installation migration identifier changed.")
+        raise InstallationError("Installation operation is no longer active.")
     return record
 
 

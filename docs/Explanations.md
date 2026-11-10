@@ -397,6 +397,13 @@ Malformed, wrong-identity, unsupported or pending authority is instead an
 explicit recovery condition, not permission to silently select another store.
 The grouped installation show/doctor commands remain available for diagnosis.
 
+Installation authority uses strict schema `2`. Older installation records and
+Buildben receipts are not adopted or translated. This does not migrate or erase
+configuration, appdata, or workspace contents; those have independent ownership
+and lifetimes. An upgrade from older authority requires the explicit
+[reinstallation procedure](How-To-User-Guides.md#migrate-existing-applications),
+not a schema-number edit or automatic fallback.
+
 When saved placement wins, AppRC uses the recorded absolute locations—even for
 OS-native mode. Changing `XDG_CONFIG_HOME` or a cache base does not silently
 repoint that installation. Changing the installation discovery base itself, such

@@ -904,10 +904,11 @@ from the corresponding checkout. Repair does not silently download a newer
 application-specific remover. If the program itself is missing, re-run the
 matching root installer or the saved recovery command reported at failure.
 
-For recognized legacy layouts, stop old consumers and preview
-`demo installation migrate --dry-run` before applying migration. Unknown
-databases/payload need an inventory supplied by the owning application; generic
-migration does not treat every descendant as AppRC-owned.
+For an application-supported resource/layout relocation, stop its consumers and
+preview `demo installation migrate --dry-run` before applying migration. This
+does not convert old installation records or receipts. Unknown databases/payload
+need an inventory supplied by the owning application; generic migration does
+not treat every descendant as AppRC-owned.
 
 ## Remove a managed program
 
@@ -1231,21 +1232,53 @@ checks. It does not run application state factories or contact external services
 
 ## Migrate existing applications
 
+### From installation record schema 1
+
+Current management support accepts installation schema `2` only. It does not
+repair or translate schema `1`, and changing the JSON's version number is not
+an upgrade. If you already upgraded, use the previous generation's saved
+management support for inspection and retirement rather than overwriting its
+authority with the new installer.
+
+> [!CAUTION]
+> Back up configuration, private secret companions and appdata before retiring
+> old authority. `--complete --forget-retained` is not a general keep-data
+> command: selected categories can still be deleted.
+
+1. With the old generation, record the enabled resource paths and finish any
+   pending operation. Keep backups outside those managed roots.
+2. Use that generation's [program-only removal](#remove-a-managed-program).
+   Confirm its preview preserves the resources you need; program-only removal
+   deliberately leaves reconnectable installation support behind.
+3. Once removal is complete and all old consumers are stopped, move only the
+   fixed [installation directory](References.md#installationmanager), including
+   its old record and saved support, into a backup outside the managed roots.
+   Leave configuration, appdata, user workspaces and shared uv/Python locations
+   untouched. Do not remove shared sibling coordination locks.
+4. Install a fresh managed generation. Select the previous single-root path or
+   retain the previous OS-native environment, and compare its shown resource
+   paths before confirming reuse. Keep the backup until the new installation
+   and its preserved data are verified.
+
+If the old support cannot establish safe removal, use the owning application's
+backup/reinstallation procedure. Do not use the new SDK to invent ownership of
+an unsupported record.
+
 ### From AppRC 0.30
 
-Upgrade the application and regenerate its authored management artifacts.
 Installation is a separate durable component, not a subdirectory of disposable
-state. Existing OS-native Linux appdata at the parent requires explicit migration
-to the `appdata/` child before new initialization. Existing Buildben receipts
-require a validated cutover to `installation.json`, with old removal procedures
-quiescent and retired; never leave two active authorities.
+state. Old Buildben receipts have no adoption or replacement path in the current
+SDK; retire them with the old application's own procedures before installing a
+fresh generation. Do not leave two active authorities. Resource relocation,
+including old OS-native Linux appdata at the parent moving to the `appdata/`
+child, is a separate explicit operation using a project-owned inventory.
 
 Saved placement outranks declared defaults. Use installer `--layout`/`--root`
 to persist an explicit switch, or invocation controls for a temporary override.
 Callers manually constructing `AppPaths` must now preserve its `installation`
 snapshot; prefer `MyRC.paths(...)` rather than constructing or rediscovering it
-inside adapters. Keep old files and receipt/recovery state until migration has
-completed and been verified.
+inside adapters. Keep old files and recovery backups until the explicit
+reinstallation or resource migration has completed and been verified.
 
 ### Supply a project-owned migration inventory
 

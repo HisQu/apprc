@@ -185,7 +185,7 @@ def _validate(record: InstallationRecord, app_id: str) -> None:
 
 
 def decode_record(content: bytes, *, app_id: str) -> InstallationRecord:
-    """Decode exact schema 1 fields without accepting JSON coercions.
+    """Decode exact schema 2 fields without accepting JSON coercions.
 
     :param content: Exact UTF-8 authority bytes.
     :param app_id: Expected host identity, never obtained from untrusted bytes.

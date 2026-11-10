@@ -38,7 +38,7 @@ from apprc.user_files.installation.discovery import (
 def record(tmp_path: Path) -> InstallationRecord:
     """Use a valid retained cache-only installation, independent of appdata."""
     return InstallationRecord(
-        schema_version=1,
+        schema_version=2,
         app_id="fixture-app",
         generation_id=uuid4(),
         support_version="0.31.0",
@@ -62,9 +62,37 @@ def test_authority_round_trip_preserves_independent_resources(
     assert restored.placement.cache_dir == record.placement.cache_dir
 
 
+@pytest.mark.parametrize("schema_version", [1, 3])
+def test_old_and_unknown_authority_versions_are_invalid_without_mutation(
+    tmp_path: Path, record: InstallationRecord, schema_version: int
+) -> None:
+    directory = tmp_path / "installation"
+    directory.mkdir()
+    authority = directory / "installation.json"
+    value = json.loads(encode_record(record))
+    value["schema_version"] = schema_version
+    content = json.dumps(value).encode("utf-8")
+    authority.write_bytes(content)
+
+    inspection = inspect_installation(directory, app_id=record.app_id)
+
+    assert inspection.status == "invalid"
+    assert inspection.record is None
+    assert authority.read_bytes() == content
+    assert set(directory.iterdir()) == {authority}
+
+
 @pytest.mark.parametrize(
     "corruption",
-    ["unknown", "missing", "bool-version", "relative", "identity", "duplicate"],
+    [
+        "unknown",
+        "missing",
+        "bool-version",
+        "relative",
+        "identity",
+        "duplicate",
+        "old-nested",
+    ],
 )
 def test_invalid_authority_is_diagnostic_not_fallback(
     tmp_path: Path, record: InstallationRecord, corruption: str
@@ -80,6 +108,20 @@ def test_invalid_authority_is_diagnostic_not_fallback(
         value["placement"]["cache_dir"] = "relative/cache"
     elif corruption == "identity":
         value["app_id"] = "foreign-app"
+    elif corruption == "old-nested":
+        value["migration"] = {
+            "source": "/source",
+            "destination": "/destination",
+            "phase": "staged",
+            "inventory": {
+                "source_root": "/source",
+                "destination_root": "/destination",
+                "entries": [],
+                "destinations": [],
+                "unknown": [],
+            },
+            "legacy": None,
+        }
     content = json.dumps(value)
     if corruption == "duplicate":
         content = content[:-1] + ', "schema_version": 1}'
@@ -149,7 +191,7 @@ def test_saved_native_paths_remain_sticky_with_changed_xdg(
     )
     directory = app.installation(environment=environment).directory
     saved = InstallationRecord(
-        schema_version=1,
+        schema_version=2,
         app_id="fixture-app",
         generation_id=uuid4(),
         support_version="0.31.0",

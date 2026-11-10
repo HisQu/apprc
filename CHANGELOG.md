@@ -69,6 +69,18 @@ All notable changes to `AppRC` will be documented in this file.
   module. Affected: callers importing these low-level helpers.
   Migration: use `ConfigManager.plan_update()` or `plan_removal()`, then
   `apply_edit()`; the shared low-level plan/apply primitives remain available.
+- Breaking: Installation authority now uses strict schema `2`. Affected: managed
+  applications with schema-1 records. Old/unknown records remain read-only
+  diagnostics; the SDK no longer translates or adopts them.
+  Migration: finish old operations, back up data, retire the previous generation
+  and its saved authority without deleting preserved resources, then reinstall.
+  See the [upgrade procedure](docs/How-To-User-Guides.md#migrate-existing-applications).
+- Breaking: Removed receipt adoption/replacement APIs and receipt-only migration
+  types/arguments, including `InstallationManager.migrate_legacy()` and the
+  `apprc.distribution.runtime` legacy receipt/replacement families.
+  Affected: installer authors and direct callers of those APIs.
+  Migration: remove legacy receipt cutover code and use a fresh current-format
+  installation; current resource/layout migration remains supported.
 
 <br>
 

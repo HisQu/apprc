@@ -495,9 +495,12 @@ so ordinary `pip install -e .` does not require uv or an installation record.
 Unusable authority blocks ordinary path resolution/mutation rather than silently
 selecting another store. Management inspection remains available.
 
-`installation.json` uses strict schema `1`: duplicate/unknown structural keys,
-wrong types, mismatched app ID and relative paths are rejected. Revision is the
-SHA-256 of its exact UTF-8 bytes, not another persisted counter.
+`installation.json` uses strict schema `2`: duplicate/unknown structural keys,
+wrong types, mismatched app ID and relative paths are rejected. Schema `1` and
+unknown versions are incompatible read-only diagnostics, not upgrade inputs.
+AppRC does not adopt Buildben receipts or translate old installation records.
+Revision is the SHA-256 of the exact UTF-8 bytes, not another persisted counter.
+Resource ownership markers and workspace TOML retain their separate schema `1`.
 
 | Record field | Meaning |
 | --- | --- |
@@ -508,7 +511,7 @@ SHA-256 of its exact UTF-8 bytes, not another persisted counter.
 | `operation` | Pending target, fixed checkpoints, safe retry inputs and failure diagnostic, or `null`. |
 | `status` | `provisional`, `ready`, `incomplete`, or `removed-retained`. Ready requires observed current state and no pending operation. |
 | `owned_outputs` | Exact owned support/registration entries; never ownership of a shared parent, uv or Python. |
-| `migration` | Explicit legacy source, staged/retired entries and cutover progress, or `null`. |
+| `migration` | Current resource/layout source, destination, inventory and staged/activated progress, or `null`; no receipt/controller compatibility evidence. |
 
 Replacement creates a new generation; repair retains the target generation.
 Program-only removal records observed package absence as `removed-retained` and

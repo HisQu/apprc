@@ -454,6 +454,8 @@ contribute no values.
 | `apprc.defaults.env` | Package data for optional application defaults. |
 | `.apprc-owner.json` | Ownership marker inside an initialized category root; category-specific, not secret content. |
 | `installation.json` | Sole authority in the fixed native `installation/` directory; no secrets, unrelated to `.apprc-owner.json`. |
+| `management.py` | Owned stdlib launch/uninstall program in the installation directory; not an authority or application import. |
+| `management.json` | Owned support bindings beside that program; its digest is recorded in installation authority. |
 | `apprc.user.env` | Enabled config root; saved user overrides. |
 | `apprc.user.secret.env` | Enabled config root; private user secrets. |
 | `apprc.toml` | Enabled config root; workspace registry. |
@@ -521,6 +523,27 @@ After authority retirement, finalization may retire locks/remove empty container
 but must never delete later payload or recreate the record. See the
 [installation recovery guide](How-To-User-Guides.md#install-and-recover-managed-applications)
 for CLI use and [coordination rationale](Explanations.md#installation).
+
+Saved management support separates executable policy from host bindings.
+`management.py` is copied from the canonical stdlib-only
+`distribution/runtime/saved_management.py` source. Its explicit `launch` and
+`uninstall` actions do not infer behavior from filenames. Public root launch and
+uninstall wrappers remain the application-facing entry points.
+
+`management.json` has exactly these support-data fields:
+
+| Field | Meaning |
+| --- | --- |
+| `app_id` | Portable application identity used for fixed native discovery. |
+| `command` | Declared launcher command, checked against the observed installed package. |
+| `base_python` | `null` in portable author output; an absolute, independently validated external interpreter after installation binding. |
+
+The installation record owns the exact program and data digests. These bindings
+cannot grant ownership, replace the record, or select an ambient uv executable.
+Repair reuses a saved interpreter only from digest-authorized binding data and
+validates it again; it never extracts settings from Python source. Preview uses
+saved inspection without provisioning an environment. Actual removal uses the
+recorded backend and the application's saved uninstall composition.
 
 ## ConfigManager
 
@@ -683,7 +706,7 @@ encoding/decoding is exposed as
 | `paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. No category lists all paths; category prints only its absolute path. Disabled category and invalid `--open` combinations exit 2. `--open` launches an existing directory and never creates it. |
 | `doctor [--json]` | Always. Local/read-only config, declared-path and installation diagnostics; no application factories or external services. Normal JSON uses `status`/`checks`; unresolvable placement uses the diagnostic report described below. |
 | `installation show [--json]`, `installation doctor [--json]` | Always. Inspect saved authority without business resolution, resource initialization, uv or network calls; invalid/pending records remain manageable. |
-| `installation migrate [--dry-run]` | Explicit supported legacy cutover. Unrecognized project data requires an application-owned exact inventory, not automatic adoption. |
+| `installation migrate [--dry-run]` | Explicit current resource/layout migration, including supported resource-parent layouts. Unrecognized project data requires an application-owned exact inventory, not receipt adoption. |
 | `installation repair [--installer PATH]` | Resume/revalidate matching saved or explicitly supplied installer support, without silently downloading newer removal code. |
 | `installation uninstall [--dry-run] [--complete] [--category KIND] [--forget-retained] [--yes]` | Shared saved removal procedure. Repeat `--category` for config/appdata/cache/state. Program-only retains all resources; complete removal requires exact preview/consent. |
 | `config init [--adopt]` | Config enabled; initialize user config and explicitly adopt nonempty unowned config when requested. |

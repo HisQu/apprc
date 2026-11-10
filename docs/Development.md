@@ -111,6 +111,13 @@ ordinary Python and serialize complete explicitly included files into standalone
 support. Never extract function source, rewrite Python, or create a second
 installer implementation as a large template.
 
+`distribution/runtime/saved_management.py` is the canonical stdlib-only saved
+program. Rendering copies that source and serializes portable `management.json`
+data; `runtime/installation.py::bind_install_support()` binds the validated
+external interpreter in JSON, not by inspecting or rewriting Python. Native
+frontend path escaping is a separate binding concern. Keep both program and
+binding data in the record's exact support-digest inventory.
+
 <br>
 
 # Verify and update changes

@@ -410,6 +410,15 @@ repoint that installation. Changing the installation discovery base itself, such
 as `XDG_DATA_HOME` or the OS profile, requires explicit relocation; AppRC does not
 search other profiles. A saved helper operates against its adjacent record.
 
+Saved management code is not installation configuration. One canonical stdlib
+program implements launch/uninstall dispatch; adjacent `management.json` stores
+the application identity, command and bound external interpreter as data. Both
+are digest-owned by `installation.json`, which remains the only authority.
+Changing a binding does not authorize a new interpreter: saved execution must
+reject altered data before dispatch. This keeps repair independent of Python
+formatting and preserves previews that do not provision environments. See the
+[saved-support reference](References.md#installationmanager).
+
 An installer offers the layout on first install and retains it on reinstall.
 An explicit switch records earlier owned locations as retired resources; it
 does not automatically move arbitrary databases or project data. Linux's old

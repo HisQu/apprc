@@ -6,6 +6,5 @@ PUBLIC_NAMES = [
     "EnvFileEditPlan",
     "EnvFileUpdate",
     "read_env_file",
-    "ConfigSetupError",
     "ConfigSetupResult",
 ]

@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
-import os
-import sys
-
 # == 3rd Party ===============================
 import typer
 from prompt_toolkit import prompt
@@ -18,7 +14,6 @@ from apprc.interfaces.cli._errors import app_path_bad_parameter
 from apprc.public.app_rc import AppRC
 from apprc.services.manager import ConfigManager, WriteScope
 from apprc.user_files.app_home.locations import AppRCDirectoryError
-from apprc.user_files.setup.flow import ConfigSetupError, ConfigSetupResult
 
 
 def run_config_setup(
@@ -27,7 +22,6 @@ def run_config_setup(
     assume_yes: bool = False,
     adopt: bool = False,
     manager: ConfigManager | None = None,
-    allow_interactive_secret_repair: bool = False,
     config_group_name: str = "config",
     show_next_step: bool = False,
 ) -> None:
@@ -40,8 +34,6 @@ def run_config_setup(
     :param assume_yes: Whether to skip setup's optional field prompts.
     :param adopt: Whether to accept an existing unowned config directory.
     :param manager: Invocation-bound manager supplied by the config command.
-    :param allow_interactive_secret_repair: Whether to offer confirmed
-        permission repair for an unsafe user-secret directory.
     :param config_group_name: Config command group name used in guidance.
     :param show_next_step: Whether to print the declaration's next step.
     :raises typer.BadParameter: If setup inputs or managed files are invalid.
@@ -53,17 +45,7 @@ def run_config_setup(
         )
     active_manager = manager or apprc.manage(ResolveOptions())
     try:
-        result = _run_setup_with_user_secret_repair(
-            active_manager,
-            assume_yes=assume_yes,
-            allow_interactive_secret_repair=allow_interactive_secret_repair,
-            adopt=adopt,
-        )
-    except ConfigSetupError as exc:
-        raise typer.BadParameter(
-            str(exc),
-            param_hint=exc.param_hint,
-        ) from exc
+        result = active_manager.setup(adopt=adopt)
     except (OSError, ValueError) as exc:
         if isinstance(exc, AppRCDirectoryError):
             raise app_path_bad_parameter(exc) from exc
@@ -81,65 +63,6 @@ def run_config_setup(
     )
     if show_next_step:
         _print_setup_next_step(apprc)
-
-
-def _run_setup_with_user_secret_repair(
-    manager: ConfigManager,
-    *,
-    assume_yes: bool,
-    allow_interactive_secret_repair: bool,
-    adopt: bool,
-) -> ConfigSetupResult:
-    """Offer one confirmed repair for an unsafe user-secret directory.
-
-    :param manager: Manager bound to the selected AppRC path snapshot.
-    :param assume_yes: Whether setup should skip its own prompts.
-    :param allow_interactive_secret_repair: Whether an interactive caller
-        selected setup inputs before invoking this operation.
-    :param adopt: Whether setup may adopt an existing unowned config directory.
-    :return: Paths initialized by setup.
-    """
-    try:
-        return manager.setup(adopt=adopt)
-    except ConfigSetupError as setup_error:
-        if (
-            setup_error.param_hint != "config"
-            or (assume_yes and not allow_interactive_secret_repair)
-            or not sys.stdin.isatty()
-            or not sys.stdout.isatty()
-            or not manager.schema.uses_user_dotenv()
-        ):
-            raise
-        status = manager.secret_status("user")
-        if status.reason != "parent_not_private":
-            raise
-        allowed_principals = (
-            "this user, SYSTEM, and Administrators"
-            if os.name == "nt"
-            else "the current user"
-        )
-        if not typer.confirm(
-            f"The user secret directory at {status.path.parent} is not "
-            "private. Update safety permissions to allow access only to "
-            f"{allowed_principals}, then continue setup?"
-        ):
-            raise
-        try:
-            repaired = manager.repair_secret_permissions("user")
-        except (OSError, ValueError) as exc:
-            raise ConfigSetupError(
-                f"Could not repair user secret permissions: {exc}",
-                param_hint="config",
-            ) from exc
-        if not repaired.available:
-            issue = (
-                repaired.issue or "The user secret directory is unavailable."
-            )
-            raise ConfigSetupError(
-                f"Could not repair user secret permissions: {issue}",
-                param_hint="config",
-            )
-        return manager.setup(adopt=adopt)
 
 
 def _print_setup_next_step(apprc: AppRC) -> None:

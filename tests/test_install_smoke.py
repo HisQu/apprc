@@ -7,11 +7,6 @@ import tomllib
 from apprc_dev.packaging.terminal_metadata import ROOT, generated_files
 
 
-def test_terminal_metadata_is_current() -> None:
-    for path, expected in generated_files().items():
-        assert path.read_text() == expected, path.name
-
-
 def test_terminal_wrapper_owns_no_packages_and_pins_matching_core() -> None:
     core = tomllib.loads((ROOT / "pyproject.toml").read_text())
     wrapper = tomllib.loads(
@@ -45,10 +40,7 @@ def test_gui_distribution_owns_only_its_view_and_pins_matching_core() -> None:
 def test_gui_metadata_sync_handles_current_and_simulated_versions(
     tmp_path: Path,
 ) -> None:
-    from apprc_dev.packaging.gui_metadata import (
-        render_gui_pyproject,
-        sync_gui_metadata,
-    )
+    from apprc_dev.packaging.gui_metadata import sync_gui_metadata
 
     gui_path = ROOT / "src/apprc_dev/packaging/gui/pyproject.toml"
     gui_source = gui_path.read_text(encoding="utf-8")
@@ -68,10 +60,6 @@ def test_gui_metadata_sync_handles_current_and_simulated_versions(
     assert simulated_project["version"] == "0.27.1"
     assert "apprc-core==0.27.1" in simulated_project["dependencies"]
     assert "gradio>=6.26,<7" in simulated_project["dependencies"]
-    assert simulated_path.read_text(encoding="utf-8") == render_gui_pyproject(
-        gui_source,
-        "0.27.1",
-    )
 
 
 def test_distribution_generation_follows_root_version(

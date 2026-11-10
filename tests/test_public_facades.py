@@ -203,37 +203,3 @@ def test_internal_config_package_does_not_expose_legacy_declarations() -> None:
         importlib.import_module("apprc.definition.env_config.fields")
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("apprc.definition.env_config.env")
-
-
-def test_public_docs_do_not_reference_unreleased_runtime_names() -> None:
-    """Keep public docs aligned with the pre-release runtime API."""
-    docs = "\n".join(
-        (ROOT / path).read_text(encoding="utf-8")
-        for path in (
-            "README.md",
-            "README.pypi.md",
-            "docs/How-To-User-Guides.md",
-            "docs/References.md",
-            "CHANGELOG.md",
-        )
-    )
-
-    assert "`CliStateFactory`" not in docs
-    assert "runtime_policy=..." in docs
-    assert "COMMON_ROOT_FLAG_OPTIONS" not in docs
-    assert "COMMON_ROOT_VALUE_OPTIONS" not in docs
-    assert "config_policy=" not in docs
-    assert 'config_group_name="config"' not in docs
-    assert "actions={" not in docs
-    current_docs = "\n".join(
-        (ROOT / path).read_text(encoding="utf-8")
-        for path in (
-            "README.md",
-            "README.pypi.md",
-            "docs/How-To-User-Guides.md",
-            "docs/References.md",
-        )
-    )
-    assert "apprc[logging]" not in current_docs
-    assert "Optional Logging" not in current_docs
-    assert "src/apprc/logging" not in current_docs

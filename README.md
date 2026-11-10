@@ -100,21 +100,26 @@ Python 3.12 or newer is required.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install "apprc>=0.30.0,<0.31"` | Core configuration, Typer commands, prompts, and Textual editor. |
-| `python -m pip install "apprc-core>=0.30.0,<0.31"` | Configuration and noninteractive path/maintenance APIs. |
-| `python -m pip install "apprc-gui>=0.30.0,<0.31"` | Configuration and Gradio settings editor. |
+| `python -m pip install "apprc>=0.32.0,<0.33"` | Core configuration, Typer commands, prompts, and Textual editor. |
+| `python -m pip install "apprc-core>=0.32.0,<0.33"` | Configuration and noninteractive path/maintenance APIs. |
+| `python -m pip install "apprc-gui>=0.32.0,<0.33"` | Configuration and Gradio settings editor. |
 
 `apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
 `from apprc_gui import ConfigEditor`. Terminal and GUI distributions install the
 matching `apprc-core` release.
 
 > [!CAUTION]
-> Version 0.30 makes a breaking API and on-disk configuration cutover. Existing
+> Version 0.32 makes a breaking API and on-disk configuration cutover. Existing
 > `Storage`, `storage`, `apprc_dir`, and `--storage` integrations must be changed
 > to the new contracts described in the
 > [upgrade guide](docs/How-To-User-Guides.md#migrate-existing-applications).
 > AppRC does not move, rename, scan, delete, or automatically upgrade old user
 > files. Keep any old files as-is and deliberately configure the new paths.
+
+CI runs on Ubuntu: core checks cover Python 3.12, 3.13, and 3.14, and GUI/browser
+checks cover Python 3.12. Windows and macOS runtime and installer code remain,
+but those platforms are unverified by this CI policy and have
+[known native test failures](BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails).
 
 <br>
 
@@ -285,3 +290,4 @@ builds.
   - [README maintenance](docs/Development.md#readme-maintenance)
   - [Verification](docs/Development.md#checks)
   - [Releases](docs/Development.md#release-procedure)
+- [Changelog](CHANGELOG.md) — Current release notes and migration requirements; [older releases](CHANGELOG-ARCHIVE.md) are archived.

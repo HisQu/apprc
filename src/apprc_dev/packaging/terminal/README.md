@@ -100,9 +100,9 @@ Python 3.12 or newer is required.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install "apprc>=0.30.0,<0.31"` | Core configuration, Typer commands, prompts, and Textual editor. |
-| `python -m pip install "apprc-core>=0.30.0,<0.31"` | Configuration and noninteractive path/maintenance APIs. |
-| `python -m pip install "apprc-gui>=0.30.0,<0.31"` | Configuration and Gradio settings editor. |
+| `python -m pip install "apprc>=0.32.0,<0.33"` | Core configuration, Typer commands, prompts, and Textual editor. |
+| `python -m pip install "apprc-core>=0.32.0,<0.33"` | Configuration and noninteractive path/maintenance APIs. |
+| `python -m pip install "apprc-gui>=0.32.0,<0.33"` | Configuration and Gradio settings editor. |
 
 `apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
 `from apprc_gui import ConfigEditor`. Terminal and GUI distributions install the
@@ -110,12 +110,17 @@ matching `apprc-core` release.
 
 **Caution**
 
-Version 0.30 makes a breaking API and on-disk configuration cutover. Existing
+Version 0.32 makes a breaking API and on-disk configuration cutover. Existing
 `Storage`, `storage`, `apprc_dir`, and `--storage` integrations must be changed
 to the new contracts described in the
 [upgrade guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#migrate-existing-applications).
 AppRC does not move, rename, scan, delete, or automatically upgrade old user
 files. Keep any old files as-is and deliberately configure the new paths.
+
+CI runs on Ubuntu: core checks cover Python 3.12, 3.13, and 3.14, and GUI/browser
+checks cover Python 3.12. Windows and macOS runtime and installer code remain,
+but those platforms are unverified by this CI policy and have
+[known native test failures](https://github.com/HisQu/apprc/blob/main/BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails).
 
 <br>
 
@@ -286,3 +291,4 @@ builds.
   - [README maintenance](https://github.com/HisQu/apprc/blob/main/docs/Development.md#readme-maintenance)
   - [Verification](https://github.com/HisQu/apprc/blob/main/docs/Development.md#checks)
   - [Releases](https://github.com/HisQu/apprc/blob/main/docs/Development.md#release-procedure)
+- [Changelog](https://github.com/HisQu/apprc/blob/main/CHANGELOG.md) — Current release notes and migration requirements; [older releases](https://github.com/HisQu/apprc/blob/main/CHANGELOG-ARCHIVE.md) are archived.

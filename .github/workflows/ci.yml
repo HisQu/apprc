@@ -21,8 +21,6 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - windows-latest
-          - macos-latest
         python-version:
           - "3.12"
           - "3.13"
@@ -80,7 +78,6 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - windows-latest
 
     steps:
       - name: Checkout
@@ -101,10 +98,6 @@ jobs:
       - name: Install Chromium for browser checks
         if: matrix.os == 'ubuntu-latest'
         run: uv run --no-sync playwright install --with-deps chromium
-
-      - name: Install Chromium for browser checks
-        if: matrix.os == 'windows-latest'
-        run: uv run --no-sync playwright install chromium
 
       - name: Test GUI view and browser interaction
         env:

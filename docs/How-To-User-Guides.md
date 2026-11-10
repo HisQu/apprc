@@ -775,7 +775,7 @@ Declare the browser launcher and CLI entry points in `pyproject.toml`:
 
 ```toml
 [project]
-dependencies = ["apprc-gui>=0.27.0,<0.28", "gradio>=6.26,<7"]
+dependencies = ["apprc-gui>=0.32.0,<0.33", "gradio>=6.26,<7"]
 
 [project.gui-scripts]
 my-app-desktop = "my_app.desktop:main"
@@ -798,6 +798,12 @@ resources, first-run setup, browser launch, and upgrade on a Windows account
 without Python or network access. AppRC supplies the editor and file rules;
 the application owns its installer and entry points.
 
+> [!WARNING]
+> AppRC's CI does not verify Windows or macOS, and
+> [known native test failures](../BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails)
+> remain unresolved. This installer guidance is not evidence that an application
+> installer passes on Windows; validate the complete installer on its target OS.
+
 <br>
 
 # Install and recover managed applications
@@ -809,7 +815,7 @@ separates application resources, durable management metadata and the Python
 environment.
 
 > [!IMPORTANT]
-> The repository targets AppRC 0.31.0. A source version bump or `git pull` does
+> The repository targets AppRC 0.32.0. A source version bump or `git pull` does
 > not publish that version. Use the project's verified development source pin
 > until matching packages are available; do not remove that pin merely because
 > the checkout's version changed.
@@ -1330,7 +1336,8 @@ is still pending: inspect `record.migration.cleanup_complete`, not only `status`
 
 ### From AppRC 0.29 and earlier
 
-AppRC 0.30 is a breaking API, CLI, environment, and config-format cutover.
+AppRC 0.30 introduced the breaking API, CLI, environment, and config-format
+cutover retained in AppRC 0.32.
 Update all callers and user-facing instructions before upgrading applications:
 
 | Previous contract | Replacement |

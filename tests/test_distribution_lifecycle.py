@@ -1,4 +1,4 @@
-"""Maintained source identity, legacy receipt and artifact-composition scenarios."""
+"""Maintained source identity and artifact-composition scenarios."""
 
 from __future__ import annotations
 
@@ -22,8 +22,10 @@ from zipfile import ZipFile, ZipInfo
 import pytest
 
 from apprc.definition.installation import (
+    InstallationError,
     InstallationIdentity,
     InstallationSource,
+    OperationStep,
 )
 from apprc.distribution.models import (
     DistributionSpec,
@@ -36,6 +38,7 @@ from apprc.distribution.rendering import (
     install_support_files,
     render_bootstraps,
 )
+from apprc.distribution.runtime import controllers
 from apprc.distribution.runtime.acquisition import (
     SourceSelection,
     _archive_inputs,
@@ -43,19 +46,19 @@ from apprc.distribution.runtime.acquisition import (
     parse_source_arguments,
     prepare_source,
 )
-from apprc.distribution.runtime.legacy import inspect_legacy_receipt
+from apprc.distribution.runtime.controllers import prepare_uninstall
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
 from apprc.user_files.env_files.secrets import ensure_secret_file
-
-from apprc.distribution.runtime import controllers
-from apprc.distribution.runtime.controllers import prepare_uninstall
-from apprc.definition.installation import InstallationError, OperationStep
 from apprc.user_files.installation.discovery import inspect_installation
 from tests.test_distribution_support_recovery import (
     _run as install_support_fixture,
+)
+from tests.test_distribution_support_recovery import (
     _scenario as installation_scenario,
+)
+from tests.test_distribution_support_recovery import (
     _stub_backend,
 )
 
@@ -352,77 +355,6 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     assert rejected.returncode != 0
     assert not marker.exists()
     assert not tuple(temporary.iterdir())
-
-
-def _legacy_receipt(root: Path) -> Path:
-    receipt = root / "receipt.json"
-    root.mkdir(parents=True, exist_ok=True)
-    value = {
-        "schema_version": 1,
-        "distribution": "sample-app",
-        "command": "sample-app",
-        "version": "2.4.1",
-        "source_ref": "release:2.4.1",
-        "python": str(root / "base-python"),
-        "uv": str(root / "uv"),
-        "tool_dir": str(root / "tools"),
-        "tool_bin_dir": str(root / "commands"),
-        "appdata_supported": False,
-        "uv_bootstrapped": True,
-        "package_removed": False,
-        "uv_binaries": [{"path": str(root / "uv"), "sha256": "a" * 64}],
-    }
-    receipt.write_text(
-        json.dumps(value, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    (root / "uninstall.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    return receipt
-
-
-def test_legacy_receipt_rejects_unknown_identity_and_captures_exact_runnables(
-    tmp_path: Path,
-) -> None:
-    receipt = _legacy_receipt(tmp_path / "legacy" / "installation")
-    inspection = inspect_legacy_receipt(
-        receipt, distribution="sample-app", command="sample-app"
-    )
-
-    assert inspection.compatible
-    evidence = inspection.migration_evidence()
-    assert evidence.receipt.path == receipt
-    assert evidence.backend.tool_dir == receipt.parent / "tools"
-    assert [
-        (item.path.name, item.inert_path.name) for item in evidence.runnables
-    ] == [
-        ("uninstall.sh", ".retired-uninstall.sh"),
-    ]
-    assert (
-        evidence.runnables[0].revision
-        == hashlib.sha256(
-            (receipt.parent / "uninstall.sh").read_bytes()
-        ).hexdigest()
-    )
-
-    rejected = inspect_legacy_receipt(
-        receipt, distribution="other-app", command="sample-app"
-    )
-    assert not rejected.compatible
-    with pytest.raises(ValueError, match="cannot be migrated"):
-        rejected.migration_evidence()
-
-
-def test_legacy_receipt_unknown_fields_are_not_adopted(tmp_path: Path) -> None:
-    receipt = _legacy_receipt(tmp_path / "legacy" / "installation")
-    value = json.loads(receipt.read_text(encoding="utf-8"))
-    value["layout"] = "native"
-    receipt.write_text(json.dumps(value), encoding="utf-8")
-
-    inspection = inspect_legacy_receipt(
-        receipt, distribution="sample-app", command="sample-app"
-    )
-
-    assert not inspection.compatible
-    assert inspection.diagnostics[0].code == "legacy-receipt-invalid"
 
 
 def test_release_asset_digest_and_runtime_constraints_are_captured(

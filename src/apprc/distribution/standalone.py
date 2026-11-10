@@ -40,8 +40,6 @@ STANDALONE_MODULES = (
     "distribution/runtime/installation.py",
     "distribution/runtime/controllers.py",
     "distribution/runtime/inspection.py",
-    "distribution/runtime/legacy.py",
-    "distribution/runtime/legacy_replacement.py",
     "distribution/runtime/removal.py",
 )
 

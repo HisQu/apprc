@@ -1,5 +1,6 @@
 """Author inputs and generated artifact behavior, independent of installation."""
 
+import hashlib
 import json
 import os
 import shutil
@@ -12,15 +13,22 @@ from typing import Literal
 import pytest
 
 from apprc import AppRC, Paths
+from apprc.definition.installation import InstallationIdentity
 from apprc.distribution.artifacts import write_artifacts
 from apprc.distribution.metadata import (
     inspect_capabilities,
     read_project_metadata,
 )
-from apprc.distribution.models import Artifact, PayloadTree
-from apprc.definition.installation import InstallationIdentity
-from apprc.distribution.models import DistributionSpec, ProjectMetadata
-from apprc.distribution.rendering import build_main_installer
+from apprc.distribution.models import (
+    Artifact,
+    DistributionSpec,
+    PayloadTree,
+    ProjectMetadata,
+)
+from apprc.distribution.rendering import (
+    build_main_installer,
+    install_support_files,
+)
 from apprc.user_files.installation.discovery import inspect_installation
 
 
@@ -169,7 +177,7 @@ placement = InstallationPlacement(
     capabilities=frozenset({"config"}),
 )
 record = InstallationRecord(
-    schema_version=1,
+    schema_version=2,
     app_id="saved-fixture",
     generation_id=uuid4(),
     support_version="1",
@@ -316,3 +324,120 @@ def test_emitted_composition_runs_without_installed_apprc_with_saved_inventory(
         "retained": ["saved-config"],
         "unknown_contents": "retain me\n",
     }
+
+
+@pytest.mark.parametrize("schema_version", (1, 3, 2.0))
+@pytest.mark.parametrize("program", ("launcher", "uninstaller"))
+def test_generated_management_programs_reject_non_schema_two_authority(
+    tmp_path: Path, schema_version: int | float, program: str
+) -> None:
+    payload = _standalone_payload(tmp_path / "payload")
+    identity = InstallationIdentity(
+        "generation-fixture",
+        "generation-fixture",
+        "fixture",
+        None,
+        ("fixture",),
+    )
+    spec = DistributionSpec(
+        ProjectMetadata(tmp_path / "author", identity, "1.0"),
+    )
+    support_files = install_support_files(spec, payload)
+    directory = tmp_path / "saved-installation"
+    directory.mkdir()
+    authority = directory / "installation.json"
+    side_effect = tmp_path / f"{program}-side-effect"
+    application = tmp_path / "recorded-application"
+    application.write_text(
+        f"#!{sys.executable}\nfrom pathlib import Path\n"
+        f"Path({str(side_effect)!r}).write_text('ran')\n",
+        encoding="utf-8",
+    )
+    application.chmod(0o700)
+
+    if program == "launcher":
+        support_path = PurePosixPath("launcher.py")
+        support_data = support_files[support_path]
+        owned_outputs = [
+            {
+                "kind": "support",
+                "path": support_path.as_posix(),
+                "digest": hashlib.sha256(support_data).hexdigest(),
+            }
+        ]
+        executable = directory / support_path.name
+        executable.write_bytes(support_data)
+        arguments = [
+            sys.executable,
+            str(executable),
+            "--directory",
+            str(directory),
+            "--command",
+            "fixture",
+        ]
+        current = {
+            "identity": {"commands": ["fixture"]},
+            "commands": [str(application)],
+            "owned_outputs": owned_outputs,
+        }
+    else:
+        inspection_path = PurePosixPath("inspection.py")
+        inspection_data = (
+            f"from pathlib import Path\n"
+            f"Path({str(side_effect)!r}).write_text('inspection ran')\n"
+            "print('{}')\n"
+        ).encode()
+        uninstaller_path = PurePosixPath("uninstall.py")
+        uninstaller_data = support_files[uninstaller_path].replace(
+            b'BASE_PYTHON = "__APPRC_BASE_PYTHON__"',
+            f"BASE_PYTHON = {sys.executable!r}".encode(),
+        )
+        for relative, data in (
+            (inspection_path, inspection_data),
+            (uninstaller_path, uninstaller_data),
+        ):
+            (directory / relative.name).write_bytes(data)
+        owned_outputs = [
+            {
+                "kind": "support",
+                "path": relative.as_posix(),
+                "digest": hashlib.sha256(data).hexdigest(),
+            }
+            for relative, data in (
+                (inspection_path, inspection_data),
+                (uninstaller_path, uninstaller_data),
+            )
+        ]
+        arguments = [
+            sys.executable,
+            str(directory / uninstaller_path.name),
+            "--directory",
+            str(directory),
+            "--dry-run",
+        ]
+        current = {"owned_outputs": owned_outputs}
+
+    original_authority = json.dumps(
+        {
+            "schema_version": schema_version,
+            "app_id": identity.app_id,
+            "status": "ready",
+            "operation": None,
+            "current": current,
+            "last_successful": None,
+        },
+        sort_keys=True,
+    ).encode()
+    authority.write_bytes(original_authority)
+
+    result = subprocess.run(
+        arguments,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert not side_effect.exists()
+    assert authority.read_bytes() == original_authority

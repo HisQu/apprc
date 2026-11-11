@@ -84,6 +84,8 @@ def _windows_api():
     kernel32.GetProcessTimes.restype = wintypes.BOOL
     kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
     kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
     return kernel32, FileTime
 
 

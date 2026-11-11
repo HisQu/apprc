@@ -79,8 +79,10 @@ Issues = "https://github.com/HisQu/apprc/issues"
 # ruff, pyright, notebooks, profiling, and docs helpers.
 #
 # Install commands:
-#   python -m pip install -e . -e src/apprc_dev/packaging/terminal -e examples/example_apps --group dev
-#   uv sync --locked --all-groups
+#   python -m pip install -e . -e src/apprc_dev/packaging/terminal -e src/apprc_dev/packaging/gui -e examples/example_apps --group dev
+#   uv sync --all-packages --locked --all-groups
+# > --all-packages selects every workspace project, including the GUI.
+# > Dependency groups select development tools, not workspace membership.
 [dependency-groups]
 demo = [
     "apprc-example-apps",

@@ -109,8 +109,12 @@ async def test_launcher_opens_reusable_config_screen_in_same_app(
 
     async with app.run_test() as pilot:
         assert app.screen is app.home
-        assert not app.home.query_one("#launcher-config", Button).disabled
-        await pilot.click("#launcher-config")
+        config_button = app.home.query_one("#launcher-config", Button)
+        assert not config_button.disabled
+        # > Long fixture paths can place actions below the viewport.
+        config_button.scroll_visible(animate=False, immediate=True)
+        await pilot.pause()
+        assert await pilot.click(config_button)
         await pilot.pause()
         assert isinstance(app.screen, ConfigEditorScreen)
 
@@ -231,7 +235,10 @@ async def test_launcher_editor_opens_field_modal_in_the_existing_app(
     app = LauncherApp(context=context, handlers={})
 
     async with app.run_test() as pilot:
-        await pilot.click("#launcher-config")
+        config_button = app.home.query_one("#launcher-config", Button)
+        config_button.scroll_visible(animate=False, immediate=True)
+        await pilot.pause()
+        assert await pilot.click(config_button)
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, ConfigEditorScreen)

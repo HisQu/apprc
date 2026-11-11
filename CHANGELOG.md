@@ -33,10 +33,11 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.32.0 - 2026-11-10](#0320---2026-11-10)
-4. [0.29.0 - 2026-10-26](#0290---2026-10-26)
-5. [0.28.0 - 2026-10-02](#0280---2026-10-02)
-6. [Older releases](CHANGELOG-ARCHIVE.md)
+3. [0.33.0 - 2026-11-11](#0330---2026-11-11)
+4. [0.32.0 - 2026-11-10](#0320---2026-11-10)
+5. [0.29.0 - 2026-10-26](#0290---2026-10-26)
+6. [0.28.0 - 2026-10-02](#0280---2026-10-02)
+7. [Older releases](CHANGELOG-ARCHIVE.md)
 
 <br>
 
@@ -47,6 +48,44 @@ All notable changes to `AppRC` will be documented in this file.
 <!-- ======================================================== -->
 
 # [Unreleased]
+
+<br>
+
+### 💥 Breaking changes
+
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.33.0 - 2026-11-11
 
 <br>
 
@@ -114,22 +153,6 @@ All notable changes to `AppRC` will be documented in this file.
 - Gave editor workspace presentation one post-action owner. Workflows use fresh
   action inputs rather than capturing the screen, and a failed registry reload
   no longer leaves stale workspace state editable or valid user editing locked.
-
-<br>
-
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
-### 🔨 Fixed
-
-<br>
-
-### 🔒 Security
 
 <br>
 

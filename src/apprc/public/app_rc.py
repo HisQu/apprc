@@ -6,12 +6,13 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import (
     Any,
     ClassVar,
+    Generic,
     NoReturn,
     TypeGuard,
     TypeVar,
@@ -101,6 +102,16 @@ class _AppRCDeclaration:
     setup_next_step: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedDependencyConfig(Generic[ConfigInstanceT]):
+    """Carry a validated dependency binding and its pending registry entries."""
+
+    binding: ImportedConfig[ConfigInstanceT]
+    schema: AppConfigSpec
+    env_key_entries: dict[str, tuple[str, str]]
+    source_env_keys: frozenset[str]
+
+
 class AppRC:
     """Public facade for one application's AppRC integration.
 
@@ -157,11 +168,12 @@ class AppRC:
         self._bundles: dict[type[object], tuple[_BundleFieldSpec, ...]] = {}
         self._imported_configs: list[ImportedConfig[Any]] = []
         self._env_key_index: dict[str, tuple[str, str]] = {}
-        self._dependency_env_keys: set[str] = set()
         self._dependency_source_env_keys: set[str] = set()
         self._dependency_control_env_keys: set[str] = set()
         self._dependency_env_prefixes: set[str] = set()
-        self._schema = self._build_schema()
+        self._schema = self._build_schema(
+            imported_configs=self._imported_configs
+        )
 
     @property
     def schema(self) -> AppConfigSpec:
@@ -397,6 +409,42 @@ class AppRC:
         :raises ValueError: If field mappings, secrets, prefixes, or names
             conflict.
         """
+        prepared = self._prepare_dependency_config(
+            dependency=dependency,
+            config_type=config_type,
+            key=key,
+            prefix=prefix,
+            fields=fields,
+            field_targets=field_targets,
+            title=title,
+            rc_path=rc_path,
+            include_packaged_defaults=include_packaged_defaults,
+        )
+        binding = prepared.binding
+        self._env_key_index.update(prepared.env_key_entries)
+        self._dependency_source_env_keys.update(prepared.source_env_keys)
+        self._dependency_control_env_keys.update(
+            binding.dependency_control_env_keys
+        )
+        self._dependency_env_prefixes.update(binding.dependency_env_prefixes)
+        self._imported_configs.append(binding)
+        self._schema = prepared.schema
+        return binding
+
+    def _prepare_dependency_config(
+        self,
+        dependency: AppRC,
+        config_type: type[ConfigInstanceT],
+        *,
+        key: str,
+        prefix: str,
+        fields: Mapping[str, dataclasses.Field[Any]],
+        field_targets: Mapping[str, str] | None = None,
+        title: str | None = None,
+        rc_path: tuple[str, ...] | None = None,
+        include_packaged_defaults: bool = False,
+    ) -> _PreparedDependencyConfig[ConfigInstanceT]:
+        """Validate a candidate import without changing live registrations."""
         if not isinstance(dependency, AppRC):
             raise TypeError("dependency must be an AppRC instance.")
         if not isinstance(config_type, type) or not issubclass(
@@ -541,7 +589,8 @@ class AppRC:
         parent_keys = set(self._env_key_index) | mapped_parent_keys
         parent_keys.update(parent_control_keys)
         excluded_dependency_keys = (
-            self._dependency_env_keys
+            self._dependency_source_env_keys
+            | self._dependency_control_env_keys
             | imported_source_keys
             | dependency_control_keys
         )
@@ -591,22 +640,22 @@ class AppRC:
             include_packaged_defaults=include_packaged_defaults,
             runtime_config_type=runtime_config_type,
         )
-        validate_config_owner_inventory((*self.schema.owners, parent_owner))
-        for field_spec in parent_owner.fields:
-            env_key = parent_owner.env_key(field_spec.name)
-            self._env_key_index[env_key] = (
+        schema = self._build_schema(
+            imported_configs=(*self._imported_configs, binding)
+        )
+        env_key_entries = {
+            parent_owner.env_key(field_spec.name): (
                 f"{dependency._declaration.app_id}.{config_type.__name__}",
                 field_spec.name,
             )
-        self._dependency_env_keys.update(
-            imported_source_keys | dependency_control_keys
+            for field_spec in parent_owner.fields
+        }
+        return _PreparedDependencyConfig(
+            binding=binding,
+            schema=schema,
+            env_key_entries=env_key_entries,
+            source_env_keys=frozenset(imported_source_keys),
         )
-        self._dependency_source_env_keys.update(imported_source_keys)
-        self._dependency_control_env_keys.update(dependency_control_keys)
-        self._dependency_env_prefixes.update(dependency_prefixes)
-        self._imported_configs.append(binding)
-        self._schema = self._build_schema()
-        return binding
 
     @staticmethod
     def _import_field_declarations(
@@ -810,8 +859,10 @@ class AppRC:
         self._bundles[resolved_bundle] = tuple(bundle_fields.values())
         return cast(BundleClassT, resolved_bundle)
 
-    def _build_schema(self) -> AppConfigSpec:
-        """Build validated schema metadata from current registrations."""
+    def _build_schema(
+        self, *, imported_configs: Iterable[ImportedConfig[Any]]
+    ) -> AppConfigSpec:
+        """Build validated metadata from direct and explicit imported configs."""
         envs = tuple(
             item.config_type
             for item in self._registered_by_key.values()
@@ -824,7 +875,7 @@ class AppRC:
             config_package=declaration.config_package,
             envs=envs,
             additional_owners=tuple(
-                item.parent_owner for item in self._imported_configs
+                item.parent_owner for item in imported_configs
             ),
             user_dotenv=declaration.user_dotenv,
             paths=declaration.paths,
@@ -908,7 +959,9 @@ class AppRC:
                 resolved_type.__name__,
                 field_name,
             )
-        self._schema = self._build_schema()
+        self._schema = self._build_schema(
+            imported_configs=self._imported_configs
+        )
         return cast(ConfigClassT, resolved_type)
 
     def _build_owner(
@@ -956,9 +1009,13 @@ class AppRC:
     ) -> None:
         """Reject env keys that another registered config already owns."""
         for field_name, spec in declared_fields.items():
-            if spec.env_key in self._dependency_env_keys or any(
-                spec.env_key.startswith(prefix)
-                for prefix in self._dependency_env_prefixes
+            if (
+                spec.env_key in self._dependency_source_env_keys
+                or spec.env_key in self._dependency_control_env_keys
+                or any(
+                    spec.env_key.startswith(prefix)
+                    for prefix in self._dependency_env_prefixes
+                )
             ):
                 raise ValueError(
                     f"Env key {spec.env_key} belongs to an imported dependency "

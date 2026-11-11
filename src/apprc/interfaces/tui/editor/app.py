@@ -42,10 +42,9 @@ from apprc.interfaces.tui._primitives import ConfirmScreen
 from apprc.interfaces.tui._rendering import (
     active_workspace_title,
     archived_workspace_title,
-    build_field_table_rows,
-    field_table_columns,
     live_workspace_title,
     missing_workspace_title,
+    populate_field_table,
 )
 from apprc.interfaces.tui.editor.setup import ConfigEditorSetupWorkflow
 from apprc.interfaces.tui.editor.workspace_base import (
@@ -211,7 +210,7 @@ class ConfigEditorScreen(Screen[None]):
             else []
         )
         self.selection: EditorWorkspaceSelection = NoWorkspaceSelection()
-        self.row_env_keys: list[str | None] = []
+        self.row_env_keys: tuple[str | None, ...] = ()
         self._config_action_in_progress = False
 
     def compose(self) -> ComposeResult:
@@ -848,33 +847,19 @@ class ConfigEditorScreen(Screen[None]):
     def _populate_field_table(self) -> None:
         """Render every known config field for the active workspace."""
         table = self.query_one("#field-table", DataTable)
-        table.clear(columns=True)
-        table.cursor_type = "row"
-        table.add_columns(
-            *field_table_columns(
-                include_user_dotenv=self.user_dotenv_enabled,
-                include_workspace=self.workspace_enabled,
-                include_explicit=bool(self.manager.options.env_files),
-            )
-        )
-        self.row_env_keys = []
-        for row in build_field_table_rows(
+        self.row_env_keys = populate_field_table(
+            table,
             resolved=self._inspected_resolution(),
             include_user_dotenv=self.user_dotenv_enabled,
             include_workspace=self.workspace_enabled,
             hidden_env_keys=self.hidden_env_keys,
-        ):
-            if row.height is None:
-                table.add_row(*row.cells)
-            else:
-                table.add_row(*row.cells, height=row.height)
-            self.row_env_keys.append(row.env_key)
+        )
 
     def _clear_field_table(self) -> None:
         """Clear the field table when no live workspace is selected."""
         table = self.query_one("#field-table", DataTable)
         table.clear(columns=True)
-        self.row_env_keys = []
+        self.row_env_keys = ()
 
     def _selected_field(self) -> SelectedField | None:
         """Return the field represented by the current table cursor."""

@@ -46,12 +46,14 @@ after installing the local terminal wrapper.
 For the locked development environment:
 
 ```shell
-uv sync --locked --all-groups
+uv sync --locked --all-packages --all-groups
 ```
 
-The root uv workspace includes the terminal and GUI projects. Root source
-mappings select all three local distributions and the editable examples. Do not change
-shell startup files or `PATH` to locate project tools; use `.venv/bin/<tool>`.
+The root uv workspace includes the terminal and GUI projects. `--all-packages`
+selects every workspace project, including the GUI; source mappings alone do not
+select projects for installation. `--all-groups` also installs the development
+tools and editable examples. Do not change shell startup files or `PATH` to
+locate project tools; use `.venv/bin/<tool>`.
 
 ## Source ownership
 
@@ -97,12 +99,31 @@ installation records require the explicit
 [reinstallation procedure](How-To-User-Guides.md#from-installation-record-schema-1),
 not a version-number edit or automatic conversion.
 
+Package reuse, installation, verification, and package checkpoints belong to one
+reconciliation stage in `runtime/installation.py`. Its caller owns the operation,
+support publication, registration, and commit. If reconciliation fails after
+advancing a checkpoint, failure journaling reads the latest on-disk revision.
+In `runtime/removal.py`, pending uninstall preparation validates authority and
+containment before the caller-exit handshake. Execution waits outside the
+installation lock, then rechecks authority under the lock before mutation.
+Committed finalization instead requires its saved cleanup proof and never
+restores pending authority after commit.
+
 `ConfigEditorScreen` owns workspace presentation state and the single
 post-action refresh boundary. Workflows receive a fresh, read-only
 `WorkspaceActionContext` and return `WorkspaceActionResult`; they do not retain
 the screen or mutate its registry, selection, or controls. Persistent operations
 remain in `ConfigManager` and `WorkspaceManager`. A failed registry reload makes
 registry actions unavailable without locking valid user-config editing.
+
+Field-table widget population belongs in `interfaces/tui/_rendering.py`; its
+immutable row-key tuple includes section separators so screen selection stays
+aligned with displayed rows. Explicit-source columns come from the same
+`ResolvedConfig` that supplies those rows.
+
+Dependency imports prepare and validate their candidate schema before updating
+the parent application's registries. A rejected import does not reserve its
+owner key or prefix, so callers can correct the declaration and retry.
 
 Application packaging/release manifests and business actions remain in the
 consuming repository. Its `_distr` generator and payload are author inputs,

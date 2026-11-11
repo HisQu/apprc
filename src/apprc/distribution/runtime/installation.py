@@ -194,173 +194,18 @@ def _install_application_locked(
             operation is not None
             and OperationStep.PACKAGE_CHANGED in operation.steps
         )
-        prior_current = (
-            (authority.record.current or authority.record.last_successful)
-            if authority.record is not None
-            else None
+        observed, revision = _reconcile_package(
+            plan,
+            authority=authority,
+            prepared=prepared,
+            operation_context=context_path,
+            environment=environment,
+            probe_path=probe_path,
+            python_requirement=python_requirement,
+            distribution_present=distribution_present,
+            package_checkpointed=package_checkpointed,
+            revision=revision,
         )
-        acquisition = replace(
-            plan.target.source,
-            requirement=prepared.requirement,
-        )
-        probe_source = plan.target.source
-        probe_requirement: str | None = prepared.requirement
-        probe_digest = prepared.digest
-        if (
-            plan.kind == "repair"
-            and prior_current is not None
-            and plan.target.source.matches_observation(prior_current.source)
-        ):
-            probe_source = prior_current.source
-            probe_digest = prior_current.source.digest
-            probe_requirement = None
-        expected_record_digest = (
-            prior_current.distribution_record_digest
-            if plan.kind == "repair" and prior_current is not None
-            else None
-        )
-        requires_record_proof = plan.target.source.kind in {
-            "release-sdist",
-            "wheel",
-        } or (
-            prepared.digest is not None
-            and plan.target.source.kind == "index"
-            and parse_immutable_github_source(plan.target.source.requirement)
-            is not None
-        )
-        if (
-            plan.kind == "repair"
-            and requires_record_proof
-            and prior_current is not None
-            and expected_record_digest is None
-        ):
-            raise InstallationError(
-                "Saved archive observation has no installed RECORD fingerprint; repair cannot verify it."
-            )
-        should_probe_existing = distribution_present and (
-            package_checkpointed
-            or plan.kind == "repair"
-            or prior_current is None
-        )
-        observed: InstalledSnapshot | None = None
-        if should_probe_existing:
-            try:
-                observed = probe_installed_tool(
-                    plan.target.backend,
-                    plan.target.identity,
-                    probe_source,
-                    plan.target.placement,
-                    probe_path=probe_path,
-                    environment=environment,
-                    operation_context=context_path,
-                    acquisition_requirement=probe_requirement,
-                    acquisition_digest=probe_digest,
-                    expected_record_digest=expected_record_digest,
-                )
-            except (InstallationError, OSError, ValueError) as target_error:
-                if prior_current is None:
-                    raise InstallationError(
-                        "An existing uv tool is not proven to match the pending source; refusing adoption."
-                    ) from target_error
-                if (
-                    requires_record_proof
-                    and prior_current.distribution_record_digest is None
-                ):
-                    raise InstallationError(
-                        "Saved archive observation has no installed RECORD fingerprint; refusing fallback adoption."
-                    ) from target_error
-                try:
-                    previous_snapshot = probe_installed_tool(
-                        prior_current.backend,
-                        prior_current.identity,
-                        prior_current.source,
-                        prior_current.placement,
-                        probe_path=probe_path,
-                        environment=environment,
-                        expected_record_digest=(
-                            prior_current.distribution_record_digest
-                        ),
-                    )
-                except (
-                    InstallationError,
-                    OSError,
-                    ValueError,
-                ) as previous_error:
-                    raise InstallationError(
-                        "The live uv tool matches neither the intended target nor the last successful installation."
-                    ) from previous_error
-                if (
-                    previous_snapshot.identity != prior_current.identity
-                    or previous_snapshot.version != prior_current.version
-                    or previous_snapshot.backend != prior_current.backend
-                    or previous_snapshot.prefix != prior_current.prefix
-                    or previous_snapshot.interpreter
-                    != prior_current.interpreter
-                    or previous_snapshot.commands != prior_current.commands
-                ):
-                    raise InstallationError(
-                        "The live uv tool does not match the last successful installation."
-                    ) from target_error
-        if observed is None:
-            current = record_step(
-                plan.directory,
-                operation_id=operation_id,
-                expected_revision=revision,
-                step=OperationStep.PACKAGE_CHANGED,
-                observed=None,
-            )
-            revision = current.revision
-            if revision is None:
-                raise InstallationError(
-                    "Package-mutation checkpoint has no authority revision."
-                )
-            _validate_prepared_source(plan, prepared)
-            install_uv_tool(
-                plan.target.backend,
-                acquisition,
-                environment=environment,
-                python_requirement=python_requirement,
-                constraints=prepared.constraints,
-            )
-            if prepared.archive is not None and prepared.digest is not None:
-                if _sha256_file(prepared.archive) != prepared.digest:
-                    raise InstallationError(
-                        "Original package archive changed during installation."
-                    )
-                if plan.target.source.kind == "wheel":
-                    wheel = Path(prepared.requirement)
-                    if _sha256_file(wheel) != prepared.digest:
-                        raise InstallationError(
-                            "Staged wheel changed during installation."
-                        )
-                elif prepared.source_root is not None:
-                    _archive_inputs(
-                        prepared.archive, prepared.source_root, extract=False
-                    )
-            observed = probe_installed_tool(
-                plan.target.backend,
-                plan.target.identity,
-                plan.target.source,
-                plan.target.placement,
-                probe_path=probe_path,
-                environment=environment,
-                operation_context=context_path,
-                acquisition_requirement=prepared.requirement,
-                acquisition_digest=prepared.digest,
-                expected_record_digest=(expected_record_digest),
-            )
-        current = record_step(
-            plan.directory,
-            operation_id=operation_id,
-            expected_revision=revision,
-            step=OperationStep.PACKAGE_CHANGED,
-            observed=observed,
-        )
-        revision = current.revision
-        if revision is None:
-            raise InstallationError(
-                "Observed package proof has no authority revision."
-            )
         owner_candidates: list[OwnedOutput] = []
         if authority.record is not None:
             owner_candidates.extend(authority.record.owned_outputs)
@@ -538,6 +383,191 @@ def _install_application_locked(
                     [active_error, cleanup_error],
                 ) from active_error
             raise
+
+
+def _reconcile_package(
+    plan: InstallPlan,
+    *,
+    authority: InstallationInspection,
+    prepared: PreparedSource,
+    operation_context: Path,
+    environment: Mapping[str, str],
+    probe_path: Path,
+    python_requirement: str,
+    distribution_present: bool,
+    package_checkpointed: bool,
+    revision: str,
+) -> tuple[InstalledSnapshot, str]:
+    """Reconcile the live package under pending authority before support publication.
+
+    :return: Verified package observation and its latest authority revision.
+    """
+    prior_current = (
+        (authority.record.current or authority.record.last_successful)
+        if authority.record is not None
+        else None
+    )
+    acquisition = replace(
+        plan.target.source,
+        requirement=prepared.requirement,
+    )
+    probe_source = plan.target.source
+    probe_requirement: str | None = prepared.requirement
+    probe_digest = prepared.digest
+    if (
+        plan.kind == "repair"
+        and prior_current is not None
+        and plan.target.source.matches_observation(prior_current.source)
+    ):
+        probe_source = prior_current.source
+        probe_digest = prior_current.source.digest
+        probe_requirement = None
+    expected_record_digest = (
+        prior_current.distribution_record_digest
+        if plan.kind == "repair" and prior_current is not None
+        else None
+    )
+    requires_record_proof = plan.target.source.kind in {
+        "release-sdist",
+        "wheel",
+    } or (
+        prepared.digest is not None
+        and plan.target.source.kind == "index"
+        and parse_immutable_github_source(plan.target.source.requirement)
+        is not None
+    )
+    if (
+        plan.kind == "repair"
+        and requires_record_proof
+        and prior_current is not None
+        and expected_record_digest is None
+    ):
+        raise InstallationError(
+            "Saved archive observation has no installed RECORD fingerprint; repair cannot verify it."
+        )
+    should_probe_existing = distribution_present and (
+        package_checkpointed or plan.kind == "repair" or prior_current is None
+    )
+    observed: InstalledSnapshot | None = None
+    if should_probe_existing:
+        try:
+            observed = probe_installed_tool(
+                plan.target.backend,
+                plan.target.identity,
+                probe_source,
+                plan.target.placement,
+                probe_path=probe_path,
+                environment=environment,
+                operation_context=operation_context,
+                acquisition_requirement=probe_requirement,
+                acquisition_digest=probe_digest,
+                expected_record_digest=expected_record_digest,
+            )
+        except (InstallationError, OSError, ValueError) as target_error:
+            if prior_current is None:
+                raise InstallationError(
+                    "An existing uv tool is not proven to match the pending source; refusing adoption."
+                ) from target_error
+            if (
+                requires_record_proof
+                and prior_current.distribution_record_digest is None
+            ):
+                raise InstallationError(
+                    "Saved archive observation has no installed RECORD fingerprint; refusing fallback adoption."
+                ) from target_error
+            try:
+                previous_snapshot = probe_installed_tool(
+                    prior_current.backend,
+                    prior_current.identity,
+                    prior_current.source,
+                    prior_current.placement,
+                    probe_path=probe_path,
+                    environment=environment,
+                    expected_record_digest=(
+                        prior_current.distribution_record_digest
+                    ),
+                )
+            except (
+                InstallationError,
+                OSError,
+                ValueError,
+            ) as previous_error:
+                raise InstallationError(
+                    "The live uv tool matches neither the intended target nor the last successful installation."
+                ) from previous_error
+            if (
+                previous_snapshot.identity != prior_current.identity
+                or previous_snapshot.version != prior_current.version
+                or previous_snapshot.backend != prior_current.backend
+                or previous_snapshot.prefix != prior_current.prefix
+                or previous_snapshot.interpreter != prior_current.interpreter
+                or previous_snapshot.commands != prior_current.commands
+            ):
+                raise InstallationError(
+                    "The live uv tool does not match the last successful installation."
+                ) from target_error
+    if observed is None:
+        current = record_step(
+            plan.directory,
+            operation_id=plan.operation_id,
+            expected_revision=revision,
+            step=OperationStep.PACKAGE_CHANGED,
+            observed=None,
+        )
+        checkpoint_revision = current.revision
+        if checkpoint_revision is None:
+            raise InstallationError(
+                "Package-mutation checkpoint has no authority revision."
+            )
+        revision = checkpoint_revision
+        _validate_prepared_source(plan, prepared)
+        install_uv_tool(
+            plan.target.backend,
+            acquisition,
+            environment=environment,
+            python_requirement=python_requirement,
+            constraints=prepared.constraints,
+        )
+        if prepared.archive is not None and prepared.digest is not None:
+            if _sha256_file(prepared.archive) != prepared.digest:
+                raise InstallationError(
+                    "Original package archive changed during installation."
+                )
+            if plan.target.source.kind == "wheel":
+                wheel = Path(prepared.requirement)
+                if _sha256_file(wheel) != prepared.digest:
+                    raise InstallationError(
+                        "Staged wheel changed during installation."
+                    )
+            elif prepared.source_root is not None:
+                _archive_inputs(
+                    prepared.archive, prepared.source_root, extract=False
+                )
+        observed = probe_installed_tool(
+            plan.target.backend,
+            plan.target.identity,
+            plan.target.source,
+            plan.target.placement,
+            probe_path=probe_path,
+            environment=environment,
+            operation_context=operation_context,
+            acquisition_requirement=prepared.requirement,
+            acquisition_digest=prepared.digest,
+            expected_record_digest=(expected_record_digest),
+        )
+    current = record_step(
+        plan.directory,
+        operation_id=plan.operation_id,
+        expected_revision=revision,
+        step=OperationStep.PACKAGE_CHANGED,
+        observed=observed,
+    )
+    observed_revision = current.revision
+    if observed_revision is None:
+        raise InstallationError(
+            "Observed package proof has no authority revision."
+        )
+    return observed, observed_revision
 
 
 def _validate_prepared_source(

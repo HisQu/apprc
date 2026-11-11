@@ -1481,6 +1481,58 @@ def test_direct_owner_path_collision_fails_before_registration_mutation() -> (
     assert resolved.build(binding).endpoint == "host-default"
 
 
+def test_failed_import_path_collision_can_be_corrected() -> None:
+    """A rejected imported path does not reserve its key or environment data."""
+    dependency, ClientRC = _single_field_dependency()
+    host = rc.AppRC(app_id="host")
+
+    @host.config("local", prefix="HOST_LOCAL_", rc_path=("client",))
+    class LocalClient(rc.Config):
+        endpoint: str = rc.field("HOST_LOCAL_ENDPOINT", default="local")
+
+    schema_before = host.schema
+
+    with pytest.raises(ValueError, match="Duplicate config path"):
+        host.import_dependency_config(
+            dependency,
+            ClientRC,
+            key="imported",
+            prefix="HOST_IMPORTED_",
+            fields={
+                "endpoint": rc.field(
+                    "HOST_IMPORTED_ENDPOINT", default="imported"
+                )
+            },
+            rc_path=("client",),
+        )
+
+    assert host.schema is schema_before
+    local_resolved = host.resolve(
+        environment={"HOST_LOCAL_ENDPOINT": "local-value"}
+    )
+    assert local_resolved.build(LocalClient).endpoint == "local-value"
+
+    binding = host.import_dependency_config(
+        dependency,
+        ClientRC,
+        key="imported",
+        prefix="HOST_IMPORTED_",
+        fields={
+            "endpoint": rc.field("HOST_IMPORTED_ENDPOINT", default="imported")
+        },
+        rc_path=("imported",),
+    )
+    resolved = host.resolve(
+        environment={
+            "HOST_LOCAL_ENDPOINT": "local-value",
+            "HOST_IMPORTED_ENDPOINT": "imported-value",
+        }
+    )
+
+    assert resolved.build(LocalClient).endpoint == "local-value"
+    assert resolved.build(binding).endpoint == "imported-value"
+
+
 def test_import_validation_and_parent_env_key_collisions(
     tmp_path: Path,
 ) -> None:

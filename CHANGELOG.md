@@ -61,6 +61,17 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
+- Gave package reconciliation one installation stage while keeping support
+  publication, registration, and transaction completion with its caller.
+- Separated pending uninstall preparation and execution from committed
+  finalization, preserving authority, containment, and recovery checks before
+  readiness or mutation.
+- Moved field-table widget population into the config editor's rendering layer,
+  keeping displayed rows and immutable selection keys aligned.
+- Grouped typed runtime facade exports without changing the public symbol set.
+- Prepared dependency-import schemas before committing registry updates and
+  removed the redundant combined dependency-key registry.
+
 <br>
 
 ### ⚠️ Deprecated
@@ -72,6 +83,11 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+- Declared the Windows `CloseHandle` signature so native process handles are
+  closed without truncating their pointer-sized values.
+- Selected all workspace projects in complete-development and CI sync commands,
+  including the GUI from the locked workspace rather than a second install.
 
 <br>
 

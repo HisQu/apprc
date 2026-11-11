@@ -28,7 +28,7 @@ async def open_field_editor(
     :param pilot: Textual test pilot used to let the modal mount.
     """
     screen = editor.editor_screen
-    table = editor.query_one("#field-table", DataTable)
+    table = screen.query_one("#field-table", DataTable)
     table.cursor_coordinate = Coordinate(screen.row_env_keys.index(env_key), 0)
     screen._open_selected_field_editor()
     await pilot.pause()

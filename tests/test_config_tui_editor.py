@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from textual.coordinate import Coordinate
 from textual.pilot import Pilot
-from textual.widgets import Button, DataTable, ListView, Static
+from textual.widgets import Button, DataTable, Input, ListView, Static
 
 import apprc as rc
 from apprc.definition.resolution import ResolveOptions
@@ -24,7 +25,7 @@ from tests.support_config import (
     build_config_only_example_app,
     build_workspace_example_app,
 )
-from tests.support_tui import static_text
+from tests.support_tui import open_field_editor, static_text
 
 
 def _single_root(root: Path) -> ResolveOptions:
@@ -67,6 +68,89 @@ async def test_config_only_editor_saves_user_setting_without_workspace_service(
         'CONFIG_ONLY_APP_PROFILE="edited"\n'
     )
     assert not files.config_file().exists()
+
+
+@pytest.mark.asyncio
+async def test_field_table_keeps_explicit_columns_and_edit_keys_aligned(
+    tmp_path: Path,
+) -> None:
+    kit = build_workspace_example_app()
+
+    @kit.config("second", title="Second", prefix="SECOND_", rc_path=("second",))
+    class SecondSection(rc.Config):
+        value: str = rc.field("SECOND_VALUE", default="second-default")
+
+    explicit = tmp_path / "explicit.env"
+    explicit.write_text(
+        'APPRC_EXAMPLE_APP_PROFILE="explicit-profile"\n',
+        encoding="utf-8",
+    )
+    options = ResolveOptions(
+        layout=rc.Layout.single_root(tmp_path / "application"),
+        env_files=(explicit,),
+    )
+    paths = kit.paths(options, environment={})
+    manager = kit._manage_with_paths(options, {}, paths)
+    manager.setup()
+    workspace_manager = kit.workspaces(options=options, environment={})
+    editor = ConfigEditorApp(
+        apprc=kit,
+        manager=manager,
+        workspace_manager=workspace_manager,
+    )
+    screen = editor.editor_screen
+
+    async with editor.run_test() as pilot:
+        await pilot.pause()
+        table = screen.query_one("#field-table", DataTable)
+        columns = tuple(str(column.label) for column in table.columns.values())
+        assert "Workspace dotenv" in columns
+        assert "Explicit dotenv" in columns
+        assert "APPRC_EXAMPLE_APP_WORKSPACE" not in screen.row_env_keys
+        profile_row = screen.row_env_keys.index("APPRC_EXAMPLE_APP_PROFILE")
+        profile_cells = table.get_row_at(profile_row)
+        assert str(profile_cells[columns.index("Explicit dotenv")]) == (
+            "explicit-profile"
+        )
+
+        separator_row = screen.row_env_keys.index(None)
+        table.cursor_coordinate = Coordinate(separator_row, 0)
+        original_screen = editor.screen
+        screen._open_selected_field_editor()
+        await pilot.pause()
+        assert editor.screen is original_screen
+
+        await open_field_editor(editor, "SECOND_VALUE", pilot)
+        assert (
+            static_text(editor.screen.query_one("#edit-env-key", Static)).plain
+            == "SECOND_VALUE"
+        )
+        editor.screen.query_one(
+            "#edit-value-input", Input
+        ).value = "second-edited"
+        await pilot.click("#edit-save-user")
+        await pilot.pause()
+        assert screen.row_env_keys.index("SECOND_VALUE") > separator_row
+        second_row = screen.row_env_keys.index("SECOND_VALUE")
+        second_cells = table.get_row_at(second_row)
+        assert str(second_cells[columns.index("Effective")]) == "second-edited"
+        assert (
+            screen._inspected_resolution().values["SECOND_VALUE"]
+            == "second-edited"
+        )
+        profile_row = screen.row_env_keys.index("APPRC_EXAMPLE_APP_PROFILE")
+        assert (
+            str(table.get_row_at(profile_row)[columns.index("Explicit dotenv")])
+            == "explicit-profile"
+        )
+
+    files = AppFiles(kit.schema, paths)
+    assert read_env_file(files.user_dotenv_path())["SECOND_VALUE"] == (
+        "second-edited"
+    )
+    assert explicit.read_text(encoding="utf-8") == (
+        'APPRC_EXAMPLE_APP_PROFILE="explicit-profile"\n'
+    )
 
 
 @pytest.mark.asyncio

@@ -47,7 +47,7 @@ jobs:
         run: just --summary
 
       - name: Install project
-        run: uv sync --locked --all-extras --group dev --group gui-test
+        run: uv sync --all-packages --locked --all-extras --group dev --group gui-test
 
       - name: Check generated terminal metadata
         run: uv run --locked python src/apprc_dev/packaging/terminal_metadata.py --check
@@ -90,10 +90,7 @@ jobs:
           enable-cache: auto
 
       - name: Install core and test dependencies
-        run: uv sync --locked --group dev --group gui-test
-
-      - name: Install GUI distribution
-        run: uv pip install -e src/apprc_dev/packaging/gui
+        run: uv sync --all-packages --locked --group dev --group gui-test
 
       - name: Install Chromium for browser checks
         if: matrix.os == 'ubuntu-latest'

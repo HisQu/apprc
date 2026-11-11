@@ -87,7 +87,7 @@ clean:
 reset-venv:
     @echo "♻ Rebuilding virtual environment..."
     uv venv --seed --clear
-    uv sync --frozen --all-extras --all-groups
+    uv sync --all-packages --frozen --all-extras --all-groups
 
 # ---------------------------------------------------------------
 # Install flows
@@ -95,6 +95,7 @@ reset-venv:
 # Key rule: CI and teammates should *not* relock by accident.
 # We therefore install with `--locked` which errors if uv.lock is stale.
 # If it errors, you intentionally run `just lock` or `just upgrade`.
+# > --all-packages: Select every workspace project, including the GUI distribution.
 # > --all-extras: Install any declared extras. The terminal wrapper is a dev dependency.
 # > --all-groups: Install all local groups from [dependency-groups], such as dev.
 # > --no-default-groups: Skip uv's default groups, including dev, for runtime-only installs.
@@ -107,7 +108,7 @@ reset-venv:
 sync:
     just _note-direnv
     just _check-uv
-    uv sync --all-extras --all-groups --locked
+    uv sync --all-packages --all-extras --all-groups --locked
 alias install := sync
 
 # ---------------------------------------------------------------
@@ -127,7 +128,7 @@ lock *ARGS:
 # Re-lock with --upgrade & install from the new lock.
 upgrade *ARGS:
     just lock --upgrade {{ARGS}}
-    uv sync --all-extras --all-groups --locked
+    uv sync --all-packages --all-extras --all-groups --locked
 
 
 # Re-lock with --upgrade ONLY git-based dependencies & uv sync from the new lock.
@@ -138,7 +139,7 @@ upgrade-repos *ARGS:
         # --upgrade-package gta \
         # --upgrade-package embedding \
         {{ARGS}}
-    uv sync --all-extras --all-groups --locked
+    uv sync --all-packages --all-extras --all-groups --locked
 alias uprep := upgrade-repos
 
 
@@ -156,7 +157,7 @@ py-switch version="3.13":
     # > Recreate the project venv with that interpreter.
     uv venv --python {{version}} --seed --clear
     # > Sync dependencies for the recreated environment.
-    uv sync --all-extras --all-groups
+    uv sync --all-packages --all-extras --all-groups
     # > Verify via uv, so shell activation state cannot mislead you.
     uv run python -c 'import sys; print(sys.version); print(sys.executable)'
 
@@ -178,6 +179,7 @@ _ci-check-python version environment:
     uv sync \
         --python "{{version}}" \
         --locked \
+        --all-packages \
         --all-extras \
         --all-groups \
         --quiet \
@@ -460,7 +462,7 @@ diagnose:
     just _check-uv
     uv --version
     uv python list || true
-    uv sync --check --all-extras --all-groups
+    uv sync --all-packages --check --all-extras --all-groups
 
 
 # ---------------------------------------------------------------

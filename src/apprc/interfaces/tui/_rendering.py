@@ -19,6 +19,7 @@ from pathlib import Path
 
 # == 3rd Party ===============================
 from rich.text import Text
+from textual.widgets import DataTable
 
 # == Internal ================================
 from apprc.definition.env_config.schema import ConfigField
@@ -166,6 +167,46 @@ def build_field_table_rows(
             )
             row_number += 1
     return tuple(rows)
+
+
+def populate_field_table(
+    table: DataTable,
+    *,
+    resolved: ResolvedConfig,
+    include_user_dotenv: bool,
+    include_workspace: bool,
+    hidden_env_keys: set[str] | frozenset[str],
+) -> tuple[str | None, ...]:
+    """Replace the widget contents and return its aligned field selection keys.
+
+    :param table: Mounted field table to populate.
+    :param resolved: Resolution supplying both source columns and field values.
+    :param include_user_dotenv: Whether to show user overrides.
+    :param include_workspace: Whether to show workspace overrides.
+    :param hidden_env_keys: Fields omitted from the editor.
+    :return: Environment keys in widget order, with ``None`` for separators.
+    """
+    table.clear(columns=True)
+    table.cursor_type = "row"
+    table.add_columns(
+        *field_table_columns(
+            include_user_dotenv=include_user_dotenv,
+            include_workspace=include_workspace,
+            include_explicit=bool(resolved.options.env_files),
+        )
+    )
+    rows = build_field_table_rows(
+        resolved=resolved,
+        include_user_dotenv=include_user_dotenv,
+        include_workspace=include_workspace,
+        hidden_env_keys=hidden_env_keys,
+    )
+    for row in rows:
+        if row.height is None:
+            table.add_row(*row.cells)
+        else:
+            table.add_row(*row.cells, height=row.height)
+    return tuple(row.env_key for row in rows)
 
 
 def default_value_cell(

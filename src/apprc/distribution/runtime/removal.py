@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 from contextlib import nullcontext
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict, TypeGuard
 from uuid import UUID
@@ -21,8 +22,10 @@ from apprc.definition.installation import (
     CleanupInventory,
     InstallationDiagnostic,
     InstallationError,
+    InstallationInspection,
     InstallationSnapshot,
     InstallationWriteAuthority,
+    InstalledSnapshot,
     InventoryEntry,
     OperationContext,
     OperationStep,
@@ -70,6 +73,13 @@ class HandoffPlan(TypedDict):
     forget_retained: bool
     inventory: list[object]
     retained: list[object]
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingHandoff:
+    plan: UninstallPlan
+    target: InstalledSnapshot
+    python: Path
 
 
 PathKind = Literal["file", "directory"]
@@ -529,7 +539,7 @@ def _recovery_support_digest(recovery: Path, relative_path: str) -> str:
 
 
 def execute_handoff(plan_file: Path) -> None:
-    """Wait for caller exit, then remove exact package, data, support and authority.
+    """Validate the saved receiver, then resume pending or committed removal.
 
     :param plan_file: Private absolute plan staged outside every removal target.
     """
@@ -544,93 +554,107 @@ def execute_handoff(plan_file: Path) -> None:
         raise InstallationError(
             "Uninstall recovery directory is not the exact private sibling."
         )
+    inspection = inspect_installation(directory, app_id=value["app_id"])
+    if inspection.record is None:
+        _finalize_committed_handoff(plan_file, value, recovery)
+    else:
+        pending = _prepare_pending_handoff(
+            plan_file, value, recovery, inspection
+        )
+        _execute_pending_handoff(plan_file, value, recovery, pending)
+
+
+def _finalize_committed_handoff(
+    plan_file: Path, value: HandoffPlan, recovery: Path
+) -> None:
+    """Finish retired authority only with exact durable finalization proof."""
+    directory = Path(value["directory"])
     finalizer = recovery / "final-worker.py"
     finalization_plan = recovery / "finalization.json"
+    if (
+        not value["complete"]
+        or finalizer.is_symlink()
+        or not finalizer.is_file()
+        or finalization_plan.is_symlink()
+        or not finalization_plan.is_file()
+    ):
+        raise InstallationError(
+            "Uninstall authority is missing before safe finalization."
+        )
+    assert_no_links(finalizer)
+    assert_no_links(finalization_plan)
+    expected_plan = {"directory": str(directory), "support": []}
+    if (
+        json.loads(finalization_plan.read_text(encoding="utf-8"))
+        != expected_plan
+    ):
+        raise InstallationError(
+            "External finalization plan changed after uninstall commit."
+        )
+    expected_digest = _recovery_support_digest(recovery, "final-worker.py")
+    if file_revision(finalizer) != expected_digest:
+        raise InstallationError(
+            "External final worker differs from the committed support backup."
+        )
+    roots = (directory.resolve(),)
+    receiver_paths = (
+        Path(sys.prefix),
+        Path(sys.base_prefix),
+        Path(sys.executable),
+        Path.cwd(),
+        plan_file.parent,
+        plan_file,
+        recovery,
+        recovery / "controller.py",
+        finalizer,
+        finalization_plan,
+    )
+    for path in receiver_paths:
+        _handoff.assert_outside_removal(path, roots)
+    for path in (
+        plan_file.parent,
+        plan_file,
+        recovery,
+        recovery / "controller.py",
+        finalizer,
+        finalization_plan,
+    ):
+        assert_no_links(path)
+    python = external_base_python(
+        Path(value["target_prefix"]), forbidden_roots=roots
+    )
+    _wait_for_caller_exit(value)
+    subprocess.run(
+        [
+            str(python),
+            str(finalizer),
+            "--plan",
+            str(finalization_plan),
+            "--directory",
+            str(directory),
+        ],
+        check=True,
+    )
+    shutil.rmtree(plan_file.parent)
+
+
+def _prepare_pending_handoff(
+    plan_file: Path,
+    value: HandoffPlan,
+    recovery: Path,
+    inspection: InstallationInspection,
+) -> _PendingHandoff:
+    """Validate pending authority and containment without starting the handshake."""
+    directory = Path(value["directory"])
     app_id = value["app_id"]
     operation_id = UUID(value["operation_id"])
     generation_id = UUID(value["generation_id"])
-    inspection = inspect_installation(directory, app_id=app_id)
+    finalizer = recovery / "final-worker.py"
+    finalization_plan = recovery / "finalization.json"
     record = inspection.record
-    if record is None:
-        if (
-            not value["complete"]
-            or finalizer.is_symlink()
-            or not finalizer.is_file()
-            or finalization_plan.is_symlink()
-            or not finalization_plan.is_file()
-        ):
-            raise InstallationError(
-                "Uninstall authority is missing before safe finalization."
-            )
-        assert_no_links(finalizer)
-        assert_no_links(finalization_plan)
-        expected_plan = {"directory": str(directory), "support": []}
-        if (
-            json.loads(finalization_plan.read_text(encoding="utf-8"))
-            != expected_plan
-        ):
-            raise InstallationError(
-                "External finalization plan changed after uninstall commit."
-            )
-        expected_digest = _recovery_support_digest(recovery, "final-worker.py")
-        if file_revision(finalizer) != expected_digest:
-            raise InstallationError(
-                "External final worker differs from the committed support backup."
-            )
-        roots = (directory.resolve(),)
-        receiver_paths = (
-            Path(sys.prefix),
-            Path(sys.base_prefix),
-            Path(sys.executable),
-            Path.cwd(),
-            plan_file.parent,
-            plan_file,
-            recovery,
-            recovery / "controller.py",
-            finalizer,
-            finalization_plan,
-        )
-        for path in receiver_paths:
-            _handoff.assert_outside_removal(path, roots)
-        for path in (
-            plan_file.parent,
-            plan_file,
-            recovery,
-            recovery / "controller.py",
-            finalizer,
-            finalization_plan,
-        ):
-            assert_no_links(path)
-        python = external_base_python(
-            Path(value["target_prefix"]), forbidden_roots=roots
-        )
-        waiter = _open_process_waiter(
-            value["original_pid"], value["original_start"]
-        )
-        if waiter[0] != "already-exited":
-            print(
-                f"APPRC-UNINSTALL-READY:{value['readiness_token']}", flush=True
-            )
-            if sys.stdin.readline() != "EXIT\n":
-                raise InstallationError(
-                    "Original process did not acknowledge its exit handoff."
-                )
-            _wait_open_process(waiter)
-        subprocess.run(
-            [
-                str(python),
-                str(finalizer),
-                "--plan",
-                str(finalization_plan),
-                "--directory",
-                str(directory),
-            ],
-            check=True,
-        )
-        shutil.rmtree(plan_file.parent)
-        return
     if (
-        record.generation_id != generation_id
+        record is None
+        or record.generation_id != generation_id
         or record.operation is None
         or record.operation.operation_id != operation_id
         or record.operation.kind != "uninstall"
@@ -659,10 +683,6 @@ def execute_handoff(plan_file: Path) -> None:
         raise InstallationError(
             "Pending uninstall authority changed before handoff readiness."
         )
-    complete = value["complete"]
-    registry_backup: list[tuple[str, dict[str, str]]] = []
-    committed = False
-    succeeded = False
     target = record.current or record.last_successful
     if target is None:
         raise InstallationError(
@@ -720,33 +740,46 @@ def execute_handoff(plan_file: Path) -> None:
         executable=base_candidate,
         forbidden_roots=management_roots,
     )
-    waiter = _open_process_waiter(
-        value["original_pid"], value["original_start"]
-    )
-    if waiter[0] != "already-exited":
-        print(f"APPRC-UNINSTALL-READY:{value['readiness_token']}", flush=True)
-        if sys.stdin.readline() != "EXIT\n":
-            raise InstallationError(
-                "Original process did not acknowledge its exit handoff."
-            )
-        _wait_open_process(waiter)
+    return _PendingHandoff(persisted_plan, target, python)
+
+
+def _execute_pending_handoff(
+    plan_file: Path,
+    value: HandoffPlan,
+    recovery: Path,
+    pending: _PendingHandoff,
+) -> None:
+    """Wait outside the lock, then revalidate authority and own its transaction."""
+    directory = pending.plan.directory
+    app_id = pending.plan.app_id
+    operation_id = pending.plan.operation_id
+    inventory = pending.plan.inventory
+    complete = pending.plan.complete
+    target = pending.target
+    finalizer = recovery / "final-worker.py"
+    finalization_plan = recovery / "finalization.json"
+    registry_backup: list[tuple[str, dict[str, str]]] = []
+    committed = False
+    succeeded = False
+    _wait_for_caller_exit(value)
     try:
         with installation_lock(directory):
             current = inspect_installation(directory, app_id=app_id)
             current_record = current.record
             if (
                 current_record is None
-                or current_record.generation_id != generation_id
+                or current_record.generation_id
+                != pending.plan.expected_generation
                 or current_record.operation is None
                 or current_record.operation.operation_id != operation_id
                 or current_record.operation.kind != "uninstall"
                 or current_record.operation.inventory != inventory
                 or current_record.operation.categories
-                != frozenset(value["categories"])
+                != pending.plan.categories
                 or current_record.operation.complete != complete
                 or current_record.operation.forget_retained
-                != value["forget_retained"]
-                or current.revision != value["expected_revision"]
+                != pending.plan.forget_retained
+                or current.revision != pending.plan.expected_revision
             ):
                 raise InstallationError(
                     "Pending uninstall authority changed before backend removal."
@@ -762,12 +795,14 @@ def execute_handoff(plan_file: Path) -> None:
                     root for _, root in resource_roots(current_record.placement)
                 )
                 snapshot = InstallationSnapshot(
-                    directory, latest_revision, generation_id
+                    directory,
+                    latest_revision,
+                    pending.plan.expected_generation,
                 )
                 context = OperationContext(
                     directory,
                     operation_id,
-                    generation_id,
+                    pending.plan.expected_generation,
                     current_record.placement,
                 )
                 authority = InstallationWriteAuthority(
@@ -892,7 +927,7 @@ def execute_handoff(plan_file: Path) -> None:
 
         if complete:
             retirement = finish_namespace_retirement(
-                directory, generation_id=generation_id
+                directory, generation_id=pending.plan.expected_generation
             )
             if retirement.container not in {"removed", "occupied"}:
                 raise InstallationError(
@@ -901,7 +936,7 @@ def execute_handoff(plan_file: Path) -> None:
                 )
             subprocess.run(
                 [
-                    str(python),
+                    str(pending.python),
                     str(finalizer),
                     "--plan",
                     str(finalization_plan),
@@ -917,7 +952,7 @@ def execute_handoff(plan_file: Path) -> None:
                 _recover_pending_uninstall(
                     directory,
                     app_id=app_id,
-                    generation_id=generation_id,
+                    generation_id=pending.plan.expected_generation,
                     operation_id=operation_id,
                     inventory=inventory,
                     complete=complete,
@@ -934,6 +969,20 @@ def execute_handoff(plan_file: Path) -> None:
     finally:
         if succeeded and plan_file.parent.exists():
             shutil.rmtree(plan_file.parent)
+
+
+def _wait_for_caller_exit(value: HandoffPlan) -> None:
+    """Advertise readiness only after validation and wait for the exact caller."""
+    waiter = _open_process_waiter(
+        value["original_pid"], value["original_start"]
+    )
+    if waiter[0] != "already-exited":
+        print(f"APPRC-UNINSTALL-READY:{value['readiness_token']}", flush=True)
+        if sys.stdin.readline() != "EXIT\n":
+            raise InstallationError(
+                "Original process did not acknowledge its exit handoff."
+            )
+        _wait_open_process(waiter)
 
 
 def _recover_pending_uninstall(

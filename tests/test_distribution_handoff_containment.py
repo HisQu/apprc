@@ -13,6 +13,7 @@ import pytest
 
 from apprc.definition.installation import (
     CleanupInventory,
+    InstallationDiagnostic,
     InstallationError,
     InstallationPlacement,
     InventoryEntry,
@@ -29,6 +30,7 @@ from apprc.distribution.runtime.controllers import (
 )
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.discovery import inspect_installation
+from apprc.user_files.installation.operations import fail_operation
 from tests.test_distribution_process_waiter import _owned_child
 from tests.test_distribution_support_recovery import (
     _run as install_fixture,
@@ -327,6 +329,65 @@ def test_receiver_rejects_execution_cwd_under_complete_selected_cache(
         assert program_marker.read_bytes() == b"installed program"
         assert cache_payload.read_bytes() == b'{"keep":true}\n'
         assert receiver_marker.read_bytes() == b"receiver working directory\n"
+        assert not absent_cache_root.exists()
+        assert not retained_root.exists()
+
+
+def test_receiver_rejects_stale_revision_before_handoff_readiness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (
+        directory,
+        _program_prefix,
+        program_marker,
+        cache_root,
+        cache_payload,
+        absent_cache_root,
+        retained_root,
+        preparation,
+    ) = _installed_removal_scenario(tmp_path, monkeypatch)
+    plan = preparation.plan
+    assert preparation.can_execute and plan is not None
+
+    with _owned_child() as original:
+        handoff = _pending_receiver_handoff(
+            plan, tmp_path, monkeypatch, original.pid
+        )
+        envelope_before = handoff.plan_file.read_bytes()
+        recovery = handoff.plan_file.parent / "recovery"
+        authority = inspect_installation(directory, app_id=plan.app_id)
+        assert authority.record is not None and authority.revision is not None
+        changed = fail_operation(
+            directory,
+            operation_id=plan.operation_id,
+            expected_revision=authority.revision,
+            diagnostic=InstallationDiagnostic(
+                "installation-incomplete",
+                "The pending operation failed after handoff staging.",
+                "Resume the pending uninstall with a fresh handoff.",
+            ),
+        )
+        assert changed.revision != authority.revision
+        stdin = io.StringIO("EXIT\n")
+        monkeypatch.setattr(removal.sys, "stdin", stdin)
+
+        with pytest.raises(
+            InstallationError,
+            match="authority changed before handoff readiness",
+        ):
+            removal.execute_handoff(handoff.plan_file)
+
+        assert stdin.tell() == 0
+        assert "APPRC-UNINSTALL-READY:" not in capsys.readouterr().out
+        assert original.poll() is None
+        assert handoff.plan_file.read_bytes() == envelope_before
+        assert recovery.is_dir()
+        assert (recovery / "controller.py").is_file()
+        assert program_marker.read_bytes() == b"installed program"
+        assert cache_root.is_dir()
+        assert cache_payload.read_bytes() == b'{"keep":true}\n'
         assert not absent_cache_root.exists()
         assert not retained_root.exists()
 

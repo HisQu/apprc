@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import multiprocessing
 import os
@@ -17,11 +18,12 @@ from filelock import FileLock, Timeout
 
 from apprc.definition.installation import InstallationError
 from apprc.distribution.rendering import _stdlib_worker
+from apprc.distribution.runtime import _handoff, namespace_finalizer, removal
+from apprc.distribution.runtime.removal import _restore_support
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
-from apprc.distribution.runtime.removal import _restore_support
-from apprc.distribution.runtime import namespace_finalizer
+from tests.test_distribution_process_waiter import _owned_child
 
 
 def _support_manifest(recovery: Path, entries: list[dict[str, object]]) -> None:
@@ -128,6 +130,106 @@ def _run_finalizer(
         capture_output=True,
         text=True,
     )
+
+
+def _committed_receiver_handoff(
+    tmp_path: Path,
+    *,
+    worker: bytes | None = None,
+) -> tuple[Path, Path, Path]:
+    directory = tmp_path / "retired-installation"
+    receiver = tmp_path / "receiver"
+    create_private_directory_if_missing(receiver)
+    recovery = receiver / "recovery"
+    create_private_directory_if_missing(recovery)
+    expected_worker = _stdlib_worker()
+    (recovery / "final-worker.py").write_bytes(
+        expected_worker if worker is None else worker
+    )
+    (recovery / "final-worker.py").chmod(0o600)
+    _write_finalization_plan(recovery / "finalization.json", directory)
+    with _owned_child() as child:
+        start = _handoff.process_start_token(child.pid)
+        if child.stdin is None:
+            raise AssertionError("owned child has no stdin")
+        child.stdin.write("EXIT\n")
+        child.stdin.flush()
+        child.wait(timeout=5)
+        value = {
+            "directory": str(directory),
+            "app_id": "apprc",
+            "generation_id": "00000000-0000-0000-0000-000000000001",
+            "operation_id": "00000000-0000-0000-0000-000000000002",
+            "expected_revision": "0" * 64,
+            "original_pid": child.pid,
+            "target_prefix": str(tmp_path / "removed-tool"),
+            "original_start": start,
+            "readiness_token": "1" * 32,
+            "recovery_directory": str(recovery),
+            "complete": True,
+            "categories": [],
+            "forget_retained": False,
+            "inventory": [],
+            "retained": [],
+        }
+    (recovery / "support-backup.json").write_text(
+        json.dumps(
+            [
+                {
+                    "path": "final-worker.py",
+                    "digest": hashlib.sha256(expected_worker).hexdigest(),
+                    "mode": 0o600,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (recovery / "support-backup.json").chmod(0o600)
+    plan_file = receiver / "plan.json"
+    plan_file.write_text(json.dumps(value), encoding="utf-8")
+    plan_file.chmod(0o600)
+    return plan_file, receiver, recovery
+
+
+def test_committed_receiver_runs_real_finalizer_and_removes_receiver(
+    tmp_path: Path,
+) -> None:
+    plan_file, receiver, _recovery = _committed_receiver_handoff(tmp_path)
+    removal.execute_handoff(plan_file)
+    assert not receiver.exists()
+
+
+@pytest.mark.parametrize(
+    ("worker", "message"),
+    [
+        (None, "safe finalization"),
+        (
+            b"# changed final worker\\n",
+            "differs from the committed support backup",
+        ),
+    ],
+)
+def test_committed_receiver_rejects_missing_or_changed_worker_before_readiness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    worker: bytes | None,
+    message: str,
+) -> None:
+    plan_file, receiver, recovery = _committed_receiver_handoff(
+        tmp_path, worker=worker
+    )
+    if worker is None:
+        (recovery / "final-worker.py").unlink()
+    stdin = io.StringIO("EXIT\n")
+    monkeypatch.setattr(removal.sys, "stdin", stdin)
+
+    with pytest.raises(InstallationError, match=message):
+        removal.execute_handoff(plan_file)
+
+    assert stdin.tell() == 0
+    assert receiver.is_dir()
+    assert recovery.is_dir()
+    assert plan_file.is_file()
 
 
 def test_emitted_finalizer_runs_isolated_and_removes_absent_or_empty_namespace(

@@ -121,9 +121,18 @@ immutable row-key tuple includes section separators so screen selection stays
 aligned with displayed rows. Explicit-source columns come from the same
 `ResolvedConfig` that supplies those rows.
 
-Dependency imports prepare and validate their candidate schema before updating
-the parent application's registries. A rejected import does not reserve its
-owner key or prefix, so callers can correct the declaration and retry.
+`public/app_rc.py` owns application declarations, registration records, live
+registries, and schema construction. Its private helpers separate config-class
+normalization (`public/_config_registration.py`), dependency-import preparation
+(`public/_dependency_import.py`), and config bundle validation and generated
+methods (`public/_bundle_registration.py`). These modules belong to `apprc-core`;
+they do not call distribution execution or own application registration state.
+
+Dependency-import preparation returns a binding and pending environment-index
+entries without constructing a schema or changing registries. The facade builds
+and validates the candidate schema before committing those entries and the
+binding. A rejected import does not reserve its owner key or prefix, so callers
+can correct the declaration and retry.
 
 Application packaging/release manifests and business actions remain in the
 consuming repository. Its `_distr` generator and payload are author inputs,

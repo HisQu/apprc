@@ -71,6 +71,9 @@ All notable changes to `AppRC` will be documented in this file.
 - Grouped typed runtime facade exports without changing the public symbol set.
 - Prepared dependency-import schemas before committing registry updates and
   removed the redundant combined dependency-key registry.
+- Extracted config normalization, dependency-import preparation, and config
+  bundle generation into private public-facade helpers, keeping registration
+  state and validation-before-commit schema construction in `AppRC`.
 
 <br>
 

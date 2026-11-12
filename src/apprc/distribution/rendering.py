@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import base64
-import io
 import json
 import shlex
 import urllib.parse
 from importlib.resources import files
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from apprc.distribution.models import Artifact, DistributionSpec, PayloadTree
 from apprc.distribution.standalone import (
     MANAGEMENT_REQUIREMENTS,
+    _deterministic_zip,
     payload_archive,
 )
 
@@ -493,16 +492,7 @@ def build_main_installer(
     content = standalone_script(spec, payload, entry=payload.entry_module)
     filename = "main-installer.py"
     if spec.payload_format == "zipapp":
-        buffer = io.BytesIO()
-        with ZipFile(
-            buffer, "w", compression=ZIP_DEFLATED, compresslevel=9
-        ) as archive:
-            info = ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0))
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
-            info.compress_type = ZIP_DEFLATED
-            archive.writestr(info, content)
-        content = buffer.getvalue()
+        content = _deterministic_zip((("__main__.py", content),))
         filename = "main-installer.pyz"
     return Artifact(
         spec.metadata.distribution_path / "artifacts" / "installer" / filename,

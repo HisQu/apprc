@@ -217,6 +217,8 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     command.write_bytes(artifacts["app-install.cmd"])
     temporary = tmp_path / "installer temp % ! café"
     temporary.mkdir()
+    unowned_file = temporary / "caller-owned.txt"
+    unowned_file.write_text("preserve caller data", encoding="utf-8")
     uv = shutil.which("uv")
     powershell = shutil.which("powershell.exe")
     assert uv is not None and powershell is not None
@@ -239,17 +241,17 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     def run_cmd_bootstrap(
         entry: Path, *bootstrap_arguments: str
     ) -> subprocess.CompletedProcess[str]:
+        # > /s strips one outer quote pair; pass CMD's command line intact.
+        command_line = subprocess.list2cmdline(
+            [str(entry), *bootstrap_arguments]
+        )
+        cmd = os.environ.get("COMSPEC", "cmd.exe")
         return subprocess.run(
-            [
-                os.environ.get("COMSPEC", "cmd.exe"),
-                "/d",
-                "/c",
-                f'"{entry}"',
-                *bootstrap_arguments,
-            ],
+            f'"{cmd}" /d /s /c "{command_line}"',
             env=environment,
             cwd=caller_directory,
             text=True,
+            encoding="oem",
             capture_output=True,
             check=False,
             timeout=180,
@@ -342,7 +344,9 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
         exit_code=37,
         suffix=("--", *arguments, "--exit-37"),
     )
-    assert not tuple(temporary.iterdir())
+    # > AppRC removes its own helpers, not uv's retained locks or caller data.
+    assert not tuple(temporary.glob("apprc-*"))
+    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
 
     checkout_spec = replace(spec, source_mode="checkout")
     write_artifacts(render_bootstraps(checkout_spec))
@@ -365,7 +369,8 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
         exit_code=37,
         suffix=("--", *arguments, "--exit-37"),
     )
-    assert not tuple(temporary.iterdir())
+    assert not tuple(temporary.glob("apprc-*"))
+    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
 
     mismatched_manifest = dict(manifest, version="9.9.9")
     bad_manifest = json.dumps(
@@ -380,7 +385,8 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     )
     assert rejected.returncode != 0
     assert not marker.exists()
-    assert not tuple(temporary.iterdir())
+    assert not tuple(temporary.glob("apprc-*"))
+    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
 
 
 def test_release_asset_digest_and_runtime_constraints_are_captured(

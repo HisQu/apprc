@@ -66,7 +66,7 @@ class _WorkspacePackage:
     requested_extras: tuple[str, ...]
 
 
-def _run(argv: list[str], *, cwd: Path, environment: Mapping[str, str]) -> None:
+def _run(argv: list[str], *, cwd: Path, environment: Mapping[str, str]) -> str:
     result = subprocess.run(
         argv,
         cwd=cwd,
@@ -80,6 +80,7 @@ def _run(argv: list[str], *, cwd: Path, environment: Mapping[str, str]) -> None:
             f"Bundle build command failed ({Path(argv[0]).name}): "
             f"{result.stderr[-4000:]}"
         )
+    return result.stdout
 
 
 def _repository(value: str) -> str:
@@ -348,7 +349,7 @@ def _workspace_patterns(
 
 
 def _directory_project(
-    package: Mapping[str, object], *, lock_file: Path
+    package: Mapping[str, object], *, source_root: Path
 ) -> Path | None:
     source = package.get("directory")
     if source is None:
@@ -366,7 +367,7 @@ def _directory_project(
         or not raw_path
     ):
         raise InstallationError("Locked local package path is unsafe.")
-    path = Path("/") if pure_path.is_absolute() else lock_file.parent.absolute()
+    path = Path("/") if pure_path.is_absolute() else source_root.absolute()
     for part in pure_path.parts:
         if part in {"/", ".", ""}:
             continue
@@ -405,12 +406,12 @@ def _directory_project(
 def _workspace_directory(
     package: Mapping[str, object],
     *,
-    lock_file: Path,
+    source_root: Path,
     project_root: Path,
     members: tuple[str, ...],
     excluded: tuple[str, ...],
 ) -> Path | None:
-    project = _directory_project(package, lock_file=lock_file)
+    project = _directory_project(package, source_root=source_root)
     if project is None:
         return None
     root = project_root.resolve(strict=True)
@@ -442,18 +443,8 @@ def _workspace_directory(
     return project
 
 
-def _normalize_directory_versions(
-    packages: list[dict[str, object]],
-    *,
-    export: Path,
-    project_root: Path,
-    root_name: str,
-    root_version: str,
-) -> Path:
-    """Recover directory versions from exact source identities in uv's lock.
-
-    :return: The nearest locked workspace root used by the selected project.
-    """
+def _project_lock(project_root: Path) -> Path:
+    """Find the selected project's nearest existing lock without changing it."""
     project_root = project_root.resolve(strict=True)
     lock_file = next(
         (
@@ -466,6 +457,19 @@ def _normalize_directory_versions(
     if lock_file is None:
         raise InstallationError("The application has no existing uv.lock.")
     assert_no_links(lock_file)
+    return lock_file
+
+
+def _normalize_directory_versions(
+    packages: list[dict[str, object]],
+    *,
+    lock_file: Path,
+    project_root: Path,
+    root_name: str,
+    root_version: str,
+) -> None:
+    """Recover directory versions from exact source identities in uv's lock."""
+    project_root = project_root.resolve(strict=True)
     try:
         locked = tomllib.loads(lock_file.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as error:
@@ -487,7 +491,7 @@ def _normalize_directory_versions(
         name = package.get("name")
         if not isinstance(name, str):
             raise InstallationError("Locked directory package has no name.")
-        project = _directory_project(package, lock_file=export)
+        project = _directory_project(package, source_root=lock_file.parent)
         candidates: list[str] = []
         for locked_package in locked_packages:
             locked_name = locked_package.get("name")
@@ -506,7 +510,7 @@ def _normalize_directory_versions(
             if len(paths) != 1 or not isinstance(paths[0], str):
                 raise InstallationError("Locked directory source is ambiguous.")
             locked_project = _directory_project(
-                {"directory": {"path": paths[0]}}, lock_file=lock_file
+                {"directory": {"path": paths[0]}}, source_root=lock_file.parent
             )
             if locked_project != project:
                 continue
@@ -544,7 +548,7 @@ def _normalize_directory_versions(
         package["version"] = version
         _workspace_directory(
             package,
-            lock_file=export,
+            source_root=lock_file.parent,
             project_root=lock_file.parent,
             members=members,
             excluded=excluded,
@@ -561,7 +565,6 @@ def _normalize_directory_versions(
         raise InstallationError(
             "The exported application directory identity is missing or ambiguous."
         )
-    return lock_file.parent
 
 
 def _locked_git_for_requirement(
@@ -722,7 +725,8 @@ def compile_wheel_bundle(
         prefix="apprc-wheel-authoring-"
     ) as temporary:
         work = Path(temporary)
-        export = work / "pylock.toml"
+        lock_file = _project_lock(spec.metadata.project_root)
+        lock_root = lock_file.parent
         command = [
             str(uv),
             "export",
@@ -733,12 +737,12 @@ def compile_wheel_bundle(
             spec.metadata.identity.distribution,
             "--format",
             "pylock.toml",
-            "--output-file",
-            str(export),
         ]
         for extra in extras:
             command.extend(("--extra", extra))
-        _run(command, cwd=spec.metadata.project_root, environment=env)
+        # > Stdout paths are relative to the export cwd. Using the workspace
+        # > root also preserves that origin when selecting a member package.
+        exported_lock = _run(command, cwd=lock_root, environment=env)
         requirements_export = work / "runtime-requirements.txt"
         requirements_command = [
             str(uv),
@@ -776,7 +780,7 @@ def compile_wheel_bundle(
             raise InstallationError(
                 "uv requirements export contains an invalid runtime requirement."
             ) from error
-        graph = tomllib.loads(export.read_text(encoding="utf-8"))
+        graph = tomllib.loads(exported_lock)
         packages = graph.get("packages")
         if (
             not isinstance(packages, list)
@@ -794,9 +798,9 @@ def compile_wheel_bundle(
             raise InstallationError(
                 "uv did not export a complete locked runtime package graph."
             )
-        lock_root = _normalize_directory_versions(
+        _normalize_directory_versions(
             packages,
-            export=export,
+            lock_file=lock_file,
             project_root=spec.metadata.project_root,
             root_name=canonicalize_name(spec.metadata.identity.distribution),
             root_version=spec.metadata.version,
@@ -877,7 +881,7 @@ def compile_wheel_bundle(
                 continue
             project = _workspace_directory(
                 item,
-                lock_file=export,
+                source_root=lock_root,
                 project_root=lock_root,
                 members=workspace_members,
                 excluded=workspace_excluded,

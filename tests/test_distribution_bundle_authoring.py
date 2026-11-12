@@ -79,7 +79,7 @@ def test_locked_git_monorepo_bundle_builds_only_selected_extra_graph(
 ) -> None:
     if sys.platform != "linux":
         pytest.skip("Managed recipient execution is limited to Linux.")
-    workspace_root = tmp_path / "application"
+    workspace_root = tmp_path / "application workspace"
     root = (
         workspace_root / "apps" / "application"
         if application_is_workspace_member

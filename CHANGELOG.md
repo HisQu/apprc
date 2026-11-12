@@ -93,6 +93,10 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
+- Reset inherited PowerShell module paths in checkout and standalone Windows
+  CMD installers so PowerShell 7 callers cannot select incompatible built-in
+  modules in Windows PowerShell. Caller environments and persistent execution
+  policies remain unchanged.
 - Declared the Windows `CloseHandle` signature so native process handles are
   closed without truncating their pointer-sized values.
 - Selected all workspace projects in complete-development and CI sync commands,

@@ -21,6 +21,7 @@ from zipfile import ZipFile, ZipInfo
 
 import pytest
 
+from apprc.distribution import write_artifacts
 from apprc.definition.installation import (
     InstallationError,
     InstallationIdentity,
@@ -216,6 +217,8 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     command.write_bytes(artifacts["app-install.cmd"])
     temporary = tmp_path / "installer temp % ! café"
     temporary.mkdir()
+    unowned_file = temporary / "caller-owned.txt"
+    unowned_file.write_text("preserve caller data", encoding="utf-8")
     uv = shutil.which("uv")
     powershell = shutil.which("powershell.exe")
     assert uv is not None and powershell is not None
@@ -234,6 +237,25 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     arguments = ("with space", "literal%20", "literal!bang", "snowman ☃")
     caller_directory = tmp_path / "unrelated caller directory"
     caller_directory.mkdir()
+
+    def run_cmd_bootstrap(
+        entry: Path, *bootstrap_arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        # > /s strips one outer quote pair; pass CMD's command line intact.
+        command_line = subprocess.list2cmdline(
+            [str(entry), *bootstrap_arguments]
+        )
+        cmd = os.environ.get("COMSPEC", "cmd.exe")
+        return subprocess.run(
+            f'"{cmd}" /d /s /c "{command_line}"',
+            env=environment,
+            cwd=caller_directory,
+            text=True,
+            encoding="oem",
+            capture_output=True,
+            check=False,
+            timeout=180,
+        )
 
     def assert_payload_run(
         result: subprocess.CompletedProcess[str],
@@ -297,25 +319,25 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     )
 
     environment.pop("APPRC_POWERSHELL_ARGS")
+    # > Model an incompatible built-in module inherited from another host.
+    inherited_modules = tmp_path / "PowerShell modules from another host"
+    security_module = inherited_modules / "Microsoft.PowerShell.Security"
+    security_module.mkdir(parents=True)
+    # > A loadable manifest ensures autoload selects the incompatible export.
+    (security_module / "Microsoft.PowerShell.Security.psd1").write_text(
+        "@{\nModuleVersion = '99.0.0'\nPowerShellVersion = '5.1'\n"
+        "RootModule = 'Microsoft.PowerShell.Security.psm1'\n"
+        "FunctionsToExport = @('Get-ExecutionPolicy')\n}\n",
+        encoding="utf-8",
+    )
+    (security_module / "Microsoft.PowerShell.Security.psm1").write_text(
+        "function Get-ExecutionPolicy { throw 'Incompatible module selected' }\n",
+        encoding="utf-8",
+    )
+    environment["PSMODULEPATH"] = str(inherited_modules)
     environment["APPRC_NATIVE_MARKER"] = str(marker)
-    standalone = subprocess.run(
-        [
-            os.environ.get("COMSPEC", "cmd.exe"),
-            "/d",
-            "/c",
-            f'"{command}"',
-            "--version",
-            "1.2.3",
-            "--",
-            *arguments,
-            "--exit-37",
-        ],
-        env=environment,
-        cwd=caller_directory,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=180,
+    standalone = run_cmd_bootstrap(
+        command, "--version", "1.2.3", "--", *arguments, "--exit-37"
     )
     assert_payload_run(
         standalone,
@@ -323,7 +345,33 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
         exit_code=37,
         suffix=("--", *arguments, "--exit-37"),
     )
-    assert not tuple(temporary.iterdir())
+    # > AppRC removes its own helpers, not uv's retained locks or caller data.
+    assert not tuple(temporary.glob("apprc-*"))
+    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
+
+    checkout_spec = replace(spec, source_mode="checkout")
+    write_artifacts(render_bootstraps(checkout_spec))
+    checkout_installer = (
+        project
+        / checkout_spec.metadata.distribution_path
+        / "artifacts"
+        / "installer"
+        / "main-installer.py"
+    )
+    checkout_installer.write_bytes(
+        standalone_script(checkout_spec, payload, entry=payload.entry_module)
+    )
+    checkout = run_cmd_bootstrap(
+        project / "app-install.cmd", "--", *arguments, "--exit-37"
+    )
+    assert_payload_run(
+        checkout,
+        marker,
+        exit_code=37,
+        suffix=("--", *arguments, "--exit-37"),
+    )
+    assert not tuple(temporary.glob("apprc-*"))
+    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
 
     mismatched_manifest = dict(manifest, version="9.9.9")
     bad_manifest = json.dumps(
@@ -333,27 +381,13 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
         transport_root / hashlib.sha256(manifest_url.encode()).hexdigest()
     ).write_bytes(bad_manifest)
     environment["APPRC_NATIVE_MARKER"] = str(marker)
-    rejected = subprocess.run(
-        [
-            os.environ.get("COMSPEC", "cmd.exe"),
-            "/d",
-            "/c",
-            f'"{command}"',
-            "--version",
-            "1.2.3",
-            "--",
-            *arguments,
-        ],
-        cwd=caller_directory,
-        env=environment,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=180,
+    rejected = run_cmd_bootstrap(
+        command, "--version", "1.2.3", "--", *arguments
     )
     assert rejected.returncode != 0
     assert not marker.exists()
-    assert not tuple(temporary.iterdir())
+    assert not tuple(temporary.glob("apprc-*"))
+    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
 
 
 def test_release_asset_digest_and_runtime_constraints_are_captured(

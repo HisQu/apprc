@@ -219,6 +219,7 @@ def render_bootstraps(spec: DistributionSpec) -> tuple[Artifact, ...]:
         ).encode()
         app_cmd = (
             '@echo off\r\nsetlocal\r\nset "HERE=%~dp0"\r\n'
+            'set "PSModulePath="\r\n'
             "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
             f'"%HERE%{windows_path}\\artifacts\\installer\\bootstrap.ps1" %*\r\n'
             "exit /b %ERRORLEVEL%\r\n"

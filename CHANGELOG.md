@@ -74,6 +74,12 @@ All notable changes to `AppRC` will be documented in this file.
 - Extracted config normalization, dependency-import preparation, and config
   bundle generation into private public-facade helpers, keeping registration
   state and validation-before-commit schema construction in `AppRC`.
+- Shared materialized-directory source proof between immutable-main and
+  release-sdist probes, preserving installed `RECORD` checks and diagnostics.
+- Centralized deterministic ZIP serialization for standalone payloads,
+  inspection bundles, and zipapps without changing archive settings.
+- Shared file and directory privacy checks while preserving operation-boundary
+  validation, platform-specific diagnostics, and coordination's POSIX owner check.
 
 <br>
 

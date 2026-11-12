@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+from collections.abc import Iterable
 from importlib.resources import files
 from pathlib import PurePosixPath
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
@@ -94,6 +95,25 @@ def bundle_config(spec: DistributionSpec) -> bytes:
     ).encode("utf-8")
 
 
+def _deterministic_zip(entries: Iterable[tuple[str, bytes]]) -> bytes:
+    """Serialize archive entries with shared deterministic ZIP metadata.
+
+    :param entries: Archive paths and their exact file contents.
+    :return: In-memory ZIP bytes with stable ordering and file metadata.
+    """
+    buffer = io.BytesIO()
+    with ZipFile(
+        buffer, "w", compression=ZIP_DEFLATED, compresslevel=9
+    ) as archive:
+        for address, content in sorted(entries):
+            info = ZipInfo(address, date_time=(1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            info.compress_type = ZIP_DEFLATED
+            archive.writestr(info, content)
+    return buffer.getvalue()
+
+
 def payload_archive(spec: DistributionSpec, payload: PayloadTree) -> bytes:
     """Build a deterministic ZIP of complete modules and explicitly owned resources.
 
@@ -126,17 +146,7 @@ def payload_archive(spec: DistributionSpec, payload: PayloadTree) -> bytes:
                 b'"""Bundled lifecycle namespace."""\n',
             )
             parent = parent.parent
-    buffer = io.BytesIO()
-    with ZipFile(
-        buffer, "w", compression=ZIP_DEFLATED, compresslevel=9
-    ) as archive:
-        for address, content in sorted(entries.items()):
-            info = ZipInfo(address, date_time=(1980, 1, 1, 0, 0, 0))
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
-            info.compress_type = ZIP_DEFLATED
-            archive.writestr(info, content)
-    return buffer.getvalue()
+    return _deterministic_zip(entries.items())
 
 
 def inspection_archive() -> bytes:
@@ -160,14 +170,4 @@ def inspection_archive() -> bytes:
                 b'"""Bundled read-only namespace."""\n',
             )
             parent = parent.parent
-    buffer = io.BytesIO()
-    with ZipFile(
-        buffer, "w", compression=ZIP_DEFLATED, compresslevel=9
-    ) as archive:
-        for address, content in sorted(entries.items()):
-            info = ZipInfo(address, date_time=(1980, 1, 1, 0, 0, 0))
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
-            info.compress_type = ZIP_DEFLATED
-            archive.writestr(info, content)
-    return buffer.getvalue()
+    return _deterministic_zip(entries.items())

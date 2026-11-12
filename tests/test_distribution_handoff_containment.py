@@ -200,6 +200,25 @@ def _pending_receiver_handoff(
     return handoff
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX private directory modes")
+def test_handoff_directory_refuses_shared_permissions_without_mutation(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "handoff"
+    directory.mkdir(mode=0o700)
+    directory.chmod(0o755)
+    payload = directory / "retained"
+    payload.write_text("keep", encoding="utf-8")
+    mode = directory.stat().st_mode
+
+    with pytest.raises(InstallationError) as error:
+        controllers._assert_private_directory(directory)
+    assert str(error.value) == "Uninstall handoff directory must be private."
+
+    assert directory.stat().st_mode == mode
+    assert payload.read_text(encoding="utf-8") == "keep"
+
+
 def test_receiver_rejects_management_prefix_under_program_only_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

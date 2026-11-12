@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -45,10 +44,11 @@ from apprc.user_files.app_home.locations import (
 )
 from apprc.user_files.app_home.ownership import inspect_ownership
 from apprc.user_files.app_home.permissions import (
+    _path_permissions_are_private,
     create_private_directory_if_missing,
     set_windows_private_acl,
-    windows_acl_is_private,
 )
+
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
@@ -65,12 +65,11 @@ from apprc.user_files.purge import plan_config_file_purge
 def _assert_private_directory(directory: Path) -> None:
     """Verify the privacy boundary on a newly created handoff directory."""
     assert_no_links(directory)
-    if os.name == "nt":
-        if not windows_acl_is_private(directory):
+    if not _path_permissions_are_private(directory):
+        if os.name == "nt":
             raise InstallationError(
                 "Uninstall handoff directory does not have a private Windows ACL."
             )
-    elif stat.S_IMODE(directory.stat().st_mode) & 0o077:
         raise InstallationError("Uninstall handoff directory must be private.")
 
 

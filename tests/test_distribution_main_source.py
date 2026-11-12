@@ -183,6 +183,48 @@ def _zip_as_sdist(package_path: Path, archive_path: Path) -> None:
     package_path.unlink()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX private directory modes")
+@pytest.mark.parametrize("boundary", ("staging", "package-parent"))
+def test_source_preparation_rejects_shared_staging_without_mutation(
+    tmp_path: Path, boundary: str
+) -> None:
+    package_directory = tmp_path / "package"
+    package_directory.mkdir(mode=0o700)
+    package = package_directory / "main.zip"
+    package.write_bytes(b"retained package")
+    staging = tmp_path / "staging"
+    staging.mkdir(mode=0o700)
+    if boundary == "staging":
+        staging.chmod(0o755)
+        expected_error = "Source staging directory must be private."
+    else:
+        package_directory.chmod(0o755)
+        expected_error = "Bootstrap package staging must be private."
+    before = {
+        path: (
+            path.stat().st_mode,
+            path.read_bytes() if path.is_file() else None,
+        )
+        for path in (package_directory, package, staging)
+    }
+    selection = SourceSelection(
+        InstallationSource(
+            "index",
+            f"git+https://github.com/example/main-archive-fixture.git@{_COMMIT}",
+        ),
+        package_path=package,
+    )
+
+    with pytest.raises(InstallationError) as error:
+        selection.prepare(staging)
+    assert str(error.value) == expected_error
+
+    for path, (mode, content) in before.items():
+        assert path.stat().st_mode == mode
+        if content is not None:
+            assert path.read_bytes() == content
+
+
 @pytest.mark.parametrize(
     ("source_kind", "subdirectory"),
     (

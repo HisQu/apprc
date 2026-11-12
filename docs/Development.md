@@ -148,6 +148,23 @@ external interpreter in JSON, not by inspecting or rewriting Python. Native
 frontend path escaping is a separate binding concern. Keep both program and
 binding data in the record's exact support-digest inventory.
 
+Materialized immutable-main and release-sdist source proof belongs to
+`distribution/runtime/probe.py::_verify_materialized_directory_source()`.
+Both source branches keep their installed `RECORD` checks before that proof;
+`runtime/acquisition.py::_validate_content_addressed_origin()` remains the owner
+of content-addressed origin validation.
+
+`distribution/standalone.py::_deterministic_zip()` serializes payload,
+inspection, and zipapp entries with the same sorted paths, fixed timestamp,
+Unix file metadata, and compression settings. Entry collection, namespace
+package synthesis, and payload collision checks remain with the callers.
+
+`user_files/app_home/permissions.py::_path_permissions_are_private()` checks
+file or directory privacy through Windows ACLs or POSIX mode bits. Callers
+retain link checks, creation, explicit repair, and operation-boundary
+revalidation. Installation coordination additionally requires POSIX ownership
+by the current user; other callers do not inherit that requirement.
+
 <br>
 
 # Verify and update changes

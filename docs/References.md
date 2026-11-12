@@ -253,9 +253,9 @@ These author-time APIs live under `apprc.distribution`:
 | --- | --- |
 | `read_project_metadata(project_root)` | `ProjectMetadata` from project metadata, without importing application/business code. App ID, distribution, import package and command identities remain distinct. |
 | `inspect_capabilities(apprc)` | `AppCapabilities` from declarations only, not resolved settings or the author's installation. |
-| `render_bootstraps(spec)` | Native bootstrap artifacts. |
+| `render_python_installer(spec)` | Rust-free root `app-install.py` developer/remote entry. |
 | `build_main_installer(spec, payload)` | Deterministic standalone installer from the explicit `PayloadTree`. |
-| `render_launcher(spec)` / `render_uninstaller(spec)` | Launcher/removal artifacts using the same runtime contract. |
+| `render_launcher(spec)` / `render_uninstaller(spec)` | Python `app-launch.py` / root removal wrappers using saved management. |
 | `generate_artifacts(spec, payload)` | Convenience composition of the same generation primitives. |
 | `install_support_files(spec, payload)` | Flatten generated saved support into installation-relative files; machine addresses are bound separately at runtime. |
 | `write_artifacts(artifacts, check=False)` | Write exact bytes/modes; `check=True` reports named drift without writing. |
@@ -288,19 +288,8 @@ installed application or separately installed AppRC. Management requires Python
 `>=3.12`, `platformdirs==4.10.0`, `filelock==3.32.7`, `packaging==26.2`, and
 `pywin32==312` on Windows. These are direct dependency pins, not a transitive lock.
 
-Remote-mode `app-install.cmd` is self-contained: it carries the same rendered
-PowerShell bootstrap, runs an exclusively created temporary helper, forwards
-the original arguments and exit code, and removes that owned helper. It needs
-neither an adjacent `bootstrap.ps1` nor uv/Python beforehand. The separately
-emitted `bootstrap.ps1` also supports remote-mode downloaded-text invocation
-without a script directory. Checkout entries still require their local payload;
-a missing payload never silently selects remote code.
-
-Both checkout and remote CMD launchers clear inherited `PSModulePath` only
-inside their `setlocal` scope before starting Windows PowerShell. The child
-therefore builds its own module paths instead of loading incompatible
-PowerShell 7 modules inherited through CMD. The caller's environment and
-persistent execution policies are unchanged.
+Retirement of an old owned `launch.sh` requires its recorded digest to match
+under the existing installation lock. Unknown or edited files are not deleted.
 
 Lifecycle primitives under `apprc.distribution.runtime` operate on frozen typed
 plans: `plan_install`, `plan_uninstall`, `plan_migration`, `begin_operation`,
@@ -309,6 +298,11 @@ Planning is read-only; mutation revalidates revision/generation under coordinati
 Repository-owned payload functions choose their order and application actions.
 There is no required lifecycle base class, hook registry, function extraction or
 source-code rewriting.
+Native entries use uv for the installed application environment; PyApp is only
+the native frontend's Python bootstrap. See
+[the development guide](Development.md#native-application-frontends) for compiler
+requirements and native release staging.
+
 
 Authored installers must also accept `--repair --directory PATH`. Resolve that
 explicit saved address, verify its installation identity, and use `plan_repair`
@@ -352,19 +346,126 @@ coordination and revision checks. Supply only digest-proven previous ownership.
 Stage this bound output before `execute_migration(...)` can commit `ready`;
 reinstallation afterward is not a substitute for usable recovery at activation.
 
-Authored installer entries call `parse_source_arguments(spec, sys.argv[1:])`
-before parsing application options. It returns a `SourceSelection` and the
-remaining arguments. Plan with `selection.source`, acquire with
-`selection.prepare(private_staging)`, and pass the resulting `PreparedSource`
-to `install_prepared_application(...)`. This preserves the selected immutable
-main commit or release identity, staged package, runtime constraints, and
-explicit GitHub client through installation. Recomputing
-`installation_source(spec)` afterward would discard the transport selection.
+Authored installer entries load portable inputs with
+`load_installer_spec(*, script=None)`, then call
+`parse_source_arguments(spec, sys.argv[1:])` before parsing application options.
+It returns a `SourceSelection` and remaining arguments. Acquire through
+`prepare_installation_source(spec, selection, private_staging, repair_from=None)`
+and pass the resulting `PreparedSource` to `install_prepared_application(...)`.
+For saved repair, supply the explicit saved installation address as `repair_from`.
+This preserves ordinary source selection while adapting authenticated native
+payloads. Recomputing `installation_source(spec)` would discard transport choices.
 
 The standalone loader installs only `MANAGEMENT_REQUIREMENTS`. Application
 `runtime_requirements` and `runtime_overrides` remain in the bundled source
 contract for the uv-tool environment; they do not constrain the independent
 loader. An application with no runtime dependencies has a valid empty closure.
+
+The low-level
+`apprc.distribution.runtime.backend.install_uv_tool(target, source, *, environment, python_requirement=">=3.12", constraints=None, override_file=None, runtime_requirements_file=None)`
+accepts explicit `Path` inputs for three distinct uv mechanisms:
+
+| Keyword | uv option | Effect |
+| --- | --- | --- |
+| `constraints` | `--constraint` | Restrict dependency versions without adding requirements. |
+| `override_file` | `--override` | Replace dependency requirements with the file's requirements. |
+| `runtime_requirements_file` | `--with-requirements` | Add the file's requirements to the installed runtime graph. |
+
+Omitted file inputs emit no corresponding option. `source.runtime_overrides`
+still emits one `--with` per requirement; it does not supply uv overrides.
+Low-level callers own file preparation, integrity verification, and lifecycle
+authorization. Managed installation accepts a `PreparedSource.bundle` descriptor:
+`prepare_wheel_bundle(payload_directory, private_staging, source=source, distribution=name)`
+verifies `inventory.json`, `runtime-requirements.txt`, and wheel bytes, then
+prepares private override/requirements files. The trusted `InstallationSource`
+must identify the root wheel and complete pinned runtime graph. The inventory
+may contain only the bundled subset; ordinary unbundled dependencies remain in
+that graph. Repository rows retain their immutable commit and subdirectory.
+`install_application(...)` revalidates these inputs before mutation and after
+the existing setup hook, then supplies them to the recorded uv backend. Staged
+paths are operation inputs, not saved installation authority.
+
+`repair_saved(directory)` uses retained record ownership when a pending package
+snapshot has not published its support inventory. It still requires the exact
+recorded saved installer digest and rejects unknown, linked or modified files;
+an interrupted repair does not authorize downloading a newer installer.
+
+Native compilation is an explicit authoring operation:
+`NativeFrontendBuilder(workspace, bootstrap_name=name, python_version="3.14")`
+creates a new private workspace, and
+`builder.build(dispatcher, target=target, destination=path)` returns a
+`NativeArtifact` with the finished path, target, byte size, SHA-256 and build
+report path. Supported targets are `x86_64-unknown-linux-gnu` and
+`x86_64-pc-windows-msvc`; the latter uses Cargo-xwin. The builder verifies pinned
+PyApp 0.31.0 source and bootstraps normal pip with management dependencies and
+uv 0.13.6. Its toolchain-based bootstrap version does not change with dispatcher
+bytes. Calls sharing a builder or `CARGO_TARGET_DIR` must be serialized; relative
+Cargo paths are resolved from the builder's construction directory.
+Ordinary Python artifact generation does not invoke this compiler. Cross-building
+and inspecting a Windows console executable does not establish Windows runtime
+correctness.
+
+The optional producer is imported explicitly from
+`apprc.distribution.frontends`, not from the `apprc.distribution` root:
+
+```python
+from apprc.distribution.frontends import build_native_installers
+
+native = build_native_installers(
+    spec,
+    payload,
+    source_package=release_sdist,
+    uv=uv_executable,
+    workspace=private_build_directory,
+    extras=(),
+)
+```
+
+Here `spec` must identify the exact immutable HTTPS release SDIST, matching
+version, full commit and SHA-256; `release_sdist` is that original local archive.
+The workspace must not exist. The default targets return four app-specific
+executables: `appid-install-linux-x86_64`, `appid-launch-linux-x86_64`,
+`appid-install-windows-x86_64.exe`, and `appid-launch-windows-x86_64.exe`.
+`NativeDistribution.frontends` contains compiled artifact metadata;
+`NativeDistribution.payload_files` contains the original main installer,
+retained runtime ZIP and optional ZIPapp requirements.
+It excludes the inner manifest and original SDIST. The consuming release route
+separately creates its outer manifest after the native assets are finished.
+
+Repository selection is typed author metadata:
+
+```toml
+[tool.apprc.distribution]
+bundle-repositories = ["https://github.com/owner/private-library.git"]
+```
+
+URLs must be credential-free HTTPS Git URLs. The locked selected application
+graph and explicit `extras` determine the runtime profile; development/default
+groups and unrelated workspace members are excluded. Selected Git dependencies
+and needed declared workspace projects are built through their real backends.
+Markers and unselected source semantics are preserved. Unsupported non-default
+indexes and external local sources are rejected. Native compilation also rejects
+nonempty manual `spec.runtime_requirements` and `spec.runtime_overrides`;
+the lock supplies the complete runtime requirements and consistent lowered
+constraints, with a real uv override file for bundled wheels.
+
+The inner manifest authenticates the original installer and original input
+archive. Authenticated ZIP overlays bind application-specific script bytes
+without changing the toolchain/dependency-only bootstrap version. Installation
+retains one digest-owned `installer-payload.zip` containing verified wheels,
+original source metadata and optional Linux launcher. Saved repair verifies that
+retained payload instead of requiring vanished build staging. The root wheel
+identity uses its basename, never a temporary path. Windows PE bytes are compiled
+but never executed by the producer or promoted as owned saved launchers.
+Public dependencies and Python may still be downloaded online; repository access
+uses the author's existing authenticated environment, not a new authentication
+broker. Do not commit private wheels, executable bytes or encoded copies.
+
+New installations prefer the invoking uv identified by its official
+[`UV` environment variable](https://docs.astral.sh/uv/reference/environment/#uv)
+(available since uv 0.6). Repairs use the recorded backend first. There is no
+custom AppRC uv environment variable, and the application remains a uv tool,
+not a PyApp-managed application environment.
 
 For verified immutable-main and release-sdist inputs,
 `InstalledSnapshot.source.digest` retains the original acquired archive SHA-256.
@@ -381,36 +482,6 @@ the same name/version does not satisfy that proof. The `RECORD` fingerprint
 binds the installed observation; it does not reconstruct the original archive
 or turn an opaque uv URL into a cryptographic attestation.
 
-For a historical program whose deleted arbitrary staging cannot prove its source,
-explicit replacement is separate from adoption. `plan_legacy_replacement(...)`
-takes the inspected `LegacyReceiptInspection`, independently observed old RECORD
-digest, new immutable source and placement. Its empty `MigrationInventory` uses
-the installation directory as both roots; it does not move data or workspaces.
-`execute_legacy_replacement(...)` first persists digest-bound recovery inputs and
-an owned recovery entry, then publishes initial pending authority before any
-backend replacement. An interruption immediately after authority publication can
-therefore resume from retained inputs. The ordinary strict probe precedes old
-controller retirement and bound-support activation; historical source provenance
-is never fabricated.
-
-The support mapping must provide a nonempty `repair-installer.py` or
-`legacy-recovery.py` root entry. AppRC checks the retained byte identity; the
-application author remains responsible for that entry's recovery behavior.
-
-> [!WARNING]
-> A hard stop before initial authority publication can leave unclaimed
-> preparation files for manual inspection. The old program is still untouched.
-> Caught failures roll back only unchanged files created by that invocation;
-> unknown or changed files are not adopted or deleted automatically.
-
-Authored recovery first calls `is_pending_legacy_replacement(inspection)`, before
-generic migration recovery. If true, call `resume_legacy_replacement(...)` with
-the exact operation UUID, current revision and fresh explicit quiescence.
-Omit optional `prepared` and `support_files` so the SDK loads its digest-verified
-retained inputs; do not require the vanished checkout/archive before calling it.
-Do not inspect private discriminator fields, reselect ambient tools or call
-`plan_install` over that pending authority. Once the operation becomes ordinary
-`migrate`, existing `resume_migration(...)` finishes the recorded cutover.
 
 `InstallationSource.matches_observation(observed)` allows only this supported
 digest enrichment; all other acquisition inputs remain exact, and a specified

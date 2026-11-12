@@ -56,13 +56,21 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         "project-path",
         "distribution-path",
         "launcher-command",
+        "bundle-repositories",
     }
     if set(settings) - allowed or any(
-        not isinstance(value, str) for value in settings.values()
+        not isinstance(value, str)
+        for key, value in settings.items()
+        if key != "bundle-repositories"
     ):
         raise ValueError(
             "Unknown or non-string tool.apprc.distribution setting."
         )
+    repositories = settings.get("bundle-repositories", [])
+    if not isinstance(repositories, list) or not all(
+        isinstance(value, str) for value in repositories
+    ):
+        raise ValueError("bundle-repositories must be a list of strings.")
     distribution = re.sub(r"[-_.]+", "-", name).lower()
     packages = {
         value.split(":", 1)[0].split(".", 1)[0] for value in scripts.values()
@@ -121,6 +129,7 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         distribution_path,
         settings.get("launcher-command"),
         python_requirement,
+        tuple(repositories),
     )
 
 

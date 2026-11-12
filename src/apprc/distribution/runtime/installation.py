@@ -178,6 +178,13 @@ def _install_application_locked(
         if after_source_acquired is not None:
             after_source_acquired(prepared)
         _validate_prepared_source(plan, prepared)
+        if prepared.support_files is not None:
+            overlap = support_files.keys() & prepared.support_files.keys()
+            if overlap:
+                raise InstallationError(
+                    "Prepared payload collides with authored support outputs."
+                )
+            support_files = {**support_files, **prepared.support_files}
         context = OperationContext(
             plan.directory,
             operation_id,
@@ -219,6 +226,15 @@ def _install_application_locked(
         for item in previous_owner:
             if item.kind == "support" and item.digest is not None:
                 previous.setdefault(item.path, set()).add(item.digest)
+        retired_launchers: list[Path] = []
+        if os.name != "nt" and PurePosixPath("launch.sh") not in support_files:
+            old_launcher = PurePosixPath("launch.sh")
+            if str(old_launcher) in previous:
+                destination = plan.directory / old_launcher
+                _validate_support_destination(
+                    destination, old_launcher, previous[str(old_launcher)]
+                )
+                retired_launchers.append(destination)
         support_files = bind_install_support(
             support_files, observed, plan.directory, previous_owner
         )
@@ -282,10 +298,18 @@ def _install_application_locked(
             )
             write_bytes_atomic(destination, content, private=True)
             if relative in {
+                PurePosixPath("launch"),
                 PurePosixPath("launch.sh"),
                 PurePosixPath("uninstall.sh"),
             }:
                 destination.chmod(0o700)
+        for destination in retired_launchers:
+            _validate_support_destination(
+                destination,
+                PurePosixPath(destination.name),
+                previous[destination.name],
+            )
+            destination.unlink(missing_ok=True)
         snapshot = observed
         if revision is None:
             raise InstallationError(
@@ -526,6 +550,16 @@ def _reconcile_package(
             environment=environment,
             python_requirement=python_requirement,
             constraints=prepared.constraints,
+            override_file=(
+                prepared.bundle.override_file
+                if prepared.bundle is not None
+                else None
+            ),
+            runtime_requirements_file=(
+                prepared.bundle.runtime_requirements_file
+                if prepared.bundle is not None
+                else None
+            ),
         )
         if prepared.archive is not None and prepared.digest is not None:
             if _sha256_file(prepared.archive) != prepared.digest:
@@ -768,6 +802,15 @@ def _validate_prepared_source(
         raise InstallationError(
             "Unexpected runtime constraints were supplied for this source."
         )
+    if prepared.bundle is not None:
+        # > Ordinary core imports must not require optional bundle dependencies.
+        from apprc.distribution.runtime.bundles import validate_prepared_bundle
+
+        validate_prepared_bundle(
+            prepared.bundle,
+            source=source,
+            distribution=plan.target.identity.distribution,
+        )
 
 
 def _assert_private_staging(directory: Path) -> None:
@@ -812,6 +855,7 @@ def _current_platform_support(
         PurePosixPath("uninstall.ps1"),
     }
     posix_frontends = {
+        PurePosixPath("launch"),
         PurePosixPath("launch.sh"),
         PurePosixPath("uninstall.sh"),
     }

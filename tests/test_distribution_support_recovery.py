@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -23,6 +25,7 @@ from apprc.definition.installation import (
     InstallationSource,
     InstalledSnapshot,
     InstallPlan,
+    OperationStep,
     UvToolTarget,
 )
 from apprc.definition.paths import Layout
@@ -32,6 +35,7 @@ from apprc.distribution.models import (
     ProjectMetadata,
 )
 from apprc.distribution.rendering import render_saved_support
+from apprc.distribution.runtime.controllers import repair_saved
 from apprc.distribution.runtime import installation, installed_probe
 from apprc.distribution.runtime.acquisition import (
     PreparedSource,
@@ -42,7 +46,12 @@ from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
 from apprc.user_files.installation.discovery import inspect_installation
-from apprc.user_files.installation.operations import plan_install, plan_repair
+from apprc.user_files.installation.operations import (
+    begin_operation,
+    plan_install,
+    plan_repair,
+    record_step,
+)
 
 
 def _scenario(
@@ -117,18 +126,24 @@ def _run(
 def _stub_backend(
     monkeypatch: pytest.MonkeyPatch, snapshot: InstalledSnapshot
 ) -> None:
+    def install_uv_tool(
+        target: UvToolTarget,
+        source: InstallationSource,
+        *,
+        environment: Mapping[str, str],
+        python_requirement: str = ">=3.12",
+        constraints: Path | None = None,
+        override_file: Path | None = None,
+        runtime_requirements_file: Path | None = None,
+    ) -> None:
+        return None
+
     monkeypatch.setattr(
         installation,
         "inspect_uv_tools",
         lambda target, *, environment: frozenset(),
     )
-    monkeypatch.setattr(
-        installation,
-        "install_uv_tool",
-        lambda target, source, *, environment, python_requirement, constraints: (
-            None
-        ),
-    )
+    monkeypatch.setattr(installation, "install_uv_tool", install_uv_tool)
     monkeypatch.setattr(
         installation,
         "probe_installed_tool",
@@ -266,6 +281,85 @@ def test_saved_repair_reuses_only_owned_bound_management_json(
         with pytest.raises(InstallationError):
             _run(repair, environment, repair_support)
         assert bound_path.read_bytes() == authorized_bytes
+
+
+def test_saved_repair_uses_retained_outputs_when_pending_snapshot_is_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory, plan, snapshot, environment = _scenario(tmp_path)
+    _stub_backend(monkeypatch, snapshot)
+    monkeypatch.setattr(
+        installation, "external_base_python", external_base_python
+    )
+    marker = directory / "repair-ran"
+    installer_bytes = (
+        b"# /// script\n"
+        b'# requires-python = ">=3.12"\n'
+        b"# dependencies = []\n"
+        b"# ///\n"
+        b"from pathlib import Path\n"
+        b"Path(__file__).with_name('repair-ran').write_text('authorized')\n"
+    )
+    selected = directory / "repair-installer.py"
+    support = {
+        PurePosixPath("repair-installer.py"): installer_bytes,
+    }
+    installed = _run(plan, environment, support)
+    assert installed.status == "ready"
+    assert installed.record is not None
+    assert installed.record.current is not None
+    assert installed.record.current.owned_outputs
+
+    repair_plan = plan_repair(
+        plan.target.identity,
+        plan.target.source,
+        plan.target.placement,
+        plan.target.backend,
+        inspection=installed,
+    )
+    pending = begin_operation(repair_plan)
+    assert pending.record is not None
+    assert pending.revision is not None
+    assert pending.record.current is not None
+    interrupted_snapshot = replace(pending.record.current, owned_outputs=())
+    pending = record_step(
+        directory,
+        operation_id=repair_plan.operation_id,
+        expected_revision=pending.revision,
+        step=OperationStep.PACKAGE_CHANGED,
+        observed=interrupted_snapshot,
+    )
+    assert pending.record is not None
+    assert pending.record.current is not None
+    assert not pending.record.current.owned_outputs
+    assert pending.record.owned_outputs
+
+    environment.update(
+        UV_PYTHON=sys.executable,
+        UV_PYTHON_DOWNLOADS="never",
+        UV_CACHE_DIR=str(tmp_path / "uv cache"),
+    )
+    (tmp_path / "uv cache").mkdir()
+    result = subprocess.run(
+        repair_saved(directory),
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert marker.read_text() == "authorized"
+
+    unowned = directory / "unowned-installer.py"
+    unowned.write_bytes(installer_bytes)
+    with pytest.raises(InstallationError):
+        repair_saved(directory, installer=unowned)
+    assert marker.read_text() == "authorized"
+
+    selected.write_bytes(b"edited saved installer")
+    with pytest.raises(InstallationError):
+        repair_saved(directory)
+    assert marker.read_text() == "authorized"
 
 
 def test_saved_release_repair_recovers_owned_installation_outputs(
@@ -505,3 +599,128 @@ def test_existing_support_matching_desired_bytes_is_not_adopted(
         )
 
     assert destination.read_bytes() == b"desired controller"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux launcher ownership")
+@pytest.mark.parametrize(
+    "old_launcher_state", ("matching", "missing", "unowned")
+)
+def test_native_launcher_recovery_retires_only_owned_legacy_script(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    old_launcher_state: str,
+) -> None:
+    directory, plan, snapshot, environment = _scenario(tmp_path)
+    _stub_backend(monkeypatch, snapshot)
+    old_bytes = b"owned legacy launcher"
+    support = {PurePosixPath("controller.py"): b"saved controller"}
+    if old_launcher_state != "unowned":
+        support[PurePosixPath("launch.sh")] = old_bytes
+    installed = _run(plan, environment, support)
+    assert installed.status == "ready"
+    assert installed.record is not None
+    assert installed.record.current is not None
+    old_outputs = tuple(
+        output
+        for output in installed.record.current.owned_outputs
+        if output.kind == "support" and output.path == "launch.sh"
+    )
+    if old_launcher_state == "unowned":
+        assert not old_outputs
+        (directory / "launch.sh").write_bytes(old_bytes)
+    else:
+        assert len(old_outputs) == 1
+        assert old_outputs[0].digest == hashlib.sha256(old_bytes).hexdigest()
+        if old_launcher_state == "missing":
+            (directory / "launch.sh").unlink()
+    user_file = directory / "launch.sh.backup"
+    user_file.write_bytes(b"user launcher backup")
+    repair_plan = plan_repair(
+        plan.target.identity,
+        plan.target.source,
+        plan.target.placement,
+        plan.target.backend,
+        inspection=installed,
+    )
+    native_bytes = b"opaque native launcher fixture"
+    recovered = _run(
+        repair_plan,
+        environment,
+        {PurePosixPath("launch"): native_bytes},
+    )
+
+    assert recovered.status == "ready"
+    assert (directory / "launch").read_bytes() == native_bytes
+    assert (directory / "launch").stat().st_mode & 0o777 == 0o700
+    if old_launcher_state == "unowned":
+        assert (directory / "launch.sh").read_bytes() == old_bytes
+    else:
+        assert not (directory / "launch.sh").exists()
+    assert user_file.read_bytes() == b"user launcher backup"
+    assert recovered.record is not None
+    assert recovered.record.current is not None
+    assert recovered.record.last_successful is not None
+    for outputs in (
+        recovered.record.owned_outputs,
+        recovered.record.current.owned_outputs,
+        recovered.record.last_successful.owned_outputs,
+    ):
+        support_outputs = {
+            output.path: output.digest
+            for output in outputs
+            if output.kind == "support"
+        }
+        assert (
+            support_outputs["launch"]
+            == hashlib.sha256(native_bytes).hexdigest()
+        )
+        assert "launch.sh" not in support_outputs
+        assert "launch.sh.backup" not in support_outputs
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux launcher ownership")
+def test_native_launcher_recovery_preserves_edited_legacy_script_and_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory, plan, snapshot, environment = _scenario(tmp_path)
+    _stub_backend(monkeypatch, snapshot)
+    old_bytes = b"owned legacy launcher"
+    installed = _run(plan, environment, {PurePosixPath("launch.sh"): old_bytes})
+    assert installed.status == "ready"
+    assert installed.record is not None
+    assert installed.record.current is not None
+    old_output = next(
+        output
+        for output in installed.record.current.owned_outputs
+        if output.kind == "support" and output.path == "launch.sh"
+    )
+    assert old_output.digest == hashlib.sha256(old_bytes).hexdigest()
+    edited_bytes = b"user-edited legacy launcher"
+    (directory / "launch.sh").write_bytes(edited_bytes)
+    repair_plan = plan_repair(
+        plan.target.identity,
+        plan.target.source,
+        plan.target.placement,
+        plan.target.backend,
+        inspection=installed,
+    )
+    with pytest.raises(InstallationError):
+        _run(
+            repair_plan,
+            environment,
+            {PurePosixPath("launch"): b"opaque native launcher fixture"},
+        )
+
+    assert (directory / "launch.sh").read_bytes() == edited_bytes
+    assert not (directory / "launch").exists()
+    refused = inspect_installation(
+        directory, app_id=plan.target.identity.app_id
+    )
+    assert refused.record is not None
+    assert old_output in refused.record.owned_outputs
+    assert refused.record.last_successful is not None
+    assert old_output in refused.record.last_successful.owned_outputs
+    assert not any(
+        output.kind == "support" and output.path == "launch"
+        for output in refused.record.owned_outputs
+    )

@@ -808,30 +808,29 @@ the application owns its installer and entry points.
 
 # Install and recover managed applications
 
-These guides apply to an application shipping AppRC-generated root wrappers.
+These guides apply to an application shipping AppRC-generated Python checkout entries.
 Examples use `demo` as its installed command; use the actual application command
 and project paths. The [installation explanation](Explanations.md#installation)
 separates application resources, durable management metadata and the Python
 environment.
 
 > [!IMPORTANT]
-> The repository targets AppRC 0.32.0. A source version bump or `git pull` does
-> not publish that version. Use the project's verified development source pin
-> until matching packages are available; do not remove that pin merely because
-> the checkout's version changed.
+> Install `uv` before using the checkout entries below. A version bump or
+> `git pull` does not publish a release; keep a verified development source pin
+> until matching packages are available.
 
 ## Install from a checkout
 
-From the application repository, run the native entry:
+From the application repository, run the Python checkout entry:
 
 ```shell
-./app-install.sh
+uv run --script app-install.py
 ```
 
 On Windows, use:
 
 ```powershell
-.\app-install.cmd
+uv run --script .\app-install.py
 ```
 
 The first install offers OS-native locations or a single root and shows the
@@ -858,19 +857,19 @@ Re-running the installer retains saved placement by default. To select OS-native
 locations explicitly:
 
 ```shell
-./app-install.sh --layout native
+uv run --script app-install.py --layout native
 ```
 
 To persist a single root:
 
 ```shell
-./app-install.sh --layout single-root --root "/absolute/path/demo-files"
+uv run --script app-install.py --layout single-root --root "/absolute/path/demo-files"
 ```
 
 Windows uses the same arguments:
 
 ```powershell
-.\app-install.cmd --layout single-root --root "D:\demo-files"
+uv run --script .\app-install.py --layout single-root --root "D:\demo-files"
 ```
 
 Do not combine `native` with `--root`; single-root requires an explicit root.

@@ -110,6 +110,37 @@ apprc-reference = "unimportable_package.config:MyRC"
     )
 
 
+def test_bundle_repository_metadata_accepts_only_string_lists(
+    tmp_path: Path,
+) -> None:
+    project = (
+        '[project]\nname = "metadata-fixture"\nversion = "1.0.0"\n'
+        '[project.scripts]\nmetadata-fixture = "fixture:main"\n'
+    )
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        project
+        + "[tool.apprc.distribution]\n"
+        + 'bundle-repositories = ["https://example.invalid/repo"]\n',
+        encoding="utf-8",
+    )
+    assert read_project_metadata(tmp_path).bundle_repositories == (
+        "https://example.invalid/repo",
+    )
+    for setting in (
+        'bundle-repositories = "https://example.invalid/repo"',
+        'bundle-repositories = ["https://example.invalid/repo", 1]',
+        '[tool.apprc.distribution.bundle-repositories]\nurl = "https://example.invalid/repo"',
+        'unknown = "value"',
+    ):
+        pyproject.write_text(
+            project + "[tool.apprc.distribution]\n" + setting + "\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError):
+            read_project_metadata(tmp_path)
+
+
 def test_capability_inspection_needs_no_settings_or_installation() -> None:
     app = AppRC(app_id="generation-fixture", paths=Paths(cache=True))
     capabilities = inspect_capabilities(app)

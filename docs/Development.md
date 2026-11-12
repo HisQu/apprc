@@ -13,6 +13,7 @@
   - [Generated files](#generated-files)
 - [Build and release AppRC](#build-and-release-apprc)
   - [Build the three distributions](#build-the-three-distributions)
+  - [Native application frontends](#native-application-frontends)
   - [Release procedure](#release-procedure)
 
 <br>
@@ -311,6 +312,51 @@ stale generated files. Commit generated files with their source changes.
 # Build and release AppRC
 
 ## Build the three distributions
+
+## Native application frontends
+
+Ordinary artifact generation and `build_main_installer()` remain Rust-free.
+Generated application checkouts use `app-install.py` and `app-launch.py`, invoked
+with `uv run --script`; these entries preserve the actual editable source tree and
+use the authored installer's PEP 723 dependencies. Recipients use uv for the
+application environment. PyApp manages only the native frontend's Python
+bootstrap.
+
+Native release executables are optional and built only through
+`apprc.distribution.frontends.build_native_installers`. The call requires a
+`DistributionSpec`, explicit `PayloadTree`, original release SDIST, uv executable,
+new private workspace, and optionally runtime extras, target tuple, and authoring
+environment. The spec must identify the exact immutable HTTPS release SDIST,
+including matching version, full commit and digest. The default target set returns
+app-specific Linux and Windows installer and launcher executables. `NativeDistribution`
+contains the compiled `frontends` and public `payload_files` for the existing
+release staging; that staging separately creates the outer release manifest.
+
+The compiler pins PyApp 0.31.0 source, Python 3.14, management requirements and
+uv 0.13.6. Linux compilation requires Rust and LLVM; Windows cross-compilation
+uses Cargo-xwin 0.23.1, `x86_64-pc-windows-msvc`, and Microsoft SDK inputs. A
+compiled Windows PE is not executed or promoted as a saved launcher, so this
+does not establish Windows runtime behavior.
+
+The `bundle-repositories` array in `[tool.apprc.distribution]` is an explicit
+allow-list of credential-free HTTPS Git URLs. Native compilation resolves the
+locked selected application graph and requested extras; it excludes development
+and default groups and unrelated workspace projects. Needed selected Git and
+declared workspace projects use their real build backends. Unsupported
+non-default indexes and external local sources are rejected. The producer
+derives runtime requirements and lowered constraints from the lock and rejects
+manual runtime requirement or override values.
+
+Native installers retain one digest-owned `installer-payload.zip` containing
+verified wheels, original source metadata and an optional Linux launch binary.
+The inner manifest authenticates the original installer and original source
+input; payload script overlays are authenticated separately. The existing release
+staging manifest authenticates finished native assets. Native output examples
+are `appid-install-linux-x86_64`, `appid-launch-linux-x86_64`,
+`appid-install-windows-x86_64.exe`, and `appid-launch-windows-x86_64.exe`.
+Windows `launch.cmd` and `launch.ps1` saved wrappers remain; root `launch.sh` is
+not generated. Public dependencies and Python may still be downloaded online.
+Do not commit private wheels, executable bytes, or encoded copies.
 
 Ordinary PEP 517 builds:
 

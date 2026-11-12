@@ -228,14 +228,24 @@ def install_uv_tool(
     environment: Mapping[str, str],
     python_requirement: str = ">=3.12",
     constraints: Path | None = None,
+    override_file: Path | None = None,
+    runtime_requirements_file: Path | None = None,
 ) -> None:
     """Acquire the explicit source; lifecycle authorization belongs to the caller.
+
+    Source ``runtime_overrides`` remain additional ``--with`` requirements.
+    Constraints restrict selected versions without adding dependencies; an
+    override file replaces dependency requirements, while a runtime requirements
+    file adds the requirements to install.
 
     :param target: Validated uv address.
     :param source: Exact editable/archive/wheel/index input.
     :param environment: Captured inputs, overridden with the recorded uv roots.
     :param python_requirement: Application's declared Python compatibility.
-    :param constraints: Verified release runtime constraints, separate from management deps.
+    :param constraints: Verified runtime constraints passed through ``--constraint``.
+    :param override_file: Explicit dependency replacements passed through ``--override``.
+    :param runtime_requirements_file: Additional runtime graph passed through
+        ``--with-requirements``.
     """
     if not source.requirement or source.requirement.startswith("-"):
         raise InstallationError(
@@ -266,6 +276,15 @@ def install_uv_tool(
     if constraints is not None:
         # > uv splits constraint path arguments at spaces; file URIs preserve them.
         argv.extend(("--constraint", constraints.absolute().as_uri()))
+    if override_file is not None:
+        argv.extend(("--override", override_file.absolute().as_uri()))
+    if runtime_requirements_file is not None:
+        argv.extend(
+            (
+                "--with-requirements",
+                runtime_requirements_file.absolute().as_uri(),
+            )
+        )
     argv.append(source.requirement)
     subprocess.run(
         argv, env=backend_environment(target, environment), check=True

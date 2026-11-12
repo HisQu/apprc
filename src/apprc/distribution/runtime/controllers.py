@@ -566,7 +566,7 @@ def repair_saved(
         )
     outputs = (
         record.current.owned_outputs
-        if record.current is not None
+        if record.current is not None and record.current.owned_outputs
         else record.owned_outputs
     )
     owned = {

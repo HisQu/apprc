@@ -53,9 +53,23 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
-<br>
+- Removed `render_bootstraps()` and the generated shell/PowerShell fetcher
+  templates and fetcher artifacts. Affected: application authors calling that
+  API or committing generated root installers and launchers. Migration: generate
+  `app-install.py` and `app-launch.py` with the Rust-free artifact APIs and invoke
+  them with `uv run --script`; use the optional native producer only when native
+  release executables are required. The generated root `launch.sh` is no longer
+  produced; Windows `launch.cmd` and `launch.ps1` remain.
 
 ### ➕ Added
+
+- Added verified prepared-wheel bundle inputs to managed installation, using
+  real uv overrides, exact runtime constraints and the complete locked graph.
+  Wheel bytes and metadata are revalidated at the existing mutation boundaries;
+  existing `runtime_overrides` retain their `--with` meaning.
+- Added explicit pinned PyApp frontend compilation for Linux and Windows console
+  targets, with authenticated dispatcher packaging and build reports. Ordinary
+  Python artifact generation remains independent of Rust.
 
 <br>
 
@@ -93,6 +107,9 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 🔨 Fixed
 
+- Kept saved repair usable after an interrupted package checkpoint whose current
+  snapshot has no published support inventory, while retaining digest checks
+  that reject unknown or modified repair installers.
 - Reset inherited PowerShell module paths in checkout and standalone Windows
   CMD installers so PowerShell 7 callers cannot select incompatible built-in
   modules in Windows PowerShell. Caller environments and persistent execution

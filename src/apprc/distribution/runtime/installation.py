@@ -8,7 +8,6 @@ import os
 import re
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -52,7 +51,7 @@ from apprc.user_files.app_home.locations import (
     assert_no_links,
     write_bytes_atomic,
 )
-from apprc.user_files.app_home.permissions import windows_acl_is_private
+from apprc.user_files.app_home.permissions import _path_permissions_are_private
 from apprc.user_files.installation.codec import encode_operation_context
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
@@ -773,12 +772,11 @@ def _validate_prepared_source(
 
 def _assert_private_staging(directory: Path) -> None:
     """Reject caller-staged backend inputs exposed to another local user."""
-    if os.name == "nt":
-        if not windows_acl_is_private(directory):
+    if not _path_permissions_are_private(directory):
+        if os.name == "nt":
             raise InstallationError(
                 "Prepared package staging directory does not have a private Windows ACL."
             )
-    elif stat.S_IMODE(directory.stat().st_mode) & 0o077:
         raise InstallationError(
             "Prepared package staging directory must be private."
         )

@@ -27,12 +27,29 @@ from apprc.user_files.app_home.locations import write_text_atomic
 from apprc.user_files.app_home.writes import managed_write_lock
 from apprc.user_files.installation.coordination import (
     StaleLockNamespace,
+    _private_directory,
     finish_namespace_retirement,
     installation_lock,
     retire_held_operation_lock,
     write_record,
 )
 from apprc.user_files.installation.discovery import inspect_installation
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory ownership")
+def test_private_directory_requires_current_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / "installation"
+    directory.mkdir(mode=0o700)
+    monkeypatch.setattr(os, "getuid", lambda: directory.stat().st_uid + 1)
+
+    with pytest.raises(InstallationError) as error:
+        _private_directory(directory)
+    assert (
+        str(error.value)
+        == f"Installation directory is not private: {directory}."
+    )
 
 
 def _record() -> InstallationRecord:

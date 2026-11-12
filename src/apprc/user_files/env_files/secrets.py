@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import os
-import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from apprc.user_files.app_home.permissions import (
+    _path_permissions_are_private,
     create_private_directory_if_missing,
     set_windows_private_acl,
-    windows_acl_is_private,
 )
+
 
 type SecretFileReason = Literal[
     "parent_missing",
@@ -72,7 +72,7 @@ def inspect_secret_file(path: Path) -> SecretFileStatus:
                 else "parent_missing"
             ),
         )
-    if not _private_path(path.parent):
+    if not _path_permissions_are_private(path.parent):
         return SecretFileStatus(
             path,
             False,
@@ -80,7 +80,8 @@ def inspect_secret_file(path: Path) -> SecretFileStatus:
             reason="parent_not_private",
         )
     if path.is_symlink() or (
-        path.exists() and (not path.is_file() or not _private_path(path))
+        path.exists()
+        and (not path.is_file() or not _path_permissions_are_private(path))
     ):
         return SecretFileStatus(
             path,
@@ -138,11 +139,3 @@ def repair_secret_file_permissions(path: Path) -> SecretFileStatus:
     else:
         path.chmod(0o600)
     return inspect_secret_file(path)
-
-
-def _private_path(path: Path) -> bool:
-    """Reject a managed secret location accessible to ordinary other users."""
-    if os.name == "nt":
-        return windows_acl_is_private(path)
-    permissions = stat.S_IMODE(path.stat().st_mode)
-    return permissions & 0o077 == 0

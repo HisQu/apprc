@@ -22,8 +22,8 @@ from apprc.definition.installation import InstallationError, InstallationSource
 from apprc.distribution.models import DistributionSpec, relative_destination
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import (
+    _path_permissions_are_private,
     create_private_directory_if_missing,
-    windows_acl_is_private,
 )
 
 
@@ -46,12 +46,11 @@ def _assert_private_staging(staging: Path) -> None:
         raise InstallationError("Source staging directory must be absolute.")
     create_private_directory_if_missing(staging)
     assert_no_links(staging)
-    if os.name == "nt":
-        if not windows_acl_is_private(staging):
+    if not _path_permissions_are_private(staging):
+        if os.name == "nt":
             raise InstallationError(
                 "Source staging directory does not have a private Windows ACL."
             )
-    elif stat.S_IMODE(staging.stat().st_mode) & 0o077:
         raise InstallationError("Source staging directory must be private.")
 
 
@@ -450,12 +449,7 @@ class SourceSelection:
             assert_no_links(self.package_path)
             real_package = self.package_path.resolve(strict=True)
             parent = real_package.parent
-            if os.name == "nt":
-                if not windows_acl_is_private(parent):
-                    raise InstallationError(
-                        "Bootstrap package staging must be private."
-                    )
-            elif stat.S_IMODE(parent.stat().st_mode) & 0o077:
+            if not _path_permissions_are_private(parent):
                 raise InstallationError(
                     "Bootstrap package staging must be private."
                 )

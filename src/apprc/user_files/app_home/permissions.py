@@ -1,9 +1,28 @@
-"""Private directory creation and Windows access-control helpers."""
+"""Private path permission checks, directory creation and Windows ACL helpers."""
 
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
+
+
+def _path_permissions_are_private(
+    path: Path, *, metadata: os.stat_result | None = None
+) -> bool:
+    """Check file or directory permissions without changing the path.
+
+    Callers remain responsible for link and ownership checks. Windows checks
+    only the ACL; POSIX checks mode bits using supplied metadata when available.
+
+    :param path: File or directory whose permissions must exclude other users.
+    :param metadata: Optional existing POSIX stat result to avoid another stat.
+    :return: Whether the mode or ACL grants access only to private principals.
+    """
+    if os.name == "nt":
+        return windows_acl_is_private(path)
+    info = metadata if metadata is not None else path.stat()
+    return stat.S_IMODE(info.st_mode) & 0o077 == 0
 
 
 def create_private_directory_if_missing(path: Path) -> None:

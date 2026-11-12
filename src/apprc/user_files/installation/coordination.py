@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import stat
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -20,9 +19,10 @@ from apprc.user_files.app_home.locations import (
     write_text_atomic,
 )
 from apprc.user_files.app_home.permissions import (
+    _path_permissions_are_private,
     create_private_directory_if_missing,
-    windows_acl_is_private,
 )
+
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.codec import encode_record
 
@@ -47,13 +47,9 @@ def _private_directory(directory: Path) -> None:
     assert_no_links(directory)
     create_private_directory_if_missing(directory)
     info = directory.stat()
-    if os.name == "nt":
-        private = windows_acl_is_private(directory)
-    else:
-        private = (
-            not (stat.S_IMODE(info.st_mode) & 0o077)
-            and info.st_uid == os.getuid()
-        )
+    private = _path_permissions_are_private(directory, metadata=info)
+    if os.name != "nt":
+        private = private and info.st_uid == os.getuid()
     if not private:
         raise InstallationError(
             f"Installation directory is not private: {directory}."

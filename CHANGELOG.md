@@ -70,6 +70,9 @@ All notable changes to `AppRC` will be documented in this file.
 - Added explicit pinned PyApp frontend compilation for Linux and Windows console
   targets, with authenticated dispatcher packaging and build reports. Ordinary
   Python artifact generation remains independent of Rust.
+- Added the `runtime-python` distribution setting to select a managed CPython
+  minor consistently for native wheel builds and uv installation, independently
+  of the package compatibility range and PyApp's bootstrap interpreter.
 
 <br>
 

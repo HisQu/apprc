@@ -654,7 +654,7 @@ def compile_wheel_bundle(
     :param application_source: Actual backend project directory or release sdist.
     :param extras: Requested application extras.
     :param target: Supported native target used for wheel compatibility checks.
-    :param python_version: Target Python major.minor for marker-free tag checks.
+    :param python_version: Selected interpreter minor for builds and tag checks.
     :param marker_environment: Optional complete PEP 508 environment overrides.
     :param require_no_git: Refuse remaining active or indeterminate Git sources.
     :param environment: Optional subprocess environment.
@@ -922,6 +922,9 @@ def compile_wheel_bundle(
             validate_requirement(str(requirement))
         for package in selected:
             validate_requirement(package.requirement)
+        python_requirement = (
+            f"{spec.metadata.python_requirement},=={python_version}.*"
+        )
         target_tags = _target_tags(target, python_version)
         build_input = application_source
         if spec.source_mode == "release":
@@ -943,6 +946,8 @@ def compile_wheel_bundle(
                 "build",
                 "--wheel",
                 "--no-sources",
+                "--python",
+                python_requirement,
                 "--out-dir",
                 str(wheels_dir),
                 str(build_input),
@@ -1035,6 +1040,8 @@ def compile_wheel_bundle(
                     "build",
                     "--wheel",
                     "--no-sources",
+                    "--python",
+                    python_requirement,
                     "--out-dir",
                     str(output),
                     str(project),
@@ -1089,6 +1096,8 @@ def compile_wheel_bundle(
                     "build",
                     "--wheel",
                     "--no-sources",
+                    "--python",
+                    python_requirement,
                     "--out-dir",
                     str(output),
                     str(project),

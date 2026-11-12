@@ -74,6 +74,7 @@ def bundle_config(spec: DistributionSpec) -> bytes:
         "commands": identity.commands,
         "version": spec.metadata.version,
         "python_requirement": spec.metadata.python_requirement,
+        "runtime_python": spec.metadata.runtime_python,
         "project_path": str(spec.metadata.project_path),
         "distribution_path": str(spec.metadata.distribution_path),
         "launcher_command": spec.metadata.launcher_command,

@@ -315,6 +315,7 @@ def load_installer_spec(*, script: Path | None = None) -> DistributionSpec:
             distribution_path=distribution_path,
             launcher_command=data["launcher_command"],
             python_requirement=data["python_requirement"],
+            runtime_python=data["runtime_python"],
         )
         return DistributionSpec(
             metadata=metadata,

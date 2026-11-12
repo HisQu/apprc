@@ -313,51 +313,6 @@ stale generated files. Commit generated files with their source changes.
 
 ## Build the three distributions
 
-## Native application frontends
-
-Ordinary artifact generation and `build_main_installer()` remain Rust-free.
-Generated application checkouts use `app-install.py` and `app-launch.py`, invoked
-with `uv run --script`; these entries preserve the actual editable source tree and
-use the authored installer's PEP 723 dependencies. Recipients use uv for the
-application environment. PyApp manages only the native frontend's Python
-bootstrap.
-
-Native release executables are optional and built only through
-`apprc.distribution.frontends.build_native_installers`. The call requires a
-`DistributionSpec`, explicit `PayloadTree`, original release SDIST, uv executable,
-new private workspace, and optionally runtime extras, target tuple, and authoring
-environment. The spec must identify the exact immutable HTTPS release SDIST,
-including matching version, full commit and digest. The default target set returns
-app-specific Linux and Windows installer and launcher executables. `NativeDistribution`
-contains the compiled `frontends` and public `payload_files` for the existing
-release staging; that staging separately creates the outer release manifest.
-
-The compiler pins PyApp 0.31.0 source, Python 3.14, management requirements and
-uv 0.13.6. Linux compilation requires Rust and LLVM; Windows cross-compilation
-uses Cargo-xwin 0.23.1, `x86_64-pc-windows-msvc`, and Microsoft SDK inputs. A
-compiled Windows PE is not executed or promoted as a saved launcher, so this
-does not establish Windows runtime behavior.
-
-The `bundle-repositories` array in `[tool.apprc.distribution]` is an explicit
-allow-list of credential-free HTTPS Git URLs. Native compilation resolves the
-locked selected application graph and requested extras; it excludes development
-and default groups and unrelated workspace projects. Needed selected Git and
-declared workspace projects use their real build backends. Unsupported
-non-default indexes and external local sources are rejected. The producer
-derives runtime requirements and lowered constraints from the lock and rejects
-manual runtime requirement or override values.
-
-Native installers retain one digest-owned `installer-payload.zip` containing
-verified wheels, original source metadata and an optional Linux launch binary.
-The inner manifest authenticates the original installer and original source
-input; payload script overlays are authenticated separately. The existing release
-staging manifest authenticates finished native assets. Native output examples
-are `appid-install-linux-x86_64`, `appid-launch-linux-x86_64`,
-`appid-install-windows-x86_64.exe`, and `appid-launch-windows-x86_64.exe`.
-Windows `launch.cmd` and `launch.ps1` saved wrappers remain; root `launch.sh` is
-not generated. Public dependencies and Python may still be downloaded online.
-Do not commit private wheels, executable bytes, or encoded copies.
-
 Ordinary PEP 517 builds:
 
 ```shell
@@ -386,6 +341,67 @@ not promise safe transfer of overlapping ownership during a plain pip upgrade.
 
 The equivalent uv build commands use `uv build --no-sources --package` with
 `apprc-core`, `apprc`, and `apprc-gui` in that order.
+
+## Native application frontends
+
+Ordinary artifact generation and `build_main_installer()` remain Rust-free.
+Generated application checkouts use `app-install.py` and `app-launch.py`, invoked
+with `uv run --script`; these entries preserve the actual editable source tree and
+use the authored installer's PEP 723 dependencies. Recipients use uv for the
+application environment. PyApp manages only the native frontend's Python
+bootstrap.
+
+Native release executables are optional and built only through
+`apprc.distribution.frontends.build_native_installers`. The call requires a
+`DistributionSpec`, explicit `PayloadTree`, original release SDIST, uv executable,
+new private workspace, and optionally runtime extras, target tuple, and authoring
+environment. The spec must identify the exact immutable HTTPS release SDIST,
+including matching version, full commit and digest. The default target set returns
+app-specific Linux and Windows installer and launcher executables. `NativeDistribution`
+contains the compiled `frontends` and public `payload_files` for the existing
+release staging; that staging separately creates the outer release manifest.
+
+Declare the managed application's CPython minor before native authoring:
+
+```toml
+[tool.apprc.distribution]
+runtime-python = "3.13"
+```
+
+`runtime-python` selects the application's uv-managed interpreter, wheel builds,
+and compatibility checks. It must satisfy the package's `requires-python`
+compatibility range; selecting a minor does not remove a declared patch-version
+minimum. Native authoring requires this setting. Ordinary Python artifact
+generation may omit it and retain the package's interpreter requirement.
+The application interpreter remains separate from PyApp's Python 3.14 bootstrap.
+
+The compiler pins PyApp 0.31.0 source, Python 3.14, management requirements and
+uv 0.13.6. Linux compilation requires Rust and LLVM; Windows cross-compilation
+uses Cargo-xwin 0.23.1, `x86_64-pc-windows-msvc`, and Microsoft SDK inputs. A
+compiled Windows PE is not executed or promoted as a saved launcher, so this
+does not establish Windows runtime behavior.
+
+The `bundle-repositories` array in `[tool.apprc.distribution]` is an explicit
+allow-list of credential-free HTTPS Git URLs. Native compilation resolves the
+locked selected application graph and requested extras; it excludes development
+and default groups and unrelated workspace projects. Needed selected Git and
+declared workspace projects use their real build backends. Unsupported
+non-default indexes and external local sources are rejected. The producer
+derives runtime requirements and lowered constraints from the lock and rejects
+manual runtime requirement or override values.
+
+Native installers retain one digest-owned `installer-payload.zip` containing
+verified wheels, original source metadata and an optional Linux launch binary.
+The native frontend's embedded manifest authenticates the original installer and
+SDIST; payload script overlays are authenticated separately. The retained ZIP
+contains source metadata and a wheel inventory, not another release manifest.
+The existing release staging manifest authenticates finished native assets.
+Native output examples are `appid-install-linux-x86_64`,
+`appid-launch-linux-x86_64`,
+`appid-install-windows-x86_64.exe`, and `appid-launch-windows-x86_64.exe`.
+Windows `launch.cmd` and `launch.ps1` saved wrappers remain; root `launch.sh` is
+not generated. Public dependencies and Python may still be downloaded online.
+Do not commit private wheels, executable bytes, or encoded copies.
 
 ## Release procedure
 

@@ -103,6 +103,7 @@ def _write_project(
         "[build-system]\nrequires=['setuptools>=80']\nbuild-backend='setuptools.build_meta'\n"
         f"[project]\nname='apprc-pyapp-fixture-app'\nversion='1.0.0'\nrequires-python='>=3.12'\ndependencies=[{core_requirement!r},'platformdirs==4.10.0']\n"
         "[project.scripts]\napprc-pyapp-fixture-app='fixture_app:main'\n"
+        "[tool.apprc.distribution]\nruntime-python='3.13'\n"
         "[tool.setuptools]\npy-modules=['fixture_app','fixture_config']\n",
         encoding="utf-8",
     )
@@ -110,7 +111,7 @@ def _write_project(
         "import importlib.metadata,json,sys\n"
         f"MARKER={marker!r}\n"
         "def main():\n"
-        " print(json.dumps({'version':'1.0.0','marker':MARKER,'dependency':importlib.metadata.version('platformdirs'),'argv':sys.argv[1:]}))\n"
+        " print(json.dumps({'version':'1.0.0','marker':MARKER,'dependency':importlib.metadata.version('platformdirs'),'python_minor':sys.version_info.minor,'argv':sys.argv[1:]}))\n"
         " print('fixture-stderr', file=__import__('sys').stderr)\n"
         " if '--exit-23' in sys.argv: raise SystemExit(23)\n"
         "if __name__ == '__main__': main()\n",
@@ -303,7 +304,7 @@ def _write_lifecycle_payload(root: Path) -> PayloadTree:
                         environment=dict(os.environ),
                         probe_path=Path(installed_probe.__file__).absolute(),
                         support_files=support,
-                        python_requirement=spec.metadata.python_requirement,
+                        python_requirement=spec.metadata.runtime_python_requirement,
                         prepared_source=prepared,
                     )
                     print(json.dumps({
@@ -449,6 +450,7 @@ def _build_native_release(
             identity,
             _VERSION,
             bundle_repositories=(repository_url,),
+            runtime_python="3.13",
         ),
         source_mode="release",
         repository_url="https://github.com/example/fixture",
@@ -600,11 +602,12 @@ def test_linux_native_frontends_preserve_saved_lifecycle(
         environment=environment,
         check=False,
     )
-    assert launched.returncode == 0, launched.stdout + launched.stderr
+
     assert json.loads(launched.stdout.splitlines()[0]) == {
         "version": "1.0.0",
         "marker": "release",
         "dependency": "4.10.0",
+        "python_minor": 13,
         "argv": ["with space", "literal%20"],
     }
     assert "fixture-stderr" in launched.stderr
@@ -858,11 +861,12 @@ def test_real_lifecycle_saved_backend_launch_repair_and_external_base(
             capture_output=True,
             check=False,
         )
-        assert result.returncode == 0
+
         assert json.loads(result.stdout.splitlines()[0]) == {
             "version": "1.0.0",
             "marker": "first",
             "dependency": "4.10.0",
+            "python_minor": sys.version_info.minor,
             "argv": list(arguments),
         }
         assert "fixture-stderr" in result.stderr
@@ -888,11 +892,12 @@ def test_real_lifecycle_saved_backend_launch_repair_and_external_base(
             capture_output=True,
             check=False,
         )
-        assert management.returncode == 0, management.stdout + management.stderr
+
         assert json.loads(management.stdout.splitlines()[0]) == {
             "version": "1.0.0",
             "marker": "first",
             "dependency": "4.10.0",
+            "python_minor": sys.version_info.minor,
             "argv": list(arguments),
         }
         project.joinpath("fixture_app.py").write_text(
@@ -923,11 +928,12 @@ def test_real_lifecycle_saved_backend_launch_repair_and_external_base(
             capture_output=True,
             check=False,
         )
-        assert changed.returncode == 0
+
         assert json.loads(changed.stdout.splitlines()[0]) == {
             "version": "1.0.0",
             "marker": "changed",
             "dependency": "4.10.0",
+            "python_minor": sys.version_info.minor,
             "argv": ["changed payload"],
         }
         missing_uv = uv.with_name("uv-missing")

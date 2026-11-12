@@ -82,11 +82,14 @@ def _release_source(spec: DistributionSpec) -> InstallationSource:
 
 
 def _compatible_bundle(
-    bundle: CompiledWheelBundle, targets: tuple[NativeTarget, ...]
+    bundle: CompiledWheelBundle,
+    targets: tuple[NativeTarget, ...],
+    *,
+    python_version: str,
 ) -> None:
     """Require one portable locked bundle to support every advertised native target."""
     for target in targets:
-        allowed = _target_tags(target, "3.14")
+        allowed = _target_tags(target, python_version)
         for wheel in bundle.wheels:
             if not parse_wheel_filename(wheel.filename)[3] & allowed:
                 raise ValueError(
@@ -114,6 +117,12 @@ def build_runtime_payload(
     :return: Deterministic portable ZIP bytes, reused unchanged by saved repair.
     """
     origin = _release_source(spec)
+    runtime_python = spec.metadata.runtime_python
+    if runtime_python is None:
+        raise ValueError(
+            "Native runtime payload requires an explicit "
+            "tool.apprc.distribution.runtime-python minor, such as '3.13'."
+        )
     if not targets or len(set(targets)) != len(targets):
         raise ValueError("Runtime payload requires unique native targets.")
     if linux_launcher is not None and "x86_64-unknown-linux-gnu" not in targets:
@@ -123,7 +132,7 @@ def build_runtime_payload(
     _root_entry(
         bundle.source, spec.metadata.identity.distribution, bundle.wheels
     )
-    _compatible_bundle(bundle, targets)
+    _compatible_bundle(bundle, targets, python_version=runtime_python)
     sources = _PayloadSources(origin, bundle.source, targets)
     entries = {
         "sources.json": (
@@ -224,6 +233,12 @@ def build_native_installers(
     :param environment: Existing authenticated authoring/toolchain environment.
     :return: Native executables and standalone assets for the existing release route.
     """
+    runtime_python = spec.metadata.runtime_python
+    if runtime_python is None:
+        raise ValueError(
+            "Native release assembly requires an explicit "
+            "tool.apprc.distribution.runtime-python minor, such as '3.13'."
+        )
     _release_source(spec)
     if not targets or len(set(targets)) != len(targets):
         raise ValueError("Native release assembly requires unique targets.")
@@ -258,6 +273,7 @@ def build_native_installers(
         application_source=source_package,
         extras=extras,
         target=targets[0],
+        python_version=runtime_python,
         environment=environment,
     )
     linux = launchers.get("x86_64-unknown-linux-gnu")

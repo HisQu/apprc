@@ -87,6 +87,14 @@ class ProjectMetadata:
     launcher_command: str | None = None
     python_requirement: str = ">=3.12"
     bundle_repositories: tuple[str, ...] = ()
+    runtime_python: str | None = None
+
+    @property
+    def runtime_python_requirement(self) -> str:
+        """Restrict runtime selection without changing package compatibility."""
+        if self.runtime_python is None:
+            return self.python_requirement
+        return f"{self.python_requirement},=={self.runtime_python}.*"
 
 
 @dataclass(frozen=True, slots=True)

@@ -73,25 +73,9 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-11](#2026-11-11)
-   1. [P2 / E2 \[Bug risk\] - *Windows bootstrap aborts on Security module autoload failure*](#windows-bootstrap-security-module-load)
-3. [2026-11-09](#2026-11-09)
+2. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 
-
-<br>
-
-# 2026-11-11
-
-<a id="windows-bootstrap-security-module-load"></a>
-
-## P2 / E2 [Bug risk] - *Windows bootstrap aborts on Security module autoload failure*
-- **Area:** `src/apprc/distribution/templates/bootstrap.ps1.jinja`, `src/apprc/distribution/templates/bootstrap.cmd.jinja`, and `src/apprc/distribution/rendering.py`.
-- **Observed while:** A user followed PersoDB's README Windows installation instructions: clone the complete `main` checkout, then run `app-install.cmd --main --layout native`.
-- **Why not fixed now:** The user requested a backlog entry only. Address this in a focused Windows bootstrap pass; broader native validation remains deferred, not a prerequisite for Linux releases.
-- **Evidence:** Cloning succeeded, but generated `bootstrap.ps1` line 2 failed at `Get-ExecutionPolicy -Scope Process` with `CouldNotAutoloadMatchingModule`: `Microsoft.PowerShell.Security` was found but could not load. This occurs before argument selection, uv discovery, or application installation.
-- **Context:** The CMD launcher explicitly starts `powershell.exe -NoProfile -ExecutionPolicy Bypass -File`. The bootstrap nevertheless snapshots the process policy before entering its `try` block, conditionally changes it, and restores it in `finally`. No explicit PowerShell host/module-path compatibility handling exists. The underlying module-import failure is not diagnosed; neither a PowerShell-version mismatch nor an execution-policy denial is established.
-- **Suggested next step:** Diagnose an explicit `Import-Module Microsoft.PowerShell.Security -Verbose -ErrorAction Stop` in the exact child host. Check host/module-path compatibility, remove redundant policy handling where safe, and make startup failures actionable without weakening persistent execution policies. Fix the authored AppRC templates/rendering, regenerate consumer artifacts, and verify the reported flow on native Windows when authorized. Coordinate with [deferred Windows/macOS validation](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred); do not re-enable its CI implicitly.
 
 <br>
 
@@ -105,6 +89,6 @@ Treat this as the parking lot for actionable problems discovered while working b
 - **Why not fixed now:** Explicitly deferred by the user. Keep CI Linux-only; native remediation is not a prerequisite for Linux releases or the current maintainability work.
 - **Evidence:** Windows core/GUI and macOS core jobs failed while Ubuntu core Python 3.12/3.13/3.14 and Ubuntu GUI passed. Representative failures include Windows private staging ACL rejection, missing `ntsecuritycon` in standalone execution, macOS temporary-address link rejection, and native secret persistence/editor workflows.
 - **Context:** The historical native failures remain unresolved; disabling their jobs did not fix them or establish compatibility. Their causes have not yet been separated into production defects, fixture/platform assumptions, interpreter prerequisites, newline expectations, or shell setup. Permission rejection alone is not evidence of a security vulnerability.
-- **Suggested next step:** Leave the native jobs disabled while this work is deferred. Revisit when Windows/macOS validation is explicitly back in scope, starting with the recorded installation/ACL and standalone dependency failures, then path/interpreter and secret/UI workflows. Include the separately reported [PowerShell Security module startup blocker](#windows-bootstrap-security-module-load). Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
+- **Suggested next step:** Leave the native jobs disabled while this work is deferred. Revisit when Windows/macOS validation is explicitly back in scope, starting with the recorded installation/ACL and standalone dependency failures, then path/interpreter and secret/UI workflows. Preserve containment and private-permission contracts; do not introduce runner, billing, or security changes implicitly.
 
 <br>

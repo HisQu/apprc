@@ -296,6 +296,12 @@ emitted `bootstrap.ps1` also supports remote-mode downloaded-text invocation
 without a script directory. Checkout entries still require their local payload;
 a missing payload never silently selects remote code.
 
+Both checkout and remote CMD launchers clear inherited `PSModulePath` only
+inside their `setlocal` scope before starting Windows PowerShell. The child
+therefore builds its own module paths instead of loading incompatible
+PowerShell 7 modules inherited through CMD. The caller's environment and
+persistent execution policies are unchanged.
+
 Lifecycle primitives under `apprc.distribution.runtime` operate on frozen typed
 plans: `plan_install`, `plan_uninstall`, `plan_migration`, `begin_operation`,
 `record_step`, `commit_installation`, `commit_uninstall` and `fail_operation`.

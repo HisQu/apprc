@@ -21,6 +21,7 @@ from zipfile import ZipFile, ZipInfo
 
 import pytest
 
+from apprc.distribution import write_artifacts
 from apprc.definition.installation import (
     InstallationError,
     InstallationIdentity,
@@ -235,6 +236,25 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     caller_directory = tmp_path / "unrelated caller directory"
     caller_directory.mkdir()
 
+    def run_cmd_bootstrap(
+        entry: Path, *bootstrap_arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                os.environ.get("COMSPEC", "cmd.exe"),
+                "/d",
+                "/c",
+                f'"{entry}"',
+                *bootstrap_arguments,
+            ],
+            env=environment,
+            cwd=caller_directory,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=180,
+        )
+
     def assert_payload_run(
         result: subprocess.CompletedProcess[str],
         marker: Path,
@@ -297,28 +317,50 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     )
 
     environment.pop("APPRC_POWERSHELL_ARGS")
+    # > Model an incompatible built-in module inherited from another host.
+    inherited_modules = tmp_path / "PowerShell modules from another host"
+    security_module = inherited_modules / "Microsoft.PowerShell.Security"
+    security_module.mkdir(parents=True)
+    (security_module / "Microsoft.PowerShell.Security.psd1").write_text(
+        "@{\nModuleVersion = '99.0.0'\nPowerShellVersion = '99.0'\n"
+        "RootModule = 'Microsoft.PowerShell.Security.psm1'\n"
+        "FunctionsToExport = @('Get-ExecutionPolicy')\n}\n",
+        encoding="utf-8",
+    )
+    (security_module / "Microsoft.PowerShell.Security.psm1").write_text(
+        "function Get-ExecutionPolicy { throw 'Incompatible module selected' }\n",
+        encoding="utf-8",
+    )
+    environment["PSModulePath"] = str(inherited_modules)
     environment["APPRC_NATIVE_MARKER"] = str(marker)
-    standalone = subprocess.run(
-        [
-            os.environ.get("COMSPEC", "cmd.exe"),
-            "/d",
-            "/c",
-            f'"{command}"',
-            "--version",
-            "1.2.3",
-            "--",
-            *arguments,
-            "--exit-37",
-        ],
-        env=environment,
-        cwd=caller_directory,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=180,
+    standalone = run_cmd_bootstrap(
+        command, "--version", "1.2.3", "--", *arguments, "--exit-37"
     )
     assert_payload_run(
         standalone,
+        marker,
+        exit_code=37,
+        suffix=("--", *arguments, "--exit-37"),
+    )
+    assert not tuple(temporary.iterdir())
+
+    checkout_spec = replace(spec, source_mode="checkout")
+    write_artifacts(render_bootstraps(checkout_spec))
+    checkout_installer = (
+        project
+        / checkout_spec.metadata.distribution_path
+        / "artifacts"
+        / "installer"
+        / "main-installer.py"
+    )
+    checkout_installer.write_bytes(
+        standalone_script(checkout_spec, payload, entry=payload.entry_module)
+    )
+    checkout = run_cmd_bootstrap(
+        project / "app-install.cmd", "--", *arguments, "--exit-37"
+    )
+    assert_payload_run(
+        checkout,
         marker,
         exit_code=37,
         suffix=("--", *arguments, "--exit-37"),
@@ -333,23 +375,8 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
         transport_root / hashlib.sha256(manifest_url.encode()).hexdigest()
     ).write_bytes(bad_manifest)
     environment["APPRC_NATIVE_MARKER"] = str(marker)
-    rejected = subprocess.run(
-        [
-            os.environ.get("COMSPEC", "cmd.exe"),
-            "/d",
-            "/c",
-            f'"{command}"',
-            "--version",
-            "1.2.3",
-            "--",
-            *arguments,
-        ],
-        cwd=caller_directory,
-        env=environment,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=180,
+    rejected = run_cmd_bootstrap(
+        command, "--version", "1.2.3", "--", *arguments
     )
     assert rejected.returncode != 0
     assert not marker.exists()

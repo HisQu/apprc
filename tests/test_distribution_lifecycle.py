@@ -323,8 +323,9 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
     inherited_modules = tmp_path / "PowerShell modules from another host"
     security_module = inherited_modules / "Microsoft.PowerShell.Security"
     security_module.mkdir(parents=True)
+    # > A loadable manifest ensures autoload selects the incompatible export.
     (security_module / "Microsoft.PowerShell.Security.psd1").write_text(
-        "@{\nModuleVersion = '99.0.0'\nPowerShellVersion = '99.0'\n"
+        "@{\nModuleVersion = '99.0.0'\nPowerShellVersion = '5.1'\n"
         "RootModule = 'Microsoft.PowerShell.Security.psm1'\n"
         "FunctionsToExport = @('Get-ExecutionPolicy')\n}\n",
         encoding="utf-8",
@@ -333,7 +334,7 @@ def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
         "function Get-ExecutionPolicy { throw 'Incompatible module selected' }\n",
         encoding="utf-8",
     )
-    environment["PSModulePath"] = str(inherited_modules)
+    environment["PSMODULEPATH"] = str(inherited_modules)
     environment["APPRC_NATIVE_MARKER"] = str(marker)
     standalone = run_cmd_bootstrap(
         command, "--version", "1.2.3", "--", *arguments, "--exit-37"

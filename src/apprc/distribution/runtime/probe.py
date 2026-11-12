@@ -9,6 +9,7 @@ import subprocess
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
+from typing import Literal
 from urllib.parse import unquote, urlsplit
 from urllib.request import url2pathname
 
@@ -96,6 +97,72 @@ def _archive_sha256(direct: object) -> str | None:
     if not observed or any(value != observed[0] for value in observed[1:]):
         return None
     return observed[0]
+
+
+def _verify_materialized_directory_source(
+    source: InstallationSource,
+    direct: object,
+    *,
+    digest: str | None,
+    acquisition_requirement: str | None,
+    expected_record_digest: str | None,
+    source_label: Literal["main", "release"],
+) -> str:
+    """Verify non-editable directory provenance using acquisition's origin policy.
+
+    :param source: Selected immutable archive source.
+    :param direct: Installed PEP 610 direct-URL observation.
+    :param digest: Independently verified or saved archive SHA-256.
+    :param acquisition_requirement: Acquired project directory, if still available.
+    :param expected_record_digest: Saved installed RECORD fingerprint, if any.
+    :param source_label: Source-specific label used in existing diagnostics.
+    :return: Verified archive SHA-256.
+    """
+    installed_label = "main source" if source_label == "main" else "release"
+    direct_url = direct.get("url") if isinstance(direct, dict) else None
+    dir_info = direct.get("dir_info") if isinstance(direct, dict) else None
+    if (
+        not isinstance(direct, dict)
+        or set(direct) != {"url", "dir_info"}
+        or not isinstance(direct_url, str)
+        or not isinstance(dir_info, dict)
+        or dir_info.get("editable") is True
+        or digest is None
+        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+    ):
+        raise InstallationError(
+            f"Installed {installed_label} lacks verified local-directory metadata."
+        )
+    url = urlsplit(direct_url)
+    if url.scheme != "file" or url.fragment or url.query:
+        raise InstallationError(
+            f"Installed {installed_label} does not identify a local directory."
+        )
+    actual = Path(url2pathname(url.path))
+    if url.netloc and url.netloc != "localhost":
+        actual = Path("//" + url.netloc + str(actual))
+    if acquisition_requirement is None:
+        if expected_record_digest is None:
+            raise InstallationError(
+                f"Saved {source_label} source lacks its installed RECORD fingerprint."
+            )
+        _validate_content_addressed_origin(source, digest, actual)
+        expected = actual
+    else:
+        expected = Path(acquisition_requirement)
+        _validate_content_addressed_origin(source, digest, expected)
+        assert_no_links(actual)
+        if not actual.is_dir():
+            raise InstallationError(
+                f"Installed {source_label} source directory is unavailable."
+            )
+    if os.path.normcase(str(actual.resolve(strict=False))) != os.path.normcase(
+        str(expected.resolve(strict=False))
+    ):
+        raise InstallationError(
+            f"Installed {installed_label} differs from its content-addressed project."
+        )
+    return digest
 
 
 def probe_installed_tool(
@@ -292,51 +359,14 @@ def probe_installed_tool(
             or acquisition_digest is not None
         )
     ):
-        digest = acquisition_digest or source.digest
-        direct_url = direct.get("url") if isinstance(direct, dict) else None
-        dir_info = direct.get("dir_info") if isinstance(direct, dict) else None
-        if (
-            not isinstance(direct, dict)
-            or set(direct) != {"url", "dir_info"}
-            or not isinstance(direct_url, str)
-            or not isinstance(dir_info, dict)
-            or dir_info.get("editable") is True
-            or digest is None
-            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
-        ):
-            raise InstallationError(
-                "Installed main source lacks verified local-directory metadata."
-            )
-        url = urlsplit(direct_url)
-        if url.scheme != "file" or url.fragment or url.query:
-            raise InstallationError(
-                "Installed main source does not identify a local directory."
-            )
-        actual = Path(url2pathname(url.path))
-        if url.netloc and url.netloc != "localhost":
-            actual = Path("//" + url.netloc + str(actual))
-        if acquisition_requirement is None:
-            if expected_record_digest is None:
-                raise InstallationError(
-                    "Saved main source lacks its installed RECORD fingerprint."
-                )
-            _validate_content_addressed_origin(source, digest, actual)
-            expected = actual
-        else:
-            expected = Path(acquisition_requirement)
-            _validate_content_addressed_origin(source, digest, expected)
-            assert_no_links(actual)
-            if not actual.is_dir():
-                raise InstallationError(
-                    "Installed main source directory is unavailable."
-                )
-        if os.path.normcase(
-            str(actual.resolve(strict=False))
-        ) != os.path.normcase(str(expected.resolve(strict=False))):
-            raise InstallationError(
-                "Installed main source differs from its content-addressed project."
-            )
-        observed_digest = digest
+        observed_digest = _verify_materialized_directory_source(
+            source,
+            direct,
+            digest=acquisition_digest or source.digest,
+            acquisition_requirement=acquisition_requirement,
+            expected_record_digest=expected_record_digest,
+            source_label="main",
+        )
     elif source.kind == "index" and source.requirement.startswith("git+"):
         durable_locator, _, project_fragment = source.requirement.partition("#")
         expected_repository, separator, expected_commit = durable_locator[
@@ -414,51 +444,14 @@ def probe_installed_tool(
             assert_no_links(actual)
         observed_digest = digest
     elif source.kind == "release-sdist":
-        direct_url = direct.get("url") if isinstance(direct, dict) else None
-        dir_info = direct.get("dir_info") if isinstance(direct, dict) else None
-        digest = acquisition_digest or source.digest
-        if (
-            not isinstance(direct, dict)
-            or set(direct) != {"url", "dir_info"}
-            or not isinstance(direct_url, str)
-            or not isinstance(dir_info, dict)
-            or dir_info.get("editable") is True
-            or digest is None
-            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
-        ):
-            raise InstallationError(
-                "Installed release lacks verified local-directory metadata."
-            )
-        url = urlsplit(direct_url)
-        if url.scheme != "file" or url.fragment or url.query:
-            raise InstallationError(
-                "Installed release does not identify a local directory."
-            )
-        actual = Path(url2pathname(url.path))
-        if url.netloc and url.netloc != "localhost":
-            actual = Path("//" + url.netloc + str(actual))
-        if acquisition_requirement is None:
-            if expected_record_digest is None:
-                raise InstallationError(
-                    "Saved release source lacks its installed RECORD fingerprint."
-                )
-            _validate_content_addressed_origin(source, digest, actual)
-            expected = actual
-        else:
-            expected = Path(acquisition_requirement)
-            _validate_content_addressed_origin(source, digest, expected)
-            assert_no_links(actual)
-            if not actual.is_dir():
-                raise InstallationError(
-                    "Installed release source directory is unavailable."
-                )
-        if os.path.normcase(
-            str(actual.resolve(strict=False))
-        ) != os.path.normcase(str(expected.resolve(strict=False))):
-            raise InstallationError(
-                "Installed release differs from its content-addressed project."
-            )
-        observed_digest = digest
+        observed_digest = _verify_materialized_directory_source(
+            source,
+            direct,
+            digest=acquisition_digest or source.digest,
+            acquisition_requirement=acquisition_requirement,
+            expected_record_digest=expected_record_digest,
+            source_label="release",
+        )
     elif source.kind == "index" and source.digest is not None:
         if _archive_sha256(direct) != source.digest:
             raise InstallationError(

@@ -819,7 +819,7 @@ def run_installer(
                 uv_executable=uv_executable,
             )
         with tempfile.TemporaryDirectory(prefix="apprc-source-") as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve(strict=True)
             os.chmod(root, 0o700)
             if not selection.explicit and embedded_payload is not None:
                 payload, payload_format, package = _embedded_payload(

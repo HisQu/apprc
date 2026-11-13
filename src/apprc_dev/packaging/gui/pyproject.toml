@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "apprc-gui"
-version = "0.33.0"
+version = "0.34.0"
 description = "Gradio configuration editor for AppRC applications."
 requires-python = ">=3.12"
 readme = "README.md"
 license = "MIT"
 dependencies = [
-    "apprc-core==0.33.0",
+    "apprc-core==0.34.0",
     "gradio>=6.26,<7",
 ]
 

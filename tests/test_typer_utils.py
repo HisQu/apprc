@@ -71,20 +71,20 @@ def test_args_after_command_skips_root_options_before_command() -> None:
             "local.env",
             "--skip-dotenv-layers",
             "config",
-            "doctor",
+            "setup",
         ],
         root_value_options={"--env-file"},
-    ) == ["doctor"]
+    ) == ["setup"]
     assert args_after_command(
         "config",
-        tokens=["-s", "config", "doctor"],
+        tokens=["-s", "config", "setup"],
         root_value_options={"--env-file"},
-    ) == ["doctor"]
+    ) == ["setup"]
     assert args_after_command(
         "config",
-        tokens=["-o", "config", "doctor"],
+        tokens=["-o", "config", "setup"],
         root_value_options={"--env-file"},
-    ) == ["doctor"]
+    ) == ["setup"]
     assert (
         args_after_command(
             "config",
@@ -95,9 +95,9 @@ def test_args_after_command_skips_root_options_before_command() -> None:
     )
     assert args_after_cli_command(
         "config",
-        tokens=["--env-file", "local.env", "config", "doctor"],
+        tokens=["--env-file", "local.env", "config", "setup"],
         cli_value_options={"--env-file"},
-    ) == ["doctor"]
+    ) == ["setup"]
 
 
 def test_structural_help_helpers_preserve_value_and_separator_tokens() -> None:
@@ -112,6 +112,18 @@ def test_structural_help_helpers_preserve_value_and_separator_tokens() -> None:
     assert not help_requested_before_separator(
         ["--text", "--help"],
         value_options={"--text"},
+    )
+    assert help_requested_before_separator(
+        ["--env-file", "--help", "app", "doctor", "--help"],
+        value_options={"--env-file"},
+    )
+    assert not help_requested_before_separator(
+        ["--env-file", "--help", "app", "doctor", "--", "--help"],
+        value_options={"--env-file"},
+    )
+    assert not help_requested_before_separator(
+        ["--env-file=--help", "app", "doctor"],
+        value_options={"--env-file"},
     )
     assert structural_help_requested(["cache", "--help"])
     assert not structural_help_requested(["cache", "--json", "--help"])
@@ -131,7 +143,7 @@ def test_config_request_skips_runtime_for_setup_only_commands() -> None:
     assert (
         skips(
             tokens=["config", "set", "profile", "demo"],
-            runtime_independent_actions={"doctor"},
+            runtime_independent_actions={"setup"},
         )
         is False
     )
@@ -141,15 +153,15 @@ def test_config_request_skips_runtime_for_setup_only_commands() -> None:
             "--skip-dotenv-layers",
             "--workspace",
             "alpha",
-            "doctor",
+            "setup",
         ]
     )
     assert skips(
-        tokens=["--env-file", "local.env", "config", "doctor"],
+        tokens=["--env-file", "local.env", "config", "setup"],
         root_value_options={"--env-file"},
     )
     assert skips(
-        tokens=["config", "--custom-env", "local.env", "doctor"],
+        tokens=["config", "--custom-env", "local.env", "setup"],
         root_value_options={"--custom-env"},
     )
     assert skips(tokens=["config", "show", "--", "--help"]) is False
@@ -159,6 +171,5 @@ def test_config_request_skips_runtime_for_setup_only_commands() -> None:
         is False
     )
     assert skips(tokens=["config", "setup"])
-    assert skips(tokens=["config", "paths"])
     assert skips(tokens=["config", "show"]) is False
     assert skips(tokens=["tool", "run"]) is False

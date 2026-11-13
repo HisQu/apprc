@@ -33,7 +33,7 @@ def test_root_paths_is_zero_write_and_uses_captured_config_location(
     )
     app, groups = _root_cli(kit)
 
-    result = CliRunner().invoke(app, ["paths", "--json"])
+    result = CliRunner().invoke(app, ["app", "paths", "--json"])
 
     assert result.exit_code == 0, result.output
     assert set(groups) >= {"config"}

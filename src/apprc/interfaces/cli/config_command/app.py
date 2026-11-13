@@ -89,7 +89,14 @@ def build_config_typer_app_from_options(
     """
     app = typer.Typer(
         help=options.help
-        or f"Inspect and initialize {apprc.schema.display_name} configuration.",
+        or (
+            "Inspect resolved settings, update saved configuration, or open "
+            "the interactive configuration editor."
+        ),
+        short_help=(
+            "Inspect resolved settings, update saved configuration, or open "
+            "the interactive configuration editor."
+        ),
         invoke_without_command=True,
         no_args_is_help=False,
         pretty_exceptions_show_locals=False,
@@ -125,17 +132,6 @@ def build_config_typer_app_from_options(
         """Show config help when no subcommand was selected."""
         handlers.callback(ctx)
 
-    @app.command("paths")
-    def config_paths_cmd(
-        ctx: typer.Context,
-        json_output: Annotated[
-            bool,
-            typer.Option("--json", help="Emit machine-readable JSON."),
-        ] = False,
-    ) -> None:
-        """Show declared and active config paths without writing files."""
-        handlers.paths(ctx, json_output=json_output)
-
     @app.command("show")
     def config_show_cmd(
         ctx: typer.Context,
@@ -149,17 +145,6 @@ def build_config_typer_app_from_options(
     ) -> None:
         """Show the resolved runtime config available to this CLI run."""
         handlers.show(ctx, json_output=json_output)
-
-    @app.command("doctor")
-    def config_doctor_cmd(
-        ctx: typer.Context,
-        json_output: Annotated[
-            bool,
-            typer.Option("--json", help="Emit machine-readable JSON."),
-        ] = False,
-    ) -> None:
-        """Check AppRC config readiness and print suggested fixes."""
-        handlers.doctor(ctx, json_output=json_output)
 
     if (
         config_enabled
@@ -203,23 +188,7 @@ def build_config_typer_app_from_options(
             """Restrict a selected layer and its secret companion."""
             handlers.secrets_repair(ctx, scope=scope, assume_yes=assume_yes)
 
-    if config_enabled:
-
-        @app.command("init")
-        def config_init_cmd(
-            ctx: typer.Context,
-            adopt: Annotated[
-                bool,
-                typer.Option(
-                    "--adopt",
-                    help="Accept an existing unowned config directory.",
-                ),
-            ] = False,
-        ) -> None:
-            """Initialize the enabled config directory."""
-            handlers.setup(ctx, assume_yes=True, adopt=adopt)
-
-    if user_dotenv_enabled:
+    if config_enabled or user_dotenv_enabled:
 
         @app.command("setup")
         def config_setup_cmd(

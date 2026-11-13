@@ -139,7 +139,7 @@ uses `.apprc-owner.json` with exactly `schema_version: 1`, `app_id`, and
 `category`. Mutation refuses links/reparse points, overlapping managed roots,
 mismatched markers, and nonempty unowned directories unless explicit adoption
 is requested. Adoption claims contents; it does not move or delete them. Config
-setup uses the same initializer, and `config init --adopt` explicitly adopts an
+setup uses the same initializer, and `config setup --adopt` explicitly adopts an
 existing nonempty config root. Ordinary edits never silently adopt. `ensure_path("state")`
 does not initialize logs; `ensure_path("logs")` does. State maintenance returns
 separate plans for distinct state/log roots and deduplicates nested roots.
@@ -699,15 +699,17 @@ state prune, and state reset pairs. Every plan returns a tuple of plans and ever
 apply returns a tuple of results. State operations address state and external
 logs roots separately, deduplicating nested locations.
 
-Purge validates every requested category before mutating any. Explicit disabled
-scope is an error; `--all` means declared components only. A missing directory
-has an empty plan and does not get initialized. Unknown resources, unsafe links,
-nonempty unowned roots, mismatched markers, changed revisions, and out-of-root
-targets refuse deletion. AppRC plans exact files and empty directories rather
-than recursive instructions. Providers repeat freshness and lease checks under
-their own coordination. A single-root parent and workspace payloads are never
-purge targets. Multi-root apply is not atomic; partial results are reported.
-Provider info values must be JSON-compatible values, not arbitrary objects.
+Purge is a Python service operation, not an application CLI command.
+`plan_purge(scopes)` validates every requested category before mutating any;
+an explicitly disabled scope is an error. Pass the declared categories explicitly
+to plan all enabled resources. A missing directory has an empty plan and does not
+get initialized. Unknown resources, unsafe links, nonempty unowned roots,
+mismatched markers, changed revisions, and out-of-root targets refuse deletion.
+AppRC plans exact files and empty directories rather than recursive instructions.
+Providers repeat freshness and lease checks under their own coordination. A
+single-root parent and workspace payloads are never purge targets. Multi-root
+apply is not atomic; partial results are reported. Provider info values must be
+JSON-compatible values, not arbitrary objects.
 
 Backup requires a new destination outside source appdata. Restore requires an
 existing source and refuses nonempty appdata except its owner marker. Formats are
@@ -742,106 +744,282 @@ utility.
 
 ## Terminal commands
 
-`rc.cli.mount_app_cli(app, MyRC, *, handlers=..., maintenance_help_panel="Maintenance", ...)`
-mounts the high-level route and returns `dict[str, typer.Typer]` for mounted
-category subgroups. It owns the callback and rejects callback replacement.
-Applications with their own callback use `CliRuntime.prepare()` and the
-`CliRuntime.mount_app_groups()` method. Fixed groups are mounted only when their
-declaration/capability exists; `installation` and read-only diagnostics remain
-available independently. `build_config_typer_app` remains a config-only advanced
-builder. AppRC groups management commands in the configurable `Maintenance`
-Rich help panel, separate from application commands.
+`rc.cli.mount_app_cli(app, MyRC, *, ...)` installs the standard root callback and
+returns `dict[str, typer.Typer]` for the groups actually mounted. It rejects an
+existing host callback. Applications that own their callback instead construct
+`rc.cli.CliRuntime(...)`, call `runtime.prepare(ctx, options)`, and register groups
+with `runtime.mount_app_groups(app, ...)`. There is no module-level
+`mount_app_groups()` function. `build_config_typer_app()` remains the advanced
+config-only builder.
 
-`CliRuntime.prepare()` returns a session whose `apprc_context` is either the
-normal `CliRuntimeContext` or `InstallationCommandContext`. The latter contains
-captured controls/environment, inspection, manager and optional `path_error`,
-not fabricated `paths` or resolved business settings. Business state factories
-run only with the normal context; `ctx.obj` remains application-owned.
-The recovery type, `installation_command_context_from(ctx)` and
-`prepare_installation_command_context(...)` are exposed through `rc.cli` for
-advanced adapters.
+### Composition arguments
 
-`mount_app_cli(..., installation_inventory=provider)` optionally supplies
-complete-removal ownership. The callable contract is
-`(InstallationInspection, frozenset[ResourceKind], bool) -> CleanupInventory`;
-the boolean is `forget_retained`. The host receives normalized selected
-categories (an omitted category list on `--complete` means all enabled
-resources), and the provider should return only application-owned resource
-entries. It runs only for selected complete removal, including cache-only
-selection, not help, diagnostics, program-only removal, or a zero-resource
-selection. A pending uninstall reuses its persisted inventory without calling
-the provider again. No business configuration is required.
+All arguments after `app, apprc` in `mount_app_cli()` are keyword-only. The
+following existing controls remain supported:
 
-Providers can compose the default marker-based inventory by calling
-`apprc.distribution.runtime.default_cleanup_inventory(inspection,
-categories=categories, forget_retained=forget_retained)`. Strict transport
-encoding/decoding is exposed as
-`apprc.user_files.installation.codec.encode_cleanup_inventory` and
-`decode_cleanup_inventory`.
+| Keyword | Default | Meaning |
+| --- | --- | --- |
+| `config_group_name` | `"config"` | Name of the enabled config group. |
+| `state_type` | `DefaultConfigCliState` | Type of application-owned runtime state; a custom type requires a factory. |
+| `state_factory` | `None` | Build host state after ordinary AppRC resolution; the high-level factory receives `CliRuntimeContext`. |
+| `args_provider` | `None` | Supply invocation tokens for embedded use; otherwise use the current invocation. |
+| `runtime_policy` | `None` | `ConfigRuntimePolicy` or `CliRuntimePolicy` for additional runtime-independent host command paths. |
+| `workspace_required` | `False` | Require a workspace for ordinary business execution; requires a Workspaces declaration. |
+| `handlers` | `MaintenanceHandlers()` | Explicit supported appdata, cache, and state operations. |
+| `maintenance_help_panel` | `"AppRC: Commands"` | Help metadata panel for injected root entries. |
+| `installation_inventory` | `None` | Host-owned complete-removal inventory provider, described below. |
+| `runtime_payload` | `None` | Serialize application state for `config show`. |
+| `active_workspace_root_with_context` | `None` | Selector-aware active-workspace resolver for config commands. |
+| `initial_workspace_with_context` | `None` | Selector-aware initial workspace resolver for the config editor. |
+| `editor_app_cls` | `None` | Custom Textual config editor class. |
+| `help` | `None` | Config-group help override. |
+| `setup_message` | `None` | Config setup message override. |
+| `runtime_error_param_hint` | `"CONFIG"` | Parameter hint when converting runtime/config errors. |
+| `setup_logging` | `None` | Host logging setup callable, invoked before business resolution. |
+| `logger` | `None` | Resolution logger. |
+
+The composition extension keywords have these exact types and defaults:
+
+| Keyword | Type/default | Meaning |
+| --- | --- | --- |
+| `maintenance_group_name` | `str = "app"` | Maintenance command path and returned mapping prefix. |
+| `installation_management` | `bool = False` | Enable saved `repair`, `uninstall`, and `migrate`; never inferred from a receipt at mount time. |
+| `installer_entrypoint` | `Callable[[Sequence[str]], int] \| None = None` | Explicit host-authored installer delegate; supplying it enables `app install`. A noncallable is rejected. |
+| `host_diagnostics` | `Callable[[], Mapping[str, object]] \| None = None` | Local, read-only host metadata, evaluated only by verbose doctor. |
+| `resource_diagnostics` | `Mapping[Literal["appdata", "cache", "state"], Callable[[Path], Mapping[str, object]]] \| None = None` | Explicit local, read-only resource details on safe existing roots, only in verbose doctor. |
+| `resource_group_extensions` | `Mapping[Literal["appdata", "cache", "state"], Callable[[typer.Typer], None]] \| None = None` | Register host commands on detached declared resource groups before empty-group filtering. |
+| `launcher_spec` | `LauncherSpec \| None = None` | Enable root `launch` using AppRC's existing Textual launcher. |
+| `launcher_handlers` | `Mapping[str, LauncherHandler] \| None = None` | Action handlers forwarded to the launcher; invalid without a spec. |
+
+`CliRuntime` accepts the runtime/config controls above on its constructor,
+including `maintenance_group_name`, but not the group-composition inputs
+`handlers`, `maintenance_help_panel`, `installation_inventory`,
+`installation_management`, `installer_entrypoint`, `host_diagnostics`,
+`resource_diagnostics`, `resource_group_extensions`, `launcher_spec`, or
+`launcher_handlers`. Pass those to `runtime.mount_app_groups(app, *, ...)`;
+that method reads `maintenance_group_name` and `config_group_name` from the
+runtime rather than taking them again. Its `handlers`, help-panel and inventory
+defaults match the high-level mount, as do all extension defaults above.
+The low-level `state_factory` receives `(CliRuntimeContext, options)`, preserving
+host-owned option types; selector-aware workspace callbacks receive host state
+and `ConfigSelectorContext`.
+
+Before modifying the host tree or installing a generated callback, composition
+preflights every enabled root name, including conflicts between configured
+names. It rejects a colliding host command/group without partially mounting.
+The reserved names are the configured maintenance name, enabled config name,
+conditional `workspace`, and `launch` only with a spec. Removed names such as
+root `paths` are not reserved. Resource registrations for undeclared categories
+are errors. A resource group appears only if the category is declared and at
+least one built-in or extension command is registered.
+
+Returned mapping keys are actual mounted paths: `config`, `workspace`, `app`,
+`app.data`, `app.cache`, and `app.state`, omitting unavailable entries. Custom
+config/maintenance names replace the corresponding names and prefixes. There
+are no flat `cache` or `appdata` compatibility keys. Register host resource
+commands through `resource_group_extensions` so they participate in availability
+filtering; returned mounted groups remain directly accessible.
+
+### Root help and runtime options
+
+Opt in with `typer.Typer(cls=rc.cli.AppRCRootGroup, ...)` for the ordered,
+nonempty panels `Options`, `Commands`, `AppRC: Runtime Options`, and
+`AppRC: Commands`. Host options/commands remain in the first two panels;
+AppRC options and injected entries use the latter two. Applications that do not
+opt in retain ordinary Typer help. Nested help, parsing, completion, no-color
+output, and eager help exits retain normal Typer behavior. Root help never
+expands nested commands into extra root rows.
+
+The maintenance row reads `Inspect and maintain the application (<available names>).`
+from its actual immediate commands in registration order: `doctor`, `paths`,
+`install`, `repair`, `uninstall`, `migrate`, `data`, `cache`, `state`, filtering
+unavailable entries. Registered host extensions determine resource availability.
+The remaining injected descriptions are:
+
+| Entry | Root description |
+| --- | --- |
+| `launch` | Open the interactive AppRC application launcher. |
+| `config` | Inspect resolved settings, update saved configuration, or open the interactive configuration editor. |
+| Registry `workspace` | Register, select, move, archive, or restore workspaces. |
+| Direct `workspace` | Inspect a workspace path or initialize it explicitly. |
+
+All seven public option annotations are accepted by
+`CliRuntimeOptions.from_typer()` and preserved by
+`cli_runtime_options_to_args()`:
+
+| Annotation | Root option | Behavior |
+| --- | --- | --- |
+| `EnvFilesOption` | `--env-file PATH` | Repeatable explicit files in order; later files win. Process environment wins unless `-o` is supplied. |
+| `EnvFileOverridesOption` | `--env-file-overrides-os-environ`, `-o` | Explicit files override captured process environment. |
+| `SkipDotenvLayersOption` | `--skip-dotenv-layers`, `-s` | Exclude managed dotenv layers, retaining explicit files and process environment. |
+| `WorkspaceOption` | `--workspace VALUE` | Select a registered workspace name or a direct path according to the declaration. |
+| `LayoutOption` | `--layout native\|single-root` | Override the layout for this invocation only. |
+| `AppRootOption` | `--app-root PATH` | Supply this invocation's single-root location; never rewrite saved placement. |
+| `LogLevelOption` | `--log-level LEVEL` | Configure logging before business configuration resolution. |
+
+Persist layout choices through the authored installer's `--layout native` or
+`--layout single-root --root PATH`; resource migration is a separate explicit
+operation. Forward embedded calls with `runtime.run_forwarded(...)`, which uses
+the forwarded token stream rather than unrelated process arguments. Structural
+help at every depth, including options before a subcommand, avoids managed-path
+and business-setting resolution; option values and tokens after `--` are not
+misclassified as commands.
+
+`CliRuntime.prepare()` returns a session whose `apprc_context` is either
+`CliRuntimeContext` or `InstallationCommandContext`. The recovery context has
+captured selectors/environment, installation inspection/manager and optional
+`path_error`, not fabricated paths or business settings. Maintenance and workspace
+commands never build host business state. Saved lifecycle actions, explicit
+install and configured root launch prepare recovery context before strict
+path/business resolution. Doctor/paths retain safe inspection context when path
+resolution fails. `ctx.obj` remains application-owned; session metadata itself
+does not become nullable. Advanced adapters can use
+`installation_command_context_from(ctx)` and
+`prepare_installation_command_context(...)`.
+
+### Command tree
+
+Paths below use default group names. Only host commands, enabled `config`,
+conditional `workspace`, `app`, and optional `launch` appear at the root.
 
 | Command | Availability and behavior |
 | --- | --- |
-| `paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. No category lists all paths; category prints only its absolute path. Disabled category and invalid `--open` combinations exit 2. `--open` launches an existing directory and never creates it. |
-| `doctor [--json]` | Always. Local/read-only config, declared-path and installation diagnostics; no application factories or external services. Normal JSON uses `status`/`checks`; unresolvable placement uses the diagnostic report described below. |
-| `installation show [--json]`, `installation doctor [--json]` | Always. Inspect saved authority without business resolution, resource initialization, uv or network calls; invalid/pending records remain manageable. |
-| `installation migrate [--dry-run]` | Explicit current resource/layout migration, including supported resource-parent layouts. Unrecognized project data requires an application-owned exact inventory, not receipt adoption. |
-| `installation repair [--installer PATH]` | Resume/revalidate matching saved or explicitly supplied installer support, without silently downloading newer removal code. |
-| `installation uninstall [--dry-run] [--complete] [--category KIND] [--forget-retained] [--yes]` | Shared saved removal procedure. Repeat `--category` for config/appdata/cache/state. Program-only retains all resources; complete removal requires exact preview/consent. |
-| `config init [--adopt]` | Config enabled; initialize user config and explicitly adopt nonempty unowned config when requested. |
-| `config setup` | UserDotenv enabled; interactive setup and preference prompts. |
-| `config show`, `set`, `edit`, config `doctor` | Typed schema available. Set scopes are `user` and `workspace`. |
-| `config secrets ...` | Current config secret operations only; these do not migrate layouts or old registry formats. |
-| `workspace add/list/select/rename/repoint/move/remove/archive/restore` | Registry mode (`registry=True`); registration and registry mutations require config enabled. |
-| `workspace init PATH`, `workspace info PATH` | Direct mode (`registry=False`); initialize or inspect an explicit workspace path without a config/registry. |
-| `<category> info [--json]`, `<category> init [--adopt]` | Enabled appdata/cache/state. `state init --logs` initializes logs only. |
-| `appdata backup/restore` | Mounted only when corresponding handlers exist; restore confirms unless `--yes`. |
-| `cache prune/clear`, `state prune/reset` | Mounted only when the corresponding provider operation exists; support dry-run/confirmation/JSON. |
-| `purge --scope CATEGORY...` or `purge --all` | Always. Scope forms are mutually exclusive and required; preview/apply options described below. |
+| `app doctor [--verbose] [--json]` | Always. Aggregate local/read-only installation, path, ownership, boundary and config diagnostics; no host business factories or remote services. JSON contract below. |
+| `app paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. Without a category, list all paths; a category prints its absolute path. Disabled category and invalid `--open` combinations exit 2. Open only an existing directory; never create it. Original authority/path failures exit nonzero without fallback locations. |
+| `app install [ARGS]...` | Only with `installer_entrypoint`. Forward ordinary Click extra arguments/unknown options in order to the authored callable; consume a CLI `--` separator conventionally. Keep `--help` local and propagate its integer status. Fresh bootstrap/PyApp/checkout installation remains external. |
+| `app repair [--installer PATH]` | `installation_management=True`. Call saved repair support or explicit installer with subprocess argv and preserve its status; never silently download an installer. |
+| `app uninstall [--dry-run] [--complete] [--category KIND] [--forget-retained] [--yes/-y]` | `installation_management=True`. Shared saved removal procedure; repeat categories for config/appdata/cache/state. Program-only is the default and retains resources. Complete removal requires exact preview/consent. |
+| `app migrate [--dry-run] [--yes/-y]` | `installation_management=True`. Preview and explicitly apply current resource/layout migration with confirmation and quiescence checks. Unrecognized project data requires application-owned exact inventory. |
+| `app data backup/restore` | Declared appdata and corresponding provider operations. Restore confirms unless `--yes`; data means AppRC appdata, never workspace/project payloads. |
+| `app cache prune/clear`, `app state prune/reset` | Declared category and supported provider operations; preserve dry-run, confirmation and JSON controls. Host resource extensions may provide application-specific commands. |
+| `config setup [--adopt] [--yes/-y]` | Config initialization or user-dotenv setup supported. Config-only declarations get idempotent initialization; user-dotenv declarations retain guided/noninteractive setup. Explicit adoption is required for nonempty unowned config. |
+| `config show`, `config set`, `config edit` | Typed schema available. Set scopes are `user` and `workspace`. |
+| `config secrets ...` | Supported config secret operations; no layout/old-registry migration. |
+| `workspace add/list/select/rename/repoint/move/remove/archive/restore` | Registry mode (`registry=True`); registry mutations require config enabled. |
+| `workspace init PATH`, `workspace info PATH` | Direct mode (`registry=False`); initialize/inspect an explicit workspace path without config/registry. |
+| `launch` | Only with `launcher_spec`. Open one Textual event loop without business settings; `launch --help` never starts it. |
 
-Authored saved uninstall controllers may accept optional `--inventory PATH`.
-This private host-to-controller handoff is strict cleanup-inventory JSON, not
-an option on the public `installation uninstall` command. When a host supplies
-inventory, the CLI writes the exact accepted inventory after confirmation to a
-private temporary file and
-passes it through `uninstall_saved(..., inventory_file=path)`. The file remains
-available until the saved controller returns; dry-run creates no transport file
-or management environment.
+There is no generic resource `init`/`info`, CLI purge, `installation` group,
+config `init`/`paths`/`doctor`, or root AppRC `paths`/`doctor` alias. Python
+`ensure_path()`, maintenance `info()`/`plan_purge()`/`apply_purge()` and public
+config diagnostic/output helpers retain their service semantics. The separate
+developer CLI `apprc scaffold config` and authored distribution entries are
+unchanged.
 
-The controller decodes the file with `decode_cleanup_inventory()`, passes the
-inventory to `prepare_uninstall()`, and checks the private expected record
-revision before staging intent. Preparation validates target scope, file
-revisions, and recorded support. The accepted inventory is persisted in the
-operation record; the controller must not replace it with a fresh scan.
+### Saved removal inventory
 
-Root selectors include `--workspace`, `--layout native\|single-root`, and
-`--app-root PATH`; they are captured before business-state setup is skipped.
-Root `--env-file` and `--env-file-overrides-os-environ` preserve dotenv behavior.
-These selectors affect the invocation only. Persist a layout change through the
-installer's `--layout native` or `--layout single-root --root PATH`; migration
-is a separate explicit operation, not an automatic consequence of switching.
+`installation_inventory` has contract
+`(InstallationInspection, frozenset[ResourceKind], bool) -> CleanupInventory`;
+`ResourceKind` is config/appdata/cache/state, and the boolean is `forget_retained`.
+The host receives normalized selected categories (omitting
+categories on `--complete` selects all enabled resources). Return only owned
+resource entries. The provider runs only for selected complete removal, including
+cache-only selection, not help, diagnostics, program-only removal, or an empty
+selection. Pending uninstall reuses persisted inventory without calling it again.
+No business configuration is required.
 
-Normal doctor reports include captured installation errors even when an explicit
-layout override permits path inspection. If placement cannot resolve, doctor
-reports raw inspection under `installation` and retains the actual path failure;
-a valid/missing record does not turn a reconciliation/migration failure into
-success. Invalid/provisional/incomplete inspection statuses remain identifiable,
-and unusable placement exits nonzero without creating fallback locations.
+Providers can compose
+`apprc.distribution.runtime.default_cleanup_inventory(inspection, categories=categories, forget_retained=forget_retained)`.
+Strict transport helpers are
+`apprc.user_files.installation.codec.encode_cleanup_inventory` and
+`decode_cleanup_inventory`.
 
-For `paths --json` without a category, JSON is
-`{layout, root, source, paths: {config, appdata, cache, state, logs}, exists: {config, appdata, cache, state, logs}}`. Disabled path and existence entries are `null`; a missing enabled directory has `exists=false`. Category JSON is `{category,path,exists}`. `--open` with JSON or without a category exits 2.
+Saved controllers may accept private `--inventory PATH`, not a public
+`app uninstall` option. After confirmation, the CLI writes accepted inventory
+privately to a temporary file and calls
+`uninstall_saved(..., inventory_file=path)`, preserving original PID and expected
+record revision. It keeps the file until the controller returns and then cleans
+it up; dry-run creates neither transport file nor management environment.
+The controller decodes the file, passes inventory to `prepare_uninstall()`,
+validates scope, revisions/support and the private expected revision, then persists
+accepted inventory with the operation. It must not replace it with a fresh scan.
 
-Purge JSON is `{plans:[{category,root,targets,revision,warnings}], results:[{category,root,removed,skipped,warnings}]}`. Preview returns `results: []`. It prints paths and revisions, never marker or secret contents. Confirmation is prompted once; JSON prompts go to stderr. Noninteractive apply needs `--yes`/`-y`. Exit 0 means successful preview/apply or empty `--all`; exit 1 means cancellation, partial result, or failure; exit 2 means invalid/unsafe preflight. There is no `appdata clean`, `appdata paths`, or `config purge` command.
+### Doctor and paths JSON
+
+`app doctor --json` always returns this envelope:
+
+| Key | Contract |
+| --- | --- |
+| `status` | Ordinary `ok`, `warning`, or `error`; preserve unusable installation statuses `invalid`, `provisional`, or `incomplete`. |
+| `checks` | Always an array of `{name, status, message}` records. Include installation/path ownership, boundary, config readiness/validation and explicit diagnostic-callback failures. Preserve real errors and recovery messages. |
+| `installation` | Always `{status, app_id, directory, revision, record, diagnostics}`. Each diagnostic has `code`, `message`, and `recovery`. Retain raw saved authority, including broken records. |
+| `details` | Present only with `--verbose`; exactly the detail categories `paths`, `configuration`, `resources`, and `host`. |
+
+Verbose `details.paths` is the existing all-path payload or `null` without safe
+paths. `details.configuration` is the existing config doctor payload or `null`
+when unavailable, using captured config selectors rather than a fresh default
+resolution. `details.resources` is keyed by declared `appdata`, `cache`, and
+`state`; each entry reports `root`, `exists`, `ownership`, available operation
+names, and optional `provider`. Unknown locations/ownership are `null`, never
+invented paths. `details.host` is the explicit host callback mapping or `{}`.
+
+Only explicitly registered `resource_diagnostics` callbacks run, and only for
+existing roots that passed link/ownership checks. Doctor never implicitly invokes
+`MaintenanceHandlers.info`, acquires a resource by writing, initializes missing
+directories, or queries remote providers. Expected `OSError`/`ValueError` callback
+failures become named error checks; programming exceptions are not blanket-caught.
+Host metadata remains available even if placement is broken.
+
+An error check or unusable installation status exits 1; warnings alone exit 0.
+`--json` changes representation, not health or status. Verbose callbacks can reveal
+additional failures, which also exit 1. If paths cannot resolve, append the original
+resolution error without changing otherwise valid saved authority. An explicit
+invocation layout does not erase captured installation errors or rewrite the
+record.
+
+`app paths --json` without a category preserves
+`{layout, root, source, paths: {config, appdata, cache, state, logs}, exists: {config, appdata, cache, state, logs}}`.
+Disabled entries are `null`; missing enabled directories have `exists=false`.
+Category JSON remains `{category,path,exists}`. `--open` with JSON or without a
+category exits 2. Resolution failure is a controlled nonzero error, not a
+successful invented payload; use doctor for the recovery report.
+
+### Breaking CLI and JSON migration
+
+No compatibility aliases survive. Existing scripts must change as follows:
+
+| Previous CLI | Current interface |
+| --- | --- |
+| Root `paths` | `app paths` |
+| Root/config/installation doctor or host diagnose | `app doctor` |
+| `installation show`, resource `info` | `app doctor --verbose` |
+| `installation repair/uninstall/migrate` | `app repair/uninstall/migrate` |
+| `config init` | `config setup` |
+| `appdata backup/restore` | `app data backup/restore` |
+| Root cache/state operations | `app cache ...`, `app state ...` |
+| Example root `launcher` | Optional root `launch` |
+| CLI purge or generic resource init | No CLI replacement; use explicit Python service operations. |
+
+Doctor's envelope deliberately replaces previous diagnostic JSON shapes. Consumers
+must read `checks` and `installation` from the new envelope, config diagnostics
+from verbose `details.configuration`, local provider metadata from
+`details.resources.<kind>.provider`, and host diagnose metadata from `details.host`.
+Successful paths and resource/lifecycle operation JSON contracts are unchanged.
 
 ## Launcher
 
 Optional terminal exports live under `apprc.interfaces.tui`:
 `LauncherSpec`, `LauncherAction` and
-`run_launcher(apprc, *, spec, options=None, environment=None, handlers=None)`.
+`run_launcher(apprc, *, spec, options=None, environment=None, handlers=None, log_level=None)`.
 `LauncherSpec(actions=(), title="Application launcher")` owns one application's
 home screen. Each `LauncherAction(id, label, argv, interactive=True, group="main")`
 has an identifier, visible label and argv factory accepting captured
 `LauncherContext` plus a dry-run flag. `group` is `"main"` or `"project"`.
 Commands use argument vectors, never shell strings.
+The optional `log_level` is captured on `LauncherContext.log_level` (default
+`None`) so application-owned action factories can forward the invocation's
+logging selector with the other runtime options. Root `launch` supplies it
+without resolving business configuration.
+
+Supply `launcher_spec` to either [composition entry point](#composition-arguments)
+to register root `launch`. It invokes this existing launcher lazily, forwarding
+the captured environment and `ResolveOptions` fields `workspace`, `layout`,
+ordered `env_files`, `env_file_overrides_os_environ`, and `load_dotenv_layers`.
+Optional `launcher_handlers` maps action IDs to
+`Callable[[LauncherContext, bool], Awaitable[object] | object]`. An empty
+`LauncherSpec(actions=())` still exposes supported built-in management controls.
+`launch --help` does not create the UI. This is not the application's foreground
+entry point or the authored saved `app-launch.py` lifecycle wrapper.
 
 Launcher captures installation diagnostics and optional valid paths without
 building business settings. Capability-driven management stays available when

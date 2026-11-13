@@ -743,6 +743,7 @@ app = typer.Typer()
 rc.cli.mount_app_cli(
     app,
     rc.AppRC(app_id="saved-lifecycle-fixture", paths=rc.Paths()),
+    installation_management=True,
 )
 directory = Path(os.environ["APPRC_FIXTURE_DIRECTORY"])
 directory_before = directory.is_dir()
@@ -762,7 +763,7 @@ except SystemExit:
                     sys.executable,
                     "-c",
                     host_cli,
-                    "installation",
+                    "app",
                     "uninstall",
                     *arguments,
                 ],

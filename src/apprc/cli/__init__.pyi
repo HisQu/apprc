@@ -15,6 +15,9 @@ from apprc.interfaces.cli import (
     MISSING_ACTION_MESSAGE as MISSING_ACTION_MESSAGE,
 )
 from apprc.interfaces.cli import (
+    AppRCRootGroup as AppRCRootGroup,
+)
+from apprc.interfaces.cli import (
     AppRootOption as AppRootOption,
 )
 from apprc.interfaces.cli import (

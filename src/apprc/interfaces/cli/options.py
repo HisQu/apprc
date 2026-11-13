@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-# == Standard Library ========================
 from pathlib import Path
 from typing import Annotated, TypeAlias
 
 # == 3rd Party ===============================
 import typer
+
 
 COMMON_CLI_FLAG_OPTIONS = frozenset(
     {
@@ -31,10 +31,11 @@ EnvFilesOption: TypeAlias = Annotated[
     list[Path] | None,
     typer.Option(
         "--env-file",
-        rich_help_panel="Maintenance",
+        rich_help_panel="AppRC: Runtime Options",
         help=(
-            "Load dotenv values from this file before runtime config. "
-            "May be repeated."
+            "Load explicitly selected dotenv files in order for runtime "
+            "configuration; later files take precedence over earlier files. "
+            "Repeat the option to add more files."
         ),
     ),
 ]
@@ -43,10 +44,10 @@ EnvFileOverridesOption: TypeAlias = Annotated[
     typer.Option(
         "--env-file-overrides-os-environ",
         "-o",
-        rich_help_panel="Maintenance",
+        rich_help_panel="AppRC: Runtime Options",
         help=(
-            "Let --env-file values override existing process env values "
-            "in the resolved configuration."
+            "Let explicitly selected --env-file values override process "
+            "environment values when resolving configuration."
         ),
     ),
 ]
@@ -55,39 +56,54 @@ SkipDotenvLayersOption: TypeAlias = Annotated[
     typer.Option(
         "--skip-dotenv-layers",
         "-s",
-        rich_help_panel="Maintenance",
-        help="Exclude managed dotenv values from settings.",
+        rich_help_panel="AppRC: Runtime Options",
+        help=(
+            "Exclude AppRC-managed dotenv layers from settings; explicitly "
+            "selected --env-file values are still loaded."
+        ),
     ),
 ]
 WorkspaceOption: TypeAlias = Annotated[
     str | None,
     typer.Option(
         "--workspace",
-        rich_help_panel="Maintenance",
-        help="Registered workspace name or direct filesystem path.",
+        rich_help_panel="AppRC: Runtime Options",
+        help=(
+            "Select a registered workspace by name or select a direct "
+            "filesystem path."
+        ),
     ),
 ]
 LayoutOption: TypeAlias = Annotated[
     str | None,
     typer.Option(
         "--layout",
-        help="Select the native or single-root layout.",
-        rich_help_panel="Maintenance",
+        help=(
+            "Override the native or single-root layout for this invocation "
+            "without changing the saved installation layout."
+        ),
+        rich_help_panel="AppRC: Runtime Options",
     ),
 ]
 AppRootOption: TypeAlias = Annotated[
     Path | None,
     typer.Option(
         "--app-root",
-        help="Root directory for single-root layout.",
-        rich_help_panel="Maintenance",
+        help=(
+            "Select the single-root directory for this invocation; this "
+            "option does not change the saved installation layout."
+        ),
+        rich_help_panel="AppRC: Runtime Options",
     ),
 ]
 LogLevelOption: TypeAlias = Annotated[
     str | None,
     typer.Option(
         "--log-level",
-        rich_help_panel="Maintenance",
-        help="Configure logging before runtime resolution.",
+        rich_help_panel="AppRC: Runtime Options",
+        help=(
+            "Configure logging before application business settings are "
+            "resolved."
+        ),
     ),
 ]

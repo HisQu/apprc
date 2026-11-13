@@ -1,6 +1,7 @@
 """Reusable CLI helpers for application config commands."""
 
 # ruff: noqa: F401
+from apprc.interfaces.cli._root_help import AppRCRootGroup
 
 from apprc.interfaces.cli._resolution import parse_log_level, resolve_cli_config
 from apprc.interfaces.cli._typer_utils import (

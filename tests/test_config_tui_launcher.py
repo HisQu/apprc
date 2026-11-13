@@ -7,8 +7,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import typer
 from textual.coordinate import Coordinate
 from textual.widgets import Button, DataTable, Select, Static
+from typer.testing import CliRunner
 
 import apprc as rc
 from apprc.definition.installation import (
@@ -37,6 +39,7 @@ from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
 )
+from apprc.interfaces.cli import mount_app_cli
 from tests.support_config import build_config_only_example_app
 
 
@@ -66,7 +69,7 @@ def _launcher_context(
                 InstallationDiagnostic(
                     code="malformed",
                     message="The saved record is invalid.",
-                    recovery="Run installation repair after inspection.",
+                    recovery="Run app repair after inspection.",
                 ),
             ),
         )
@@ -470,3 +473,125 @@ def test_launcher_reports_unusable_placement_without_invalidating_record(
     assert record_path.read_bytes() == before
     assert manager.inspect().status == "removed-retained"
     assert not (tmp_path / "xdg-cache").exists()
+
+
+def test_cli_launch_uses_captured_selectors_and_real_launcher(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    from apprc.definition.resolution import ResolveOptions
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(home / "cache"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(home / "state"))
+    apprc = rc.AppRC(app_id="cli-launch-test", paths=rc.Paths(cache=True))
+    manager = apprc.installation()
+    manager.directory.mkdir(parents=True)
+    record_path = manager.directory / "installation.json"
+    record_path.write_text("{invalid", encoding="utf-8")
+    original_record = record_path.read_bytes()
+    original_diagnostics = [
+        item.message for item in manager.inspect().diagnostics
+    ]
+    first_env = tmp_path / "first.env"
+    second_env = tmp_path / "second.env"
+    first_env.write_text("FIRST=one\n", encoding="utf-8")
+    second_env.write_text("SECOND=two\n", encoding="utf-8")
+    selected_root = tmp_path / "missing-selected-root"
+    observed: list[LauncherApp] = []
+
+    async def observe(app: LauncherApp) -> None:
+        async with app.run_test():
+            status = json.loads(
+                str(app.home.query_one("#launcher-status", Static).content)
+            )
+            assert status["diagnostics"] == original_diagnostics
+            assert app.home.query_one("#launcher-action-run", Button).disabled
+            assert (
+                app.home.query_one("#launcher-repair", Button).disabled is False
+            )
+
+    def run(app: LauncherApp) -> None:
+        observed.append(app)
+        asyncio.run(observe(app))
+
+    monkeypatch.setattr(LauncherApp, "run", run)
+    spec = LauncherSpec(
+        actions=(
+            LauncherAction(
+                "run", "Run", lambda _context, _dry_run: (sys.executable,)
+            ),
+        )
+    )
+    app = typer.Typer()
+    mount_app_cli(app, apprc, launcher_spec=spec)
+    result = CliRunner().invoke(
+        app,
+        [
+            "--layout",
+            "single-root",
+            "--app-root",
+            str(selected_root),
+            "--env-file",
+            str(first_env),
+            "--env-file",
+            str(second_env),
+            "-o",
+            "-s",
+            "--workspace",
+            "sample",
+            "--log-level",
+            "DEBUG",
+            "launch",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(observed) == 1
+    context = observed[0].context
+    assert context.options == ResolveOptions(
+        env_files=(first_env, second_env),
+        env_file_overrides_os_environ=True,
+        load_dotenv_layers=False,
+        workspace="sample",
+        layout=Layout.single_root(selected_root),
+    )
+    assert context.log_level == "DEBUG"
+    assert context.environment["HOME"] == str(home)
+    assert record_path.read_bytes() == original_record
+    assert not selected_root.exists()
+
+
+def test_cli_launch_help_is_local_and_absent_spec_has_no_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_run(_app: LauncherApp) -> None:
+        raise AssertionError("launch help must not start Textual")
+
+    monkeypatch.setattr(LauncherApp, "run", unexpected_run)
+    app = typer.Typer()
+    mount_app_cli(
+        app,
+        build_config_only_example_app(),
+        launcher_spec=LauncherSpec(),
+    )
+    result = CliRunner().invoke(app, ["launch", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "Open the interactive AppRC application launcher." in result.output
+
+    root_help = CliRunner().invoke(app, ["--help"])
+    assert root_help.exit_code == 0, root_help.output
+    assert (
+        "Open the interactive AppRC application launcher." in root_help.output
+    )
+
+    absent = typer.Typer()
+    mount_app_cli(absent, build_config_only_example_app())
+    result = CliRunner().invoke(absent, ["launch"])
+    assert result.exit_code != 0
+    assert "No such command" in result.output

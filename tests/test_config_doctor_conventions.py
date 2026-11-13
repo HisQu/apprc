@@ -44,7 +44,7 @@ def test_config_doctor_reports_missing_required_secret_without_writes(
     monkeypatch.delenv("DOCTOR_CONFIGURATION_TOKEN", raising=False)
     app_rc, app = _doctor_app(tmp_path)
 
-    result = CliRunner().invoke(app, ["config", "doctor", "--json"])
+    result = CliRunner().invoke(app, ["app", "doctor", "--verbose", "--json"])
 
     assert result.exit_code == 1, result.output
     payload = json.loads(result.output)
@@ -65,7 +65,7 @@ def test_config_doctor_reports_uninitialized_user_preferences_without_secrets(
     app_rc, app = _doctor_app(tmp_path, required_secret=False)
     monkeypatch.setenv("DOCTOR_CONFIGURATION_TOKEN", "private-test-secret")
 
-    result = CliRunner().invoke(app, ["config", "doctor", "--json"])
+    result = CliRunner().invoke(app, ["app", "doctor", "--verbose", "--json"])
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)

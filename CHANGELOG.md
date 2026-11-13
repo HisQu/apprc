@@ -51,10 +51,14 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💥 Breaking changes
+- Breaking: Applications now mount `config`, optional `workspace`, and configurable `app` groups instead of root maintenance commands. Migrate `paths` to `app paths`, all diagnostic commands to `app doctor`, saved installation actions to `app repair|uninstall|migrate`, and resource operations to `app data|cache|state`. Use `config setup` instead of `config init`. Public `purge` and generic resource `info`/`init` commands are removed; their Python maintenance APIs remain available.
+- Breaking: CLI integrations must opt into saved installation management with `installation_management=True`, use nested returned-group keys such as `app.cache`, and register custom resource commands through `resource_group_extensions`. Doctor JSON now always includes `status`, `checks`, and `installation`; `--verbose` adds `details.paths`, `details.configuration`, `details.resources`, and `details.host`. No compatibility command aliases are retained.
 
 <br>
 
 ### ➕ Added
+- Added opt-in ordered root help through `rc.cli.AppRCRootGroup`, with separate application and AppRC panels while preserving normal Typer parsing and nested help.
+- Added optional root `launch` through an explicitly supplied `LauncherSpec`, opening the existing Textual management launcher without resolving business settings. Explicit installer and local diagnostic registrations integrate existing application-owned behavior without discovering or replacing it.
 
 <br>
 

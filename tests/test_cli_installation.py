@@ -7,6 +7,7 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
+from collections.abc import Callable, Sequence
 
 import pytest
 import typer
@@ -47,18 +48,44 @@ from apprc.user_files.installation.discovery import installation_directory
 def _app(
     apprc: rc.AppRC | None = None,
     *,
+    args: Sequence[str],
     installation_inventory: InstallationInventoryProvider | None = None,
+    installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
 ) -> typer.Typer:
     app = typer.Typer()
     rc.cli.mount_app_cli(
         app,
         apprc or rc.AppRC(app_id="installation-cli", paths=rc.Paths()),
+        installation_management=True,
         installation_inventory=installation_inventory,
+        installer_entrypoint=installer_entrypoint,
+        args_provider=lambda: args,
     )
     return app
 
 
-def test_installation_show_and_doctor_inspect_invalid_authority_without_paths(
+def test_explicit_installer_forwards_arguments_and_status() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def installer(arguments: Sequence[str]) -> int:
+        calls.append(tuple(arguments))
+        return 23
+
+    args = ["app", "install", "--help"]
+    app = _app(args=args, installer_entrypoint=installer)
+    runner = CliRunner()
+
+    help_result = runner.invoke(app, args)
+    assert help_result.exit_code == 0, help_result.output
+    assert calls == []
+
+    args[:] = ["app", "install", "--feature", "value", "--", "package.whl"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 23
+    assert calls == [("--feature", "value", "package.whl")]
+
+
+def test_root_doctor_reports_invalid_authority_without_paths(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -73,32 +100,32 @@ def test_installation_show_and_doctor_inspect_invalid_authority_without_paths(
     )
     directory.mkdir(parents=True)
     (directory / "installation.json").write_text("{not json", encoding="utf-8")
-    app = _app()
+    args = ["app", "doctor", "--json"]
+    app = _app(args=args)
     runner = CliRunner()
 
-    shown = runner.invoke(app, ["installation", "show", "--json"])
-    diagnosed = runner.invoke(app, ["installation", "doctor", "--json"])
-    root_doctor = runner.invoke(app, ["doctor", "--json"])
+    root_doctor = runner.invoke(app, args)
 
-    assert shown.exit_code == 0, shown.output
-    assert json.loads(shown.stdout)["status"] == "invalid"
-    assert diagnosed.exit_code == 1, diagnosed.output
     assert root_doctor.exit_code == 1, root_doctor.output
-    assert json.loads(root_doctor.stdout)["status"] == "invalid"
-    strict_paths = runner.invoke(app, ["paths", "--json"])
+    report = json.loads(root_doctor.stdout)
+    assert report["status"] == "invalid"
+    assert report["installation"]["status"] == "invalid"
+    args[:] = ["app", "paths", "--json"]
+    strict_paths = runner.invoke(app, args)
     assert strict_paths.exit_code != 0
     assert tuple(directory.iterdir()) == (directory / "installation.json",)
 
 
-def test_installation_show_missing_is_read_only(
+def test_root_doctor_reports_missing_installation_read_only(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
-    result = CliRunner().invoke(_app(), ["installation", "show", "--json"])
+    args = ["app", "doctor", "--json"]
+    result = CliRunner().invoke(_app(args=args), args)
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)["status"] == "missing"
+    assert json.loads(result.stdout)["installation"]["status"] == "missing"
     assert not (tmp_path / "xdg-data").exists()
 
 
@@ -117,13 +144,13 @@ def test_installation_migration_dry_run_is_read_only_and_execution_needs_consent
         '"category":"appdata"}\n',
         encoding="utf-8",
     )
-    app = _app(rc.AppRC(app_id=app_id, paths=rc.Paths(appdata=True)))
+    args = ["app", "migrate", "--dry-run", "--json"]
+    app = _app(rc.AppRC(app_id=app_id, paths=rc.Paths(appdata=True)), args=args)
     runner = CliRunner()
 
-    preview = runner.invoke(
-        app, ["installation", "migrate", "--dry-run", "--json"]
-    )
-    refused = runner.invoke(app, ["installation", "migrate"])
+    preview = runner.invoke(app, args)
+    args[:] = ["app", "migrate"]
+    refused = runner.invoke(app, args)
 
     assert preview.exit_code == 0, preview.output
     assert json.loads(preview.stdout)["entries"] == [str(marker)]
@@ -138,7 +165,8 @@ def test_installation_migration_dry_run_is_read_only_and_execution_needs_consent
         },
     ).exists()
 
-    accepted = runner.invoke(app, ["installation", "migrate", "--yes"])
+    args[:] = ["app", "migrate", "--yes"]
+    accepted = runner.invoke(app, args)
     assert accepted.exit_code == 0, accepted.output
     assert (source / "appdata" / ".apprc-owner.json").is_file()
     assert not marker.exists()
@@ -176,10 +204,8 @@ def test_installation_repair_uses_exact_saved_argv_and_propagates_exit(
     monkeypatch.setattr(
         "apprc.interfaces.cli.installation_command.subprocess.run", run
     )
-    result = CliRunner().invoke(
-        _app(),
-        ["installation", "repair", "--installer", str(installer)],
-    )
+    args = ["app", "repair", "--installer", str(installer)]
+    result = CliRunner().invoke(_app(args=args), args)
 
     assert result.exit_code == 23
     assert saved_calls == [
@@ -337,31 +363,22 @@ def test_installation_uninstall_preview_uses_real_owned_inventory_and_requires_c
     monkeypatch.setattr(
         controllers, "inspect_saved", lambda _directory: inspection
     )
+    args = [
+        "app",
+        "uninstall",
+        "--dry-run",
+        "--complete",
+        "--category",
+        "config",
+        "--category",
+        "cache",
+        "--json",
+    ]
     runner = CliRunner()
-    app = _app(installation_inventory=inventory_provider)
-    preview = runner.invoke(
-        app,
-        [
-            "installation",
-            "uninstall",
-            "--dry-run",
-            "--complete",
-            "--category",
-            "config",
-            "--category",
-            "cache",
-            "--json",
-        ],
-    )
-    no_consent = runner.invoke(
-        app,
-        [
-            "installation",
-            "uninstall",
-            "--complete",
-            "--json",
-        ],
-    )
+    app = _app(args=args, installation_inventory=inventory_provider)
+    preview = runner.invoke(app, args)
+    args[:] = ["app", "uninstall", "--complete", "--json"]
+    no_consent = runner.invoke(app, args)
     assert preview.exit_code == 0, preview.output
     assert observed == [
         (frozenset({"config", "cache"}), False),
@@ -440,17 +457,17 @@ def test_cache_only_complete_preview_uses_provider_without_host_config(
     monkeypatch.setattr(
         controllers, "inspect_saved", lambda _directory: inspection
     )
+    args = [
+        "app",
+        "uninstall",
+        "--dry-run",
+        "--complete",
+        "--category",
+        "cache",
+        "--json",
+    ]
     result = CliRunner().invoke(
-        _app(installation_inventory=inventory_provider),
-        [
-            "installation",
-            "uninstall",
-            "--dry-run",
-            "--complete",
-            "--category",
-            "cache",
-            "--json",
-        ],
+        _app(args=args, installation_inventory=inventory_provider), args
     )
 
     assert result.exit_code == 0, result.output
@@ -493,9 +510,9 @@ def test_zero_resource_complete_preview_skips_host_inventory_provider(
         calls.append(args)
         return CleanupInventory()
 
+    args = ["app", "uninstall", "--dry-run", "--complete", "--json"]
     result = CliRunner().invoke(
-        _app(installation_inventory=inventory_provider),
-        ["installation", "uninstall", "--dry-run", "--complete", "--json"],
+        _app(args=args, installation_inventory=inventory_provider), args
     )
 
     assert result.exit_code == 0, result.output
@@ -766,15 +783,9 @@ def test_pending_complete_cli_retry_reuses_persisted_inventory_without_provider(
         calls.append(args)
         return CleanupInventory()
 
+    args = ["app", "uninstall", "--dry-run", "--complete", "--json"]
     result = CliRunner().invoke(
-        _app(installation_inventory=fresh_provider),
-        [
-            "installation",
-            "uninstall",
-            "--dry-run",
-            "--complete",
-            "--json",
-        ],
+        _app(args=args, installation_inventory=fresh_provider), args
     )
 
     assert result.exit_code == 0, result.output
@@ -834,20 +845,18 @@ def test_cli_complete_preview_uses_fresh_saved_owned_inventory(
         controllers, "inspect_saved", lambda _directory: inspection
     )
 
-    result = CliRunner().invoke(
-        _app(),
-        [
-            "installation",
-            "uninstall",
-            "--dry-run",
-            "--complete",
-            "--category",
-            "config",
-            "--category",
-            "appdata",
-            "--json",
-        ],
-    )
+    args = [
+        "app",
+        "uninstall",
+        "--dry-run",
+        "--complete",
+        "--category",
+        "config",
+        "--category",
+        "appdata",
+        "--json",
+    ]
+    result = CliRunner().invoke(_app(args=args), args)
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
@@ -1058,17 +1067,17 @@ stage_uninstall(preparation.plan, provider_cleanup=lambda _context: None)
         observed.append(inventory)
         return inventory
 
+    args = [
+        "app",
+        "uninstall",
+        "--complete",
+        "--category",
+        "config",
+        "--forget-retained",
+        "--yes",
+    ]
     result = CliRunner().invoke(
-        _app(installation_inventory=inventory_provider),
-        [
-            "installation",
-            "uninstall",
-            "--complete",
-            "--category",
-            "config",
-            "--forget-retained",
-            "--yes",
-        ],
+        _app(args=args, installation_inventory=inventory_provider), args
     )
 
     assert result.exit_code == 0, result.output

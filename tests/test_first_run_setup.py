@@ -93,8 +93,8 @@ def test_skipped_runtime_keeps_environment_layout_snapshot_for_refresh(
     captured_root = tmp_path / "captured"
     monkeypatch.setenv(layout_key, "single-root")
     monkeypatch.setenv(root_key, str(captured_root))
-    runtime = CliRuntime(app_rc, args_provider=lambda: ["paths"])
-    command_context = _context("paths")
+    runtime = CliRuntime(app_rc, args_provider=lambda: ["app", "paths"])
+    command_context = _context("app")
     session = runtime.prepare(
         command_context,
         CliRuntimeOptions(load_dotenv_layers=False),

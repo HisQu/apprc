@@ -286,17 +286,17 @@ ownership initialized first when logs are nested within state.
 Creation refuses symlinks/junctions, overlapping category roots, mismatched
 markers, and nonempty unowned directories. `adopt=True` on `ensure_path` is the
 explicit choice to claim a nonempty unowned root; it does not move or delete its
-contents. Config setup uses the same ownership checks, and
-`config init --adopt` provides explicit config adoption. Ordinary settings edits
-do not adopt unrelated directories. Read-only path inspection diagnoses unsafe
-locations without creating markers or changing files.
+contents. `config setup --adopt` provides explicit config adoption. Ordinary
+settings edits do not adopt unrelated directories. Read-only path inspection
+diagnoses unsafe locations without creating markers or changing files.
 
 No code scans old locations as fallback. A path declaration alone does not
 enable `UserDotenv`, workspaces, or a provider operation. Ordinary application
 code can obtain an enabled directory and use its own database/files; maintenance
-providers are needed only for app-specific backup, restore, pruning, reset, or
-purge operations.
-
+providers are needed only for supported app-specific backup, restore, prune,
+clear, or reset operations. AppRC does not expose resource initialization or
+generic purge as CLI commands; Python `ensure_path` and the maintenance planning
+and apply APIs remain available.
 ## Workspaces
 
 `Workspaces(selector_env_key=None, registry=True)` declares optional selection
@@ -395,7 +395,11 @@ settings or creating files. A missing record means an unmanaged installation:
 ordinary `pip install -e .` remains usable without uv or a bootstrap record.
 Malformed, wrong-identity, unsupported or pending authority is instead an
 explicit recovery condition, not permission to silently select another store.
-The grouped installation show/doctor commands remain available for diagnosis.
+The always-mounted `app paths` and `app doctor` commands provide the corresponding
+CLI inspection. `app doctor` exits 1 for an error check or unusable installation;
+warnings exit 0. `--verbose` adds paths, configuration, resource, and host
+details, while `--json` returns the structured status/checks/installation
+envelope.
 
 Installation authority uses strict schema `2`. Older installation records and
 Buildben receipts are not adopted or translated. This does not migrate or erase
@@ -441,13 +445,21 @@ its captured installation generation has been retired; it must restart.
 ## Maintenance
 
 `AppRC.maintain(..., handlers=MaintenanceHandlers(...))` supplies explicit
-category handlers. Enabled paths provide basic `info`; semantic backup,
-restore, prune, clear, reset, and purge operations appear only when their
-operation is supplied. Providers for disabled categories are declaration
-errors. `AppDataOperations`, `CacheOperations`, and `StateOperations` use named
-fields rather than arbitrary operation dispatch.
+category handlers. Semantic backup, restore, prune, clear, reset, and purge
+operations are available only when their operation is supplied. Providers for
+disabled categories are declaration errors. `AppDataOperations`,
+`CacheOperations`, and `StateOperations` use named fields rather than arbitrary
+operation dispatch.
 
-Purge planning lists exact managed files and empty directories, tracks a
+In the CLI, these operations appear under the nested `app` maintenance group:
+`app data backup/restore`, `app cache prune/clear`, and `app state prune/reset`.
+Each command exists only when that provider operation is supported. Installation
+management commands are also opt-in; they require
+`installation_management=True`, and `app install` additionally requires an
+explicit `installer_entrypoint` callable. No generic resource initialization or
+purge CLI alias is provided.
+
+Python purge planning lists exact managed files and empty directories, tracks a
 revision, and refuses unknown or unowned contents. Apply rechecks markers,
 boundaries, links, and revisions immediately before dispatch; provider
 operations repeat freshness and lease checks under their coordination lock.
@@ -477,20 +489,43 @@ cross-process locks protect managed writes, but multiple filesystem roots are
 not one transaction. See [management reference](References.md#configmanager).
 ## Application CLI
 
-`rc.cli.mount_app_cli(app, MyRC, ...)` mounts fixed groups for available
-capabilities and returns a dictionary of mounted category subgroups. It owns the
-root callback and rejects replacement of an existing callback. Applications
-that own a callback use `CliRuntime.prepare()` and its `mount_app_groups()`
-method. Both routes use one captured bootstrap/path snapshot. Maintenance
-commands skip business-state construction while retaining that snapshot.
+`rc.cli.mount_app_cli(app, MyRC, ...)` mounts available groups and returns a
+mapping of groups to their actual mounted paths, such as `config`, `workspace`,
+`app`, `app.data`, `app.cache`, and `app.state`. Resource extensions are
+registered before empty groups are filtered. The maintenance group defaults to
+`app`; `maintenance_group_name` renames it, while `maintenance_help_panel`
+defaults to `AppRC: Commands`. The function owns the root callback and rejects
+replacement of an existing callback. Applications that own a callback use
+`CliRuntime.prepare()` and its `mount_app_groups()` method. Both routes use one
+captured bootstrap/path snapshot. Maintenance and workspace commands skip
+business-state construction while retaining that snapshot.
 
-`paths [CATEGORY]` and `doctor` are always mounted. The `config`, `workspace`,
-`appdata`, `cache`, and `state` groups appear only when their required
-declarations exist. The root `purge` command handles AppRC-owned exact targets;
-category commands expose only supported provider operations. The
-[command reference](References.md#terminal-commands) gives availability,
-options, JSON, and exit behavior. There is no `appdata clean` or layout
-migration command.
+The `app` group is always mounted and contains `paths` and `doctor`. The
+`config` and `workspace` groups are conditional on their declarations.
+`config setup [--adopt] [--yes/-y]` initializes only user configuration, reusing
+config-only initialization and user-dotenv setup. The app group exposes
+`app data backup/restore`, `app cache prune/clear`, and `app state prune/reset`
+only for supported provider operations. Installation management commands are
+also opt-in; they require `installation_management=True`, and `app install`
+additionally requires an explicit `installer_entrypoint` callable.
+
+A host may provide `launcher_spec` and `launcher_handlers` to add root `launch`,
+which opens the existing Textual management launcher. It is not the host's
+foreground command launcher or saved distribution launch support. Root help
+panels are opt-in through `typer.Typer(cls=rc.cli.AppRCRootGroup)` and appear in
+order as `Options`, `Commands`, `AppRC: Runtime Options`, and
+`AppRC: Commands`; nested help remains standard.
+
+Diagnostics run only explicitly supplied `host_diagnostics` and
+`resource_diagnostics`; resource diagnostics additionally require
+`resource_group_extensions`. No provider info operation runs implicitly.
+`app doctor` exits 1 for an error check or unusable installation; warnings exit
+0. `--verbose` adds paths, configuration, resource, and host details, while
+`--json` returns the structured status/checks/installation envelope. See
+[composition arguments](References.md#composition-arguments),
+[root help and runtime options](References.md#root-help-and-runtime-options),
+[commands](References.md#command-tree), and
+[doctor and paths JSON](References.md#doctor-and-paths-json).
 
 ## Config editor
 

@@ -17,18 +17,19 @@ import apprc.tui as apprc_tui
 import apprc.workspaces as apprc_workspaces
 from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.interfaces.cli._resolution import resolve_cli_config
+from apprc.interfaces.cli._root_help import AppRCRootGroup
 from apprc.interfaces.cli.config_command import (
     ConfigSelectorContext,
     DefaultConfigCliState,
     config_request_skips_runtime,
 )
 from apprc.interfaces.cli.context import CliRuntimeOptions, cli_options_from
-from apprc.interfaces.cli.mount import CliArgvProvider, mount_app_cli
 from apprc.interfaces.cli.options import (
     COMMON_CLI_FLAG_OPTIONS,
     COMMON_CLI_VALUE_OPTIONS,
 )
 from apprc.interfaces.cli.runtime import (
+    CliArgvProvider,
     CliRuntime,
     CliRuntimePolicy,
     CliRuntimeSession,
@@ -78,14 +79,14 @@ def test_cli_namespace_exports_advanced_cli_symbols() -> None:
     assert apprc_cli.CliRuntimePolicy is CliRuntimePolicy
     assert apprc_cli.ConfigSelectorContext is ConfigSelectorContext
     assert apprc_cli.DefaultConfigCliState is DefaultConfigCliState
-    assert apprc_cli.mount_app_cli is mount_app_cli
+    assert apprc_cli.AppRCRootGroup is AppRCRootGroup
     assert apprc_cli.COMMON_CLI_FLAG_OPTIONS is COMMON_CLI_FLAG_OPTIONS
     assert apprc_cli.COMMON_CLI_VALUE_OPTIONS is COMMON_CLI_VALUE_OPTIONS
     assert (
         apprc_cli.config_request_skips_runtime is config_request_skips_runtime
     )
 
-    assert "EnvFilesOption" in apprc_cli.__all__
+    assert "AppRCRootGroup" in apprc_cli.__all__
     assert "EnvFileOverridesOption" in apprc_cli.__all__
     assert "SkipDotenvLayersOption" in apprc_cli.__all__
     assert "WorkspaceOption" in apprc_cli.__all__

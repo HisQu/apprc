@@ -26,6 +26,7 @@ def build_app(
     :return: Typer application.
     """
     app = typer.Typer(
+        cls=rc.cli.AppRCRootGroup,
         help="Exercise AppRC with one managed user dotenv.",
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
@@ -36,6 +37,17 @@ def build_app(
         args_provider=args_provider,
         editor_app_cls=editor_app_cls,
         runtime_payload=_runtime_payload,
+        launcher_spec=rc.tui.LauncherSpec(
+            title="User preferences",
+            actions=(
+                rc.tui.LauncherAction(
+                    id="run",
+                    label="Print active configuration",
+                    argv=_run_argv,
+                    interactive=True,
+                ),
+            ),
+        ),
     )
 
     @app.command("run")
@@ -43,45 +55,30 @@ def build_app(
         """Print the config resolved for this process."""
         typer.echo(json.dumps(_runtime_payload(_state(ctx)), indent=2))
 
-    @app.command("launcher")
-    def launcher_cmd(ctx: typer.Context) -> None:
-        """Open management and the example command in one Textual event loop."""
-        context = rc.cli.installation_command_context_from(ctx)
-        if context is None:
-            raise RuntimeError("Launcher recovery context was not prepared.")
-        controls = context.runtime_options
-        command = Path(sys.executable).with_name(
-            "apprc-user-dotenv" + (".exe" if os.name == "nt" else "")
-        )
-        arguments = tuple(rc.cli.cli_runtime_options_to_args(controls))
-        rc.tui.run_launcher(
-            MyRC,
-            spec=rc.tui.LauncherSpec(
-                title="User preferences",
-                actions=(
-                    rc.tui.LauncherAction(
-                        id="run",
-                        label="Print active configuration",
-                        argv=lambda _context, _dry_run: (
-                            str(command),
-                            *arguments,
-                            "run",
-                        ),
-                        interactive=True,
-                    ),
-                ),
-            ),
-            options=rc.ResolveOptions(
-                workspace=controls.workspace,
-                layout=controls.layout,
-                env_files=controls.env_files,
-                env_file_overrides_os_environ=controls.env_file_overrides_os_environ,
-                load_dotenv_layers=controls.load_dotenv_layers,
-            ),
-            environment=context.environment,
-        )
-
     return app
+
+
+def _run_argv(
+    context: rc.tui.LauncherContext,
+    _dry_run: bool,
+) -> tuple[str, ...]:
+    """Forward the launcher's captured selectors to the example run command."""
+    command = Path(sys.executable).with_name(
+        "apprc-user-dotenv" + (".exe" if os.name == "nt" else "")
+    )
+    controls = rc.cli.CliRuntimeOptions(
+        workspace=context.options.workspace,
+        layout=context.options.layout,
+        env_files=context.options.env_files,
+        env_file_overrides_os_environ=context.options.env_file_overrides_os_environ,
+        load_dotenv_layers=context.options.load_dotenv_layers,
+        log_level=context.log_level,
+    )
+    return (
+        str(command),
+        *rc.cli.cli_runtime_options_to_args(controls),
+        "run",
+    )
 
 
 def _runtime_payload(

@@ -25,6 +25,7 @@ class ExampleAppSpec:
     :param name: Short selector accepted by the lab command.
     :param command_name: Installed console-script name.
     :param app_id: Stable AppRC application identifier.
+    :param app_rc: Public application facade used for fixture service operations.
     :param root_env_key: Environment key that relocates managed files.
     :param env_prefix: Prefix removed from inherited lab environments.
     :param uses_user_dotenv: Whether setup manages a user dotenv.
@@ -37,6 +38,7 @@ class ExampleAppSpec:
     name: str
     command_name: str
     app_id: str
+    app_rc: rc.AppRC
     root_env_key: str
     env_prefix: str
     uses_user_dotenv: bool
@@ -59,6 +61,7 @@ def _spec(
         name=name,
         command_name=command_name,
         app_id=spec.app_id,
+        app_rc=app_rc,
         root_env_key=spec.root_env_key,
         env_prefix=env_prefix,
         uses_user_dotenv=spec.uses_user_dotenv(),

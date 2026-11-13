@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 # == 3rd Party ===============================
 import typer
@@ -36,6 +36,12 @@ from apprc.interfaces.cli.runtime import (
 from apprc.public.app_rc import AppRC
 from apprc.runtime.logging import ResolutionLogger
 
+if TYPE_CHECKING:
+    from apprc.interfaces.tui.launcher.model import (
+        LauncherHandler,
+        LauncherSpec,
+    )
+
 
 def mount_app_cli(
     app: typer.Typer,
@@ -48,8 +54,23 @@ def mount_app_cli(
     runtime_policy: ConfigRuntimePolicy | CliRuntimePolicy | None = None,
     workspace_required: bool = False,
     handlers: MaintenanceHandlers = MaintenanceHandlers(),
-    maintenance_help_panel: str = "Maintenance",
+    maintenance_help_panel: str = "AppRC: Commands",
+    maintenance_group_name: str = "app",
+    installation_management: bool = False,
     installation_inventory: InstallationInventoryProvider | None = None,
+    installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
+    host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
+    resource_diagnostics: Mapping[
+        Literal["appdata", "cache", "state"],
+        Callable[[Path], Mapping[str, object]],
+    ]
+    | None = None,
+    resource_group_extensions: Mapping[
+        Literal["appdata", "cache", "state"], Callable[[typer.Typer], None]
+    ]
+    | None = None,
+    launcher_spec: LauncherSpec | None = None,
+    launcher_handlers: Mapping[str, LauncherHandler] | None = None,
     runtime_payload: Callable[[Any], Mapping[str, Any]] | None = None,
     active_workspace_root_with_context: Callable[..., Path | None]
     | None = None,
@@ -74,6 +95,14 @@ def mount_app_cli(
     :param handlers: Explicit application maintenance operations.
     :param installation_inventory: Optional exact owned-resource inventory provider for complete uninstall previews.
     :param maintenance_help_panel: Rich help panel for AppRC maintenance groups.
+    :param maintenance_group_name: Public name for the maintenance subtree.
+    :param installation_management: Enable saved installation recovery commands.
+    :param installer_entrypoint: Explicit host-authored installer delegate.
+    :param host_diagnostics: Read-only metadata provider for verbose doctor.
+    :param resource_diagnostics: Read-only details for declared resource roots.
+    :param resource_group_extensions: Detached resource command registrations.
+    :param launcher_spec: Optional declaration enabling the root Textual launcher.
+    :param launcher_handlers: Optional action handlers for that launcher.
     :param runtime_payload: Optional serializer for config show.
     :param active_workspace_root_with_context: Optional workspace root resolver.
     :param initial_workspace_with_context: Optional initial workspace selector.
@@ -104,6 +133,7 @@ def mount_app_cli(
             else None
         ),
         config_group_name=config_group_name,
+        maintenance_group_name=maintenance_group_name,
         runtime_policy=runtime_policy,
         workspace_required=workspace_required,
         args_provider=args_provider,
@@ -117,7 +147,19 @@ def mount_app_cli(
         setup_logging=setup_logging,
         logger=logger,
     )
-    _ensure_mount_names(app, apprc, config_group_name)
+    mounted = runtime.mount_app_groups(
+        app,
+        handlers=handlers,
+        maintenance_help_panel=maintenance_help_panel,
+        installation_management=installation_management,
+        installation_inventory=installation_inventory,
+        installer_entrypoint=installer_entrypoint,
+        host_diagnostics=host_diagnostics,
+        resource_diagnostics=resource_diagnostics,
+        resource_group_extensions=resource_group_extensions,
+        launcher_spec=launcher_spec,
+        launcher_handlers=launcher_handlers,
+    )
 
     @app.callback()
     def apprc_app_callback(
@@ -145,41 +187,4 @@ def mount_app_cli(
             raise typer.BadParameter(str(exc)) from exc
         runtime.prepare(ctx, options)
 
-    return runtime.mount_app_groups(
-        app,
-        handlers=handlers,
-        maintenance_help_panel=maintenance_help_panel,
-        installation_inventory=installation_inventory,
-    )
-
-
-def _ensure_mount_names(
-    app: typer.Typer, apprc: AppRC, config_group_name: str
-) -> None:
-    """Reject fixed command collisions before callbacks or groups are added."""
-    reserved = {"paths", "doctor", "purge", "installation"}
-    reserved.update(
-        kind
-        for kind in ("appdata", "cache", "state")
-        if getattr(apprc.schema.paths, kind)
-    )
-    if apprc.schema.workspaces is not None:
-        reserved.add("workspace")
-    if (
-        apprc.schema.paths.config
-        or apprc.schema.owners
-        or apprc.schema.user_dotenv
-    ):
-        reserved.add(config_group_name)
-    existing = {group.name for group in app.registered_groups if group.name}
-    for command in app.registered_commands:
-        if command.name:
-            existing.add(command.name)
-        elif command.callback is not None:
-            existing.add(typer.main.get_command_name(command.callback.__name__))
-    collisions = reserved & existing
-    if collisions:
-        raise RuntimeError(
-            "AppRC cannot mount because these command names are already in use: "
-            + ", ".join(sorted(collisions))
-        )
+    return mounted

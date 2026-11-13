@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 # == Internal ===================================================
+import apprc as rc
+
 from _example_apps_utils.registry import EXAMPLE_APPS, ExampleAppSpec
 
 
@@ -76,7 +78,7 @@ def _setup_workspace(
     root: Path,
     env: Mapping[str, str],
 ) -> None:
-    _run_cli(spec, ["config", "init"], env=env)
+    _run_cli(spec, ["config", "setup", "--yes"], env=env)
     _run_cli(
         spec, ["workspace", "add", "default", str(root / "workspace")], env=env
     )
@@ -108,13 +110,20 @@ def _clean_managed(
     payload = root / "workspace" / "runner-payload.txt"
     if spec.uses_workspace:
         payload.write_text("keep", encoding="utf-8")
-    preview = _json_output(
-        _run_cli(spec, ["purge", "--all", "--dry-run", "--json"], env=env)
+    manager = spec.app_rc.maintain(environment=env)
+    paths = spec.app_rc.schema.paths
+    categories: tuple[tuple[rc.ResourceKind, bool], ...] = (
+        ("config", paths.config),
+        ("appdata", paths.appdata),
+        ("cache", paths.cache),
+        ("state", paths.state),
     )
-    targets = [
-        Path(target) for plan in preview["plans"] for target in plan["targets"]
-    ]
-    _run_cli(spec, ["purge", "--all", "--yes"], env=env)
+    scopes: tuple[rc.ResourceKind, ...] = tuple(
+        kind for kind, enabled in categories if enabled
+    )
+    plans = manager.plan_purge(scopes)
+    targets = [target for plan in plans for target in plan.targets]
+    manager.apply_purge(plans)
     cleaned = all(not path.exists() for path in targets)
     if spec.uses_workspace:
         cleaned = cleaned and payload.read_text(encoding="utf-8") == "keep"
@@ -126,15 +135,15 @@ def _clean_managed(
 
 
 def _smoke_standard(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
-    """Exercise declared command groups, application runtime, and scoped purge."""
+    """Exercise declared commands, runtime, and service-owned fixture cleanup."""
     env = _example_environment(spec, root)
     _run_cli(spec, ["--help"], env=env)
     runtime_prefix: list[str] = []
     if spec.name == "cache-only":
-        _run_cli(spec, ["cache", "--help"], env=env)
-        _run_cli(spec, ["cache", "init"], env=env)
+        _run_cli(spec, ["app", "--help"], env=env)
+        spec.app_rc.ensure_path("cache", environment=env)
         cache = _json_output(
-            _run_cli(spec, ["paths", "cache", "--json"], env=env)
+            _run_cli(spec, ["app", "paths", "cache", "--json"], env=env)
         )
         if cache["exists"] is not True or cache["path"] != str(
             root / "apprc" / "cache"
@@ -164,7 +173,7 @@ def _smoke_standard(spec: ExampleAppSpec, root: Path) -> dict[str, object]:
         app_id = _json_output(_run_cli(spec, [*run_args, "run"], env=env))[
             "app_id"
         ]
-    doctor = _json_output(_run_cli(spec, ["doctor", "--json"], env=env))
+    doctor = _json_output(_run_cli(spec, ["app", "doctor", "--json"], env=env))
     return {
         "example": spec.name,
         "doctor_status": doctor["status"],

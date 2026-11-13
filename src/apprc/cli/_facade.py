@@ -5,6 +5,7 @@ from __future__ import annotations
 from apprc._lazy import build_lazy_facade
 
 _CLI_EXPORTS = [
+    "AppRCRootGroup",
     "COMMON_CLI_FLAG_OPTIONS",
     "COMMON_CLI_VALUE_OPTIONS",
     "DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS",

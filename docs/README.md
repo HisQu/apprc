@@ -82,7 +82,7 @@ the Python name identifies its implementation.
 | [`ConfigManager`](Explanations.md#configmanager) | Returned by `MyRC.manage()` | Settings setup, inspection, editing, and secret repair. |
 | [`WorkspaceManager`](Explanations.md#workspaces) | Returned by `MyRC.workspaces()` | Workspace registry, selection, and archive operations. |
 | [Maintenance](Explanations.md#maintenance) | `rc.MaintenanceHandlers` | Explicit application operations for supported resource categories. |
-| [Application CLI](Explanations.md#application-cli) | `rc.cli.mount_app_cli(...)` | Grouped paths, doctor, config, workspace, category, and purge commands. |
+| [Application CLI](Explanations.md#application-cli) | `rc.cli.mount_app_cli(...)` | Conditional config/workspace groups, nested `app` inspection and maintenance, and optional Textual `launch`. |
 | [Config editor](Explanations.md#config-editor) | `rc.tui.ConfigEditorApp` | Terminal interface for inspecting and editing saved settings. |
 | [Gradio editor](Explanations.md#gradio-editor) | `apprc_gui.ConfigEditor` | Settings controls in application-owned Gradio `Blocks`. |
 | [Config bundle](Explanations.md#config-bundles) | Dataclass registered with `@MyRC.bundle` | An object containing several config sections. |

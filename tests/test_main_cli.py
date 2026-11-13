@@ -13,6 +13,7 @@ from typing import ClassVar
 import pytest
 import typer
 from cache_only import cli as cache_only
+from cache_only.config.app import MyRC as CACHE_ONLY_RC
 from cli_runtime import cli as cli_runtime
 from cli_runtime.config.app import MyRC as RUNTIME_KIT
 from explicit_env_precedence import (
@@ -32,9 +33,10 @@ from user_dotenv_with_workspace.config.app import MyRC as BOTH_RC
 from workspace import cli as workspace
 from workspace.config.app import MyRC as WORKSPACE_RC
 
-from apprc import AppRC
+from apprc import AppRC, Layout, ResolveOptions
 from apprc.interfaces.cli.diagnostics.messages import config_command_text
 from apprc.interfaces.tui.editor import ConfigEditorApp
+from apprc.interfaces.tui.launcher.model import LauncherContext, LauncherSpec
 from tests.support_config import build_workspace_example_app
 
 ROOT = Path(__file__).parents[1]
@@ -196,9 +198,10 @@ def test_example_cli_runs_every_supported_config_command(
 
     _assert_success(harness.invoke(["--help"]))
     _assert_success(harness.invoke(["config", "--help"]))
-    _assert_success(harness.invoke(["config", "paths"]))
+    _assert_success(harness.invoke(["app", "--help"]))
+    _assert_success(harness.invoke(["app", "paths"]))
     _assert_json_success(
-        harness.invoke(["--log-level", "INFO", "config", "paths", "--json"])
+        harness.invoke(["--log-level", "INFO", "app", "paths", "--json"])
     )
 
     if definition.uses_user_dotenv:
@@ -258,9 +261,8 @@ def test_example_cli_runs_every_supported_config_command(
     else:
         assert harness.invoke(["config", "set", "x", "y"]).exit_code != 0
 
-    _assert_success(harness.invoke([*runtime_prefix, "config", "doctor"]))
     doctor_json = _assert_json_success(
-        harness.invoke([*runtime_prefix, "config", "doctor", "--json"])
+        harness.invoke([*runtime_prefix, "app", "doctor", "--json"])
     )
     assert doctor_json["status"] == "ok"
 
@@ -404,7 +406,7 @@ def test_workspace_example_exercises_registry_lifecycle_and_path_selection(
     assert registry["selected_workspace"] is None
 
 
-def test_cache_only_entrypoint_exercises_help_initialization_and_paths(
+def test_cache_only_entrypoint_uses_service_initialization_and_nested_paths(
     tmp_path: Path,
 ) -> None:
     app = cache_only.build_app()
@@ -414,27 +416,71 @@ def test_cache_only_entrypoint_exercises_help_initialization_and_paths(
     help_result = _assert_success(
         runner.invoke(app, ["--help"], prog_name="apprc-cache-only")
     )
-    assert "paths" in help_result.output
-    assert "cache" in help_result.output
+    assert "app" in help_result.output
 
     before_init = _assert_json_success(
-        runner.invoke(app, ["paths", "cache", "--json"], env=env)
+        runner.invoke(app, ["app", "paths", "cache", "--json"], env=env)
     )
     assert before_init["exists"] is False
     cache_path = before_init["path"]
 
-    init_result = _assert_success(
-        runner.invoke(app, ["cache", "init"], env=env)
-    )
-    assert init_result.output.strip() == cache_path
+    CACHE_ONLY_RC.ensure_path("cache", environment=env)
     after_init = _assert_json_success(
-        runner.invoke(app, ["paths", "cache", "--json"], env=env)
+        runner.invoke(app, ["app", "paths", "cache", "--json"], env=env)
     )
     assert after_init == {
         "category": "cache",
         "path": cache_path,
         "exists": True,
     }
+
+
+def test_example_launcher_run_preserves_captured_runtime_options(
+    tmp_path: Path,
+) -> None:
+    environment = {
+        "HOME": str(tmp_path),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+    }
+    first = tmp_path / "first.env"
+    second = tmp_path / "second.env"
+    root = tmp_path / "app-root"
+    context = LauncherContext(
+        apprc=USER_DOTENV_RC,
+        spec=LauncherSpec(),
+        options=ResolveOptions(
+            env_files=(first, second),
+            env_file_overrides_os_environ=True,
+            load_dotenv_layers=False,
+            workspace="selected",
+            layout=Layout.single_root(root),
+        ),
+        environment=environment,
+        inspection=USER_DOTENV_RC.installation(
+            environment=environment
+        ).inspect(),
+        paths=None,
+        cwd=tmp_path,
+        log_level="DEBUG",
+    )
+
+    assert user_dotenv._run_argv(context, False)[1:] == (
+        "--log-level",
+        "DEBUG",
+        "--env-file",
+        str(first),
+        "--env-file",
+        str(second),
+        "--env-file-overrides-os-environ",
+        "--skip-dotenv-layers",
+        "--workspace",
+        "selected",
+        "--layout",
+        "single-root",
+        "--app-root",
+        str(root),
+        "run",
+    )
 
 
 def test_example_cli_env_file_options_control_layout(
@@ -455,6 +501,7 @@ def test_example_cli_env_file_options_control_layout(
                 "--env-file",
                 str(env_file),
                 "--env-file-overrides-os-environ",
+                "app",
                 "paths",
                 "--json",
             ],

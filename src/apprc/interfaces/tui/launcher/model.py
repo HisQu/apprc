@@ -29,6 +29,7 @@ class LauncherContext:
     :param paths: Resolved captured paths, unavailable when authority is unsafe.
     :param cwd: External working directory captured at invocation.
     :param path_error: Original placement failure shown without invalidating the record.
+    :param log_level: Invocation logging selector forwarded by app-owned actions.
     """
 
     apprc: AppRC
@@ -39,6 +40,7 @@ class LauncherContext:
     paths: AppPaths | None
     cwd: Path
     path_error: str | None = None
+    log_level: str | None = None
 
 
 LauncherHandler = Callable[[LauncherContext, bool], Awaitable[object] | object]
@@ -104,6 +106,7 @@ def run_launcher(
     options: ResolveOptions | None = None,
     environment: Mapping[str, str] | None = None,
     handlers: Mapping[str, LauncherHandler] | None = None,
+    log_level: str | None = None,
 ) -> None:
     """Run one Textual launcher using captured paths and installation state.
 
@@ -117,6 +120,7 @@ def run_launcher(
     :param options: Invocation controls used only to capture declared paths.
     :param environment: Optional exact environment snapshot.
     :param handlers: Optional app-owned handlers keyed by action ID.
+    :param log_level: Optional invocation logging selector for app-owned actions.
     """
     from apprc.interfaces.tui.launcher.app import LauncherApp
 
@@ -147,6 +151,7 @@ def run_launcher(
         paths=paths,
         cwd=cwd,
         path_error=path_error,
+        log_level=log_level,
     )
     app = LauncherApp(context=context, handlers=handlers or {})
     result = app.run()

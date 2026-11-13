@@ -616,7 +616,7 @@ def test_mount_app_cli_returns_declared_groups_and_accepts_typer() -> None:
     groups = rc.cli.mount_app_cli(app, MyRC)
 
     assert "config" in groups
-    result = CliRunner().invoke(app, ["paths", "--json"])
+    result = CliRunner().invoke(app, ["app", "paths", "--json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert "paths" in payload

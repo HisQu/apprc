@@ -18,6 +18,8 @@
   - [Supply application maintenance operations](#supply-application-maintenance-operations)
 - [Give users configuration tools](#give-users-configuration-tools)
   - [Add configuration commands to Typer](#add-configuration-commands-to-typer)
+  - [Launch the optional Textual application screen](#launch-the-optional-textual-application-screen)
+  - [Handle eager version without preparing runtime state](#handle-eager-version-without-preparing-runtime-state)
   - [Preview and apply a purge](#preview-and-apply-a-purge)
   - [Inspect and edit settings in the terminal](#inspect-and-edit-settings-in-the-terminal)
   - [Save and repair secret settings](#save-and-repair-secret-settings)
@@ -492,8 +494,9 @@ working directory. `ensure_path("state")` does not create logs; use
 If a category root already contains files without an owner marker, the safe
 default is refusal. `ensure_path("config", adopt=True)` explicitly adopts a
 nonempty unowned config root without moving or deleting its contents. `config
-init --adopt` provides the same explicit choice through the CLI. Do not use
-adoption to make AppRC claim files you do not control.
+setup --adopt` provides the same explicit choice through the CLI. Other resource
+initialization remains a Python `ensure_path()` operation, not a resource `init`
+command. Do not use adoption to make AppRC claim files you do not control.
 
 ## Select a workspace
 
@@ -586,13 +589,14 @@ do not put relocation controls into the managed user dotenv it would relocate.
 
 ## Supply application maintenance operations
 
-AppRC can describe basic information for each enabled path, but application
-backup, restore, cache pruning, state reset, and semantic purge require an
-explicit provider handler. Supply `MaintenanceHandlers` to
-`MyRC.maintain(...)` and to the CLI mount. Commands for absent operations are
-not mounted. An app-specific provider owns its database format, leases, and
-coordination; AppRC validates ownership, boundaries, exact target lists, and
-plan revisions before dispatch.
+Application backup, restore, cache pruning, state reset, and semantic purge
+require explicit provider handlers. Supply `MaintenanceHandlers` to
+`MyRC.maintain(...)` and to the CLI mount. Supported operations appear under
+`app data backup/restore`, `app cache prune/clear`, and `app state prune/reset`;
+absent operations are not mounted. An enabled path alone does not create a
+resource command group. An app-specific provider owns its database format,
+leases, and coordination; AppRC validates ownership, boundaries, exact target
+lists, and plan revisions before dispatch.
 
 Purge is not recursive cleanup. It previews exact AppRC-managed files and empty
 directories, refuses unknown contents and unsafe links, and reports partial
@@ -606,8 +610,9 @@ roots are not deleted atomically. See [maintenance contracts](References.md#main
 ## Add configuration commands to Typer
 
 `mount_app_cli` provides the high-level integration: it owns the Typer callback,
-captures bootstrap options, and puts the resolved snapshot in CLI state. This
-complete `demo.py` configures user preferences and a single-root layout:
+captures bootstrap options, and prepares business settings only for commands
+that need them. This complete `demo.py` configures user preferences and a
+single-root layout:
 
 <!-- example-file: demo.py -->
 ```python
@@ -625,7 +630,7 @@ MyRC = rc.AppRC(
 class ClientSettings(rc.Config):
     timeout: int = rc.field("DEMO_TIMEOUT", default=30)
 
-app = typer.Typer()
+app = typer.Typer(cls=rc.cli.AppRCRootGroup)
 rc.cli.mount_app_cli(app, MyRC)
 
 @app.command()
@@ -642,47 +647,206 @@ Run from the directory containing `demo.py`:
 
 ```shell
 python demo.py --help
-python demo.py paths config
-python demo.py config init
+python demo.py app paths config
 python demo.py config setup --yes
 python demo.py config set client.timeout 20 --scope user
 python demo.py run
-python demo.py doctor --json
+python demo.py app doctor --json
 ```
 
-`paths config` prints its absolute path without creating it. `config init`
-initializes the config category and its owner marker. The edit is saved in
-`demo-config/config/apprc.user.env`; `run` then prints `20`. A high-level mount
-rejects an existing root callback. If the application already owns that
-callback, use `CliRuntime`'s `mount_app_groups()` method and call
-`CliRuntime.prepare()` in the callback. See the
+`app paths config` prints its absolute path without creating it. `config setup
+--yes` initializes only configuration and the managed user dotenv without
+interactive preference prompts. Add `--adopt` only to claim a nonempty unowned
+config directory you control. The edit is saved in
+`demo-config/config/apprc.user.env`; `run` then prints `20`.
+
+`AppRCRootGroup` opts in to four root-help panels, in this order: `Options`,
+`Commands`, `AppRC: Runtime Options`, and `AppRC: Commands`. Empty panels are
+omitted; ordinary Typer roots remain supported, and nested help uses normal
+Typer formatting. AppRC's seven runtime options are repeatable ordered
+`--env-file`, `--env-file-overrides-os-environ`/`-o`,
+`--skip-dotenv-layers`/`-s`, `--workspace`, `--layout`, `--app-root`, and
+`--log-level`. `-o` changes explicit-file versus OS-environment priority;
+`-s` skips managed dotenv layers, not explicit files. Layout and root overrides
+apply to this invocation only. Log-level handling still occurs before resolution.
+
+The mount adds `app doctor` and `app paths` even without config or resource
+declarations. `config` and `workspace` depend on their declarations. Set
+`maintenance_group_name="app"` to choose the maintenance group's name (the
+default shown here), and `maintenance_help_panel="AppRC: Commands"` to choose
+its root-help panel. `app repair`, `app uninstall`, and `app migrate` require
+`installation_management=True`; `app install` additionally requires an explicit
+callable `installer_entrypoint`. There is no inferred installer or compatibility
+alias for the old command paths.
+
+The returned group mapping uses actual mounted paths: `config`, `workspace`,
+`app`, and, when nonempty, `app.data`, `app.cache`, and `app.state`. A renamed
+maintenance group changes that prefix. There are no flat `appdata`, `cache`,
+or `state` aliases.
+
+Register host resource commands with `resource_group_extensions` while mounting,
+not by adding commands to the returned mapping afterward. Each key must name a
+declared resource category; its callback receives that detached resource Typer
+group before empty-group filtering:
+
+```python
+def register_cache_commands(group: typer.Typer) -> None:
+    @group.command("inspect")
+    def inspect_cache() -> None:
+        typer.echo("Application cache inspection")
+
+
+groups = rc.cli.mount_app_cli(
+    app,
+    MyRC,
+    resource_group_extensions={"cache": register_cache_commands},
+)
+```
+
+This excerpt requires `MyRC` to declare `Paths(cache=True)`. A callback cannot
+create a group for an undeclared category. See the exact
+[mounting contract](References.md#composition-arguments).
+
+A high-level mount rejects an existing root callback. If the application owns
+that callback, use `CliRuntime.mount_app_groups()` and call
+`CliRuntime.prepare()` in the callback. Maintenance and workspace routes do not
+build host business state; nested help and recovery must remain usable with
+broken business configuration or installation authority. See the
 [callback example](EXAMPLES.md#an-application-owned-cli-callback).
+
+## Launch the optional Textual application screen
+
+Replace the earlier `rc.cli.mount_app_cli(app, MyRC)` line in `demo.py` with
+this call. AppRC's Textual launcher remains optional; the host supplies a
+`LauncherSpec` and optional handlers:
+
+```python
+from apprc.interfaces.tui import LauncherAction, LauncherSpec
+
+rc.cli.mount_app_cli(
+    app,
+    MyRC,
+    launcher_spec=LauncherSpec(
+        actions=(
+            LauncherAction(
+                id="run",
+                label="Run demo",
+                argv=lambda _context, _dry_run: ("python", "demo.py", "run"),
+            ),
+        ),
+        title="Demo",
+    ),
+)
+```
+
+Add `launcher_handlers` only when an action needs a host callback. It maps
+action IDs to callbacks; a handler receives captured launcher context and a
+dry-run flag. The `launch` command is mounted only when `launcher_spec` is
+provided. It does not replace the application's foreground `run` command or
+create a saved app-launch entry. See the [launcher reference](References.md#launcher).
+
+## Handle eager version without preparing runtime state
+
+When the host owns the root callback, an eager boolean callback can print
+version metadata and exit before calling `runtime.prepare()`. This prevents a
+metadata-only query from resolving application paths or business settings.
+Declare the host callback first, then construct `CliRuntime` and mount groups:
+
+```python
+def version_callback(value: bool) -> bool:
+    if value and not typer.get_current_context().resilient_parsing:
+        typer.echo("demo 1.0.0")
+        raise typer.Exit()
+    return value
+
+
+@app.callback()
+def host_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        callback=version_callback,
+        is_eager=True,
+    ),
+    env_files: rc.cli.EnvFilesOption = None,
+    env_file_overrides_os_environ: rc.cli.EnvFileOverridesOption = False,
+    skip_dotenv_layers: rc.cli.SkipDotenvLayersOption = False,
+    workspace: rc.cli.WorkspaceOption = None,
+    layout: rc.cli.LayoutOption = None,
+    app_root: rc.cli.AppRootOption = None,
+    log_level: rc.cli.LogLevelOption = None,
+) -> None:
+    del version
+    options = rc.cli.CliRuntimeOptions.from_typer(
+        env_files=env_files,
+        env_file_overrides_os_environ=env_file_overrides_os_environ,
+        load_dotenv_layers=not skip_dotenv_layers,
+        workspace=workspace,
+        layout=layout,
+        app_root=app_root,
+        log_level=log_level,
+    )
+    runtime.prepare(ctx, options)
+```
+
+This is an excerpt: create `app = typer.Typer(cls=rc.cli.AppRCRootGroup)` and
+`runtime = rc.cli.CliRuntime(MyRC)` before registering the callback, then call
+`runtime.mount_app_groups(app, ...)` after its definition. Supply composition
+options such as `handlers`, `installation_management`,
+`installer_entrypoint`, and `launcher_spec` to `mount_app_groups()`. The seven
+AppRC option annotations preserve the normal root controls; logging is captured
+before business resolution. The high-level `mount_app_cli()` owns its callback,
+so use this host-owned route when adding an eager option. See
+[runtime options and callback composition](References.md#root-help-and-runtime-options).
 
 ## Preview and apply a purge
 
-`paths` reports locations and existence; `doctor` reports configuration and
-declared-path diagnostics. The root `purge` previews exact files and empty
-directories; it is not a recursive application-data cleaner. For a cache-only
-app with `Paths(cache=True)`, the maintenance commands work without config,
-registry, or application state setup:
+Purge remains a Python maintenance service, not an app-facing CLI command or
+alias. Obtain a `MaintenanceManager` with `MyRC.maintain()`, preview its exact
+plans, obtain the application's explicit consent, and apply those same plans.
+This complete `demo.py` initializes only an empty temporary cache and displays
+its plan before asking permission:
 
-```shell
-demo paths --json
-demo doctor --json
-demo purge --scope cache --dry-run --json
-demo purge --scope cache --yes --json
+<!-- example-file: demo.py -->
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import sys
+import apprc as rc
+
+with TemporaryDirectory() as directory:
+    MyRC = rc.AppRC(
+        app_id="purge-demo",
+        paths=rc.Paths(cache=True),
+        layout=rc.Layout.single_root(Path(directory)),
+    )
+    MyRC.ensure_path("cache")
+    manager = MyRC.maintain(environment={})
+    plans = manager.plan_purge(("cache",))
+
+    for plan in plans:
+        print(plan)
+    if sys.stdin.isatty() and input("Apply these exact cache plans? [y/N] ").strip().lower() == "y":
+        for result in manager.apply_purge(plans):
+            print(result)
 ```
 
-`purge` requires `--scope CATEGORY` one or more times, or `--all`, but not both.
-Disabled explicit categories are invalid; `--all` expands only declared
-components and succeeds as a no-op when none are declared. JSON output contains
-`plans` and `results`; preview results are empty. A JSON apply prompt goes to
-stderr. Noninteractive apply requires `--yes`/`-y`. Exit status is 0 for
-success/preview, 1 for cancellation or partial/failure, and 2 for invalid or
-unsafe preflight. Unknown files, unsafe links, changed revisions, or unowned
-nonempty roots are not deleted. Applications provide handlers for their own
-backup, restore, pruning, reset, or purge semantics; commands without handlers
-are absent. See the [maintenance reference](References.md#maintenance).
+Run `python demo.py`; enter `y` to apply or leave the answer empty to decline.
+The temporary directory is removed on exit either way. Real applications must
+keep backups outside selected roots and supply their own consent and result
+presentation. A missing category directory has an empty plan and is not
+initialized by planning. An explicitly disabled category is invalid.
+
+Plans carry exact targets and revisions, not recursive cleanup instructions.
+Unknown files, unsafe links, changed revisions, or unowned nonempty roots block
+unsafe deletion. `apply_purge()` revalidates all supplied plans before dispatch;
+multi-root application is not atomic, so inspect returned removed/skipped
+targets and warnings rather than assuming rollback. Workspace payloads and
+package caches are never implicit targets. Application-specific purge semantics
+still use the existing provider handlers. See the
+[maintenance service reference](References.md#maintenance).
 
 ## Inspect and edit settings in the terminal
 
@@ -833,6 +997,11 @@ On Windows, use:
 uv run --script .\app-install.py
 ```
 
+The checkout script is a host-authored installation workflow, separate from
+the optional CLI installer delegate. `app install` appears only when the
+application supplies an explicit callable `installer_entrypoint`; AppRC does
+not infer one from this script.
+
 The first install offers OS-native locations or a single root and shows the
 resolved resource/installation paths. The choice controls enabled config,
 appdata, cache and state—not uv's Python environment or dependencies. Installation
@@ -884,38 +1053,45 @@ relocation rather than a search through other users' directories.
 
 ## Inspect or repair installation
 
-The maintenance group is independent of missing business settings:
+`app paths` and `app doctor` are available independently of missing business
+settings:
 
 ```shell
-demo installation show --json
-demo installation doctor --json
+demo app paths --json
+demo app doctor --json
 ```
 
 Inspection does not initialize directories or repair invalid authority.
-An incomplete replacement reports observed live state and the last successful
+`app doctor --json` returns a `status`/`checks`/`installation` envelope;
+`--verbose` adds `details` containing `paths`, `configuration`, `resources`,
+and `host`. The application must supply explicit callbacks for host,
+configuration, or resource diagnostics; AppRC does not infer provider `info`
+calls. Errors or unusable installation placement exit 1; warnings exit 0.
+An incomplete replacement reports observed live state and last successful
 history separately; it must not claim the old program is still installed.
 Keep the record and recovery files while diagnosing a failure.
 
-Use `demo installation repair` for the matching saved repair procedure.
-When a matching installer must be supplied explicitly, pass
-`demo installation repair --installer src/demo_distr/artifacts/installer/main-installer.py`
-from the corresponding checkout. Repair does not silently download a newer
-application-specific remover. If the program itself is missing, re-run the
-matching root installer or the saved recovery command reported at failure.
+Lifecycle commands are mounted only when the host sets
+`installation_management=True`. Use `demo app repair` for the matching saved
+repair procedure. When a matching installer must be supplied explicitly, pass
+`demo app repair --installer src/demo_distr/artifacts/installer/main-installer.py`
+from the corresponding checkout. Repair does not silently download newer
+application-specific support. If the program itself is missing, rerun the
+matching root installer or saved recovery command reported at failure.
 
 For an application-supported resource/layout relocation, stop its consumers and
-preview `demo installation migrate --dry-run` before applying migration. This
-does not convert old installation records or receipts. Unknown databases/payload
-need an inventory supplied by the owning application; generic migration does
-not treat every descendant as AppRC-owned.
+preview `demo app migrate --dry-run` before applying migration. This does not
+convert old installation records or receipts. Unknown databases/payload need
+an inventory supplied by the owning application; generic migration does not
+treat every descendant as AppRC-owned.
 
 ## Remove a managed program
 
 Preview program-only removal before confirming it:
 
 ```shell
-demo installation uninstall --dry-run
-demo installation uninstall
+demo app uninstall --dry-run
+demo app uninstall
 ```
 
 This preserves all resource categories and reconnectable installation support,
@@ -929,8 +1105,8 @@ keeps its checkpoints; successful package/data steps are not repeated. A
 conflicting request or a different installation generation is rejected rather
 than treated as a retry.
 
-For a cache-only application with no other retired resources, preview and request
-complete removal through that remaining wrapper:
+For a cache-only application with no other retired resources, preview and
+request complete removal through the saved wrapper:
 
 ```shell
 ./app-uninstall.sh --dry-run --complete --category cache
@@ -1212,12 +1388,17 @@ or an installed [example application](EXAMPLES.md#run-the-example-applications).
 The commands below assume the `demo.py` from the Typer guide:
 
 ```shell
-python demo.py paths config --json
-python demo.py doctor --json
+python demo.py app paths config --json
+python demo.py app doctor --json
 ```
-`paths` reports declared paths without creating them. Root `doctor` performs
-read-only path and configuration diagnostics and exits nonzero for error-status
-checks. It does not run application state factories or contact external services.
+`app paths` reports declared paths without creating them. `app doctor` performs
+read-only path and configuration diagnostics and exits 1 for error checks or
+unusable installation placement; warnings exit 0. The default JSON envelope
+contains `status`, `checks`, and `installation`; `--verbose` adds a `details`
+object containing `paths`, `configuration`, `resources`, and `host`.
+Application-specific details require explicit diagnostic callbacks. The command
+does not run application state factories or contact external services. See the
+[doctor JSON contract](References.md#doctor-and-paths-json).
 
 | Symptom | What to inspect or change |
 | --- | --- |
@@ -1281,8 +1462,9 @@ reinstallation or resource migration has completed and been verified.
 
 ### Supply a project-owned migration inventory
 
-The generic `installation migrate --dry-run` recognizes AppRC-owned files, not
-your database or annotation format. If it reports unknown payload, add an
+The `app migrate --dry-run` command is available only when the host opts in with
+`installation_management=True`; it recognizes AppRC-owned files, not your
+database or annotation format. If it reports unknown payload, add an
 application-owned migration command that supplies an exact `MigrationInventory`
 to `MyRC.installation().plan_migration(...)`. Do not solve the refusal by
 claiming every descendant, adopting the old parent as the new child, or calling
@@ -1377,10 +1559,16 @@ Update all callers and user-facing instructions before upgrading applications:
 | `Storage`, `storage=`, `ResolveOptions.storage`, `storage_required`, and `resolved.selection` | `Workspaces`, `workspaces=`, `ResolveOptions.workspace`, `workspace_required`, and `resolved.workspace`; application data roots are no longer workspace roots. |
 | `apprc_dir`, `apprc_dir_env_key`, `legacy_app_ids`, or `*_APPRC_DIR` | Declare each used `Paths` category and choose `Layout.native()` or `Layout.single_root(root)`; use `<PREFIX>_LAYOUT` plus `<PREFIX>_ROOT` as one bootstrap pair. |
 | `requires_storage=True` | `requires_workspace=True` when fields belong to a selected workspace. |
-| `mount_config_cli`, `mount_appdata_cli`, `mount_config_group`, `appdata paths`, and `appdata clean` | `mount_app_cli` or `mount_app_groups`; use root `paths`, `doctor`, category groups, and exact-target `purge`. Supply providers for application-owned operations. |
+| `mount_config_cli`, `mount_appdata_cli`, `mount_config_group`, root `paths`/`doctor`/`purge`, the `installation` group, resource `info`/`init`, and `config init` | `mount_app_cli` or `mount_app_groups`; use `config setup` for configuration, `workspace init PATH` for direct workspace setup, `app paths`/`app doctor` for diagnostics, and supported nested `app data`/`app cache`/`app state` operations. Use Python `ensure_path()` for generic resource initialization and `MaintenanceManager.plan_purge()`/`apply_purge()` for purge. No command aliases remain. See the [CLI migration reference](References.md#breaking-cli-and-json-migration). |
 | ConfigManager storage registry methods | Use `WorkspaceManager` methods such as `register_workspace()` and `archive_workspace()`. |
 | `apprc.storage.env`, `apprc.storage.secret.env`, and old `storages` TOML records | New `apprc.workspace.env`, `apprc.workspace.secret.env`, and versioned `workspaces` schema. |
 | Textual/Gradio storage controls | Provide `WorkspaceManager` separately from `ConfigManager`. |
+
+The CLI changes above are breaking: scripts and automation must replace removed
+root commands and groups rather than rely on aliases. Doctor JSON consumers must
+also adapt to the `status`/`checks`/`installation` envelope and, when requesting
+`--verbose`, its nested `details` object. Follow the
+[command and JSON migration reference](References.md#breaking-cli-and-json-migration).
 
 Choose which independent components each application truly uses; `UserDotenv`
 and registry-backed `Workspaces` both require `Paths(config=True)`. Use native

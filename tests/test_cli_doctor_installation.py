@@ -40,18 +40,33 @@ def test_root_doctor_rejects_malformed_authority_without_initializing(
     authority = directory / "installation.json"
     content = b"{not valid installation JSON\n"
     authority.write_bytes(content)
+    host_calls: list[str] = []
+    arguments = [
+        *(["--layout", "native"] if override else []),
+        "app",
+        "doctor",
+        "--verbose",
+        "--json",
+    ]
     app = typer.Typer()
-    rc.cli.mount_app_cli(app, declaration)
-    arguments = ["--layout", "native"] if override else []
-
-    result = CliRunner().invoke(
-        app, [*arguments, "doctor", "--json"], env=environment
+    rc.cli.mount_app_cli(
+        app,
+        declaration,
+        args_provider=lambda: arguments,
+        host_diagnostics=lambda: (
+            host_calls.append("called") or {"host": "available"}
+        ),
     )
+
+    result = CliRunner().invoke(app, arguments, env=environment)
 
     assert result.exit_code != 0, result.output
     report = json.loads(result.stdout)
+    assert report["details"]["host"] == {"host": "available"}
+    assert host_calls == ["called"]
+    assert report["status"] == "invalid"
     if override:
-        assert report["status"] == "error"
+        assert report["installation"]["status"] == "invalid"
         assert any(
             check["name"] == "installation"
             and check["status"] == "error"
@@ -96,10 +111,11 @@ def test_root_doctor_diagnoses_unsupported_authority_without_mutation(
     value["schema_version"] = schema_version
     content = json.dumps(value).encode("utf-8")
     authority.write_bytes(content)
+    arguments = ["app", "doctor", "--json"]
     app = typer.Typer()
-    rc.cli.mount_app_cli(app, declaration)
+    rc.cli.mount_app_cli(app, declaration, args_provider=lambda: arguments)
 
-    result = CliRunner().invoke(app, ["doctor", "--json"], env=environment)
+    result = CliRunner().invoke(app, arguments, env=environment)
 
     assert result.exit_code != 0, result.output
     report = json.loads(result.stdout)
@@ -133,10 +149,11 @@ def test_root_doctor_reports_missing_saved_capability_without_initializing() -> 
     authority = directory / "installation.json"
     content = authority.read_bytes()
     existing_entries = set(directory.rglob("*"))
+    arguments = ["app", "doctor", "--json"]
     app = typer.Typer()
-    rc.cli.mount_app_cli(app, declaration)
+    rc.cli.mount_app_cli(app, declaration, args_provider=lambda: arguments)
 
-    result = CliRunner().invoke(app, ["doctor", "--json"], env=environment)
+    result = CliRunner().invoke(app, arguments, env=environment)
 
     assert result.exit_code != 0, result.output
     report = json.loads(result.stdout)
@@ -185,10 +202,11 @@ def test_root_doctor_reports_legacy_migration_without_creating_new_store() -> (
     payload = legacy_root / "database.sqlite"
     payload_content = b"retained legacy application data"
     payload.write_bytes(payload_content)
+    arguments = ["app", "doctor", "--json"]
     app = typer.Typer()
-    rc.cli.mount_app_cli(app, declaration)
+    rc.cli.mount_app_cli(app, declaration, args_provider=lambda: arguments)
 
-    result = CliRunner().invoke(app, ["doctor", "--json"], env=environment)
+    result = CliRunner().invoke(app, arguments, env=environment)
 
     assert result.exit_code != 0, result.output
     report = json.loads(result.stdout)

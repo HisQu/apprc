@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+import inspect
 import sys
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -10,21 +11,24 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
 
 # == 3rd Party ===============================
 import typer
+from typer.core import TyperGroup
 
 from apprc.definition.installation import (
     CleanupInventory,
     InstallationError,
     InstallationInspection,
 )
+from apprc.definition.resolution import ResolveOptions
 from apprc.definition.maintenance import MaintenanceHandlers
 from apprc.definition.paths import ResourceKind
 from apprc.interfaces.cli._typer_utils import (
     args_after_cli_command,
     parse_leading_options,
+    help_requested_before_separator,
     run_typer_app,
     structural_help_requested,
 )
@@ -32,6 +36,7 @@ from apprc.interfaces.cli.context import (
     CliRuntimeContext,
     CliRuntimeOptionsProtocol,
     InstallationCommandContext,
+    installation_command_context_from,
     prepare_cli_runtime_context,
     prepare_installation_command_context,
 )
@@ -51,6 +56,10 @@ from apprc.runtime.logging import ResolutionLogger
 if TYPE_CHECKING:
     from apprc.interfaces.cli.config_command import ConfigSelectorContext
     from apprc.interfaces.tui import ConfigEditorApp
+    from apprc.interfaces.tui.launcher.model import (
+        LauncherHandler,
+        LauncherSpec,
+    )
 
 OptionsT = TypeVar("OptionsT", bound=CliRuntimeOptionsProtocol)
 StateT = TypeVar("StateT")
@@ -260,12 +269,14 @@ class CliRuntimePolicy:
         *,
         tokens: Sequence[str],
         config_group_name: str,
+        maintenance_group_name: str = "app",
     ) -> bool:
         """Return whether one CLI run can avoid runtime state.
 
         :param ctx: Active Typer context from the app callback.
         :param tokens: Command tokens without the executable name.
         :param config_group_name: Generated config command group name.
+        :param maintenance_group_name: Configured maintenance group name.
         :return: Whether app runtime state can be skipped.
         """
         command_name = ctx.invoked_subcommand
@@ -275,6 +286,20 @@ class CliRuntimePolicy:
             return self._config_policy(
                 config_group_name,
             ).request_skips_runtime(tokens=tokens)
+        if command_name == maintenance_group_name:
+            args = args_after_cli_command(
+                maintenance_group_name,
+                tokens=tokens,
+                cli_value_options=self.cli_value_options,
+            )
+            return (
+                args is not None
+                and not parse_leading_options(
+                    args,
+                    flag_options=self.cli_flag_options,
+                    value_options=self.cli_value_options,
+                ).separator_before_action
+            )
         args = args_after_cli_command(
             command_name,
             tokens=tokens,
@@ -283,7 +308,10 @@ class CliRuntimePolicy:
         if args is None:
             return False
         declaration = self.runtime_independent_commands.get(command_name)
-        if _is_help_request(args):
+        if help_requested_before_separator(
+            args,
+            value_options=self.cli_value_options,
+        ):
             return declaration.skip_help if declaration is not None else True
         if declaration is None:
             return False
@@ -292,9 +320,10 @@ class CliRuntimePolicy:
             flag_options=self.cli_flag_options,
             value_options=self.cli_value_options,
         )
-        if parsed.separator_before_action:
-            return False
-        return declaration.matches_action_tokens(parsed.action_tokens)
+        return (
+            not parsed.separator_before_action
+            and declaration.matches_action_tokens(parsed.action_tokens)
+        )
 
     def _config_policy(self, config_group_name: str) -> ConfigRuntimePolicy:
         """Return a config policy aligned with this CLI command shape."""
@@ -327,6 +356,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
     :param runtime_error_param_hint: Parameter hint for runtime-payload errors.
     :param setup_logging: Optional application logging setup callable.
     :param logger: Optional application logger for resolution status.
+    :param maintenance_group_name: Public name for the maintenance subtree.
     """
 
     apprc: AppRC
@@ -351,11 +381,18 @@ class CliRuntime(Generic[OptionsT, StateT]):
     runtime_error_param_hint: str = "CONFIG"
     setup_logging: Callable[..., Any] | None = None
     logger: ResolutionLogger | None = None
+    maintenance_group_name: str = field(default="app", kw_only=True)
     _forwarded_args: ContextVar[tuple[str, ...] | None] = field(
         default_factory=lambda: ContextVar(
             "apprc_cli_runtime_forwarded_args",
             default=None,
         ),
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _launcher_callbacks: set[Callable[..., object]] = field(
+        default_factory=set,
         init=False,
         repr=False,
         compare=False,
@@ -396,12 +433,25 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :param options: CLI option object carrying AppRC-compatible fields.
         :return: Prepared session metadata and optional app state.
         """
+        if ctx.resilient_parsing:
+            context = prepare_installation_command_context(
+                ctx, self.apprc, options
+            )
+            return CliRuntimeSession(apprc_context=context)
         if self._installation_command_requested(ctx):
             diagnostic_context = prepare_installation_command_context(
                 ctx, self.apprc, options
             )
             return CliRuntimeSession(apprc_context=diagnostic_context)
         skip_runtime_setup = self._request_skips_runtime(ctx)
+        if skip_runtime_setup and help_requested_before_separator(
+            self.current_args(),
+            value_options=self.cli_value_options,
+        ):
+            context = prepare_installation_command_context(
+                ctx, self.apprc, options
+            )
+            return CliRuntimeSession(apprc_context=context)
         try:
             apprc_context = prepare_cli_runtime_context(
                 ctx,
@@ -412,8 +462,8 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 setup_logging=self.setup_logging,
                 logger=self.logger,
             )
-        except InstallationError as error:
-            if not self._root_doctor_requested(ctx):
+        except (InstallationError, OSError, ValueError) as error:
+            if not self._doctor_requested(ctx):
                 raise
             diagnostic_context = prepare_installation_command_context(
                 ctx, self.apprc, options, path_error=str(error)
@@ -450,10 +500,25 @@ class CliRuntime(Generic[OptionsT, StateT]):
         app: typer.Typer,
         *,
         handlers: MaintenanceHandlers = MaintenanceHandlers(),
-        maintenance_help_panel: str = "Maintenance",
+        maintenance_help_panel: str = "AppRC: Commands",
+        installation_management: bool = False,
         installation_inventory: InstallationInventoryProvider | None = None,
+        installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
+        host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
+        resource_diagnostics: Mapping[
+            Literal["appdata", "cache", "state"],
+            Callable[[Path], Mapping[str, object]],
+        ]
+        | None = None,
+        resource_group_extensions: Mapping[
+            Literal["appdata", "cache", "state"],
+            Callable[[typer.Typer], None],
+        ]
+        | None = None,
+        launcher_spec: LauncherSpec | None = None,
+        launcher_handlers: Mapping[str, LauncherHandler] | None = None,
     ) -> dict[str, typer.Typer]:
-        """Mount fixed AppRC command groups without replacing the host callback."""
+        """Build groups off-tree, preflight every root name, then mount them."""
         from apprc.interfaces.cli.config_command.app import (
             build_config_typer_app,
         )
@@ -461,24 +526,37 @@ class CliRuntime(Generic[OptionsT, StateT]):
             mount_maintenance_groups,
         )
 
-        if (
-            self.apprc.schema.paths.config
-            or self.apprc.schema.owners
-            or self.apprc.schema.user_dotenv is not None
+        if not isinstance(app, typer.Typer):
+            raise TypeError(
+                "mount_app_groups supports typer.Typer instances only."
+            )
+        if installer_entrypoint is not None and not callable(
+            installer_entrypoint
         ):
-            ensure_config_group_name_available(app, self.config_group_name)
+            raise TypeError("installer_entrypoint must be callable.")
+        if launcher_handlers is not None and launcher_spec is None:
+            raise ValueError("launcher_handlers requires launcher_spec.")
+
+        staging = typer.Typer()
         mounted = mount_maintenance_groups(
-            app,
+            staging,
             self.apprc,
             handlers=handlers,
             maintenance_help_panel=maintenance_help_panel,
+            maintenance_group_name=self.maintenance_group_name,
+            installation_management=installation_management,
             installation_inventory=installation_inventory,
+            installer_entrypoint=installer_entrypoint,
+            host_diagnostics=host_diagnostics,
+            resource_diagnostics=resource_diagnostics,
+            resource_group_extensions=resource_group_extensions,
         )
-        if (
+        config_enabled = bool(
             self.apprc.schema.paths.config
             or self.apprc.schema.owners
             or self.apprc.schema.user_dotenv is not None
-        ):
+        )
+        if config_enabled:
             config_app = build_config_typer_app(
                 self.apprc,
                 state_type=self.state_type,
@@ -491,30 +569,52 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 runtime_error_param_hint=self.runtime_error_param_hint,
                 config_group_name=self.config_group_name,
             )
-            app.add_typer(
+            staging.add_typer(
                 config_app,
                 name=self.config_group_name,
                 rich_help_panel=maintenance_help_panel,
             )
             mounted[self.config_group_name] = config_app
+        if launcher_spec is not None:
+            self._mount_launcher(
+                staging, launcher_spec, launcher_handlers or {}
+            )
+
+        entries = _registered_typer_names(staging)
+        _ensure_unique_names(entries)
+        collisions = set(entries) & set(_registered_typer_names(app))
+        if collisions:
+            raise RuntimeError(
+                "AppRC cannot mount because these command names are already "
+                "in use: " + ", ".join(sorted(collisions))
+            )
+
+        app.registered_groups.extend(staging.registered_groups)
+        app.registered_commands.extend(staging.registered_commands)
         return mounted
 
     def _request_skips_runtime(self, ctx: typer.Context) -> bool:
         """Return whether this CLI run can avoid app runtime state."""
         if ctx.resilient_parsing:
             return True
-        maintenance_commands = {"paths", "doctor", "purge"}
-        paths = self.apprc.schema.paths
-        if paths.appdata:
-            maintenance_commands.add("appdata")
-        if paths.cache:
-            maintenance_commands.add("cache")
-        if paths.state:
-            maintenance_commands.add("state")
-        if self.apprc.schema.workspaces is not None:
-            maintenance_commands.add("workspace")
-        if ctx.invoked_subcommand in maintenance_commands:
+        if ctx.invoked_subcommand == self.maintenance_group_name:
             return True
+        if (
+            self.apprc.schema.workspaces is not None
+            and ctx.invoked_subcommand == "workspace"
+        ):
+            return True
+        if ctx.invoked_subcommand is not None:
+            nested_args = args_after_cli_command(
+                ctx.invoked_subcommand,
+                tokens=self.current_args(),
+                cli_value_options=self.cli_value_options,
+            )
+            if nested_args is not None and help_requested_before_separator(
+                nested_args,
+                value_options=self.cli_value_options,
+            ):
+                return True
         policy = self.runtime_policy or CliRuntimePolicy()
         tokens = self.current_args()
         if isinstance(policy, CliRuntimePolicy):
@@ -522,8 +622,27 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 ctx,
                 tokens=tokens,
                 config_group_name=self.config_group_name,
+                maintenance_group_name=self.maintenance_group_name,
             )
         return policy.request_skips_runtime(tokens=tokens)
+
+    @property
+    def cli_flag_options(self) -> Collection[str]:
+        policy = self.runtime_policy
+        if isinstance(policy, CliRuntimePolicy):
+            return policy.cli_flag_options
+        if isinstance(policy, ConfigRuntimePolicy):
+            return policy.root_flag_options
+        return COMMON_CLI_FLAG_OPTIONS
+
+    @property
+    def cli_value_options(self) -> Collection[str]:
+        policy = self.runtime_policy
+        if isinstance(policy, CliRuntimePolicy):
+            return policy.cli_value_options
+        if isinstance(policy, ConfigRuntimePolicy):
+            return policy.root_value_options
+        return COMMON_CLI_VALUE_OPTIONS
 
     def current_args(self) -> Sequence[str]:
         """Return the command tokens this runtime should inspect.
@@ -539,25 +658,96 @@ class CliRuntime(Generic[OptionsT, StateT]):
         return sys.argv[1:]
 
     def _installation_command_requested(self, ctx: typer.Context) -> bool:
-        """Select installation and launcher recovery before strict paths."""
-        if ctx.invoked_subcommand in {"installation", "launcher"}:
-            return True
-        tokens = self.current_args()
-        parsed = parse_leading_options(
-            tokens,
-            flag_options=COMMON_CLI_FLAG_OPTIONS,
-            value_options=COMMON_CLI_VALUE_OPTIONS,
+        """Select lifecycle recovery and configured launch before path resolution."""
+        if ctx.invoked_subcommand == "launch" and isinstance(
+            ctx.command, TyperGroup
+        ):
+            command = ctx.command.get_command(ctx, "launch")
+            callback = command.callback if command is not None else None
+            if (
+                callback is not None
+                and inspect.unwrap(callback) in self._launcher_callbacks
+            ):
+                return True
+        args = args_after_cli_command(
+            self.maintenance_group_name,
+            tokens=self.current_args(),
+            cli_value_options=self.cli_value_options,
         )
-        return not parsed.separator_before_action and tuple(
-            parsed.action_tokens[:1]
-        ) in {
-            ("installation",),
-            ("launcher",),
-        }
+        if args is None:
+            return False
+        parsed = parse_leading_options(
+            args,
+            flag_options=self.cli_flag_options,
+            value_options=self.cli_value_options,
+        )
+        return (
+            not parsed.separator_before_action
+            and bool(parsed.action_tokens)
+            and parsed.action_tokens[0]
+            in {"install", "repair", "uninstall", "migrate"}
+        )
 
-    def _root_doctor_requested(self, ctx: typer.Context) -> bool:
-        """Select only root doctor after installation path resolution fails."""
-        return ctx.invoked_subcommand == "doctor"
+    def _doctor_requested(self, ctx: typer.Context) -> bool:
+        if ctx.invoked_subcommand != self.maintenance_group_name:
+            return False
+        args = args_after_cli_command(
+            self.maintenance_group_name,
+            tokens=self.current_args(),
+            cli_value_options=self.cli_value_options,
+        )
+        if args is None:
+            return False
+        parsed = parse_leading_options(
+            args,
+            flag_options=self.cli_flag_options,
+            value_options=self.cli_value_options,
+        )
+        return not parsed.separator_before_action and bool(
+            parsed.action_tokens
+            and (parsed.action_tokens[0] in {"doctor", "paths"})
+        )
+
+    def _mount_launcher(
+        self,
+        app: typer.Typer,
+        spec: LauncherSpec,
+        handlers: Mapping[str, LauncherHandler],
+    ) -> None:
+        """Register a root command that opens the existing Textual launcher."""
+
+        @app.command(
+            "launch",
+            help="Open the interactive AppRC application launcher.",
+            short_help="Open the interactive AppRC application launcher.",
+            rich_help_panel="AppRC: Commands",
+        )
+        def launch(ctx: typer.Context) -> None:
+            from apprc.interfaces.tui.launcher.model import run_launcher
+
+            context = installation_command_context_from(ctx)
+            if context is None:
+                raise RuntimeError(
+                    "AppRC launcher requires captured recovery context."
+                )
+            options = context.runtime_options
+            resolve_options = ResolveOptions(
+                env_files=options.env_files,
+                env_file_overrides_os_environ=options.env_file_overrides_os_environ,
+                load_dotenv_layers=options.load_dotenv_layers,
+                workspace=options.workspace,
+                layout=options.layout,
+            )
+            run_launcher(
+                self.apprc,
+                spec=spec,
+                options=resolve_options,
+                environment=context.environment,
+                handlers=handlers,
+                log_level=options.log_level,
+            )
+
+        self._launcher_callbacks.add(launch)
 
     @contextmanager
     def forwarded_args(self, args: Sequence[str]) -> Iterator[None]:
@@ -608,19 +798,33 @@ def ensure_config_group_name_available(
     )
 
 
-def _registered_typer_names(app: typer.Typer) -> set[str]:
-    """Return explicit and implicit command names registered on ``app``."""
-    names: set[str] = set()
-    for group in app.registered_groups:
-        if group.name is not None:
-            names.add(group.name)
+def _registered_typer_names(app: typer.Typer) -> list[str]:
+    """Return registered command names without discarding duplicate entries."""
+    names = [
+        group.name for group in app.registered_groups if group.name is not None
+    ]
     for command in app.registered_commands:
         if command.name is not None:
-            names.add(command.name)
-            continue
-        if command.callback is not None:
-            names.add(typer.main.get_command_name(command.callback.__name__))
+            names.append(command.name)
+        elif command.callback is not None:
+            names.append(typer.main.get_command_name(command.callback.__name__))
     return names
+
+
+def _ensure_unique_names(names: Sequence[str]) -> None:
+    """Reject duplicate command names in the detached proposed root."""
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for name in names:
+        if name in seen:
+            duplicates.add(name)
+        else:
+            seen.add(name)
+    if duplicates:
+        raise RuntimeError(
+            "AppRC proposed conflicting command names: "
+            + ", ".join(sorted(duplicates))
+        )
 
 
 def _is_help_request(tokens: Sequence[str]) -> bool:

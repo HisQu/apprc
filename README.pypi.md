@@ -237,18 +237,30 @@ contains a complete example. Saved secrets use private companion files; the
 
 ## Add terminal commands
 
-Use `rc.cli.mount_app_cli(app, MyRC)` to mount available configuration and
-maintenance groups together. The returned subgroup mapping lets an application
-add category-specific commands. `paths` and `doctor` are always available;
-config, workspace, and category groups appear only when their declared
-capabilities exist. The [Typer guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
-and [command reference](https://github.com/HisQu/apprc/blob/main/docs/References.md#terminal-commands) document the groups.
+Use `rc.cli.mount_app_cli(app, MyRC)` to add configuration and application
+maintenance alongside the host's commands. `config` and `workspace` appear when
+their capabilities exist; `app paths` and `app doctor` are always available.
+`config setup [--adopt] [--yes/-y]` initializes only enabled user configuration.
+The maintenance group defaults to `app` and can be renamed with
+`maintenance_group_name`. The returned mapping identifies actual mounted paths,
+such as `app.cache`, for application extensions. See the
+[Typer guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#add-configuration-commands-to-typer)
+and [command reference](https://github.com/HisQu/apprc/blob/main/docs/References.md#terminal-commands).
 
-The root `purge` command previews or removes explicitly declared AppRC-managed
-resources. It validates ownership and exact targets, never recursively removes
-unknown files, and never touches workspace payloads or package caches. Providers
-are required for application-specific operations. See
-[maintenance](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#maintenance) for its safety boundary.
+Resource commands are nested under `app`: `app data backup/restore`,
+`app cache prune/clear`, and `app state prune/reset` appear only for supported
+operations. Declaring a path alone does not enable these commands or create its
+directory. `app repair`, `app uninstall`, and `app migrate` require
+`installation_management=True`; `app install` additionally requires an explicit
+`installer_entrypoint` callable. There are no resource `init` or `purge` CLI
+aliases. Python `ensure_path` and maintenance purge planning remain available
+with their existing [ownership and safety boundaries](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#maintenance).
+
+Passing `launcher_spec` and `launcher_handlers` adds optional root `launch`,
+which opens the existing Textual management launcher. It is separate from a
+foreground application command and from saved distribution launch support.
+Hosts can opt into separated root help panels with
+`typer.Typer(cls=rc.cli.AppRCRootGroup)`; nested help stays standard.
 
 The [Textual editor](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#config-editor) and
 [Gradio editor](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#gradio-editor) edit config settings; when a

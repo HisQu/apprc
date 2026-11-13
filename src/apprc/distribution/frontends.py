@@ -163,10 +163,11 @@ def build_runtime_payload(
 
 
 def render_native_launcher(spec: DistributionSpec) -> bytes:
-    """Render identity-only dispatch through the unchanged saved-management program.
+    """Render identity-only saved launch dispatch without a child process.
 
-    The executable contains no installer, wheel payload or removal implementation
-    of its own. It uses the canonical program and its existing authority/locator.
+    The executable embeds only portable app identity and uses the saved
+    management program's authority checks before replacing itself with the
+    recorded external interpreter.
 
     :param spec: Application identity and selected registered launch command.
     :return: Python input for the explicit native builder.
@@ -188,17 +189,18 @@ def render_native_launcher(spec: DistributionSpec) -> bytes:
     encoded = base64.b64encode(program).decode("ascii")
     return (
         '"""Native identity-only saved launch dispatch."""\n'
-        "import base64, os, subprocess, sys, tempfile\nfrom pathlib import Path\n"
-        "with tempfile.TemporaryDirectory(prefix='apprc-launch-') as temporary:\n"
-        "    root = Path(temporary)\n"
-        "    program = root / 'management.py'\n"
-        f"    program.write_bytes(base64.b64decode({encoded!r}, validate=True))\n"
-        f"    program.with_name('management.json').write_text({binding!r}, encoding='utf-8')\n"
-        "    arguments = list(sys.argv[1:])\n"
-        "    adjacent = Path(os.environ['PYAPP']).absolute().parent\n"
-        "    if '--directory' not in arguments and not any(arg.startswith('--directory=') for arg in arguments) and (adjacent / 'installation.json').is_file():\n"
-        "        arguments = ['--directory', str(adjacent), *arguments]\n"
-        "    raise SystemExit(subprocess.run([sys.executable, '-I', str(program), 'launch', *arguments], check=False).returncode)\n"
+        "import base64, os, sys\nfrom pathlib import Path\nfrom types import ModuleType\n"
+        "module = ModuleType('_apprc_saved_management')\n"
+        "module.__file__ = os.environ['PYAPP']\n"
+        "sys.modules[module.__name__] = module\n"
+        f"exec(compile(base64.b64decode({encoded!r}, validate=True), module.__file__, 'exec'), vars(module))\n"
+        "arguments = list(sys.argv[1:])\n"
+        "adjacent = Path(os.environ['PYAPP']).absolute().parent\n"
+        "if '--directory' not in arguments and not any(arg.startswith('--directory=') for arg in arguments) and (adjacent / 'installation.json').is_file():\n"
+        "    arguments = ['--directory', str(adjacent), *arguments]\n"
+        "sys.argv = [module.__file__, 'launch', *arguments]\n"
+        f"binding = module.decode_management_binding({binding.encode('utf-8')!r})\n"
+        "raise SystemExit(module.main(portable_binding=binding))\n"
     ).encode("utf-8")
 
 

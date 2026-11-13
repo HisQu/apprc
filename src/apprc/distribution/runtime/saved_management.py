@@ -247,8 +247,12 @@ def _inspection(
     return inspection
 
 
-def main() -> int:
-    """Dispatch an explicit action; saved metadata never replaces authority."""
+def main(*, portable_binding: ManagementBinding | None = None) -> int:
+    """Dispatch a CLI action, replacing POSIX launch processes after validation.
+
+    :param portable_binding: Compiled native launcher identity, when embedded.
+    :return: Action status on failure, Windows launch, or uninstall dispatch.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("launch", "uninstall"))
     action, remaining = parser.parse_known_args()
@@ -259,7 +263,7 @@ def main() -> int:
     args, forwarded = options.parse_known_args(remaining)
     try:
         local = Path(__file__).absolute()
-        portable = decode_management_binding(
+        portable = portable_binding or decode_management_binding(
             _regular_bytes(local.with_name("management.json"))
         )
         directory = args.directory or _installation_directory(portable.app_id)
@@ -283,6 +287,9 @@ def main() -> int:
             ]
             if action.action == "uninstall" and args.dry_run:
                 dispatch.append("--dry-run")
+            if action.action == "launch" and os.name != "nt":
+                python = str(_base_python(binding, target))
+                os.execv(python, [python, *dispatch[1:], *forwarded])
             return subprocess.run(
                 [*dispatch, *forwarded], check=False
             ).returncode
@@ -309,6 +316,8 @@ def main() -> int:
                 raise ValueError(
                     "Recorded application command is missing; repair the installation."
                 )
+            if os.name != "nt":
+                os.execv(str(executable), [str(executable), *forwarded])
             return subprocess.run(
                 [str(executable), *forwarded], check=False
             ).returncode

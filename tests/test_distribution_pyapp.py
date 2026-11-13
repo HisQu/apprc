@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -108,9 +109,12 @@ def _write_project(
         encoding="utf-8",
     )
     (root / "fixture_app.py").write_text(
-        "import importlib.metadata,json,sys\n"
+        "import importlib.metadata,json,os,sys,time\n"
         f"MARKER={marker!r}\n"
         "def main():\n"
+        " if '--hold' in sys.argv:\n"
+        "  print(json.dumps({'pid':os.getpid()}),flush=True)\n"
+        "  while True: time.sleep(0.1)\n"
         " print(json.dumps({'version':'1.0.0','marker':MARKER,'dependency':importlib.metadata.version('platformdirs'),'python_minor':sys.version_info.minor,'argv':sys.argv[1:]}))\n"
         " print('fixture-stderr', file=__import__('sys').stderr)\n"
         " if '--exit-23' in sys.argv: raise SystemExit(23)\n"
@@ -669,6 +673,38 @@ def test_linux_native_frontends_preserve_saved_lifecycle(
         check=False,
     )
     assert recovered.returncode == 0, recovered.stdout + recovered.stderr
+    held = subprocess.Popen(
+        [
+            str(launcher_path),
+            "--directory",
+            str(directory),
+            "--hold",
+        ],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        assert held.stdout is not None
+        identity = json.loads(held.stdout.readline())
+        assert identity == {"pid": held.pid}
+        held.terminate()
+        assert held.wait(timeout=10) == -signal.SIGTERM
+    finally:
+        # > Failure cleanup targets only this fixture's isolated process group.
+        try:
+            os.killpg(held.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if held.poll() is None:
+            held.kill()
+            held.wait(timeout=10)
+        if held.stdout is not None:
+            held.stdout.close()
+        if held.stderr is not None:
+            held.stderr.close()
     assert json.loads(recovered.stdout.splitlines()[0])["marker"] == "release"
     management = json.loads((directory / "management.json").read_text())
     base_python = Path(management["base_python"])

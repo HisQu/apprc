@@ -73,6 +73,8 @@ All notable changes to `AppRC` will be documented in this file.
 - Added the `runtime-python` distribution setting to select a managed CPython
   minor consistently for native wheel builds and uv installation, independently
   of the package compatibility range and PyApp's bootstrap interpreter.
+- Native POSIX launch dispatch preserves the application process identity, so
+  terminating the launcher stops the application instead of leaving it running.
 
 <br>
 

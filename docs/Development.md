@@ -401,6 +401,8 @@ Native output examples are `appid-install-linux-x86_64`,
 `appid-install-windows-x86_64.exe`, and `appid-launch-windows-x86_64.exe`.
 Windows `launch.cmd` and `launch.ps1` saved wrappers remain; root `launch.sh` is
 not generated. Public dependencies and Python may still be downloaded online.
+POSIX launch dispatch replaces its validated wrappers with the application, so
+signals sent to the launcher reach the application process.
 Do not commit private wheels, executable bytes, or encoded copies.
 
 ## Release procedure

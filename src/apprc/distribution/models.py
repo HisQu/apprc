@@ -6,7 +6,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Literal
-from apprc.definition.installation import InstallationIdentity
+from apprc.definition.installation import (
+    InstallationIdentity,
+    InstallationSource,
+)
 from apprc.definition.paths import Paths
 
 
@@ -30,6 +33,49 @@ def relative_destination(value: str | PurePosixPath) -> PurePosixPath:
 
 
 @dataclass(frozen=True, slots=True)
+class BundledWheel:
+    """Portable wheel identity and optional immutable repository provenance."""
+
+    name: str
+    version: str
+    filename: str
+    digest: str
+    marker: str | None = None
+    repository: str | None = None
+    commit: str | None = None
+    subdirectory: str | None = None
+    original_requirement: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedWheelBundle:
+    """Ephemeral verified backend inputs, never saved installation authority."""
+
+    directory: Path
+    wheels: tuple[BundledWheel, ...]
+
+    @property
+    def override_file(self) -> Path:
+        """Return overrides targeting the privately staged dependency wheels."""
+        return self.directory / "overrides.txt"
+
+    @property
+    def runtime_requirements_file(self) -> Path:
+        """Return the complete exported runtime graph, including markers."""
+        return self.directory / "runtime-requirements.txt"
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledWheelBundle:
+    """Portable authoring output with its complete immutable runtime graph."""
+
+    directory: Path
+    source: InstallationSource
+    wheels: tuple[BundledWheel, ...]
+    remaining_git_sources: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectMetadata:
     """Packaging and runtime identities plus explicit repository routing."""
 
@@ -40,6 +86,15 @@ class ProjectMetadata:
     distribution_path: PurePosixPath = PurePosixPath("src/app_distr")
     launcher_command: str | None = None
     python_requirement: str = ">=3.12"
+    bundle_repositories: tuple[str, ...] = ()
+    runtime_python: str | None = None
+
+    @property
+    def runtime_python_requirement(self) -> str:
+        """Restrict runtime selection without changing package compatibility."""
+        if self.runtime_python is None:
+            return self.python_requirement
+        return f"{self.python_requirement},=={self.runtime_python}.*"
 
 
 @dataclass(frozen=True, slots=True)

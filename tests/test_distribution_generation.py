@@ -13,6 +13,7 @@ from typing import Literal
 from uuid import uuid4
 
 import pytest
+from packaging.specifiers import SpecifierSet
 
 from apprc import AppRC, Paths
 from apprc.definition.installation import (
@@ -108,6 +109,87 @@ apprc-reference = "unimportable_package.config:MyRC"
     assert (
         metadata.identity.apprc_reference == "unimportable_package.config:MyRC"
     )
+
+
+def test_runtime_python_metadata_preserves_requirement_and_derives_selector(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[project]
+name = "metadata-fixture"
+version = "1.0.0"
+requires-python = ">=3.13.2,<4"
+[project.scripts]
+metadata-fixture = "fixture:main"
+[tool.apprc.distribution]
+runtime-python = "3.13"
+""",
+        encoding="utf-8",
+    )
+    metadata = read_project_metadata(tmp_path)
+    compatibility = SpecifierSet(metadata.python_requirement)
+    runtime = SpecifierSet(metadata.runtime_python_requirement)
+    assert "3.14.0" in compatibility
+    assert "3.13.2" in runtime
+    assert "3.13.1" not in runtime
+    assert "3.14.0" not in runtime
+
+
+def test_runtime_python_metadata_rejects_non_minor_values(
+    tmp_path: Path,
+) -> None:
+    project = (
+        '[project]\nname = "metadata-fixture"\nversion = "1.0.0"\n'
+        '[project.scripts]\nmetadata-fixture = "fixture:main"\n'
+        "[tool.apprc.distribution]\n"
+    )
+    pyproject = tmp_path / "pyproject.toml"
+    for value in ("3.13.*", ">=3.13", "python3.13", "3.13.1", "3.013"):
+        pyproject.write_text(
+            project + f"runtime-python = {json.dumps(value)}\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="runtime-python"):
+            read_project_metadata(tmp_path)
+    for value in ("3.13", "3", '["3.13"]'):
+        pyproject.write_text(
+            project + f"runtime-python = {value}\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="runtime-python"):
+            read_project_metadata(tmp_path)
+
+
+def test_bundle_repository_metadata_accepts_only_string_lists(
+    tmp_path: Path,
+) -> None:
+    project = (
+        '[project]\nname = "metadata-fixture"\nversion = "1.0.0"\n'
+        '[project.scripts]\nmetadata-fixture = "fixture:main"\n'
+    )
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        project
+        + "[tool.apprc.distribution]\n"
+        + 'bundle-repositories = ["https://example.invalid/repo"]\n',
+        encoding="utf-8",
+    )
+    assert read_project_metadata(tmp_path).bundle_repositories == (
+        "https://example.invalid/repo",
+    )
+    for setting in (
+        'bundle-repositories = "https://example.invalid/repo"',
+        'bundle-repositories = ["https://example.invalid/repo", 1]',
+        '[tool.apprc.distribution.bundle-repositories]\nurl = "https://example.invalid/repo"',
+        'unknown = "value"',
+    ):
+        pyproject.write_text(
+            project + "[tool.apprc.distribution]\n" + setting + "\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError):
+            read_project_metadata(tmp_path)
 
 
 def test_capability_inspection_needs_no_settings_or_installation() -> None:

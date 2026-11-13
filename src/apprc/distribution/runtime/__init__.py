@@ -41,6 +41,10 @@ from apprc.distribution.runtime.installation import (
     install_application as install_application,
     install_prepared_application as install_prepared_application,
 )
+from apprc.distribution.runtime.payloads import (
+    load_installer_spec as load_installer_spec,
+    prepare_installation_source as prepare_installation_source,
+)
 from apprc.user_files.installation.migration import (
     execute_migration as execute_migration,
     resume_migration as resume_migration,

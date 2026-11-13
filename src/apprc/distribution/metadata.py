@@ -56,12 +56,29 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         "project-path",
         "distribution-path",
         "launcher-command",
+        "bundle-repositories",
+        "runtime-python",
     }
     if set(settings) - allowed or any(
-        not isinstance(value, str) for value in settings.values()
+        not isinstance(value, str)
+        for key, value in settings.items()
+        if key not in {"bundle-repositories", "runtime-python"}
     ):
         raise ValueError(
             "Unknown or non-string tool.apprc.distribution setting."
+        )
+    repositories = settings.get("bundle-repositories", [])
+    if not isinstance(repositories, list) or not all(
+        isinstance(value, str) for value in repositories
+    ):
+        raise ValueError("bundle-repositories must be a list of strings.")
+    runtime_python = settings.get("runtime-python")
+    if "runtime-python" in settings and (
+        not isinstance(runtime_python, str)
+        or re.fullmatch(r"3\.(?:0|[1-9][0-9]*)", runtime_python) is None
+    ):
+        raise ValueError(
+            "runtime-python must be an exact CPython minor string, such as '3.13'."
         )
     distribution = re.sub(r"[-_.]+", "-", name).lower()
     packages = {
@@ -121,6 +138,8 @@ def read_project_metadata(project_root: Path) -> ProjectMetadata:
         distribution_path,
         settings.get("launcher-command"),
         python_requirement,
+        tuple(repositories),
+        runtime_python=runtime_python,
     )
 
 

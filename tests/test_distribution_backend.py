@@ -536,11 +536,15 @@ if __name__ == "__main__":
         APPRC_FIXTURE_CLEANUP_MARKER=str(cleanup_marker),
     )
 
+    root_entries = tmp_path / "root entries"
+    for artifact in artifacts:
+        output = root_entries.joinpath(*artifact.destination.parts)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(artifact.content)
+
     platform_suffix = ".cmd" if os.name == "nt" else ".sh"
     root_launch = next(
-        item
-        for item in artifacts
-        if item.destination.name == f"app-launch{platform_suffix}"
+        item for item in artifacts if item.destination.name == "app-launch.py"
     )
     root_uninstall = next(
         item
@@ -552,10 +556,10 @@ if __name__ == "__main__":
         artifact: Artifact,
         *arguments: str,
     ) -> subprocess.CompletedProcess[str]:
-        wrapper = tmp_path / "root wrappers" / artifact.destination.name
-        wrapper.parent.mkdir(parents=True, exist_ok=True)
-        wrapper.write_bytes(artifact.content)
-        if artifact.destination.suffix == ".sh":
+        wrapper = root_entries.joinpath(*artifact.destination.parts)
+        if artifact.destination.suffix == ".py":
+            argv = [sys.executable, str(wrapper), *arguments]
+        elif artifact.destination.suffix == ".sh":
             wrapper.chmod(0o700)
             argv = [str(wrapper), *arguments]
         else:
@@ -600,6 +604,8 @@ if __name__ == "__main__":
             for item in installed.record.current.owned_outputs
             if item.kind == "support"
         }
+        assert {"management.py", "management.json"} <= support_names
+        assert "launch.sh" not in support_names
         if os.name == "nt":
             assert not {"launch.sh", "uninstall.sh"} & support_names
         else:
@@ -625,9 +631,7 @@ if __name__ == "__main__":
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_bytes(content)
         rebound_arguments = ("with space", "literal%20", "snowman ☃")
-        rebound_launcher = rebound_root / (
-            "launch.cmd" if os.name == "nt" else "launch.sh"
-        )
+        rebound_launcher = rebound_root / "launch.cmd"
         if os.name == "nt":
             rebound_result = subprocess.run(
                 [
@@ -643,9 +647,15 @@ if __name__ == "__main__":
                 check=False,
             )
         else:
-            rebound_launcher.chmod(0o700)
             rebound_result = subprocess.run(
-                [str(rebound_launcher), *rebound_arguments],
+                [
+                    sys.executable,
+                    str(rebound_root / "management.py"),
+                    "launch",
+                    "--directory",
+                    str(directory),
+                    *rebound_arguments,
+                ],
                 env=environment,
                 text=True,
                 capture_output=True,

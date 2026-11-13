@@ -8,6 +8,7 @@ import shlex
 import urllib.parse
 from importlib.resources import files
 from pathlib import PurePosixPath
+from textwrap import indent
 from typing import TYPE_CHECKING
 
 from apprc.distribution.models import Artifact, DistributionSpec, PayloadTree
@@ -47,6 +48,7 @@ def standalone_script(
     *,
     entry: str,
     public_entry: bool = True,
+    installer_payload: bytes | None = None,
 ) -> bytes:
     """Render the small loader around the same explicit ordinary-module tree.
 
@@ -57,9 +59,18 @@ def standalone_script(
     :param payload: Explicit module/resource inclusion tree.
     :param entry: Selected bundled entry module.
     :param public_entry: Validate the public release asset rather than saved support.
+    :param installer_payload: Retained runtime ZIP for this public installer only.
     :return: UTF-8 PEP 723 executable script bytes.
     """
-    archive = base64.b64encode(payload_archive(spec, payload)).decode("ascii")
+    if installer_payload is not None and (
+        not public_entry or entry != payload.entry_module
+    ):
+        raise ValueError(
+            "Runtime payload bytes belong only in the public installer."
+        )
+    archive = base64.b64encode(
+        payload_archive(spec, payload, installer_payload=installer_payload)
+    ).decode("ascii")
     release_contract = None
     if (
         public_entry
@@ -107,140 +118,124 @@ def _artifact(
     )
 
 
-def _shell_double_quoted(value: str) -> str:
-    """Escape shell expansions within a double-quoted generated path."""
-    return value.replace("$", "\\$").replace("`", "\\`").replace('"', '\\"')
+def _installer_dispatcher(
+    spec: DistributionSpec,
+    *,
+    embedded_payload: bytes | None = None,
+    developer: bool = False,
+) -> bytes:
+    """Serialize the ordinary standalone frontend without author filesystem paths."""
+    from apprc.distribution._frontend import github_repository_identity
 
-
-def render_bootstraps(spec: DistributionSpec) -> tuple[Artifact, ...]:
-    """Render native checkout or standalone-source bootstraps."""
-    environment = _environment()
-    base = f"{spec.metadata.distribution_path}/artifacts/installer"
-    release_fetcher = ""
-    main_fetcher = ""
-    repository_url = ""
-    if spec.repository_url is not None:
-        repository = urllib.parse.urlsplit(spec.repository_url)
-        repository_parts = [part for part in repository.path.split("/") if part]
-        if (
-            repository.scheme != "https"
-            or repository.hostname != "github.com"
-            or repository.username is not None
-            or repository.password is not None
-            or repository.query
-            or repository.fragment
-            or len(repository_parts) != 2
-        ):
-            raise ValueError(
-                "Remote source bootstrap requires a credential-free GitHub repository URL."
-            )
-        repository_url = (
-            f"https://github.com/{repository_parts[0]}/"
-            f"{repository_parts[1].removesuffix('.git')}"
+    if (
+        spec.repository_url is not None
+        and github_repository_identity(spec.repository_url) is None
+    ):
+        raise ValueError(
+            "Installer repository must be a credential-free GitHub URL."
         )
-        release_fetcher = environment.get_template(
-            "release_fetcher.py.jinja"
-        ).render(
-            app_id=spec.metadata.identity.app_id,
-            distribution=spec.metadata.identity.distribution,
-            repository_url=repository_url,
-            release_version=spec.release_version or "latest",
+    if spec.source_mode in {"release", "main"} and spec.repository_url is None:
+        raise ValueError(
+            "Remote installer selection requires a GitHub repository."
         )
-        installer = (
-            PurePosixPath(spec.metadata.distribution_path)
+    config = {
+        "app_id": spec.metadata.identity.app_id,
+        "distribution": spec.metadata.identity.distribution,
+        "repository_url": spec.repository_url,
+        "distribution_path": str(spec.metadata.distribution_path),
+        "project_path": str(spec.metadata.project_path),
+        "payload_format": spec.payload_format,
+        "source_mode": spec.source_mode,
+        "version": spec.release_version or spec.metadata.version,
+        "commit": spec.release_commit
+        if spec.source_mode == "release"
+        else None,
+    }
+    source = files("apprc.distribution").joinpath("_frontend.py").read_bytes()
+    invocation = []
+    options = []
+    if embedded_payload is not None:
+        invocation.append("import base64\n")
+        encoded = base64.b64encode(embedded_payload).decode("ascii")
+        options.append(
+            f"embedded_payload=base64.b64decode({encoded!r}, validate=True)"
+        )
+    if developer:
+        invocation.append("import shutil\n")
+    if invocation:
+        invocation.append("\n")
+    invocation.append(
+        f"config = FrontendConfig(**json.loads({json.dumps(json.dumps(config, sort_keys=True))}))\n"
+    )
+    if developer and spec.source_mode == "checkout":
+        filename = (
+            "main-installer.pyz"
+            if spec.payload_format == "zipapp"
+            else "main-installer.py"
+        )
+        address = str(
+            spec.metadata.distribution_path
             / "artifacts"
             / "installer"
+            / filename
         )
-        main_fetcher = environment.get_template("main_fetcher.py.jinja").render(
-            repository_url=repository_url,
-            installer_path=str(
-                installer
-                / (
-                    "main-installer.pyz"
-                    if spec.payload_format == "zipapp"
-                    else "main-installer.py"
-                )
-            ),
-            payload_format=spec.payload_format,
+        options.append(
+            f"local_installer=Path(__file__).resolve().parent / {address!r}"
         )
-    if spec.source_mode in {"release", "main"} and not repository_url:
-        raise ValueError(
-            "Remote source bootstrap requires a GitHub repository URL."
+    if developer:
+        invocation.append(
+            "uv = os.environ.get('UV') or shutil.which('uv')\n"
+            "if uv is None:\n"
+            "    raise SystemExit('This Python entry requires uv; use the native installer when uv is unavailable.')\n"
         )
-    template_values = {
-        "zipapp": spec.payload_format == "zipapp",
-        "source_mode": spec.source_mode,
-        "repository_url": repository_url,
-        "release_fetcher": release_fetcher,
-        "main_fetcher": main_fetcher,
-        "has_repository": bool(repository_url),
-    }
-    shell = (
-        environment.get_template("bootstrap.sh.jinja")
-        .render(**template_values)
-        .encode()
+        options.append("uv_executable=Path(uv)")
+    suffix = ", " + ", ".join(options) if options else ""
+    invocation.append(f"return run_installer(config, sys.argv[1:]{suffix})\n")
+    entrypoint = (
+        "\n\ndef _main() -> int:\n"
+        + indent("".join(invocation), "    ")
+        + '\n\nif __name__ == "__main__":\n'
+        + "    raise SystemExit(_main())\n"
     )
-    powershell = (
-        environment.get_template("bootstrap.ps1.jinja")
-        .render(**template_values)
-        .encode()
-    )
-    bootstrap = (
-        _artifact(spec, f"{base}/bootstrap.sh", shell, executable=True),
-        _artifact(spec, f"{base}/bootstrap.ps1", powershell),
-    )
-    requirements: tuple[Artifact, ...] = ()
-    if spec.payload_format == "zipapp":
-        requirements = (
-            _artifact(
-                spec,
-                f"{base}/main-installer-requirements.txt",
-                ("\n".join(MANAGEMENT_REQUIREMENTS) + "\n").encode(),
-            ),
-        )
-    if spec.source_mode in {"release", "main"}:
-        app_shell = shell
-        app_cmd = (
-            environment.get_template("bootstrap.cmd.jinja")
-            .render(
-                powershell_b64=base64.b64encode(powershell).decode("ascii"),
-            )
-            .encode("ascii")
-        )
-        release_bootstrap = (_artifact(spec, "bootstrap.ps1", powershell),)
-    else:
-        windows_path = spec.metadata.distribution_path.as_posix().replace(
-            "%", "%%"
-        )
-        app_shell = (
-            f'#!/bin/sh\nset -eu\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
-            f'exec "$HERE/{_shell_double_quoted(spec.metadata.distribution_path.as_posix())}'
-            '/artifacts/installer/bootstrap.sh" "$@"\n'
-        ).encode()
-        app_cmd = (
-            '@echo off\r\nsetlocal\r\nset "HERE=%~dp0"\r\n'
-            'set "PSModulePath="\r\n'
-            "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
-            f'"%HERE%{windows_path}\\artifacts\\installer\\bootstrap.ps1" %*\r\n'
-            "exit /b %ERRORLEVEL%\r\n"
-        ).encode()
-        release_bootstrap = ()
     return (
-        *bootstrap,
-        *requirements,
-        *release_bootstrap,
-        _artifact(spec, "app-install.sh", app_shell, executable=True),
-        _artifact(spec, "app-install.cmd", app_cmd),
+        b"#!/usr/bin/env -S uv run --script\n"
+        b'# /// script\n# requires-python = ">=3.12"\n# dependencies = []\n# ///\n'
+        + source
+        + entrypoint.encode("utf-8")
     )
 
 
-def _wrappers(
-    spec: DistributionSpec, *, command: str, entry: str
-) -> tuple[Artifact, ...]:
-    """Generate native root wrappers that dispatch to the fixed saved installation."""
+def render_installer_dispatcher(
+    spec: DistributionSpec, *, embedded_payload: bytes | None = None
+) -> bytes:
+    """Render explicit native installer input; compilation remains a separate action.
+
+    :param spec: Portable application and default source identity.
+    :param embedded_payload: Optional verified original release envelope.
+    :return: Standalone Python source for the pinned native builder.
+    """
+    return _installer_dispatcher(spec, embedded_payload=embedded_payload)
+
+
+def render_python_installer(spec: DistributionSpec) -> Artifact:
+    """Render the Rust-free developer/remote Python installation entry.
+
+    :param spec: Source routing and actual repository-relative installer address.
+    :return: Executable Python frontend; it does not install or discover Python.
+    """
+    return _artifact(
+        spec,
+        "app-install.py",
+        _installer_dispatcher(spec, developer=True),
+        executable=True,
+    )
+
+
+def _uninstaller_wrappers(spec: DistributionSpec) -> tuple[Artifact, ...]:
+    """Generate root dispatch to the unchanged saved uninstaller."""
     app_id = spec.metadata.identity.app_id
-    saved = "launch.sh" if entry == "launch" else "uninstall.sh"
-    batch_saved = "launch.cmd" if entry == "launch" else "uninstall.cmd"
+    saved = "uninstall.sh"
+    batch_saved = "uninstall.cmd"
     shell = (
         "#!/bin/sh\nset -eu\n"
         "HOME=${HOME:?HOME is required to locate the installation}\n"
@@ -263,23 +258,41 @@ def _wrappers(
         "exit /b %ERRORLEVEL%\r\n"
     )
     return (
-        _artifact(spec, f"{command}.sh", shell.encode(), executable=True),
-        _artifact(spec, f"{command}.cmd", windows.encode()),
+        _artifact(spec, "app-uninstall.sh", shell.encode(), executable=True),
+        _artifact(spec, "app-uninstall.cmd", windows.encode()),
     )
 
 
 def render_launcher(spec: DistributionSpec) -> tuple[Artifact, ...]:
-    """Render root launch wrappers that dispatch to the adjacent saved launcher."""
-    return _wrappers(spec, command="app-launch", entry="launch")
+    """Render a Python developer launch entry using existing saved management."""
+    address = str(
+        spec.metadata.distribution_path
+        / "artifacts"
+        / "management"
+        / "management.py"
+    )
+    content = (
+        "#!/usr/bin/env python3\n"
+        '"""Launch through the canonical saved management program."""\n'
+        "import runpy\nimport sys\nfrom pathlib import Path\n"
+        f"program = Path(__file__).resolve().parent / {address!r}\n"
+        "sys.argv = [str(program), 'launch', *sys.argv[1:]]\n"
+        "runpy.run_path(str(program), run_name='__main__')\n"
+    ).encode("utf-8")
+    return (_artifact(spec, "app-launch.py", content, executable=True),)
 
 
 def render_uninstaller(spec: DistributionSpec) -> tuple[Artifact, ...]:
     """Render root removal wrappers that dispatch to the adjacent saved uninstaller."""
-    return _wrappers(spec, command="app-uninstall", entry="uninstall")
+    return _uninstaller_wrappers(spec)
 
 
 def generate_artifacts(
-    spec: DistributionSpec, payload: PayloadTree
+    spec: DistributionSpec,
+    payload: PayloadTree,
+    *,
+    installer_payload: bytes | None = None,
+    native_launcher: bytes | None = None,
 ) -> tuple[Artifact, ...]:
     """Compose all tracked installer, saved-support and root wrapper outputs.
 
@@ -287,10 +300,36 @@ def generate_artifacts(
     :param payload: Explicit application composition tree.
     :return: Complete artifact set with collision-checked destinations.
     """
-    main = build_main_installer(spec, payload)
-    support = render_saved_support(spec, payload)
+    main = build_main_installer(
+        spec, payload, installer_payload=installer_payload
+    )
+    support = render_saved_support(
+        spec, payload, native_launcher=native_launcher
+    )
     artifacts = (
-        *render_bootstraps(spec),
+        render_python_installer(spec),
+        *(
+            (
+                _artifact(
+                    spec,
+                    f"{spec.metadata.distribution_path}/artifacts/installer/main-installer-requirements.txt",
+                    ("\n".join(MANAGEMENT_REQUIREMENTS) + "\n").encode(),
+                ),
+            )
+            if spec.payload_format == "zipapp"
+            else ()
+        ),
+        *(
+            (
+                _artifact(
+                    spec,
+                    f"{spec.metadata.distribution_path}/artifacts/installer/installer-payload.zip",
+                    installer_payload,
+                ),
+            )
+            if installer_payload is not None
+            else ()
+        ),
         main,
         *support,
         *render_launcher(spec),
@@ -305,7 +344,10 @@ def generate_artifacts(
 
 
 def render_saved_support(
-    spec: DistributionSpec, payload: PayloadTree
+    spec: DistributionSpec,
+    payload: PayloadTree,
+    *,
+    native_launcher: bytes | None = None,
 ) -> tuple[Artifact, ...]:
     """Render grouped checkout support outputs and installable saved controllers."""
     from apprc.distribution.standalone import inspection_archive
@@ -370,11 +412,17 @@ def render_saved_support(
                 + "\n"
             ).encode(),
         ),
-        _artifact(
-            spec,
-            f"{base}/launcher/launch.sh",
-            _saved_frontend("sh", "launch", spec),
-            executable=True,
+        *(
+            (
+                _artifact(
+                    spec,
+                    f"{base}/launcher/launch",
+                    native_launcher,
+                    executable=True,
+                ),
+            )
+            if native_launcher is not None
+            else ()
         ),
         _artifact(
             spec,
@@ -408,12 +456,16 @@ def render_saved_support(
 def install_support_files(
     spec: DistributionSpec,
     payload: PayloadTree,
+    *,
+    native_launcher: bytes | None = None,
 ) -> dict[PurePosixPath, bytes]:
     """Flatten grouped generated support to exact installation-relative paths."""
     root = (
         PurePosixPath(spec.metadata.distribution_path.as_posix()) / "artifacts"
     )
-    artifacts = render_saved_support(spec, payload)
+    artifacts = render_saved_support(
+        spec, payload, native_launcher=native_launcher
+    )
     result = {}
     for artifact in artifacts:
         relative = artifact.destination.relative_to(root)
@@ -482,15 +534,24 @@ def _stdlib_worker() -> bytes:
 
 
 def build_main_installer(
-    spec: DistributionSpec, payload: PayloadTree
+    spec: DistributionSpec,
+    payload: PayloadTree,
+    *,
+    installer_payload: bytes | None = None,
 ) -> Artifact:
     """Build script or explicit zipapp from exactly one loader/runtime closure.
 
     :param spec: Portable generation and payload-format selection.
     :param payload: Repository-owned ordinary-Python composition.
+    :param installer_payload: Optional runtime ZIP excluded from other lifecycle entries.
     :return: Main installer output; zipapp dependencies are emitted separately.
     """
-    content = standalone_script(spec, payload, entry=payload.entry_module)
+    content = standalone_script(
+        spec,
+        payload,
+        entry=payload.entry_module,
+        installer_payload=installer_payload,
+    )
     filename = "main-installer.py"
     if spec.payload_format == "zipapp":
         content = _deterministic_zip((("__main__.py", content),))

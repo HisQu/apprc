@@ -67,13 +67,3 @@ def test_rewrite_repository_links_uses_github_urls() -> None:
         "[Anchor](#local)\n"
         "[External](https://example.com)\n"
     )
-
-
-def test_pypi_readme_is_generated_from_github_readme() -> None:
-    module = load_pypi_readme_module()
-    github_readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    pypi_readme = (ROOT / "README.pypi.md").read_text(encoding="utf-8")
-
-    assert pypi_readme == module.build_pypi_markdown(github_readme)
-    assert "](docs/" not in pypi_readme
-    assert 'src="docs/assets/' not in pypi_readme

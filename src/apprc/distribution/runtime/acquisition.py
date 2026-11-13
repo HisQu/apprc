@@ -11,15 +11,20 @@ import subprocess
 import tarfile
 import urllib.parse
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import IO
 from zipfile import ZipFile, is_zipfile
 
 from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import InstallationError, InstallationSource
-from apprc.distribution.models import DistributionSpec, relative_destination
+from apprc.distribution._frontend import github_repository_identity
+from apprc.distribution.models import (
+    DistributionSpec,
+    PreparedWheelBundle,
+    relative_destination,
+)
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import (
     _path_permissions_are_private,
@@ -38,6 +43,8 @@ class PreparedSource:
     archive: Path | None = None
     source_root: Path | None = None
     project_directory: Path | None = None
+    bundle: PreparedWheelBundle | None = None
+    support_files: Mapping[PurePosixPath, bytes] | None = None
 
 
 def _assert_private_staging(staging: Path) -> None:
@@ -67,27 +74,6 @@ def _validate_source(source: InstallationSource) -> None:
         and re.fullmatch(r"[0-9a-f]{64}", source.digest) is None
     ):
         raise InstallationError("Source digest must be SHA-256.")
-
-
-def _github_repository_identity(value: str) -> tuple[str, str] | None:
-    """Return a normalized owner/repository pair for a public GitHub URL."""
-    address = urllib.parse.urlsplit(value)
-    path = address.path.rstrip("/")
-    parts = path[1:].split("/") if path.startswith("/") else []
-    if (
-        address.scheme != "https"
-        or address.hostname != "github.com"
-        or address.username is not None
-        or address.password is not None
-        or address.query
-        or address.fragment
-        or len(parts) != 2
-    ):
-        return None
-    repository = parts[1].removesuffix(".git")
-    if not parts[0] or not repository:
-        return None
-    return parts[0].casefold(), repository.casefold()
 
 
 def _sha256_file(path: Path) -> str:
@@ -769,8 +755,8 @@ def parse_source_arguments(
         )
     if spec.repository_url is None:
         raise InstallationError("Remote-main source repository is missing.")
-    configured_repository = _github_repository_identity(spec.repository_url)
-    selected_repository = _github_repository_identity(transport["repository"])
+    configured_repository = github_repository_identity(spec.repository_url)
+    selected_repository = github_repository_identity(transport["repository"])
     if (
         transport["mode"] != "main"
         or configured_repository is None

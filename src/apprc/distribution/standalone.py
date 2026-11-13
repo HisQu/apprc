@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 from collections.abc import Iterable
@@ -9,6 +10,7 @@ from importlib.resources import files
 from pathlib import PurePosixPath
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
+from apprc.distribution._frontend import RUNTIME_PAYLOAD_FILENAME
 from apprc.distribution.models import DistributionSpec, PayloadTree
 from apprc.user_files.app_home.locations import assert_no_links
 
@@ -32,12 +34,15 @@ STANDALONE_MODULES = (
     "user_files/installation/migration.py",
     "user_files/purge.py",
     "distribution/models.py",
+    "distribution/_frontend.py",
     "distribution/runtime/__init__.py",
     "distribution/runtime/_handoff.py",
     "distribution/runtime/installed_probe.py",
     "distribution/runtime/backend.py",
     "distribution/runtime/probe.py",
     "distribution/runtime/acquisition.py",
+    "distribution/runtime/bundles.py",
+    "distribution/runtime/payloads.py",
     "distribution/runtime/saved_management.py",
     "distribution/runtime/installation.py",
     "distribution/runtime/controllers.py",
@@ -69,6 +74,7 @@ def bundle_config(spec: DistributionSpec) -> bytes:
         "commands": identity.commands,
         "version": spec.metadata.version,
         "python_requirement": spec.metadata.python_requirement,
+        "runtime_python": spec.metadata.runtime_python,
         "project_path": str(spec.metadata.project_path),
         "distribution_path": str(spec.metadata.distribution_path),
         "launcher_command": spec.metadata.launcher_command,
@@ -82,6 +88,7 @@ def bundle_config(spec: DistributionSpec) -> bytes:
         "workspaces": capabilities.workspaces,
         "workspace_registry": capabilities.workspace_registry,
         "source_mode": spec.source_mode,
+        "payload_format": spec.payload_format,
         "repository_url": spec.repository_url,
         "release_version": spec.release_version,
         "release_commit": spec.release_commit,
@@ -114,11 +121,17 @@ def _deterministic_zip(entries: Iterable[tuple[str, bytes]]) -> bytes:
     return buffer.getvalue()
 
 
-def payload_archive(spec: DistributionSpec, payload: PayloadTree) -> bytes:
+def payload_archive(
+    spec: DistributionSpec,
+    payload: PayloadTree,
+    *,
+    installer_payload: bytes | None = None,
+) -> bytes:
     """Build a deterministic ZIP of complete modules and explicitly owned resources.
 
     :param spec: Portable generation inputs.
     :param payload: Exact repository-owned composition tree.
+    :param installer_payload: Runtime ZIP whose checksum only is embedded by the installer.
     :return: Embedded archive; no imports from the author application are executed.
     """
     entries: dict[str, bytes] = {}
@@ -137,6 +150,10 @@ def payload_archive(spec: DistributionSpec, payload: PayloadTree) -> bytes:
                 f"Payload collides with shared runtime: {relative}."
             )
         entries[destination] = target.read_bytes()
+    if installer_payload is not None:
+        entries[
+            f"apprc/distribution/runtime/{RUNTIME_PAYLOAD_FILENAME}.sha256"
+        ] = hashlib.sha256(installer_payload).hexdigest().encode("ascii")
     entries["apprc/distribution/runtime/bundle.json"] = bundle_config(spec)
     for address in tuple(entries):
         parent = PurePosixPath(address).parent

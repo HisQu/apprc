@@ -33,11 +33,10 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.33.0 - 2026-11-11](#0330---2026-11-11)
-4. [0.32.0 - 2026-11-10](#0320---2026-11-10)
-5. [0.29.0 - 2026-10-26](#0290---2026-10-26)
-6. [0.28.0 - 2026-10-02](#0280---2026-10-02)
-7. [Older releases](CHANGELOG-ARCHIVE.md)
+3. [0.34.0 - 2026-11-13](#0340---2026-11-13)
+4. [0.33.0 - 2026-11-11](#0330---2026-11-11)
+5. [0.32.0 - 2026-11-10](#0320---2026-11-10)
+6. [Older releases](CHANGELOG-ARCHIVE.md)
 
 <br>
 
@@ -56,6 +55,63 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.34.0 - 2026-11-13
+
+<br>
+
+### 💥 Breaking changes
+
+- Removed `render_bootstraps()` and the generated shell/PowerShell fetcher
+  templates and fetcher artifacts. Affected: application authors calling that
+  API or committing generated root installers and launchers. Migration: generate
+  `app-install.py` and `app-launch.py` with the Rust-free artifact APIs and invoke
+  them with `uv run --script`; use the optional native producer only when native
+  release executables are required. The generated root `launch.sh` is no longer
+  produced; Windows `launch.cmd` and `launch.ps1` remain.
+
+### ➕ Added
+
+- Added verified prepared-wheel bundle inputs to managed installation, using
+  real uv overrides, exact runtime constraints and the complete locked graph.
+  Wheel bytes and metadata are revalidated at the existing mutation boundaries;
+  existing `runtime_overrides` retain their `--with` meaning.
+- Added explicit pinned PyApp frontend compilation for Linux and Windows console
+  targets, with authenticated dispatcher packaging and build reports. Ordinary
+  Python artifact generation remains independent of Rust.
+- Added the `runtime-python` distribution setting to select a managed CPython
+  minor consistently for native wheel builds and uv installation, independently
+  of the package compatibility range and PyApp's bootstrap interpreter.
+- Native POSIX launch dispatch preserves the application process identity, so
+  terminating the launcher stops the application instead of leaving it running.
 
 <br>
 
@@ -83,16 +139,11 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-### ⚠️ Deprecated
-
-<br>
-
-### 🗑️ Removed
-
-<br>
-
 ### 🔨 Fixed
 
+- Kept saved repair usable after an interrupted package checkpoint whose current
+  snapshot has no published support inventory, while retaining digest checks
+  that reject unknown or modified repair installers.
 - Reset inherited PowerShell module paths in checkout and standalone Windows
   CMD installers so PowerShell 7 callers cannot select incompatible built-in
   modules in Windows PowerShell. Caller environments and persistent execution
@@ -101,10 +152,6 @@ All notable changes to `AppRC` will be documented in this file.
   closed without truncating their pointer-sized values.
 - Selected all workspace projects in complete-development and CI sync commands,
   including the GUI from the locked workspace rather than a second install.
-
-<br>
-
-### 🔒 Security
 
 <br>
 
@@ -332,78 +379,5 @@ Includes the changes previously listed under unpublished 0.31.0 and Unreleased.
 
 
 ---
-
-<br>
-
-<!-- ======================================================== -->
-
-# 0.29.0 - 2026-10-26
-
-<br>
-
-### 💥 Breaking changes
-
-- Breaking: Removed the `config purge` CLI command. Applications and scripts
-  using it must explicitly mount `rc.cli.mount_appdata_cli(app, MyRC)` and
-  invoke `appdata clean` instead; no alias remains. Add `paths` and `clean`
-  action prefixes to the application's existing runtime-independent policy.
-  Use each action's `--apprc-dir PATH` for explicit cleanup targeting rather
-  than root env-file or storage selectors. `config paths` remains configuration
-  diagnostics; manager-level `plan_purge()` and `apply_purge(plan)` are unchanged.
-
-- Breaking: Renamed the durable repository backlog from `TODO.md` to
-  `BACKLOG.md`. Contributors and tooling using the old path must update their
-  links; existing entries are preserved. Reserve `TODO.md` for active-pass
-  checklists beside `PLAN.md`.
-
-<br>
-
-### ➕ Added
-
-- Added an opt-in application-data CLI with `appdata paths`, a structured
-  `appdata paths --json` cleanup inventory, and previewed, confirmed
-  `appdata clean` removal. It uses the existing managed-file and internal-storage
-  safety boundary without resolving application settings, retains external
-  payloads and unrelated files, and is demonstrated by all executable examples.
-
-<br>
-
-### 🔨 Fixed
-
-- Deferred release dependency locking until all three distribution versions are
-  regenerated, so minor releases do not resolve mismatched workspace metadata.
-
-<br>
-
-
----
-
-<br>
-
-<!-- ======================================================== -->
-
-# 0.28.0 - 2026-10-02
-
-<br>
-
-### ➕ Added
-
-- Added `AppRC.import_dependency_config()` so a parent can explicitly map a
-  dependency's leaf config section to parent-owned fields and build it from the
-  parent's `ResolvedConfig`. Parent fields own mapped defaults, validation,
-  secrets, and provenance; aliases are supported, and one dependency section
-  can have separate bindings in different parent namespaces. Dependency
-  environment, selectors, registries, user files, and storage files are
-  excluded. A storage-required section uses the parent's selected storage
-  after the parent enables and selects storage. Dependency packaged defaults
-  remain opt-in. Mapped dependency fields must be dataclass fields with
-  `init=True` so the parent can supply their values during construction.
-
-<br>
-
-### 💔 Changed
-
-- Clarified secret-directory permission prompts and repair guidance to name
-  this user, SYSTEM, and Administrators as the allowed Windows principals.
 
 <br>

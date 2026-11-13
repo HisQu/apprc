@@ -15,13 +15,11 @@ from dataclasses import replace
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.request import Request
 from uuid import uuid4
 from zipfile import ZipFile, ZipInfo
 
 import pytest
 
-from apprc.distribution import write_artifacts
 from apprc.definition.installation import (
     InstallationError,
     InstallationIdentity,
@@ -34,9 +32,7 @@ from apprc.distribution.models import (
     ProjectMetadata,
 )
 from apprc.distribution.rendering import (
-    _environment,
     generate_artifacts,
-    render_bootstraps,
 )
 from apprc.distribution.runtime import controllers
 from apprc.distribution.runtime.acquisition import (
@@ -63,331 +59,92 @@ from tests.test_distribution_support_recovery import (
 )
 
 
-@pytest.mark.skipif(
-    os.name != "nt", reason="Requires native Windows PowerShell."
-)
-def test_remote_windows_bootstrap_acquires_manifest_and_runs_alone(
+def test_dirty_checkout_python_entry_runs_from_outside_checkout(
     tmp_path: Path,
 ) -> None:
-    from apprc.distribution.rendering import standalone_script
+    from apprc.distribution.rendering import (
+        render_python_installer,
+        standalone_script,
+    )
 
-    project = tmp_path / "remote % ! café"
+    project = tmp_path / "dirty checkout"
     project.mkdir()
-    package_bytes = (
-        b"fixture source archive acquired through the release transport"
-    )
-    wheel_bytes = b"fixture wheel acquired through the release transport"
     identity = InstallationIdentity(
-        "remote-app", "remote-app", "remote_app", None, ("remote-app",)
+        "checkout-app", "checkout-app", "checkout_app", None, ("checkout-app",)
     )
-    spec = DistributionSpec(
-        ProjectMetadata(project, identity, "1.2.3"),
-        source_mode="release",
-        repository_url="https://github.com/example/remote-app",
-        release_version="1.2.3",
-        release_commit="a" * 40,
-        release_asset="remote-app-1.2.3.tar.gz",
-        release_digest=hashlib.sha256(package_bytes).hexdigest(),
-        runtime_requirements=("platformdirs==4.10.0",),
-    )
-    payload_root = project / "payload"
-    package = payload_root / "app_lifecycle"
-    package.mkdir(parents=True)
+    spec = DistributionSpec(ProjectMetadata(project, identity, "1.2.3"))
+    package = project / "app_lifecycle"
+    package.mkdir()
     (package / "__init__.py").write_text(
-        '"""Remote release consumer."""\n', encoding="utf-8"
+        '"""Checkout fixture."""\n', encoding="utf-8"
     )
     (package / "install.py").write_text(
-        "import json\nimport os\nimport sys\nfrom pathlib import Path\n"
+        "import json, os, sys\nfrom pathlib import Path\n"
         "def main():\n"
-        '    Path(os.environ["APPRC_NATIVE_MARKER"]).write_text(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}, ensure_ascii=False), encoding="utf-8")\n'
-        '    if "--exit-37" in sys.argv: raise SystemExit(37)\n'
-        'if __name__ == "__main__": main()\n',
+        "    value = {'argv': sys.argv[1:], 'cwd': os.getcwd(), "
+        "'dirty': Path(os.environ['APPRC_CHECKOUT_ROOT'], 'dirty.txt').read_text()}\n"
+        "    Path(os.environ['APPRC_NATIVE_MARKER']).write_text(json.dumps(value), encoding='utf-8')\n"
+        "    if '--exit-37' in sys.argv: raise SystemExit(37)\n"
+        "if __name__ == '__main__': main()\n",
         encoding="utf-8",
     )
     (package / "uninstall.py").write_text(
-        "import os\nfrom pathlib import Path\n"
-        "def main(): Path(os.environ['APPRC_NATIVE_MARKER']).unlink(missing_ok=True)\n"
-        'if __name__ == "__main__": main()\n',
+        "def main(): return 0\nif __name__ == '__main__': main()\n",
         encoding="utf-8",
     )
+    (project / "pyproject.toml").write_text(
+        "[build-system]\nrequires = ['setuptools>=80']\n"
+        "build-backend = 'setuptools.build_meta'\n"
+        "[project]\nname = 'checkout-app'\nversion = '1.2.3'\n"
+        "[tool.setuptools.packages.find]\ninclude = ['app_lifecycle*']\n",
+        encoding="utf-8",
+    )
+    dirty_content = "modified source retained from the checkout"
+    (project / "dirty.txt").write_text(dirty_content, encoding="utf-8")
     payload = PayloadTree(
-        payload_root,
+        project,
         tuple(
             PurePosixPath("app_lifecycle") / name
             for name in ("__init__.py", "install.py", "uninstall.py")
         ),
     )
-    installer = standalone_script(spec, payload, entry=payload.entry_module)
-    artifacts = {
-        item.destination.name: item.content for item in render_bootstraps(spec)
-    }
-    files = {
-        "main-installer.py": installer,
-        "remote-app-1.2.3.tar.gz": package_bytes,
-        "remote-app-1.2.3-py3-none-any.whl": wheel_bytes,
-        "app-install.sh": artifacts["app-install.sh"],
-        "app-install.cmd": artifacts["app-install.cmd"],
-        "bootstrap.ps1": artifacts["bootstrap.ps1"],
-    }
-    manifest = {
-        "schema_version": 1,
-        "app_id": identity.app_id,
-        "distribution": identity.distribution,
-        "version": "1.2.3",
-        "commit": "a" * 40,
-        "payload_format": "script",
-        "assets": [
-            {
-                "filename": filename,
-                "size": len(content),
-                "sha256": hashlib.sha256(content).hexdigest(),
-            }
-            for filename, content in files.items()
-        ],
-    }
-    manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
-    release = {
-        "draft": False,
-        "tag_name": "v1.2.3",
-        "assets": [
-            {
-                "name": filename,
-                "size": len(content),
-                "browser_download_url": (
-                    "https://github.com/example/remote-app/releases/download/"
-                    f"v1.2.3/{filename}"
-                ),
-            }
-            for filename, content in (
-                *files.items(),
-                ("release-manifest.json", manifest_bytes),
-            )
-        ],
-    }
-    api_url = (
-        "https://api.github.com/repos/example/remote-app/releases/tags/v1.2.3"
+    artifact_directory = (
+        project / spec.metadata.distribution_path / "artifacts" / "installer"
     )
-    manifest_url = (
-        "https://github.com/example/remote-app/releases/download/"
-        "v1.2.3/release-manifest.json"
+    artifact_directory.mkdir(parents=True)
+    (artifact_directory / "main-installer.py").write_bytes(
+        standalone_script(spec, payload, entry=payload.entry_module)
     )
-    responses = {
-        api_url: json.dumps(release).encode(),
-        **{
-            "https://github.com/example/remote-app/releases/download/"
-            f"v1.2.3/{filename}": content
-            for filename, content in files.items()
-        },
-        manifest_url: manifest_bytes,
-    }
-    transport_root = tmp_path / "transport fixture"
-    transport_root.mkdir()
-    for url, content in responses.items():
-        (transport_root / hashlib.sha256(url.encode()).hexdigest()).write_bytes(
-            content
-        )
-    response_path = transport_root / "responses.json"
-    response_path.write_text(
-        json.dumps(
-            {
-                url: str(
-                    transport_root / hashlib.sha256(url.encode()).hexdigest()
-                )
-                for url in responses
-            }
-        ),
-        encoding="utf-8",
-    )
-    (transport_root / "sitecustomize.py").write_text(
-        "import io, json, os, urllib.error, urllib.request\n"
-        "from pathlib import Path\n"
-        "responses = json.loads(Path(os.environ['APPRC_FIXTURE_RESPONSES']).read_text())\n"
-        "def _urlopen(request, timeout=60):\n"
-        "    url = request.full_url if hasattr(request, 'full_url') else request\n"
-        "    try: return io.BytesIO(Path(responses[url]).read_bytes())\n"
-        "    except KeyError as error: raise urllib.error.URLError('unmatched fixture URL') from error\n"
-        "urllib.request.urlopen = _urlopen\n",
-        encoding="utf-8",
-    )
-    helper = project / "downloaded bootstrap.ps1"
-    helper.write_bytes(artifacts["bootstrap.ps1"])
-    command_root = tmp_path / "command only % ! café"
-    command_root.mkdir()
-    command = command_root / "standalone app-install.cmd"
-    command.write_bytes(artifacts["app-install.cmd"])
-    temporary = tmp_path / "installer temp % ! café"
-    temporary.mkdir()
-    unowned_file = temporary / "caller-owned.txt"
-    unowned_file.write_text("preserve caller data", encoding="utf-8")
-    uv = shutil.which("uv")
-    powershell = shutil.which("powershell.exe")
-    assert uv is not None and powershell is not None
-    environment = dict(
-        os.environ,
-        APPRC_FIXTURE_RESPONSES=str(response_path),
-        PYTHONPATH=os.pathsep.join(
-            filter(
-                None, (str(transport_root), os.environ.get("PYTHONPATH", ""))
-            )
-        ),
-        TEMP=str(temporary),
-        TMP=str(temporary),
-        UV=str(uv),
-    )
-    arguments = ("with space", "literal%20", "literal!bang", "snowman ☃")
+    app_install = project / "app-install.py"
+    app_install.write_bytes(render_python_installer(spec).content)
+    marker = tmp_path / "checkout result.json"
     caller_directory = tmp_path / "unrelated caller directory"
     caller_directory.mkdir()
-
-    def run_cmd_bootstrap(
-        entry: Path, *bootstrap_arguments: str
-    ) -> subprocess.CompletedProcess[str]:
-        # > /s strips one outer quote pair; pass CMD's command line intact.
-        command_line = subprocess.list2cmdline(
-            [str(entry), *bootstrap_arguments]
+    uv = shutil.which("uv")
+    assert uv is not None
+    arguments = ("literal%20", "snowman ☃")
+    for uv_environment in ({"UV": uv}, {}):
+        environment = dict(
+            os.environ,
+            APPRC_NATIVE_MARKER=str(marker),
+            APPRC_CHECKOUT_ROOT=str(project),
         )
-        cmd = os.environ.get("COMSPEC", "cmd.exe")
-        return subprocess.run(
-            f'"{cmd}" /d /s /c "{command_line}"',
+        environment.pop("UV", None)
+        environment.update(uv_environment)
+        result = subprocess.run(
+            [sys.executable, str(app_install), "--", *arguments, "--exit-37"],
             env=environment,
             cwd=caller_directory,
-            text=True,
-            encoding="oem",
-            capture_output=True,
             check=False,
+            text=True,
+            capture_output=True,
             timeout=180,
         )
-
-    def assert_payload_run(
-        result: subprocess.CompletedProcess[str],
-        marker: Path,
-        *,
-        exit_code: int,
-        suffix: tuple[str, ...],
-    ) -> None:
-        assert result.returncode == exit_code, result.stdout + result.stderr
-        value = json.loads(marker.read_text(encoding="utf-8"))
-        assert value["argv"][-len(suffix) :] == list(suffix)
-        assert value["cwd"] == str(caller_directory)
-        marker.unlink()
-
-    marker = tmp_path / "PowerShell file consumer"
-    environment["APPRC_NATIVE_MARKER"] = str(marker)
-    by_file = subprocess.run(
-        [
-            powershell,
-            "-NoProfile",
-            "-File",
-            str(helper),
-            "--version",
-            "1.2.3",
-            "--",
-            *arguments,
-        ],
-        env=environment,
-        cwd=caller_directory,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=180,
-    )
-    assert_payload_run(by_file, marker, exit_code=0, suffix=("--", *arguments))
-
-    environment["APPRC_NATIVE_MARKER"] = str(marker)
-    environment["APPRC_POWERSHELL_ARGS"] = json.dumps(
-        ["--version", "1.2.3", "--", *arguments, "--exit-37"]
-    )
-    scriptblock = subprocess.run(
-        [
-            powershell,
-            "-NoProfile",
-            "-Command",
-            "$argv = ConvertFrom-Json $env:APPRC_POWERSHELL_ARGS; "
-            "& ([ScriptBlock]::Create([IO.File]::ReadAllText($env:APPRC_HELPER_PATH))) @argv",
-        ],
-        env=dict(environment, APPRC_HELPER_PATH=str(helper)),
-        cwd=caller_directory,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=180,
-    )
-    assert_payload_run(
-        scriptblock,
-        marker,
-        exit_code=37,
-        suffix=("--", *arguments, "--exit-37"),
-    )
-
-    environment.pop("APPRC_POWERSHELL_ARGS")
-    # > Model an incompatible built-in module inherited from another host.
-    inherited_modules = tmp_path / "PowerShell modules from another host"
-    security_module = inherited_modules / "Microsoft.PowerShell.Security"
-    security_module.mkdir(parents=True)
-    # > A loadable manifest ensures autoload selects the incompatible export.
-    (security_module / "Microsoft.PowerShell.Security.psd1").write_text(
-        "@{\nModuleVersion = '99.0.0'\nPowerShellVersion = '5.1'\n"
-        "RootModule = 'Microsoft.PowerShell.Security.psm1'\n"
-        "FunctionsToExport = @('Get-ExecutionPolicy')\n}\n",
-        encoding="utf-8",
-    )
-    (security_module / "Microsoft.PowerShell.Security.psm1").write_text(
-        "function Get-ExecutionPolicy { throw 'Incompatible module selected' }\n",
-        encoding="utf-8",
-    )
-    environment["PSMODULEPATH"] = str(inherited_modules)
-    environment["APPRC_NATIVE_MARKER"] = str(marker)
-    standalone = run_cmd_bootstrap(
-        command, "--version", "1.2.3", "--", *arguments, "--exit-37"
-    )
-    assert_payload_run(
-        standalone,
-        marker,
-        exit_code=37,
-        suffix=("--", *arguments, "--exit-37"),
-    )
-    # > AppRC removes its own helpers, not uv's retained locks or caller data.
-    assert not tuple(temporary.glob("apprc-*"))
-    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
-
-    checkout_spec = replace(spec, source_mode="checkout")
-    write_artifacts(render_bootstraps(checkout_spec))
-    checkout_installer = (
-        project
-        / checkout_spec.metadata.distribution_path
-        / "artifacts"
-        / "installer"
-        / "main-installer.py"
-    )
-    checkout_installer.write_bytes(
-        standalone_script(checkout_spec, payload, entry=payload.entry_module)
-    )
-    checkout = run_cmd_bootstrap(
-        project / "app-install.cmd", "--", *arguments, "--exit-37"
-    )
-    assert_payload_run(
-        checkout,
-        marker,
-        exit_code=37,
-        suffix=("--", *arguments, "--exit-37"),
-    )
-    assert not tuple(temporary.glob("apprc-*"))
-    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
-
-    mismatched_manifest = dict(manifest, version="9.9.9")
-    bad_manifest = json.dumps(
-        mismatched_manifest, separators=(",", ":")
-    ).encode()
-    (
-        transport_root / hashlib.sha256(manifest_url.encode()).hexdigest()
-    ).write_bytes(bad_manifest)
-    environment["APPRC_NATIVE_MARKER"] = str(marker)
-    rejected = run_cmd_bootstrap(
-        command, "--version", "1.2.3", "--", *arguments
-    )
-    assert rejected.returncode != 0
-    assert not marker.exists()
-    assert not tuple(temporary.glob("apprc-*"))
-    assert unowned_file.read_text(encoding="utf-8") == "preserve caller data"
+        assert result.returncode == 37, result.stdout + result.stderr
+        observed = json.loads(marker.read_text(encoding="utf-8"))
+        assert observed["dirty"] == dirty_content
+        assert observed["cwd"] == str(caller_directory)
+        assert observed["argv"][-4:] == ["--", *arguments, "--exit-37"]
 
 
 def test_release_asset_digest_and_runtime_constraints_are_captured(
@@ -624,19 +381,6 @@ def test_distribution_modes_preserve_exact_source_identity(
         main.requirement
         == f"git+https://github.com/example/app.git@{'a' * 40}#subdirectory=workspace%20root"
     )
-    remote_artifacts = {
-        item.destination: item.content for item in render_bootstraps(main_spec)
-    }
-    installer_directory = metadata.distribution_path / "artifacts" / "installer"
-    assert (
-        remote_artifacts[PurePosixPath("app-install.sh")]
-        == remote_artifacts[installer_directory / "bootstrap.sh"]
-    )
-    assert remote_artifacts[PurePosixPath("app-install.cmd")]
-    assert (
-        remote_artifacts[PurePosixPath("bootstrap.ps1")]
-        == remote_artifacts[installer_directory / "bootstrap.ps1"]
-    )
 
     release = installation_source(
         DistributionSpec(
@@ -664,77 +408,38 @@ def test_distribution_modes_preserve_exact_source_identity(
     assert prepared_index.requirement == indexed.requirement
 
 
-@pytest.mark.skipif(
-    not Path("/bin/sh").is_file(), reason="POSIX shell is unavailable"
-)
-def test_rendered_shell_bootstrap_rejects_invalid_selectors_before_uv(
+def test_frontend_rejects_invalid_selectors_before_authored_setup(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    project = tmp_path / "checkout"
-    metadata = ProjectMetadata(
-        project,
-        InstallationIdentity(
-            "bootstrap-app",
-            "bootstrap-app",
-            "bootstrap_app",
-            None,
-            ("bootstrap-app",),
-        ),
-        "1.2.3",
-    )
-    spec = DistributionSpec(metadata)
-    bootstrap_path = (
-        metadata.distribution_path / "artifacts" / "installer" / "bootstrap.sh"
-    )
-    bootstrap = next(
-        artifact.content
-        for artifact in render_bootstraps(spec)
-        if artifact.destination == bootstrap_path
-    )
-    script = tmp_path / "bootstrap.sh"
-    script.write_bytes(bootstrap)
-    environment = dict(os.environ)
-    environment.pop("UV", None)
+    from apprc.distribution import _frontend
 
-    missing_version = subprocess.run(
-        ["/bin/sh", str(script), "--version"],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=environment,
+    config = _frontend.FrontendConfig(
+        app_id="bootstrap-app",
+        distribution="bootstrap-app",
+        repository_url=None,
+        distribution_path="src/bootstrap_app",
+        project_path=".",
+        payload_format="script",
+        source_mode="checkout",
+        version="1.2.3",
+        commit=None,
     )
-    assert missing_version.returncode == 2
-    assert "--version requires an exact X.Y.Z version" in missing_version.stderr
-
-    obsolete_alias = subprocess.run(
-        ["/bin/sh", str(script), "--main-ref", "main"],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=environment,
+    monkeypatch.setattr(
+        _frontend,
+        "_execute",
+        lambda *args, **kwargs: pytest.fail("authored setup must not run"),
     )
-    assert obsolete_alias.returncode == 2
-    assert "not a supported public selector" in obsolete_alias.stderr
-
-    local_missing = subprocess.run(
-        ["/bin/sh", str(script)],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=environment,
+    installer = tmp_path / "missing-main-installer.py"
+    assert _frontend.run_installer(config, ("--version",)) == 2
+    assert _frontend.run_installer(config, ("--main-ref", "main")) == 2
+    assert _frontend.run_installer(config, ()) == 2
+    assert (
+        _frontend.run_installer(
+            config, ("--github-client", "gh"), local_installer=installer
+        )
+        == 2
     )
-    assert local_missing.returncode == 2
-    assert "just make-artifacts" in local_missing.stderr
-
-    local_client = subprocess.run(
-        ["/bin/sh", str(script), "--github-client", "gh"],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=environment,
-    )
-    assert local_client.returncode == 2
-    assert "just make-artifacts" in local_client.stderr
 
 
 def test_main_source_arguments_bind_the_resolved_commit_and_preserve_app_argv(
@@ -840,165 +545,86 @@ def test_main_source_arguments_bind_the_resolved_commit_and_preserve_app_argv(
         )
 
 
-def test_remote_main_bootstrap_resolves_one_ref_and_transports_its_commit(
+def test_remote_main_frontend_resolves_one_commit_for_selected_inputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    source_spec = DistributionSpec(
-        ProjectMetadata(
-            tmp_path,
-            InstallationIdentity(
-                "main-app", "main-app", "main_app", None, ("main-app",)
-            ),
-            "1.2.3",
-            distribution_path=PurePosixPath("src/main café_distr"),
-        ),
-        source_mode="checkout",
+    from apprc.distribution import _frontend
+
+    config = _frontend.FrontendConfig(
+        app_id="main-app",
+        distribution="main-app",
         repository_url="https://github.com/example/main-app.git",
+        distribution_path="src/main café_distr",
+        project_path=".",
+        payload_format="script",
+        source_mode="checkout",
+        version="1.2.3",
+        commit=None,
     )
-    bootstrap_path = (
-        source_spec.metadata.distribution_path
-        / "artifacts"
-        / "installer"
-        / "bootstrap.sh"
-    )
-    bootstrap = next(
-        artifact.content
-        for artifact in render_bootstraps(source_spec)
-        if artifact.destination == bootstrap_path
-    )
-    marker = b"""cat >"$FETCHER" <<'APPRC_MAIN_BOOTSTRAP'\n"""
-    source = (
-        bootstrap.split(marker, 1)[1]
-        .split(b"\nAPPRC_MAIN_BOOTSTRAP", 1)[0]
-        .decode("utf-8")
-    )
-    namespace: dict[str, Any] = {"__name__": "main_bootstrap_test"}
-    exec(compile(source, "main_fetcher.py", "exec"), namespace)
     commit = "c" * 40
-    api_url = "https://api.github.com/repos/example/main-app/commits/main"
-    payload_url = (
-        f"https://raw.githubusercontent.com/example/main-app/{commit}/"
-        "src/main%20caf%C3%A9_distr/artifacts/installer/main-installer.py"
-    )
-    package_url = (
-        f"https://api.github.com/repos/example/main-app/tarball/{commit}"
-    )
-    requests: list[str] = []
-
-    class Response:
-        def __init__(self, content: bytes) -> None:
-            self.remaining = content
-
-        def __enter__(self) -> Response:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            return None
-
-        def read(self, limit: int = -1) -> bytes:
-            size = len(self.remaining) if limit < 0 else limit
-            chunk, self.remaining = self.remaining[:size], self.remaining[size:]
-            return chunk
-
-    def urlopen(request: Request, timeout: float) -> Response:
-        assert timeout == 60
-        requests.append(request.full_url)
-        if request.full_url == api_url:
-            return Response(json.dumps({"sha": commit}).encode())
-        if request.full_url == payload_url:
-            return Response(b"installer payload from selected commit")
-        if request.full_url == package_url:
-            archive_bytes = BytesIO()
-            with tarfile.open(fileobj=archive_bytes, mode="w:gz") as archive:
-                content = (
-                    "[build-system]\nrequires=['setuptools']\n"
-                    "build-backend='setuptools.build_meta'\n"
-                    "[project]\nname='main-app'\nversion='1.0.0'\n"
-                ).encode()
-                member = tarfile.TarInfo("main-app/pyproject.toml")
-                member.size = len(content)
-                archive.addfile(member, BytesIO(content))
-            return Response(archive_bytes.getvalue())
-        raise AssertionError(
-            f"Unexpected remote-main request: {request.full_url}"
-        )
-
-    uv = tmp_path / "uv"
-    uv.write_bytes(b"uv fixture")
-    commands: list[tuple[list[str], dict[str, str]]] = []
-
-    class Result:
-        returncode = 0
-
-    def run(command: list[str], *, env: dict[str, str], check: bool) -> Result:
-        assert check is False
-        commands.append((command, env))
-        transport_start = command.index("--source-mode")
-        selection, remaining = parse_source_arguments(
-            source_spec, command[transport_start:]
-        )
-        assert selection.github_client is None
-        assert remaining == ("--repair", "literal%20")
-        prepared = selection.prepare(tmp_path / "prepared")
-        assert prepared.source.requirement == (
-            f"git+https://github.com/example/main-app.git@{commit}"
-        )
-        assert selection.package_path is not None
-        package_path = selection.package_path
-        assert (
-            prepared.digest
-            == hashlib.sha256(package_path.read_bytes()).hexdigest()
-        )
-        return Result()
-
-    monkeypatch.setattr(namespace["urllib"].request, "urlopen", urlopen)
-    monkeypatch.setattr(namespace["subprocess"], "run", run)
-    monkeypatch.setenv("APPRC_UV_PATH", str(uv))
+    reads: list[str] = []
+    downloads: list[str] = []
+    executions: list[tuple[Path, list[str], list[str]]] = []
     monkeypatch.setattr(
-        namespace["sys"],
-        "argv",
-        ["main_fetcher.py", "--main", "--repair", "literal%20"],
+        _frontend,
+        "_read_url",
+        lambda address, *, client, limit=_frontend._METADATA_LIMIT: (
+            reads.append(address) or json.dumps({"sha": commit}).encode()
+        ),
     )
-    assert namespace["main"]() == 0
-    assert requests == [api_url, payload_url, package_url]
-    command, environment = commands[-1]
-    assert command[command.index("--source-mode") + 1] == "main"
+
+    def download(
+        address: str, destination: Path, client: str, **kwargs: Any
+    ) -> None:
+        downloads.append(address)
+        destination.write_bytes(b"selected source bytes")
+
+    monkeypatch.setattr(_frontend, "_download", download)
+    monkeypatch.setattr(
+        _frontend,
+        "_execute",
+        lambda payload, payload_format, transport, forwarded, **kwargs: (
+            executions.append((payload, list(transport), list(forwarded))) or 7
+        ),
+    )
+
     assert (
-        command[command.index("--source-repository") + 1]
-        == "https://github.com/example/main-app"
+        _frontend.run_installer(config, ("--main", "--repair", "literal%20"))
+        == 7
     )
-    assert command[command.index("--source-commit") + 1] == commit
-    assert command[command.index("--source-package") + 1].endswith(
-        "source.tar.gz"
-    )
-    assert command[-2:] == ["--repair", "literal%20"]
-    assert environment["APPRC_UV_PATH"] == str(uv)
-
-    gh_commands: list[list[str]] = []
-
-    def run_gh_api(command: list[str], *, check: bool, stdout: Any) -> Result:
-        assert check
-        gh_commands.append(command)
-        stdout.write(b"authenticated installer payload")
-        return Result()
-
-    monkeypatch.setattr(namespace["subprocess"], "run", run_gh_api)
-    authenticated_payload = tmp_path / "authenticated-main-installer.py"
-    namespace["_download"](payload_url, authenticated_payload, "gh")
-    assert (
-        authenticated_payload.read_bytes() == b"authenticated installer payload"
-    )
-    assert gh_commands == [
-        [
-            "gh",
-            "api",
-            "repos/example/main-app/contents/src/main%20caf%C3%A9_distr/artifacts/installer/main-installer.py?ref="
-            + commit,
-            "-H",
-            "Accept: application/vnd.github.raw",
-        ]
+    assert reads == [
+        "https://api.github.com/repos/example/main-app/commits/main"
     ]
+    assert len(downloads) == 2
+    assert all(
+        f"/{commit}/" in address or address.endswith(f"/{commit}")
+        for address in downloads
+    )
+    assert (
+        executions[0][1][executions[0][1].index("--source-commit") + 1]
+        == commit
+    )
+    assert executions[0][2] == ["--repair", "literal%20"]
+
+    gh_downloads: list[tuple[str, str]] = []
+
+    def gh_download(
+        address: str, destination: Path, client: str, **kwargs: Any
+    ) -> None:
+        gh_downloads.append((address, client))
+        destination.write_bytes(b"selected source bytes")
+
+    monkeypatch.setattr(_frontend, "_download", gh_download)
+    assert (
+        _frontend.run_installer(
+            config, ("--main", "--github-client", "gh", "--repair")
+        )
+        == 7
+    )
+    assert len(gh_downloads) == 2
+    assert {client for _, client in gh_downloads} == {"gh"}
+    assert executions[-1][1][-1] == "gh"
 
 
 def test_release_payload_requires_matching_manifest_before_authored_install(
@@ -1084,147 +710,29 @@ def test_release_payload_requires_matching_manifest_before_authored_install(
     )
     assert result.returncode != 0
     assert not marker.exists()
-    assert str(project).encode() not in script
-    artifacts = generate_artifacts(spec, payload)
-    destinations = {str(item.destination) for item in artifacts}
-    assert {
-        "bootstrap.ps1",
-        "app-install.sh",
-        "app-install.cmd",
-    } <= destinations
-    app_shell = next(
-        item.content
-        for item in artifacts
-        if item.destination == PurePosixPath("app-install.sh")
-    )
-    assert b"main-installer.py" in app_shell
-    assert str(project).encode() not in app_shell
 
 
-def test_release_bootstrap_selects_one_tag_and_rejects_manifest_identity(
+def test_release_frontend_validates_identity_and_assets_before_execution(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    source = (
-        _environment()
-        .get_template("release_fetcher.py.jinja")
-        .render(
-            app_id="release-app",
-            distribution="release-app",
-            repository_url="https://github.com/example/release-app",
-            release_version="latest",
-        )
+    from apprc.distribution import _frontend
+
+    config = _frontend.FrontendConfig(
+        app_id="release-app",
+        distribution="release-app",
+        repository_url="https://github.com/example/release-app",
+        distribution_path="src/release_app",
+        project_path=".",
+        payload_format="script",
+        source_mode="release",
+        version="1.0.0",
+        commit="a" * 40,
     )
-    namespace: dict[str, Any] = {"__name__": "release_bootstrap_test"}
-    exec(compile(source, "release_fetcher.py", "exec"), namespace)
-    selected = namespace["_select_release"]
-    assert callable(selected)
-
-    class Response:
-        def __init__(self, content: bytes) -> None:
-            self.remaining = content
-
-        def __enter__(self) -> Response:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            return None
-
-        def read(self, limit: int = -1) -> bytes:
-            size = len(self.remaining) if limit < 0 else limit
-            chunk, self.remaining = self.remaining[:size], self.remaining[size:]
-            return chunk
-
-    requests: list[str] = []
-    latest_body = json.dumps({"draft": False, "tag_name": "v2.4.0"}).encode()
-
-    def latest_urlopen(request: Request, timeout: float) -> Response:
-        assert timeout == 60
-        requests.append(request.full_url)
-        return Response(latest_body)
-
-    monkeypatch.setattr(namespace["urllib"].request, "urlopen", latest_urlopen)
-    assert selected(
-        "https://api.github.com/repos/example/release-app", "latest"
-    ) == {
-        "draft": False,
-        "tag_name": "v2.4.0",
-    }
-    assert requests == [
-        "https://api.github.com/repos/example/release-app/releases/latest"
-    ]
-
-    requests.clear()
-    exact_body = json.dumps({"draft": False, "tag_name": "v1.0.0"}).encode()
-
-    def exact_urlopen(request: Request, timeout: float) -> Response:
-        assert timeout == 60
-        requests.append(request.full_url)
-        return Response(exact_body)
-
-    monkeypatch.setattr(namespace["urllib"].request, "urlopen", exact_urlopen)
-    assert selected(
-        "https://api.github.com/repos/example/release-app", "1.0.0"
-    ) == {
-        "draft": False,
-        "tag_name": "v1.0.0",
-    }
-    assert requests == [
-        "https://api.github.com/repos/example/release-app/releases/tags/v1.0.0",
-    ]
-
-    monkeypatch.setattr(
-        namespace["sys"],
-        "argv",
-        ["release_fetcher.py", "--version", "1.0.0", "--repair"],
-    )
-    assert namespace["_arguments"]() == (
-        "1.0.0",
-        "public",
-        ["--repair"],
-    )
-    monkeypatch.setattr(
-        namespace["sys"],
-        "argv",
-        ["release_fetcher.py", "--version", "latest"],
-    )
-    with pytest.raises(RuntimeError, match="exact X.Y.Z"):
-        namespace["_arguments"]()
-    monkeypatch.setattr(
-        namespace["sys"], "argv", ["release_fetcher.py", "--version"]
-    )
-    with pytest.raises(RuntimeError, match="exact X.Y.Z"):
-        namespace["_arguments"]()
-    with pytest.raises(RuntimeError, match="Duplicate JSON"):
-        namespace["_json_loads"](b'{"version":"1.0.0","version":"2.0.0"}')
-
-    contents = {
-        "main-installer.py": b"payload",
-        "release-app-1.0.0.tar.gz": b"sdist",
+    content = {
+        "main-installer.py": b"installer",
+        "release-app-1.0.0.tar.gz": b"source archive",
         "release-app-1.0.0.whl": b"wheel",
-    }
-    manifest_assets = [
-        {
-            "filename": name,
-            "size": len(content),
-            "sha256": hashlib.sha256(content).hexdigest(),
-        }
-        for name, content in contents.items()
-    ]
-    release_assets = {
-        name: {
-            "size": len(content),
-            "browser_download_url": (
-                f"https://github.com/example/release-app/releases/download/v1.0.0/{name}"
-            ),
-        }
-        for name, content in contents.items()
-    }
-    release_assets["release-manifest.json"] = {
-        "size": 12,
-        "browser_download_url": (
-            "https://github.com/example/release-app/releases/download/v1.0.0/release-manifest.json"
-        ),
     }
     manifest = {
         "schema_version": 1,
@@ -1233,347 +741,143 @@ def test_release_bootstrap_selects_one_tag_and_rejects_manifest_identity(
         "version": "1.0.0",
         "commit": "a" * 40,
         "payload_format": "script",
-        "assets": manifest_assets,
-    }
-    validate_manifest = namespace["_validate_manifest"]
-    assert (
-        validate_manifest(manifest, release_assets, "latest")[0]
-        == "main-installer.py"
-    )
-    with pytest.raises(RuntimeError, match="identity"):
-        validate_manifest(
-            {**manifest, "app_id": "other-app"}, release_assets, "latest"
-        )
-    with pytest.raises(RuntimeError, match="version"):
-        validate_manifest(manifest, release_assets, "2.0.0")
-    manifest_bytes = json.dumps(manifest, sort_keys=True).encode()
-    release_assets["release-manifest.json"]["size"] = len(manifest_bytes)
-    downloads = {**contents, "release-manifest.json": manifest_bytes}
-    release_body = json.dumps(
-        {
-            "draft": False,
-            "tag_name": "v1.0.0",
-            "assets": [
-                {
-                    "name": name,
-                    "size": len(content),
-                    "browser_download_url": release_assets[name][
-                        "browser_download_url"
-                    ],
-                }
-                for name, content in downloads.items()
-            ],
-        }
-    ).encode()
-    route_requests: list[str] = []
-
-    def route_urlopen(request: Request, timeout: float) -> Response:
-        assert timeout == 60
-        route_requests.append(request.full_url)
-        if request.full_url.endswith("/releases/latest"):
-            return Response(release_body)
-        name = request.full_url.rsplit("/", 1)[1]
-        return Response(downloads[name])
-
-    uv = tmp_path / "uv"
-    uv.write_bytes(b"uv fixture")
-    executed: list[list[str]] = []
-
-    class Result:
-        returncode = 0
-
-    def fake_run(command: list[str], *, check: bool) -> Result:
-        executed.append(command)
-        return Result()
-
-    monkeypatch.setattr(namespace["urllib"].request, "urlopen", route_urlopen)
-    monkeypatch.setattr(namespace["subprocess"], "run", fake_run)
-    monkeypatch.setattr(
-        namespace["sys"],
-        "argv",
-        [
-            "release_fetcher.py",
-            "--dry-run",
-            "custom arg",
+        "assets": [
+            {
+                "filename": name,
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+            for name, data in content.items()
         ],
+    }
+    manifest_bytes = json.dumps(manifest).encode()
+    asset_bytes = {**content, "release-manifest.json": manifest_bytes}
+    release = {
+        "draft": False,
+        "tag_name": "v1.0.0",
+        "assets": [
+            {
+                "name": name,
+                "size": len(data),
+                "browser_download_url": (
+                    "https://github.com/example/release-app/releases/download/"
+                    f"v1.0.0/{name}"
+                ),
+            }
+            for name, data in asset_bytes.items()
+        ],
+    }
+    reads: list[str] = []
+    monkeypatch.setattr(
+        _frontend,
+        "_read_url",
+        lambda address, *, client, limit=_frontend._METADATA_LIMIT: (
+            reads.append(address) or json.dumps(release).encode()
+        ),
     )
-    monkeypatch.setenv("APPRC_UV_PATH", str(uv))
-    assert namespace["main"]() == 0
-    assert (
-        len([url for url in route_requests if url.endswith("/releases/latest")])
-        == 1
-    )
-    assert executed[0][0] == str(uv)
-    assert executed[0][-2:] == ["--dry-run", "custom arg"]
-    package_url = release_assets["release-app-1.0.0.tar.gz"][
-        "browser_download_url"
-    ]
-    assert package_url in route_requests
-    assert executed[0][executed[0].index("--source-package") + 1].endswith(
-        "release-app-1.0.0.tar.gz"
-    )
-    assert "--script" in executed[0]
-    downloads["main-installer.py"] = contents["main-installer.py"]
-    downloads["release-app-1.0.0.tar.gz"] = b"incorrect package bytes"
-    assert namespace["main"]() == 2
-    assert len(executed) == 1
 
-    downloads["main-installer.py"] = b"PAYLOAD"
-    downloads["release-app-1.0.0.tar.gz"] = contents["release-app-1.0.0.tar.gz"]
-    assert namespace["main"]() == 2
-    assert len(executed) == 1
+    def download(
+        address: str, destination: Path, client: str, **kwargs: Any
+    ) -> None:
+        destination.write_bytes(asset_bytes[destination.name])
+
+    monkeypatch.setattr(_frontend, "_download", download)
+    executions: list[tuple[Path, list[str], list[str]]] = []
+    monkeypatch.setattr(
+        _frontend,
+        "_execute",
+        lambda payload, payload_format, transport, forwarded, **kwargs: (
+            executions.append((payload, list(transport), list(forwarded))) or 9
+        ),
+    )
+    assert (
+        _frontend.run_installer(
+            config, ("--version", "1.0.0", "--repair", "value")
+        )
+        == 9
+    )
+    assert reads == [
+        "https://api.github.com/repos/example/release-app/releases/tags/v1.0.0"
+    ]
+    assert executions[0][2] == ["--repair", "value"]
+
+    release["tag_name"] = "v2.0.0"
+    assert _frontend.run_installer(config, ("--version", "1.0.0")) == 2
+    assert len(executions) == 1
+    release["tag_name"] = "v1.0.0"
+    asset_bytes["release-app-1.0.0.tar.gz"] = b"changed source"
+    assert _frontend.run_installer(config, ("--version", "1.0.0")) == 2
+    assert len(executions) == 1
 
 
 def test_release_gh_client_acquires_the_selected_hashed_package(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    source = (
-        _environment()
-        .get_template("release_fetcher.py.jinja")
-        .render(
-            app_id="release-app",
-            distribution="release-app",
-            repository_url="https://github.com/example/release-app",
-            release_version="1.0.0",
-        )
-    )
-    namespace: dict[str, Any] = {"__name__": "release_gh_test"}
-    exec(compile(source, "release_fetcher.py", "exec"), namespace)
+    from apprc.distribution import _frontend
+
     package_name = "release-app-1.0.0.tar.gz"
-    pyproject = (
-        "[build-system]\n"
-        'requires = ["setuptools>=80"]\n'
-        'build-backend = "setuptools.build_meta"\n'
-        "[project]\nname = 'release-app'\nversion = '1.0.0'\n"
-    ).encode()
-    metadata = b"Metadata-Version: 2.1\nName: release-app\nVersion: 1.0.0\n"
-    package_buffer = BytesIO()
-    with tarfile.open(fileobj=package_buffer, mode="w:gz") as archive:
-        for relative, content in {
-            "pyproject.toml": pyproject,
-            "PKG-INFO": metadata,
-            "release_app.egg-info/PKG-INFO": metadata,
-            "release_app.egg-info/SOURCES.txt": b"pyproject.toml\n",
-        }.items():
-            member = tarfile.TarInfo(f"release-app-1.0.0/{relative}")
-            member.size = len(content)
-            archive.addfile(member, BytesIO(content))
-    package_bytes = package_buffer.getvalue()
-    asset_url = (
-        "https://github.com/example/release-app/releases/download/"
-        f"v1.0.0/{package_name}"
-    )
-    assets = {
-        package_name: {
-            "size": len(package_bytes),
-            "sha256": hashlib.sha256(package_bytes).hexdigest(),
-            "filename": package_name,
-        }
-    }
-    release_assets = {
-        package_name: {
-            "size": len(package_bytes),
-            "browser_download_url": asset_url,
-        }
-    }
+    content = b"selected source archive"
     commands: list[list[str]] = []
-    content = package_bytes
 
-    class Result:
-        returncode = 0
-
-    def run(command: list[str], *, check: bool) -> Result:
+    def run(
+        command: list[str], *, check: bool
+    ) -> subprocess.CompletedProcess[bytes]:
         assert check
         commands.append(command)
         directory = Path(command[command.index("--dir") + 1])
         name = command[command.index("--pattern") + 1]
         (directory / name).write_bytes(content)
-        return Result()
+        return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(namespace["subprocess"], "run", run)
-    namespace["GITHUB_CLIENT"] = "gh"
-    namespace["RELEASE_TAG"] = "v1.0.0"
-    download_directory = tmp_path / "gh-download"
-    download_directory.mkdir(mode=0o700)
-    package = download_directory / package_name
-    namespace["_download_asset"](package_name, release_assets, assets, package)
-    assert package.read_bytes() == package_bytes
-    assert commands[0][:5] == ["gh", "release", "download", "v1.0.0", "--repo"]
-
-    release_spec = DistributionSpec(
-        ProjectMetadata(
-            tmp_path,
-            InstallationIdentity(
-                "release-app",
-                "release-app",
-                "release_app",
-                None,
-                ("release-app",),
-            ),
-            "1.0.0",
-        ),
-        source_mode="release",
-        repository_url="https://github.com/example/release-app",
-        release_version="1.0.0",
-        release_commit="a" * 40,
-        release_asset=asset_url,
-        release_digest=hashlib.sha256(package_bytes).hexdigest(),
-        runtime_requirements=("apprc-core==0.31.0",),
+    monkeypatch.setattr(_frontend.subprocess, "run", run)
+    directory = tmp_path / "gh-download"
+    directory.mkdir(mode=0o700)
+    package = directory / package_name
+    _frontend._download(
+        f"https://github.com/example/release-app/releases/download/v1.0.0/{package_name}",
+        package,
+        "gh",
+        release=("example/release-app", "v1.0.0"),
     )
-    selection, remaining = parse_source_arguments(
-        release_spec,
-        ("--source-package", str(package), "--github-client", "gh", "--repair"),
-    )
-    assert remaining == ("--repair",)
-    prepared = selection.prepare(tmp_path / "prepared-release")
-    assert prepared.source == selection.source
-    assert prepared.source.requirement == asset_url
-    assert prepared.project_directory == Path(prepared.requirement)
-    assert (
-        Path(prepared.requirement) / "pyproject.toml"
-    ).read_bytes() == pyproject
-    assert prepared.constraints is not None
-    assert (
-        prepared.constraints.read_text(encoding="utf-8")
-        == "apprc-core==0.31.0\n"
-    )
-
-    package.unlink()
-    content = b"modified package bytes"
-    with pytest.raises(RuntimeError, match="differs from its manifest"):
-        namespace["_download_asset"](
-            package_name, release_assets, assets, package
-        )
-    assert not package.exists()
-
-
-def test_default_generated_composition_is_complete_and_author_root_independent(
-    tmp_path: Path,
-) -> None:
-    project = tmp_path / "application"
-    package = project / "payload" / "app_lifecycle"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text(
-        '"""Fixture composition."""\n', encoding="utf-8"
-    )
-    (package / "install.py").write_text(
-        "def main():\n    return 0\n", encoding="utf-8"
-    )
-    (package / "uninstall.py").write_text(
-        "def main():\n    return 0\n", encoding="utf-8"
-    )
-    payload = PayloadTree(
-        project / "payload",
-        tuple(
-            PurePosixPath("app_lifecycle") / name
-            for name in ("__init__.py", "install.py", "uninstall.py")
-        ),
-    )
-    metadata = ProjectMetadata(
-        project,
-        InstallationIdentity(
-            "fixture-app", "fixture-app", "fixture", None, ("fixture",)
-        ),
-        "1.0.0",
-        distribution_path=PurePosixPath("src/fixture_distr"),
-        launcher_command="fixture",
-    )
-    spec = DistributionSpec(metadata)
-
-    artifacts = generate_artifacts(spec, payload)
-    relocated = generate_artifacts(
-        replace(
-            spec,
-            metadata=replace(
-                metadata, project_root=tmp_path / "other author root"
-            ),
-        ),
-        payload,
-    )
-    observed = {str(item.destination) for item in artifacts}
-    assert {
-        "app-install.sh",
-        "app-install.cmd",
-        "app-launch.sh",
-        "app-launch.cmd",
-        "app-uninstall.sh",
-        "app-uninstall.cmd",
-    }.issubset(observed)
-    assert [(item.destination, item.content) for item in artifacts] == [
-        (item.destination, item.content) for item in relocated
+    expected = {
+        "filename": package_name,
+        "size": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+    _frontend._verify(package, expected)
+    assert package.read_bytes() == content
+    assert commands[0][:7] == [
+        "gh",
+        "release",
+        "download",
+        "v1.0.0",
+        "--repo",
+        "example/release-app",
+        "--dir",
     ]
 
+    package.unlink()
+    content = b"altered source archive"
 
-def test_no_app_stack_script_and_zipapp_share_exact_standalone_payload(
-    tmp_path: Path,
-) -> None:
-    from apprc.distribution.standalone import payload_archive
-
-    project = tmp_path / "plain-project"
-    package = project / "payload" / "plain_app"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text(
-        '"""Standalone application."""\n', encoding="utf-8"
-    )
-    install_source = "def main():\n    return 0\n"
-    uninstall_source = "def main():\n    return 0\n"
-    (package / "install.py").write_text(install_source, encoding="utf-8")
-    (package / "uninstall.py").write_text(uninstall_source, encoding="utf-8")
-    payload = PayloadTree(
-        project / "payload",
-        tuple(
-            PurePosixPath("plain_app") / name
-            for name in ("__init__.py", "install.py", "uninstall.py")
-        ),
-        entry_module="plain_app.install",
-        uninstall_entry_module="plain_app.uninstall",
-    )
-    metadata = ProjectMetadata(
-        project,
-        InstallationIdentity(
-            "plain-app", "plain-app", "plain_app", None, ("plain-app",)
-        ),
-        "1.0.0",
-    )
-    script_spec = DistributionSpec(metadata)
-    script_artifacts = generate_artifacts(script_spec, payload)
-    script = next(
-        artifact.content
-        for artifact in script_artifacts
-        if artifact.destination.name == "main-installer.py"
-    )
-    assert script.startswith(b"#!/usr/bin/env -S uv run --script\n")
-    assert b"platformdirs==4.10.0" in script
-    assert b"filelock==3.32.7" in script
-
-    zipapp_spec = replace(script_spec, payload_format="zipapp")
-    zipapp_artifacts = generate_artifacts(zipapp_spec, payload)
-    zipapp = next(
-        artifact.content
-        for artifact in zipapp_artifacts
-        if artifact.destination.name == "main-installer.pyz"
-    )
-    with ZipFile(BytesIO(zipapp)) as archive:
-        assert archive.namelist() == ["__main__.py"]
-        assert archive.read("__main__.py") == script
-    with ZipFile(BytesIO(payload_archive(script_spec, payload))) as archive:
-        assert (
-            archive.read("plain_app/install.py").decode("utf-8")
-            == install_source
+    def bad_run(
+        command: list[str], *, check: bool
+    ) -> subprocess.CompletedProcess[bytes]:
+        directory = Path(command[command.index("--dir") + 1])
+        (directory / command[command.index("--pattern") + 1]).write_bytes(
+            content
         )
-        assert (
-            archive.read("plain_app/uninstall.py").decode("utf-8")
-            == uninstall_source
-        )
+        return subprocess.CompletedProcess(command, 0)
 
-    repeated = generate_artifacts(zipapp_spec, payload)
-    repeated_zipapp = next(
-        artifact.content
-        for artifact in repeated
-        if artifact.destination.name == "main-installer.pyz"
+    monkeypatch.setattr(_frontend.subprocess, "run", bad_run)
+    _frontend._download(
+        f"https://github.com/example/release-app/releases/download/v1.0.0/{package_name}",
+        package,
+        "gh",
+        release=("example/release-app", "v1.0.0"),
     )
-    assert repeated_zipapp == zipapp
+    with pytest.raises(RuntimeError):
+        _frontend._verify(package, expected)
 
 
 def test_stdlib_final_worker_preserves_a_new_generation_record(

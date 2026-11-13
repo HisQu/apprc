@@ -8,37 +8,116 @@ patch releases; older entries move here without changing their text.
 
 1. [Changelog archive](#changelog-archive)
    1. [Table Of Contents](#table-of-contents)
-2. [0.27.4 - 2026-10-01](#0274---2026-10-01)
-3. [0.27.3 - 2026-10-01](#0273---2026-10-01)
-4. [0.27.2 - 2026-09-28](#0272---2026-09-28)
-5. [0.27.0 - 2026-09-24](#0270---2026-09-24)
-6. [0.26.0 - 2026-09-23](#0260---2026-09-23)
-7. [0.25.1 - 2026-09-23](#0251---2026-09-23)
-8. [0.25.0 - 2026-09-23](#0250---2026-09-23)
-9. [0.24.0 - 2026-09-11](#0240---2026-09-11)
-10. [0.23.7 - 2026-09-10](#0237---2026-09-10)
-11. [0.23.6 - 2026-09-10](#0236---2026-09-10)
-12. [0.23.5 - 2026-09-08](#0235---2026-09-08)
-13. [0.22.1 - 2026-09-04](#0221---2026-09-04)
-14. [0.22.0 - 2026-09-04](#0220---2026-09-04)
-15. [0.21.0 - 2026-09-04](#0210---2026-09-04)
-16. [0.20.0 - 2026-09-04](#0200---2026-09-04)
-17. [0.19.9 - 2026-09-02](#0199---2026-09-02)
-18. [0.19.8 - 2026-09-01](#0198---2026-09-01)
-19. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-20. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-21. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-22. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-23. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-24. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-25. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-26. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-27. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-28. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-29. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-30. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-31. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-32. [0.1.0 - 2026-06-02](#010---2026-06-02)
+2. [0.29.0 - 2026-10-26](#0290---2026-10-26)
+3. [0.28.0 - 2026-10-02](#0280---2026-10-02)
+4. [0.27.4 - 2026-10-01](#0274---2026-10-01)
+5. [0.27.3 - 2026-10-01](#0273---2026-10-01)
+6. [0.27.2 - 2026-09-28](#0272---2026-09-28)
+7. [0.27.0 - 2026-09-24](#0270---2026-09-24)
+8. [0.26.0 - 2026-09-23](#0260---2026-09-23)
+9. [0.25.1 - 2026-09-23](#0251---2026-09-23)
+10. [0.25.0 - 2026-09-23](#0250---2026-09-23)
+11. [0.24.0 - 2026-09-11](#0240---2026-09-11)
+12. [0.23.7 - 2026-09-10](#0237---2026-09-10)
+13. [0.23.6 - 2026-09-10](#0236---2026-09-10)
+14. [0.23.5 - 2026-09-08](#0235---2026-09-08)
+15. [0.22.1 - 2026-09-04](#0221---2026-09-04)
+16. [0.22.0 - 2026-09-04](#0220---2026-09-04)
+17. [0.21.0 - 2026-09-04](#0210---2026-09-04)
+18. [0.20.0 - 2026-09-04](#0200---2026-09-04)
+19. [0.19.9 - 2026-09-02](#0199---2026-09-02)
+20. [0.19.8 - 2026-09-01](#0198---2026-09-01)
+21. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+22. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+23. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+24. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+25. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+26. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+27. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+28. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+29. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+30. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+31. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+32. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+33. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+34. [0.1.0 - 2026-06-02](#010---2026-06-02)
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.29.0 - 2026-10-26
+
+<br>
+
+### 💥 Breaking changes
+
+- Breaking: Removed the `config purge` CLI command. Applications and scripts
+  using it must explicitly mount `rc.cli.mount_appdata_cli(app, MyRC)` and
+  invoke `appdata clean` instead; no alias remains. Add `paths` and `clean`
+  action prefixes to the application's existing runtime-independent policy.
+  Use each action's `--apprc-dir PATH` for explicit cleanup targeting rather
+  than root env-file or storage selectors. `config paths` remains configuration
+  diagnostics; manager-level `plan_purge()` and `apply_purge(plan)` are unchanged.
+
+- Breaking: Renamed the durable repository backlog from `TODO.md` to
+  `BACKLOG.md`. Contributors and tooling using the old path must update their
+  links; existing entries are preserved. Reserve `TODO.md` for active-pass
+  checklists beside `PLAN.md`.
+
+<br>
+
+### ➕ Added
+
+- Added an opt-in application-data CLI with `appdata paths`, a structured
+  `appdata paths --json` cleanup inventory, and previewed, confirmed
+  `appdata clean` removal. It uses the existing managed-file and internal-storage
+  safety boundary without resolving application settings, retains external
+  payloads and unrelated files, and is demonstrated by all executable examples.
+
+<br>
+
+### 🔨 Fixed
+
+- Deferred release dependency locking until all three distribution versions are
+  regenerated, so minor releases do not resolve mismatched workspace metadata.
+
+<br>
+
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+# 0.28.0 - 2026-10-02
+
+<br>
+
+### ➕ Added
+
+- Added `AppRC.import_dependency_config()` so a parent can explicitly map a
+  dependency's leaf config section to parent-owned fields and build it from the
+  parent's `ResolvedConfig`. Parent fields own mapped defaults, validation,
+  secrets, and provenance; aliases are supported, and one dependency section
+  can have separate bindings in different parent namespaces. Dependency
+  environment, selectors, registries, user files, and storage files are
+  excluded. A storage-required section uses the parent's selected storage
+  after the parent enables and selects storage. Dependency packaged defaults
+  remain opt-in. Mapped dependency fields must be dataclass fields with
+  `init=True` so the parent can supply their values during construction.
+
+<br>
+
+### 💔 Changed
+
+- Clarified secret-directory permission prompts and repair guidance to name
+  this user, SYSTEM, and Administrators as the allowed Windows principals.
 
 <br>
 

@@ -442,7 +442,7 @@ exact encoded bytes, not another persisted counter.
 | `placement` | Committed absolute resource locations, capabilities and retained earlier locations. |
 | `active_runtime` | Validated managed slot or non-owned editable checkout; remains selected while a replacement is prepared. |
 | `retiring_runtime_ids` | Exact owned old slots awaiting safe collection; never an instruction to sweep arbitrary directories. |
-| `operation` | Exact pending target, checkpoints, retry preconditions and failure diagnostic. |
+| `operation` | Exact pending target, checkpoints, authenticated output-publication intent, retry preconditions and failure diagnostic. |
 | `owned_outputs` | Digest-owned support, global commands, shortcuts and registration—not shared uv/Python or an editable environment. |
 | `migration` | Explicit resource-placement migration state and inventory. |
 
@@ -456,6 +456,15 @@ operation-context checks and failure checkpoints. Candidate initialization
 requires its matching operation context. Ordinary access uses the committed
 active target during replacement; uninstall and resource migration retain their
 quiescence boundaries and stale captured writers remain rejected.
+
+Resource migration keeps its inventory/checkpoint engine in core.
+`migrate(..., migration_hook=...)` and
+`resume_migration(..., migration_hook=...)` can receive an explicit
+`(MigrationPlan, OperationContext) -> None` callback. The shared CLI supplies
+the existing application-runtime bridge when a recorded provider is required;
+core does not import distribution execution or accept a native executable path.
+The hook runs only after pending authority is durable, and its completion is
+checkpointed before resource moves. Missing required code blocks those moves.
 
 `InstallationManager.initialize(context=...)` is the shared declared-resource
 initialization path for managed and editable registration. Application code runs
@@ -733,9 +742,9 @@ conditional `workspace`, `app`, and optional `launch` appear at the root.
 | `app doctor [--verbose] [--json]` | Always. Aggregate local/read-only installation, path, ownership, boundary and config diagnostics; no host business factories or remote services. JSON contract below. |
 | `app paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. Without a category, list all paths; a category prints its absolute path. Disabled category and invalid `--open` combinations exit 2. Open only an existing directory; never create it. Original authority/path failures exit nonzero without fallback locations. |
 | `app install [-e/--editable] [ARGS]...` | Enabled by installation management or an explicit installer delegate. Editable registration uses the invocation's actual checkout `.venv`; it never syncs/copies an environment. Other arguments go to the authored delegate, if present; otherwise explain how to run native setup. `--help` remains local. |
-| `app repair [--installer PATH]` | `installation_management=True`. Call saved repair support or explicit installer with subprocess argv and preserve its status; never silently download an installer. |
+| `app repair` | `installation_management=True`. Rebuild the recorded managed project through authenticated native support without selecting newer source or changing placement. Editable environments receive `uv sync --locked` guidance instead. |
 | `app uninstall [--dry-run] [--complete] [--category KIND] [--forget-retained] [--yes/-y]` | `installation_management=True`. Shared saved removal procedure; repeat categories for config/appdata/cache/state. Program-only is the default and retains resources. Complete removal requires exact preview/consent. |
-| `app migrate [--dry-run] [--yes/-y]` | `installation_management=True`. Preview and explicitly apply current resource/layout migration with confirmation and quiescence checks. Unrecognized project data requires application-owned exact inventory. |
+| `app migrate [--dry-run] [--yes/-y]` | `installation_management=True`. Preview/apply exact resource migration, or resume its saved pending inventory/revision, with confirmation and quiescence checks. Unrecognized data needs application-owned inventory; recovery never rescans it silently. |
 | `app data backup/restore` | Declared appdata and corresponding provider operations. Restore confirms unless `--yes`; data means AppRC appdata, never workspace/project payloads. |
 | `app cache prune/clear`, `app state prune/reset` | Declared category and supported provider operations; preserve dry-run, confirmation and JSON controls. Host resource extensions may provide application-specific commands. |
 | `config setup [--adopt] [--yes/-y]` | Config initialization or user-dotenv setup supported. Config-only declarations get idempotent initialization; user-dotenv declarations retain guided/noninteractive setup. Explicit adoption is required for nonempty unowned config. |

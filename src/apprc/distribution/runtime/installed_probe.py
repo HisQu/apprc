@@ -263,6 +263,7 @@ def _serve_request(request: object) -> int:
         module_name, attribute = reference.split(":", 1)
         application = vars(importlib.import_module(module_name))[attribute]
         from apprc import AppRC
+        from apprc.services.installation import InstallationManager
 
         if (
             not isinstance(application, AppRC)

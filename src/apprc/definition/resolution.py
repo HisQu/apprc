@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import glob
 import re
+import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 from typing import Generic, Protocol, Self, TypeVar
 
@@ -14,6 +16,102 @@ from apprc.definition.paths import Layout
 from apprc.definition.provenance import ConfigOriginState
 
 ConfigTypeT = TypeVar("ConfigTypeT")
+
+
+def resolve_editable_environment(project: Path) -> Path:
+    """Select the existing environment for a PEP 621 project or uv member.
+
+    Workspace environments are shared by their declared members. Matching the
+    project against the workspace member patterns before selecting the root
+    environment prevents an unrelated ancestor ``.venv`` from being treated as
+    the application's environment.
+
+    :param project: Selected project directory containing ``pyproject.toml``.
+    :return: Canonical expected environment path, which may not exist yet.
+    """
+    selected = project.resolve(strict=True)
+    if not (selected / "pyproject.toml").is_file():
+        raise ValueError("Selected project has no pyproject.toml.")
+
+    saw_workspace = False
+    for candidate in selected.parents:
+        metadata_path = candidate / "pyproject.toml"
+        if not metadata_path.is_file():
+            continue
+        with metadata_path.open("rb") as stream:
+            document = tomllib.load(stream)
+        tool = document.get("tool", {})
+        uv = tool.get("uv", {}) if isinstance(tool, dict) else {}
+        workspace = uv.get("workspace", {}) if isinstance(uv, dict) else {}
+        if not isinstance(workspace, dict):
+            raise ValueError("tool.uv.workspace must be a table.")
+        members = workspace.get("members", [])
+        excludes = workspace.get("exclude", [])
+        if (
+            not isinstance(members, list)
+            or not all(isinstance(item, str) for item in members)
+            or not isinstance(excludes, list)
+            or not all(isinstance(item, str) for item in excludes)
+        ):
+            raise ValueError("uv workspace members and excludes must be strings.")
+        patterns = (*members, *excludes)
+        for pattern in patterns:
+            path = PurePosixPath(pattern)
+            if (
+                not pattern
+                or path.is_absolute()
+                or ".." in path.parts
+                or "\\" in pattern
+                or PureWindowsPath(pattern).drive
+            ):
+                raise ValueError(f"Unsafe uv workspace pattern: {pattern}.")
+        saw_workspace = saw_workspace or bool(members)
+        if not members:
+            continue
+        relative = selected.relative_to(candidate).as_posix()
+        member_matches = {
+            Path(match).resolve(strict=False)
+            for pattern in members
+            for match in glob.glob(str(candidate / pattern), recursive=True)
+        }
+        excluded_matches = {
+            Path(match).resolve(strict=False)
+            for pattern in excludes
+            for match in glob.glob(str(candidate / pattern), recursive=True)
+        }
+        workspace_root = candidate.resolve()
+        if any(
+            not path.is_relative_to(workspace_root)
+            for path in member_matches | excluded_matches
+        ):
+            raise ValueError("A uv workspace pattern escapes its workspace root.")
+        if selected in excluded_matches:
+            raise ValueError(
+                f"Selected project is excluded from its uv workspace: {relative}."
+            )
+        if selected in member_matches:
+            return (candidate / ".venv").resolve(strict=False)
+
+    with (selected / "pyproject.toml").open("rb") as stream:
+        selected_document = tomllib.load(stream)
+    selected_tool = selected_document.get("tool", {})
+    selected_uv = (
+        selected_tool.get("uv", {})
+        if isinstance(selected_tool, dict)
+        else {}
+    )
+    selected_workspace = (
+        selected_uv.get("workspace", {}) if isinstance(selected_uv, dict) else {}
+    )
+    selected_project = selected_document.get("project")
+    if not saw_workspace or (
+        isinstance(selected_workspace, dict)
+        and isinstance(selected_workspace.get("members"), list)
+        and isinstance(selected_project, dict)
+    ):
+        return (selected / ".venv").resolve(strict=False)
+
+    raise ValueError("Selected project is not a declared member of a uv workspace.")
 
 
 @dataclass(frozen=True, slots=True, eq=False)

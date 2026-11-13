@@ -56,3 +56,50 @@ def test_bridge_rejects_command_not_owned_by_identity_before_subprocess(
             environment={},
         )
     assert not (tmp_path / "installation").exists()
+
+
+def test_bridge_rejects_stale_authority_before_application_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+    from types import ModuleType
+
+    import apprc as rc
+    from apprc.distribution.runtime import installed_probe
+
+    module = ModuleType("runtime_bridge_fixture")
+    module.__dict__["APP_RC"] = rc.AppRC(
+        app_id="bridge-probe", paths=rc.Paths()
+    )
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    identity = {
+        "app_id": "bridge-probe",
+        "distribution": "bridge-probe",
+        "import_package": "bridge_probe",
+        "apprc_reference": "runtime_bridge_fixture:APP_RC",
+        "commands": ["bridge-probe"],
+    }
+    request = {
+        "action": "doctor",
+        "identity": identity,
+        "command_name": "bridge-probe",
+        "directory": str(tmp_path / "installation"),
+        "expected_revision": "a" * 64,
+        "runtime_options": {},
+        "operation_context": None,
+        "categories": [],
+        "forget_retained": False,
+        "migration_plan": None,
+        "hooks": {
+            "initialize": None,
+            "inventory": None,
+            "cleanup": None,
+            "migrate": None,
+        },
+    }
+
+    with pytest.raises(
+        ValueError, match="authority revision changed"
+    ):
+        installed_probe._serve_request(request)

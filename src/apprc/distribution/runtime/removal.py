@@ -30,9 +30,11 @@ from apprc.definition.installation import (
     OperationStep,
     OwnedOutput,
     ResourceKind,
+    RuntimeSlot,
     UninstallPlan,
 )
 from apprc.distribution.models import relative_destination
+from apprc.distribution.runtime import _handoff, _integration
 from apprc.distribution.runtime._leases import (
     try_acquire_runtime_quiescence,
     try_retire_runtime_slot,
@@ -410,12 +412,12 @@ def _remove_inventory(entries: tuple[InventoryEntry, ...]) -> None:
 
 
 def _remove_owned_outputs(
-    outputs: tuple[OwnedOutput, ...], *, complete: bool
+    outputs: tuple[OwnedOutput, ...], *, directory: Path
 ) -> None:
     """Remove only recorded command and shortcut outputs for this uninstall mode."""
     for output in outputs:
         if output.kind == "command":
-            if complete:
+            if Path(output.path).parent != directory:
                 _integration.remove_owned_command(output)
             continue
         if output.kind != "shortcut":
@@ -800,7 +802,11 @@ def _execute_pending_handoff(
 
         operation = record.operation
         data_categories = plan.categories - {"config"}
-        needs_cleanup = plan.complete and bool(data_categories)
+        runtime = record.active_runtime
+        needs_cleanup = plan.complete and (
+            bool(data_categories)
+            or bool(plan.categories and runtime is not None and runtime.hooks.cleanup)
+        )
         if OperationStep.PROVIDER_CLEANUP not in operation.steps:
             runtime = record.active_runtime
             claims = []
@@ -845,8 +851,6 @@ def _execute_pending_handoff(
                                 manager_executable=pending.manager_executable,
                                 expected_revision=latest_revision,
                                 operation_context=context,
-                                categories=frozenset(plan.categories),
-                                forget_retained=plan.forget_retained,
                             )
                     else:
                         result = application_bridge(
@@ -859,8 +863,6 @@ def _execute_pending_handoff(
                             manager_executable=pending.manager_executable,
                             expected_revision=latest_revision,
                             operation_context=context,
-                            categories=frozenset(plan.categories),
-                            forget_retained=plan.forget_retained,
                         )
                     if result != {"completed": True}:
                         raise InstallationError(
@@ -977,18 +979,22 @@ def _execute_pending_handoff(
                 record = current.record
                 assert record is not None
             _remove_registry_outputs(record, directory, registry_backup)
-            _remove_owned_outputs(record.owned_outputs, complete=True)
-            result = commit_uninstall(
-                directory,
-                operation_id=operation_id,
-                expected_revision=latest_revision,
-            )
-            if result.kind != "retired":
-                raise InstallationError("Complete uninstall unexpectedly retained authority.")
-            committed = True
-            retire_held_operation_lock(directory)
+            _remove_owned_outputs(record.owned_outputs, directory=directory)
+            with installation_lock(directory):
+                result = commit_uninstall(
+                    directory,
+                    operation_id=operation_id,
+                    expected_revision=latest_revision,
+                )
+                if result.kind != "retired":
+                    raise InstallationError(
+                        "Complete uninstall unexpectedly retained authority."
+                    )
+                committed = True
+                retire_held_operation_lock(directory)
         else:
-            _remove_owned_outputs(record.owned_outputs, complete=False)
+            _remove_registry_outputs(record, directory, registry_backup)
+            _remove_owned_outputs(record.owned_outputs, directory=directory)
             commit_uninstall(
                 directory,
                 operation_id=operation_id,
@@ -1005,7 +1011,9 @@ def _execute_pending_handoff(
                     retirement.diagnostic
                     or "Installation namespace cleanup left residue."
                 )
-            _finalize_committed_handoff(plan_file, value, recovery)
+            _finalize_committed_handoff(
+                plan_file, value, recovery, expected_app_id=app_id
+            )
             succeeded = True
     except BaseException as error:
         if not committed:
@@ -1121,13 +1129,13 @@ def _remove_registry_outputs(
         "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
         + record.identity.app_id
     )
-    command = directory / (
-        record.command_name + (".exe" if os.name == "nt" else "")
-    )
     for output in record.owned_outputs:
         if output.kind != "hkcu":
             continue
-        if output.path != "HKCU\\" + expected_subkey:
+        if (
+            output.path != "HKCU\\" + expected_subkey
+            or dict(output.values).get("InstallLocation") != str(directory)
+        ):
             raise InstallationError("Recorded HKCU registration path is malformed.")
         try:
             key = winreg.OpenKey(
@@ -1146,10 +1154,8 @@ def _remove_registry_outputs(
                     winreg.EnumValue(key, index) for index in range(count)
                 )
             }
+        _integration.remove_windows_registration(output)
         removed.append((expected_subkey, values))
-        _integration.remove_windows_registration(
-            directory, record.identity, command
-        )
 
 
 def _restore_registry_outputs(

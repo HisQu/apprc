@@ -23,6 +23,7 @@ from apprc.definition.installation import (
     InstallationRecord,
     InstallationTarget,
     OwnedOutput,
+    PublicationOutput,
     RuntimeSlot,
     InstallPlan,
     MigrationInventory,
@@ -110,8 +111,6 @@ def plan_repair(
         raise InstallationError("Repair requires a valid record for this application.")
     if placement != record.placement:
         raise InstallationError("Repair cannot relocate recorded resources.")
-    if isinstance(record.active_runtime, EditableCheckout):
-        raise InstallationError("Editable environment is developer-owned; restore it with uv sync --locked.")
     if record.operation is not None and record.operation.kind not in {
         "install", "replace", "repair"
     }:
@@ -120,6 +119,10 @@ def plan_repair(
         saved = record.operation.intended
         if saved.identity != identity:
             raise InstallationError("Pending candidate identity has changed.")
+        if not isinstance(saved.runtime, RuntimeSlot):
+            raise InstallationError(
+                "Editable environments are developer-owned; restore it with uv sync --locked."
+            )
         return InstallPlan(
             directory=inspection.directory,
             expected_revision=inspection.revision,
@@ -129,6 +132,10 @@ def plan_repair(
             generation_id=record.generation_id,
             command_name=record.command_name,
             kind="repair",
+        )
+    if isinstance(record.active_runtime, EditableCheckout):
+        raise InstallationError(
+            "Editable environments are developer-owned; restore it with uv sync --locked."
         )
     if not isinstance(record.active_runtime, RuntimeSlot):
         raise InstallationError("Repair requires a managed active or pending runtime.")
@@ -523,13 +530,30 @@ def commit_installation(
             or previous.slot_id != observed.slot_id
         ):
             retiring = tuple(dict.fromkeys((*retiring, previous.slot_id)))
+        output_values = list(
+            record.owned_outputs if owned_outputs is None else owned_outputs
+        )
+        known_paths = {item.path for item in output_values}
+        if operation.registration is not None:
+            output_values = [
+                item for item in output_values
+                if item.path != operation.registration.path
+            ]
+            output_values.append(operation.registration)
+            known_paths = {item.path for item in output_values}
+        for item in operation.publication:
+            for image in (item.previous, item.intended):
+                if image is None or image.content is None or image.content in known_paths:
+                    continue
+                output_values.append(OwnedOutput("support", image.content, image.digest))
+                known_paths.add(image.content)
         ready = replace(
             record,
             status="ready",
             placement=target.placement,
             active_runtime=observed,
             retiring_runtime_ids=retiring,
-            owned_outputs=record.owned_outputs if owned_outputs is None else owned_outputs,
+            owned_outputs=tuple(output_values),
             operation=None,
         )
         write_record(directory, ready, expected_revision=expected_revision)
@@ -606,6 +630,51 @@ def record_runtime_retired(
         )
         write_record(directory, updated, expected_revision=expected_revision)
         return inspect_installation(directory, app_id=app_id)
+def record_publication(
+    directory: Path,
+    *,
+    operation_id: UUID,
+    expected_revision: str,
+    publication: tuple[PublicationOutput, ...],
+) -> InstallationInspection:
+    """Persist authenticated output intent before replacing command files."""
+    with installation_lock(directory):
+        record = _pending(directory, operation_id, expected_revision)
+        operation = record.operation
+        assert operation is not None
+        if operation.kind not in {"install", "replace", "repair"}:
+            raise InstallationError("Command publication requires a runtime operation.")
+        outputs = {item.path for item in publication}
+        if len(outputs) != len(publication):
+            raise InstallationError("Publication output paths must be unique.")
+        updated = replace(record, operation=replace(operation, publication=publication))
+        write_record(directory, updated, expected_revision=expected_revision)
+        return inspect_installation(directory, app_id=record.identity.app_id)
+
+
+def record_registration(
+    directory: Path,
+    *,
+    operation_id: UUID,
+    expected_revision: str,
+    registration: OwnedOutput,
+) -> InstallationInspection:
+    """Persist an exact HKCU value recipe before creating its registry key."""
+    with installation_lock(directory):
+        record = _pending(directory, operation_id, expected_revision)
+        operation = record.operation
+        assert operation is not None
+        if operation.kind not in {"install", "replace", "repair"}:
+            raise InstallationError("Registry registration requires a runtime operation.")
+        if registration.kind != "hkcu":
+            raise InstallationError("Registry intent must be an HKCU output.")
+        updated = replace(
+            record, operation=replace(operation, registration=registration)
+        )
+        write_record(directory, updated, expected_revision=expected_revision)
+        return inspect_installation(directory, app_id=record.identity.app_id)
+
+
 def fail_operation(
     directory: Path,
     *,

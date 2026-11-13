@@ -15,8 +15,10 @@ from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path, PurePosixPath
 
+
 from apprc.definition.installation import RuntimeSelection
 from apprc.distribution._archives import _deterministic_zip
+from apprc.distribution.metadata import _validate_project_declaration
 from apprc.distribution.models import (
     Artifact,
     DistributionSpec,
@@ -31,7 +33,7 @@ from apprc.distribution.native import (
 )
 from apprc.distribution.project import PreparedProject
 from apprc.distribution.runtime.acquisition import materialize_project_snapshot
-from apprc.distribution.metadata import read_project_metadata
+from apprc.user_files.app_home.locations import assert_no_links
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +86,7 @@ def _bootstrap_requirements() -> tuple[str, ...]:
     """Select manager dependencies from the matching SDK distribution metadata."""
     from packaging.markers import Marker
     from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
 
     selected: list[str] = []
     try:
@@ -139,17 +142,7 @@ def _validate_prepared_project(
         selected = staging if project_path == PurePosixPath(".") else (
             staging.joinpath(*project_path.parts)
         )
-        committed = read_project_metadata(selected)
-        if (
-            committed.identity != spec.metadata.identity
-            or committed.version != spec.metadata.version
-            or committed.command_name != spec.metadata.command_name
-            or committed.project_path != spec.metadata.project_path
-            or committed.distribution_path != spec.metadata.distribution_path
-            or committed.python_requirement != spec.metadata.python_requirement
-            or committed.runtime_python != spec.metadata.runtime_python
-        ):
-            raise ValueError("Prepared snapshot metadata does not match the native declaration.")
+        _validate_project_declaration(spec, selected)
     finally:
         shutil.rmtree(staging)
 def _sdk_archive(

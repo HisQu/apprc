@@ -689,11 +689,10 @@ def mount_maintenance_groups(
                             ),
                         }
                     )
-                    details = payload.get("details")
-                    if not isinstance(details, dict):
-                        details = {}
-                        payload["details"] = details
-                    details["runtime_health"] = observations
+                    if verbose:
+                        details = cast(dict[str, object], payload["details"])
+                        host = cast(dict[str, object], details["host"])
+                        host["runtime"] = observations
                 except (OSError, ValueError) as exc:
                     cast(list[object], payload["checks"]).extend(
                         [
@@ -733,11 +732,25 @@ def mount_maintenance_groups(
                         app_checks = application.get("checks", [])
                         if isinstance(app_checks, list):
                             cast(list[object], payload["checks"]).extend(app_checks)
-                        details = payload.get("details")
-                        if not isinstance(details, dict):
-                            details = {}
-                            payload["details"] = details
-                        details["application"] = application.get("details", {})
+                        app_details = application.get("details", {})
+                        if verbose and isinstance(app_details, dict):
+                            details = cast(dict[str, object], payload["details"])
+                            configuration = app_details.get("configuration")
+                            if configuration is not None:
+                                details["configuration"] = configuration
+                            resource_details = app_details.get("resources", {})
+                            resources = cast(
+                                dict[str, object], details["resources"]
+                            )
+                            if isinstance(resource_details, dict):
+                                for kind, provider in resource_details.items():
+                                    resource = resources.get(kind)
+                                    if isinstance(resource, dict):
+                                        resource["provider"] = provider
+                            host_details = app_details.get("host", {})
+                            host = cast(dict[str, object], details["host"])
+                            if isinstance(host_details, dict):
+                                host.update(host_details)
                         if application.get("status") in {
                             "error", "invalid", "provisional", "incomplete"
                         }:

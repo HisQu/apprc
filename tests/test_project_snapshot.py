@@ -67,7 +67,7 @@ def _retirement_probe_worker(
         except Timeout:
             connection.send("child-lock-still-held")
         else:
-            connection.send(("retired", try_retire_runtime_slot(slot)))
+            connection.send(("retired", _leases.try_retire_runtime_slot(slot)))
     except BaseException as error:
         connection.send(("error", f"{type(error).__name__}: {error}"))
     finally:
@@ -124,6 +124,8 @@ def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
         status="ready",
         active_runtime=runtime,
     )
+    directory.mkdir(mode=0o700, exist_ok=True)
+    directory.chmod(0o700)
     slot = directory / "runtimes" / str(runtime.slot_id)
     prefix_bin = slot / ".venv" / "bin"
     prefix_bin.mkdir(parents=True)
@@ -211,7 +213,7 @@ def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
         os.write(release_fd, b"X")
         assert forward.result(timeout=10) == 0
         assert result.read_text(encoding="utf-8") == "selected slot"
-        assert try_retire_runtime_slot(slot)
+        assert _leases.try_retire_runtime_slot(slot)
     finally:
         child_ready.set()
         continue_selection.set()
@@ -236,7 +238,7 @@ def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
             retirer.join(timeout=2)
         parent.close()
         if slot.exists():
-            assert try_retire_runtime_slot(slot)
+            assert _leases.try_retire_runtime_slot(slot)
         os.close(ready_fd)
         os.close(release_fd)
         ready_fifo.unlink(missing_ok=True)
@@ -343,9 +345,11 @@ def test_runtime_environment_removes_interpreter_injection_only() -> None:
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX inherited descriptor semantics")
 def test_child_inherits_runtime_lease_after_parent_closes(tmp_path: Path) -> None:
-    slot = tmp_path / "installation" / "runtimes" / str(uuid4())
+    installation = tmp_path / "installation"
+    installation.mkdir(mode=0o700)
+    slot = installation / "runtimes" / str(uuid4())
     slot.mkdir(parents=True)
-    lease = acquire_runtime_lease(slot)
+    lease = _leases.acquire_runtime_lease(slot)
     try:
         process = subprocess.Popen(
             [sys.executable, "-c", "import sys; sys.stdin.buffer.read()"],
@@ -358,13 +362,13 @@ def test_child_inherits_runtime_lease_after_parent_closes(tmp_path: Path) -> Non
         raise
     try:
         lease.close()
-        assert not try_retire_runtime_slot(slot)
+        assert not _leases.try_retire_runtime_slot(slot)
     finally:
         if process.poll() is None:
             assert process.stdin is not None
             process.stdin.close()
         assert process.wait(timeout=10) == 0
-    assert try_retire_runtime_slot(slot)
+    assert _leases.try_retire_runtime_slot(slot)
 
 
 def test_materialization_rejects_embedded_nul_member_name_before_extraction(

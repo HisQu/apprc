@@ -16,19 +16,22 @@ from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urlsplit
 from urllib.request import url2pathname
 
+import click
 import typer
+from typer.core import TyperCommand
 
 from apprc.definition.installation import (
     EditableCheckout,
     InstallationHooks,
     InstallationInspection,
     InstallationRecord,
+    MigrationPlan,
+    OperationContext,
     RuntimeSlot,
 )
 from apprc.definition.paths import ResourceKind
 from apprc.interfaces.cli.context import (
     InstallationCommandContext,
-    _cli_runtime_options_payload,
     installation_command_context_from,
 )
 
@@ -36,6 +39,14 @@ if TYPE_CHECKING:
     from apprc.distribution.runtime.controllers import UninstallPreparation
 
 _CATEGORIES: tuple[ResourceKind, ...] = ("config", "appdata", "cache", "state")
+
+
+class _InstallationCommand(TyperCommand):
+    """Capture the invocation before Click consumes known installer options."""
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        ctx.meta["apprc.installation.arguments"] = tuple(args)
+        return super().parse_args(ctx, args)
 
 
 def mount_installation_group(
@@ -53,6 +64,7 @@ def mount_installation_group(
     if installer_entrypoint is not None or installation_management:
         @child.command(
             "install",
+            cls=_InstallationCommand,
             context_settings={
                 "allow_extra_args": True,
                 "ignore_unknown_options": True,
@@ -78,6 +90,7 @@ def mount_installation_group(
                         ctx,
                         command_directory=command_directory,
                         assume_yes=assume_yes,
+                        installation_hooks=installation_hooks,
                     )
                     from apprc.distribution.runtime.installation import (
                         offer_configuration_setup,
@@ -93,27 +106,16 @@ def mount_installation_group(
                     or Path(sys.argv[0]).stem
                 )
                 raise typer.BadParameter(
-                    f"Run `uv run --locked {command} {maintenance_group_name} "
-                    "install -e` from the checkout."
+                    "Managed installation requires the application's native setup "
+                    f"executable. For an editable checkout, run `uv run --locked "
+                    f"{command} {maintenance_group_name} install -e`."
                 )
-            from apprc.interfaces.cli._typer_utils import (
-                args_after_cli_command,
-                args_after_command,
+            arguments = tuple(
+                token
+                for token in ctx.meta["apprc.installation.arguments"]
+                if token != "--"
             )
-
-            group_args = args_after_cli_command(
-                maintenance_group_name, tokens=sys.argv[1:]
-            )
-            arguments = (
-                args_after_command("install", tokens=group_args)
-                if group_args is not None
-                else None
-            )
-            raise typer.Exit(
-                code=installer_entrypoint(
-                    tuple(ctx.args if arguments is None else arguments)
-                )
-            )
+            raise typer.Exit(code=installer_entrypoint(arguments))
 
     @child.command("migrate")
     def migrate(
@@ -126,15 +128,41 @@ def mount_installation_group(
         context = _inspection(ctx)
         manager = context.manager
         try:
-            if context.native_binding is None:
+            inspection = manager.inspect()
+            record = inspection.record
+            pending = (
+                record
+                if record is not None
+                and record.operation is not None
+                and record.operation.kind == "migrate"
+                and record.migration is not None
+                and inspection.revision is not None
+                else None
+            )
+            if pending is not None:
+                operation = pending.operation
+                assert operation is not None and pending.migration is not None
+                plan = MigrationPlan(
+                    directory=inspection.directory,
+                    expected_revision=inspection.revision,
+                    expected_generation=pending.generation_id,
+                    app_id=pending.identity.app_id,
+                    operation_id=operation.operation_id,
+                    generation_id=pending.generation_id,
+                    placement=operation.placement,
+                    inventory=pending.migration.inventory,
+                    quiescent=True,
+                    identity=pending.identity,
+                    command_name=pending.command_name,
+                )
+            elif context.native_binding is None:
                 plan = manager.preview_migration()
             else:
                 plan = manager.preview_migration(
                     identity=context.native_binding.identity,
                     command_name=context.native_binding.command_name,
                 )
-            payload = _migration_payload(plan)
-            _emit(payload, json_output)
+            _emit(_migration_payload(plan), json_output)
             if dry_run:
                 return
             if not assume_yes and not sys.stdin.isatty():
@@ -144,15 +172,21 @@ def mount_installation_group(
                 default=False,
             ):
                 raise typer.Abort()
-            manager_executable = context._native_manager_executable
-            result = manager.migrate(
-                plan,
-                quiescent=True,
-                manager_executable=manager_executable,
-            )
+            migration_hook = _migration_bridge(context)
+            if pending is not None:
+                result = manager.resume_migration(
+                    operation_id=plan.operation_id,
+                    expected_revision=inspection.revision,
+                    migration_hook=migration_hook,
+                )
+            else:
+                result = manager.migrate(
+                    plan, quiescent=True, migration_hook=migration_hook
+                )
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc)) from exc
         _emit(_inspection_payload(result), json_output)
+
 
     @child.command("repair")
     def repair(ctx: typer.Context) -> None:
@@ -260,19 +294,55 @@ def mount_installation_group(
 
     return child
 
+
+def _migration_bridge(
+    context: InstallationCommandContext,
+) -> Callable[[MigrationPlan, OperationContext], None] | None:
+    """Compose the recorded-runtime migration bridge outside installation core."""
+    inspection = context.manager.inspect()
+    record = inspection.record
+    if record is None or record.active_runtime is None:
+        return None
+    runtime = record.active_runtime
+    if not runtime.hooks.migrate:
+        return None
+
+    def invoke(plan: MigrationPlan, operation: OperationContext) -> None:
+        from apprc.distribution.runtime.probe import application_bridge
+
+        result = application_bridge(
+            inspection.directory,
+            record.identity,
+            runtime,
+            command_name=record.command_name,
+            action="migrate",
+            environment=dict(context.environment),
+            manager_executable=context._native_manager_executable,
+            expected_revision=plan.expected_revision,
+            operation_context=operation,
+            migration_plan=plan,
+        )
+        if result != {"completed": True}:
+            raise ValueError("Migration hook did not report completion.")
+
+    return invoke
+
+
 def _register_editable(
     ctx: typer.Context,
     *,
     command_directory: Path | None,
     assume_yes: bool,
+    installation_hooks: InstallationHooks = InstallationHooks(),
 ) -> InstallationInspection:
-    """Validate the current uv checkout before recording its existing environment."""
+    """Validate the mounted command's existing editable uv checkout."""
     context = _inspection(ctx)
-    command = (
-        context.manager.spec.command_name
-        or Path(sys.argv[0]).stem
-        or "<command>"
-    )
+    if context.native_binding is not None:
+        command = context.native_binding.command_name
+    else:
+        command = context.manager.spec.command_name or Path(sys.argv[0]).stem
+    if not command:
+        command = "<command>"
     maintenance_group = (
         context.native_binding.maintenance_group_name
         if context.native_binding is not None
@@ -288,56 +358,47 @@ def _register_editable(
     prefix = Path(sys.prefix).resolve()
     project_root: Path | None = None
     distribution_spec = None
+    distribution = None
     try:
+        from apprc.definition.resolution import resolve_editable_environment
         from apprc.distribution.metadata import read_distribution_spec
 
-        for candidate in (cwd, *cwd.parents):
-            environment = candidate / ".venv"
-            if not environment.is_dir() or environment.resolve() != prefix:
-                continue
-            spec = read_distribution_spec(candidate)
-            primary = spec.metadata.command_name or (
-                spec.metadata.identity.commands[0]
-                if len(spec.metadata.identity.commands) == 1
-                else None
+        installed_commands = tuple(
+            importlib.metadata.entry_points(
+                group="console_scripts",
+                name=command,
             )
-            if (
-                spec.metadata.identity.app_id == context.manager.spec.app_id
-                and primary is not None
-                and primary in spec.metadata.identity.commands
-                and (
-                    context.manager.spec.command_name is None
-                    or primary == context.manager.spec.command_name
-                )
-            ):
-                command = primary
-                project_root = candidate
-                distribution_spec = spec
-                break
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise ValueError(f"{exc} {guidance}") from exc
-    if project_root is None or distribution_spec is None:
-        raise ValueError(
-            "The current interpreter, checkout metadata, and declared command "
-            f"do not identify one existing .venv. {guidance}"
         )
-    if not prefix.is_dir() or not (project_root / "pyproject.toml").is_file():
-        raise ValueError(f"The checkout or its .venv is unavailable. {guidance}")
-    try:
-        distribution = importlib.metadata.distribution(
-            distribution_spec.metadata.identity.distribution
+        record = context.inspection.record
+        expected_identity = (
+            context.native_binding.identity
+            if context.native_binding is not None
+            else record.identity
+            if record is not None
+            else None
         )
+        if expected_identity is not None:
+            installed_commands = tuple(
+                entry
+                for entry in installed_commands
+                if entry.dist is not None
+                and re.sub(
+                    r"[-_.]+", "-", entry.dist.metadata["Name"]
+                ).lower()
+                == expected_identity.distribution
+            )
+        if len(installed_commands) != 1:
+            raise ValueError(
+                "The mounted console command does not identify one installed "
+                "distribution."
+            )
+        installed_command = installed_commands[0]
+        distribution = installed_command.dist
+        if distribution is None:
+            raise ValueError("The mounted console command has no distribution owner.")
         installed_name = re.sub(
             r"[-_.]+", "-", distribution.metadata["Name"]
         ).lower()
-        if (
-            installed_name != distribution_spec.metadata.identity.distribution
-            or distribution.version != distribution_spec.metadata.version
-        ):
-            raise ValueError(
-                "The installed distribution version or identity differs from "
-                f"the checkout metadata. {guidance}"
-            )
         direct_url = distribution.read_text("direct_url.json")
         direct = json.loads(direct_url) if direct_url is not None else None
         parsed_url = (
@@ -354,29 +415,48 @@ def _register_editable(
         )
         if (
             source_root is None
-            or source_root.resolve() != project_root.resolve()
             or not isinstance(direct.get("dir_info"), dict)
             or direct["dir_info"].get("editable") is not True
         ):
             raise ValueError(
-                "The installed distribution is not an editable installation "
-                f"of this checkout. {guidance}"
+                "The installed distribution is not editable. "
+                f"{guidance}"
             )
-        with (project_root / "pyproject.toml").open("rb") as stream:
-            project = tomllib.load(stream)["project"]
-        scripts = project.get("scripts")
-        installed_scripts = {
-            entry.name: entry.value
-            for entry in distribution.entry_points
-            if entry.group == "console_scripts"
-        }
+        project_root = source_root.resolve(strict=True)
+        distribution_spec = read_distribution_spec(project_root)
+        identity = distribution_spec.metadata.identity
         if (
-            not isinstance(scripts, dict)
-            or installed_scripts.get(command) != scripts.get(command)
+            installed_name != identity.distribution
+            or distribution.version != distribution_spec.metadata.version
+            or identity.app_id != context.manager.spec.app_id
+            or command not in identity.commands
+            or (
+                expected_identity is not None
+                and identity != expected_identity
+            )
+            or (
+                context.native_binding is not None
+                and distribution_spec.metadata.version
+                != context.native_binding.version
+            )
         ):
             raise ValueError(
-                "The installed command entry point differs from checkout "
-                f"metadata. {guidance}"
+                "The installed distribution differs from the mounted "
+                f"identity or version. {guidance}"
+            )
+        expected_environment = resolve_editable_environment(project_root)
+        if expected_environment != prefix:
+            raise ValueError(
+                "The selected checkout does not own the current interpreter. "
+                f"{guidance}"
+            )
+        if not (
+            cwd.is_relative_to(project_root)
+            or cwd.is_relative_to(expected_environment.parent)
+        ):
+            raise ValueError(
+                "Run editable installation from the selected checkout or its "
+                f"workspace root. {guidance}"
             )
     except (
         OSError,
@@ -385,6 +465,33 @@ def _register_editable(
         TypeError,
         importlib.metadata.PackageNotFoundError,
     ) as exc:
+        raise ValueError(f"{exc} {guidance}") from exc
+    if project_root is None or distribution_spec is None or distribution is None:
+        raise ValueError(
+            "The installed console command does not identify an editable checkout. "
+            f"{guidance}"
+        )
+    if not prefix.is_dir() or not (project_root / "pyproject.toml").is_file():
+        raise ValueError(f"The checkout or its .venv is unavailable. {guidance}")
+    try:
+        with (project_root / "pyproject.toml").open("rb") as stream:
+            project = tomllib.load(stream)["project"]
+        scripts = project.get("scripts")
+        primary = distribution_spec.metadata.command_name or (
+            distribution_spec.metadata.identity.commands[0]
+            if len(distribution_spec.metadata.identity.commands) == 1
+            else None
+        )
+        if (
+            not isinstance(scripts, dict)
+            or primary != command
+            or installed_command.value != scripts.get(command)
+        ):
+            raise ValueError(
+                "The installed command entry point differs from checkout "
+                f"metadata. {guidance}"
+            )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         raise ValueError(f"{exc} {guidance}") from exc
     executable = prefix / (
         "Scripts" if os.name == "nt" else "bin"
@@ -455,8 +562,11 @@ def _register_editable(
             "The command directory must be an absolute existing directory on PATH. "
             f"{guidance}"
         )
-    if command_directory.resolve().is_relative_to(project_root) or (
-        command_directory.resolve().is_relative_to(prefix)
+    selected_command_directory = command_directory.resolve()
+    if (
+        selected_command_directory.is_relative_to(project_root)
+        or selected_command_directory.is_relative_to(prefix)
+        or selected_command_directory.is_relative_to(prefix.parent)
     ):
         raise ValueError(
             "The command directory must be outside the checkout and .venv. "
@@ -469,7 +579,7 @@ def _register_editable(
             EditableCheckout(
                 project=project_root,
                 environment=prefix,
-                hooks=distribution_spec.hooks,
+                hooks=installation_hooks,
             ),
             placement,
             command_name=command,

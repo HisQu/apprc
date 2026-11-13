@@ -548,7 +548,7 @@ def prepare_uninstall(
                 forget_retained=forget_retained,
                 manager_executable=validated_manager,
             )
-            if complete and data_categories
+            if complete and categories
             else None
         )
         if inventory is not None and provider_inventory is not None:

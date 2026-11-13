@@ -10,7 +10,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from uuid import uuid4
-from apprc.definition.installation import InstallationPlacement, RuntimeSlot
+from apprc.definition.installation import InstallationPlacement, OwnedOutput, RuntimeSlot
 from apprc.distribution.models import NativeBinding, decode_native_binding
 from apprc.services.installation import InstallationManager
 
@@ -254,7 +254,15 @@ def _owned_manager_invocation(
     except OSError:
         resolved_stable = None
     normalized_executable = os.path.normcase(str(executable_path))
-    for output in record.owned_outputs:
+    pending_outputs = (
+        tuple(
+            OwnedOutput("command", str(item.path), item.intended.digest)
+            for item in record.operation.publication
+        )
+        if record.operation is not None
+        else ()
+    )
+    for output in (*record.owned_outputs, *pending_outputs):
         if output.kind != "command" or output.digest is None:
             continue
         output_path = os.path.normcase(os.path.abspath(output.path))

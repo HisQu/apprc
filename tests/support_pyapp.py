@@ -4,21 +4,30 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing
 import os
 import shutil
 import subprocess
 import venv
 from collections.abc import Sequence
+from multiprocessing.process import BaseProcess
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
+from apprc.definition.installation import (
+    InstallationInspection,
+    OperationPlan,
+    OwnedOutput,
+)
 from apprc.distribution import (
     DistributionSpec,
     build_native_distribution,
     build_project_snapshot,
     read_distribution_spec,
 )
+from apprc.distribution.models import decode_native_binding
 from apprc.distribution.native import NativeFrontendBuilder, UV_VERSION
 from apprc.distribution.project import PreparedProject
 
@@ -56,6 +65,118 @@ def run(
     if check and result.returncode:
         raise AssertionError(f"{argv!r}\n{result.stdout}\n{result.stderr}")
     return result
+
+
+def start_installation_driver(
+    setup: Path,
+    uv: Path,
+    command_directory: Path,
+    *,
+    environment: dict[str, str],
+    cwd: Path,
+    log_path: Path,
+    ready: Path | None = None,
+    boundary: Literal["candidate", "publication"] | None = None,
+) -> BaseProcess:
+    """Run the real install engine with a killable test-only boundary.
+
+    The child uses the native product's immutable binding, project archive and
+    executable, and the real uv binary. Only boundary notification is replaced;
+    native command dispatch and recovery are observed by separate executables.
+
+    :param setup: Real setup executable supplying product bytes.
+    :param uv: Fixture's pinned manager uv.
+    :param command_directory: Isolated global-command destination.
+    :param environment: Isolated installation environment.
+    :param cwd: Child working directory.
+    :param log_path: Persistent child diagnostics for failed readiness waits.
+    :param ready: Notification written after the selected durable mutation.
+    :param boundary: Mutation after which the child waits to be killed.
+    :return: Started POSIX process; the caller owns termination and joining.
+    """
+    def install() -> None:
+        import signal
+        from zipfile import ZipFile
+
+        from apprc.distribution.runtime import _manager, installation
+        from apprc.services.installation import InstallationManager
+
+        os.setsid()
+        os.environ.clear()
+        os.environ.update(environment)
+        os.chdir(cwd)
+        with log_path.open("w", encoding="utf-8", buffering=1) as log:
+            import sys
+            original_stdout, original_stderr = sys.stdout, sys.stderr
+
+            sys.stdout = sys.stderr = log
+            os.dup2(log.fileno(), 1)
+            os.dup2(log.fileno(), 2)
+            sys.argv = [str(setup)]
+            with ZipFile(setup) as archive:
+                binding = decode_native_binding(archive.read("binding.json"))
+                project_bytes = archive.read("project.zip")
+            manager = InstallationManager(
+                _manager._application(binding).schema, environment=environment
+            )
+            patch = pytest.MonkeyPatch()
+
+            def pause() -> None:
+                if ready is None:
+                    raise ValueError("A crash boundary requires readiness output.")
+                ready.write_text("ready", encoding="utf-8")
+                while True:
+                    signal.pause()
+
+            if boundary == "candidate":
+                original_begin = manager.begin_operation
+
+                def begin(plan: OperationPlan) -> InstallationInspection:
+                    result = original_begin(plan)
+                    pause()
+                    return result
+
+                patch.setattr(manager, "begin_operation", begin)
+            elif boundary == "publication":
+                original_publish = installation._publish_stable_command
+
+                def publish(
+                    destination: Path, executable: Path, *,
+                    previous: tuple[OwnedOutput, ...],
+                ) -> OwnedOutput:
+                    result = original_publish(
+                        destination, executable, previous=previous
+                    )
+                    pause()
+                    return result
+
+                patch.setattr(installation, "_publish_stable_command", publish)
+            patch.setattr(_manager, "_manager_uv", lambda: uv)
+            patch.setattr(
+                _manager, "_read_product",
+                lambda *, include_project=False: (
+                    binding, project_bytes if include_project else None
+                ),
+            )
+            try:
+                _manager._install(
+                    binding, manager, setup,
+                    (
+                        "--yes", "--skip-setup",
+                        "--command-directory", str(command_directory),
+                    ),
+                )
+            except BaseException:
+                import traceback
+
+                traceback.print_exc(file=log)
+                raise
+            finally:
+                sys.stdout, sys.stderr = original_stdout, original_stderr
+
+    process = multiprocessing.get_context("fork").Process(target=install)
+    process.start()
+    return process
 
 
 def pinned_uv(root: Path) -> Path:
@@ -265,7 +386,7 @@ def native_product(
     terminal_wheel = next(vendor.glob("apprc-*.whl")).name
     (project_root / "pyproject.toml").write_text(
         "[build-system]\nrequires = ['setuptools>=80']\n"
-        "build-backend = 'setuptools.build_meta'\n"
+        "build-backend = 'fixture_backend'\nbackend-path = ['.']\n"
         "[project]\nname = 'fixture-app'\nversion = '1.0.0'\n"
         f"requires-python = '>=3.12'\ndependencies = ['apprc-core==0.34.0', 'apprc==0.34.0']\n"
         "[project.optional-dependencies]\nnative-feature = ['fixture-feature-dependency==1.0.0']\n"
@@ -279,7 +400,7 @@ def native_product(
         "[tool.apprc.distribution]\napp-id = 'fixture-app'\n"
         "import-package = 'fixture_app'\ncommand-name = 'fixture-app'\n"
         "apprc-reference = 'fixture_config:APP_RC'\n"
-        "runtime-python = '3.14'\nconfig = true\n"
+        "runtime-python = '3.14'\nconfig = true\nappdata = true\n"
         "[tool.apprc.distribution.hooks]\n"
         "initialize = 'fixture_app:initialize'\n"
         "inventory = 'fixture_app:inventory'\n"
@@ -301,6 +422,21 @@ def native_product(
             "[tool.setuptools]\npy-modules = []\n",
             encoding="utf-8",
         )
+    (project_root / "fixture_backend.py").write_text(
+        "import json, os, time\n"
+        "from pathlib import Path\n"
+        "from setuptools import build_meta\n"
+        "def __getattr__(name): return getattr(build_meta, name)\n"
+        "def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):\n"
+        " ready = os.environ.get('APPRC_FIXTURE_BUILD_READY')\n"
+        " release = os.environ.get('APPRC_FIXTURE_BUILD_RELEASE')\n"
+        " if bool(ready) != bool(release): raise RuntimeError('incomplete build barrier')\n"
+        " if ready:\n"
+        "  Path(ready).write_text(json.dumps({'process': os.getpid(), 'parent': os.getppid()}), encoding='utf-8')\n"
+        "  while not Path(release).exists(): time.sleep(0.01)\n"
+        " return build_meta.build_wheel(wheel_directory, config_settings, metadata_directory)\n",
+        encoding="utf-8",
+    )
     (project_root / "fixture_app.py").write_text(
         "import json, os, platform, sys, time\n"
         "from pathlib import Path\n"
@@ -370,15 +506,18 @@ def native_product(
         " from apprc.user_files.app_home.writes import file_revision\n"
         " if os.environ.get('FIXTURE_FAIL_INVENTORY') == '1':\n"
         "  raise RuntimeError('controlled inventory preflight failure')\n"
-        " if categories != frozenset({'config'}):\n"
+        " if not categories or not categories <= frozenset({'config', 'appdata'}):\n"
         "  raise RuntimeError('unexpected cleanup request')\n"
         " record = inspection.record\n"
-        " if record is None or record.placement.config_dir is None:\n"
-        "  raise RuntimeError('fixture config placement unavailable')\n"
-        " root = record.placement.config_dir\n"
-        " target = root / 'provider-owned.json'\n"
-        " entries = (InventoryEntry(target, 'file', file_revision(target), 'config'),) if target.is_file() else ()\n"
-        " return CleanupInventory(entries=entries, retained=(InventoryEntry(root, 'directory', None, 'config'),))\n"
+        " if record is None: raise RuntimeError('fixture authority unavailable')\n"
+        " entries, retained = [], []\n"
+        " for category in sorted(categories):\n"
+        "  root = getattr(record.placement, category + '_dir')\n"
+        "  if root is None: raise RuntimeError('fixture placement unavailable')\n"
+        "  target = root / 'provider-owned.json'\n"
+        "  if target.is_file(): entries.append(InventoryEntry(target, 'file', file_revision(target), category))\n"
+        "  retained.append(InventoryEntry(root, 'directory', None, category))\n"
+        " return CleanupInventory(entries=tuple(entries), retained=tuple(retained))\n"
         "def cleanup(context):\n"
         " marker = {'operation_id': str(context.operation_id), "
         "'generation_id': str(context.generation_id), 'directory': str(context.directory)}\n"
@@ -399,7 +538,7 @@ def native_product(
     )
     (project_root / "fixture_config.py").write_text(
         "from apprc import AppRC, Paths\n"
-        "APP_RC = AppRC(app_id='fixture-app', paths=Paths(config=True), "
+        "APP_RC = AppRC(app_id='fixture-app', paths=Paths(config=True, appdata=True), "
         "command_name='fixture-app')\n",
         encoding="utf-8",
     )
@@ -417,7 +556,7 @@ def native_product(
         [
             "git", "-C", str(project_root), "add",
             "pyproject.toml", "uv.lock", "fixture_app.py", "fixture_config.py",
-            "vendor", "feature-dependency", "dev-dependency",
+            "vendor", "feature-dependency", "dev-dependency", "fixture_backend.py",
         ],
         environment=git_environment,
     )
@@ -464,7 +603,7 @@ def native_product(
         [
             "git", "-C", str(project_b), "add", "pyproject.toml", "uv.lock",
             "fixture_app.py", "fixture_config.py", "vendor",
-            "feature-dependency", "dev-dependency",
+            "feature-dependency", "dev-dependency", "fixture_backend.py",
         ],
         environment=git_environment,
     )

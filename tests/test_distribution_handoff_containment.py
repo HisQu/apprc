@@ -40,6 +40,7 @@ from apprc.user_files.installation.coordination import (
 )
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.operations import fail_operation
+from apprc.distribution.runtime import namespace_finalizer
 from tests.test_distribution_process_waiter import _owned_child
 
 
@@ -62,7 +63,11 @@ def _schema3_installation(
     tmp_path: Path,
     *,
     cache_root: Path | None = None,
+    config_root: Path | None = None,
     retired: tuple[RetiredResource, ...] = (),
+    hooks: InstallationHooks = InstallationHooks(
+        cleanup="handoff_test.hooks:cleanup"
+    ),
 ) -> tuple[Path, RuntimeSlot]:
     directory = tmp_path / "installation"
     identity = InstallationIdentity(
@@ -74,8 +79,16 @@ def _schema3_installation(
     )
     placement = InstallationPlacement(
         Layout.native(),
+        config_dir=config_root,
         cache_dir=cache_root,
-        capabilities=frozenset({"cache"}) if cache_root is not None else frozenset(),
+        capabilities=frozenset(
+            category
+            for category, root in (
+                ("config", config_root),
+                ("cache", cache_root),
+            )
+            if root is not None
+        ),
         retired=retired,
     )
     slot_id = uuid4()
@@ -88,7 +101,7 @@ def _schema3_installation(
         RuntimeSelection("3.12"),
         version="1.0",
         python_version="3.12.1",
-        hooks=InstallationHooks(cleanup="handoff_test.hooks:cleanup"),
+        hooks=hooks,
     )
     record = InstallationRecord(
         schema_version=3,
@@ -222,6 +235,75 @@ def _pending_receiver_handoff(
     controllers._assert_private_directory(recovery)
     assert not (recovery / "controller.py").exists()
     return handoff
+
+
+def test_namespace_finalizer_rejects_substituted_product_identity(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "installation"
+    directory.mkdir()
+    recovery = tmp_path / "recovery"
+    recovery.mkdir(mode=0o700)
+    plan = recovery / "finalization.json"
+    plan.write_text(
+        removal.json.dumps(
+            {
+                "directory": str(directory),
+                "app_id": "saved-product",
+                "generation_id": str(uuid4()),
+                "support": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    plan.chmod(0o600)
+
+    with pytest.raises(ValueError, match="malformed or grants support"):
+        namespace_finalizer.finalize_namespace(
+            plan, directory, expected_app_id="different-product"
+        )
+
+    assert directory.is_dir()
+
+
+def test_config_only_removal_needs_no_custom_provider(
+    tmp_path: Path,
+) -> None:
+    config_root = tmp_path / "config"
+    config_root.mkdir()
+    marker = config_root / ".apprc-owner.json"
+    marker.write_text(
+        '{"schema_version":1,"app_id":"handoff-app","category":"config"}\n',
+        encoding="utf-8",
+    )
+    config_payload = config_root / "apprc.user.env"
+    config_payload.write_text("VALUE=remove\n", encoding="utf-8")
+    directory, _runtime = _schema3_installation(
+        tmp_path, config_root=config_root, hooks=InstallationHooks()
+    )
+
+    preparation = prepare_uninstall(
+        directory, categories=frozenset({"config"}), complete=True
+    )
+
+    assert preparation.can_execute
+    assert preparation.plan is not None
+    config_entries = tuple(
+        entry
+        for entry in preparation.plan.inventory.entries
+        if entry.resource == "config"
+    )
+    assert {entry.path for entry in config_entries} == {
+        config_root,
+        marker,
+        config_payload,
+    }
+    assert next(
+        entry for entry in config_entries if entry.path == marker
+    ).revision == file_revision(marker)
+    assert next(
+        entry for entry in config_entries if entry.path == config_payload
+    ).revision == file_revision(config_payload)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX private directory modes")

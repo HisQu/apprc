@@ -158,6 +158,22 @@ def validate_global_command(
     _authorized_existing(command, previous)
 
 
+def windows_registration_intent(
+    directory: Path,
+    identity: InstallationIdentity,
+    command: Path,
+    *,
+    maintenance_group_name: str = "app",
+) -> OwnedOutput:
+    subkey = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{identity.app_id}"
+    expected = (
+        ("DisplayName", identity.app_id),
+        ("UninstallString", f'"{command}" {maintenance_group_name} uninstall'),
+        ("InstallLocation", str(directory)),
+    )
+    return OwnedOutput("hkcu", rf"HKCU\{subkey}", None, expected)
+
+
 def publish_windows_registration(
     directory: Path,
     identity: InstallationIdentity,
@@ -166,91 +182,91 @@ def publish_windows_registration(
     previous: tuple[OwnedOutput, ...] = (),
     maintenance_group_name: str = "app",
 ) -> OwnedOutput | None:
-    """Own the exact HKCU uninstall values for a stable managed command."""
+    """Create only the exact registration recipe recorded as owned."""
     if os.name != "nt":
         return None
     import winreg
 
-    subkey = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{identity.app_id}"
-    output = OwnedOutput("hkcu", rf"HKCU\{subkey}", None)
-    owned_before = output in previous
-    expected = {
-        "DisplayName": identity.app_id,
-        "UninstallString": f'"{command}" {maintenance_group_name} uninstall',
-        "InstallLocation": str(directory),
-    }
-    old: dict[str, tuple[object, int]] | None = None
+    output = windows_registration_intent(
+        directory, identity, command, maintenance_group_name=maintenance_group_name
+    )
+    if output not in previous:
+        raise InstallationError("Refusing to claim an unowned Windows uninstall key.")
+    subkey = output.path.removeprefix("HKCU\\")
+    expected = dict(output.values)
     try:
         with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, subkey, 0, winreg.KEY_QUERY_VALUE
-        ) as key:
-            if not owned_before:
-                raise InstallationError("Refusing to claim an unowned Windows uninstall key.")
-            old = {}
-            count = winreg.QueryInfoKey(key)[1]
-            for index in range(count):
-                name, value, kind = winreg.EnumValue(key, index)
-                old[name] = (value, kind)
-            if set(old) != set(expected) or any(
-                old[name][0] != value or old[name][1] != winreg.REG_SZ
-                for name, value in expected.items()
-            ):
-                raise InstallationError("Windows uninstall registration changed outside AppRC ownership.")
-    except FileNotFoundError:
-        if owned_before:
-            raise InstallationError("Previously owned Windows uninstall registration is missing.")
-    if old is None:
-        with winreg.CreateKeyEx(
-            winreg.HKEY_CURRENT_USER,
-            subkey,
-            0,
+            winreg.HKEY_CURRENT_USER, subkey, 0,
             winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
         ) as key:
-            written: list[str] = []
-            try:
-                for name, value in expected.items():
-                    written.append(name)
+            subkey_count, value_count, _ = winreg.QueryInfoKey(key)
+            if subkey_count:
+                raise InstallationError("Windows uninstall key contains unknown subkeys.")
+            values = {
+                name: (value, kind)
+                for name, value, kind in (
+                    winreg.EnumValue(key, index) for index in range(value_count)
+                )
+            }
+            if any(
+                name not in expected or value != expected[name] or kind != winreg.REG_SZ
+                for name, (value, kind) in values.items()
+            ):
+                raise InstallationError("Windows uninstall registration changed outside AppRC ownership.")
+            for name, value in expected.items():
+                if name not in values:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
-            except BaseException:
-                for name in written:
-                    try:
-                        winreg.DeleteValue(key, name)
-                    except FileNotFoundError:
-                        pass
-                raise
+    except FileNotFoundError:
+        with winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER, subkey, 0,
+            winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
+        ) as key:
+            subkey_count, value_count, _ = winreg.QueryInfoKey(key)
+            if subkey_count:
+                raise InstallationError("Windows uninstall key contains unknown subkeys.")
+            values = {
+                name: (value, kind)
+                for name, value, kind in (
+                    winreg.EnumValue(key, index) for index in range(value_count)
+                )
+            }
+            if any(
+                name not in expected or values[name] != (value, winreg.REG_SZ)
+                for name, value in expected.items()
+                if name in values
+            ) or any(name not in expected for name in values):
+                raise InstallationError("Windows uninstall registration changed outside AppRC ownership.")
+            for name, value in expected.items():
+                if name not in values:
+                    winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
     return output
 
 
-def remove_windows_registration(
-    directory: Path, identity: InstallationIdentity, command: Path,
-    *, maintenance_group_name: str = "app",
-) -> bool:
-    """Delete a current-user uninstall key only while its values still match."""
+def remove_windows_registration(output: OwnedOutput) -> bool:
+    """Delete only the exact owned HKCU value recipe without unknown subkeys."""
     if os.name != "nt":
         return True
+    if output.kind != "hkcu" or output.digest is not None:
+        raise InstallationError("Registry removal requires exact HKCU ownership.")
     import winreg
 
-    key_path = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{identity.app_id}"
-    expected = {
-        "DisplayName": identity.app_id,
-        "UninstallString": f'"{command}" {maintenance_group_name} uninstall',
-        "InstallLocation": str(directory),
-    }
+    key_path = output.path.removeprefix("HKCU\\")
+    expected = dict(output.values)
     with winreg.OpenKey(
         winreg.HKEY_CURRENT_USER,
         key_path,
         0,
         winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
     ) as key:
-        count = winreg.QueryInfoKey(key)[1]
+        subkey_count, value_count, _ = winreg.QueryInfoKey(key)
         values = {
             name: (value, kind)
             for name, value, kind in (
-                winreg.EnumValue(key, index) for index in range(count)
+                winreg.EnumValue(key, index) for index in range(value_count)
             )
         }
-        if set(values) != set(expected) or any(
-            values[name][0] != value or values[name][1] != winreg.REG_SZ
+        if subkey_count or set(values) != set(expected) or any(
+            values[name] != (value, winreg.REG_SZ)
             for name, value in expected.items()
         ):
             raise InstallationError("Refusing to delete a modified Windows uninstall registration.")

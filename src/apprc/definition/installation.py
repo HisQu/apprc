@@ -87,8 +87,25 @@ class OwnedOutput:
     kind: Literal["support", "shortcut", "hkcu", "command"]
     path: str
     digest: str | None
+    values: tuple[tuple[str, str], ...] = ()
+
+    def _validate_registration(self) -> None:
+        if self.kind != "hkcu" and self.values:
+            raise InstallationError("Only HKCU outputs may record registration values.")
+        if self.kind == "hkcu" and (
+            not self.path.startswith("HKCU\\")
+            or not self.values
+            or len({name for name, _ in self.values}) != len(self.values)
+            or any(
+                not isinstance(name, str) or not name
+                or not isinstance(value, str)
+                for name, value in self.values
+            )
+        ):
+            raise InstallationError("HKCU output requires an exact value recipe.")
 
     def __post_init__(self) -> None:
+        self._validate_registration()
         if self.kind == "support":
             from pathlib import PurePosixPath, PureWindowsPath
 
@@ -102,15 +119,17 @@ class OwnedOutput:
                 or str(path) != self.path
             ):
                 raise InstallationError("Owned support path must be portable and relative.")
-        if (
-            not path.is_absolute()
-            or ".." in path.parts
-            or str(path) != self.path
-            or "\x00" in self.path
-        ):
-            raise InstallationError(
-                "Owned command path must be normalized and absolute."
-            )
+        elif self.kind in {"command", "shortcut"}:
+            path = Path(self.path)
+            if (
+                not path.is_absolute()
+                or ".." in path.parts
+                or str(path) != self.path
+                or "\x00" in self.path
+            ):
+                raise InstallationError(
+                    "Owned command path must be normalized and absolute."
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +347,49 @@ class InstallationMigration:
 
 
 @dataclass(frozen=True, slots=True)
+class PublicationImage:
+    """Authenticated retained bytes or an exact symlink target for publication."""
+
+    digest: str
+    content: str | None = None
+    link_target: str | None = None
+    mode: int | None = None
+
+    def __post_init__(self) -> None:
+        if re.fullmatch(r"[0-9a-f]{64}", self.digest) is None:
+            raise InstallationError("Publication image requires a lowercase SHA-256.")
+        if self.mode is not None and (
+            type(self.mode) is not int or self.mode < 0 or self.mode > 0o7777
+            or self.content is None
+        ):
+            raise InstallationError("Publication file mode is invalid.")
+        if (self.content is None) == (self.link_target is None):
+            raise InstallationError("Publication image requires bytes or a symlink target.")
+        if self.content is not None and (
+            not self.content.startswith(".publication-")
+            or Path(self.content).name != self.content
+            or any(character in self.content for character in "/\\\x00")
+        ):
+            raise InstallationError("Publication bytes must use an owned local filename.")
+        if self.link_target is not None and (
+            not Path(self.link_target).is_absolute() or "\x00" in self.link_target
+        ):
+            raise InstallationError("Publication symlink target must be absolute.")
+
+
+@dataclass(frozen=True, slots=True)
+class PublicationOutput:
+    """Recoverable old/new command images recorded before replacing one output."""
+
+    path: Path
+    previous: PublicationImage | None
+    intended: PublicationImage
+
+    def __post_init__(self) -> None:
+        OwnedOutput("command", str(self.path), self.intended.digest)
+
+
+@dataclass(frozen=True, slots=True)
 class InstallationOperation:
     """Validated pending work, recorded before destructive mutation."""
 
@@ -342,6 +404,8 @@ class InstallationOperation:
     complete: bool = False
     forget_retained: bool = False
     inventory: CleanupInventory = CleanupInventory()
+    publication: tuple[PublicationOutput, ...] = ()
+    registration: OwnedOutput | None = None
 
 
 @dataclass(frozen=True, slots=True)

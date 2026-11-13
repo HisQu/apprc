@@ -20,6 +20,63 @@ if TYPE_CHECKING:
     from apprc.public.app_rc import AppRC
 
 
+def _validate_project_declaration(
+    spec: DistributionSpec,
+    committed_project: Path,
+) -> None:
+    """Require committed declarations while retaining explicit product composition.
+
+    :param spec: Authored product to validate against its selected source.
+    :param committed_project: Exported project directory from the requested commit.
+    :return: ``None`` when all committed declarations match.
+    """
+    committed_spec = read_distribution_spec(committed_project)
+    authored_spec = read_distribution_spec(spec.metadata.project_root)
+    for metadata in (spec.metadata, authored_spec.metadata):
+        if (
+            committed_spec.metadata.identity != metadata.identity
+            or committed_spec.metadata.version != metadata.version
+            or committed_spec.metadata.command_name != metadata.command_name
+            or committed_spec.metadata.project_path != metadata.project_path
+            or committed_spec.metadata.distribution_path != metadata.distribution_path
+            or committed_spec.metadata.python_requirement != metadata.python_requirement
+            or committed_spec.metadata.runtime_python != metadata.runtime_python
+        ):
+            raise ValueError("Committed project metadata does not match the author declaration.")
+    if (
+        authored_spec.capabilities != committed_spec.capabilities
+        or authored_spec.display_name != committed_spec.display_name
+        or authored_spec.bootstrap_env_prefix != committed_spec.bootstrap_env_prefix
+        or authored_spec.maintenance_group_name != committed_spec.maintenance_group_name
+        or authored_spec.launch_enabled != committed_spec.launch_enabled
+    ):
+        raise ValueError("Committed project metadata does not match the author declaration.")
+    authored_hooks = _declared_hooks(spec.metadata.project_root)
+    committed_hooks = _declared_hooks(committed_project)
+    if authored_hooks != committed_hooks:
+        raise ValueError("Committed installation hook declarations do not match the author tree.")
+
+
+def _declared_hooks(project_root: Path) -> InstallationHooks:
+    """Read only hook strings explicitly authored in project metadata.
+
+    :param project_root: Project directory containing ``pyproject.toml``.
+    :return: The declared hook references, or empty hooks when omitted.
+    """
+    with (project_root / "pyproject.toml").open("rb") as stream:
+        document = tomllib.load(stream)
+    tool = document.get("tool", {})
+    apprc = tool.get("apprc", {}) if isinstance(tool, dict) else {}
+    settings = apprc.get("distribution", {}) if isinstance(apprc, dict) else {}
+    values = settings.get("hooks", {}) if isinstance(settings, dict) else {}
+    if (
+        not isinstance(values, dict)
+        or set(values) - {"initialize", "inventory", "cleanup", "migrate"}
+        or any(not isinstance(value, str) for value in values.values())
+    ):
+        raise ValueError("hooks must contain only string callback references.")
+    return InstallationHooks(**values)
+
 def read_project_metadata(project_root: Path) -> ProjectMetadata:
     """Read PEP 621 identity and portable AppRC routing declarations."""
     root = project_root.expanduser().absolute()

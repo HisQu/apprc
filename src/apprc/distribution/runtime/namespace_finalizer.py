@@ -7,6 +7,7 @@ import errno
 import json
 import os
 import stat
+from pathlib import Path
 from uuid import UUID
 
 

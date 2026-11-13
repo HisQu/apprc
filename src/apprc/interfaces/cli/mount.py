@@ -60,6 +60,7 @@ def mount_app_cli(
     installation_management: bool = False,
     native_binding: NativeBinding | None = None,
     installation_hooks: InstallationHooks = InstallationHooks(),
+    installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
     resource_diagnostics: Mapping[
         Literal["appdata", "cache", "state"],

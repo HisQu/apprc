@@ -12,8 +12,10 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
 from apprc.definition.installation import ProjectSnapshot
-from apprc.distribution.metadata import read_project_metadata
+from apprc.distribution._archives import _deterministic_zip
+from apprc.distribution.metadata import _validate_project_declaration
 from apprc.distribution.models import DistributionSpec, relative_destination
 from apprc.distribution.runtime.acquisition import (
     _archive_inputs,
@@ -65,6 +67,7 @@ def _validate_workspace(tree: Path) -> None:
             raise ValueError("Workspace members must be relative path patterns.")
         if not isinstance(excludes, list) or not all(isinstance(item, str) for item in excludes):
             raise ValueError("Workspace excludes must be relative path patterns.")
+        matches_by_pattern: dict[str, set[Path]] = {}
         for pattern in (*members, *excludes):
             pattern_path = PurePosixPath(pattern)
             if (
@@ -75,19 +78,22 @@ def _validate_workspace(tree: Path) -> None:
                 or PureWindowsPath(pattern).drive
             ):
                 raise ValueError(f"Workspace pattern is not a safe relative path: {pattern}.")
-            matches = [
+            matches = {
                 Path(match)
                 for match in glob.glob(str(pyproject.parent / pattern), recursive=True)
-            ]
-            if pattern in members and not matches:
-                raise ValueError(f"Workspace member pattern has no committed match: {pattern}.")
+            }
             for match in matches:
                 assert_no_links(match)
                 if not match.resolve().is_relative_to(tree_root):
                     raise ValueError(f"Workspace pattern escapes the exported tree: {pattern}.")
-                if pattern in members and (
-                    not match.is_dir() or not (match / "pyproject.toml").is_file()
-                ):
+            matches_by_pattern[pattern] = matches
+        excluded = set().union(*(matches_by_pattern[pattern] for pattern in excludes))
+        for pattern in members:
+            matches = matches_by_pattern[pattern]
+            if not matches:
+                raise ValueError(f"Workspace member pattern has no committed match: {pattern}.")
+            for match in matches - excluded:
+                if not match.is_dir() or not (match / "pyproject.toml").is_file():
                     raise ValueError(f"Workspace member has no pyproject.toml: {pattern}.")
         sources = uv.get("sources", {})
         if not isinstance(sources, dict):
@@ -121,7 +127,7 @@ def _remove_generated(
     always_remove = {
         "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache",
         ".mypy_cache", ".ruff_cache", ".cache", ".bun", ".vite", ".turbo",
-        ".tox", "target",
+        ".tox",
     }
     for current, directories, _ in os.walk(tree, topdown=True, followlinks=False):
         parent = Path(current)
@@ -132,11 +138,13 @@ def _remove_generated(
                 shutil.rmtree(path)
                 directories.remove(name)
                 continue
-            if name not in {"build", "dist"}:
+            if name not in {"build", "dist", "target"}:
                 if path.is_symlink():
                     raise ValueError(f"Project snapshot contains a directory link: {relative}.")
                 continue
-            if relative not in baseline_directories or relative.parent == PurePosixPath("."):
+            if relative not in baseline_directories or (
+                name in {"build", "dist"} and relative.parent == PurePosixPath(".")
+            ):
                 shutil.rmtree(path)
                 directories.remove(name)
                 continue
@@ -207,7 +215,7 @@ def _baseline_output_files(tree: Path) -> dict[PurePosixPath, str]:
     result: dict[PurePosixPath, str] = {}
     for current, _, filenames in os.walk(tree, topdown=True, followlinks=False):
         parent = Path(current)
-        if not any(part in {"build", "dist"} for part in parent.relative_to(tree).parts):
+        if not any(part in {"build", "dist", "target"} for part in parent.relative_to(tree).parts):
             continue
         for name in filenames:
             path = parent / name
@@ -270,17 +278,7 @@ def build_project_snapshot(
         selected = tree.joinpath(*project_parts) if project_parts else tree
         if not selected.is_dir():
             raise ValueError("Committed selected project path is missing from the exported tree.")
-        committed_metadata = read_project_metadata(selected)
-        if (
-            committed_metadata.identity != spec.metadata.identity
-            or committed_metadata.version != spec.metadata.version
-            or committed_metadata.command_name != spec.metadata.command_name
-            or committed_metadata.project_path != spec.metadata.project_path
-            or committed_metadata.distribution_path != spec.metadata.distribution_path
-            or committed_metadata.python_requirement != spec.metadata.python_requirement
-            or committed_metadata.runtime_python != spec.metadata.runtime_python
-        ):
-            raise ValueError("Committed project metadata does not match the author declaration.")
+        _validate_project_declaration(spec, selected)
         lock_path = _nearest_lockfile(tree, selected)
         committed_lock_digest = _sha256_file(lock_path)
         _validate_workspace(tree)
@@ -301,6 +299,7 @@ def build_project_snapshot(
             raise ValueError("Preparation modified a committed uv.lock.")
         _validate_workspace(tree)
         entries: list[tuple[str, bytes]] = []
+        executables: set[str] = set()
         for current, directories, filenames in os.walk(tree, topdown=True, followlinks=False):
             parent = Path(current)
             for name in tuple(directories):
@@ -313,8 +312,11 @@ def build_project_snapshot(
                 assert_no_links(path)
                 if not path.is_file():
                     raise ValueError("Project snapshot contains a non-regular file.")
-                entries.append((path.relative_to(tree).as_posix(), path.read_bytes()))
-        archive_bytes = _deterministic_zip(entries)
+                address = path.relative_to(tree).as_posix()
+                entries.append((address, path.read_bytes()))
+                if path.stat().st_mode & 0o111:
+                    executables.add(address)
+        archive_bytes = _deterministic_zip(entries, executables=executables)
         with destination.open("xb") as output:
             created_output = True
             output.write(archive_bytes)

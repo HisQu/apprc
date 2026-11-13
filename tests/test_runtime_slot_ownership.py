@@ -11,15 +11,75 @@ import pytest
 from apprc.definition.installation import (
     EditableCheckout,
     InstallationError,
+    InstallationIdentity,
+    InstallationInspection,
+    InstallationOperation,
+    InstallationPlacement,
+    InstallationRecord,
+    InstallationTarget,
     OwnedOutput,
+    ProjectSnapshot,
+    RuntimeSelection,
+    RuntimeSlot,
 )
+from apprc.definition.paths import Layout
 from apprc.distribution.runtime._integration import (
     publish_global_command,
     remove_owned_command,
 )
 from apprc.distribution.runtime._leases import try_retire_runtime_slot
 from apprc.distribution.runtime.backend import runtime_command, runtime_interpreter
+from apprc.user_files.installation.operations import plan_repair
 
+
+
+def test_repair_resumes_pending_managed_candidate_before_active_editable_guidance(
+    tmp_path: Path,
+) -> None:
+    identity = InstallationIdentity("repair-fixture", "repair-fixture", "app", None, ("app",))
+    placement = InstallationPlacement(Layout.native())
+    editable = EditableCheckout(tmp_path / "checkout", tmp_path / "checkout" / ".venv")
+    candidate = RuntimeSlot(
+        uuid4(),
+        ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+        RuntimeSelection("3.12", ("feature",)),
+    )
+    target = InstallationTarget(identity, placement, candidate)
+    operation_id = uuid4()
+    generation_id = uuid4()
+    operation = InstallationOperation(
+        operation_id, "replace", "failed", target, placement
+    )
+    record = InstallationRecord(
+        3, identity, "app", generation_id, "1", placement, "incomplete",
+        active_runtime=editable, operation=operation,
+    )
+    inspection = InstallationInspection(
+        "incomplete", tmp_path / "installation", "revision", identity.app_id, record
+    )
+
+    resumed = plan_repair(identity, candidate, placement, inspection=inspection)
+
+    assert resumed.operation_id == operation_id
+    assert resumed.target == target
+    assert isinstance(resumed.target.runtime, RuntimeSlot)
+    assert resumed.target.runtime.source == candidate.source
+    assert resumed.target.runtime.selection == candidate.selection
+    assert resumed.target.runtime.slot_id == candidate.slot_id
+
+    pure_editable = InstallationRecord(
+        3, identity, "app", generation_id, "1", placement, "ready",
+        active_runtime=editable,
+    )
+    with pytest.raises(InstallationError, match="uv sync --locked"):
+        plan_repair(
+            identity,
+            candidate,
+            placement,
+            inspection=InstallationInspection(
+                "ready", tmp_path / "installation", "revision", identity.app_id, pure_editable
+            ),
+        )
 
 def test_editable_runtime_uses_recorded_environment_without_copying_checkout(
     tmp_path: Path,
@@ -42,6 +102,7 @@ def test_editable_runtime_uses_recorded_environment_without_copying_checkout(
     assert set(project.iterdir()) == {environment, sentinel}
     with pytest.raises(InstallationError):
         runtime_command(tmp_path / "installation", runtime, "../outside")
+
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX global commands are symlinks")

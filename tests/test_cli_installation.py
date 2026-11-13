@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
+import pytest
 
 import typer
 from typer.testing import CliRunner
@@ -47,6 +48,80 @@ def test_explicit_installer_forwards_arguments_and_status() -> None:
     result = runner.invoke(app, args)
     assert result.exit_code == 23
     assert calls == [("--feature", "value", "package.whl")]
+
+
+def test_editable_workspace_resolves_member_project_to_root_environment(
+    tmp_path: Path,
+) -> None:
+    from apprc.definition.resolution import resolve_editable_environment
+
+    root = tmp_path / "workspace"
+    member = root / "apps" / "application"
+    excluded = root / "apps" / "excluded"
+    member.mkdir(parents=True)
+    excluded.mkdir()
+    (root / "pyproject.toml").write_text(
+        '[tool.uv.workspace]\nmembers = ["apps/*"]\n'
+        'exclude = ["apps/excluded"]\n',
+        encoding="utf-8",
+    )
+    for project in (member, excluded):
+        (project / "pyproject.toml").write_text(
+            '[project]\nname = "application"\nversion = "1.0"\n',
+            encoding="utf-8",
+        )
+
+    assert resolve_editable_environment(member) == root / ".venv"
+    with pytest.raises(ValueError, match="excluded"):
+        resolve_editable_environment(excluded)
+
+
+def test_installer_preserves_click_consumed_options_in_order(
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+    args = [
+        "app",
+        "install",
+        "--yes",
+        "--feature",
+        "before",
+        "--skip-setup",
+        "--command-directory",
+        str(tmp_path),
+        "--feature",
+        "after",
+    ]
+    app = _app(
+        args=args,
+        installer_entrypoint=lambda values: (
+            calls.append(tuple(values)) or 0
+        ),
+    )
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        (
+            "--yes",
+            "--feature",
+            "before",
+            "--skip-setup",
+            "--command-directory",
+            str(tmp_path),
+            "--feature",
+            "after",
+        )
+    ]
+
+
+def test_noneditable_install_without_delegate_requires_native_setup() -> None:
+    args = ["app", "install"]
+    result = CliRunner().invoke(_app(args=args), args)
+
+    assert result.exit_code != 0
+    assert "native setup executable" in result.output
 
 
 def test_root_doctor_reports_invalid_authority_without_paths(
@@ -123,3 +198,167 @@ def test_initial_migration_without_bound_identity_is_read_only(
             "XDG_DATA_HOME": str(tmp_path / "data"),
         },
     ).exists()
+
+
+def test_native_cli_migrate_resumes_exact_pending_inventory_and_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uuid import uuid4
+
+    from apprc.definition.installation import (
+        EditableCheckout,
+        InstallationHooks,
+        InstallationIdentity,
+        InstallationPlacement,
+        InstallationRecord,
+        InventoryEntry,
+        MigrationInventory,
+        MigrationPlan,
+        ProjectSnapshot,
+        RuntimeSelection,
+    )
+    from apprc.definition.paths import Layout, Paths
+    from apprc.distribution.models import AppCapabilities, NativeBinding
+    from apprc.distribution.runtime import probe
+    from apprc.interfaces.cli.context import _authenticated_native_manager_scope
+    from apprc.user_files.app_home.writes import file_revision
+    from apprc.user_files.installation.coordination import (
+        installation_lock,
+        write_record,
+    )
+
+    app_id = "native-migration-cli"
+    command = "native-migration-cli"
+    environment = {
+        "HOME": str(tmp_path / "home"),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "XDG_CACHE_HOME": str(tmp_path / "cache"),
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+    }
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+    declaration = rc.AppRC(
+        app_id=app_id, paths=Paths(appdata=True), command_name=command
+    )
+    manager = declaration.installation(environment=environment)
+    identity = InstallationIdentity(
+        app_id, app_id, "migration_cli", None, (command,)
+    )
+    hooks = InstallationHooks(migrate="migration_cli:migrate")
+    project = tmp_path / "developer-project"
+    venv = project / ".venv"
+    venv.mkdir(parents=True)
+    runtime = EditableCheckout(project, venv, hooks)
+    destination_root = tmp_path / "current"
+    placement = InstallationPlacement(
+        Layout.native(),
+        appdata_dir=destination_root,
+        capabilities=frozenset({"appdata"}),
+    )
+    record = InstallationRecord(
+        schema_version=3,
+        identity=identity,
+        command_name=command,
+        generation_id=uuid4(),
+        support_version="0.34.0",
+        placement=placement,
+        status="ready",
+        active_runtime=runtime,
+    )
+    with installation_lock(manager.directory):
+        write_record(manager.directory, record, expected_revision=None)
+
+    source_root = tmp_path / "legacy"
+    source_root.mkdir()
+    source = source_root / "database.sqlite"
+    source.write_bytes(b"preserved application data")
+    inventory = MigrationInventory(
+        source_root,
+        destination_root,
+        (InventoryEntry(source, "file", file_revision(source), "appdata"),),
+        (destination_root / source.name,),
+    )
+    plan = manager.plan_migration(
+        placement, inventory=inventory, quiescent=True
+    )
+
+    def fail_provider(*_args: object) -> None:
+        raise RuntimeError("interrupted migration provider")
+
+    with pytest.raises(RuntimeError, match="interrupted migration provider"):
+        manager.migrate(plan, quiescent=True, migration_hook=fail_provider)
+    pending = manager.inspect()
+    assert pending.record is not None and pending.record.operation is not None
+    operation_id = pending.record.operation.operation_id
+    calls: list[object] = []
+
+    def application_bridge(
+        _directory: Path,
+        _identity: InstallationIdentity,
+        _runtime: EditableCheckout,
+        **request: object,
+    ) -> dict[str, bool]:
+        current = manager.inspect()
+        assert current.revision == request["expected_revision"]
+        migration_plan = request["migration_plan"]
+        assert isinstance(migration_plan, MigrationPlan)
+        assert migration_plan.quiescent
+        assert migration_plan.inventory == inventory
+        assert request["operation_context"] is not None
+        calls.append(migration_plan)
+        return {"completed": True}
+
+    monkeypatch.setattr(probe, "application_bridge", application_bridge)
+    binding = NativeBinding(
+        identity=identity,
+        command_name=command,
+        display_name="Native migration fixture",
+        version="1.0",
+        source=ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+        selection=RuntimeSelection("3.14"),
+        capabilities=AppCapabilities(paths=Paths(appdata=True)),
+        layout=Layout.native(),
+        bootstrap_env_prefix="APPRC",
+        hooks=hooks,
+    )
+    arguments = ["app", "migrate", "--yes", "--json"]
+    app = typer.Typer()
+    rc.cli.mount_app_cli(
+        app,
+        declaration,
+        installation_management=True,
+        native_binding=binding,
+        args_provider=lambda: arguments,
+    )
+    monkeypatch.setattr(
+        type(manager),
+        "preview_migration",
+        lambda *_args, **_kwargs: pytest.fail(
+            "pending migration must not replan or rescan"
+        ),
+    )
+    manager_executable = tmp_path / "native-manager"
+    manager_executable.write_bytes(b"fixture manager")
+    with _authenticated_native_manager_scope(manager_executable):
+        result = CliRunner().invoke(app, arguments, env=environment)
+
+    assert result.exit_code == 0, result.output
+    decoder = json.JSONDecoder()
+    preview, _offset = decoder.raw_decode(result.stdout)
+    assert preview["entries"] == [str(source)]
+    assert preview["source_root"] == str(source_root)
+    assert len(calls) == 1
+    resumed_plan = calls[0]
+    assert isinstance(resumed_plan, MigrationPlan)
+    assert resumed_plan.operation_id == operation_id
+    assert resumed_plan.expected_revision == pending.revision
+    completed = manager.inspect()
+    assert completed.record is not None
+    assert completed.record.operation is None
+    assert completed.record.migration is not None
+    assert completed.record.migration.phase == "activated"
+    assert (destination_root / source.name).read_bytes() == (
+        b"preserved application data"
+    )

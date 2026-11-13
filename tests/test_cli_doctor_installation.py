@@ -102,6 +102,25 @@ def test_bridge_preserves_relative_env_file_across_working_directory_change(
     )
 
 
+def test_root_doctor_omits_verbose_details_without_verbose_option() -> None:
+    environment = native_environment()
+    declaration = rc.AppRC(app_id="doctor-no-details", paths=Paths())
+    arguments = ["app", "doctor", "--json"]
+    app = typer.Typer()
+    rc.cli.mount_app_cli(
+        app,
+        declaration,
+        args_provider=lambda: arguments,
+        host_diagnostics=lambda: {"host": "available"},
+    )
+
+    result = CliRunner().invoke(app, arguments, env=environment)
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert set(report) == {"status", "checks", "installation"}
+
+
 
 @pytest.mark.parametrize(
     "override", [True, False], ids=["native-override", "fallback"]

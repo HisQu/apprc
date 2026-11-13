@@ -18,6 +18,7 @@ from apprc.definition.installation import (
     InstallationPlacement,
     InstallPlan,
     MigrationInventory,
+    MigrationPlan,
     OperationStep,
     OwnedOutput,
     ProjectSnapshot,
@@ -433,28 +434,25 @@ def test_migration_hook_is_pending_checkpointed_and_skipped_on_resume(
         inventory=MigrationInventory(source_root, destination_root),
         quiescent=True,
     )
-    bridge_calls: list[dict[str, object]] = []
+    bridge_calls: list[tuple[MigrationPlan, object]] = []
 
-    def bridge(*_args: object, **kwargs: object) -> dict[str, object]:
+    def bridge(plan: MigrationPlan, context: object) -> None:
         pending = inspect_installation(directory, app_id=_identity().app_id)
         assert pending.record is not None
         assert pending.record.operation is not None
         assert pending.record.operation.kind == "migrate"
-        assert kwargs["expected_revision"] == pending.revision
-        bridge_calls.append(kwargs)
-        return {"completed": True}
+        assert plan.expected_revision == pending.revision
+        bridge_calls.append((plan, context))
 
     def stop_before_sdk_moves(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("simulated interruption after provider checkpoint")
 
-    monkeypatch.setattr(migration_engine, "application_bridge", bridge)
     monkeypatch.setattr(
         migration_engine, "_resume_migration", stop_before_sdk_moves
     )
     with pytest.raises(RuntimeError, match="provider checkpoint"):
         migration_engine.execute_migration(
-            migration_plan,
-            environment={"FIXTURE_ENV": "preserved"},
+            migration_plan, migration_hook=bridge
         )
 
     failed = inspect_installation(directory, app_id=_identity().app_id)
@@ -466,15 +464,8 @@ def test_migration_hook_is_pending_checkpointed_and_skipped_on_resume(
     )
     assert failed.record.operation.phase == "failed"
     assert len(bridge_calls) == 1
-    assert bridge_calls[0]["environment"] == {"FIXTURE_ENV": "preserved"}
+    assert bridge_calls[0][0].operation_id == migration_plan.operation_id
     monkeypatch.undo()
-    monkeypatch.setattr(
-        migration_engine,
-        "application_bridge",
-        lambda *_args, **_kwargs: pytest.fail(
-            "completed migration hook was invoked again"
-        ),
-    )
     resumed = migration_engine.resume_migration(
         directory,
         operation_id=migration_plan.operation_id,
@@ -488,7 +479,6 @@ def test_migration_hook_is_pending_checkpointed_and_skipped_on_resume(
 
 def test_migration_hook_failure_records_failed_pending_authority(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import apprc.user_files.installation.migration as migration_engine
 
@@ -521,12 +511,24 @@ def test_migration_hook_failure_records_failed_pending_authority(
         quiescent=True,
     )
 
-    def fail_hook(*_args: object, **_kwargs: object) -> dict[str, object]:
+    with pytest.raises(
+        InstallationError, match="migration provider is unavailable"
+    ):
+        migration_engine.execute_migration(migration_plan)
+    pending = inspect_installation(directory, app_id=_identity().app_id)
+    assert pending.record is not None and pending.record.operation is not None
+    assert pending.revision is not None
+
+    def fail_hook(*_args: object) -> None:
         raise RuntimeError("provider migration failed")
 
-    monkeypatch.setattr(migration_engine, "application_bridge", fail_hook)
     with pytest.raises(RuntimeError, match="provider migration failed"):
-        migration_engine.execute_migration(migration_plan)
+        migration_engine.resume_migration(
+            directory,
+            operation_id=migration_plan.operation_id,
+            expected_revision=pending.revision,
+            migration_hook=fail_hook,
+        )
 
     failed = inspect_installation(directory, app_id=_identity().app_id)
     assert failed.record is not None and failed.record.operation is not None

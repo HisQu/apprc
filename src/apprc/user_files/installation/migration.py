@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID
@@ -17,7 +17,6 @@ from apprc.definition.installation import (
     OperationContext,
     OperationStep,
 )
-from apprc.distribution.runtime.probe import application_bridge
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
@@ -121,14 +120,14 @@ def _record_migration_failure(
 def execute_migration(
     plan: MigrationPlan,
     *,
-    manager_executable: Path | None = None,
-    environment: Mapping[str, str] | None = None,
+    migration_hook: (
+        Callable[[MigrationPlan, OperationContext], None] | None
+    ) = None,
 ) -> InstallationInspection:
     """Begin and execute an explicitly confirmed migration.
 
     :param plan: Revision-checked mapping and resource-consumer quiescence confirmation.
-    :param manager_executable: Optional verified manager carrying the native bridge.
-    :param environment: Captured manager environment for the app-owned hook.
+    :param migration_hook: Application-owned callback composed by the CLI.
     :return: Activated placement, or a durable incomplete record on failure.
     """
     if not plan.quiescent:
@@ -142,17 +141,18 @@ def execute_migration(
         plan.directory,
         operation_id=plan.operation_id,
         expected_revision=pending.revision,
-        manager_executable=manager_executable,
-        environment=environment,
+        migration_hook=migration_hook,
     )
+
 
 def _run_migration_hook(
     directory: Path,
     *,
     operation_id: UUID,
     expected_revision: str,
-    manager_executable: Path | None,
-    environment: Mapping[str, str] | None,
+    migration_hook: (
+        Callable[[MigrationPlan, OperationContext], None] | None
+    ),
 ) -> str:
     """Run the captured provider only after exact pending authority is durable."""
     record = _pending(directory, operation_id, expected_revision)
@@ -168,8 +168,13 @@ def _run_migration_hook(
     if (
         runtime is None
         or OperationStep.MIGRATION_HOOK_COMPLETED in operation.steps
+        or not runtime.hooks.migrate
     ):
         return expected_revision
+    if migration_hook is None:
+        raise InstallationError(
+            "Required application migration provider is unavailable."
+        )
     migration_plan = MigrationPlan(
         directory=directory,
         expected_revision=expected_revision,
@@ -189,20 +194,7 @@ def _run_migration_hook(
         generation_id=record.generation_id,
         placement=operation.placement,
     )
-    result = application_bridge(
-        directory,
-        record.identity,
-        runtime,
-        command_name=record.command_name,
-        action="migrate",
-        environment=dict(environment or {}),
-        manager_executable=manager_executable,
-        expected_revision=expected_revision,
-        operation_context=context,
-        migration_plan=migration_plan,
-    )
-    if result != {"completed": True}:
-        raise InstallationError("Migration hook did not report completion.")
+    migration_hook(migration_plan, context)
     checkpoint = record_step(
         directory,
         operation_id=operation_id,
@@ -288,16 +280,16 @@ def resume_migration(
     *,
     operation_id: UUID,
     expected_revision: str,
-    manager_executable: Path | None = None,
-    environment: Mapping[str, str] | None = None,
+    migration_hook: (
+        Callable[[MigrationPlan, OperationContext], None] | None
+    ) = None,
 ) -> InstallationInspection:
     """Resume exact migration state and record failure while authority is unchanged.
 
     :param directory: Explicit installation address.
     :param operation_id: Pending migration identifier.
-    :param expected_revision: Last inspected authority revision.
-    :param manager_executable: Optional verified manager carrying the native bridge.
-    :param environment: Captured manager environment for the app-owned hook.
+    :param expected_revision: Exact current authority revision.
+    :param migration_hook: Application-owned callback for an uncheckpointed hook.
     :return: Activated authority; unknown files remain untouched.
     """
     record = _pending(directory, operation_id, expected_revision)
@@ -307,8 +299,7 @@ def resume_migration(
             directory,
             operation_id=operation_id,
             expected_revision=current_revision,
-            manager_executable=manager_executable,
-            environment=environment,
+            migration_hook=migration_hook,
         )
         return _resume_migration(
             directory,

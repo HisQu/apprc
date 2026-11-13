@@ -91,7 +91,7 @@ def _inspect(command: Path, environment: dict[str, str], cwd: Path) -> dict[str,
 
 
 def _package_metadata(
-    uv: Path, project: Path, environment: dict[str, str]
+    project: Path, environment: dict[str, str]
 ) -> dict[str, str | None]:
     code = (
         "import importlib.metadata as metadata\n"
@@ -107,7 +107,7 @@ def _package_metadata(
         "print(json.dumps(result, sort_keys=True))\n"
     )
     output = run(
-        [str(uv), "run", "--locked", "python", "-c", code],
+        [str(project / ".venv" / "bin" / "python"), "-I", "-c", code],
         environment=environment,
         cwd=project,
     ).stdout
@@ -231,11 +231,11 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert inspected["commands"] == [command_name]
     assert active_a["selection"]["extras"] == ["native-feature"]
     assert inspected["capabilities"] == {
-        "config": True, "appdata": False, "cache": False, "state": False
+        "config": True, "appdata": True, "cache": False, "state": False
     }
     assert inspected["paths"] == {
         "config": placement["config_dir"],
-        "appdata": None,
+        "appdata": placement["appdata_dir"],
         "cache": None,
         "state": None,
     }
@@ -258,7 +258,13 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         cwd=tmp_path,
     )
     doctor_json = json.loads(healthy_doctor.stdout)
-    assert doctor_json["details"]["application"]["host"]["application"] == "fixture"
+    assert "details" not in doctor_json
+    verbose_doctor = run(
+        [str(setup_a), "app", "doctor", "--json", "--verbose"],
+        environment=environment,
+        cwd=tmp_path,
+    )
+    assert json.loads(verbose_doctor.stdout)["details"]["host"]["application"] == "fixture"
     failed_doctor = run(
         [str(setup_a), "app", "doctor", "--json"],
         environment={**environment, "FIXTURE_DOCTOR_FAILURE": "1"},
@@ -374,7 +380,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         assert after_b["commands"] == [command_name]
         assert active_b["selection"]["extras"] == ["native-feature"]
         assert after_b["capabilities"] == {
-            "config": True, "appdata": False, "cache": False, "state": False
+            "config": True, "appdata": True, "cache": False, "state": False
         }
         assert after_b["paths"]["config"] == str(config_directory)
         assert after_b["feature_version"] == "1.0.0"
@@ -472,6 +478,10 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     new_record = _record(new_directory)
     active = new_directory / "runtimes" / _active_slot(new_record)
     shutil.rmtree(active / ".venv")
+    unknown_command = new_commands / "unrelated-command"
+    unknown_command.write_text("preserve unrelated command", encoding="utf-8")
+    unknown_installation_file = new_directory / "unrelated-file"
+    unknown_installation_file.write_text("preserve unrelated file", encoding="utf-8")
     program_only = run(
         [str(setup_a), "app", "uninstall", "--yes"],
         environment=new_host,
@@ -481,16 +491,19 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert program_only.returncode == 0, program_only.stdout + program_only.stderr
     assert not (new_commands / command_name).exists()
     assert (new_directory / "installation.json").is_file()
+    assert unknown_command.read_text(encoding="utf-8") == "preserve unrelated command"
+    assert unknown_installation_file.read_text(encoding="utf-8") == "preserve unrelated file"
 
     # * Editable registration uses the developer's existing environment.
     # * Preserve its package baseline and restore the source after the test.
     editable_host, editable_commands = _host(tmp_path / "editable-host")
+    editable_host["PATH"] += os.pathsep + str(uv.parent)
     run(
         [str(uv), "sync", "--locked", "--no-default-groups"],
         environment=editable_host,
         cwd=project_root,
     )
-    baseline_packages = _package_metadata(uv, project_root, editable_host)
+    baseline_packages = _package_metadata(project_root, editable_host)
     environment_root = project_root / ".venv"
     sentinel = environment_root / "user-sentinel.txt"
     sentinel.write_text("keep this environment", encoding="utf-8")
@@ -500,7 +513,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     )
     editable_register = run(
         [
-            str(uv), "run", "--locked", "fixture-app", "app", "install", "-e",
+            str(uv), "run", "--locked", "--no-sync", "fixture-app", "app", "install", "-e",
             "--yes", "--command-directory", str(editable_commands),
         ],
         environment=editable_host,
@@ -521,7 +534,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert environment_root.is_dir() and sentinel.read_text(encoding="utf-8") == (
         "keep this environment"
     )
-    assert _package_metadata(uv, project_root, editable_host) == baseline_packages
+    assert _package_metadata(project_root, editable_host) == baseline_packages
     editable_command = editable_commands / command_name
     editable_outside = _inspect(editable_command, editable_host, outside)
     assert Path(editable_outside["prefix"]).resolve() == environment_root.resolve()
@@ -536,7 +549,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     )
     refresh = run(
         [
-            str(uv), "run", "--locked", "fixture-app", "app", "install", "-e",
+            str(uv), "run", "--locked", "--no-sync", "fixture-app", "app", "install", "-e",
             "--yes", "--command-directory", str(editable_commands),
         ],
         environment=editable_host,
@@ -547,8 +560,31 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     refreshed_record = _record(editable_directory)
     assert refreshed_record["generation_id"] == editable_record["generation_id"]
     assert refreshed_record["active_runtime"] == editable_record["active_runtime"]
-    assert _package_metadata(uv, project_root, editable_host) == baseline_packages
+    assert _package_metadata(project_root, editable_host) == baseline_packages
+    unrelated_editable_command = editable_commands / "unrelated-command"
+    unrelated_editable_command.write_text("keep unrelated command", encoding="utf-8")
     assert sentinel.read_text(encoding="utf-8") == "keep this environment"
+
+    unregistered = run(
+        [str(editable_command), "app", "uninstall", "--yes"],
+        environment=editable_host,
+        cwd=outside,
+        check=False,
+    )
+    assert unregistered.returncode == 0, unregistered.stdout + unregistered.stderr
+    assert not editable_command.exists() and not editable_command.is_symlink()
+    assert (project_root / "fixture_app.py").read_bytes() == changed_source
+    assert sentinel.read_text(encoding="utf-8") == "keep this environment"
+    assert _package_metadata(project_root, editable_host) == baseline_packages
+    assert unrelated_editable_command.read_text(encoding="utf-8") == "keep unrelated command"
+    run(
+        [
+            str(environment_root / "bin" / command_name), "app", "install", "-e",
+            "--yes", "--command-directory", str(editable_commands),
+        ],
+        environment=editable_host,
+        cwd=project_root,
+    )
 
     editable_config = Path(_record(editable_directory)["placement"]["config_dir"])
     editable_provider = editable_config / "provider-owned.json"
@@ -557,7 +593,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     editable_unrelated.write_text("preserve", encoding="utf-8")
     editable_uninstall = run(
         [
-            str(uv), "run", "--locked", "fixture-app", "app", "uninstall",
+            str(uv), "run", "--locked", "--no-sync", "fixture-app", "app", "uninstall",
             "--complete", "--category", "config", "--yes", "--forget-retained",
         ],
         environment=editable_host,
@@ -572,4 +608,217 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert (project_root / "fixture_app.py").read_bytes() == changed_source
     assert environment_root.is_dir()
     assert sentinel.read_text(encoding="utf-8") == "keep this environment"
-    assert _package_metadata(uv, project_root, editable_host) == baseline_packages
+    assert _package_metadata(project_root, editable_host) == baseline_packages
+
+
+def test_native_appdata_purge_executes_provider_and_preserves_unknown_data(
+    tmp_path: Path, native_product: NativeProduct,
+) -> None:
+    _project_root, _uv, setup, _checksums, spec, _project = native_product
+    environment, commands = _host(tmp_path / "host")
+    run(_install(setup, commands), environment=environment, cwd=tmp_path)
+    directory = installation_directory(
+        spec.metadata.identity.app_id, environment=environment
+    )
+    record = _record(directory)
+    appdata = Path(record["placement"]["appdata_dir"])
+    config = Path(record["placement"]["config_dir"])
+    provider = appdata / "provider-owned.json"
+    unrelated = appdata / "unrelated-user.json"
+    provider.write_text('{"owned":true}', encoding="utf-8")
+    unrelated.write_text("keep unrelated data", encoding="utf-8")
+    removal = run(
+        [
+            str(setup), "app", "uninstall", "--complete", "--category", "appdata",
+            "--yes", "--forget-retained",
+        ],
+        environment=environment, cwd=tmp_path, check=False,
+    )
+    assert removal.returncode == 0, removal.stdout + removal.stderr
+    event = json.loads((config / "cleanup-hook.json").read_text(encoding="utf-8"))
+    assert event["generation_id"] == record["generation_id"]
+    assert event["directory"] == str(directory)
+    assert not provider.exists()
+    assert unrelated.read_text(encoding="utf-8") == "keep unrelated data"
+    assert not (commands / str(spec.metadata.command_name)).exists()
+
+
+def test_failed_editable_switch_restores_real_global_command_and_authority(
+    tmp_path: Path, native_product: NativeProduct,
+) -> None:
+    from apprc.definition.installation import EditableCheckout
+    from apprc.distribution.runtime import _manager
+    from apprc.services.installation import InstallationManager
+
+    project_a, uv, setup, _checksums, _spec, _project = native_product
+    project_b = project_a.parent / "fixture-b"
+    environment, commands = _host(tmp_path / "host")
+    environment["PATH"] += os.pathsep + str(uv.parent)
+    for project in (project_a, project_b):
+        run(
+            [str(uv), "sync", "--locked", "--no-default-groups"],
+            environment=environment, cwd=project,
+        )
+    with ZipFile(setup) as archive:
+        binding = decode_native_binding(archive.read("binding.json"))
+    manager = InstallationManager(
+        _manager._application(binding).schema, environment=environment
+    )
+    runtime_a = EditableCheckout(project_a, project_a / ".venv", binding.hooks)
+    runtime_b = EditableCheckout(project_b, project_b / ".venv", binding.hooks)
+    run(
+        [
+            str(runtime_a.environment / "bin" / binding.command_name),
+            "app", "install", "-e", "--yes", "--skip-setup",
+            "--command-directory", str(commands),
+        ],
+        environment=environment, cwd=project_a,
+    )
+    initial = manager.inspect().record
+    assert initial is not None
+    command = commands / binding.command_name
+    old_target = os.readlink(command)
+
+    activation = tmp_path / "activation-attempted"
+    driver = (
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "from apprc.definition.installation import EditableCheckout, InstallationError\n"
+        "from apprc.distribution.runtime.installation import register_editable_application\n"
+        "from fixture_config import APP_RC\n"
+        "manager = APP_RC.installation(environment=dict(os.environ))\n"
+        "record = manager.inspect().record\n"
+        "assert record is not None and record.active_runtime is not None\n"
+        "project, uv, command_directory, marker = map(Path, sys.argv[1:])\n"
+        "runtime = EditableCheckout(project, Path(sys.prefix), record.active_runtime.hooks)\n"
+        "def fail_activation(**kwargs):\n"
+        " command = command_directory / record.command_name\n"
+        " assert command.resolve() == Path(sys.prefix) / 'bin' / record.command_name\n"
+        " marker.write_text('activation attempted', encoding='utf-8')\n"
+        " raise InstallationError('controlled editable activation failure')\n"
+        "manager.commit_install = fail_activation\n"
+        "try:\n"
+        " register_editable_application(manager, record.identity, runtime, record.placement, "
+        "command_name=record.command_name, uv=uv, command_directory=command_directory, assume_yes=True)\n"
+        "except InstallationError:\n"
+        " raise SystemExit(23)\n"
+        "raise SystemExit('activation failure was not injected')\n"
+    )
+    rejected = run(
+        [
+            str(runtime_b.environment / "bin" / "python"), "-I", "-c", driver,
+            str(project_b), str(uv), str(commands), str(activation),
+        ],
+        environment=environment, cwd=project_b, check=False,
+    )
+    assert rejected.returncode == 23, rejected.stdout + rejected.stderr
+    assert activation.read_text(encoding="utf-8") == "activation attempted"
+    failed = manager.inspect().record
+    assert failed is not None
+    assert failed.active_runtime == initial.active_runtime == runtime_a
+    assert failed.operation is not None and failed.operation.intended is not None
+    assert failed.operation.intended.runtime == runtime_b
+    assert os.readlink(command) == old_target
+    observed = _inspect(command, environment, tmp_path)
+    assert observed["version"] == "1.0.0"
+    assert Path(observed["prefix"]).resolve() == runtime_a.environment.resolve()
+    assert runtime_a.environment.is_dir() and runtime_b.environment.is_dir()
+
+
+def test_real_workspace_member_registration_uses_composed_hooks(
+    tmp_path: Path, native_product: NativeProduct,
+) -> None:
+    source, uv, _setup, _checksums, spec, _project = native_product
+    workspace = tmp_path / "virtual-workspace"
+    member = workspace / "applications" / "selected-member"
+    member.parent.mkdir(parents=True)
+    shutil.copytree(
+        source, member,
+        ignore=shutil.ignore_patterns(".git", ".venv", ".cache", "dist"),
+    )
+    (workspace / "pyproject.toml").write_text(
+        "[tool.uv.workspace]\nmembers = ['applications/*']\n",
+        encoding="utf-8",
+    )
+    metadata = member / "pyproject.toml"
+    metadata.write_text(
+        metadata.read_text(encoding="utf-8").replace(
+            "[tool.apprc.distribution.hooks]\n"
+            "initialize = 'fixture_app:initialize'\n"
+            "inventory = 'fixture_app:inventory'\n"
+            "cleanup = 'fixture_app:cleanup'\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+    (member / "uv.lock").unlink()
+    environment, commands = _host(tmp_path / "host")
+    environment["PATH"] += os.pathsep + str(uv.parent)
+    run(
+        [str(uv), "lock", "--project", str(member)],
+        environment=environment, cwd=workspace,
+    )
+    run(
+        [
+            str(uv), "sync", "--locked", "--no-default-groups",
+            "--project", str(member), "--python", sys.executable,
+        ],
+        environment=environment, cwd=workspace,
+    )
+    environment_root = workspace / ".venv"
+    original_environment = environment_root.stat().st_ino
+    sentinel = environment_root / "developer-sentinel"
+    sentinel.write_bytes(b"developer-owned environment")
+    original_lock = (workspace / "uv.lock").read_bytes()
+    command_name = spec.metadata.command_name
+    assert command_name is not None
+    member_command = environment_root / "bin" / command_name
+    registration = run(
+        [
+            str(member_command), "app", "install", "-e", "--yes",
+            "--skip-setup", "--command-directory", str(commands),
+        ],
+        environment=environment, cwd=workspace, check=False,
+    )
+    assert registration.returncode == 0, registration.stdout + registration.stderr
+    directory = installation_directory(
+        spec.metadata.identity.app_id, environment=environment
+    )
+    record = _record(directory)
+    assert record["active_runtime"]["project"] == str(member)
+    assert record["active_runtime"]["environment"] == str(environment_root)
+    run(
+        [
+            str(member_command), "app", "install", "-e", "--yes",
+            "--skip-setup", "--command-directory", str(commands),
+        ],
+        environment=environment, cwd=member,
+    )
+    refreshed = _record(directory)
+    assert refreshed["active_runtime"] == record["active_runtime"]
+    assert refreshed["generation_id"] == record["generation_id"]
+    global_command = commands / command_name
+    observed = _inspect(global_command, environment, tmp_path)
+    assert Path(observed["prefix"]).resolve() == environment_root.resolve()
+    assert environment_root.stat().st_ino == original_environment
+    assert (workspace / "uv.lock").read_bytes() == original_lock
+    config = Path(record["placement"]["config_dir"])
+    provider = config / "provider-owned.json"
+    unrelated = config / "unrelated-user.json"
+    provider.write_text('{"owned":true}', encoding="utf-8")
+    unrelated.write_text("preserve unknown config", encoding="utf-8")
+    removal = run(
+        [
+            str(global_command), "app", "uninstall", "--complete",
+            "--category", "config", "--forget-retained", "--yes",
+        ],
+        environment=environment, cwd=tmp_path, check=False,
+    )
+    assert removal.returncode == 0, removal.stdout + removal.stderr
+    assert not provider.exists()
+    event = json.loads((config / "cleanup-hook.json").read_text(encoding="utf-8"))
+    assert event["generation_id"] == record["generation_id"]
+    assert unrelated.read_text(encoding="utf-8") == "preserve unknown config"
+    assert sentinel.read_bytes() == b"developer-owned environment"
+    assert member_command.is_file() and (member / "fixture_app.py").is_file()
+    assert not global_command.exists() and not global_command.is_symlink()

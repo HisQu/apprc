@@ -1423,8 +1423,9 @@ fresh generation. Do not leave two active authorities. Resource relocation,
 including old OS-native Linux appdata at the parent moving to the `appdata/`
 child, is a separate explicit operation using a project-owned inventory.
 
-Saved placement outranks declared defaults. Use the explicit `--layout` and
-`--app-root` installation controls to persist a switch, not ambient variables.
+Saved placement outranks declared defaults and ambient variables. `--layout`
+and `--app-root` choose a fresh installation's placement; use explicit,
+inventory-backed `app migrate` to relocate an existing installation.
 Callers manually constructing `AppPaths` must now preserve its `installation`
 snapshot; prefer `MyRC.paths(...)` rather than constructing or rediscovering it
 inside adapters. Keep old files and recovery backups until the explicit

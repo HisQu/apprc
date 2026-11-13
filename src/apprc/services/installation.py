@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
@@ -360,13 +360,15 @@ class InstallationManager:
         plan: MigrationPlan,
         *,
         quiescent: bool,
-        manager_executable: Path | None = None,
+        migration_hook: (
+            Callable[[MigrationPlan, OperationContext], None] | None
+        ) = None,
     ) -> InstallationInspection:
         """Execute a preview only after explicit old-consumer quiescence.
 
         :param plan: Previously inspected exact inventory and revision.
         :param quiescent: Explicit confirmation that old consumers are stopped.
-        :param manager_executable: Optional verified native manager carrying the bridge.
+        :param migration_hook: Application-owned migration callback, if required.
         :return: Updated installation authority.
         """
         from apprc.user_files.installation.migration import execute_migration
@@ -381,8 +383,7 @@ class InstallationManager:
             )
         return execute_migration(
             replace(plan, quiescent=True),
-            manager_executable=manager_executable,
-            environment=self.environment,
+            migration_hook=migration_hook,
         )
 
     def resume_migration(
@@ -390,13 +391,15 @@ class InstallationManager:
         *,
         operation_id: UUID,
         expected_revision: str,
-        manager_executable: Path | None = None,
+        migration_hook: (
+            Callable[[MigrationPlan, OperationContext], None] | None
+        ) = None,
     ) -> InstallationInspection:
         """Resume the matching migration at this captured host address.
 
         :param operation_id: Pending migration identifier.
         :param expected_revision: Exact current authority revision.
-        :param manager_executable: Optional verified native manager carrying the bridge.
+        :param migration_hook: Application-owned callback for an uncheckpointed hook.
         :return: Updated installation authority.
         """
         from apprc.user_files.installation.migration import resume_migration
@@ -405,8 +408,7 @@ class InstallationManager:
             self.directory,
             operation_id=operation_id,
             expected_revision=expected_revision,
-            manager_executable=manager_executable,
-            environment=self.environment,
+            migration_hook=migration_hook,
         )
 
     def initialize(self, *, context: OperationContext) -> InitializationReport:

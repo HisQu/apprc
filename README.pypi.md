@@ -100,9 +100,9 @@ Python 3.12 or newer is required.
 
 | Command | Includes |
 | --- | --- |
-| `python -m pip install "apprc>=0.32.0,<0.33"` | Core configuration, Typer commands, prompts, and Textual editor. |
-| `python -m pip install "apprc-core>=0.32.0,<0.33"` | Configuration and noninteractive path/maintenance APIs. |
-| `python -m pip install "apprc-gui>=0.32.0,<0.33"` | Configuration and Gradio settings editor. |
+| `python -m pip install "apprc>=0.34.0,<0.35"` | Core configuration, Typer commands, prompts, and Textual editor. |
+| `python -m pip install "apprc-core>=0.34.0,<0.35"` | Configuration and noninteractive path/maintenance APIs. |
+| `python -m pip install "apprc-gui>=0.34.0,<0.35"` | Configuration and Gradio settings editor. |
 
 `apprc-core` and `apprc` use `import apprc`; `apprc-gui` provides
 `from apprc_gui import ConfigEditor`. Terminal and GUI distributions install the

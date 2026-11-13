@@ -71,6 +71,7 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+- Corrected the one-line installation requirement ranges to include the published 0.34 release.
 
 <br>
 

@@ -1,94 +1,71 @@
-"""Behavioral coverage for immutable GitHub source identity."""
+"""Validate strict managed runtime snapshots and selections."""
 
-from apprc.definition._source_identity import parse_immutable_github_source
-from apprc.definition.installation import InstallationSource
-from apprc.user_files.installation.operations import _requires_record_proof
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+
+from apprc.definition.installation import (
+    EditableCheckout,
+    InstallationError,
+    ProjectSnapshot,
+    RuntimeSelection,
+    RuntimeSlot,
+)
 
 
-def test_parse_immutable_github_source_preserves_raw_identity() -> None:
-    identity = parse_immutable_github_source(
-        "git+https://github.com/Example/Project.git@"
-        "0123456789abcdef0123456789abcdef01234567"
-        "#subdirectory=packages/app"
+def test_project_snapshot_requires_lowercase_digests_and_full_commit() -> None:
+    valid = ProjectSnapshot("a" * 64, "b" * 64, "c" * 40)
+    assert valid.project_path == "."
+
+    for digest in ("A" * 64, "a" * 63, "z" * 64):
+        with pytest.raises(InstallationError, match="SHA-256"):
+            ProjectSnapshot(digest, "b" * 64, "c" * 40)
+    with pytest.raises(InstallationError, match="commit ID"):
+        ProjectSnapshot("a" * 64, "b" * 64, "A" * 40)
+
+
+@pytest.mark.parametrize("project_path", ["../outside", "/absolute", "src\\app", "a/../b"])
+def test_project_snapshot_rejects_non_normalized_project_paths(
+    project_path: str,
+) -> None:
+    with pytest.raises(InstallationError, match="normalized and relative"):
+        ProjectSnapshot("a" * 64, "b" * 64, "c" * 40, project_path)
+
+
+def test_runtime_selection_rejects_duplicate_or_invalid_extras() -> None:
+    assert RuntimeSelection("3.14", ("gui", "web")).extras == ("gui", "web")
+    for extras in (("web", "web"), ("bad extra",), ("",)):
+        with pytest.raises(InstallationError, match="valid and unique"):
+            RuntimeSelection("3.14", extras)
+
+
+def test_runtime_slot_captures_immutable_source_selection_and_observations() -> None:
+    source = ProjectSnapshot("a" * 64, "b" * 64, "c" * 40)
+    selection = RuntimeSelection("3.14", ("web",))
+    candidate = RuntimeSlot(uuid4(), source, selection)
+    observed = RuntimeSlot(
+        candidate.slot_id,
+        source,
+        selection,
+        version="1.2.3",
+        python_version="3.14.2",
     )
-
-    assert identity is not None
-    assert identity.owner == "Example"
-    assert identity.repository == "Project.git"
-    assert identity.commit == "0123456789abcdef0123456789abcdef01234567"
-    assert identity.subdirectory == "packages/app"
-    assert identity.repository_url == "https://github.com/Example/Project.git"
+    assert candidate.source == observed.source
+    assert candidate.selection == observed.selection
+    assert candidate.slot_id == observed.slot_id
+    with pytest.raises(InstallationError, match="observations"):
+        RuntimeSlot(uuid4(), source, selection, version=" ")
 
 
-def test_parse_immutable_github_source_without_subdirectory() -> None:
-    identity = parse_immutable_github_source(
-        "git+https://github.com/owner/repository@"
-        "0123456789abcdef0123456789abcdef01234567"
-    )
-
-    assert identity is not None
-    assert identity.subdirectory is None
+def test_editable_checkout_requires_canonical_absolute_paths(tmp_path: Path) -> None:
+    runtime = EditableCheckout(tmp_path / "checkout", tmp_path / "checkout/.venv")
+    assert runtime.project.is_absolute()
+    assert runtime.environment.is_absolute()
+    with pytest.raises(InstallationError, match="absolute"):
+        EditableCheckout(Path("checkout"), Path("checkout/.venv"))
 
 
-def test_parse_immutable_github_source_rejects_unaccepted_requirements() -> (
-    None
-):
-    accepted_base = (
-        "git+https://github.com/owner/repository@"
-        "0123456789abcdef0123456789abcdef01234567"
-    )
-    rejected = (
-        accepted_base.replace("github.com/", "user@github.com/"),
-        accepted_base.replace("owner/", "owner@other/"),
-        accepted_base[:-40] + "0123456789abcdef0123456789abcdef0123456",
-        accepted_base[:-40] + "0123456789ABCDEF0123456789ABCDEF01234567",
-        accepted_base + "\n",
-        accepted_base + "#subdirectory=bad\\path",
-    )
-
-    for requirement in rejected:
-        assert parse_immutable_github_source(requirement) is None
-
-
-def test_observation_digest_requires_immutable_github_source() -> None:
-    requirement = (
-        "git+https://github.com/owner/repository.git@"
-        "0123456789abcdef0123456789abcdef01234567"
-        "#subdirectory=packages/app"
-    )
-    selected = InstallationSource("index", requirement)
-    observed = InstallationSource("index", requirement, digest="a" * 64)
-
-    assert selected.matches_observation(observed)
-    assert not selected.matches_observation(
-        InstallationSource("index", requirement + "\n", digest="a" * 64)
-    )
-    assert not selected.matches_observation(
-        InstallationSource("index", requirement, digest="A" * 64)
-    )
-    assert not selected.matches_observation(
-        InstallationSource("index", requirement, digest="a" * 63)
-    )
-    assert not InstallationSource("wheel", requirement).matches_observation(
-        InstallationSource("wheel", requirement, digest="a" * 64)
-    )
-
-
-def test_record_proof_classification_keeps_source_and_digest_boundaries() -> (
-    None
-):
-    requirement = (
-        "git+https://github.com/owner/repository@"
-        "0123456789abcdef0123456789abcdef01234567"
-    )
-
-    assert _requires_record_proof(
-        InstallationSource("index", requirement, digest="a" * 64)
-    )
-    assert not _requires_record_proof(InstallationSource("index", requirement))
-    assert not _requires_record_proof(
-        InstallationSource("index", requirement + "\n", digest="a" * 64)
-    )
-    assert _requires_record_proof(
-        InstallationSource("release-sdist", "https://example.invalid/source")
-    )
+def test_editable_checkout_rejects_parent_traversal(tmp_path: Path) -> None:
+    with pytest.raises(InstallationError, match="normalized"):
+        EditableCheckout(tmp_path / ".." / "outside", tmp_path / ".venv")

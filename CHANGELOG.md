@@ -53,12 +53,16 @@ All notable changes to `AppRC` will be documented in this file.
 ### 💥 Breaking changes
 - Breaking: Applications now mount `config`, optional `workspace`, and configurable `app` groups instead of root maintenance commands. Migrate `paths` to `app paths`, all diagnostic commands to `app doctor`, saved installation actions to `app repair|uninstall|migrate`, and resource operations to `app data|cache|state`. Use `config setup` instead of `config init`. Public `purge` and generic resource `info`/`init` commands are removed; their Python maintenance APIs remain available.
 - Breaking: CLI integrations must opt into saved installation management with `installation_management=True`, use nested returned-group keys such as `app.cache`, and register custom resource commands through `resource_group_extensions`. Doctor JSON now always includes `status`, `checks`, and `installation`; `--verbose` adds `details.paths`, `details.configuration`, `details.resources`, and `details.host`. No compatibility command aliases are retained.
+- Breaking: Managed installations now require a complete project snapshot embedded in native setup and use locked runtime slots instead of shared uv tools. Existing managed users must remove the old program using its matching old tools while retaining user data, then reinstall; schema-2 records are not converted automatically. Remote `--main`/`--version`, wheel/index installation, custom wheel compilation and runtime dependency injection are removed.
+- Breaking: Distribution authors must use the project-snapshot/native-distribution builders and keep generated outputs in ignored `dist/` and `.cache/apprc/`. Standalone Python installers, shell/CMD/PowerShell lifecycle wrappers and generated source-tree support copies are removed. CLI integrations replace `installation_inventory` with typed `InstallationHooks` declarations; no compatibility aliases remain.
 
 <br>
 
 ### ➕ Added
 - Added opt-in ordered root help through `rc.cli.AppRCRootGroup`, with separate application and AppRC panels while preserving normal Typer parsing and nested help.
 - Added optional root `launch` through an explicitly supplied `LauncherSpec`, opening the existing Textual management launcher without resolving business settings. Explicit installer and local diagnostic registrations integrate existing application-owned behavior without discovering or replacing it.
+- Added first-class `app install -e` registration of an existing developer-owned checkout environment, without duplicating it or taking ownership of the checkout.
+- Added an independent native management command that forwards application commands to the recorded active runtime, with runtime leases, recoverable slot activation and explicit reporting of unavailable application checks.
 
 <br>
 

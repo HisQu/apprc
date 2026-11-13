@@ -2,32 +2,54 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from pathlib import Path, PurePosixPath
-from tempfile import TemporaryDirectory
+from pathlib import Path
 
-from apprc.definition.installation import InstallPlan, InstallationInspection
-from apprc.distribution.runtime.acquisition import SourceSelection
-from apprc.distribution.runtime.installation import install_prepared_application
+from apprc.definition.installation import (
+    InstallationIdentity,
+    InstallationInspection,
+    InstallationPlacement,
+    RuntimeSlot,
+)
+from apprc.distribution.runtime.installation import install_application
+from apprc.services.installation import InstallationManager
 
 
 def install_default(
-    plan: InstallPlan,
+    manager: InstallationManager,
+    identity: InstallationIdentity,
+    runtime: RuntimeSlot,
+    placement: InstallationPlacement,
     *,
-    selection: SourceSelection,
-    environment: Mapping[str, str],
-    probe_path: Path,
-    support_files: Mapping[PurePosixPath, bytes],
-    python_requirement: str,
+    command_name: str,
+    project_archive: Path,
+    manager_executable: Path,
+    uv: Path,
+    command_directory: Path | None = None,
+    assume_yes: bool = False,
 ) -> InstallationInspection:
-    """Install from the exact selected source and save the current support outputs."""
-    with TemporaryDirectory(prefix="apprc-install-source-") as temporary:
-        prepared = selection.prepare(Path(temporary))
-        return install_prepared_application(
-            plan,
-            prepared,
-            environment=environment,
-            probe_path=probe_path,
-            support_files=support_files,
-            python_requirement=python_requirement,
-        )
+    """Install an embedded project snapshot through the shared transaction.
+
+    :param manager: Bound installation/resource authority.
+    :param identity: Declared application identity.
+    :param runtime: Exact immutable managed candidate.
+    :param placement: Selected owned resource locations.
+    :param command_name: Primary declared console command.
+    :param project_archive: Verified committed project snapshot.
+    :param manager_executable: Native setup bytes to publish as the stable manager.
+    :param uv: Absolute manager-owned uv executable.
+    :param command_directory: Optional global command directory already on PATH.
+    :param assume_yes: Accept an explicit mode/replacement confirmation.
+    :return: Activated installation inspection.
+    """
+    return install_application(
+        manager,
+        identity,
+        runtime,
+        placement,
+        command_name=command_name,
+        project_archive=project_archive,
+        manager_executable=manager_executable,
+        uv=uv,
+        command_directory=command_directory,
+        assume_yes=assume_yes,
+    )

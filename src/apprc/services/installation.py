@@ -13,14 +13,14 @@ from uuid import UUID
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.installation import (
     CleanupInventory,
+    EditableCheckout,
     InitializationReport,
     InstallationDiagnostic,
     InstallationError,
     InstallationIdentity,
     InstallationInspection,
     InstallationPlacement,
-    InstallationSource,
-    InstalledSnapshot,
+    InstallationRecord,
     InstallPlan,
     InventoryEntry,
     MigrationInventory,
@@ -28,9 +28,10 @@ from apprc.definition.installation import (
     OperationContext,
     OperationPlan,
     OperationStep,
+    OwnedOutput,
+    RuntimeSlot,
     UninstallCommit,
     UninstallPlan,
-    UvToolTarget,
 )
 from apprc.definition.paths import AppPaths, Layout, PathKind, ResourceKind
 from apprc.user_files.installation.discovery import (
@@ -83,15 +84,20 @@ class InstallationManager:
     def plan_install(
         self,
         identity: InstallationIdentity,
-        source: InstallationSource,
+        runtime: RuntimeSlot | EditableCheckout,
         placement: InstallationPlacement,
-        backend: UvToolTarget,
+        *,
+        command_name: str | None = None,
     ) -> InstallPlan:
-        """Bind an install/replace plan to this captured installation address."""
+        """Bind install/replace planning to this captured authority address."""
         from apprc.user_files.installation.operations import plan_install
 
         return plan_install(
-            identity, source, placement, backend, inspection=self.inspect()
+            identity,
+            runtime,
+            placement,
+            inspection=self.inspect(),
+            command_name=command_name,
         )
 
     def plan_uninstall(
@@ -141,9 +147,9 @@ class InstallationManager:
         operation_id: UUID,
         expected_revision: str,
         step: OperationStep,
-        observed: InstalledSnapshot | None = None,
+        observed: RuntimeSlot | EditableCheckout | None = None,
     ) -> InstallationInspection:
-        """Persist a truthful lifecycle checkpoint at the captured address."""
+        """Persist a truthful runtime lifecycle checkpoint at this address."""
         from apprc.user_files.installation.operations import record_step
 
         return record_step(
@@ -159,9 +165,10 @@ class InstallationManager:
         *,
         operation_id: UUID,
         expected_revision: str,
-        observed: InstalledSnapshot,
+        observed: RuntimeSlot | EditableCheckout,
+        owned_outputs: tuple[OwnedOutput, ...] | None = None,
     ) -> InstallationInspection:
-        """Activate verified package state under this manager's address."""
+        """Activate a verified runtime candidate under this manager's address."""
         from apprc.user_files.installation.operations import commit_installation
 
         return commit_installation(
@@ -169,6 +176,7 @@ class InstallationManager:
             operation_id=operation_id,
             expected_revision=expected_revision,
             observed=observed,
+            owned_outputs=owned_outputs,
         )
 
     def fail_operation(
@@ -203,25 +211,34 @@ class InstallationManager:
             expected_revision=expected_revision,
         )
 
+    def record_runtime_retired(
+        self,
+        *,
+        slot_id: UUID,
+        expected_revision: str,
+        generation_id: UUID,
+    ) -> InstallationInspection:
+        """Remove one confirmed-retired managed slot from durable authority."""
+        from apprc.user_files.installation.operations import record_runtime_retired
+
+        return record_runtime_retired(
+            self.directory,
+            slot_id=slot_id,
+            expected_revision=expected_revision,
+            generation_id=generation_id,
+        )
+
     def plan_repair(
         self,
         identity: InstallationIdentity,
-        source: InstallationSource,
+        runtime: RuntimeSlot | EditableCheckout,
         placement: InstallationPlacement,
-        backend: UvToolTarget,
     ) -> InstallPlan:
-        """Plan repair against saved identity and preserve its generation.
-
-        :param identity: Exact saved application/package/import/command identities.
-        :param source: Exact source facts from the saved installation.
-        :param placement: Exact recorded placement; repair cannot relocate resources.
-        :param backend: Recorded uv executable and tool/bin addresses.
-        :return: Repair plan bound to this manager's inspected authority.
-        """
+        """Plan repair by resuming or reconstructing the exact managed runtime."""
         from apprc.user_files.installation.operations import plan_repair
 
         return plan_repair(
-            identity, source, placement, backend, inspection=self.inspect()
+            identity, runtime, placement, inspection=self.inspect()
         )
 
     def plan_migration(
@@ -230,25 +247,29 @@ class InstallationManager:
         *,
         inventory: MigrationInventory,
         quiescent: bool = False,
+        identity: InstallationIdentity | None = None,
+        command_name: str | None = None,
     ) -> MigrationPlan:
-        """Plan an explicit migration without changing files.
-
-        :param placement: Intended absolute resource locations.
-        :param inventory: Exact revision-checked source/destination mapping.
-        :param quiescent: Whether legacy consumers have stopped.
-        :return: A plan bound to this manager's captured installation address.
-        """
-        from apprc.user_files.installation.migration import (
-            validate_migration_inventory,
-        )
+        """Plan an explicit migration with exact optional initial identity."""
+        from apprc.user_files.installation.migration import validate_migration_inventory
         from apprc.user_files.installation.operations import plan_migration
 
         validate_migration_inventory(inventory, directory=self.directory)
         return plan_migration(
-            self.inspect(), placement, inventory=inventory, quiescent=quiescent
+            self.inspect(),
+            placement,
+            inventory=inventory,
+            quiescent=quiescent,
+            identity=identity,
+            command_name=command_name,
         )
 
-    def preview_migration(self) -> MigrationPlan:
+    def preview_migration(
+        self,
+        *,
+        identity: InstallationIdentity | None = None,
+        command_name: str | None = None,
+    ) -> MigrationPlan:
         """Plan Linux native appdata marker migration without scanning ownership.
 
         Only the known AppRC ownership marker is recognized by the generic
@@ -327,18 +348,25 @@ class InstallationManager:
                     kind for kind, enabled in capabilities if enabled
                 ),
             )
-        return self.plan_migration(placement, inventory=inventory)
+        return self.plan_migration(
+            placement,
+            inventory=inventory,
+            identity=identity,
+            command_name=command_name,
+        )
 
     def migrate(
         self,
         plan: MigrationPlan,
         *,
         quiescent: bool,
+        manager_executable: Path | None = None,
     ) -> InstallationInspection:
         """Execute a preview only after explicit old-consumer quiescence.
 
         :param plan: Previously inspected exact inventory and revision.
         :param quiescent: Explicit confirmation that old consumers are stopped.
+        :param manager_executable: Optional verified native manager carrying the bridge.
         :return: Updated installation authority.
         """
         from apprc.user_files.installation.migration import execute_migration
@@ -351,18 +379,24 @@ class InstallationManager:
             raise InstallationError(
                 "Migration plan belongs to another installation."
             )
-        return execute_migration(replace(plan, quiescent=True))
+        return execute_migration(
+            replace(plan, quiescent=True),
+            manager_executable=manager_executable,
+            environment=self.environment,
+        )
 
     def resume_migration(
         self,
         *,
         operation_id: UUID,
         expected_revision: str,
+        manager_executable: Path | None = None,
     ) -> InstallationInspection:
         """Resume the matching migration at this captured host address.
 
         :param operation_id: Pending migration identifier.
         :param expected_revision: Exact current authority revision.
+        :param manager_executable: Optional verified native manager carrying the bridge.
         :return: Updated installation authority.
         """
         from apprc.user_files.installation.migration import resume_migration
@@ -371,6 +405,8 @@ class InstallationManager:
             self.directory,
             operation_id=operation_id,
             expected_revision=expected_revision,
+            manager_executable=manager_executable,
+            environment=self.environment,
         )
 
     def initialize(self, *, context: OperationContext) -> InitializationReport:
@@ -402,7 +438,7 @@ class InstallationManager:
             ("state", self.spec.paths.state),
         )
         declared = {kind for kind, enabled in declared_capabilities if enabled}
-        if declared != placement.capabilities:
+        if not declared.issubset(placement.capabilities):
             raise InstallationError(
                 "Installed declaration differs from intended capabilities."
             )

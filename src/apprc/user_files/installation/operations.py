@@ -7,14 +7,13 @@ calls reuse that lock and revalidate exact authority revisions.
 
 from __future__ import annotations
 
-import re
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.installation import (
     CleanupInventory,
+    EditableCheckout,
     InstallationDiagnostic,
     InstallationError,
     InstallationIdentity,
@@ -22,9 +21,9 @@ from apprc.definition.installation import (
     InstallationOperation,
     InstallationPlacement,
     InstallationRecord,
-    InstallationSource,
     InstallationTarget,
-    InstalledSnapshot,
+    OwnedOutput,
+    RuntimeSlot,
     InstallPlan,
     MigrationInventory,
     MigrationPlan,
@@ -32,7 +31,6 @@ from apprc.definition.installation import (
     OperationStep,
     UninstallCommit,
     UninstallPlan,
-    UvToolTarget,
 )
 from apprc.definition.paths import ResourceKind
 from apprc.user_files.installation.coordination import (
@@ -48,210 +46,106 @@ from apprc.user_files.installation.planning import (
 SUPPORT_VERSION = "0.31.0"
 
 
-def _repair_source(
-    record: InstallationRecord, source: InstallationSource
-) -> InstallationSource:
-    """Retain matching saved archive proof when rebuilding a repair plan."""
-    for snapshot in (record.current, record.last_successful):
-        if snapshot is None:
-            continue
-        observed = snapshot.source
-        if not replace(source, digest=None).matches_observation(
-            replace(observed, digest=None)
-        ):
-            continue
-        if (
-            source.digest is not None
-            and observed.digest is not None
-            and source.digest != observed.digest
-        ):
-            raise InstallationError(
-                "Repair digest differs from the recorded source proof."
-            )
-        if source.digest is None and observed.digest is not None:
-            return replace(source, digest=observed.digest)
-        return source
-    return source
-
-
-def _requires_record_proof(source: InstallationSource) -> bool:
-    """Identify acquired archive sources whose ready snapshot needs RECORD proof."""
-    return source.kind == "release-sdist" or (
-        source.kind == "index"
-        and source.digest is not None
-        and parse_immutable_github_source(source.requirement) is not None
-    )
-
-
 def plan_install(
     identity: InstallationIdentity,
-    source: InstallationSource,
+    runtime: RuntimeSlot | EditableCheckout,
     placement: InstallationPlacement,
-    backend: UvToolTarget,
     *,
     inspection: InstallationInspection,
+    command_name: str | None = None,
 ) -> InstallPlan:
-    """Plan acquisition without touching disk, executing uv or downloading code.
-
-    :param identity: Distinct application/package/entry identities.
-    :param source: Exact acquisition input.
-    :param placement: Explicit intended absolute resource locations.
-    :param backend: Selected backend address.
-    :param inspection: Previously read authority and compare preconditions.
-    :return: Immutable acquisition plan.
-    """
+    """Plan runtime registration or replacement with exact CAS preconditions."""
     record = inspection.require_usable()
+    selected_command = command_name or (identity.commands[0] if identity.commands else "")
     if identity.app_id != inspection.app_id:
-        raise InstallationError(
-            "Target identity differs from captured discovery identity."
-        )
+        raise InstallationError("Target identity differs from captured discovery identity.")
+    if selected_command not in identity.commands:
+        raise InstallationError("Primary command is not declared by the application.")
     validate_placement(placement, directory=inspection.directory)
+    if isinstance(runtime, RuntimeSlot) and (
+        runtime.version is not None or runtime.python_version is not None
+    ):
+        raise InstallationError("New managed candidates cannot contain observations.")
+    if record is not None and record.operation is not None:
+        raise InstallationError("Resume or repair the pending operation before planning another install.")
     if placement.layout.mode == "native" and placement.appdata_dir is not None:
         import sys
 
-        from apprc.user_files.installation.validation import (
-            check_native_appdata_container,
-        )
+        from apprc.user_files.installation.validation import check_native_appdata_container
 
         if sys.platform not in {"win32", "darwin"}:
             check_native_appdata_container(
                 placement.appdata_dir.parent, app_id=identity.app_id
             )
-    if record is not None and record.app_id != identity.app_id:
+    if record is not None and record.identity != identity:
+        raise InstallationError("Install identity differs from saved authority.")
+    if record is not None and record.command_name != selected_command:
+        raise InstallationError("Primary command is retained across installation updates.")
+    if record is not None and record.placement != placement:
         raise InstallationError(
-            "Install identity differs from saved authority."
+            "Installation placement is retained; relocate resources with app migrate."
         )
-    if record is not None and record.current is not None:
-        if record.current.identity.distribution != identity.distribution:
-            raise InstallationError(
-                "Cannot replace a different installed distribution."
-            )
-        if record.current.backend != backend:
-            raise InstallationError(
-                "Replacement must target the recorded uv backend."
-            )
-    if record is not None:
-        from apprc.definition.installation import RetiredResource
-        from apprc.user_files.installation.planning import resource_roots
-
-        selected = set(resource_roots(placement))
-        retired = tuple(
-            dict.fromkeys(
-                (
-                    *placement.retired,
-                    *(
-                        RetiredResource(kind, path)
-                        for kind, path in resource_roots(record.placement)
-                        if (kind, path) not in selected
-                    ),
-                )
-            )
-        )
-        placement = replace(placement, retired=retired)
-        validate_placement(placement, directory=inspection.directory)
     return InstallPlan(
-        inspection.directory,
-        inspection.revision,
-        record.generation_id if record is not None else None,
-        InstallationTarget(identity, source, placement, backend),
-        uuid4(),
-        uuid4(),
-        "replace" if record is not None else "install",
+        directory=inspection.directory,
+        expected_revision=inspection.revision,
+        expected_generation=record.generation_id if record is not None else None,
+        target=InstallationTarget(identity, placement, runtime),
+        operation_id=uuid4(),
+        generation_id=record.generation_id if record is not None else uuid4(),
+        command_name=selected_command,
+        kind="replace" if record is not None and record.active_runtime is not None else "install",
     )
 
 
 def plan_repair(
     identity: InstallationIdentity,
-    source: InstallationSource,
+    runtime: RuntimeSlot | EditableCheckout,
     placement: InstallationPlacement,
-    backend: UvToolTarget,
     *,
     inspection: InstallationInspection,
 ) -> InstallPlan:
-    """Plan repair from exact recorded facts without selecting a new backend.
-
-    A matching pending install resumes its operation UUID and checkpoints. A
-    ready or removed-retained generation starts a new operation while retaining
-    that generation's UUID.
-
-    :param identity: Explicit application/package/import/command identity.
-    :param source: Explicit source facts matching the saved installation.
-    :param placement: Explicit saved placement; repair does not relocate data.
-    :param backend: Explicit recorded uv tool address.
-    :param inspection: Previously inspected host authority and exact revision.
-    :return: Repair plan retaining the saved generation.
-    """
+    """Resume the exact candidate or create a repair from active authority."""
     record = inspection.record
-    if (
-        record is None
-        or identity.app_id != inspection.app_id
-        or record.app_id != identity.app_id
-    ):
-        raise InstallationError(
-            "Repair requires a valid record for the captured application."
-        )
-    validate_placement(placement, directory=inspection.directory)
-    target = InstallationTarget(
-        identity, _repair_source(record, source), placement, backend
-    )
-    if record.operation is not None:
+    if record is None or record.identity != identity or identity.app_id != inspection.app_id:
+        raise InstallationError("Repair requires a valid record for this application.")
+    if placement != record.placement:
+        raise InstallationError("Repair cannot relocate recorded resources.")
+    if isinstance(record.active_runtime, EditableCheckout):
+        raise InstallationError("Editable environment is developer-owned; restore it with uv sync --locked.")
+    if record.operation is not None and record.operation.kind not in {
+        "install", "replace", "repair"
+    }:
+        raise InstallationError("Resume or complete the pending operation before repair.")
+    if record.operation is not None and record.operation.intended is not None:
         saved = record.operation.intended
-        if (
-            inspection.status not in {"provisional", "incomplete"}
-            or record.operation.kind not in {"install", "replace", "repair"}
-            or saved is None
-            or saved.identity != target.identity
-            or not (
-                saved.source.matches_observation(target.source)
-                or target.source.matches_observation(saved.source)
-            )
-            or saved.placement != target.placement
-            or saved.backend != target.backend
-        ):
-            raise InstallationError(
-                "Pending operation does not match the explicit repair inputs."
-            )
-        retained_source = target.source
-        if retained_source.digest is None and saved.source.digest is not None:
-            retained_source = replace(
-                retained_source, digest=saved.source.digest
-            )
-        saved_target = replace(saved, source=retained_source)
+        if saved.identity != identity:
+            raise InstallationError("Pending candidate identity has changed.")
         return InstallPlan(
-            inspection.directory,
-            inspection.revision,
-            record.generation_id,
-            saved_target,
-            record.operation.operation_id,
-            record.generation_id,
-            "repair",
+            directory=inspection.directory,
+            expected_revision=inspection.revision,
+            expected_generation=record.generation_id,
+            target=saved,
+            operation_id=record.operation.operation_id,
+            generation_id=record.generation_id,
+            command_name=record.command_name,
+            kind="repair",
         )
-    if inspection.status not in {"ready", "removed-retained"}:
-        raise InstallationError(
-            "Repair requires a resumable operation or valid saved installation."
-        )
-    observed = record.current or record.last_successful
-    if observed is None:
-        raise InstallationError(
-            "Repair needs explicit saved source and placement facts."
-        )
-    if (
-        observed.identity != identity
-        or not target.source.matches_observation(observed.source)
-        or observed.placement != placement
-        or observed.backend != backend
-    ):
-        raise InstallationError(
-            "Repair inputs differ from the recorded installation."
-        )
+    if not isinstance(record.active_runtime, RuntimeSlot):
+        raise InstallationError("Repair requires a managed active or pending runtime.")
+    if not isinstance(runtime, RuntimeSlot):
+        raise InstallationError("Managed repair requires a runtime slot candidate.")
+    if runtime.source != record.active_runtime.source or runtime.selection != record.active_runtime.selection or runtime.hooks != record.active_runtime.hooks:
+        raise InstallationError("Repair must reuse active runtime source, selection and hooks.")
+    candidate = replace(runtime, version=None, python_version=None)
     return InstallPlan(
-        inspection.directory,
-        inspection.revision,
-        record.generation_id,
-        target,
-        uuid4(),
-        record.generation_id,
-        "repair",
+        directory=inspection.directory,
+        expected_revision=inspection.revision,
+        expected_generation=record.generation_id,
+        target=InstallationTarget(identity, record.placement, candidate),
+        operation_id=uuid4(),
+        generation_id=record.generation_id,
+        command_name=record.command_name,
+        kind="repair",
     )
 
 
@@ -303,7 +197,7 @@ def plan_uninstall(
         directory,
         revision,
         record.generation_id,
-        record.app_id,
+        record.identity.app_id,
         uuid4(),
         record.placement,
         inventory,
@@ -319,35 +213,41 @@ def plan_migration(
     *,
     inventory: MigrationInventory,
     quiescent: bool = False,
+    identity: InstallationIdentity | None = None,
+    command_name: str | None = None,
 ) -> MigrationPlan:
-    """Plan only explicitly enumerated ownership-preserving movement.
-
-    :param inspection: Host authority and exact revision.
-    :param placement: Intended absolute resource locations.
-    :param inventory: Repository/provider source/destination enumeration.
-    :param quiescent: Explicit confirmation that resource consumers are stopped.
-    :return: Migration plan; execution still revalidates quiescence and targets.
-    """
+    """Plan explicitly enumerated resource movement with bound app identity."""
     record = inspection.require_usable()
-    if record is not None and record.app_id != inspection.app_id:
-        raise InstallationError(
-            "Migration identity differs from captured host."
-        )
+    if record is not None and record.identity.app_id != inspection.app_id:
+        raise InstallationError("Migration identity differs from captured host.")
+    if record is not None and record.operation is not None:
+        raise InstallationError("Resume or complete the pending operation before migration.")
+    if record is not None:
+        if identity is not None and identity != record.identity:
+            raise InstallationError("Migration identity differs from saved authority.")
+        if command_name is not None and command_name != record.command_name:
+            raise InstallationError("Migration command differs from saved authority.")
+        identity = record.identity
+        command_name = record.command_name
+    if identity is None or command_name is None:
+        raise InstallationError("Initial migration needs exact application identity and primary command.")
+    if identity.app_id != inspection.app_id or command_name not in identity.commands:
+        raise InstallationError("Migration identity or primary command does not match the application.")
     validate_placement(placement, directory=inspection.directory)
     if inventory.unknown:
-        raise InstallationError(
-            "Unknown payload requires a project-owned migration inventory."
-        )
+        raise InstallationError("Unknown payload requires a project-owned migration inventory.")
     return MigrationPlan(
-        inspection.directory,
-        inspection.revision,
-        record.generation_id if record is not None else None,
-        inspection.app_id,
-        uuid4(),
-        uuid4(),
-        placement,
-        inventory,
-        quiescent,
+        directory=inspection.directory,
+        expected_revision=inspection.revision,
+        expected_generation=record.generation_id if record is not None else None,
+        app_id=inspection.app_id,
+        operation_id=uuid4(),
+        generation_id=record.generation_id if record is not None else uuid4(),
+        placement=placement,
+        inventory=inventory,
+        quiescent=quiescent,
+        identity=identity,
+        command_name=command_name,
     )
 
 
@@ -386,16 +286,9 @@ def _checked(plan: OperationPlan) -> InstallationInspection:
                 or operation.operation_id != plan.operation_id
                 or operation.intended is None
                 or operation.intended.identity != plan.target.identity
-                or not (
-                    operation.intended.source.matches_observation(
-                        plan.target.source
-                    )
-                    or plan.target.source.matches_observation(
-                        operation.intended.source
-                    )
-                )
+                or operation.intended.runtime != plan.target.runtime
                 or operation.intended.placement != plan.target.placement
-                or operation.intended.backend != plan.target.backend
+                or plan.command_name != record.command_name
             ):
                 raise InstallationError(
                     "Pending repair operation changed after planning."
@@ -429,11 +322,7 @@ def begin_operation(plan: OperationPlan) -> InstallationInspection:
             raise InstallationError(
                 "Stop legacy consumers before executing migration."
             )
-        placement = (
-            plan.target.placement
-            if isinstance(plan, InstallPlan)
-            else plan.placement
-        )
+        placement = plan.target.placement if isinstance(plan, InstallPlan) else plan.placement
         operation = InstallationOperation(
             operation_id=plan.operation_id,
             kind=plan.kind
@@ -463,13 +352,26 @@ def begin_operation(plan: OperationPlan) -> InstallationInspection:
             else plan.generation_id
         )
         if previous is None:
+            if isinstance(plan, InstallPlan):
+                identity = plan.target.identity
+                command_name = plan.command_name
+            elif isinstance(plan, MigrationPlan):
+                identity = plan.identity
+                command_name = plan.command_name
+            else:
+                raise InstallationError(
+                    "Initial removal requires saved installation authority."
+                )
+            if identity is None or command_name is None:
+                raise InstallationError("Initial installation authority is incomplete.")
             record = InstallationRecord(
-                2,
-                _identity(plan),
-                generation,
-                SUPPORT_VERSION,
-                placement,
-                "provisional",
+                schema_version=3,
+                identity=identity,
+                command_name=command_name,
+                generation_id=generation,
+                support_version=SUPPORT_VERSION,
+                placement=placement,
+                status="provisional",
                 operation=operation,
             )
         else:
@@ -494,7 +396,7 @@ def begin_operation(plan: OperationPlan) -> InstallationInspection:
         write_record(
             plan.directory, record, expected_revision=plan.expected_revision
         )
-        return inspect_installation(plan.directory, app_id=record.app_id)
+        return inspect_installation(plan.directory, app_id=record.identity.app_id)
 
 
 def _pending(
@@ -510,12 +412,12 @@ def _pending(
     content = (directory / "installation.json").read_bytes()
     if sha256(content).hexdigest() != revision:
         raise InstallationError("Installation operation revision changed.")
-    # > The caller's operation UUID is checked after strict decoding; app_id is
-    # > used only to validate internal consistency, never for path discovery.
     value = json.loads(content)
-    if not isinstance(value, dict) or not isinstance(value.get("app_id"), str):
+    identity = value.get("identity") if isinstance(value, dict) else None
+    app_id = identity.get("app_id") if isinstance(identity, dict) else None
+    if not isinstance(app_id, str):
         raise InstallationError("Installation identity is invalid.")
-    record = decode_record(content, app_id=value["app_id"])
+    record = decode_record(content, app_id=app_id)
     if (
         record.operation is None
         or record.operation.operation_id != operation_id
@@ -524,68 +426,63 @@ def _pending(
     return record
 
 
+
+def _matches_candidate(
+    intended: RuntimeSlot | EditableCheckout,
+    observed: RuntimeSlot | EditableCheckout,
+) -> bool:
+    if isinstance(intended, RuntimeSlot) and isinstance(observed, RuntimeSlot):
+        return (
+            intended.slot_id == observed.slot_id
+            and intended.source == observed.source
+            and intended.selection == observed.selection
+            and intended.hooks == observed.hooks
+            and (intended.version is None or intended.version == observed.version)
+            and (
+                intended.python_version is None
+                or intended.python_version == observed.python_version
+            )
+        )
+    return intended == observed
 def record_step(
     directory: Path,
     *,
     operation_id: UUID,
     expected_revision: str,
     step: OperationStep,
-    observed: InstalledSnapshot | None = None,
+    observed: RuntimeSlot | EditableCheckout | None = None,
 ) -> InstallationInspection:
-    """Save a completed action and truthful live state.
-
-    :param directory: Explicit locked authority address.
-    :param operation_id: Expected pending operation.
-    :param expected_revision: Exact previous bytes digest.
-    :param step: Completed standard checkpoint.
-    :param observed: Actual observed backend, never a predicted package.
-    :return: New authority and revision.
-    """
+    """Persist an exact lifecycle checkpoint without replacing active authority."""
     with installation_lock(directory):
         record = _pending(directory, operation_id, expected_revision)
         operation = record.operation
         assert operation is not None
-        if observed is not None and observed.identity.app_id != record.app_id:
-            raise InstallationError(
-                "Observed backend belongs to another application."
-            )
         if (
-            step == OperationStep.PACKAGE_CHANGED
-            and observed is not None
-            and operation.kind in {"repair", "replace"}
-            and _requires_record_proof(observed.source)
-            and (operation.kind == "repair" or record.current is not None)
+            step == OperationStep.MIGRATION_HOOK_COMPLETED
+            and operation.kind != "migrate"
         ):
-            previous = record.current or record.last_successful
-            if (
-                previous is None
-                or previous.distribution_record_digest is None
-                or observed.distribution_record_digest
-                != previous.distribution_record_digest
-            ):
-                raise InstallationError(
-                    "Repair snapshot differs from the saved RECORD fingerprint."
-                )
-        current = record.current
-        if step == OperationStep.PACKAGE_CHANGED:
-            current = observed
-        elif step == OperationStep.PACKAGE_REMOVED:
+            raise InstallationError(
+                "Migration hook checkpoint requires a pending migration."
+            )
+        if step == OperationStep.RUNTIME_REMOVED:
             if operation.kind != "uninstall" or observed is not None:
-                raise InstallationError(
-                    "Package absence checkpoint requires an uninstall operation."
-                )
-            current = None
+                raise InstallationError("Runtime absence checkpoint requires uninstall.")
+            record = replace(record, active_runtime=None, retiring_runtime_ids=())
+        elif operation.kind == "uninstall" and observed is not None:
+            raise InstallationError("Uninstall checkpoints cannot carry runtime observations.")
+        elif observed is not None:
+            candidate = operation.intended
+            if candidate is None or not _matches_candidate(candidate.runtime, observed):
+                raise InstallationError("Observation differs from the pending runtime candidate.")
         operation = replace(
             operation,
             phase="running",
             diagnostic=None,
             steps=tuple(dict.fromkeys((*operation.steps, step))),
         )
-        record = replace(
-            record, status="incomplete", operation=operation, current=current
-        )
-        write_record(directory, record, expected_revision=expected_revision)
-        return inspect_installation(directory, app_id=record.app_id)
+        updated = replace(record, operation=operation, status="incomplete")
+        write_record(directory, updated, expected_revision=expected_revision)
+        return inspect_installation(directory, app_id=record.identity.app_id)
 
 
 def commit_installation(
@@ -593,98 +490,122 @@ def commit_installation(
     *,
     operation_id: UUID,
     expected_revision: str,
-    observed: InstalledSnapshot,
+    observed: RuntimeSlot | EditableCheckout,
+    owned_outputs: tuple[OwnedOutput, ...] | None = None,
 ) -> InstallationInspection:
-    """Activate only validated observed package, placement and saved support.
-
-    :param directory: Explicit authority address.
-    :param operation_id: Pending operation UUID.
-    :param expected_revision: Last checkpoint revision.
-    :param observed: Probe result after support/registration validation.
-    :return: Ready inspection.
-    """
+    """CAS-activate a validated candidate and retire only its prior managed slot."""
     with installation_lock(directory):
         record = _pending(directory, operation_id, expected_revision)
         operation = record.operation
         assert operation is not None
         required = {
-            OperationStep.PACKAGE_CHANGED,
+            OperationStep.RUNTIME_PREPARED,
+            OperationStep.RUNTIME_VALIDATED,
             OperationStep.RESOURCES_READY,
             OperationStep.SUPPORT_READY,
             OperationStep.REGISTRATION_READY,
         }
-        if operation.kind not in {
-            "install",
-            "replace",
-            "repair",
-        } or not required.issubset(operation.steps):
-            raise InstallationError(
-                "Installation has not completed required checkpoints."
-            )
         target = operation.intended
         if (
-            target is None
-            or observed.identity != target.identity
-            or not target.source.matches_observation(observed.source)
-            or observed.backend != target.backend
-            or observed.placement != target.placement
+            operation.kind not in {"install", "replace", "repair"}
+            or target is None or not _matches_candidate(target.runtime, observed)
+            or not required.issubset(operation.steps)
         ):
-            raise InstallationError(
-                "Observed installation does not match intended target."
-            )
-        requires_record_proof = _requires_record_proof(observed.source)
-        if requires_record_proof and (
-            observed.distribution_record_digest is None
-            or observed.source.digest is None
-            or re.fullmatch(r"[0-9a-f]{64}", observed.source.digest) is None
+            raise InstallationError("Candidate has not completed required validated checkpoints.")
+        if isinstance(observed, RuntimeSlot) and (
+            observed.version is None or observed.python_version is None
         ):
-            raise InstallationError(
-                "Installed archive snapshot lacks acquisition or RECORD SHA-256 proof."
-            )
-        if operation.kind in {"repair", "replace"} and requires_record_proof:
-            previous = record.current or record.last_successful
-            if (
-                previous is None
-                or previous.distribution_record_digest is None
-                or observed.distribution_record_digest
-                != previous.distribution_record_digest
-            ):
-                raise InstallationError(
-                    "Repair snapshot differs from the saved RECORD fingerprint."
-                )
-        if record.current is not None:
-            recorded_source = _repair_source(
-                replace(record, last_successful=None), target.source
-            )
-            if (
-                recorded_source.digest is not None
-                and recorded_source.digest != observed.source.digest
-            ):
-                raise InstallationError(
-                    "Observed source differs from the recorded archive proof."
-                )
-        elif operation.kind == "repair":
-            recorded_source = _repair_source(record, target.source)
-            if (
-                recorded_source.digest is not None
-                and recorded_source.digest != observed.source.digest
-            ):
-                raise InstallationError(
-                    "Observed source differs from the recorded archive proof."
-                )
+            raise InstallationError("Managed candidate lacks observed version metadata.")
+        retiring = record.retiring_runtime_ids
+        previous = record.active_runtime
+        if isinstance(previous, RuntimeSlot) and (
+            not isinstance(observed, RuntimeSlot)
+            or previous.slot_id != observed.slot_id
+        ):
+            retiring = tuple(dict.fromkeys((*retiring, previous.slot_id)))
         ready = replace(
             record,
             status="ready",
-            current=observed,
-            last_successful=observed,
-            placement=observed.placement,
-            owned_outputs=observed.owned_outputs,
+            placement=target.placement,
+            active_runtime=observed,
+            retiring_runtime_ids=retiring,
+            owned_outputs=record.owned_outputs if owned_outputs is None else owned_outputs,
             operation=None,
         )
         write_record(directory, ready, expected_revision=expected_revision)
-        return inspect_installation(directory, app_id=record.app_id)
+        return inspect_installation(directory, app_id=record.identity.app_id)
 
 
+def record_owned_outputs(
+    directory: Path,
+    *,
+    app_id: str,
+    expected_revision: str,
+    generation_id: UUID,
+    owned_outputs: tuple[OwnedOutput, ...],
+) -> InstallationInspection:
+    """Replace support-output ownership without changing the runtime generation.
+
+    :param directory: Explicit installation authority address.
+    :param app_id: Expected saved application identity.
+    :param expected_revision: Exact authority revision from activation.
+    :param generation_id: Generation whose shortcuts were published.
+    :param owned_outputs: Exact support outputs observed after publication.
+    :return: Updated authority at the same generation.
+    """
+    with installation_lock(directory):
+        inspection = inspect_installation(directory, app_id=app_id)
+        record = inspection.record
+        if (
+            record is None
+            or inspection.revision != expected_revision
+            or record.identity.app_id != app_id
+            or record.generation_id != generation_id
+            or record.status != "ready"
+            or record.operation is not None
+        ):
+            raise InstallationError(
+                "Installation changed before support outputs were recorded."
+            )
+        updated = replace(record, owned_outputs=owned_outputs)
+        write_record(directory, updated, expected_revision=expected_revision)
+        return inspect_installation(directory, app_id=app_id)
+
+
+def record_runtime_retired(
+    directory: Path,
+    *,
+    slot_id: UUID,
+    expected_revision: str,
+    generation_id: UUID,
+) -> InstallationInspection:
+    """CAS-clear one listed slot after its exclusive claim confirms absence."""
+    with installation_lock(directory):
+        import json
+        from hashlib import sha256
+
+        from apprc.user_files.installation.codec import decode_record
+
+        content = (directory / "installation.json").read_bytes()
+        if sha256(content).hexdigest() != expected_revision:
+            raise InstallationError("Installation changed before runtime retirement was recorded.")
+        value = json.loads(content)
+        identity = value.get("identity") if isinstance(value, dict) else None
+        app_id = identity.get("app_id") if isinstance(identity, dict) else None
+        if not isinstance(app_id, str):
+            raise InstallationError("Installation identity is invalid.")
+        record = decode_record(content, app_id=app_id)
+        if record.generation_id != generation_id or slot_id not in record.retiring_runtime_ids:
+            raise InstallationError("Runtime slot is not listed for this generation.")
+        updated = replace(
+            record,
+            retiring_runtime_ids=tuple(
+                candidate for candidate in record.retiring_runtime_ids
+                if candidate != slot_id
+            ),
+        )
+        write_record(directory, updated, expected_revision=expected_revision)
+        return inspect_installation(directory, app_id=app_id)
 def fail_operation(
     directory: Path,
     *,
@@ -711,7 +632,7 @@ def fail_operation(
             ),
         )
         write_record(directory, failed, expected_revision=expected_revision)
-        return inspect_installation(directory, app_id=record.app_id)
+        return inspect_installation(directory, app_id=record.identity.app_id)
 
 
 def commit_uninstall(
@@ -733,13 +654,20 @@ def commit_uninstall(
         assert operation is not None
         if (
             operation.kind != "uninstall"
-            or record.current is not None
-            or OperationStep.PACKAGE_REMOVED not in operation.steps
+            or record.active_runtime is not None
+            or OperationStep.RUNTIME_REMOVED not in operation.steps
         ):
             raise InstallationError("Program absence has not been observed.")
         if not operation.complete:
             retained = replace(
-                record, status="removed-retained", operation=None
+                record,
+                status="removed-retained",
+                operation=None,
+                owned_outputs=tuple(
+                    output
+                    for output in record.owned_outputs
+                    if output.kind != "shortcut"
+                ),
             )
             write_record(
                 directory, retained, expected_revision=expected_revision
@@ -748,7 +676,7 @@ def commit_uninstall(
                 "retained",
                 directory,
                 record.generation_id,
-                inspect_installation(directory, app_id=record.app_id),
+                inspect_installation(directory, app_id=record.identity.app_id),
             )
         if OperationStep.DATA_REMOVED not in operation.steps:
             raise InstallationError("Requested data cleanup has not completed.")

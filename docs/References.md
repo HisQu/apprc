@@ -51,7 +51,7 @@ Examples use `import apprc as rc`.
 | `rc.cli`, `rc.tui` | Typer adapters and Textual interfaces. |
 | `apprc_gui.ConfigEditor` | Optional Gradio editor. |
 | `apprc.scaffold` | `ConfigScaffoldRequest` and `scaffold_config_package()`. |
-| `apprc.distribution` | Optional author-time metadata, artifact generation and deterministic standalone packaging. Requires `apprc-core[distribution]`. |
+| `apprc.distribution` | Project metadata, verified source snapshots and explicit native setup builds; no custom dependency compiler. |
 | `apprc.distribution.runtime` | Shared ordinary-Python installation/removal composition primitives. |
 
 `apprc-core` owns the `apprc` modules; terminal use requires the `apprc`
@@ -247,259 +247,117 @@ child; AppRC injects that child from the parent's snapshot. See the
 
 ## Distribution generation
 
-These author-time APIs live under `apprc.distribution`:
+Distribution authoring uses committed project source and the application's exact
+`uv.lock`. The SDK delegates dependency installation to uv; it does not generate
+runtime overrides, compile private dependency wheels or maintain a wheelhouse.
 
 | API | Result / contract |
 | --- | --- |
-| `read_project_metadata(project_root)` | `ProjectMetadata` from project metadata, without importing application/business code. App ID, distribution, import package and command identities remain distinct. |
-| `inspect_capabilities(apprc)` | `AppCapabilities` from declarations only, not resolved settings or the author's installation. |
-| `render_python_installer(spec)` | Rust-free root `app-install.py` developer/remote entry. |
-| `build_main_installer(spec, payload)` | Deterministic standalone installer from the explicit `PayloadTree`. |
-| `render_launcher(spec)` / `render_uninstaller(spec)` | Python `app-launch.py` / root removal wrappers using saved management. |
-| `generate_artifacts(spec, payload)` | Convenience composition of the same generation primitives. |
-| `install_support_files(spec, payload)` | Flatten generated saved support into installation-relative files; machine addresses are bound separately at runtime. |
-| `write_artifacts(artifacts, check=False)` | Write exact bytes/modes; `check=True` reports named drift without writing. |
+| `read_project_metadata(project_root)` | Packaging, import, app and console-command identities remain distinct. |
+| `inspect_capabilities(apprc)` | Declared filesystem capabilities without resolving business settings. |
+| `build_project_snapshot(spec, *, revision, destination, prepare=None)` | `PreparedProject(archive, source)` from one committed Git tree and optional authored preparation of its private staging copy. |
+| `build_native_distribution(spec, project, *, uv, workspace, targets=..., extras=(), environment=None)` | Native setup artifacts and their checksum file. |
+| `NativeFrontendBuilder.build(*, target, destination, runtime_archive, entrypoint)` | Compile the verified ordinary-module archive without executing the produced binary. |
 
-`DistributionSpec` combines project identity, declared capabilities, source mode,
-payload format, repository/release inputs and explicit runtime overrides.
-`Artifact` contains a project-relative destination, bytes and executable bit.
-`PayloadTree(root, modules, entry_module="app_lifecycle.install",
-uninstall_entry_module="app_lifecycle.uninstall", resources=())` explicitly
-lists included ordinary modules/resources. Both entry modules must be present in
-`modules`. A custom namespace must set both entry names to match its included
-modules; the defaults do not create `app_lifecycle` aliases. Links, traversal and
-duplicate destinations are errors.
+Snapshot preparation retains the complete workspace, local member source,
+`pyproject.toml`, `uv.lock` and build inputs. uv selects the installed package and
+runtime extras; development/default groups are excluded from managed installs.
+Local sources escaping the snapshot, unsafe archive members, missing metadata or
+lockfiles, and output collisions fail before publication. Application-authored
+preparation can build frontend assets into Python package data, but must remove
+generated dependency directories and caches before archiving.
 
-The standalone loader executes the selected entry with
-`runpy.run_module(entry, run_name="__main__")`. Defining `main()` alone does not
-invoke it: an entry that defines this function must call it, normally under
-`if __name__ == "__main__":`. Templates use strict author-time Jinja; runtime
-imports do not require it.
+`ProjectSnapshot` records the archive SHA-256, lock SHA-256, full source commit
+and relative project path. `RuntimeSelection` records the Python selector and
+selected extras. `DistributionSpec` carries the project metadata, resource
+declarations and typed installation hooks; it has no wheel/index/remote-main
+source mode or injected runtime requirements.
 
-The saved read-only entry is `inspection.py`. It deliberately avoids the
-standard-library module name `inspect`, which must remain importable by adjacent
-management scripts.
+Native outputs are confined to the repository's ignored `dist/`:
 
-Default `main-installer.py` is a PEP 723 script with a deterministic encoded
-archive of explicitly selected whole modules/resources. `main-installer.pyz`
-is an explicit alternative with `main-installer-requirements.txt`.
-Both use the same implementation; neither imports the author's checkout,
-installed application or separately installed AppRC. Management requires Python
-`>=3.12`, `platformdirs==4.10.0`, `filelock==3.32.7`, `packaging==26.2`, and
-`pywin32==312` on Windows. These are direct dependency pins, not a transitive lock.
-
-Retirement of an old owned `launch.sh` requires its recorded digest to match
-under the existing installation lock. Unknown or edited files are not deleted.
-
-Lifecycle primitives under `apprc.distribution.runtime` operate on frozen typed
-plans: `plan_install`, `plan_uninstall`, `plan_migration`, `begin_operation`,
-`record_step`, `commit_installation`, `commit_uninstall` and `fail_operation`.
-Planning is read-only; mutation revalidates revision/generation under coordination.
-Repository-owned payload functions choose their order and application actions.
-There is no required lifecycle base class, hook registry, function extraction or
-source-code rewriting.
-Native entries use uv for the installed application environment; PyApp is only
-the native frontend's Python bootstrap. See
-[the development guide](Development.md#native-application-frontends) for compiler
-requirements and native release staging.
-
-
-Authored installers must also accept `--repair --directory PATH`. Resolve that
-explicit saved address, verify its installation identity, and use `plan_repair`
-with the saved source, placement and backend rather than planning a new install
-from ambient defaults. Saved `repair-installer.py` uses owned-support digests and
-recorded source identity; it does not need the public release manifest beside it.
-
-`uninstall_saved(...)` returns the verified adjacent authored uninstaller's argv,
-carrying `original_pid`, `expected_revision`, selected categories, `complete`
-and `forget_retained`. CLI and launcher use that saved procedure rather than
-bypassing application cleanup with a generic controller. The initiating process
-waits for saved preparation, then exits; the receiver still waits for its actual
-OS termination before removal.
-
-Authored uninstaller entries import `parse_uninstall_handoff_args(...)` from
-`apprc.distribution.runtime` and call it before their ordinary argument parser.
-Its result is `(original_pid, expected_revision, remaining)`. Revalidate that
-revision against fresh `prepare_uninstall(...)`,
-then pass the original PID to `start_uninstall_handoff(...)`. Return success only
-after `wait_ready()` and `signal_exit()`. These reserved routing arguments are
-`--apprc-original-pid` and `--apprc-expected-revision`, not application options.
-Run application cleanup while the recorded program is present; completion from
-`removed-retained` must not invent or require a live installation.
-
-`InstallationTarget` carries intended identity, source, placement and backend
-inputs; it has no owned outputs. `InstalledSnapshot` carries observed package
-state, optional `distribution_record_digest`, and its support inventory. Support
-publication accepts existing files only
-when their exact digests match saved record or snapshot ownership, not merely
-the newly requested bytes. The installer binds support to actual executable
-addresses, validates existing destinations, and checkpoints the final digests
-before writing files. A matching repair can therefore resume interrupted
-publication; unknown or edited destinations remain errors.
-
-`bind_install_support(support_files, observed, directory, previous_outputs)`
-is the supported runtime boundary for authored installation and legacy cutover.
-It selects the current platform's support and binds the verified external Python
-and observed application command before support digests are staged. It returns
-bytes; it does not publish files, activate authority or replace the caller's
-coordination and revision checks. Supply only digest-proven previous ownership.
-Stage this bound output before `execute_migration(...)` can commit `ready`;
-reinstallation afterward is not a substitute for usable recovery at activation.
-
-Authored installer entries load portable inputs with
-`load_installer_spec(*, script=None)`, then call
-`parse_source_arguments(spec, sys.argv[1:])` before parsing application options.
-It returns a `SourceSelection` and remaining arguments. Acquire through
-`prepare_installation_source(spec, selection, private_staging, repair_from=None)`
-and pass the resulting `PreparedSource` to `install_prepared_application(...)`.
-For saved repair, supply the explicit saved installation address as `repair_from`.
-This preserves ordinary source selection while adapting authenticated native
-payloads. Recomputing `installation_source(spec)` would discard transport choices.
-
-The standalone loader installs only `MANAGEMENT_REQUIREMENTS`. Application
-`runtime_requirements` and `runtime_overrides` remain in the bundled source
-contract for the uv-tool environment; they do not constrain the independent
-loader. An application with no runtime dependencies has a valid empty closure.
-
-The low-level
-`apprc.distribution.runtime.backend.install_uv_tool(target, source, *, environment, python_requirement=">=3.12", constraints=None, override_file=None, runtime_requirements_file=None)`
-accepts explicit `Path` inputs for three distinct uv mechanisms:
-
-| Keyword | uv option | Effect |
-| --- | --- | --- |
-| `constraints` | `--constraint` | Restrict dependency versions without adding requirements. |
-| `override_file` | `--override` | Replace dependency requirements with the file's requirements. |
-| `runtime_requirements_file` | `--with-requirements` | Add the file's requirements to the installed runtime graph. |
-
-Omitted file inputs emit no corresponding option. `source.runtime_overrides`
-still emits one `--with` per requirement; it does not supply uv overrides.
-Low-level callers own file preparation, integrity verification, and lifecycle
-authorization. Managed installation accepts a `PreparedSource.bundle` descriptor:
-`prepare_wheel_bundle(payload_directory, private_staging, source=source, distribution=name)`
-verifies `inventory.json`, `runtime-requirements.txt`, and wheel bytes, then
-prepares private override/requirements files. The trusted `InstallationSource`
-must identify the root wheel and complete pinned runtime graph. The inventory
-may contain only the bundled subset; ordinary unbundled dependencies remain in
-that graph. Repository rows retain their immutable commit and subdirectory.
-`install_application(...)` revalidates these inputs before mutation and after
-the existing setup hook, then supplies them to the recorded uv backend. Staged
-paths are operation inputs, not saved installation authority.
-
-`repair_saved(directory)` uses retained record ownership when a pending package
-snapshot has not published its support inventory. It still requires the exact
-recorded saved installer digest and rejects unknown, linked or modified files;
-an interrupted repair does not authorize downloading a newer installer.
-
-Native compilation is an explicit authoring operation:
-`NativeFrontendBuilder(workspace, bootstrap_name=name, python_version="3.14")`
-creates a new private workspace, and
-`builder.build(dispatcher, target=target, destination=path)` returns a
-`NativeArtifact` with the finished path, target, byte size, SHA-256 and build
-report path. Supported targets are `x86_64-unknown-linux-gnu` and
-`x86_64-pc-windows-msvc`; the latter uses Cargo-xwin. The builder verifies pinned
-PyApp 0.31.0 source and bootstraps normal pip with management dependencies and
-uv 0.13.6. Its toolchain-based bootstrap version does not change with dispatcher
-bytes. Calls sharing a builder or `CARGO_TARGET_DIR` must be serialized; relative
-Cargo paths are resolved from the builder's construction directory.
-Ordinary Python artifact generation does not invoke this compiler. Cross-building
-and inspecting a Windows console executable does not establish Windows runtime
-correctness.
-
-The optional producer is imported explicitly from
-`apprc.distribution.frontends`, not from the `apprc.distribution` root:
-
-```python
-from apprc.distribution.frontends import build_native_installers
-
-native = build_native_installers(
-    spec,
-    payload,
-    source_package=release_sdist,
-    uv=uv_executable,
-    workspace=private_build_directory,
-    extras=(),
-)
+```text
+dist/
+├── <app-id>-setup-linux-x86_64
+├── <app-id>-setup-windows-x86_64.exe
+└── SHA256SUMS
 ```
 
-Here `spec` must identify the exact immutable HTTPS release SDIST, matching
-version, full commit and SHA-256; `release_sdist` is that original local archive.
-The workspace must not exist. The default targets return four app-specific
-executables: `appid-install-linux-x86_64`, `appid-launch-linux-x86_64`,
-`appid-install-windows-x86_64.exe`, and `appid-launch-windows-x86_64.exe`.
-`NativeDistribution.frontends` contains compiled artifact metadata;
-`NativeDistribution.payload_files` contains the original main installer,
-retained runtime ZIP and optional ZIPapp requirements.
-It excludes the inner manifest and original SDIST. The consuming release route
-separately creates its outer manifest after the native assets are finished.
+Build inputs, source archives, compilation reports and caches stay under ignored
+`.cache/apprc/`. Each setup embeds one shared SDK implementation, immutable app
+binding and prebuilt project snapshot. It is also the installed stable native
+command; installation copies it rather than compiling another launcher.
+There are no standalone Python installer assets or shell/CMD/PowerShell wrappers.
 
-Repository selection is typed author metadata:
+The compiler pins PyApp 0.31.0 and uv 0.13.6. Management uses its own Python 3.14
+bootstrap, independently of the selected application Python. Public SDK
+management dependencies come from the matching SDK package metadata, not the
+application graph. PyApp self-management commands are disabled; removal goes
+through AppRC's ownership-aware lifecycle.
 
-```toml
-[tool.apprc.distribution]
-bundle-repositories = ["https://github.com/owner/private-library.git"]
+Supported compile targets are `x86_64-unknown-linux-gnu` and
+`x86_64-pc-windows-msvc`. Windows cross-compilation/header validation is not
+native Windows execution evidence; macOS builds remain deferred. See
+[compiler prerequisites](Development.md#native-application-frontends).
+
+### Runtime ownership
+
+Managed release slots live below the fixed native installation directory:
+
+```text
+installation/
+├── installation.json
+├── <command>[.exe]
+└── runtimes/
+    └── <slot-id>/
+        ├── project.zip
+        ├── source/
+        └── .venv/
 ```
 
-URLs must be credential-free HTTPS Git URLs. The locked selected application
-graph and explicit `extras` determine the runtime profile; development/default
-groups and unrelated workspace members are excluded. Selected Git dependencies
-and needed declared workspace projects are built through their real backends.
-Markers and unselected source semantics are preserved. Unsupported non-default
-indexes and external local sources are rejected. Native compilation also rejects
-nonempty manual `spec.runtime_requirements` and `spec.runtime_overrides`;
-the lock supplies the complete runtime requirements and consistent lowered
-constraints, with a real uv override file for bundled wheels.
+The retained archive is the verified repair input; materialized source may
+contain ordinary build intermediates. Environments are created at their final
+paths with `uv sync --locked --no-default-groups --no-editable`, explicit Python,
+package and extras selection, and the slot's absolute environment path.
+An update activates its validated candidate through the existing record CAS.
+Old slot IDs remain recorded until ownership-checked cleanup can obtain an
+exclusive runtime lease. A live child retains its inherited lease even if its
+native forwarding parent exits.
 
-The inner manifest authenticates the original installer and original input
-archive. Authenticated ZIP overlays bind application-specific script bytes
-without changing the toolchain/dependency-only bootstrap version. Installation
-retains one digest-owned `installer-payload.zip` containing verified wheels,
-original source metadata and optional Linux launcher. Saved repair verifies that
-retained payload instead of requiring vanished build staging. The root wheel
-identity uses its basename, never a temporary path. Windows PE bytes are compiled
-but never executed by the producer or promoted as owned saved launchers.
-Public dependencies and Python may still be downloaded online; repository access
-uses the author's existing authenticated environment, not a new authentication
-broker. Do not commit private wheels, executable bytes or encoded copies.
+Editable registration instead records `EditableCheckout(project, environment)`.
+It uses the checkout's existing `.venv`; AppRC neither resolves its dependencies
+nor copies or owns the checkout/environment. Its global console entry is bound
+to that environment, not the shell's activation. Restore a broken developer
+environment with uv before invoking its maintenance commands.
 
-New installations prefer the invoking uv identified by its official
-[`UV` environment variable](https://docs.astral.sh/uv/reference/environment/#uv)
-(available since uv 0.6). Repairs use the recorded backend first. There is no
-custom AppRC uv environment variable, and the application remains a uv tool,
-not a PyApp-managed application environment.
+### Application hooks and command dispatch
 
-For verified immutable-main and release-sdist inputs,
-`InstalledSnapshot.source.digest` retains the original acquired archive SHA-256.
-Immutable main also retains its original repository/full-commit requirement.
-AppRC verifies the archive and materialized inputs, selects the actual project
-directory, and installs it non-editably. Local uv URL fragments are not trusted
-as archive-hash or subdirectory verification.
+`InstallationHooks` contains optional importable `module:function` references:
 
-The target-environment probe captures the installed distribution's `RECORD`
-SHA-256 in `InstalledSnapshot.distribution_record_digest`. Saved probes compare
-that actual observation with the recorded fingerprint and acquisition identity,
-including after temporary source deletion. A different installed package with
-the same name/version does not satisfy that proof. The `RECORD` fingerprint
-binds the installed observation; it does not reconstruct the original archive
-or turn an opaque uv URL into a cryptographic attestation.
+| Hook | Callable |
+| --- | --- |
+| `initialize` | `(context: OperationContext) -> None`; idempotent application setup after SDK resource initialization. |
+| `inventory` | `(inspection, categories, forget_retained) -> CleanupInventory`; exact resource ownership for removal. |
+| `cleanup` | `(context: OperationContext) -> None`; application-owned cleanup under persisted authority. |
+| `migrate` | `(plan: MigrationPlan, context: OperationContext) -> None`; application-specific migration in an application runtime. |
 
+Pass the same declaration to `DistributionSpec.hooks` and CLI
+`installation_hooks`. This replaces `installation_inventory`; no alias remains.
+Runtime hooks must be packaged with the application, not merely present in an
+author-only `<app>_distr` package.
 
-`InstallationSource.matches_observation(observed)` allows only this supported
-digest enrichment; all other acquisition inputs remain exact, and a specified
-digest must match. It is an identity-matching operation, not a replacement for
-archive verification. Matching ready or pending repair plans preserve the
-recorded digest rather than discard it when the caller supplies an unhashed
-immutable source requirement.
+The native command handles `app doctor`, `paths`, `repair`, `uninstall` and
+`migrate` through the same AppRC maintenance implementation as the app CLI.
+Normal application/config/workspace commands, application-owned data/cache/state
+operations and `launch` run in the absolute recorded runtime. Doctor always
+reports independent installation health and may add actual application checks;
+unavailable checks are explicit. Unavailable application hooks block dependent
+cleanup/migration rather than silently succeeding.
 
-`InstallationSource(kind="index", ...)` represents a general package requirement,
-including an immutable GitHub commit requirement; the name does not imply only
-a package-index lookup. Source identity parsing does not replace archive,
-installed RECORD, or filesystem verification.
-
-Native entries accept `--main`, `--version X.Y.Z`, and `--github-client gh`.
-Checkout defaults stay local; release defaults use the authored version or
-resolve latest once. Source/client selectors are consumed before application
-arguments, and `--` ends their scanning. The private `--source-*` handoff is
-for matching emitted payloads, not another user-facing source selector.
+`app install -e` is available for installation-enabled application CLIs.
+`--command-directory` chooses an existing PATH directory without editing shell
+profiles; `--yes` confirms the reviewed operation and `--skip-setup` skips only
+the optional post-Ready configuration offer. Native setup installs its embedded
+release; updates use newer setup, not `--main`, `--version` or wheel/index input.
 
 <br>
 
@@ -532,8 +390,8 @@ contribute no values.
 | `apprc.defaults.env` | Package data for optional application defaults. |
 | `.apprc-owner.json` | Ownership marker inside an initialized category root; category-specific, not secret content. |
 | `installation.json` | Sole authority in the fixed native `installation/` directory; no secrets, unrelated to `.apprc-owner.json`. |
-| `management.py` | Owned stdlib launch/uninstall program in the installation directory; not an authority or application import. |
-| `management.json` | Owned support bindings beside that program; its digest is recorded in installation authority. |
+| `<command>` / `<command>.exe` | Owned stable native manager inside the installation directory; global integration points here. |
+| `runtimes/<slot-id>/project.zip` | Verified committed project retained for managed repair; adjacent `source/` and `.venv/` belong to that slot. |
 | `apprc.user.env` | Enabled config root; saved user overrides. |
 | `apprc.user.secret.env` | Enabled config root; private user secrets. |
 | `apprc.toml` | Enabled config root; workspace registry. |
@@ -552,76 +410,64 @@ separately handles them.
 
 ## InstallationManager
 
-`MyRC.installation(*, environment=None)` captures the host app/environment and
-returns an `InstallationManager` without resolving business settings or writing.
-`installation_directory(app_id, *, environment=None)` is the pure address helper:
+`MyRC.installation(*, environment=None)` captures installation discovery without
+resolving business settings or writing files. The fixed native authority remains:
 
-| OS | Fixed native installation address |
+| OS | Installation directory |
 | --- | --- |
 | Windows | `%LOCALAPPDATA%/<app-id>/installation` |
 | macOS | `~/Library/Application Support/<app-id>/installation` |
 | Linux | `${XDG_DATA_HOME:-~/.local/share}/<app-id>/installation` |
 
-This address does not depend on capabilities, chosen single-root layout, CWD,
-checkout or program environment. A changed profile/native discovery base requires
-explicit relocation/migration; AppRC does not scan other locations for receipts.
+This address is independent of optional resource capabilities, native/single-root
+resource layout, checkout and CWD. A changed OS profile/discovery base requires
+explicit relocation; AppRC does not scan other users' locations for receipts.
 
-`inspect()` returns `InstallationInspection(status, directory, revision, app_id,
-record, diagnostics)`. Its statuses are `missing`, `invalid`, `provisional`,
-`ready`, `incomplete`, and `removed-retained`; malformed disk data becomes
-diagnostics rather than an inspection exception. `inspection.snapshot` captures
-the namespace for managed writers. Missing authority means unmanaged runtime,
-so ordinary `pip install -e .` does not require uv or an installation record.
-Unusable authority blocks ordinary path resolution/mutation rather than silently
-selecting another store. Management inspection remains available.
+`inspect()` returns installation status, address, revision and structured
+diagnostics without creating authority. Statuses remain `missing`, `invalid`,
+`provisional`, `ready`, `incomplete` and `removed-retained`. Unmanaged pip
+installations do not require a record. Invalid authority never authorizes a
+silent fallback to another resource location.
 
-`installation.json` uses strict schema `2`: duplicate/unknown structural keys,
-wrong types, mismatched app ID and relative paths are rejected. Schema `1` and
-unknown versions are incompatible read-only diagnostics, not upgrade inputs.
-AppRC does not adopt Buildben receipts or translate old installation records.
-Revision is the SHA-256 of the exact UTF-8 bytes, not another persisted counter.
-Resource ownership markers and workspace TOML retain their separate schema `1`.
+Schema `3` is strict: wrong types, duplicate/unknown fields, malformed identities
+or digests and invalid paths are rejected. Schema-2 managed installations must
+be retired with their matching old tools before reinstallation; no converter or
+compatibility controller is provided. Resource ownership markers and workspace
+TOML keep their separate schemas. Record revision remains the SHA-256 of its
+exact encoded bytes, not another persisted counter.
 
 | Record field | Meaning |
 | --- | --- |
-| `schema_version`, `app_id`, `generation_id`, `support_version` | Schema/host identity, managed-generation UUID and support implementation version. |
-| `placement` | Committed layout, actual enabled paths, capabilities and retired owned locations. It never enables an undeclared component. |
-| `last_successful` | Historical validated installed snapshot; not a claim that it is still live after a failed replacement. |
-| `current` | Currently observed package/backend snapshot, or `null`. |
-| `operation` | Pending target, fixed checkpoints, safe retry inputs and failure diagnostic, or `null`. |
-| `status` | `provisional`, `ready`, `incomplete`, or `removed-retained`. Ready requires observed current state and no pending operation. |
-| `owned_outputs` | Exact owned support/registration entries; never ownership of a shared parent, uv or Python. |
-| `migration` | Current resource/layout source, destination, inventory and staged/activated progress, or `null`; no receipt/controller compatibility evidence. |
+| `identity`, `command_name`, `generation_id`, `support_version` | Application/distribution identity, primary command, installation identity and SDK support version. |
+| `placement` | Committed absolute resource locations, capabilities and retained earlier locations. |
+| `active_runtime` | Validated managed slot or non-owned editable checkout; remains selected while a replacement is prepared. |
+| `retiring_runtime_ids` | Exact owned old slots awaiting safe collection; never an instruction to sweep arbitrary directories. |
+| `operation` | Exact pending target, checkpoints, retry preconditions and failure diagnostic. |
+| `owned_outputs` | Digest-owned support, global commands, shortcuts and registration—not shared uv/Python or an editable environment. |
+| `migration` | Explicit resource-placement migration state and inventory. |
 
-Replacement creates a new generation; repair retains the target generation.
-Program-only removal records observed package absence as `removed-retained` and
-preserves reconnectable placement/support. Complete removal retires authority
-last, only after exact selected targets are resolved or expressly forgotten.
-After authority retirement, finalization may retire locks/remove empty containers
-but must never delete later payload or recreate the record. See the
-[installation recovery guide](How-To-User-Guides.md#install-and-recover-managed-applications)
-for CLI use and [coordination rationale](Explanations.md#installation).
+`generation_id` identifies the installation; `slot_id` identifies one managed
+runtime. Ready accepts either an observed managed slot or a validated editable
+checkout. Removal with retained resources clears the active target and records
+`removed-retained`; it does not claim the program still exists.
 
-Saved management support separates executable policy from host bindings.
-`management.py` is copied from the canonical stdlib-only
-`distribution/runtime/saved_management.py` source. Its explicit `launch` and
-`uninstall` actions do not infer behavior from filenames. Public root launch and
-uninstall wrappers remain the application-facing entry points.
+Lifecycle operations retain physical namespace locks, exact-revision CAS,
+operation-context checks and failure checkpoints. Candidate initialization
+requires its matching operation context. Ordinary access uses the committed
+active target during replacement; uninstall and resource migration retain their
+quiescence boundaries and stale captured writers remain rejected.
 
-`management.json` has exactly these support-data fields:
+`InstallationManager.initialize(context=...)` is the shared declared-resource
+initialization path for managed and editable registration. Application code runs
+only in its recorded runtime. The independent manager can diagnose, repair or
+remove a broken managed program without importing it, but cannot pretend that
+unavailable application-specific validators or cleanup hooks ran.
 
-| Field | Meaning |
-| --- | --- |
-| `app_id` | Portable application identity used for fixed native discovery. |
-| `command` | Declared launcher command, checked against the observed installed package. |
-| `base_python` | `null` in portable author output; an absolute, independently validated external interpreter after installation binding. |
-
-The installation record owns the exact program and data digests. These bindings
-cannot grant ownership, replace the record, or select an ambient uv executable.
-Repair reuses a saved interpreter only from digest-authorized binding data and
-validates it again; it never extracts settings from Python source. Preview uses
-saved inspection without provisioning an environment. Actual removal uses the
-recorded backend and the application's saved uninstall composition.
+Program-only removal preserves user resources by default. Complete removal
+requires explicit choices and exact provider inventories; unknown files,
+changed ownership or unavailable required code block unsafe deletion. Temporary
+native finalization waits for its initiating process before removing owned
+program files. No saved Python/CMD/PowerShell management copies are required.
 
 ## ConfigManager
 
@@ -767,7 +613,7 @@ following existing controls remain supported:
 | `workspace_required` | `False` | Require a workspace for ordinary business execution; requires a Workspaces declaration. |
 | `handlers` | `MaintenanceHandlers()` | Explicit supported appdata, cache, and state operations. |
 | `maintenance_help_panel` | `"AppRC: Commands"` | Help metadata panel for injected root entries. |
-| `installation_inventory` | `None` | Host-owned complete-removal inventory provider, described below. |
+| `installation_hooks` | `InstallationHooks()` | Importable application lifecycle providers; see the hook contract above. |
 | `runtime_payload` | `None` | Serialize application state for `config show`. |
 | `active_workspace_root_with_context` | `None` | Selector-aware active-workspace resolver for config commands. |
 | `initial_workspace_with_context` | `None` | Selector-aware initial workspace resolver for the config editor. |
@@ -783,8 +629,8 @@ The composition extension keywords have these exact types and defaults:
 | Keyword | Type/default | Meaning |
 | --- | --- | --- |
 | `maintenance_group_name` | `str = "app"` | Maintenance command path and returned mapping prefix. |
-| `installation_management` | `bool = False` | Enable saved `repair`, `uninstall`, and `migrate`; never inferred from a receipt at mount time. |
-| `installer_entrypoint` | `Callable[[Sequence[str]], int] \| None = None` | Explicit host-authored installer delegate; supplying it enables `app install`. A noncallable is rejected. |
+| `installation_management` | `bool = False` | Enable editable installation plus `repair`, `uninstall` and `migrate`; never inferred from an existing record at mount time. |
+| `installer_entrypoint` | `Callable[[Sequence[str]], int] \| None = None` | Optional authored delegate for noneditable `app install`; otherwise direct the user to native setup. A noncallable is rejected. |
 | `host_diagnostics` | `Callable[[], Mapping[str, object]] \| None = None` | Local, read-only host metadata, evaluated only by verbose doctor. |
 | `resource_diagnostics` | `Mapping[Literal["appdata", "cache", "state"], Callable[[Path], Mapping[str, object]]] \| None = None` | Explicit local, read-only resource details on safe existing roots, only in verbose doctor. |
 | `resource_group_extensions` | `Mapping[Literal["appdata", "cache", "state"], Callable[[typer.Typer], None]] \| None = None` | Register host commands on detached declared resource groups before empty-group filtering. |
@@ -793,12 +639,12 @@ The composition extension keywords have these exact types and defaults:
 
 `CliRuntime` accepts the runtime/config controls above on its constructor,
 including `maintenance_group_name`, but not the group-composition inputs
-`handlers`, `maintenance_help_panel`, `installation_inventory`,
+`handlers`, `maintenance_help_panel`, `installation_hooks`,
 `installation_management`, `installer_entrypoint`, `host_diagnostics`,
 `resource_diagnostics`, `resource_group_extensions`, `launcher_spec`, or
 `launcher_handlers`. Pass those to `runtime.mount_app_groups(app, *, ...)`;
 that method reads `maintenance_group_name` and `config_group_name` from the
-runtime rather than taking them again. Its `handlers`, help-panel and inventory
+runtime rather than taking them again. Its `handlers`, help-panel and hook
 defaults match the high-level mount, as do all extension defaults above.
 The low-level `state_factory` receives `(CliRuntimeContext, options)`, preserving
 host-owned option types; selector-aware workspace callbacks receive host state
@@ -886,7 +732,7 @@ conditional `workspace`, `app`, and optional `launch` appear at the root.
 | --- | --- |
 | `app doctor [--verbose] [--json]` | Always. Aggregate local/read-only installation, path, ownership, boundary and config diagnostics; no host business factories or remote services. JSON contract below. |
 | `app paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. Without a category, list all paths; a category prints its absolute path. Disabled category and invalid `--open` combinations exit 2. Open only an existing directory; never create it. Original authority/path failures exit nonzero without fallback locations. |
-| `app install [ARGS]...` | Only with `installer_entrypoint`. Forward ordinary Click extra arguments/unknown options in order to the authored callable; consume a CLI `--` separator conventionally. Keep `--help` local and propagate its integer status. Fresh bootstrap/PyApp/checkout installation remains external. |
+| `app install [-e/--editable] [ARGS]...` | Enabled by installation management or an explicit installer delegate. Editable registration uses the invocation's actual checkout `.venv`; it never syncs/copies an environment. Other arguments go to the authored delegate, if present; otherwise explain how to run native setup. `--help` remains local. |
 | `app repair [--installer PATH]` | `installation_management=True`. Call saved repair support or explicit installer with subprocess argv and preserve its status; never silently download an installer. |
 | `app uninstall [--dry-run] [--complete] [--category KIND] [--forget-retained] [--yes/-y]` | `installation_management=True`. Shared saved removal procedure; repeat categories for config/appdata/cache/state. Program-only is the default and retains resources. Complete removal requires exact preview/consent. |
 | `app migrate [--dry-run] [--yes/-y]` | `installation_management=True`. Preview and explicitly apply current resource/layout migration with confirmation and quiescence checks. Unrecognized project data requires application-owned exact inventory. |
@@ -908,31 +754,24 @@ unchanged.
 
 ### Saved removal inventory
 
-`installation_inventory` has contract
-`(InstallationInspection, frozenset[ResourceKind], bool) -> CleanupInventory`;
-`ResourceKind` is config/appdata/cache/state, and the boolean is `forget_retained`.
-The host receives normalized selected categories (omitting
-categories on `--complete` selects all enabled resources). Return only owned
-resource entries. The provider runs only for selected complete removal, including
-cache-only selection, not help, diagnostics, program-only removal, or an empty
-selection. Pending uninstall reuses persisted inventory without calling it again.
-No business configuration is required.
+Declare application-owned inventory through
+`InstallationHooks(inventory="package.module:function")`, not a live
+`installation_inventory` callback. The shared implementation imports the
+provider only inside the recorded application runtime. Native maintenance
+does not install or import application dependencies.
+
+The inventory provider receives the captured installation, normalized resource
+categories and `forget_retained` choice. Return only exact owned resource
+entries; selected complete removal requires the provider before any purge.
+Program-only removal, help and independent diagnosis do not require it.
+Pending uninstall reuses its accepted persisted inventory rather than silently
+rescanning after consent.
 
 Providers can compose
 `apprc.distribution.runtime.default_cleanup_inventory(inspection, categories=categories, forget_retained=forget_retained)`.
-Strict transport helpers are
-`apprc.user_files.installation.codec.encode_cleanup_inventory` and
-`decode_cleanup_inventory`.
-
-Saved controllers may accept private `--inventory PATH`, not a public
-`app uninstall` option. After confirmation, the CLI writes accepted inventory
-privately to a temporary file and calls
-`uninstall_saved(..., inventory_file=path)`, preserving original PID and expected
-record revision. It keeps the file until the controller returns and then cleans
-it up; dry-run creates neither transport file nor management environment.
-The controller decodes the file, passes inventory to `prepare_uninstall()`,
-validates scope, revisions/support and the private expected revision, then persists
-accepted inventory with the operation. It must not replace it with a fresh scan.
+The shared strict codec, ownership/revision validation and operation checkpoints
+remain authoritative. A missing or failing provider prevents dependent cleanup;
+it does not justify treating a whole application directory as owned payload.
 
 ### Doctor and paths JSON
 
@@ -1019,7 +858,7 @@ Optional `launcher_handlers` maps action IDs to
 `Callable[[LauncherContext, bool], Awaitable[object] | object]`. An empty
 `LauncherSpec(actions=())` still exposes supported built-in management controls.
 `launch --help` does not create the UI. This is not the application's foreground
-entry point or the authored saved `app-launch.py` lifecycle wrapper.
+entry point or a separate native launcher executable.
 
 Launcher captures installation diagnostics and optional valid paths without
 building business settings. Capability-driven management stays available when

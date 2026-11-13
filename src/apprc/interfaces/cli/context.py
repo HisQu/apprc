@@ -3,121 +3,45 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from os import environ
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 # == 3rd Party ===============================
 import typer
 
 # == Internal ================================
-from apprc.definition.paths import AppPaths, Layout
+from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.installation import InstallationInspection
-from apprc.definition.resolution import ResolveOptions
+from apprc.definition.paths import AppPaths, Layout
+from apprc.definition.resolution import (
+    CliRuntimeOptions,
+    CliRuntimeOptionsProtocol,
+    ResolveOptions,
+    _BridgeRuntimeOptions,
+)
 from apprc.interfaces.cli._resolution import resolve_cli_config
 from apprc.public.app_rc import AppRC
 from apprc.runtime.logging import ResolutionLogger
 from apprc.runtime.resolution import ResolvedConfig
 from apprc.services.installation import InstallationManager
 
+if TYPE_CHECKING:
+    from apprc.distribution.models import NativeBinding
+
 
 APPRC_CONTEXT_META_KEY = "apprc.interfaces.cli.runtime_context"
 OptionsT = TypeVar("OptionsT", bound="CliRuntimeOptionsProtocol")
 
 
-class CliRuntimeOptionsProtocol(Protocol):
-    """Fields accepted by AppRC CLI runtime helpers."""
-
-    @property
-    def env_files(self) -> Sequence[Path] | None: ...
-
-    @property
-    def env_file_overrides_os_environ(self) -> bool: ...
-
-    @property
-    def load_dotenv_layers(self) -> bool: ...
-
-    @property
-    def workspace(self) -> str | None: ...
-
-    @property
-    def layout(self) -> Layout | None: ...
-
-    @property
-    def log_level(self) -> str | None: ...
-
-
-@dataclass(frozen=True, slots=True)
-class CliRuntimeOptions:
-    """Parsed AppRC runtime options for one Typer CLI run."""
-
-    env_files: tuple[Path, ...] = ()
-    env_file_overrides_os_environ: bool = False
-    load_dotenv_layers: bool = True
-    workspace: str | None = None
-    layout: Layout | None = None
-    log_level: str | None = None
-
-    @classmethod
-    def from_typer(
-        cls,
-        *,
-        env_files: Sequence[Path] | None = None,
-        env_file_overrides_os_environ: bool = False,
-        load_dotenv_layers: bool = True,
-        workspace: str | None = None,
-        layout: str | None = None,
-        app_root: Path | None = None,
-        log_level: str | None = None,
-    ) -> CliRuntimeOptions:
-        """Normalize Typer runtime controls, including paired layout inputs."""
-        selected_layout = None
-        if layout is not None or app_root is not None:
-            mode = layout or (
-                "single-root" if app_root is not None else "native"
-            )
-            if mode == "native":
-                if app_root is not None:
-                    raise ValueError(
-                        "--app-root cannot be combined with --layout native."
-                    )
-                selected_layout = Layout.native()
-            elif mode == "single-root":
-                if app_root is None:
-                    raise ValueError(
-                        "--layout single-root requires --app-root."
-                    )
-                selected_layout = Layout.single_root(app_root)
-            else:
-                raise ValueError(f"Unsupported AppRC layout: {mode!r}.")
-        return cls(
-            env_files=tuple(env_files or ()),
-            env_file_overrides_os_environ=env_file_overrides_os_environ,
-            load_dotenv_layers=load_dotenv_layers,
-            workspace=workspace,
-            layout=selected_layout,
-            log_level=log_level,
-        )
-
-    @classmethod
-    def from_options(
-        cls,
-        options: CliRuntimeOptionsProtocol,
-    ) -> CliRuntimeOptions:
-        """Return an immutable copy of an option-like object."""
-        if isinstance(options, cls):
-            return options
-        return cls(
-            env_files=tuple(options.env_files or ()),
-            env_file_overrides_os_environ=options.env_file_overrides_os_environ,
-            load_dotenv_layers=options.load_dotenv_layers,
-            workspace=options.workspace,
-            layout=options.layout,
-            log_level=options.log_level,
-        )
+_AUTHENTICATED_NATIVE_MANAGER: ContextVar[Path | None] = ContextVar(
+    "apprc_authenticated_native_manager", default=None
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +56,9 @@ class InstallationCommandContext:
         pending authority diagnostics.
     :param manager: Host-bound manager used for explicit recovery operations.
     :param path_error: Original placement failure retained by diagnostic doctor.
+    :param native_binding: Authenticated native product declaration, when present.
+    :param _native_manager_executable: Authenticated executable available only
+        during the native manager's own CLI invocation.
     """
 
     runtime_options: CliRuntimeOptions
@@ -141,6 +68,22 @@ class InstallationCommandContext:
     manager: InstallationManager
     runtime_setup_skipped: bool = True
     path_error: str | None = None
+    native_binding: NativeBinding | None = None
+    _native_manager_executable: Path | None = None
+
+
+@contextmanager
+def _authenticated_native_manager_scope(executable: Path) -> Iterator[None]:
+    """Expose an authenticated manager path only while its own CLI runs.
+
+    :param executable: Absolute executable currently running the native CLI.
+    :return: Context manager that restores the previous authenticated scope.
+    """
+    token = _AUTHENTICATED_NATIVE_MANAGER.set(executable)
+    try:
+        yield
+    finally:
+        _AUTHENTICATED_NATIVE_MANAGER.reset(token)
 
 
 def installation_command_context_from(
@@ -182,6 +125,42 @@ def prepare_installation_command_context(
         inspection=manager.inspect(),
         manager=manager,
         path_error=path_error,
+    )
+    _store_apprc_context(ctx, context)
+    return context
+
+
+def prepare_native_installation_context(
+    ctx: typer.Context,
+    binding: NativeBinding,
+    options: CliRuntimeOptionsProtocol,
+    *,
+    environment: Mapping[str, str],
+) -> InstallationCommandContext:
+    """Prepare core recovery from immutable native declarations only.
+
+    The empty configuration-owner declaration is intentional: native recovery
+    must not import an application package before it has located a runtime.
+    """
+    parsed = CliRuntimeOptions.from_options(options)
+    captured = MappingProxyType(dict(environment))
+    spec = AppConfigSpec(
+        app_id=binding.identity.app_id,
+        display_name=binding.display_name,
+        paths=binding.capabilities.paths,
+        layout=binding.layout,
+        bootstrap_env_prefix=binding.bootstrap_env_prefix,
+        command_name=binding.command_name,
+    )
+    manager = InstallationManager(spec, environment=captured)
+    context = InstallationCommandContext(
+        runtime_options=parsed,
+        cli_options=options,
+        environment=captured,
+        inspection=manager.inspect(),
+        manager=manager,
+        native_binding=binding,
+        _native_manager_executable=_AUTHENTICATED_NATIVE_MANAGER.get(),
     )
     _store_apprc_context(ctx, context)
     return context
@@ -324,6 +303,28 @@ def cli_runtime_options_to_args(
         if parsed.layout.root is not None:
             args.extend(["--app-root", str(parsed.layout.root)])
     return args
+
+
+def _cli_runtime_options_payload(
+    options: CliRuntimeOptionsProtocol,
+    maintenance_group_name: str = "app",
+) -> dict[str, object]:
+    """Encode captured CLI options for the isolated application bridge."""
+    from apprc.user_files.installation.codec import _encode
+
+    captured = CliRuntimeOptions.from_options(options)
+    runtime = replace(
+        captured,
+        env_files=tuple(
+            path.expanduser().absolute() for path in captured.env_files
+        ),
+    )
+    payload = _encode(
+        _BridgeRuntimeOptions(runtime, maintenance_group_name)
+    )
+    if not isinstance(payload, dict):
+        raise TypeError("Bridge runtime options did not encode as an object.")
+    return payload
 
 
 def _store_apprc_context(

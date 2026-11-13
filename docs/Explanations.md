@@ -366,12 +366,12 @@ The model separates these lifetimes:
 
 | Part | Owner and lifetime |
 | --- | --- |
-| Program and dependencies | The package environment, such as a uv tool environment or a developer's editable pip environment. |
+| Program and dependencies | A managed, locked runtime slot, or a developer-owned checkout environment registered without transferring ownership. |
 | Config | Application-managed preferences and separately protected secrets; preserved across upgrades. |
 | Appdata | Application-managed user work, such as databases and annotations; preserved and backed up. |
 | Cache | Regenerable data; safe cleanup still requires ownership-aware application behavior. |
 | State | Disposable operational history, logs, window positions, and similar state that can survive a reboot. |
-| Installation | Durable layout/backend identities, saved management support, operation progress and recovery information. |
+| Installation | Fixed native authority, recorded resource locations, active runtime, owned integrations and recovery checkpoints. |
 | Workspaces | User-controlled project inputs and outputs, outside installation and resource cleanup. |
 
 Single-root groups only the enabled config, appdata, cache and state components.
@@ -401,7 +401,7 @@ warnings exit 0. `--verbose` adds paths, configuration, resource, and host
 details, while `--json` returns the structured status/checks/installation
 envelope.
 
-Installation authority uses strict schema `2`. Older installation records and
+Installation authority uses strict schema `3`. Older managed records and
 Buildben receipts are not adopted or translated. This does not migrate or erase
 configuration, appdata, or workspace contents; those have independent ownership
 and lifetimes. An upgrade from older authority requires the explicit
@@ -414,13 +414,13 @@ repoint that installation. Changing the installation discovery base itself, such
 as `XDG_DATA_HOME` or the OS profile, requires explicit relocation; AppRC does not
 search other profiles. A saved helper operates against its adjacent record.
 
-Saved management code is not installation configuration. One canonical stdlib
-program implements launch/uninstall dispatch; adjacent `management.json` stores
-the application identity, command and bound external interpreter as data. Both
-are digest-owned by `installation.json`, which remains the only authority.
-Changing a binding does not authorize a new interpreter: saved execution must
-reject altered data before dispatch. This keeps repair independent of Python
-formatting and preserves previews that do not provision environments. See the
+Saved native management code is not installation configuration.
+`installation.json` owns the stable executable, captured resource placement and
+active runtime selection. Managed commands execute that recorded slot's absolute
+entrypoint; neither shell activation nor a changed checkout selects a runtime.
+Core maintenance uses the same AppRC implementation from the native archive,
+not a second implementation or an application-environment import. Application
+hooks cross the explicit runtime bridge only when needed. See the
 [saved-support reference](References.md#installationmanager).
 
 An installer offers the layout on first install and retains it on reinstall.
@@ -641,29 +641,30 @@ the same `apprc-core` version. The [installation instructions](../README.md#inst
 explain which distribution to choose; maintainers can inspect the
 [package ownership rules](Development.md#source-ownership).
 
-The optional `apprc-core[distribution]` authoring extra provides
-`apprc.distribution`: metadata/capability inspection, strict external templates,
-and deterministic generation of native install, launch and uninstall entries.
-Its shared standalone runtime is bundled with the consuming repository's
-ordinary Python payload. Bootstrapping therefore does not require AppRC or the
-application to be installed first. Jinja belongs to author generation, not core
-runtime imports or the installed remover.
+The optional distribution authoring APIs build one native setup executable per
+supported platform. Each setup contains the shared AppRC management
+implementation and a verified project snapshot, including `pyproject.toml`,
+`uv.lock`, workspace sources and any prebuilt frontend assets. Dependency
+installation remains uv's responsibility: AppRC does not compile a private
+wheelhouse or inject a second dependency graph.
 
-The application owns `make_artifacts.py` and its `app_lifecycle.install`,
-`app_lifecycle.uninstall` and action modules. Those modules compose public
-planning, checkpoint and commit functions in ordinary Python. Adding a project
-prerequisite or cleanup action means making an explicit call at the right point,
-not subclassing a lifecycle framework or registering another hook system.
-Buildben seeds this structure; AppRC does not require Buildben.
+Applications keep authored build composition in `<app>_distr`. Builds write
+final executables and `SHA256SUMS` to ignored `dist/`, with intermediates under
+`.cache/apprc/`. They do not generate installer programs in the source tree.
+Buildben can seed this structure, but AppRC does not require Buildben.
 
-The app wheel excludes the author-only `<app>_distr` package. The checkout and
-sdist include its generator, payload, required artifacts and root wrappers.
-After author changes, regenerate once with `just make-artifacts`; CI uses the
-zero-write `just check-artifacts`. Generation never runs implicitly from a PEP
-517 build.
+Managed releases own their runtime slots. A replacement is prepared and checked
+before activation; a runtime lease prevents collection while an application
+process still uses it. The stable native command stays outside these disposable
+environments, so installation-level diagnosis, repair and program removal do not
+require application imports. Application validators and resource-provider hooks
+run in the recorded application runtime and report unavailable code explicitly.
 
-These are uv-based bootstrap installers, not compiled Python-environment
-bundles. A project can independently build a Windows `Setup.exe` containing
-Python and locked wheels using the
-[Windows installer guide](How-To-User-Guides.md#build-a-windows-installer).
-That project still owns its program identity, shortcuts and files.
+Editable registration owns only AppRC resources and integrations. It uses the
+repository's existing `.venv`; uninstall never deletes that environment or the
+checkout. If it breaks, the developer repairs it with uv rather than a second
+AppRC dependency manager.
+
+Both workflows preserve the same [resource layouts](#layouts) and
+ownership-aware cleanup. Python wheels and sdists remain normal packaging
+formats, but are not a parallel AppRC managed-installation backend.

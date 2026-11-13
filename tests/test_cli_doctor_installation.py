@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -12,19 +13,94 @@ from typer.testing import CliRunner
 
 import apprc as rc
 from apprc.definition.installation import (
+    InstallationIdentity,
     InstallationPlacement,
     InstallationRecord,
 )
 from apprc.definition.paths import Layout, Paths
+from apprc.definition.resolution import (
+    CliRuntimeOptions,
+    _BridgeRuntimeOptions,
+)
+from apprc.interfaces.cli.context import (
+    _cli_runtime_options_payload,
+    resolve_cli_options,
+)
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
-from apprc.user_files.installation.codec import encode_record
+from apprc.user_files.installation.codec import _decode, encode_record
 from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
 )
-from tests.support_config import native_environment
+from tests.support_config import (
+    ConfigOnlyExampleEnv,
+    build_config_only_example_app,
+    native_environment,
+)
+
+
+def _removed_record(app_id: str, command_name: str) -> InstallationRecord:
+    identity = InstallationIdentity(
+        app_id=app_id,
+        distribution=app_id,
+        import_package="doctor_fixture",
+        apprc_reference=None,
+        commands=(command_name,),
+    )
+    return InstallationRecord(
+        schema_version=3,
+        identity=identity,
+        command_name=command_name,
+        generation_id=uuid4(),
+        support_version="0.34.0",
+        status="removed-retained",
+        placement=InstallationPlacement(Layout.native()),
+    )
+
+
+def test_bridge_preserves_relative_env_file_across_working_directory_change(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    origin = tmp_path / "origin"
+    destination = tmp_path / "destination"
+    origin.mkdir()
+    destination.mkdir()
+    (origin / "captured.env").write_text(
+        "CONFIG_ONLY_APP_PROFILE=from-captured-cwd\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(origin)
+    options = CliRuntimeOptions.from_typer(
+        env_files=(Path("captured.env"),),
+        env_file_overrides_os_environ=True,
+    )
+    payload = _cli_runtime_options_payload(options)
+    captured = _decode(payload, _BridgeRuntimeOptions, "runtime_options")
+    assert isinstance(captured, _BridgeRuntimeOptions)
+
+    monkeypatch.chdir(destination)
+    app = build_config_only_example_app()
+    environment = {
+        "HOME": str(tmp_path / "home"),
+        "XDG_CONFIG_HOME": str(tmp_path / "xdg-config"),
+        "XDG_DATA_HOME": str(tmp_path / "xdg-data"),
+        "XDG_CACHE_HOME": str(tmp_path / "xdg-cache"),
+        "XDG_STATE_HOME": str(tmp_path / "xdg-state"),
+    }
+    resolved = resolve_cli_options(
+        app,
+        captured.runtime,
+        environment=environment,
+    )
+
+    assert (
+        resolved.build(ConfigOnlyExampleEnv).profile
+        == "from-captured-cwd"
+    )
+
 
 
 @pytest.mark.parametrize(
@@ -88,25 +164,20 @@ def test_root_doctor_rejects_malformed_authority_without_initializing(
     assert set(directory.parent.iterdir()) == {directory}
 
 
-@pytest.mark.parametrize("schema_version", [1, 99])
+@pytest.mark.parametrize("schema_version", [1, 2, 99])
 def test_root_doctor_diagnoses_unsupported_authority_without_mutation(
     schema_version: int,
 ) -> None:
     environment = native_environment()
+    app_id = f"doctor-schema-{schema_version}"
+    command_name = f"{app_id}-command"
     declaration = rc.AppRC(
-        app_id=f"doctor-schema-{schema_version}", paths=Paths()
+        app_id=app_id, command_name=command_name, paths=Paths()
     )
     directory = declaration.installation(environment=environment).directory
     create_private_directory_if_missing(directory)
     authority = directory / "installation.json"
-    record = InstallationRecord(
-        schema_version=2,
-        app_id=declaration.schema.app_id,
-        generation_id=uuid4(),
-        support_version="0.31.0",
-        status="removed-retained",
-        placement=InstallationPlacement(Layout.native()),
-    )
+    record = _removed_record(app_id, command_name)
     value = json.loads(encode_record(record))
     value["schema_version"] = schema_version
     content = json.dumps(value).encode("utf-8")
@@ -129,21 +200,16 @@ def test_root_doctor_reports_missing_saved_capability_without_initializing() -> 
     None
 ):
     environment = native_environment()
+    app_id = "doctor-capability-reconciliation"
+    command_name = "doctor-capability-reconciliation-command"
     declaration = rc.AppRC(
-        app_id="doctor-capability-reconciliation", paths=Paths(cache=True)
+        app_id=app_id, command_name=command_name, paths=Paths(cache=True)
     )
     directory = declaration.installation(environment=environment).directory
     cache = declaration.paths(
         rc.ResolveOptions(layout=Layout.native()), environment=environment
     ).require("cache")
-    record = InstallationRecord(
-        schema_version=2,
-        app_id=declaration.schema.app_id,
-        generation_id=uuid4(),
-        support_version="0.31.0",
-        status="removed-retained",
-        placement=InstallationPlacement(Layout.native()),
-    )
+    record = _removed_record(app_id, command_name)
     with installation_lock(directory):
         write_record(directory, record, expected_revision=None)
     authority = directory / "installation.json"

@@ -3,10 +3,28 @@
 from apprc.definition.app_config.user_dotenv import UserDotenv as UserDotenv
 from apprc.definition.app_config.workspaces import Workspaces as Workspaces
 from apprc.definition.installation import (
+    CleanupInventory as CleanupInventory,
+    EditableCheckout as EditableCheckout,
+    InitializationReport as InitializationReport,
+    InstallationDiagnostic as InstallationDiagnostic,
     InstallationError as InstallationError,
+    InstallationHooks as InstallationHooks,
+    InstallationIdentity as InstallationIdentity,
     InstallationInspection as InstallationInspection,
+    InstallationOperation as InstallationOperation,
+    InstallationPlacement as InstallationPlacement,
     InstallationRecord as InstallationRecord,
     InstallationSnapshot as InstallationSnapshot,
+    InstallPlan as InstallPlan,
+    MigrationInventory as MigrationInventory,
+    MigrationPlan as MigrationPlan,
+    OperationStep as OperationStep,
+    OwnedOutput as OwnedOutput,
+    ProjectSnapshot as ProjectSnapshot,
+    RuntimeSelection as RuntimeSelection,
+    RuntimeSlot as RuntimeSlot,
+    UninstallCommit as UninstallCommit,
+    UninstallPlan as UninstallPlan,
 )
 from apprc.services.installation import (
     InstallationManager as InstallationManager,

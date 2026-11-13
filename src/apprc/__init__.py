@@ -5,10 +5,28 @@
 from apprc.definition.app_config.user_dotenv import UserDotenv
 from apprc.definition.app_config.workspaces import Workspaces
 from apprc.definition.installation import (
+    CleanupInventory,
+    EditableCheckout,
+    InitializationReport,
+    InstallationDiagnostic,
     InstallationError,
+    InstallationHooks,
+    InstallationIdentity,
     InstallationInspection,
+    InstallationOperation,
+    InstallationPlacement,
     InstallationRecord,
     InstallationSnapshot,
+    InstallPlan,
+    MigrationInventory,
+    MigrationPlan,
+    OperationStep,
+    OwnedOutput,
+    ProjectSnapshot,
+    RuntimeSelection,
+    RuntimeSlot,
+    UninstallCommit,
+    UninstallPlan,
 )
 from apprc.definition.maintenance import (
     AppDataOperations,

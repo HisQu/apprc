@@ -1,97 +1,53 @@
-"""Explicit author inputs and deterministic generated management artifacts."""
+"""Portable author declarations and immutable native product bindings."""
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import cast
+
 from apprc.definition.installation import (
+    InstallationHooks,
     InstallationIdentity,
-    InstallationSource,
+    ProjectSnapshot,
+    RuntimeSelection,
 )
-from apprc.definition.paths import Paths
+from apprc.definition.paths import Layout, Paths
+from apprc.user_files.installation.codec import _decode, _encode, _pairs
 
 
 def relative_destination(value: str | PurePosixPath) -> PurePosixPath:
-    """Validate an archive/artifact address independently of the author's OS.
-
-    :param value: Repository-relative POSIX spelling.
-    :return: Safe normalized relative address.
-    """
+    """Validate a portable normalized relative file address."""
     path = PurePosixPath(value)
     if (
         not path.parts
         or path.is_absolute()
         or ".." in path.parts
         or any(character in str(value) for character in '\\\x00<>:"|?*')
+        or str(path) != str(value)
     ):
-        raise ValueError(
-            f"Artifact path must be relative without traversal: {value!s}."
-        )
+        raise ValueError(f"Unsafe relative artifact path: {value!s}.")
     return path
 
 
 @dataclass(frozen=True, slots=True)
-class BundledWheel:
-    """Portable wheel identity and optional immutable repository provenance."""
-
-    name: str
-    version: str
-    filename: str
-    digest: str
-    marker: str | None = None
-    repository: str | None = None
-    commit: str | None = None
-    subdirectory: str | None = None
-    original_requirement: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedWheelBundle:
-    """Ephemeral verified backend inputs, never saved installation authority."""
-
-    directory: Path
-    wheels: tuple[BundledWheel, ...]
-
-    @property
-    def override_file(self) -> Path:
-        """Return overrides targeting the privately staged dependency wheels."""
-        return self.directory / "overrides.txt"
-
-    @property
-    def runtime_requirements_file(self) -> Path:
-        """Return the complete exported runtime graph, including markers."""
-        return self.directory / "runtime-requirements.txt"
-
-
-@dataclass(frozen=True, slots=True)
-class CompiledWheelBundle:
-    """Portable authoring output with its complete immutable runtime graph."""
-
-    directory: Path
-    source: InstallationSource
-    wheels: tuple[BundledWheel, ...]
-    remaining_git_sources: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class ProjectMetadata:
-    """Packaging and runtime identities plus explicit repository routing."""
+    """Packaging identity and explicit repository-relative project routing."""
 
     project_root: Path
     identity: InstallationIdentity
     version: str
     project_path: PurePosixPath = PurePosixPath(".")
     distribution_path: PurePosixPath = PurePosixPath("src/app_distr")
-    launcher_command: str | None = None
+    command_name: str | None = None
     python_requirement: str = ">=3.12"
-    bundle_repositories: tuple[str, ...] = ()
     runtime_python: str | None = None
 
     @property
     def runtime_python_requirement(self) -> str:
-        """Restrict runtime selection without changing package compatibility."""
+        """Return the declared package compatibility and runtime selection."""
         if self.runtime_python is None:
             return self.python_requirement
         return f"{self.python_requirement},=={self.runtime_python}.*"
@@ -99,7 +55,7 @@ class ProjectMetadata:
 
 @dataclass(frozen=True, slots=True)
 class AppCapabilities:
-    """Declarations only; generation never resolves business settings."""
+    """Registered capabilities, without resolving application settings."""
 
     paths: Paths = Paths()
     user_dotenv: bool = False
@@ -109,112 +65,77 @@ class AppCapabilities:
 
 @dataclass(frozen=True, slots=True)
 class DistributionSpec:
-    """One explicit composition, source identity and payload format."""
+    """Author composition used to build a committed native product."""
 
     metadata: ProjectMetadata
     capabilities: AppCapabilities = AppCapabilities()
-    source_mode: Literal["checkout", "release", "main", "wheel", "index"] = (
-        "checkout"
-    )
-    payload_format: Literal["script", "zipapp"] = "script"
-    repository_url: str | None = None
-    release_version: str | None = None
-    release_commit: str | None = None
-    release_asset: str | None = None
-    release_digest: str | None = None
-    runtime_requirements: tuple[str, ...] = ()
-    runtime_overrides: tuple[str, ...] = ()
+    display_name: str | None = None
+    layout: Layout = Layout()
+    bootstrap_env_prefix: str = "APPRC"
+    maintenance_group_name: str = "app"
+    hooks: InstallationHooks = InstallationHooks()
+    launch_enabled: bool = False
 
     def __post_init__(self) -> None:
-        """Reject incomplete remote identities before emitting tracked output."""
-        requirements = (*self.runtime_requirements, *self.runtime_overrides)
-        if any(
-            not value.strip()
-            or value != value.strip()
-            or "\n" in value
-            or "\r" in value
-            or value.startswith("-")
-            for value in requirements
-        ):
-            raise ValueError(
-                "Runtime requirements must be individual PEP 508 values."
-            )
-        if self.metadata.launcher_command not in {
-            None,
-            *self.metadata.identity.commands,
-        }:
-            raise ValueError(
-                "launcher-command must name one declared console command."
-            )
-        if self.source_mode in {"release", "wheel"}:
-            if (
-                not self.release_version
-                or not self.release_asset
-                or not self.release_digest
-            ):
-                raise ValueError(
-                    "Release sources require explicit version, asset and SHA-256."
-                )
-            if re.fullmatch(r"[0-9a-f]{64}", self.release_digest) is None:
-                raise ValueError(
-                    "Release asset digest must be lowercase SHA-256."
-                )
-        if self.source_mode == "release" and (
-            not self.repository_url
-            or not self.release_commit
-            or re.fullmatch(r"[0-9a-f]{40}", self.release_commit) is None
-        ):
-            raise ValueError(
-                "Release mode requires repository URL and full source commit identity."
-            )
-        if self.source_mode == "main" and (
-            not self.repository_url
-            or not self.release_commit
-            or re.fullmatch(r"[0-9a-f]{40}", self.release_commit) is None
-        ):
-            raise ValueError(
-                "Remote-main mode requires one full immutable commit identity."
-            )
+        """Reject ambiguous commands and invalid portable declaration values."""
+        if self.metadata.command_name not in {None, *self.metadata.identity.commands}:
+            raise ValueError("command-name must name one declared console command.")
+        if self.metadata.command_name is None and len(self.metadata.identity.commands) != 1:
+            raise ValueError("Multiple console commands require command-name.")
+        if not self.metadata.version:
+            raise ValueError("A native product requires an explicit version.")
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.bootstrap_env_prefix) is None:
+            raise ValueError("bootstrap_env_prefix must be an environment variable prefix.")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name) is None:
+            raise ValueError("maintenance_group_name must be one CLI command name.")
+        if self.layout.root is not None:
+            raise ValueError("Native products cannot embed an author's absolute layout root.")
 
 
 @dataclass(frozen=True, slots=True)
-class PayloadTree:
-    """Explicit ordinary modules/resources; no import or source rewriting."""
+class NativeBinding:
+    """Immutable portable product declaration, never installation authority."""
 
-    root: Path
-    modules: tuple[PurePosixPath, ...]
-    entry_module: str = "app_lifecycle.install"
-    uninstall_entry_module: str = "app_lifecycle.uninstall"
-    resources: tuple[PurePosixPath, ...] = ()
+    identity: InstallationIdentity
+    command_name: str
+    display_name: str
+    version: str
+    source: ProjectSnapshot
+    selection: RuntimeSelection
+    capabilities: AppCapabilities
+    layout: Layout
+    bootstrap_env_prefix: str
+    maintenance_group_name: str = "app"
+    hooks: InstallationHooks = InstallationHooks()
+    launch_enabled: bool = False
 
     def __post_init__(self) -> None:
-        """Reject duplicate or escaping destinations before reading files."""
-        seen: set[PurePosixPath] = set()
-        for candidate in (*self.modules, *self.resources):
-            path = relative_destination(candidate)
-            if path in seen:
-                raise ValueError(f"Duplicate payload destination: {path}.")
-            seen.add(path)
-        for entry in (self.entry_module, self.uninstall_entry_module):
-            if not entry or not all(
-                part.isidentifier() for part in entry.split(".")
-            ):
-                raise ValueError(
-                    "Payload entries must be explicit Python module names."
-                )
-            if PurePosixPath(*entry.split(".")).with_suffix(".py") not in seen:
-                raise ValueError(
-                    f"Payload does not include entry module {entry}."
-                )
+        """Reject inconsistent product identity and author-specific locations."""
+        if self.command_name not in self.identity.commands:
+            raise ValueError("Native command must belong to its distribution.")
+        if not self.display_name or not self.version:
+            raise ValueError("Native display name and version must be nonempty.")
+        if self.layout.root is not None:
+            raise ValueError("Native bindings cannot contain author filesystem locations.")
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.bootstrap_env_prefix) is None:
+            raise ValueError("Invalid native bootstrap environment prefix.")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name) is None:
+            raise ValueError("Invalid native maintenance command.")
+
+
+def encode_native_binding(binding: NativeBinding) -> bytes:
+    """Encode a binding using the SDK's deterministic dataclass codec."""
+    return (json.dumps(_encode(binding), sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def decode_native_binding(data: bytes) -> NativeBinding:
+    """Decode only the exact SDK binding schema, rejecting unknown fields."""
+    return cast(NativeBinding, _decode(json.loads(data, object_pairs_hook=_pairs), NativeBinding, "binding"))
 
 
 @dataclass(frozen=True, slots=True)
 class Artifact:
-    """Generated bytes with repository-relative destination and output ownership.
-
-    ``project_root`` is used only by the writer; it is never serialized into
-    generated files. This lets author commands work outside the repository CWD.
-    """
+    """Exact output bytes at a repository-relative destination."""
 
     destination: PurePosixPath
     content: bytes
@@ -222,7 +143,7 @@ class Artifact:
     project_root: Path
 
     def __post_init__(self) -> None:
-        """Keep writes inside the explicitly selected author repository."""
+        """Keep publication inside the selected author repository."""
         relative_destination(self.destination)
         if not self.project_root.is_absolute():
             raise ValueError("Artifact project root must be absolute.")

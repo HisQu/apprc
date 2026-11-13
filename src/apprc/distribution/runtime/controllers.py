@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import argparse
-import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import IO, Callable
-from uuid import uuid4
+from typing import IO
+from uuid import UUID, uuid4
 
 from apprc.definition.config_filenames import (
     DEFAULT_APPRC_TOML_FILENAME,
@@ -25,19 +22,14 @@ from apprc.definition.installation import (
     InstallationDiagnostic,
     InstallationError,
     InstallationInspection,
-    InstallationTarget,
-    InstalledSnapshot,
+    InstallationRecord,
     InventoryEntry,
-    OperationContext,
-    OperationStep,
+    RuntimeSlot,
     UninstallPlan,
 )
 from apprc.definition.paths import ResourceKind
 from apprc.distribution.runtime import _handoff
-from apprc.distribution.runtime.backend import (
-    backend_environment,
-    external_base_python,
-)
+from apprc.distribution.runtime.probe import application_bridge
 from apprc.user_files.app_home.locations import (
     assert_no_links,
     write_bytes_atomic,
@@ -48,15 +40,12 @@ from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
     set_windows_private_acl,
 )
-
 from apprc.user_files.app_home.writes import file_revision
-from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
+from apprc.user_files.installation.codec import decode_cleanup_inventory
 from apprc.user_files.installation.operations import (
     begin_operation,
-    fail_operation,
     plan_uninstall,
-    record_step,
 )
 from apprc.user_files.installation.planning import resource_roots
 from apprc.user_files.purge import plan_config_file_purge
@@ -146,42 +135,64 @@ def inspect_saved(directory: Path) -> InstallationInspection:
         value = json.loads(
             (directory / "installation.json").read_text(encoding="utf-8")
         )
-        app_id = value["app_id"]
-    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
-        app_id = directory.parent.name
+        identity = value.get("identity") if isinstance(value, dict) else None
+        app_id = identity.get("app_id") if isinstance(identity, dict) else None
+    except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
+        app_id = None
     if not isinstance(app_id, str):
         app_id = directory.parent.name
     return inspect_installation(directory, app_id=app_id)
 
 
 def _support_inventory(
-    record,
+    record: InstallationRecord,
     directory: Path,
 ) -> tuple[tuple[InventoryEntry, ...], tuple[str, ...]]:
     """Capture only exact saved support and reject unrecorded install contents."""
-    outputs = (
-        record.current.owned_outputs
-        if record.current is not None
-        else record.owned_outputs
-    )
+    outputs = record.owned_outputs
     files: dict[Path, str] = {}
     directories: set[Path] = set()
     diagnostics: list[str] = []
-    for output in outputs:
-        if output.kind != "support":
-            continue
-        relative = Path(output.path)
-        if (
-            relative.is_absolute()
-            or not relative.parts
-            or ".." in relative.parts
-            or output.digest is None
-        ):
+    runtime_root = directory / "runtimes"
+    known_slots = set(record.retiring_runtime_ids)
+    if isinstance(record.active_runtime, RuntimeSlot):
+        known_slots.add(record.active_runtime.slot_id)
+    if runtime_root.exists() or runtime_root.is_symlink():
+        if runtime_root.is_symlink() or not runtime_root.is_dir():
             diagnostics.append(
-                f"Saved support ownership is malformed: {output.path}."
+                f"Saved runtime root is unsafe: {runtime_root}."
             )
+        else:
+            directories.add(runtime_root)
+    for output in outputs:
+        if output.digest is None:
+            if output.kind == "command":
+                diagnostics.append(
+                    f"Saved command ownership is malformed: {output.path}."
+                )
             continue
-        path = directory.joinpath(*relative.parts)
+        if output.kind == "support":
+            relative = Path(output.path)
+            if (
+                relative.is_absolute()
+                or not relative.parts
+                or ".." in relative.parts
+            ):
+                diagnostics.append(
+                    f"Saved support ownership is malformed: {output.path}."
+                )
+                continue
+            path = directory.joinpath(*relative.parts)
+        elif output.kind == "command":
+            path = Path(output.path)
+            if (
+                not path.is_absolute()
+                or ".." in path.parts
+                or not path.is_relative_to(directory)
+            ):
+                continue
+        else:
+            continue
         files[path] = output.digest
         parent = path.parent
         while parent != directory:
@@ -214,6 +225,23 @@ def _support_inventory(
         if root == directory / "locks":
             names.clear()
             continue
+        if root == runtime_root:
+            for name in tuple(names):
+                path = root / name
+                try:
+                    slot_id = UUID(name)
+                except ValueError:
+                    slot_id = None
+                if slot_id not in known_slots or path.is_symlink():
+                    diagnostics.append(
+                        f"Unowned or linked managed runtime slot: {path}."
+                    )
+                names.remove(name)
+            for name in filenames:
+                diagnostics.append(
+                    f"Unowned file in managed runtime root: {root / name}."
+                )
+            continue
         for name in tuple(names):
             path = root / name
             if path == directory / "locks":
@@ -232,6 +260,94 @@ def _support_inventory(
                     f"Unowned or linked installation file: {path}."
                 )
     return tuple(entries), tuple(dict.fromkeys(diagnostics))
+
+
+def _recorded_manager_executable(
+    record: InstallationRecord, directory: Path
+) -> Path | None:
+    """Return the stable manager only while its recorded bytes still match."""
+    stable = directory / (
+        record.command_name + (".exe" if os.name == "nt" else "")
+    )
+    output = next(
+        (
+            item
+            for item in record.owned_outputs
+            if item.kind == "command" and item.path == str(stable)
+        ),
+        None,
+    )
+    if output is None:
+        return None
+    if not stable.exists() and not stable.is_symlink():
+        return None
+    assert_no_links(stable)
+    if (
+        not stable.is_file()
+        or output.digest is None
+        or file_revision(stable) != output.digest
+    ):
+        raise InstallationError(
+            "Recorded stable manager is missing or changed."
+        )
+    return stable
+
+
+def _manager_executable(
+    record: InstallationRecord,
+    directory: Path,
+    selected: Path | None,
+) -> Path | None:
+    """Prefer an explicitly authenticated manager; otherwise use owned stable bytes."""
+    executable = (
+        selected
+        if selected is not None
+        else _recorded_manager_executable(record, directory)
+    )
+    if executable is None:
+        return None
+    if not executable.is_absolute():
+        raise InstallationError("Manager executable path must be absolute.")
+    assert_no_links(executable)
+    if not executable.is_file():
+        raise InstallationError("Manager executable is unavailable.")
+    return executable
+
+
+def _inventory_from_application(
+    inspection: InstallationInspection,
+    *,
+    categories: frozenset[ResourceKind],
+    forget_retained: bool,
+    manager_executable: Path | None,
+) -> CleanupInventory | None:
+    """Request exact app-owned cleanup targets when the active runtime declares a hook."""
+    record = inspection.record
+    runtime = record.active_runtime if record is not None else None
+    if runtime is None or runtime.hooks.inventory is None:
+        return None
+    if inspection.revision is None:
+        raise InstallationError("Inventory provider requires an authority revision.")
+    result = application_bridge(
+        inspection.directory,
+        record.identity,
+        runtime,
+        command_name=record.command_name,
+        action="inventory",
+        environment=dict(os.environ),
+        manager_executable=manager_executable,
+        expected_revision=inspection.revision,
+        categories=frozenset(categories),
+        forget_retained=forget_retained,
+    )
+    try:
+        return decode_cleanup_inventory(
+            json.dumps(result, sort_keys=True).encode("utf-8")
+        )
+    except (TypeError, ValueError) as error:
+        raise InstallationError(
+            "Application inventory hook returned malformed cleanup targets."
+        ) from error
 
 
 def default_cleanup_inventory(
@@ -257,7 +373,7 @@ def default_cleanup_inventory(
     entries: list[InventoryEntry] = []
     retained: list[InventoryEntry] = []
     for category, root in resource_roots(record.placement):
-        ownership = inspect_ownership(root, record.app_id, category)
+        ownership = inspect_ownership(root, record.identity.app_id, category)
         if ownership == "missing":
             if category not in categories:
                 retained.append(
@@ -273,7 +389,7 @@ def default_cleanup_inventory(
             continue
         if category == "config":
             config_plan = plan_config_file_purge(
-                record.app_id,
+                record.identity.app_id,
                 root,
                 user_dotenv_filename=DEFAULT_USER_DOTENV_FILENAME,
                 apprc_toml_filename=DEFAULT_APPRC_TOML_FILENAME,
@@ -342,7 +458,7 @@ def _resume_uninstall(
         inspection.directory,
         inspection.revision,
         record.generation_id,
-        record.app_id,
+        record.identity.app_id,
         operation.operation_id,
         record.placement,
         operation.inventory,
@@ -359,6 +475,7 @@ def prepare_uninstall(
     complete: bool = False,
     forget_retained: bool = False,
     inventory: CleanupInventory | None = None,
+    manager_executable: Path | None = None,
 ) -> UninstallPreparation:
     """Build a read-only uninstall plan from saved or caller-enumerated ownership.
 
@@ -366,7 +483,8 @@ def prepare_uninstall(
     :param categories: Resource categories selected for complete removal.
     :param complete: Whether support and installation authority are retired.
     :param forget_retained: Whether named unselected roots may remain unmanaged.
-    :param inventory: Exact provider enumeration; defaults cover owned markers only.
+    :param inventory: Optional exact provider enumeration supplied by the caller.
+    :param manager_executable: Authenticated native manager for bridge dispatch.
     :return: Exact preview or diagnostics explaining why planning is unsafe.
     """
     inspection = inspect_saved(directory)
@@ -404,8 +522,41 @@ def prepare_uninstall(
         return UninstallPreparation(
             None, inspection, (), inspection.diagnostics, False
         )
+    data_categories = categories - {"config"}
+    runtime = record.active_runtime
+    if complete and data_categories:
+        if (
+            runtime is None
+            or runtime.hooks.cleanup is None
+        ):
+            diagnostic = InstallationDiagnostic(
+                "uninstall-provider-unavailable",
+                "Selected data purge has no recorded runtime cleanup hook.",
+                "Restore the recorded runtime or remove the program without purging data.",
+            )
+            return UninstallPreparation(
+                None, inspection, (), (*inspection.diagnostics, diagnostic), False
+            )
     try:
-        selected_inventory = inventory
+        validated_manager = _manager_executable(
+            record, directory, manager_executable
+        )
+        provider_inventory = (
+            _inventory_from_application(
+                inspection,
+                categories=categories,
+                forget_retained=forget_retained,
+                manager_executable=validated_manager,
+            )
+            if complete and data_categories
+            else None
+        )
+        if inventory is not None and provider_inventory is not None:
+            if inventory != provider_inventory:
+                raise InstallationError(
+                    "Caller inventory differs from the recorded application provider."
+                )
+        selected_inventory = inventory or provider_inventory
         if selected_inventory is None:
             selected_inventory = (
                 default_cleanup_inventory(
@@ -525,496 +676,108 @@ def prepare_uninstall(
     )
 
 
-def repair_saved(
-    directory: Path, *, installer: Path | None = None
-) -> tuple[str, ...]:
-    """Return exact argv for the recorded matching installer without downloading.
-
-    :param directory: Explicit saved installation address.
-    :param installer: Optional selected installer, which must match owned support.
-    :return: Absolute interpreter, saved installer and repair arguments.
-    """
-    inspection = inspect_saved(directory)
-    record = inspection.record
-    if record is None:
-        raise InstallationError(
-            "Repair requires a valid saved installation identity."
-        )
-    if record.operation is not None:
-        if (
-            record.operation.kind not in {"install", "replace", "repair"}
-            or record.operation.intended is None
-        ):
-            raise InstallationError(
-                "Only a matching pending install/replace/repair can be resumed."
-            )
-        target = record.operation.intended
-    else:
-        target = record.current or record.last_successful
-        if target is None:
-            raise InstallationError(
-                "Repair requires recorded source and backend inputs."
-            )
-    selected = installer or directory / "repair-installer.py"
-    if (
-        not selected.is_absolute()
-        or not selected.is_file()
-        or selected.is_symlink()
-    ):
-        raise InstallationError(
-            "Matching saved installer is unavailable; no newer installer is downloaded."
-        )
-    outputs = (
-        record.current.owned_outputs
-        if record.current is not None and record.current.owned_outputs
-        else record.owned_outputs
-    )
-    owned = {
-        directory / item.path: item.digest
-        for item in outputs
-        if item.kind == "support"
-    }
-    digest = owned.get(selected)
-    if digest is None or not isinstance(digest, str):
-        raise InstallationError(
-            "Selected installer is not recorded support for this generation."
-        )
-    if hashlib.sha256(selected.read_bytes()).hexdigest() != digest:
-        raise InstallationError(
-            "Saved installer differs from its recorded generation digest."
-        )
-    return _saved_management_argv(directory, target, selected, ("--repair",))
-
-
-def _saved_management_argv(
-    directory: Path,
-    target: InstallationTarget | InstalledSnapshot,
-    selected: Path,
-    arguments: tuple[str, ...],
-) -> tuple[str, ...]:
-    """Run saved authored support with the recorded backend and an external Python."""
-    # > Pending targets have no observed prefix; exclude their entire backend tool root.
-    excluded_root = (
-        target.prefix
-        if isinstance(target, InstalledSnapshot)
-        else target.backend.tool_dir
-    )
-    python = external_base_python(excluded_root)
-    trampoline = (
-        "import os,sys; "
-        "os.environ['UV_TOOL_DIR']=sys.argv[1]; "
-        "os.environ['UV_TOOL_BIN_DIR']=sys.argv[2]; "
-        "os.execv(sys.argv[3],sys.argv[3:])"
-    )
-    return (
-        str(python),
-        "-I",
-        "-c",
-        trampoline,
-        str(target.backend.tool_dir),
-        str(target.backend.bin_dir),
-        str(target.backend.executable),
-        "run",
-        "--no-config",
-        "--no-project",
-        "--python",
-        str(python),
-        "--script",
-        str(selected),
-        *arguments,
-        "--directory",
-        str(directory),
-    )
-
-
-def uninstall_saved(
-    directory: Path,
-    *,
-    original_pid: int,
-    expected_revision: str,
-    categories: frozenset[ResourceKind] = frozenset(),
-    complete: bool = False,
-    forget_retained: bool = False,
-    inventory_file: Path | None = None,
-) -> tuple[str, ...]:
-    """Return verified adjacent authored uninstall argv, preserving the real caller.
-
-    The authored entry must use :func:`parse_uninstall_handoff_args`, forward
-    its PID to :func:`start_uninstall_handoff`, and return successfully only
-    after receiver readiness and the EXIT channel have been committed.
-
-    :param directory: Explicit saved installation address.
-    :param original_pid: Initiating process, which stays alive through saved readiness.
-    :param expected_revision: Revision shown in the accepted read-only preview.
-    :param categories: Exact user-selected resource categories.
-    :param complete: Whether to remove selected data and saved support.
-    :param forget_retained: Explicit consent to forget retained ownership.
-    :param inventory_file: Private exact inventory accepted during preview.
-    :return: External management argv; the caller must propagate failure and exit on success.
-    """
-    if original_pid <= 0 or not expected_revision:
-        raise InstallationError(
-            "Original uninstall PID and accepted preview revision are required."
-        )
-    if categories - {"config", "appdata", "cache", "state"}:
-        raise InstallationError("Unknown uninstall resource category.")
-    if forget_retained and not complete:
-        raise InstallationError("--forget-retained requires --complete.")
-    if not directory.is_absolute():
-        raise InstallationError("Saved uninstall address must be absolute.")
-    assert_no_links(directory)
-    inspection = inspect_saved(directory)
-    if inspection.revision != expected_revision:
-        raise InstallationError("Installation changed after uninstall preview.")
-    record = inspection.record
-    target = (record.current or record.last_successful) if record else None
-    if record is None or target is None:
-        raise InstallationError(
-            "Saved uninstall requires a recorded backend identity."
-        )
-    selected = directory / "app-uninstall.py"
-    outputs = (
-        record.current.owned_outputs if record.current else record.owned_outputs
-    )
-    digest = next(
-        (
-            item.digest
-            for item in outputs
-            if item.kind == "support" and item.path == "app-uninstall.py"
-        ),
-        None,
-    )
-    if (
-        selected.is_symlink()
-        or not selected.is_file()
-        or not isinstance(digest, str)
-        or hashlib.sha256(selected.read_bytes()).hexdigest() != digest
-    ):
-        raise InstallationError(
-            "Saved application uninstaller is missing or differs from recorded support."
-        )
-    arguments = [
-        "--apprc-original-pid",
-        str(original_pid),
-        "--apprc-expected-revision",
-        expected_revision,
-    ]
-    if complete:
-        arguments.append("--complete")
-    for category in sorted(categories):
-        arguments.extend(("--category", category))
-    if inventory_file is not None:
-        if (
-            not inventory_file.is_absolute()
-            or inventory_file.is_symlink()
-            or not inventory_file.is_file()
-        ):
-            raise InstallationError(
-                "Accepted cleanup inventory file is unavailable or unsafe."
-            )
-        arguments.extend(("--inventory", str(inventory_file)))
-    if forget_retained:
-        arguments.append("--forget-retained")
-    return _saved_management_argv(directory, target, selected, tuple(arguments))
-
-
-def parse_uninstall_handoff_args(
-    argv: Sequence[str] | None = None,
-) -> tuple[int | None, str | None, list[str]]:
-    """Extract reserved routing metadata before the authored entry parses its flags.
-
-    :param argv: Explicit arguments, or the process arguments when omitted.
-    :return: Original PID, accepted preview revision, and authored arguments.
-    """
-    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-    parser.add_argument("--apprc-original-pid", type=int)
-    parser.add_argument("--apprc-expected-revision")
-    args, remaining = parser.parse_known_args(argv)
-    if args.apprc_original_pid is not None and args.apprc_original_pid <= 0:
-        parser.error("--apprc-original-pid must be positive")
-    return args.apprc_original_pid, args.apprc_expected_revision, remaining
-
 
 def stage_uninstall(
     plan: UninstallPlan,
     *,
-    provider_cleanup: Callable[[OperationContext], None],
+    manager_executable: Path | None = None,
 ) -> UninstallPlan:
-    """Persist removal intent, run app cleanup while installed, then checkpoint it.
+    """Persist exact uninstall intent before the independent handoff starts.
 
     :param plan: Exact read-only preview accepted by the user.
-    :param provider_cleanup: App-owned ordinary cleanup, run before resource locks.
-    :return: Plan carrying the exact post-checkpoint revision for handoff.
+    :param manager_executable: Authenticated native manager, when setup initiated it.
+    :return: Plan carrying the exact pending-authority revision.
     """
-    with installation_lock(plan.directory):
-        current = inspect_saved(plan.directory)
-        record = current.record
-        operation = record.operation if record is not None else None
-        if record is not None and operation is not None:
+    current = inspect_saved(plan.directory)
+    record = current.record
+    if record is None:
+        raise InstallationError("Saved uninstall requires valid authority.")
+    _manager_executable(record, plan.directory, manager_executable)
+    operation = record.operation
+    if operation is not None:
+        if (
+            operation.kind != "uninstall"
+            or operation.operation_id != plan.operation_id
+            or record.generation_id != plan.expected_generation
+            or operation.inventory != plan.inventory
+            or operation.categories != plan.categories
+            or operation.complete != plan.complete
+            or operation.forget_retained != plan.forget_retained
+        ):
+            raise InstallationError(
+                "A different installation operation is pending."
+            )
+    else:
+        if current.revision != plan.expected_revision:
+            raise InstallationError(
+                "Installation changed after uninstall preview."
+            )
+        for entry in plan.inventory.entries:
             if (
-                operation.kind != "uninstall"
-                or operation.operation_id != plan.operation_id
-                or record.generation_id != plan.expected_generation
-                or operation.inventory != plan.inventory
-                or operation.categories != plan.categories
-                or operation.complete != plan.complete
-                or operation.forget_retained != plan.forget_retained
+                entry.kind == "file"
+                and file_revision(entry.path) != entry.revision
             ):
                 raise InstallationError(
-                    "A different installation operation is pending."
+                    f"Accepted cleanup target changed: {entry.path}"
                 )
-            if OperationStep.PROVIDER_CLEANUP in operation.steps:
-                if current.revision is None:
-                    raise InstallationError(
-                        "Pending removal authority has no revision."
-                    )
-                return replace(plan, expected_revision=current.revision)
-        else:
-            if current.revision != plan.expected_revision:
-                raise InstallationError(
-                    "Installation changed after uninstall preview."
-                )
-            for entry in plan.inventory.entries:
-                if (
-                    entry.kind == "file"
-                    and file_revision(entry.path) != entry.revision
-                ):
-                    raise InstallationError(
-                        f"Accepted cleanup target changed: {entry.path}"
-                    )
-            current = begin_operation(plan)
-        revision = current.revision
-        if revision is None:
-            raise InstallationError(
-                "Pending uninstall authority has no revision."
-            )
-        context = OperationContext(
-            plan.directory,
-            plan.operation_id,
-            plan.expected_generation,
-            plan.placement,
-        )
+        current = begin_operation(plan)
+    if current.revision is None:
+        raise InstallationError("Pending uninstall has no authority revision.")
+    return replace(plan, expected_revision=current.revision)
+
+
+
+def _handoff_python(removal_roots: tuple[Path, ...]) -> Path:
+    """Find a Python executable that will survive the requested removal."""
+    candidates = (
+        Path(sys.executable),
+        Path(sys.base_prefix)
+        / ("python.exe" if os.name == "nt" else "bin/python"),
+    )
+    for candidate in candidates:
+        if not candidate.is_absolute() or not candidate.is_file():
+            continue
         try:
-            provider_cleanup(context)
-            current = record_step(
-                plan.directory,
-                operation_id=plan.operation_id,
-                expected_revision=revision,
-                step=OperationStep.PROVIDER_CLEANUP,
-            )
-        except BaseException as error:
-            latest = inspect_saved(plan.directory)
-            if latest.revision is not None:
-                fail_operation(
-                    plan.directory,
-                    operation_id=plan.operation_id,
-                    expected_revision=latest.revision,
-                    diagnostic=InstallationDiagnostic(
-                        "provider-cleanup-incomplete",
-                        str(error),
-                        "Retry the same saved uninstall after reviewing provider cleanup effects.",
-                    ),
-                )
-            raise
-        if current.revision is None:
-            raise InstallationError(
-                "Provider-cleanup checkpoint has no revision."
-            )
-        return replace(plan, expected_revision=current.revision)
+            _handoff.assert_outside_removal(candidate, removal_roots)
+        except InstallationError:
+            continue
+        return candidate
+    raise InstallationError(
+        "No external Python executable is available for the removal handoff."
+    )
 
 
-def _launch_uninstall_handoff(
-    plan: UninstallPlan,
-    target: InstalledSnapshot,
-    controller_bytes: bytes,
-    python: Path,
-    environment: dict[str, str],
-    staging: Path,
-    removal_roots: tuple[Path, ...],
-    original_pid: int | None,
-) -> UninstallHandoff:
-    """Build and launch a checkpointed handoff, preserving its wire protocol."""
-
-    directory = plan.directory
-    recovery_directory = staging / "recovery"
-    recovery_controller = recovery_directory / "controller.py"
-    plan_file = staging / "handoff.json"
-    reserved_inputs = (
-        staging,
-        recovery_directory,
-        recovery_controller,
-        plan_file,
-    )
-    observed = inspect_saved(directory)
-    record = observed.record
-    if (
-        observed.revision != plan.expected_revision
-        or record is None
-        or record.operation is None
-        or record.operation.kind != "uninstall"
-        or record.operation.operation_id != plan.operation_id
-        or record.generation_id != plan.expected_generation
-        or OperationStep.PROVIDER_CLEANUP not in record.operation.steps
-    ):
-        raise InstallationError(
-            "Persisted provider-cleanup authority is missing or changed."
-        )
-    pid = original_pid or os.getpid()
-    original_start = _handoff.process_start_token(pid)
-    ready_token = uuid4().hex
-    payload = {
-        "directory": str(directory),
-        "app_id": plan.app_id,
-        "generation_id": str(plan.expected_generation),
-        "operation_id": str(plan.operation_id),
-        "expected_revision": plan.expected_revision,
-        "original_pid": pid,
-        "target_prefix": str(target.prefix),
-        "original_start": original_start,
-        "recovery_directory": str(recovery_directory),
-        "readiness_token": ready_token,
-        "complete": plan.complete,
-        "categories": sorted(plan.categories),
-        "forget_retained": plan.forget_retained,
-        "inventory": [
-            {
-                "path": str(item.path),
-                "kind": item.kind,
-                "revision": item.revision,
-                "resource": item.resource,
-            }
-            for item in plan.inventory.entries
-        ],
-        "retained": [
-            {
-                "path": str(item.path),
-                "kind": item.kind,
-                "revision": item.revision,
-                "resource": item.resource,
-            }
-            for item in plan.inventory.retained
-        ],
-    }
-    _assert_handoff_inputs_outside_removal(reserved_inputs, removal_roots)
-    _assert_private_directory(staging)
-    _assert_private_directory(recovery_directory)
-    if plan_file.read_bytes() != b"":
-        raise InstallationError(
-            "Reserved uninstall handoff input changed during provider cleanup."
-        )
-    if (
-        file_revision(recovery_controller)
-        != hashlib.sha256(controller_bytes).hexdigest()
-    ):
-        raise InstallationError(
-            "Reserved uninstall recovery controller changed during provider cleanup."
-        )
-    command = (
-        str(target.backend.executable),
-        "run",
-        "--no-config",
-        "--no-project",
-        "--python",
-        str(python),
-        "--script",
-        str(recovery_controller),
-        "--handoff-plan",
-        str(plan_file),
-    )
-    write_bytes_atomic(
-        plan_file,
-        (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8"),
-        private=True,
-    )
-    _assert_handoff_inputs_outside_removal(reserved_inputs, removal_roots)
-    process: subprocess.Popen[str] = subprocess.Popen(
-        command,
-        cwd=staging,
-        env=environment,
-        text=True,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=None,
-        bufsize=1,
-    )
-    assert process.stdin is not None and process.stdout is not None
-    return UninstallHandoff(
-        process,
-        command,
-        plan_file,
-        process.stdout,
-        process.stdin,
-        ready_token,
-    )
+def _copy_handoff_manager(source: Path, destination: Path) -> None:
+    """Copy authenticated native-manager bytes outside every removal root."""
+    source_revision = file_revision(source)
+    shutil.copyfile(source, destination)
+    if os.name != "nt":
+        os.chmod(destination, 0o700)
+    if file_revision(destination) != source_revision:
+        raise InstallationError("Native manager changed while it was copied.")
 
 
 def start_uninstall_handoff(
     plan: UninstallPlan,
     *,
     original_pid: int | None = None,
-    provider_cleanup: Callable[[OperationContext], None] | None = None,
+    manager_executable: Path | None = None,
 ) -> UninstallHandoff:
-    """Start the saved controller only after durable provider-cleanup checkpointing.
-
-    :param plan: Exact preview; an unstaged plan is staged here before handoff.
-    :param original_pid: Actual caller PID; defaults to this process.
-    :param provider_cleanup: App-owned cleanup; only an empty-capability no-op is implicit.
-    """
-
+    """Launch an independent native or Python controller for the staged plan."""
     directory = plan.directory
     observed = inspect_saved(directory)
     record = observed.record
     if record is None:
-        raise InstallationError(
-            "Saved controller requires valid installation authority."
-        )
-    outputs = (
-        record.current.owned_outputs
-        if record.current is not None
-        else record.owned_outputs
-    )
-    owned_support = {
-        directory / output.path: output.digest
-        for output in outputs
-        if output.kind == "support"
-    }
-    controller = directory / "controller.py"
-    controller_digest = owned_support.get(controller)
-    controller_bytes = controller.read_bytes() if controller.is_file() else b""
-    if (
-        controller.is_symlink()
-        or not isinstance(controller_digest, str)
-        or hashlib.sha256(controller_bytes).hexdigest() != controller_digest
-    ):
-        raise InstallationError(
-            "Saved independent controller is missing or differs from recorded support."
-        )
-    target = record.current or record.last_successful
-    if target is None:
-        raise InstallationError(
-            "No recorded backend is available for an independent controller."
-        )
+        raise InstallationError("Uninstall requires valid installation authority.")
+    manager = _manager_executable(record, directory, manager_executable)
     removal_roots = _handoff.handoff_removal_roots(plan, record)
+    python_executable = (
+        _handoff_python(removal_roots) if manager is None else None
+    )
     temp_parent = Path(tempfile.gettempdir()).resolve(strict=True)
     _handoff.assert_outside_removal(temp_parent, removal_roots)
     assert_no_links(temp_parent)
-    command_roots = {
-        Path(os.path.normpath(os.fspath(path))).absolute()
-        for path in target.commands
-    }
-    base_roots = tuple(
-        root for root in removal_roots if root not in command_roots
-    )
-    base_candidate = Path(sys.base_prefix) / (
-        "python.exe" if os.name == "nt" else "bin/python"
-    )
-    _handoff.assert_outside_removal(base_candidate, removal_roots)
-    python = external_base_python(
-        target.prefix,
-        executable=base_candidate,
-        forbidden_roots=base_roots,
-    )
-    environment = backend_environment(target.backend, dict(os.environ))
+    environment = dict(os.environ)
     invocation_cwd = Path.cwd()
     for key in (
         "UV_CACHE_DIR",
@@ -1032,62 +795,125 @@ def start_uninstall_handoff(
             ).resolve()
             _handoff.assert_outside_removal(selected_path, removal_roots)
             environment[key] = str(selected_path)
-    current_operation = (
-        observed.record.operation if observed.record is not None else None
-    )
-    needs_cleanup = (
-        current_operation is None
-        or OperationStep.PROVIDER_CLEANUP not in current_operation.steps
-    )
-    if needs_cleanup and provider_cleanup is None:
-        needs_provider = any(
-            item.resource not in {None, "config"}
-            and item.path.name != ".apprc-owner.json"
-            for item in plan.inventory.entries
-        )
-        if plan.complete and needs_provider:
-            raise InstallationError(
-                "Selected provider-owned payload requires app-owned cleanup."
-            )
-
-        def no_provider_cleanup(_context: OperationContext) -> None:
-            return None
-
-        provider_cleanup = no_provider_cleanup
     staging = _private_handoff_staging(temp_parent, removal_roots)
     recovery_directory = staging / "recovery"
-    recovery_controller = recovery_directory / "controller.py"
     plan_file = staging / "handoff.json"
-    reserved_inputs = (
-        staging,
-        recovery_directory,
-        recovery_controller,
-        plan_file,
+    manager_copy = (
+        staging / ("manager.exe" if os.name == "nt" else "manager")
+        if manager is not None
+        else None
     )
+    pid = original_pid if original_pid is not None else os.getpid()
     try:
         create_private_directory_if_missing(recovery_directory)
         _assert_private_directory(recovery_directory)
-        _assert_handoff_inputs_outside_removal(reserved_inputs, removal_roots)
-        write_bytes_atomic(recovery_controller, controller_bytes, private=True)
         write_bytes_atomic(plan_file, b"", private=True)
-        _assert_handoff_inputs_outside_removal(reserved_inputs, removal_roots)
-    except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
-    try:
-        if needs_cleanup and provider_cleanup is not None:
-            plan = stage_uninstall(plan, provider_cleanup=provider_cleanup)
-        return _launch_uninstall_handoff(
-            plan,
-            target,
-            controller_bytes,
-            python,
-            environment,
+        if manager is not None and manager_copy is not None:
+            _copy_handoff_manager(manager, manager_copy)
+        handoff_inputs = (
             staging,
-            removal_roots,
-            original_pid,
+            recovery_directory,
+            plan_file,
+            *((manager_copy,) if manager_copy is not None else ()),
+        )
+        _assert_handoff_inputs_outside_removal(handoff_inputs, removal_roots)
+        staged = stage_uninstall(
+            plan,
+            manager_executable=manager_executable,
+        )
+        current = inspect_saved(directory)
+        pending = current.record
+        if (
+            current.revision != staged.expected_revision
+            or pending is None
+            or pending.operation is None
+            or pending.operation.operation_id != staged.operation_id
+            or pending.operation.kind != "uninstall"
+        ):
+            raise InstallationError(
+                "Persisted pending uninstall changed before handoff launch."
+            )
+        ready_token = uuid4().hex
+        payload = {
+            "directory": str(directory),
+            "app_id": pending.identity.app_id,
+            "generation_id": str(staged.expected_generation),
+            "operation_id": str(staged.operation_id),
+            "expected_revision": staged.expected_revision,
+            "original_pid": pid,
+            "original_start": _handoff.process_start_token(pid),
+            "recovery_directory": str(recovery_directory),
+            "readiness_token": ready_token,
+            "complete": staged.complete,
+            "categories": sorted(staged.categories),
+            "forget_retained": staged.forget_retained,
+            "inventory": [
+                {
+                    "path": str(item.path),
+                    "kind": item.kind,
+                    "revision": item.revision,
+                    "resource": item.resource,
+                }
+                for item in staged.inventory.entries
+            ],
+            "retained": [
+                {
+                    "path": str(item.path),
+                    "kind": item.kind,
+                    "revision": item.revision,
+                    "resource": item.resource,
+                }
+                for item in staged.inventory.retained
+            ],
+            "manager_executable": (
+                str(manager_copy) if manager_copy is not None else None
+            ),
+            "manager_executable_revision": (
+                file_revision(manager_copy) if manager_copy is not None else None
+            ),
+        }
+        write_bytes_atomic(
+            plan_file,
+            (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8"),
+            private=True,
+        )
+        if manager_copy is not None:
+            command = (str(manager_copy), "--apprc-execute-handoff", str(plan_file))
+        else:
+            assert python_executable is not None
+            python = python_executable
+            command = (
+                str(python),
+                "-m",
+                "apprc.distribution.runtime.removal",
+                "--handoff-plan",
+                str(plan_file),
+            )
+        environment.pop("PYAPP", None)
+        environment.pop("_APPRC_NATIVE_EXECUTABLE", None)
+        if manager_copy is not None:
+            environment["PYAPP"] = str(manager_copy)
+            environment["_APPRC_NATIVE_EXECUTABLE"] = str(manager_copy)
+        _assert_handoff_inputs_outside_removal(handoff_inputs, removal_roots)
+        process: subprocess.Popen[str] = subprocess.Popen(
+            command,
+            cwd=staging,
+            env=environment,
+            text=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=None,
+            bufsize=1,
+        )
+        assert process.stdin is not None and process.stdout is not None
+        return UninstallHandoff(
+            process,
+            command,
+            plan_file,
+            process.stdout,
+            process.stdin,
+            ready_token,
         )
     except BaseException:
-        # > No package removal has begun; saved support lets callers retry the checkpoint.
         shutil.rmtree(staging, ignore_errors=True)
         raise

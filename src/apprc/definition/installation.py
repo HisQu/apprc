@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
-from apprc.definition._source_identity import parse_immutable_github_source
 from apprc.definition.paths import Layout, ResourceKind
 
 
@@ -27,11 +26,13 @@ class OperationStep(StrEnum):
 
     SOURCE_VERIFIED = "source_verified"
     PROVIDER_CLEANUP = "provider_cleanup"
-    PACKAGE_CHANGED = "package_changed"
+    RUNTIME_PREPARED = "runtime_prepared"
+    RUNTIME_VALIDATED = "runtime_validated"
     RESOURCES_READY = "resources_ready"
     SUPPORT_READY = "support_ready"
     REGISTRATION_READY = "registration_ready"
-    PACKAGE_REMOVED = "package_removed"
+    MIGRATION_HOOK_COMPLETED = "migration_hook_completed"
+    RUNTIME_REMOVED = "runtime_removed"
     DATA_REMOVED = "data_removed"
 
 
@@ -54,14 +55,62 @@ class InstallationIdentity:
     apprc_reference: str | None
     commands: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        """Reject invalid package, import and console-script identities."""
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", self.app_id) is None:
+            raise InstallationError("Application ID is invalid.")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", self.distribution) is None:
+            raise InstallationError("Distribution identity is invalid.")
+        if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", self.import_package, flags=re.ASCII) is None:
+            raise InstallationError("Import package identity is invalid.")
+        if (
+            not self.commands
+            or len(set(self.commands)) != len(self.commands)
+            or any(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", command) is None for command in self.commands)
+        ):
+            raise InstallationError("Console command identities must be valid and unique.")
+        if self.apprc_reference is not None:
+            module, separator, attribute = self.apprc_reference.partition(":")
+            if (
+                not separator
+                or not attribute
+                or not all(part.isidentifier() for part in module.split("."))
+                or not attribute.isidentifier()
+            ):
+                raise InstallationError("AppRC reference must be a module:attribute.")
+
 
 @dataclass(frozen=True, slots=True)
 class OwnedOutput:
     """One expressly owned support file, shortcut or HKCU registration."""
 
-    kind: Literal["support", "shortcut", "hkcu"]
+    kind: Literal["support", "shortcut", "hkcu", "command"]
     path: str
     digest: str | None
+
+    def __post_init__(self) -> None:
+        if self.kind == "support":
+            from pathlib import PurePosixPath, PureWindowsPath
+
+            path = PurePosixPath(self.path)
+            if (
+                not path.parts
+                or path.is_absolute()
+                or PureWindowsPath(self.path).drive
+                or ".." in path.parts
+                or any(character in self.path for character in '\\\x00<>:"|?*')
+                or str(path) != self.path
+            ):
+                raise InstallationError("Owned support path must be portable and relative.")
+        if (
+            not path.is_absolute()
+            or ".." in path.parts
+            or str(path) != self.path
+            or "\x00" in self.path
+        ):
+            raise InstallationError(
+                "Owned command path must be normalized and absolute."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,102 +165,115 @@ class InstallationPlacement:
 
 
 @dataclass(frozen=True, slots=True)
-class InstallationSource:
-    """Exact package acquisition inputs; credentials must not be persisted.
+class InstallationHooks:
+    """Importable application callbacks captured with one runtime."""
 
-    ``kind="index"`` describes general requirement-based sources, including
-    immutable GitHub requirements; it does not imply a package registry.
-    """
+    initialize: str | None = None
+    inventory: str | None = None
+    cleanup: str | None = None
+    migrate: str | None = None
 
-    kind: Literal["editable", "release-sdist", "wheel", "index"]
-    requirement: str
-    version: str | None = None
-    digest: str | None = None
-    runtime_requirements: tuple[str, ...] = ()
-    runtime_overrides: tuple[str, ...] = ()
-
-    def matches_observation(self, observed: InstallationSource) -> bool:
-        """Match durable inputs while allowing only verified archive digest proof.
-
-        :param observed: Source identity captured from an installed package.
-        :return: Whether it retains these inputs and adds no unsupported proof.
-        """
-        if any(
-            digest is not None and re.fullmatch(r"[0-9a-f]{64}", digest) is None
-            for digest in (self.digest, observed.digest)
+    def __post_init__(self) -> None:
+        for reference in (
+            self.initialize, self.inventory, self.cleanup, self.migrate
         ):
-            return False
-        if (
-            self.kind != observed.kind
-            or self.requirement != observed.requirement
-            or self.version != observed.version
-            or self.runtime_requirements != observed.runtime_requirements
-            or self.runtime_overrides != observed.runtime_overrides
-        ):
-            return False
-        if self.digest is not None:
-            return self.digest == observed.digest
-        if observed.digest is None:
-            return True
-        return (
-            self.kind == "index"
-            and parse_immutable_github_source(self.requirement) is not None
-            and re.fullmatch(r"[0-9a-f]{64}", observed.digest) is not None
-        )
+            if reference is not None and re.fullmatch(
+                r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*",
+                reference,
+                flags=re.ASCII,
+            ) is None:
+                raise InstallationError("Hooks must be module:function references.")
 
 
 @dataclass(frozen=True, slots=True)
-class UvToolTarget:
-    """Selected absolute uv backend address, independent of ambient PATH."""
+class ProjectSnapshot:
+    """Immutable project archive and lock identity."""
 
-    executable: Path
-    tool_dir: Path
-    bin_dir: Path
+    digest: str
+    lock_digest: str
+    commit: str
+    project_path: str = "."
 
     def __post_init__(self) -> None:
-        """Do not let a later CWD change reinterpret a backend target."""
-        if not all(
-            path.is_absolute()
-            for path in (self.executable, self.tool_dir, self.bin_dir)
+        from pathlib import PurePosixPath
+
+        if any(re.fullmatch(r"[0-9a-f]{64}", value) is None
+               for value in (self.digest, self.lock_digest)):
+            raise InstallationError("Project and lock digests must be lowercase SHA-256.")
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", self.commit) is None:
+            raise InstallationError("Project commit must be a full lowercase Git commit ID.")
+        path = PurePosixPath(self.project_path)
+        if (
+            not self.project_path or path.is_absolute()
+            or ".." in path.parts
+            or any(character in self.project_path for character in '\\\x00<>:"|?*')
+            or str(path) != self.project_path
         ):
-            raise InstallationError("uv backend paths must be absolute.")
+            raise InstallationError("Project path must be normalized and relative.")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSelection:
+    """Locked project interpreter and explicitly selected extras."""
+
+    python: str
+    extras: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.python.strip() or "\x00" in self.python:
+            raise InstallationError("Runtime Python selection is empty or invalid.")
+        if len(set(self.extras)) != len(self.extras) or any(
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", extra) is None
+            for extra in self.extras
+        ):
+            raise InstallationError("Runtime extras must be valid and unique.")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSlot:
+    """One immutable managed candidate or observed active runtime."""
+
+    slot_id: UUID
+    source: ProjectSnapshot
+    selection: RuntimeSelection
+    version: str | None = None
+    python_version: str | None = None
+    hooks: InstallationHooks = InstallationHooks()
+
+    def __post_init__(self) -> None:
+        if any(value is not None and not value.strip()
+               for value in (self.version, self.python_version)):
+            raise InstallationError("Runtime observations cannot be empty.")
+
+
+@dataclass(frozen=True, slots=True)
+class EditableCheckout:
+    """Developer-owned checkout and existing environment, never deletion roots."""
+
+    project: Path
+    environment: Path
+    hooks: InstallationHooks = InstallationHooks()
+
+    def __post_init__(self) -> None:
+        paths = (self.project, self.environment)
+        if any(not path.is_absolute() for path in paths):
+            raise InstallationError("Editable checkout paths must be absolute.")
+        if any(
+            ".." in path.parts or "\x00" in str(path)
+            for path in paths
+        ):
+            raise InstallationError(
+                "Editable checkout paths must be normalized and valid."
+            )
 
 
 @dataclass(frozen=True, slots=True)
 class InstallationTarget:
-    """Intended acquisition inputs, deliberately distinct from live observation."""
+    """Exact pending identity, placement and runtime candidate."""
 
     identity: InstallationIdentity
-    source: InstallationSource
     placement: InstallationPlacement
-    backend: UvToolTarget
-
-
-@dataclass(frozen=True, slots=True)
-class InstalledSnapshot:
-    """Observed live package state, not a prediction of backend success."""
-
-    identity: InstallationIdentity
-    version: str
-    source: InstallationSource
-    placement: InstallationPlacement
-    backend: UvToolTarget
-    prefix: Path
-    interpreter: Path
-    commands: tuple[Path, ...]
-    owned_outputs: tuple[OwnedOutput, ...] = ()
-    distribution_record_digest: str | None = None
-
-    def __post_init__(self) -> None:
-        """Reject malformed observed RECORD fingerprints at construction."""
-        if (
-            self.distribution_record_digest is not None
-            and re.fullmatch(r"[0-9a-f]{64}", self.distribution_record_digest)
-            is None
-        ):
-            raise InstallationError(
-                "Installed distribution RECORD digest must be SHA-256."
-            )
+    runtime: RuntimeSlot | EditableCheckout
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,39 +346,52 @@ class InstallationOperation:
 
 @dataclass(frozen=True, slots=True)
 class InstallationRecord:
-    """The single durable authority for one managed application generation."""
+    """The single durable schema-3 authority for one application generation."""
 
-    schema_version: Literal[2]
-    app_id: str
+    schema_version: Literal[3]
+    identity: InstallationIdentity
+    command_name: str
     generation_id: UUID
     support_version: str
     placement: InstallationPlacement
     status: Literal["provisional", "ready", "incomplete", "removed-retained"]
-    last_successful: InstalledSnapshot | None = None
-    current: InstalledSnapshot | None = None
+    active_runtime: RuntimeSlot | EditableCheckout | None = None
+    retiring_runtime_ids: tuple[UUID, ...] = ()
     operation: InstallationOperation | None = None
     owned_outputs: tuple[OwnedOutput, ...] = ()
     migration: InstallationMigration | None = None
-
     def __post_init__(self) -> None:
-        """Reject authority that contradicts its declared lifecycle status."""
+        """Keep active authority distinct from unfinished replacement work."""
+        if not self.identity.app_id or self.command_name not in self.identity.commands:
+            raise InstallationError("Installation identity or primary command is invalid.")
         if self.status == "ready" and (
-            self.current is None or self.operation is not None
+            self.active_runtime is None or self.operation is not None
         ):
-            raise InstallationError(
-                "Ready installation requires current state and no operation."
-            )
+            raise InstallationError("Ready installation requires an active runtime and no operation.")
         if self.status == "removed-retained" and (
-            self.current is not None or self.operation is not None
+            self.active_runtime is not None or self.operation is not None
+            or self.retiring_runtime_ids
         ):
-            raise InstallationError(
-                "Removed installation cannot claim a live package or operation."
-            )
-        for snapshot in (self.current, self.last_successful):
-            if snapshot is not None and snapshot.identity.app_id != self.app_id:
-                raise InstallationError(
-                    "Installed snapshot belongs to another application."
-                )
+            raise InstallationError("Removed installation cannot retain live runtime work.")
+        if isinstance(self.active_runtime, RuntimeSlot) and (
+            self.active_runtime.version is None
+            or self.active_runtime.python_version is None
+        ):
+            raise InstallationError("Active managed runtime requires both observed versions.")
+        ids = list(self.retiring_runtime_ids)
+        if isinstance(self.active_runtime, RuntimeSlot):
+            ids.append(self.active_runtime.slot_id)
+        if self.operation is not None and self.operation.intended is not None:
+            target = self.operation.intended
+            if target.identity != self.identity or target.placement != self.operation.placement:
+                raise InstallationError("Pending target differs from its authority.")
+            if isinstance(target.runtime, RuntimeSlot):
+                if (target.runtime.version is None) != (target.runtime.python_version is None):
+                    raise InstallationError("Pending runtime observations must be both absent or both present.")
+                ids.append(target.runtime.slot_id)
+        if len(ids) != len(set(ids)):
+            raise InstallationError("Runtime slot IDs must be unique.")
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,6 +434,13 @@ class InstallationInspection:
 
     def require_usable(self) -> InstallationRecord | None:
         """Return usable placement or fail without silently choosing a store."""
+        if self.status == "incomplete" and (
+            self.record is not None
+            and self.record.active_runtime is not None
+            and self.record.operation is not None
+            and self.record.operation.kind in {"replace", "repair"}
+        ):
+            return self.record
         if self.status not in {"missing", "ready", "removed-retained"}:
             detail = "; ".join(item.message for item in self.diagnostics)
             raise InstallationError(
@@ -396,6 +478,7 @@ class InstallPlan:
     operation_id: UUID
     generation_id: UUID
     kind: Literal["install", "replace", "repair"] = "install"
+    command_name: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -427,6 +510,8 @@ class MigrationPlan:
     placement: InstallationPlacement
     inventory: MigrationInventory
     quiescent: bool
+    identity: InstallationIdentity | None = None
+    command_name: str | None = None
 
 
 OperationPlan = InstallPlan | UninstallPlan | MigrationPlan

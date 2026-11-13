@@ -118,7 +118,7 @@ the same operation through `ConfigManager`.
 
 An application can opt into root `launch` by supplying `launcher_spec` and
 `launcher_handlers`. It opens the existing Textual management launcher; it is
-not a foreground command launcher or a saved `app-launch.py` entry.
+not a foreground web launcher or a separate native executable.
 
 The example's application-specific `launcher` command opens management and its
 example command inside one Textual event loop. Its **Print active
@@ -279,60 +279,47 @@ describes priority, including explicit-file precedence.
 
 # Repository-owned installation composition
 
-These maintained examples are ordinary composition functions for a repository
-payload, not standalone console installers. Include the chosen modules/resources
-in a `PayloadTree` and generate runnable entries through
-[`apprc.distribution`](References.md#distribution-generation). They need no
-Buildben inheritance or global hook registry.
+These maintained examples show repository-owned composition around
+[AppRC's distribution runtime](References.md#distribution-generation).
+Authored build code produces the complete locked project snapshot; installation
+uses its recorded runtime and shared transaction engine. Do not copy a second
+lifecycle engine into an application or generate a Python helper forest.
 
 ## Default lifecycle
 
-The [default install function](../examples/example_apps/src/distribution_default/install.py)
-accepts the captured plan and explicit `SourceSelection`, acquires it in private
-staging, then calls `install_prepared_application(...)` with the target probe,
-support bytes and Python requirement. The shared transaction owns the safety
-boundary: it validates source/backend, probes the actual installed target,
-publishes support and commits observed authority.
+The [default install example](../examples/example_apps/src/distribution_default/install.py)
+delegates installation to the shared locked-project lifecycle. The transaction,
+not repository glue, owns candidate validation, activation, saved placement and
+failure recovery.
 
-The [default removal function](../examples/example_apps/src/distribution_default/uninstall.py)
-uses `prepare_uninstall(...)`, rejects an unsafe preview, starts the independent
-handoff, waits for readiness and signals exit immediately before `SystemExit`.
-The calling application must obtain consent first. This function removes the
-program only; it does not interpret retention as permission to delete data.
+The [default removal example](../examples/example_apps/src/distribution_default/uninstall.py)
+delegates program removal without claiming application data. Obtain consent and
+review the preview before requesting complete resource removal.
 
-The optional `installation_inventory` callback mounted by `mount_app_cli(...)`
-has contract
-`(InstallationInspection, frozenset[ResourceKind], bool) -> CleanupInventory`;
-the boolean is `forget_retained`. A provider can call
-`apprc.distribution.runtime.default_cleanup_inventory(inspection,
-categories=categories, forget_retained=forget_retained)` to obtain default
-marker-backed targets before composing its exact application payload. The
-strict handoff codec is
-`apprc.user_files.installation.codec.encode_cleanup_inventory` and
-`decode_cleanup_inventory`.
+Applications declare `InstallationHooks` containing importable `module:function`
+providers for initialization, inventory, cleanup and migration. AppRC invokes
+them through the recorded application environment. No application dependencies
+are required for independent core diagnosis or program-only removal.
 
-For complete removal, the host may pass its accepted inventory to the saved
-authored controller with `--inventory PATH`. This is not a public
-`installation uninstall` CLI option. The controller decodes strict
-cleanup-inventory JSON and revalidates target scope and file revisions before
-staging removal; it must not replace a supplied inventory with a fresh scan.
+Inventory is an exact ownership contract, not a directory scan or permission to
+delete unknown files. The shared codec and operation checkpoints bind accepted
+inventory to the captured generation; pending removal must not replace it with
+an unreviewed rescan.
+
 
 ## Customized ordering
 
-The [custom install function](../examples/example_apps/src/distribution_custom/install.py)
-parses transport with `parse_source_arguments(...)` before application options
-and plans with the returned `selection.source`. It calls
-`selection.prepare(...)`, runs the repository's own project-setup function,
-then passes that exact `PreparedSource` to `install_prepared_application(...)`.
-The author controls this sequence without editing shared runtime or copying
-its transaction implementation.
+The [custom install example](../examples/example_apps/src/distribution_custom/install.py)
+keeps application-specific initialization outside the shared transaction engine.
+Declare importable providers and build prerequisites in the authored project;
+do not add wheel/source selectors, package override injection or a parallel
+bootstrap environment.
 
-The [custom removal function](../examples/example_apps/src/distribution_custom/uninstall.py)
-supplies project cleanup to the shared handoff. Cleanup receives an explicit
-pending `OperationContext`; application maintenance can use
-`MyRC.maintain(context=context, handlers=...)` instead of fabricating a normal
-runtime context or ignoring an incomplete record. Cleanup must finish while
-required program/provider code remains available.
+The [custom removal example](../examples/example_apps/src/distribution_custom/uninstall.py)
+keeps application-owned cleanup explicit. Cleanup must run while the recorded
+application environment is available and against the accepted operation context.
+An unavailable provider blocks dependent data deletion, not independent
+program-only removal.
 
 Keep ownership inventories, process quiescence and consent explicit when
 adapting these examples. Closing a screen is not process exit, and successful

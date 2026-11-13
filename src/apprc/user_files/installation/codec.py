@@ -11,7 +11,7 @@ import json
 import re
 import types
 from enum import Enum
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal, Union, get_args, get_origin, get_type_hints
 from uuid import UUID
 
@@ -59,11 +59,12 @@ def _decode(value: object, annotation: object, location: str) -> object:
     elif annotation is UUID:
         if isinstance(value, str):
             try:
-                return UUID(value)
+                result = UUID(value)
             except ValueError as error:
-                raise InstallationError(
-                    f"Invalid UUID at {location}."
-                ) from error
+                raise InstallationError(f"Invalid UUID at {location}.") from error
+            if str(result) != value:
+                raise InstallationError(f"UUID must use canonical lowercase form at {location}.")
+            return result
     elif isinstance(annotation, type) and issubclass(annotation, Enum):
         try:
             return annotation(value)
@@ -126,66 +127,18 @@ def _encode(value: object) -> object:
 
 
 def _validate(record: InstallationRecord, app_id: str) -> None:
+    identity = record.identity
     if (
-        record.app_id != app_id
-        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", app_id) is None
+        identity.app_id != app_id
+        or record.command_name not in identity.commands
     ):
-        raise InstallationError(
-            "Installation application identity does not match."
-        )
+        raise InstallationError("Installation application/command identity does not match.")
     for output in record.owned_outputs:
-        if output.kind == "support":
-            path = PurePosixPath(output.path)
-            if (
-                path.is_absolute()
-                or ".." in path.parts
-                or "\\" in output.path
-                or not path.parts
-            ):
-                raise InstallationError(
-                    "Owned support paths must be safe relative paths."
-                )
-        if (
-            output.digest is not None
-            and re.fullmatch(r"[0-9a-f]{64}", output.digest) is None
-        ):
-            raise InstallationError("Owned output digest must be SHA-256.")
-    sources = [
-        snapshot.source
-        for snapshot in (record.current, record.last_successful)
-        if snapshot is not None
-    ]
-    if record.operation is not None and record.operation.intended is not None:
-        sources.append(record.operation.intended.source)
-    if any(
-        source.digest is not None
-        and re.fullmatch(r"[0-9a-f]{64}", source.digest) is None
-        for source in sources
-    ):
-        raise InstallationError("Installation source digest must be SHA-256.")
-    for snapshot in (record.current, record.last_successful):
-        if snapshot is not None and (
-            not snapshot.prefix.is_absolute()
-            or not snapshot.interpreter.is_absolute()
-            or any(not command.is_absolute() for command in snapshot.commands)
-        ):
-            raise InstallationError(
-                "Installed backend observations must use absolute paths."
-            )
-    if any(
-        snapshot is not None
-        and snapshot.distribution_record_digest is not None
-        and re.fullmatch(r"[0-9a-f]{64}", snapshot.distribution_record_digest)
-        is None
-        for snapshot in (record.current, record.last_successful)
-    ):
-        raise InstallationError(
-            "Installed distribution RECORD digest must be SHA-256."
-        )
-
+        if output.digest is not None and re.fullmatch(r"[0-9a-f]{64}", output.digest) is None:
+            raise InstallationError("Owned output digest must be lowercase SHA-256.")
 
 def decode_record(content: bytes, *, app_id: str) -> InstallationRecord:
-    """Decode exact schema 2 fields without accepting JSON coercions.
+    """Decode exact schema 3 fields without accepting JSON coercions.
 
     :param content: Exact UTF-8 authority bytes.
     :param app_id: Expected host identity, never obtained from untrusted bytes.
@@ -193,11 +146,14 @@ def decode_record(content: bytes, *, app_id: str) -> InstallationRecord:
     """
     try:
         value = json.loads(content.decode("utf-8"), object_pairs_hook=_pairs)
+        if isinstance(value, dict) and value.get("schema_version") == 2:
+            raise InstallationError(
+                "Schema 2 installations are not migrated automatically; retire them "
+                "with their old tools while preserving data, then reinstall."
+            )
         record = _decode(value, InstallationRecord, "installation")
     except (UnicodeError, json.JSONDecodeError, RecursionError) as error:
-        raise InstallationError(
-            f"Invalid installation JSON: {error}"
-        ) from error
+        raise InstallationError(f"Invalid installation JSON: {error}") from error
     if not isinstance(record, InstallationRecord):
         raise InstallationError("Installation root must be a record.")
     _validate(record, app_id)
@@ -210,7 +166,7 @@ def encode_record(record: InstallationRecord) -> bytes:
     :param record: Validated schema record.
     :return: Stable bytes used for revisions and atomic publication.
     """
-    _validate(record, record.app_id)
+    _validate(record, record.identity.app_id)
     content = (
         json.dumps(
             _encode(record),
@@ -221,7 +177,7 @@ def encode_record(record: InstallationRecord) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
-    decode_record(content, app_id=record.app_id)
+    decode_record(content, app_id=record.identity.app_id)
     return content
 
 

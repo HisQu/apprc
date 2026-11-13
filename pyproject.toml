@@ -45,7 +45,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-distribution = ["Jinja2>=3.1.6,<4", "packaging>=26.2,<27"]
+distribution = ["packaging>=26.2,<27"]
 
 # Local-only dependency sources used by uv. These are not published as package
 # requirements in AppRC wheel metadata.

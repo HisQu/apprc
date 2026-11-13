@@ -87,66 +87,63 @@ def verify_install(*, core_only: bool, gui: bool = False) -> None:
 
 
 def verify_distribution_install() -> None:
-    """Generate actual artifacts using only installed package resources.
+    """Exercise committed project snapshot creation from an installed SDK.
 
-    The payload deliberately fails if imported: author generation must serialize
-    repository-owned composition, not execute it or resolve business settings.
+    :return: None.
     """
-    from pathlib import PurePosixPath
+    import os
+    import subprocess
+    from zipfile import ZipFile
 
-    from apprc.distribution import (
-        DistributionSpec,
-        PayloadTree,
-        generate_artifacts,
-        read_project_metadata,
-        write_artifacts,
-    )
+    from apprc.distribution import build_project_snapshot, read_distribution_spec
+    from apprc.distribution.runtime.acquisition import materialize_project_snapshot
 
-    with tempfile.TemporaryDirectory(
-        prefix="apprc-installed-generation-"
-    ) as temporary:
+    with tempfile.TemporaryDirectory(prefix="apprc-installed-snapshot-") as temporary:
         root = Path(temporary)
+        (root / "src" / "fixture").mkdir(parents=True)
         (root / "pyproject.toml").write_text(
-            '[project]\nname = "installed-generation-fixture"\nversion = "1.0.0"\n'
-            '[project.scripts]\ninstalled-fixture = "not_imported:main"\n',
+            '[project]\nname = "snapshot-fixture"\nversion = "1.0.0"\n'
+            'requires-python = ">=3.12"\n'
+            '[project.scripts]\nsnapshot-fixture = "fixture:main"\n'
+            '[tool.apprc.distribution]\napp-id = "snapshot-fixture"\n'
+            'import-package = "fixture"\ncommand-name = "snapshot-fixture"\n',
             encoding="utf-8",
         )
-        payload_root = root / "payload"
-        package = payload_root / "app_lifecycle"
-        package.mkdir(parents=True)
-        (package / "__init__.py").write_text(
-            '"""Explicit author composition."""\n', encoding="utf-8"
+        (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+        (root / "src" / "fixture" / "__init__.py").write_text(
+            'def main() -> None:\n    print("fixture")\n', encoding="utf-8"
         )
-        for name in ("install.py", "uninstall.py"):
-            (package / name).write_text(
-                'raise RuntimeError("Author payload must not execute during artifact generation.")\n',
-                encoding="utf-8",
-            )
-        payload = PayloadTree(
-            payload_root,
-            tuple(
-                PurePosixPath("app_lifecycle") / name
-                for name in (
-                    "__init__.py",
-                    "install.py",
-                    "uninstall.py",
-                )
-            ),
+        environment = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "AppRC smoke",
+            "GIT_AUTHOR_EMAIL": "smoke@example.invalid",
+            "GIT_COMMITTER_NAME": "AppRC smoke",
+            "GIT_COMMITTER_EMAIL": "smoke@example.invalid",
+        }
+        subprocess.run(["git", "init", "-q", str(root)], env=environment, check=True)
+        subprocess.run(
+            ["git", "-C", str(root), "add", "pyproject.toml", "uv.lock", "src"],
+            env=environment,
+            check=True,
         )
-        artifacts = generate_artifacts(
-            DistributionSpec(read_project_metadata(root)), payload
+        subprocess.run(
+            ["git", "-C", str(root), "commit", "-q", "-m", "fixture"],
+            env=environment,
+            check=True,
         )
-        write_artifacts(artifacts)
-        write_artifacts(artifacts, check=True)
-        for filename in (
-            "app-install.py",
-            "app-launch.py",
-            "app-uninstall.sh",
-            "app-uninstall.cmd",
-        ):
-            assert (root / filename).is_file()
-    print("apprc installed distribution resources passed")
-
+        spec = read_distribution_spec(root)
+        prepared = build_project_snapshot(
+            spec,
+            revision="HEAD",
+            destination=root / "project.zip",
+        )
+        materialized = root / "materialized"
+        materialize_project_snapshot(prepared.archive, materialized, prepared.source)
+        with ZipFile(prepared.archive) as package:
+            assert "pyproject.toml" in package.namelist()
+            assert "uv.lock" in package.namelist()
+        assert (materialized / "uv.lock").read_text(encoding="utf-8") == "version = 1\n"
+    print("apprc installed project snapshot passed")
 
 def main() -> None:
     """Select and run one installation check."""

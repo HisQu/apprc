@@ -21,10 +21,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import BinaryIO, Literal, NotRequired, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
-from apprc.distribution.standalone import (
-    MANAGEMENT_REQUIREMENTS,
-    _deterministic_zip,
-)
+from apprc.distribution._archives import _deterministic_zip
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import (
     set_windows_private_acl,
@@ -213,7 +210,7 @@ class NativeFrontendBuilder:
         self,
         workspace: Path,
         *,
-        bootstrap_name: str,
+        bootstrap_name: str = "apprc-native-manager",
         python_version: str = "3.14",
         pip_extra_args: str = "",
         environment: Mapping[str, str] | None = None,
@@ -245,7 +242,7 @@ class NativeFrontendBuilder:
             "pyapp_version": PYAPP_VERSION,
             "pyapp_source_sha256": PYAPP_SOURCE_SHA256,
             "python_version": python_version,
-            "management_requirements": MANAGEMENT_REQUIREMENTS,
+            "management_requirements": (),
             "uv_version": UV_VERSION,
             "pip_extra_args": pip_extra_args,
         }
@@ -390,33 +387,60 @@ class NativeFrontendBuilder:
 
     def build(
         self,
-        dispatcher: Path,
         *,
         target: NativeTarget,
         destination: Path,
+        runtime_archive: Path,
+        entrypoint: str,
     ) -> NativeArtifact:
-        """Compile and authenticate a frontend without executing the output.
+        """Compile PyApp with one fixed loader for a verified SDK ZIP.
 
-        A small fixed-shape upstream exec script validates the sole appended ZIP
-        entry's exact size and SHA256, then executes it in a clean ``__main__``
-        namespace. Large dispatchers never become Cargo environment variables or
-        cached bootstrap-project files. Final files are created exclusively with
-        private executable permissions; on Windows the parent must already have
-        a private ACL so the file inherits privacy at creation.
-
-        :param dispatcher: Complete role-specific Python dispatcher bytes.
         :param target: Supported GNU Linux or MSVC Windows x86_64 target.
-        :param destination: New release executable; existing paths are rejected.
+        :param destination: New operation-cache executable path.
+        :param runtime_archive: Ordinary ZIP containing the SDK, binding, and snapshot.
+        :param entrypoint: Python module executed by the fixed loader.
         :return: Finished artifact metadata and a report inside the workspace.
         """
         if target not in ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"):
             raise ValueError(f"Unsupported native target: {target}")
+        if not all(part.isidentifier() for part in entrypoint.split(".")):
+            raise ValueError("Native entrypoint must be a Python module name.")
         destination = destination.expanduser().absolute()
+        runtime_archive = runtime_archive.expanduser().absolute()
         assert_no_links(destination)
+        assert_no_links(runtime_archive)
         if destination.exists():
             raise FileExistsError(destination)
-        dispatcher_bytes = dispatcher.read_bytes()
-        dispatcher_digest = hashlib.sha256(dispatcher_bytes).hexdigest()
+        archive_bytes = runtime_archive.read_bytes()
+        archive_digest = hashlib.sha256(archive_bytes).hexdigest()
+        from zipfile import ZipFile
+
+        with ZipFile(runtime_archive) as archive:
+            requirements = archive.read("bootstrap-requirements.txt")
+        requirements_text = requirements.decode("utf-8")
+        requirement_lines = tuple(
+            line.strip() for line in requirements_text.splitlines() if line.strip()
+        )
+        uv_lines = [
+            line for line in requirement_lines
+            if re.match(r"(?i)^uv(?:\[|[<=>!~; ]|$)", line)
+        ]
+        if uv_lines != [f"uv=={UV_VERSION}"]:
+            raise ValueError("Native SDK archive must contain exactly one pinned uv requirement.")
+        bootstrap_inputs = {
+            "pyapp_version": PYAPP_VERSION,
+            "pyapp_source_sha256": PYAPP_SOURCE_SHA256,
+            "python_version": self._python_version,
+            "requirements": requirement_lines,
+            "uv_version": UV_VERSION,
+            "pip_extra_args": self._pip_extra_args,
+        }
+        digest = hashlib.sha256(
+            json.dumps(
+                bootstrap_inputs, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        self._bootstrap_version = f"{PYAPP_VERSION}+{digest}"
         self._build_count += 1
         attempt = self.workspace / f"build-{self._build_count:04d}"
         assert_no_links(attempt)
@@ -427,8 +451,8 @@ class NativeFrontendBuilder:
             "target": target,
             "bootstrap_name": self._bootstrap_name,
             "bootstrap_version": self.bootstrap_version,
-            "dispatcher_size": len(dispatcher_bytes),
-            "dispatcher_sha256": dispatcher_digest,
+            "runtime_archive_size": len(archive_bytes),
+            "runtime_archive_sha256": archive_digest,
             "commands": observations,
         }
         environment = self._environment.copy()
@@ -439,40 +463,24 @@ class NativeFrontendBuilder:
             stub = (
                 "import hashlib\n"
                 "import os\n"
+                "import runpy\n"
+                "import sys\n"
                 "from pathlib import Path\n"
-                "from zipfile import ZipFile\n"
-                "\n"
-                "executable = Path(os.environ['PYAPP'])\n"
-                "with ZipFile(executable) as archive:\n"
-                "    entries = archive.infolist()\n"
-                "    if len(entries) != 1 or entries[0].filename != 'dispatcher.py':\n"
-                "        raise RuntimeError('Expected exactly one dispatcher.py ZIP entry')\n"
-                f"    if entries[0].file_size != {len(dispatcher_bytes)}:\n"
-                "        raise RuntimeError('Dispatcher ZIP entry size mismatch')\n"
-                "    dispatcher = archive.read(entries[0])\n"
-                f"if hashlib.sha256(dispatcher).hexdigest() != {dispatcher_digest!r}:\n"
-                "    raise RuntimeError('Dispatcher SHA256 mismatch')\n"
-                "filename = str(executable) + '/dispatcher.py'\n"
-                "namespace = {\n"
-                "    '__name__': '__main__',\n"
-                "    '__file__': filename,\n"
-                "    '__package__': None,\n"
-                "    '__spec__': None,\n"
-                "    '__cached__': None,\n"
-                "}\n"
-                "exec(compile(dispatcher, filename, 'exec'), namespace)\n"
+                "executable = Path(os.environ['PYAPP']).resolve()\n"
+                "with executable.open('rb') as stream:\n"
+                f"    stream.seek(-{len(archive_bytes)}, os.SEEK_END)\n"
+                "    payload = stream.read()\n"
+                f"if len(payload) != {len(archive_bytes)}:\n"
+                "    raise RuntimeError('AppRC runtime archive size mismatch')\n"
+                f"if hashlib.sha256(payload).hexdigest() != {archive_digest!r}:\n"
+                "    raise RuntimeError('AppRC runtime archive SHA256 mismatch')\n"
+                "sys.path.insert(0, str(executable))\n"
+                f"runpy.run_module({entrypoint!r}, init_globals={{'_APPRC_ARCHIVE_SHA256': {archive_digest!r}, '_APPRC_ARCHIVE_SIZE': {len(archive_bytes)}}}, run_name='__main__', alter_sys=True)\n"
             )
-            with _create_file(inputs / "dispatcher.py") as output:
+            with _create_file(inputs / "loader.py") as output:
                 output.write(stub.encode())
             with _create_file(inputs / "requirements.txt") as output:
-                output.write(
-                    (
-                        "\n".join(
-                            (*MANAGEMENT_REQUIREMENTS, f"uv=={UV_VERSION}")
-                        )
-                        + "\n"
-                    ).encode()
-                )
+                output.write(requirements)
             search_path = environment.get("PATH", os.defpath)
             cargo = shutil.which("cargo", path=search_path)
             rustc = shutil.which("rustc", path=search_path)
@@ -521,10 +529,10 @@ class NativeFrontendBuilder:
                     (inputs / "requirements.txt").relative_to(source)
                 ),
                 "PYAPP_EXEC_SCRIPT": str(
-                    (inputs / "dispatcher.py").relative_to(source)
+                    (inputs / "loader.py").relative_to(source)
                 ),
                 "PYAPP_PASS_LOCATION": "1",
-                "PYAPP_SELF_COMMAND": "bootstrap",
+                "PYAPP_SELF_COMMAND": "none",
                 "PYAPP_IS_GUI": "0",
                 "PYAPP_UV_ENABLED": "0",
                 "PYAPP_PIP_EXTRA_ARGS": self._pip_extra_args,
@@ -591,11 +599,7 @@ class NativeFrontendBuilder:
             ):
                 try:
                     shutil.copyfileobj(input_stream, output)
-                    output.write(
-                        _deterministic_zip(
-                            (("dispatcher.py", dispatcher_bytes),)
-                        )
-                    )
+                    output.write(archive_bytes)
                 except BaseException:
                     destination.unlink(missing_ok=True)
                     raise

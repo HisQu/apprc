@@ -934,218 +934,188 @@ The application owns the start callback and builds its runtime only after
 
 ## Build a Windows installer
 
-The application owns its [installer build](Explanations.md#installed-packages-and-installer-builds).
-Declare the browser launcher and CLI entry points in `pyproject.toml`:
+Use the same authored project-snapshot/native build as for Linux. Declare
+`runtime-python` and the primary `command-name` under
+`[tool.apprc.distribution]`; compose the public
+[distribution builders](References.md#distribution-generation) in the
+application's `<app>_distr` build command.
 
-```toml
-[project]
-dependencies = ["apprc-gui>=0.32.0,<0.33", "gradio>=6.26,<7"]
+With the existing authoring dependencies and cross-compilation toolchain
+available, the application runs `just make-artifacts`. Its ignored `dist/`
+contains Windows and Linux setup executables plus `SHA256SUMS`; intermediates
+stay in `.cache/apprc/`. The Windows setup installs the same stable native command
+used for diagnosis, repair and uninstall—no separate PowerShell/CMD launcher.
 
-[project.gui-scripts]
-my-app-desktop = "my_app.desktop:main"
-
-[project.scripts]
-my-app = "my_app.cli:main"
-
-```
-
-For a one-file offline Windows installer, build wheels for the locked
-application and its dependencies on Windows. `uv export --locked
---no-emit-project --no-dev --no-hashes -o requirements.txt` produces a pinned
-input for `python -m pip wheel --no-deps -r requirements.txt -w wheelhouse`;
-build the application wheel into the same directory. Include those wheels, a
-Python runtime, and `uv.exe` in an [Inno Setup](https://jrsoftware.org/isinfo.php)
-payload. During setup, create an application-owned environment and install
-the wheels with `uv pip install --offline --no-index --no-deps`. Point the
-Start menu shortcut at `pythonw.exe -m my_app.desktop`. Test packaged
-resources, first-run setup, browser launch, and upgrade on a Windows account
-without Python or network access. AppRC supplies the editor and file rules;
-the application owns its installer and entry points.
+For a hybrid application, build static frontend assets on the private authoring
+copy and include them in Python package data before snapshotting. Do not bundle
+a custom wheelhouse or require Bun/React build tools on the recipient. Normal uv
+dependency acquisition can still need network access and private Git credentials;
+this is not an offline installer guarantee.
 
 > [!WARNING]
-> AppRC's CI does not verify Windows or macOS, and
-> [known native test failures](../BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails)
-> remain unresolved. This installer guidance is not evidence that an application
-> installer passes on Windows; validate the complete installer on its target OS.
+> Cross-compiling a Windows executable does not establish native Windows
+> installation, shortcuts, updates or self-removal. Windows/macOS validation is
+> deferred. Never launch native Windows test executables from WSL; follow the
+> separately authorized native validation procedure.
 
 <br>
 
 # Install and recover managed applications
 
-These guides apply to an application shipping AppRC-generated Python checkout entries.
-Examples use `demo` as its installed command; use the actual application command
-and project paths. The [installation explanation](Explanations.md#installation)
-separates application resources, durable management metadata and the Python
-environment.
+These guides cover managed native releases and lightweight editable registration.
+Examples use `demo` as the primary command; substitute the application's actual
+command and paths. Both workflows retain the same
+[OS-specific resource layouts](Explanations.md#installation), independently of
+their program environments.
 
 > [!IMPORTANT]
-> Install `uv` before using the checkout entries below. A version bump or
-> `git pull` does not publish a release; keep a verified development source pin
-> until matching packages are available.
+> uv prepares a developer environment or synchronizes a managed runtime.
+> AppRC does not implement dependency resolution. Private Git dependencies may
+> require Git, credentials and network access on the recipient.
 
 ## Install from a checkout
 
-From the application repository, run the Python checkout entry:
+For a fresh application checkout:
 
 ```shell
-uv run --script app-install.py
+uv run --locked demo app install -e
 ```
 
-On Windows, use:
+uv prepares the repository's existing `.venv` when necessary; AppRC then
+registers it and initializes only declared configuration/data/cache/state.
+Registration does not create another environment, copy the repository, resolve
+dependencies or take ownership of the checkout.
 
-```powershell
-uv run --script .\app-install.py
+The registered global `demo` command uses that repository environment even when
+another environment is active. Its command directory must already be on PATH;
+`--command-directory PATH` can select another safe existing directory without
+editing shell profiles. Unknown command collisions are errors, not replacements.
+Use `--skip-setup` to skip only the optional post-Ready configuration offer.
+
+Git and `uv sync --locked` remain responsible for developer updates. Source
+changes stay editable. If the environment breaks, restore it with uv before
+using its maintenance commands; editable registration does not add an independent
+native management environment. Ordinary unmanaged `pip install -e .` remains
+usable without an installation record.
+
+For a managed release, verify the downloaded `SHA256SUMS`, then run its setup:
+
+```shell
+chmod +x demo-setup-linux-x86_64
+./demo-setup-linux-x86_64
 ```
 
-The checkout script is a host-authored installation workflow, separate from
-the optional CLI installer delegate. `app install` appears only when the
-application supplies an explicit callable `installer_entrypoint`; AppRC does
-not infer one from this script.
-
-The first install offers OS-native locations or a single root and shows the
-resolved resource/installation paths. The choice controls enabled config,
-appdata, cache and state—not uv's Python environment or dependencies. Installation
-support remains at its fixed native address in either mode. Only declared
-components are initialized; a cache-only application does not acquire config or
-appdata directories.
-
-Checkout installation is genuinely editable: uv installs the current application
-project, including dirty source changes, rather than an archive of committed
-HEAD. `uv sync --locked` prepares the developer's project environment; it does
-not run this installer or choose a persistent resource layout. Plain
-`python -m pip install -e .` remains a supported unmanaged alternative and does
-not need an installation record.
-
-If tracked generated files are missing or stale, the author runs
-`just make-artifacts`. Installers do not silently fall back to remote code when
-the checkout payload is absent.
+On Windows run `demo-setup-windows-x86_64.exe` on Windows itself. Setup contains
+the complete prebuilt project snapshot, prepares a private locked runtime slot
+and installs the stable native command. It does not build frontends on the
+recipient. Update by running newer setup; remote-main/version, wheel and package
+index source selectors are not supported.
 
 ## Keep or switch the saved layout
 
-Re-running the installer retains saved placement by default. To select OS-native
-locations explicitly:
+Native locations remain the default. The resource layout controls configuration,
+appdata, cache and state—not Python dependencies or the fixed installation
+authority. Disabled resource categories remain disabled.
+
+For explicit single-root editable registration, pass the ordinary root controls
+before the command:
 
 ```shell
-uv run --script app-install.py --layout native
+uv run --locked demo --layout single-root --app-root "/absolute/path/demo-files" app install -e
 ```
 
-To persist a single root:
+`--layout native` uses the OS defaults; single-root needs an explicit app root.
+Windows uses the same command structure with a Windows path. Registration shows
+the resolved locations before changes; review them rather than assuming all
+resource categories are enabled.
 
-```shell
-uv run --script app-install.py --layout single-root --root "/absolute/path/demo-files"
-```
-
-Windows uses the same arguments:
-
-```powershell
-uv run --script .\app-install.py --layout single-root --root "D:\demo-files"
-```
-
-Do not combine `native` with `--root`; single-root requires an explicit root.
-Saved OS-native paths remain the absolute locations chosen at installation time,
-not a later recomputation from changed config/cache environment variables.
-
-A switch records previous owned locations as retired resources; it does not
-silently move a database, credentials or project files. Review an explicit
-application migration when those files should move. Changing the native
-installation discovery base or OS profile itself also requires explicit
-relocation rather than a search through other users' directories.
+Existing installs retain their committed absolute resource locations.
+Environment changes or a different CWD do not silently migrate their data.
+Persistent resource relocation is a separate, inventory-backed operation;
+changing the installation discovery base/profile also requires explicit
+relocation, not a scan of other users' directories.
 
 ## Inspect or repair installation
 
-`app paths` and `app doctor` are available independently of missing business
-settings:
-
 ```shell
 demo app paths --json
-demo app doctor --json
+demo app doctor --verbose --json
 ```
 
-Inspection does not initialize directories or repair invalid authority.
-`app doctor --json` returns a `status`/`checks`/`installation` envelope;
-`--verbose` adds `details` containing `paths`, `configuration`, `resources`,
-and `host`. The application must supply explicit callbacks for host,
-configuration, or resource diagnostics; AppRC does not infer provider `info`
-calls. Errors or unusable installation placement exit 1; warnings exit 0.
-An incomplete replacement reports observed live state and last successful
-history separately; it must not claim the old program is still installed.
-Keep the record and recovery files while diagnosing a failure.
+Inspection does not initialize missing resources. Native doctor always reports
+installation authority, path ownership and runtime health independently of the
+app. It may invoke the application's validators through the recorded runtime;
+unavailable checks are explicit warnings, not successful validation.
+Actual validation/authority errors remain nonzero.
 
-Lifecycle commands are mounted only when the host sets
-`installation_management=True`. Use `demo app repair` for the matching saved
-repair procedure. When a matching installer must be supplied explicitly, pass
-`demo app repair --installer src/demo_distr/artifacts/installer/main-installer.py`
-from the corresponding checkout. Repair does not silently download newer
-application-specific support. If the program itself is missing, rerun the
-matching root installer or saved recovery command reported at failure.
+For managed repair:
 
-For an application-supported resource/layout relocation, stop its consumers and
-preview `demo app migrate --dry-run` before applying migration. This does not
-convert old installation records or receipts. Unknown databases/payload need
-an inventory supplied by the owning application; generic migration does not
-treat every descendant as AppRC-owned.
+```shell
+demo app repair
+```
+
+Repair uses the recorded verified project archive and placement to prepare a
+replacement slot. It never selects newer application source. An interrupted
+candidate resumes under its exact operation/revision; an old active target
+remains selected until its replacement is validated and published. Dependency
+acquisition may still require network access and credentials.
+
+If the stable command is missing, the matching original setup provides the
+independent recovery entry point. For an editable checkout, use
+`uv sync --locked` instead: AppRC does not rebuild or own that environment.
+Application-specific migrations and cleanup run in an application runtime; if
+required code is unavailable, the dependent operation stops safely.
+
+Resource relocation remains explicit: stop application consumers, review
+`demo app migrate --dry-run`, then confirm its exact inventory. This is not an
+old-record converter or permission to claim arbitrary database files.
 
 ## Remove a managed program
 
-Preview program-only removal before confirming it:
+Preview and then confirm program-only removal:
 
 ```shell
 demo app uninstall --dry-run
 demo app uninstall
 ```
 
-This preserves all resource categories and reconnectable installation support,
-including cache and state. Once the console command is gone, use the saved
-uninstall entry or the checkout's `app-uninstall.sh`/`app-uninstall.cmd` for
-further inspection and cleanup.
+Managed removal deletes only owned runtime slots, commands, shortcuts and
+registration. It preserves user configuration/data by default, including cache
+and state. An editable registration removes its integrations but never its
+checkout or `.venv`. Shared Python/uv/PyApp caches and unrelated commands are not
+implicit cleanup targets.
 
-If application cleanup fails, rerun the same removal command with the same
-`--complete`, `--category` and `--forget-retained` choices. The saved operation
-keeps its checkpoints; successful package/data steps are not repeated. A
-conflicting request or a different installation generation is rejected rather
-than treated as a retry.
+If the stable managed command is missing, use the matching original setup's
+`app uninstall` recovery action. No root uninstall script or separate native
+uninstaller is required.
 
-For a cache-only application with no other retired resources, preview and
-request complete removal through the saved wrapper:
+Complete removal is an explicit resource choice:
 
 ```shell
-./app-uninstall.sh --dry-run --complete --category cache
-./app-uninstall.sh --complete --category cache
+demo app uninstall --dry-run --complete --category cache
+demo app uninstall --complete --category cache
 ```
 
-Select only the categories actually owned by the application, including any
-retired locations shown in the preview. Unattended removal additionally requires
-`--yes`; that flag is not implied by a previous dry-run.
+Select only declared/retired categories shown by the preview. Unattended
+confirmation additionally requires `--yes`. Ownership markers alone do not
+identify application databases or custom payload; those require an exact
+application-owned inventory and cleanup hook. Unavailable application code
+blocks that purge, not independent program-only removal. If the program was
+already removed, restore its environment before requesting provider cleanup.
 
-The default preview recognizes matching resource ownership markers and standard
-AppRC config files. It does not infer ownership of custom config filenames,
-databases or arbitrary descendants. Those need an application-supplied
-`CleanupInventory`, or an explicit decision to leave retained files unmanaged;
-selecting a category alone does not make unknown files safe to delete.
+Failed operations retain checkpoints. Retry with the same resource choices;
+stale revisions, changed inventories, unknown content and live runtime leases
+are not ignored. `--forget-retained` leaves explicitly retained files unmanaged,
+not deleted.
 
 > [!CAUTION]
-> Complete removal can delete persistent configuration and appdata when those
-> categories are explicitly selected. Back up user work first. Unknown content,
-> unavailable provider inventories and stale ownership block unsafe deletion;
-> they are not treated as successful cleanup.
+> Complete removal can delete explicitly selected configuration and appdata.
+> Back up user work first. Never interpret confirmation, a category name or a
+> missing application as permission to recursively delete unknown files.
 
-An explicit `--forget-retained` decision leaves the named retained files
-unmanaged; it does not delete them. Review the preview before making that choice.
-Editable checkouts, user workspaces, other uv tools, shared uv and shared Python
-are never implicit cleanup targets. The independent controller waits for the
-actual installed caller/foreground children to exit before deleting its program
-environment.
-CLI and launcher removal use the verified saved application procedure, so
-repository-authored cleanup is not bypassed. A retained record can later complete
-independent cleanup even though its program has already been removed.
-
-The controller, its base Python, working directory and private temporary files
-must all remain outside the program and resource paths being removed. This is
-checked before cleanup and again before the controller signals readiness. If
-placement blocks removal, start from a surviving directory and use a temporary
-location outside the selected targets (`TMPDIR` on Linux/macOS, `TEMP`/`TMP` on
-Windows). Do not relocate shared uv or Python into the application's own data
-directories.
+Finalization uses a temporary copy of the same native manager outside removal
+targets and waits for its initiating process. Preserve its reported recovery
+state if a busy runtime or changed ownership prevents safe completion.
 
 <br>
 
@@ -1412,10 +1382,10 @@ does not run application state factories or contact external services. See the
 
 ## Migrate existing applications
 
-### From installation record schema 1
+### From installation record schema 1 or 2
 
-Current management support accepts installation schema `2` only. It does not
-repair or translate schema `1`, and changing the JSON's version number is not
+Current management support accepts schema `3`. It does not repair or translate
+older schemas, and changing the JSON version number is not
 an upgrade. If you already upgraded, use the previous generation's saved
 management support for inspection and retirement rather than overwriting its
 authority with the new installer.
@@ -1453,8 +1423,8 @@ fresh generation. Do not leave two active authorities. Resource relocation,
 including old OS-native Linux appdata at the parent moving to the `appdata/`
 child, is a separate explicit operation using a project-owned inventory.
 
-Saved placement outranks declared defaults. Use installer `--layout`/`--root`
-to persist an explicit switch, or invocation controls for a temporary override.
+Saved placement outranks declared defaults. Use the explicit `--layout` and
+`--app-root` installation controls to persist a switch, not ambient variables.
 Callers manually constructing `AppPaths` must now preserve its `installation`
 snapshot; prefer `MyRC.paths(...)` rather than constructing or rediscovering it
 inside adapters. Keep old files and recovery backups until the explicit
@@ -1535,18 +1505,11 @@ the migration's coordination record does not assert a tool environment exists.
 
 </details>
 
-After interruption, inspect again and use `manager.resume_migration(...)` with
-the saved migration operation UUID and the **current** record revision. Do not
-reuse a stale revision or restart old removal entries. Legacy Buildben conversion
-also requires verified package/backend evidence and staged replacement support.
-The matching installer adapter uses
-`apprc.distribution.runtime.bind_install_support(...)` to select and bind
-current-platform support before staging it and calling `execute_migration(...)`.
-Activation must leave runnable recovery support even if the later reinstall
-never occurs; unresolved Python/command markers are not a ready installation.
-Do not treat the old receipt as appdata or copy AppRC's private binder.
-An activated migration can have a usable record while exact inert-file cleanup
-is still pending: inspect `record.migration.cleanup_complete`, not only `status`.
+After interruption, inspect again and resume only the saved resource-migration
+operation with its current revision. Do not reuse stale authority or restart
+old generated removal entries. Migration preserves exact inventory and
+quiescence checks; it does not convert Buildben receipts, install a package
+backend or bind generated management scripts.
 
 ### From AppRC 0.29 and earlier
 

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import re
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Generic, Self, TypeVar
+from typing import Generic, Protocol, Self, TypeVar
 
 from apprc.definition.env_config.schema import ConfigOwner
 from apprc.definition.paths import Layout
@@ -172,6 +173,112 @@ class ResolveOptions:
         object.__setattr__(
             self, "env_files", tuple(Path(path) for path in self.env_files)
         )
+
+
+class CliRuntimeOptionsProtocol(Protocol):
+    """Fields accepted by AppRC CLI runtime helpers."""
+
+    @property
+    def env_files(self) -> Sequence[Path] | None: ...
+
+    @property
+    def env_file_overrides_os_environ(self) -> bool: ...
+
+    @property
+    def load_dotenv_layers(self) -> bool: ...
+
+    @property
+    def workspace(self) -> str | None: ...
+
+    @property
+    def layout(self) -> Layout | None: ...
+
+    @property
+    def log_level(self) -> str | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class CliRuntimeOptions:
+    """Parsed AppRC runtime options for one CLI invocation."""
+
+    env_files: tuple[Path, ...] = ()
+    env_file_overrides_os_environ: bool = False
+    load_dotenv_layers: bool = True
+    workspace: str | None = None
+    layout: Layout | None = None
+    log_level: str | None = None
+
+    @classmethod
+    def from_typer(
+        cls,
+        *,
+        env_files: Sequence[Path] | None = None,
+        env_file_overrides_os_environ: bool = False,
+        load_dotenv_layers: bool = True,
+        workspace: str | None = None,
+        layout: str | None = None,
+        app_root: Path | None = None,
+        log_level: str | None = None,
+    ) -> CliRuntimeOptions:
+        """Normalize CLI runtime controls, including paired layout inputs."""
+        selected_layout = None
+        if layout is not None or app_root is not None:
+            mode = layout or (
+                "single-root" if app_root is not None else "native"
+            )
+            if mode == "native":
+                if app_root is not None:
+                    raise ValueError(
+                        "--app-root cannot be combined with --layout native."
+                    )
+                selected_layout = Layout.native()
+            elif mode == "single-root":
+                if app_root is None:
+                    raise ValueError(
+                        "--layout single-root requires --app-root."
+                    )
+                selected_layout = Layout.single_root(app_root)
+            else:
+                raise ValueError(f"Unsupported AppRC layout: {mode!r}.")
+        return cls(
+            env_files=tuple(env_files or ()),
+            env_file_overrides_os_environ=env_file_overrides_os_environ,
+            load_dotenv_layers=load_dotenv_layers,
+            workspace=workspace,
+            layout=selected_layout,
+            log_level=log_level,
+        )
+
+    @classmethod
+    def from_options(
+        cls,
+        options: CliRuntimeOptionsProtocol,
+    ) -> CliRuntimeOptions:
+        """Return an immutable copy of an option-like object."""
+        if isinstance(options, cls):
+            return options
+        return cls(
+            env_files=tuple(options.env_files or ()),
+            env_file_overrides_os_environ=options.env_file_overrides_os_environ,
+            load_dotenv_layers=options.load_dotenv_layers,
+            workspace=options.workspace,
+            layout=options.layout,
+            log_level=options.log_level,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _BridgeRuntimeOptions:
+    """Capture invocation options and the actual mounted maintenance group."""
+
+    runtime: CliRuntimeOptions = CliRuntimeOptions()
+    maintenance_group_name: str = "app"
+
+    def __post_init__(self) -> None:
+        if re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name
+        ) is None:
+            raise ValueError("maintenance_group_name must be one CLI command name.")
 
 
 @dataclass(frozen=True, slots=True)

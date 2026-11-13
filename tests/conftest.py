@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.support_pyapp import native_product
 
 
 def pytest_configure(config: pytest.Config) -> None:

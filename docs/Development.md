@@ -416,9 +416,12 @@ pin automatically.
 `just publish-check` rehearses Linux Python 3.12–3.14 checks, generated metadata,
 all three distributions, pip installation checks, and publication dry runs. It
 uploads nothing. `just release-prepare <patch|minor|major>` changes the root
-version, regenerates terminal metadata, syncs the GUI version and core pin,
-refreshes the locks, checks the release, and prepares a local commit and tag.
-`just release-push TAG` is the separate remote action.
+version, regenerates terminal and GUI metadata, aligns the example workspace's
+CLI and GUI requirement ranges, refreshes the locks, and checks the release before
+preparing a local commit and tag. Failed checks restore the prior version metadata.
+`PYTHONPATH=src python -m apprc_dev.packaging.example_metadata --check` validates
+the example requirements without changing files. `just release-push TAG` is the
+separate remote action.
 
 Tag CI reuses the same Ubuntu-only core and GUI/browser checks described in
 [Environment](#environment); it does not verify Windows or macOS. The release workflow

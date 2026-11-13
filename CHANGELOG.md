@@ -152,6 +152,8 @@ All notable changes to `AppRC` will be documented in this file.
   closed without truncating their pointer-sized values.
 - Selected all workspace projects in complete-development and CI sync commands,
   including the GUI from the locked workspace rather than a second install.
+- Aligned example-workspace CLI and GUI requirements during release preparation
+  and restored them on failure, so minor and major bumps keep the workspace resolvable.
 
 <br>
 

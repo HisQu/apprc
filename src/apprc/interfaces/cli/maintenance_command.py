@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 # == Standard Library ========================
+from collections.abc import Mapping, Sequence
 import json
 import sys
 from pathlib import Path
-from typing import Annotated, Any, Callable, cast
+from typing import Annotated, Any, Callable, Literal, cast
 
 # == 3rd Party ===============================
 import typer
@@ -21,7 +22,7 @@ from apprc.definition.maintenance import (
     RemovalPlan,
     RemovalResult,
 )
-from apprc.definition.paths import PathKind, ResourceKind
+from apprc.definition.paths import ResourceKind
 from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces.cli.context import (
     CliRuntimeContext,
@@ -38,6 +39,7 @@ from apprc.services.maintenance import (
 )
 from apprc.services.workspaces import WorkspaceManager
 from apprc.user_files.app_home.locations import assert_no_links
+from apprc.interfaces.cli._root_help import _AppRCMaintenanceGroup
 from apprc.user_files.app_home.ownership import (
     inspect_ownership,
     validate_category_root_boundaries,
@@ -45,176 +47,141 @@ from apprc.user_files.app_home.ownership import (
 from apprc.user_files.workspace_roots._loading import (
     WorkspaceRegistryInspection,
 )
-
-_CATEGORIES = ("config", "appdata", "cache", "state", "logs")
-_RESOURCE_CATEGORIES: tuple[ResourceKind, ...] = (
-    "config",
-    "appdata",
-    "cache",
-    "state",
+from apprc.interfaces.cli.diagnostics.payload import (
+    DiagnosticCheck,
+    build_config_doctor_payload,
 )
-_RESOURCE_CATEGORY_BY_NAME: dict[str, ResourceKind] = {
-    kind: kind for kind in _RESOURCE_CATEGORIES
-}
+from apprc.interfaces.cli.diagnostics.status import ConfigDoctorStatus
+from apprc.interfaces.cli.doctor_output import print_doctor_report
 
 
-def mount_maintenance_groups(
-    app: typer.Typer,
+def _doctor_payload(
+    ctx: typer.Context,
     apprc: AppRC,
     *,
-    handlers: MaintenanceHandlers = MaintenanceHandlers(),
-    maintenance_help_panel: str = "Maintenance",
-    installation_inventory: Callable[
-        [InstallationInspection, frozenset[ResourceKind], bool],
-        CleanupInventory,
-    ]
-    | None = None,
-) -> dict[str, typer.Typer]:
-    """Mount fixed path/maintenance commands and declared resource groups."""
-    names = _registered_names(app)
-    reserved = {"paths", "doctor", "purge", "installation"}
-    reserved.update(
-        kind
-        for kind in ("appdata", "cache", "state")
-        if getattr(apprc.schema.paths, kind)
-    )
-    if apprc.schema.workspaces is not None:
-        reserved.add("workspace")
-    collisions = reserved & names
-    if collisions:
-        raise RuntimeError(
-            "AppRC maintenance cannot mount because these names are already "
-            "in use: " + ", ".join(sorted(collisions))
-        )
-    mounted: dict[str, typer.Typer] = {}
-    mounted["installation"] = mount_installation_group(
-        app,
-        maintenance_help_panel=maintenance_help_panel,
-        installation_inventory=installation_inventory,
-    )
+    verbose: bool,
+    host_diagnostics: Callable[[], Mapping[str, object]] | None,
+    resource_diagnostics: Mapping[
+        Literal["appdata", "cache", "state"],
+        Callable[[Path], Mapping[str, object]],
+    ],
+    resource_groups: Mapping[Literal["appdata", "cache", "state"], typer.Typer],
+) -> dict[str, object]:
+    """Aggregate local installation, path, configuration, and provider checks."""
+    from apprc.interfaces.cli.installation_command import _inspection_payload
 
-    @app.command("paths", rich_help_panel=maintenance_help_panel)
-    def paths_command(
-        ctx: typer.Context,
-        category: Annotated[str | None, typer.Argument()] = None,
-        json_output: Annotated[bool, typer.Option("--json")] = False,
-        open_path: Annotated[bool, typer.Option("--open")] = False,
-    ) -> None:
-        """Show selected AppRC locations without creating them."""
-        runtime = _context(ctx)
-        if category is not None and category not in _CATEGORIES:
-            raise typer.BadParameter(f"Unknown path category: {category}")
-        if open_path and (category is None or json_output):
-            raise typer.BadParameter(
-                "--open requires a category and cannot be combined with --json."
+    diagnostic = installation_context(ctx)
+    runtime = cli_runtime_context_from(ctx)
+    checks: list[DiagnosticCheck] = []
+    installation_diagnostics: list[dict[str, str]] = []
+    inspection = diagnostic.inspection if diagnostic is not None else None
+    if inspection is None and runtime is not None:
+        inspection = apprc.installation(
+            environment=runtime.environment
+        ).inspect()
+    if inspection is None:
+        raise RuntimeError(
+            "AppRC doctor has no installation inspection context."
+        )
+    installation = _inspection_payload(inspection)
+    installation_diagnostics = [
+        {
+            "code": item.code,
+            "message": item.message,
+            "recovery": item.recovery,
+        }
+        for item in inspection.diagnostics
+    ]
+    unusable = inspection.status in {"invalid", "provisional", "incomplete"}
+    path_diagnostics = (
+        runtime.paths.installation.diagnostics if runtime is not None else ()
+    )
+    path_diagnostic_keys = {
+        (item.code, item.message) for item in path_diagnostics
+    }
+    for item in inspection.diagnostics:
+        checks.append(
+            DiagnosticCheck(
+                "installation",
+                ConfigDoctorStatus.ERROR.value
+                if unusable or (item.code, item.message) in path_diagnostic_keys
+                else ConfigDoctorStatus.WARNING.value,
+                f"{item.message} Recovery: {item.recovery}",
             )
-        if category is not None:
+        )
+    checks.append(
+        DiagnosticCheck(
+            "installation",
+            ConfigDoctorStatus.ERROR.value
+            if unusable or path_diagnostics
+            else ConfigDoctorStatus.WARNING.value
+            if inspection.diagnostics
+            else ConfigDoctorStatus.OK.value,
+            inspection.status,
+        )
+    )
+    if diagnostic is not None and diagnostic.path_error is not None:
+        checks.append(
+            DiagnosticCheck(
+                "path_resolution",
+                ConfigDoctorStatus.ERROR.value,
+                diagnostic.path_error,
+            )
+        )
+        installation_diagnostics.append(
+            {
+                "code": "path-resolution",
+                "message": diagnostic.path_error,
+                "recovery": "Inspect saved placement and run explicit migration if needed.",
+            }
+        )
+        installation["diagnostics"] = installation_diagnostics
+
+    paths_detail: dict[str, object] | None = None
+    config_detail: dict[str, object] | None = None
+    resources: dict[str, object] = {}
+    operations_by_kind: dict[str, list[str]] = {}
+    if verbose:
+        from apprc.interfaces.cli.runtime import _registered_typer_names
+
+        operations_by_kind = {
+            kind: _registered_typer_names(group)
+            for kind, group in resource_groups.items()
+        }
+    boundaries_safe = True
+    if runtime is not None:
+        paths_detail = _paths_payload(runtime)
+        if any(
+            (
+                apprc.schema.paths.config,
+                apprc.schema.paths.appdata,
+                apprc.schema.paths.cache,
+                apprc.schema.paths.state,
+            )
+        ):
             try:
-                path = runtime.paths.require(category)  # type: ignore[arg-type]
-            except ValueError as exc:
-                raise typer.BadParameter(str(exc)) from exc
-            exists = path.is_dir()
-            if json_output:
-                _emit(
-                    {"category": category, "path": str(path), "exists": exists},
-                    True,
+                validate_category_root_boundaries(apprc.schema, runtime.paths)
+            except (OSError, ValueError) as exc:
+                boundaries_safe = False
+                checks.append(
+                    DiagnosticCheck(
+                        "path_boundaries",
+                        ConfigDoctorStatus.ERROR.value,
+                        str(exc),
+                    )
                 )
             else:
-                typer.echo(str(path))
-            if open_path:
-                if not exists:
-                    raise typer.BadParameter(
-                        f"Directory does not exist: {path}"
+                checks.append(
+                    DiagnosticCheck(
+                        "path_boundaries",
+                        ConfigDoctorStatus.OK.value,
+                        "Declared paths are non-overlapping and link-free.",
                     )
-                typer.launch(str(path))
-            return
-        locations = _locations(runtime)
-        exists = {
-            key: path.is_dir() if path is not None else None
-            for key, path in locations.items()
-        }
-        payload = {
-            "layout": runtime.paths.layout.mode,
-            "root": str(runtime.paths.layout.root)
-            if runtime.paths.layout.root
-            else None,
-            "source": runtime.paths.source,
-            "paths": {
-                key: str(path) if path is not None else None
-                for key, path in locations.items()
-            },
-            "exists": exists,
-        }
-        if json_output:
-            _emit(payload, True)
-        else:
-            typer.echo(f"layout: {payload['layout']}")
-            typer.echo(f"root: {payload['root'] or '(native)'}")
-            typer.echo(f"source: {payload['source']}")
-            for key, path in locations.items():
-                if path is not None:
-                    typer.echo(f"{key}: {path} (exists: {exists[key]})")
-
-    @app.command("doctor", rich_help_panel=maintenance_help_panel)
-    def doctor_command(
-        ctx: typer.Context,
-        json_output: Annotated[bool, typer.Option("--json")] = False,
-    ) -> None:
-        """Check declared AppRC paths without initializing application data."""
-        diagnostic = installation_context(ctx)
-        if diagnostic is not None:
-            inspection = diagnostic.inspection
-            unusable = inspection.status in {
-                "invalid",
-                "provisional",
-                "incomplete",
-            }
-            failed = unusable or diagnostic.path_error is not None
-            diagnostics = [
-                {
-                    "code": item.code,
-                    "message": item.message,
-                    "recovery": item.recovery,
-                }
-                for item in inspection.diagnostics
-            ]
-            if diagnostic.path_error is not None and all(
-                item["message"] != diagnostic.path_error for item in diagnostics
-            ):
-                diagnostics.append(
-                    {
-                        "code": "path-resolution",
-                        "message": diagnostic.path_error,
-                        "recovery": "Inspect installation and reconcile placement or run explicit migration.",
-                    }
                 )
-            _emit(
-                {
-                    "status": inspection.status
-                    if unusable or not failed
-                    else "error",
-                    "installation": {
-                        "app_id": inspection.app_id,
-                        "status": inspection.status,
-                        "directory": str(inspection.directory),
-                        "revision": inspection.revision,
-                        "diagnostics": diagnostics,
-                    },
-                },
-                json_output,
-            )
-            if failed:
-                raise typer.Exit(code=1)
-            return
-        runtime = _context(ctx)
-        checks: list[dict[str, str]] = [
-            {"name": "installation", "status": "error", "message": item.message}
-            for item in runtime.paths.installation.diagnostics
-        ]
         for key, path in _locations(runtime).items():
             if path is None:
                 continue
-            category: ResourceKind = (
+            kind: ResourceKind = (
                 "state" if key == "logs" else cast(ResourceKind, key)
             )
             ownership_root = path
@@ -228,170 +195,349 @@ def mount_maintenance_groups(
             try:
                 assert_no_links(path)
                 ownership = inspect_ownership(
-                    ownership_root, apprc.schema.app_id, category
+                    ownership_root, apprc.schema.app_id, kind
                 )
-                if not path.exists():
-                    status, message = (
-                        "warning",
-                        f"Directory is not initialized: {path}",
-                    )
-                elif ownership == "unowned":
-                    status, message = "warning", f"Directory is unowned: {path}"
-                elif ownership == "missing":
-                    status, message = (
-                        "warning",
-                        f"Owning path is not initialized: {ownership_root}",
-                    )
-                else:
-                    status, message = "ok", f"Owned directory exists: {path}"
+                status = (
+                    ConfigDoctorStatus.WARNING.value
+                    if not path.exists() or ownership != "owned"
+                    else ConfigDoctorStatus.OK.value
+                )
+                message = f"{key} is {ownership}."
             except (OSError, ValueError) as exc:
-                status, message = "error", str(exc)
-            checks.append({"name": key, "status": status, "message": message})
-        if any(
-            (
-                apprc.schema.paths.config,
-                apprc.schema.paths.appdata,
-                apprc.schema.paths.cache,
-                apprc.schema.paths.state,
-            )
-        ):
-            try:
-                validate_category_root_boundaries(apprc.schema, runtime.paths)
-            except (OSError, ValueError) as exc:
-                checks.append(
-                    {
-                        "name": "path_boundaries",
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                )
-            else:
-                checks.append(
-                    {
-                        "name": "path_boundaries",
-                        "status": "ok",
-                        "message": "Declared paths are non-overlapping and link-free.",
-                    }
-                )
+                ownership = None
+                status = ConfigDoctorStatus.ERROR.value
+                message = str(exc)
+            checks.append(DiagnosticCheck(key, status, message))
+            if key in {"appdata", "cache", "state"}:
+                resource_kind = cast(Literal["appdata", "cache", "state"], key)
+                resource: dict[str, object] = {
+                    "root": str(path),
+                    "exists": path.is_dir(),
+                    "ownership": ownership,
+                    "operations": operations_by_kind.get(resource_kind, []),
+                }
+                callback = resource_diagnostics.get(resource_kind)
+                if (
+                    verbose
+                    and boundaries_safe
+                    and callback is not None
+                    and path.is_dir()
+                    and ownership == "owned"
+                ):
+                    try:
+                        resource["provider"] = dict(callback(path))
+                    except (OSError, ValueError) as exc:
+                        checks.append(
+                            DiagnosticCheck(
+                                f"resource_{key}_provider",
+                                ConfigDoctorStatus.ERROR.value,
+                                str(exc),
+                            )
+                        )
+                resources[key] = resource
+        for key in ("appdata", "cache", "state"):
+            kind = cast(Literal["appdata", "cache", "state"], key)
+            if _declared(apprc, kind) and key not in resources:
+                resources[key] = {
+                    "root": None,
+                    "exists": None,
+                    "ownership": None,
+                    "operations": operations_by_kind.get(kind, []),
+                }
         if apprc.schema.paths.config or apprc.schema.owners:
             try:
-                inspection = apprc._manage_with_paths(
+                config_manager = apprc._manage_with_paths(
                     _options(runtime), runtime.environment, runtime.paths
-                ).inspect()
-                if inspection.issues:
-                    checks.append(
-                        {
-                            "name": "configuration",
-                            "status": "error",
-                            "message": "; ".join(inspection.issues),
-                        }
-                    )
-                else:
-                    checks.append(
-                        {
-                            "name": "configuration",
-                            "status": "ok",
-                            "message": "Declared configuration is valid.",
-                        }
-                    )
+                )
+                payload = build_config_doctor_payload(
+                    apprc, manager=config_manager
+                )
+                config_detail = payload.to_payload()
+                checks.extend(payload.checks)
             except (OSError, ValueError) as exc:
                 checks.append(
-                    {
-                        "name": "configuration",
-                        "status": "error",
-                        "message": str(exc),
-                    }
+                    DiagnosticCheck(
+                        "configuration",
+                        ConfigDoctorStatus.ERROR.value,
+                        str(exc),
+                    )
                 )
-        status = (
-            "error"
-            if any(check["status"] == "error" for check in checks)
-            else "warning"
-            if any(check["status"] == "warning" for check in checks)
-            else "ok"
-        )
-        _emit({"status": status, "checks": checks}, json_output)
-        if status == "error":
-            raise typer.Exit(code=1)
+    else:
+        for key in ("appdata", "cache", "state"):
+            kind = cast(Literal["appdata", "cache", "state"], key)
+            if _declared(apprc, kind):
+                resources[key] = {
+                    "root": None,
+                    "exists": None,
+                    "ownership": None,
+                    "operations": operations_by_kind.get(kind, []),
+                }
+    if runtime is not None and diagnostic is None:
+        reported = {
+            (item["code"], item["message"]) for item in installation_diagnostics
+        }
+        for item in runtime.paths.installation.diagnostics:
+            key = (item.code, item.message)
+            if key in reported:
+                continue
+            reported.add(key)
+            installation_diagnostics.append(
+                {
+                    "code": item.code,
+                    "message": item.message,
+                    "recovery": item.recovery,
+                }
+            )
+            checks.append(
+                DiagnosticCheck(
+                    "installation",
+                    ConfigDoctorStatus.ERROR.value,
+                    f"{item.message} Recovery: {item.recovery}",
+                )
+            )
+        installation["diagnostics"] = installation_diagnostics
 
-    @app.command("purge", rich_help_panel=maintenance_help_panel)
-    def purge_command(
+    details: dict[str, object] | None = None
+    if verbose:
+        host: Mapping[str, object] = {}
+        if host_diagnostics is not None:
+            try:
+                host = host_diagnostics()
+            except (OSError, ValueError) as exc:
+                checks.append(
+                    DiagnosticCheck(
+                        "host_provider",
+                        ConfigDoctorStatus.ERROR.value,
+                        str(exc),
+                    )
+                )
+        details = {
+            "paths": paths_detail,
+            "configuration": config_detail,
+            "resources": resources,
+            "host": dict(host),
+        }
+    status = (
+        ConfigDoctorStatus.ERROR.value
+        if any(
+            check.status == ConfigDoctorStatus.ERROR.value for check in checks
+        )
+        else ConfigDoctorStatus.WARNING.value
+        if any(
+            check.status == ConfigDoctorStatus.WARNING.value for check in checks
+        )
+        else ConfigDoctorStatus.OK.value
+    )
+    if inspection is not None and inspection.status in {
+        "invalid",
+        "provisional",
+        "incomplete",
+    }:
+        status = inspection.status
+    result: dict[str, object] = {
+        "status": status,
+        "checks": [
+            {
+                "name": check.name,
+                "status": check.status,
+                "message": check.message,
+            }
+            for check in checks
+        ],
+        "installation": installation,
+    }
+    if details is not None:
+        result["details"] = details
+    return result
+
+
+_CATEGORIES = ("config", "appdata", "cache", "state", "logs")
+
+
+def mount_maintenance_groups(
+    app: typer.Typer,
+    apprc: AppRC,
+    *,
+    handlers: MaintenanceHandlers = MaintenanceHandlers(),
+    maintenance_help_panel: str = "AppRC: Commands",
+    maintenance_group_name: str = "app",
+    installation_management: bool = False,
+    installation_inventory: Callable[
+        [InstallationInspection, frozenset[ResourceKind], bool],
+        CleanupInventory,
+    ]
+    | None = None,
+    installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
+    host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
+    resource_diagnostics: Mapping[
+        Literal["appdata", "cache", "state"],
+        Callable[[Path], Mapping[str, object]],
+    ]
+    | None = None,
+    resource_group_extensions: Mapping[
+        Literal["appdata", "cache", "state"], Callable[[typer.Typer], None]
+    ]
+    | None = None,
+) -> dict[str, typer.Typer]:
+    """Build the configured maintenance subtree and optional workspace group."""
+    declared = {
+        kind
+        for kind in ("appdata", "cache", "state")
+        if _declared(apprc, cast(ResourceKind, kind))
+    }
+    for label, registration in (
+        ("resource_diagnostics", resource_diagnostics or {}),
+        ("resource_group_extensions", resource_group_extensions or {}),
+    ):
+        invalid = set(registration) - declared
+        if invalid:
+            raise ValueError(
+                f"{label} names undeclared resources: "
+                + ", ".join(sorted(invalid))
+            )
+    maintenance = typer.Typer(
+        cls=_AppRCMaintenanceGroup,
+        help="Inspect and maintain the application.",
+    )
+    mounted: dict[str, typer.Typer] = {maintenance_group_name: maintenance}
+    resource_groups: dict[
+        Literal["appdata", "cache", "state"], typer.Typer
+    ] = {}
+    mount_installation_group(
+        maintenance,
+        installation_management=installation_management,
+        installer_entrypoint=installer_entrypoint,
+        installation_inventory=installation_inventory,
+    )
+
+    @maintenance.command("paths", rich_help_panel=maintenance_help_panel)
+    def paths_command(
         ctx: typer.Context,
-        scope: Annotated[list[str] | None, typer.Option("--scope")] = None,
-        all_scopes: Annotated[bool, typer.Option("--all")] = False,
-        dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-        assume_yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
+        category: Annotated[str | None, typer.Argument()] = None,
+        json_output: Annotated[bool, typer.Option("--json")] = False,
+        open_path: Annotated[bool, typer.Option("--open")] = False,
+    ) -> None:
+        """Show selected AppRC locations without creating them."""
+        try:
+            runtime = _context(ctx)
+        except RuntimeError:
+            diagnostic = installation_context(ctx)
+            if diagnostic is not None and diagnostic.path_error is not None:
+                raise typer.BadParameter(diagnostic.path_error)
+            raise
+        if category is not None and category not in _CATEGORIES:
+            raise typer.BadParameter(f"Unknown path category: {category}")
+        if open_path and (category is None or json_output):
+            raise typer.BadParameter(
+                "--open requires a category and cannot be combined with --json."
+            )
+        if category is not None:
+            try:
+                path = runtime.paths.require(category)  # type: ignore[arg-type]
+            except ValueError as exc:
+                raise typer.BadParameter(str(exc)) from exc
+            exists = path.is_dir()
+            _emit(
+                {"category": category, "path": str(path), "exists": exists},
+                json_output,
+            ) if json_output else typer.echo(str(path))
+            if open_path:
+                if not exists:
+                    raise typer.BadParameter(
+                        f"Directory does not exist: {path}"
+                    )
+                typer.launch(str(path))
+            return
+        payload = _paths_payload(runtime)
+        if json_output:
+            _emit(payload, True)
+        else:
+            typer.echo(f"layout: {payload['layout']}")
+            typer.echo(f"root: {payload['root'] or '(native)'}")
+            typer.echo(f"source: {payload['source']}")
+            exists = cast(dict[str, bool | None], payload["exists"])
+            for key, path in _locations(runtime).items():
+                if path is not None:
+                    typer.echo(f"{key}: {path} (exists: {exists[key]})")
+
+    @maintenance.command("doctor", rich_help_panel=maintenance_help_panel)
+    def doctor_command(
+        ctx: typer.Context,
+        verbose: Annotated[bool, typer.Option("--verbose")] = False,
         json_output: Annotated[bool, typer.Option("--json")] = False,
     ) -> None:
-        """Preview or remove exact AppRC-managed resource files."""
-        if (not scope and not all_scopes) or (scope and all_scopes):
-            raise typer.BadParameter(
-                "Choose one or more --scope values or --all."
-            )
-        scopes: tuple[ResourceKind, ...]
-        if all_scopes:
-            scopes = tuple(
-                kind for kind in _RESOURCE_CATEGORIES if _declared(apprc, kind)
-            )
+        """Check installation authority, paths, and declared configuration."""
+        payload = _doctor_payload(
+            ctx,
+            apprc,
+            verbose=verbose,
+            host_diagnostics=host_diagnostics,
+            resource_diagnostics=resource_diagnostics or {},
+            resource_groups=resource_groups,
+        )
+        if json_output:
+            _emit(payload, True)
         else:
-            invalid = [
-                item for item in scope or () if item not in _RESOURCE_CATEGORIES
-            ]
-            if invalid:
-                raise typer.BadParameter(f"Unknown purge scope: {invalid[0]}")
-            scopes = tuple(
-                dict.fromkeys(
-                    _RESOURCE_CATEGORY_BY_NAME[item] for item in scope or ()
-                )
-            )
-        manager = _manager(ctx, apprc, handlers)
-        try:
-            plans = manager.plan_purge(scopes)
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        results: tuple[RemovalResult, ...] = ()
-        if not dry_run and plans:
-            if not assume_yes:
-                if not sys.stdin.isatty():
-                    raise typer.BadParameter(
-                        "Noninteractive purge requires --yes."
-                    )
-                if not typer.confirm(
-                    "Remove the planned AppRC resources?", err=True
-                ):
-                    _emit_purge(json_output, plans, results)
-                    raise typer.Exit(code=1)
-            try:
-                results = manager.apply_purge(plans)
-            except _MaintenanceApplyError as exc:
-                _emit_purge(
-                    json_output,
-                    plans,
-                    (*exc.results, exc.failure_result),
-                    failure={
-                        "category": exc.failed_plan.category,
-                        "root": str(exc.failed_plan.root),
-                        "message": str(exc),
-                    },
-                )
-                raise typer.Exit(code=1) from exc
-            except (OSError, ValueError) as exc:
-                raise typer.BadParameter(str(exc)) from exc
-        _emit_purge(json_output, plans, results)
-        if any(result.skipped or result.warnings for result in results):
+            print_doctor_report(payload)
+        if payload["status"] in {
+            "error",
+            "invalid",
+            "provisional",
+            "incomplete",
+        }:
             raise typer.Exit(code=1)
 
-    for kind in ("appdata", "cache", "state"):
-        if not getattr(apprc.schema.paths, kind):
+    resource_kinds: tuple[Literal["appdata", "cache", "state"], ...] = (
+        "appdata",
+        "cache",
+        "state",
+    )
+    for kind in resource_kinds:
+        if not _declared(apprc, kind):
             continue
         child = _resource_group(apprc, handlers, kind)
-        app.add_typer(child, name=kind, rich_help_panel=maintenance_help_panel)
-        mounted[kind] = child
+        extension = (resource_group_extensions or {}).get(kind)
+        if extension is not None:
+            extension(child)
+        if not child.registered_commands and not child.registered_groups:
+            continue
+        resource_groups[kind] = child
+        group_name = "data" if kind == "appdata" else kind
+        maintenance.add_typer(
+            child, name=group_name, rich_help_panel=maintenance_help_panel
+        )
+        mounted[f"{maintenance_group_name}.{group_name}"] = child
     if apprc.schema.workspaces is not None:
         workspace = _workspace_group(apprc)
+        declaration = apprc.schema.require_workspaces()
         app.add_typer(
-            workspace, name="workspace", rich_help_panel=maintenance_help_panel
+            workspace,
+            name="workspace",
+            short_help=(
+                "Register, select, move, archive, or restore workspaces."
+                if declaration.registry
+                else "Inspect a workspace path or initialize it explicitly."
+            ),
+            rich_help_panel=maintenance_help_panel,
         )
         mounted["workspace"] = workspace
+    order = {
+        name: index
+        for index, name in enumerate(
+            ("doctor", "paths", "install", "repair", "uninstall", "migrate")
+        )
+    }
+    maintenance.registered_commands.sort(
+        key=lambda command: order.get(
+            command.name or "",
+            len(order),
+        )
+    )
+    app.add_typer(
+        maintenance,
+        name=maintenance_group_name,
+        rich_help_panel=maintenance_help_panel,
+    )
     return mounted
 
 
@@ -400,39 +546,10 @@ def _resource_group(
     handlers: MaintenanceHandlers,
     kind: ResourceKind,
 ) -> typer.Typer:
-    """Build info/init and only the named operations declared for a category."""
-    child = typer.Typer(help=f"Inspect and initialize AppRC {kind}.")
-
-    @child.command("info")
-    def info_command(
-        ctx: typer.Context,
-        json_output: Annotated[bool, typer.Option("--json")] = False,
-    ) -> None:
-        """Show resource root existence and ownership."""
-        try:
-            payload = _manager(ctx, apprc, handlers).info(kind)
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        _emit(payload, json_output)
-
-    @child.command("init")
-    def init_command(
-        ctx: typer.Context,
-        adopt: Annotated[bool, typer.Option("--adopt")] = False,
-        logs: Annotated[bool, typer.Option("--logs")] = False,
-    ) -> None:
-        """Initialize the selected resource directory privately."""
-        path_kind: PathKind = "logs" if kind == "state" and logs else kind
-        try:
-            path = _manager(ctx, apprc, handlers).ensure_path(
-                path_kind, adopt=adopt
-            )
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        typer.echo(str(path))
-
-    provider = getattr(handlers, kind)
+    """Build only operations explicitly declared for a resource."""
+    child = typer.Typer(help=f"Maintain AppRC {kind}.")
     if kind == "appdata":
+        provider = handlers.appdata
         if provider is not None and provider.backup is not None:
 
             @child.command("backup")
@@ -465,15 +582,17 @@ def _resource_group(
                     _manager(ctx, apprc, handlers).restore_appdata(source)
                 except (OSError, ValueError) as exc:
                     raise typer.BadParameter(str(exc)) from exc
-    elif kind == "cache" and provider is not None:
-        if provider.prune is not None:
+    elif kind == "cache":
+        provider = handlers.cache
+        if provider is not None and provider.prune is not None:
             _add_operation_commands(child, apprc, handlers, "cache", "prune")
-        if provider.clear is not None:
+        if provider is not None and provider.clear is not None:
             _add_operation_commands(child, apprc, handlers, "cache", "clear")
-    elif kind == "state" and provider is not None:
-        if provider.prune is not None:
+    elif kind == "state":
+        provider = handlers.state
+        if provider is not None and provider.prune is not None:
             _add_operation_commands(child, apprc, handlers, "state", "prune")
-        if provider.reset is not None:
+        if provider is not None and provider.reset is not None:
             _add_operation_commands(child, apprc, handlers, "state", "reset")
     return child
 
@@ -718,12 +837,35 @@ def _locations(context: CliRuntimeContext[Any]) -> dict[str, Path | None]:
     }
 
 
+def _paths_payload(context: CliRuntimeContext[Any]) -> dict[str, object]:
+    """Return the stable all-category path report for commands and doctor."""
+    locations = _locations(context)
+    return {
+        "layout": context.paths.layout.mode,
+        "root": str(context.paths.layout.root)
+        if context.paths.layout.root
+        else None,
+        "source": context.paths.source,
+        "paths": {
+            key: str(path) if path is not None else None
+            for key, path in locations.items()
+        },
+        "exists": {
+            key: path.is_dir() if path is not None else None
+            for key, path in locations.items()
+        },
+    }
+
+
 def _declared(apprc: AppRC, kind: ResourceKind) -> bool:
-    return (
-        apprc.schema.paths.config
-        if kind == "config"
-        else getattr(apprc.schema.paths, kind)
-    )
+    paths = apprc.schema.paths
+    if kind == "config":
+        return paths.config
+    if kind == "appdata":
+        return paths.appdata
+    if kind == "cache":
+        return paths.cache
+    return paths.state
 
 
 def _emit(payload: object, json_output: bool) -> None:
@@ -789,16 +931,6 @@ def _plan_json(plan: RemovalPlan) -> dict[str, object]:
     }
 
 
-def _emit_purge(
-    json_output: bool,
-    plans: tuple[RemovalPlan, ...],
-    results: tuple[RemovalResult, ...],
-    *,
-    failure: dict[str, object] | None = None,
-) -> None:
-    _emit(_operation_payload(plans, results, failure), json_output)
-
-
 def _operation_payload(
     plans: tuple[RemovalPlan, ...],
     results: tuple[RemovalResult, ...],
@@ -855,13 +987,3 @@ def _apply_operation(
         if name == "reset":
             return manager.apply_state_reset(plans)
     raise ValueError(f"Unsupported AppRC {kind} operation: {name}")
-
-
-def _registered_names(app: typer.Typer) -> set[str]:
-    names = {group.name for group in app.registered_groups if group.name}
-    for command in app.registered_commands:
-        if command.name:
-            names.add(command.name)
-        elif command.callback is not None:
-            names.add(typer.main.get_command_name(command.callback.__name__))
-    return names

@@ -62,10 +62,7 @@ class DefaultConfigCliState:
 
 DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS = frozenset(
     {
-        "doctor",
         "edit",
-        "init",
-        "paths",
         "secrets",
         "set",
         "setup",

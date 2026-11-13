@@ -54,10 +54,11 @@ python -m pip install -e . -e src/apprc_dev/packaging/terminal -e examples/examp
 ```
 
 `apprc-examples-lab NAME` opens an isolated shell for one example. The lab sets
-its environment and creates its own temporary root. Example commands use current
-`paths`, `doctor`, category, workspace, and root `purge` commands; no old AppRC
-storage or `appdata clean` command is used. Keep demonstration data inside the
-lab root because paths explicitly chosen elsewhere remain after the lab exits.
+its environment and creates its own temporary root. Example commands use nested
+`app paths` and `app doctor`, supported category operations, and workspace
+commands. There is no resource-init or purge CLI alias. Keep demonstration data
+inside the lab root because paths explicitly chosen elsewhere remain after the
+lab exits.
 
 The [example package README](../examples/example_apps/README.md) describes the
 lab and smoke runner. Complete source code remains in `examples`; the guides
@@ -94,8 +95,8 @@ shows the same configuration approach in a CLI.
 ## Persistent user preferences
 
 The [user_dotenv declaration](../examples/example_apps/src/user_dotenv/config/app.py)
-enables `Paths(config=True)` and `UserDotenv()`. The lab sequence initializes
-preferences, saves a value, then launches the application:
+enables `Paths(config=True)` and `UserDotenv()`. The lab sequence uses config
+setup, saves a value, then launches the application:
 
 ```shell
 apprc-examples-lab user-dotenv
@@ -103,23 +104,29 @@ apprc-examples-lab user-dotenv
 
 ```shell
 cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-user-dotenv paths config
-apprc-user-dotenv config init
+apprc-user-dotenv app paths --json
 apprc-user-dotenv config setup --yes
 apprc-user-dotenv config set app.profile personal --scope user
 apprc-user-dotenv run
 apprc-user-dotenv config edit
 ```
 
-The edit is saved in `apprc.user.env` beneath the config category root. The
-[Python preference guide](How-To-User-Guides.md#save-a-user-preference) shows the
-same operation through `ConfigManager`.
+`config setup` initializes only enabled user configuration. The edit is saved
+in `apprc.user.env` beneath the config category root. The
+[Python preference guide](How-To-User-Guides.md#save-a-user-preference) shows
+the same operation through `ConfigManager`.
 
-`apprc-user-dotenv launcher` opens the same editor inside a single Textual event
-loop. Its **Print active configuration** action runs the actual example command
-in the foreground and resumes the launcher afterward. Captured selectors and
-the same Python environment's absolute command are retained; the
-[example CLI source](../examples/example_apps/src/user_dotenv/cli.py) owns this spec.
+An application can opt into root `launch` by supplying `launcher_spec` and
+`launcher_handlers`. It opens the existing Textual management launcher; it is
+not a foreground command launcher or a saved `app-launch.py` entry.
+
+The example's application-specific `launcher` command opens management and its
+example command inside one Textual event loop. Its **Print active
+configuration** action runs the actual example command in the foreground and
+resumes the launcher afterward. Captured selectors and the same Python
+environment's absolute command are retained; the
+[example CLI source](../examples/example_apps/src/user_dotenv/cli.py) owns this
+spec.
 
 ## Importable client with saved preferences
 
@@ -167,8 +174,8 @@ The existing cache-only CLI exposes the same management route:
 ```shell
 apprc-examples-lab cache-only
 cd "$APPRC_EXAMPLE_LAB_ROOT"
-apprc-cache-only installation show --json
-apprc-cache-only installation doctor --json
+apprc-cache-only app paths --json
+apprc-cache-only app doctor --json
 ```
 
 Declaring cache does not enable config/appdata/state. Managed installation
@@ -196,17 +203,16 @@ Run its actual installed command in a disposable lab:
 apprc-examples-lab cache-only
 cd "$APPRC_EXAMPLE_LAB_ROOT"
 apprc-cache-only --help
-apprc-cache-only paths --json
-apprc-cache-only cache init
-apprc-cache-only paths cache --json
+apprc-cache-only app paths --json
+apprc-cache-only app doctor --json
 ```
 
-`paths --json` reports the declared locations and existence without creating
-any directory. `cache init` initializes only cache and its owner marker; config,
-appdata, state, logs, and workspace locations remain disabled. The grouped help
-contains paths, doctor, installation, cache info/init, and purge, but no config,
-workspace, appdata, or state groups. Cache data initialization belongs at the application's
-actual write boundary, not matcher/service construction.
+`app paths` reports declared locations and existence without creating
+directories. `app doctor` reports path and installation health without
+initializing cache. This example declares no maintenance provider, so it does
+not offer cache cleanup commands. To prepare cache for an application write,
+call `MyRC.ensure_path("cache")` at that write boundary, as in the Python
+example above; constructing the CLI or inspecting paths does not initialize it.
 
 ## Single-root application paths
 

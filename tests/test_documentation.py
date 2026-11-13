@@ -170,6 +170,13 @@ def _run_example(directory: Path, *arguments: str) -> str:
         if not key.startswith("DEMO_")
     }
     env["DEMO_APPRC_DIR"] = str(directory / "demo-config")
+    source_paths = [
+        str(ROOT / "src"),
+        str(ROOT / "examples" / "example_apps" / "src"),
+    ]
+    if inherited_pythonpath := env.get("PYTHONPATH"):
+        source_paths.append(inherited_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(source_paths)
     result = subprocess.run(
         [sys.executable, *arguments],
         cwd=directory,
@@ -212,7 +219,7 @@ def test_independent_documentation_example(
             "user",
         )
         assert _run_example(tmp_path, "demo.py", "run").strip() == "20"
-        _run_example(tmp_path, "demo.py", "config", "doctor", "--json")
+        _run_example(tmp_path, "demo.py", "app", "doctor", "--json")
     else:
         _run_example(tmp_path, "demo.py")
 

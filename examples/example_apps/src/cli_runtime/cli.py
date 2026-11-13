@@ -71,6 +71,7 @@ def build_app(
     :return: Typer application.
     """
     app = typer.Typer(
+        cls=rc.cli.AppRCRootGroup,
         help="Exercise AppRC's CliRuntime app-callback integration.",
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
@@ -81,11 +82,7 @@ def build_app(
         state_factory=_build_state,
         runtime_policy=rc.cli.CliRuntimePolicy(
             runtime_independent_commands={
-                "status": rc.cli.RuntimeIndependentCommand(skip_empty=True),
-                "appdata": rc.cli.RuntimeIndependentCommand(
-                    action_prefixes={("paths",), ("clean",)},
-                    skip_empty=True,
-                ),
+                "status": rc.cli.RuntimeIndependentCommand(skip_empty=True)
             },
             extra_cli_flag_options={"--dry-run"},
             extra_cli_value_options={"--workdir", "--model"},
@@ -99,7 +96,7 @@ def build_app(
     def cli(
         ctx: typer.Context,
         env_files: rc.cli.EnvFilesOption = None,
-        env_file_overrides_os_environ: (rc.cli.EnvFileOverridesOption) = False,
+        env_file_overrides_os_environ: rc.cli.EnvFileOverridesOption = False,
         skip_dotenv_layers: rc.cli.SkipDotenvLayersOption = False,
         workspace: rc.cli.WorkspaceOption = None,
         layout: rc.cli.LayoutOption = None,
@@ -119,17 +116,25 @@ def build_app(
         ] = False,
     ) -> None:
         """Prepare AppRC plus app-specific CLI state."""
-        bootstrap = rc.cli.CliRuntimeOptions.from_typer(
-            layout=layout,
-            app_root=app_root,
-        )
+        try:
+            bootstrap = rc.cli.CliRuntimeOptions.from_typer(
+                env_files=env_files,
+                env_file_overrides_os_environ=env_file_overrides_os_environ,
+                load_dotenv_layers=not skip_dotenv_layers,
+                workspace=workspace,
+                layout=layout,
+                app_root=app_root,
+                log_level=log_level,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
         options = RuntimeOptions(
-            env_files=env_files,
-            env_file_overrides_os_environ=env_file_overrides_os_environ,
-            load_dotenv_layers=not skip_dotenv_layers,
-            workspace=workspace,
+            env_files=bootstrap.env_files,
+            env_file_overrides_os_environ=bootstrap.env_file_overrides_os_environ,
+            load_dotenv_layers=bootstrap.load_dotenv_layers,
+            workspace=bootstrap.workspace,
             layout=bootstrap.layout,
-            log_level=log_level,
+            log_level=bootstrap.log_level,
             workdir=workdir,
             model=model,
             dry_run=dry_run,

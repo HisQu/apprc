@@ -7,8 +7,9 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Callable
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
@@ -34,34 +35,34 @@ _CATEGORIES: tuple[ResourceKind, ...] = ("config", "appdata", "cache", "state")
 def mount_installation_group(
     app: typer.Typer,
     *,
-    maintenance_help_panel: str = "Maintenance",
+    installation_management: bool = False,
+    installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     installation_inventory: Callable[
         [InstallationInspection, frozenset[ResourceKind], bool],
         CleanupInventory,
     ]
     | None = None,
 ) -> typer.Typer:
-    """Mount installation recovery under the existing maintenance panel."""
-    child = typer.Typer(help="Inspect and recover the saved installation.")
+    """Register explicitly enabled installation actions on a maintenance group."""
+    child = app
+    if installer_entrypoint is not None:
+        if not callable(installer_entrypoint):
+            raise TypeError("installer_entrypoint must be callable.")
 
-    @child.command("show")
-    def show(
-        ctx: typer.Context,
-        json_output: Annotated[bool, typer.Option("--json")] = False,
-    ) -> None:
-        """Show saved installation authority without initializing paths."""
-        _emit(_inspection_payload(_inspection(ctx).inspection), json_output)
+        @child.command(
+            "install",
+            context_settings={
+                "allow_extra_args": True,
+                "ignore_unknown_options": True,
+            },
+        )
+        def install(ctx: typer.Context) -> None:
+            """Run the explicitly registered application installer."""
+            assert installer_entrypoint is not None
+            raise typer.Exit(code=installer_entrypoint(tuple(ctx.args)))
 
-    @child.command("doctor")
-    def doctor(
-        ctx: typer.Context,
-        json_output: Annotated[bool, typer.Option("--json")] = False,
-    ) -> None:
-        """Diagnose saved installation authority without resolving business settings."""
-        inspection = _inspection(ctx).inspection
-        _emit(_inspection_payload(inspection), json_output)
-        if inspection.status in {"invalid", "provisional", "incomplete"}:
-            raise typer.Exit(code=1)
+    if not installation_management:
+        return child
 
     @child.command("migrate")
     def migrate(
@@ -224,9 +225,6 @@ def mount_installation_group(
                 inventory_path.unlink(missing_ok=True)
         raise SystemExit(0)
 
-    app.add_typer(
-        child, name="installation", rich_help_panel=maintenance_help_panel
-    )
     return child
 
 

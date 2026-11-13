@@ -34,13 +34,14 @@ def _clean_environment(spec: ExampleAppSpec, root: Path) -> dict[str, str]:
 def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
     """Return copyable grouped commands for one fresh lab session."""
     command = spec.command_name
-    commands = [f"{command} --help", f"{command} paths --json"]
+    commands = [f"{command} --help", f"{command} app paths --json"]
     if spec.name == "cache-only":
         commands.extend(
             (
-                f"{command} cache --help",
-                f"{command} cache init",
-                f"{command} paths cache",
+                f"{command} app --help",
+                "python -c 'from cache_only.config.app import MyRC; "
+                'print(MyRC.ensure_path("cache"))\'',
+                f"{command} app paths cache",
             )
         )
     elif spec.name == "explicit-env-precedence":
@@ -99,8 +100,8 @@ def _walkthrough(spec: ExampleAppSpec, root: Path) -> tuple[str, ...]:
         commands.append(f"{command} run")
     commands.extend(
         (
-            f"{command} doctor",
-            f"{command} purge --all --dry-run --json",
+            f"{command} app doctor",
+            f"{command} app doctor --verbose --json",
         )
     )
     return tuple(commands)

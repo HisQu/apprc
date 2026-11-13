@@ -12,12 +12,6 @@ from rich import print as rich_print
 
 from apprc.interfaces.cli._typer_utils import dump_json
 from apprc.interfaces.cli.config_command._base import ConfigCommandBase
-from apprc.interfaces.cli.diagnostics.payload import build_config_doctor_payload
-from apprc.interfaces.cli.diagnostics.status import ConfigDoctorStatus
-from apprc.interfaces.cli.doctor_output import (
-    print_config_doctor,
-    print_config_paths,
-)
 
 # == Internal ================================
 from apprc.services.manager import ConfigManager, WriteScope
@@ -29,18 +23,6 @@ from apprc.user_files.env_files.updates import (
 
 class RuntimeConfigCommands(ConfigCommandBase):
     """Runtime config command implementations."""
-
-    def paths(self, ctx: typer.Context, *, json_output: bool) -> None:
-        """Show config-specific path readiness without writing files."""
-        payload = build_config_doctor_payload(
-            self.apprc,
-            manager=self.manager(ctx),
-            config_group_name=self.config_group_name,
-        )
-        if json_output:
-            dump_json(payload.to_payload())
-            return
-        print_config_paths(self.apprc, payload)
 
     def show(self, ctx: typer.Context, *, json_output: bool) -> None:
         """Show the resolved runtime config available to this CLI run."""
@@ -74,20 +56,6 @@ class RuntimeConfigCommands(ConfigCommandBase):
             dump_json(payload)
             return
         rich_print(payload)
-
-    def doctor(self, ctx: typer.Context, *, json_output: bool) -> None:
-        """Inspect captured configuration layers without building app state."""
-        payload = build_config_doctor_payload(
-            self.apprc,
-            manager=self.manager(ctx),
-            config_group_name=self.config_group_name,
-        )
-        if json_output:
-            dump_json(payload.to_payload())
-        else:
-            print_config_doctor(self.apprc, payload)
-        if payload.status == ConfigDoctorStatus.ERROR.value:
-            raise typer.Exit(code=1)
 
     def secrets_migrate(
         self, ctx: typer.Context, *, scope: str, assume_yes: bool

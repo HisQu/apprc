@@ -72,7 +72,7 @@ def build_graph() -> Digraph:
         operator,
         "setup_and_doctor",
         "Inspect + optional setup",
-        ("config paths", "config doctor", "setup if declared"),
+        ("app paths", "app doctor", "config setup if declared"),
         pos=gv.fixed_position(4.65, 0.0),
         border_color=gg.ORANGE,
     )
@@ -96,7 +96,7 @@ def build_graph() -> Digraph:
         operator,
         "inspect_loop",
         "Inspect loop",
-        ("config doctor", "provenance"),
+        ("app doctor", "provenance"),
         pos=gv.fixed_position(7.05, -1.45),
         border_color=gg.PURPLE,
     )

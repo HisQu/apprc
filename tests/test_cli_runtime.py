@@ -16,6 +16,7 @@ from apprc.interfaces.cli import (
     COMMON_CLI_VALUE_OPTIONS,
     CliRuntime,
     CliRuntimeContext,
+    InstallationCommandContext,
     CliRuntimeOptions,
     CliRuntimePolicy,
     CliRuntimeSession,
@@ -155,7 +156,7 @@ def test_runtime_policy_merges_workspace_layout_and_host_options() -> None:
             "--workdir-base",
             "/tmp/project",
             "config",
-            "paths",
+            "setup",
         ],
         config_group_name="config",
     )
@@ -166,6 +167,7 @@ def test_runtime_policy_skips_maintenance_and_config_paths() -> None:
         runtime_independent_commands={
             "tool": RuntimeIndependentCommand(skip_empty=True),
         },
+        extra_cli_value_options={"--text"},
     )
 
     assert policy.request_skips_runtime(
@@ -409,7 +411,7 @@ def test_installation_recovery_preserves_app_owned_ctx_obj() -> None:
     kit = build_config_only_example_app()
     app = typer.Typer()
     marker = {"application": "owned"}
-    args = ["installation", "show"]
+    args = ["app", "repair"]
     runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](
         kit,
         args_provider=lambda: args,
@@ -423,11 +425,11 @@ def test_installation_recovery_preserves_app_owned_ctx_obj() -> None:
         sessions.append(runtime.prepare(ctx, CliRuntimeOptions()))
         objects_after_prepare.append(ctx.obj)
 
-    installation = typer.Typer()
-    app.add_typer(installation, name="installation")
+    maintenance = typer.Typer()
+    app.add_typer(maintenance, name="app")
 
-    @installation.command("show")
-    def show() -> None:
+    @maintenance.command("repair")
+    def repair() -> None:
         typer.echo("installation diagnostics available")
 
     result = CliRunner().invoke(app, args)
@@ -435,3 +437,38 @@ def test_installation_recovery_preserves_app_owned_ctx_obj() -> None:
     assert result.exit_code == 0, result.output
     assert objects_after_prepare == [marker]
     assert sessions[0].runtime_setup_skipped
+    assert isinstance(
+        sessions[0].apprc_context,
+        InstallationCommandContext,
+    )
+
+
+def test_resilient_runtime_prepare_skips_managed_path_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apprc.public.app_rc import AppRC
+
+    def unexpected_paths(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("resilient parsing must not resolve managed paths")
+
+    monkeypatch.setattr(AppRC, "paths", unexpected_paths)
+    app = typer.Typer()
+
+    @app.callback()
+    def root() -> None:
+        pass
+
+    context = typer.Context(
+        typer.main.get_command(app),
+        info_name="example",
+        resilient_parsing=True,
+    )
+    runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](
+        build_config_only_example_app(),
+        args_provider=lambda: [],
+    )
+
+    session = runtime.prepare(context, CliRuntimeOptions())
+
+    assert isinstance(session.apprc_context, InstallationCommandContext)
+    assert session.runtime_setup_skipped

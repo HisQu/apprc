@@ -10,7 +10,9 @@ import typer
 from typer.testing import CliRunner
 
 from apprc.cli import prepare_cli_runtime_context
-from apprc.definition.paths import Layout
+from apprc.definition.paths import Layout, Paths
+from apprc.interfaces.tui.launcher.model import LauncherSpec
+from apprc.public.app_rc import AppRC
 from apprc.interfaces.cli import (
     AppRootOption,
     CliArgvProvider,
@@ -188,7 +190,7 @@ def test_mount_app_cli_args_provider_controls_runtime_skip(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     kit = build_config_only_example_app()
-    args = ["config", "paths", "--json"]
+    args = ["app", "paths", "--json"]
     state_calls: list[CliRuntimeContext] = []
 
     def state_factory(context: CliRuntimeContext) -> ConfigOnlyExampleState:
@@ -212,11 +214,11 @@ def test_mount_app_cli_args_provider_controls_runtime_skip(
 def test_cli_argv_provider_alias_accepts_token_provider() -> None:
     def provide_args() -> list[str]:
         """Return command tokens without the program name."""
-        return ["config", "paths"]
+        return ["app", "paths"]
 
     provider: CliArgvProvider = provide_args
 
-    assert provider() == ["config", "paths"]
+    assert provider() == ["app", "paths"]
 
 
 def test_mount_app_cli_rejects_existing_root_callback() -> None:
@@ -245,7 +247,7 @@ def test_runtime_mount_app_groups_preserves_host_callback_and_mounts_groups() ->
     None
 ):
     kit = build_config_only_example_app()
-    args = ["config", "paths", "--json"]
+    args = ["app", "paths", "--json"]
     runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](
         kit,
         state_type=ConfigOnlyExampleState,
@@ -267,7 +269,7 @@ def test_runtime_mount_app_groups_preserves_host_callback_and_mounts_groups() ->
     assert "config" in mounted
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
-    assert callback_calls == ["config"]
+    assert callback_calls == ["app"]
 
 
 def test_runtime_mount_app_groups_rejects_existing_config_group() -> None:
@@ -276,7 +278,7 @@ def test_runtime_mount_app_groups_rejects_existing_config_group() -> None:
     app.add_typer(typer.Typer(), name="config")
     runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](kit)
 
-    with pytest.raises(RuntimeError, match="already has a command or group"):
+    with pytest.raises(RuntimeError, match="names are already in use"):
         runtime.mount_app_groups(app)
 
 
@@ -304,3 +306,270 @@ def test_config_only_app_cli_resolves_explicit_environment_file(
 
     assert result.exit_code == 0, result.output
     assert result.output.strip() == "from-shell"
+
+
+def test_mount_app_cli_uses_custom_name_and_mounted_keys() -> None:
+    app = typer.Typer()
+    mounted = mount_app_cli(
+        app,
+        build_config_only_example_app(),
+        maintenance_group_name="manage",
+    )
+
+    assert "manage" in mounted
+    assert "config" in mounted
+    assert not any(
+        key in mounted for key in ("paths", "appdata", "cache", "state")
+    )
+    result = CliRunner().invoke(app, ["manage", "--help"])
+    assert result.exit_code == 0, result.output
+
+
+def test_mount_app_cli_returns_only_enabled_nested_resource_groups() -> None:
+    apprc = AppRC(app_id="resource-group-test", paths=Paths(cache=True))
+
+    def add_cache_command(group: typer.Typer) -> None:
+        @group.command("custom")
+        def custom_cache() -> None:
+            typer.echo("cache extension")
+
+    app = typer.Typer()
+    mounted = mount_app_cli(
+        app,
+        apprc,
+        maintenance_group_name="manage",
+        resource_group_extensions={"cache": add_cache_command},
+    )
+
+    assert "manage" in mounted
+    assert "manage.cache" in mounted
+    assert "cache" not in mounted
+    result = CliRunner().invoke(app, ["manage", "cache", "custom"])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "cache extension"
+
+
+def test_mount_app_cli_collision_preflight_keeps_host_app_unchanged() -> None:
+    app = typer.Typer()
+
+    @app.command("launch")
+    def host_launch() -> None:
+        typer.echo("host launch")
+
+    existing_commands = tuple(app.registered_commands)
+    with pytest.raises(RuntimeError, match="launch"):
+        mount_app_cli(
+            app,
+            build_config_only_example_app(),
+            launcher_spec=LauncherSpec(),
+        )
+
+    assert app.registered_callback is None
+    assert tuple(app.registered_commands) == existing_commands
+    assert app.registered_groups == []
+
+
+def test_mount_app_cli_rejects_launcher_handlers_without_spec() -> None:
+    app = typer.Typer()
+    with pytest.raises(ValueError, match="requires launcher_spec"):
+        mount_app_cli(
+            app,
+            build_config_only_example_app(),
+            launcher_handlers={},
+        )
+
+    assert app.registered_callback is None
+    assert app.registered_groups == []
+    assert app.registered_commands == []
+
+
+def test_mount_app_cli_allows_removed_root_paths_name_for_host_command() -> (
+    None
+):
+    app = typer.Typer()
+
+    @app.command("paths")
+    def host_paths() -> None:
+        typer.echo("host paths")
+
+    mount_app_cli(app, build_config_only_example_app())
+    result = CliRunner().invoke(app, ["paths"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "host paths"
+
+
+def test_mount_app_cli_rejects_internal_config_and_maintenance_collision() -> (
+    None
+):
+    app = typer.Typer()
+    with pytest.raises(RuntimeError, match="app"):
+        mount_app_cli(
+            app,
+            build_config_only_example_app(),
+            config_group_name="app",
+        )
+
+    assert app.registered_callback is None
+    assert app.registered_groups == []
+    assert app.registered_commands == []
+
+
+def test_mount_app_cli_does_not_treat_host_launch_as_app_recovery() -> None:
+    app = typer.Typer()
+    runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](
+        build_config_only_example_app()
+    )
+
+    @app.callback()
+    def root(ctx: typer.Context) -> None:
+        runtime.prepare(ctx, CliRuntimeOptions())
+
+    @app.command("launch")
+    def host_launch() -> None:
+        typer.echo("host launch")
+
+    result = CliRunner().invoke(app, ["launch"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "host launch"
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["app", "--help"],
+        ["app", "doctor", "--help"],
+        ["--env-file", "ignored.env", "app", "doctor", "--help"],
+        ["--env-file", "--help", "app", "doctor", "--help"],
+    ],
+)
+def test_nested_maintenance_help_uses_read_only_capture(
+    args: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apprc.public.app_rc import AppRC
+
+    def unexpected_paths(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("nested help must not resolve managed paths")
+
+    monkeypatch.setattr(AppRC, "paths", unexpected_paths)
+    app = typer.Typer()
+    mount_app_cli(
+        app,
+        build_config_only_example_app(),
+        args_provider=lambda: args,
+    )
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "doctor" in result.output
+
+
+@pytest.mark.parametrize(
+    ("args", "error_type"),
+    [
+        (["app", "paths", "--json"], OSError),
+        (["app", "doctor", "--json"], ValueError),
+    ],
+)
+def test_paths_and_doctor_keep_original_authority_failure(
+    args: list[str],
+    error_type: type[OSError] | type[ValueError],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apprc.public.app_rc import AppRC
+
+    original_error = "Original safe-path resolution failure."
+
+    def fail_paths(*_args: object, **_kwargs: object) -> object:
+        raise error_type(original_error)
+
+    monkeypatch.setattr(AppRC, "paths", fail_paths)
+    app = typer.Typer()
+    mount_app_cli(
+        app,
+        build_config_only_example_app(),
+        args_provider=lambda: args,
+    )
+
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code != 0
+    assert original_error in result.output
+    if args[1] == "doctor":
+        payload = json.loads(result.output)
+        assert payload["status"] == "error"
+        assert any(
+            check["message"] == original_error for check in payload["checks"]
+        )
+
+
+def test_resource_and_workspace_help_use_read_only_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apprc.public.app_rc import AppRC
+
+    def unexpected_paths(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("nested help must not resolve managed paths")
+
+    monkeypatch.setattr(AppRC, "paths", unexpected_paths)
+    apprc = AppRC(app_id="nested-help-test", paths=Paths(cache=True))
+    tokens: list[str] = []
+
+    def add_cache_command(group: typer.Typer) -> None:
+        @group.command("clean")
+        def clean() -> None:
+            typer.echo("clean")
+
+    app = typer.Typer()
+    mount_app_cli(
+        app,
+        apprc,
+        args_provider=lambda: tokens,
+        resource_group_extensions={"cache": add_cache_command},
+    )
+    for args in (
+        ["app", "cache", "--help"],
+        ["app", "cache", "clean", "--help"],
+    ):
+        tokens[:] = args
+        result = CliRunner().invoke(app, args)
+        assert result.exit_code == 0, result.output
+
+    workspace_app = typer.Typer()
+    tokens.clear()
+    mount_app_cli(
+        workspace_app,
+        build_workspace_example_app(),
+        args_provider=lambda: tokens,
+    )
+    for args in (["workspace", "--help"], ["workspace", "list", "--help"]):
+        tokens[:] = args
+        result = CliRunner().invoke(workspace_app, args)
+        assert result.exit_code == 0, result.output
+
+
+def test_root_option_separator_does_not_route_host_launch_to_apprc() -> None:
+    app = typer.Typer()
+    runtime = CliRuntime[CliRuntimeOptions, ConfigOnlyExampleState](
+        build_config_only_example_app(),
+        args_provider=lambda: ["--", "launch"],
+    )
+
+    @app.callback()
+    def root() -> None:
+        pass
+
+    @app.command("launch")
+    def host_launch() -> None:
+        pass
+
+    root_context = typer.Context(
+        typer.main.get_command(app),
+        info_name="example",
+    )
+    root_context.invoked_subcommand = "launch"
+
+    assert not runtime._installation_command_requested(root_context)

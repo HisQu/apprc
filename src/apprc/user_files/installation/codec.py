@@ -61,9 +61,13 @@ def _decode(value: object, annotation: object, location: str) -> object:
             try:
                 result = UUID(value)
             except ValueError as error:
-                raise InstallationError(f"Invalid UUID at {location}.") from error
+                raise InstallationError(
+                    f"Invalid UUID at {location}."
+                ) from error
             if str(result) != value:
-                raise InstallationError(f"UUID must use canonical lowercase form at {location}.")
+                raise InstallationError(
+                    f"UUID must use canonical lowercase form at {location}."
+                )
             return result
     elif isinstance(annotation, type) and issubclass(annotation, Enum):
         try:
@@ -132,10 +136,18 @@ def _validate(record: InstallationRecord, app_id: str) -> None:
         identity.app_id != app_id
         or record.command_name not in identity.commands
     ):
-        raise InstallationError("Installation application/command identity does not match.")
+        raise InstallationError(
+            "Installation application/command identity does not match."
+        )
     for output in record.owned_outputs:
-        if output.digest is not None and re.fullmatch(r"[0-9a-f]{64}", output.digest) is None:
-            raise InstallationError("Owned output digest must be lowercase SHA-256.")
+        if (
+            output.digest is not None
+            and re.fullmatch(r"[0-9a-f]{64}", output.digest) is None
+        ):
+            raise InstallationError(
+                "Owned output digest must be lowercase SHA-256."
+            )
+
 
 def decode_record(content: bytes, *, app_id: str) -> InstallationRecord:
     """Decode exact schema 3 fields without accepting JSON coercions.
@@ -153,7 +165,9 @@ def decode_record(content: bytes, *, app_id: str) -> InstallationRecord:
             )
         record = _decode(value, InstallationRecord, "installation")
     except (UnicodeError, json.JSONDecodeError, RecursionError) as error:
-        raise InstallationError(f"Invalid installation JSON: {error}") from error
+        raise InstallationError(
+            f"Invalid installation JSON: {error}"
+        ) from error
     if not isinstance(record, InstallationRecord):
         raise InstallationError("Installation root must be a record.")
     _validate(record, app_id)

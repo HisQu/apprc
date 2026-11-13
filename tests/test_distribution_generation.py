@@ -54,7 +54,9 @@ def test_project_metadata_keeps_app_distribution_and_import_identity_distinct(
     assert metadata.identity.distribution == "package-name"
     assert metadata.identity.import_package == "unimportable_package"
     assert metadata.identity.commands == ("fixture-command",)
-    assert metadata.identity.apprc_reference == "unimportable_package.config:MyRC"
+    assert (
+        metadata.identity.apprc_reference == "unimportable_package.config:MyRC"
+    )
     assert metadata.runtime_python_requirement == ">=3.12,==3.13.*"
 
 
@@ -95,8 +97,7 @@ def test_multiple_console_commands_require_an_explicit_selection(
             'second-command = "fixture_app:second"'
         ),
         settings=(
-            "[tool.apprc.distribution]\n"
-            "import-package = 'fixture_app'\n"
+            "[tool.apprc.distribution]\nimport-package = 'fixture_app'\n"
         ),
     )
 
@@ -110,17 +111,16 @@ def test_runtime_python_must_be_an_exact_minor(
 ) -> None:
     _write_project(
         tmp_path,
-        settings=(
-            "[tool.apprc.distribution]\n"
-            f"runtime-python = {value!r}\n"
-        ),
+        settings=(f"[tool.apprc.distribution]\nruntime-python = {value!r}\n"),
     )
 
     with pytest.raises(ValueError, match="runtime-python"):
         read_project_metadata(tmp_path)
 
 
-def test_artifact_destination_rejects_escaping_and_platform_specific_paths() -> None:
+def test_artifact_destination_rejects_escaping_and_platform_specific_paths() -> (
+    None
+):
     for destination in (
         "../outside",
         "/absolute",

@@ -25,7 +25,9 @@ def test_project_snapshot_requires_lowercase_digests_and_full_commit() -> None:
         ProjectSnapshot("a" * 64, "b" * 64, "A" * 40)
 
 
-@pytest.mark.parametrize("project_path", ["../outside", "/absolute", "src\\app", "a/../b"])
+@pytest.mark.parametrize(
+    "project_path", ["../outside", "/absolute", "src\\app", "a/../b"]
+)
 def test_project_snapshot_rejects_non_normalized_project_paths(
     project_path: str,
 ) -> None:
@@ -40,7 +42,9 @@ def test_runtime_selection_rejects_duplicate_or_invalid_extras() -> None:
             RuntimeSelection("3.14", extras)
 
 
-def test_runtime_slot_captures_immutable_source_selection_and_observations() -> None:
+def test_runtime_slot_captures_immutable_source_selection_and_observations() -> (
+    None
+):
     source = ProjectSnapshot("a" * 64, "b" * 64, "c" * 40)
     selection = RuntimeSelection("3.14", ("web",))
     candidate = RuntimeSlot(uuid4(), source, selection)
@@ -58,8 +62,12 @@ def test_runtime_slot_captures_immutable_source_selection_and_observations() -> 
         RuntimeSlot(uuid4(), source, selection, version=" ")
 
 
-def test_editable_checkout_requires_canonical_absolute_paths(tmp_path: Path) -> None:
-    runtime = EditableCheckout(tmp_path / "checkout", tmp_path / "checkout/.venv")
+def test_editable_checkout_requires_canonical_absolute_paths(
+    tmp_path: Path,
+) -> None:
+    runtime = EditableCheckout(
+        tmp_path / "checkout", tmp_path / "checkout/.venv"
+    )
     assert runtime.project.is_absolute()
     assert runtime.environment.is_absolute()
     with pytest.raises(InstallationError, match="absolute"):

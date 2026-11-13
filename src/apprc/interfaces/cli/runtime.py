@@ -421,7 +421,6 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 "runtime_policy.config_group_name."
             )
 
-
     def _installation_context(
         self,
         ctx: typer.Context,
@@ -444,6 +443,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             context = replace(context, path_error=path_error)
             ctx.meta[APPRC_CONTEXT_META_KEY] = context
         return context
+
     def prepare(
         self,
         ctx: typer.Context,

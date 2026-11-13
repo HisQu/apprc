@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urlsplit
 from urllib.request import url2pathname
 
-import click
 import typer
+from typer._click import Context as ClickContext
 from typer.core import TyperCommand
 
 from apprc.definition.installation import (
@@ -44,7 +44,7 @@ _CATEGORIES: tuple[ResourceKind, ...] = ("config", "appdata", "cache", "state")
 class _InstallationCommand(TyperCommand):
     """Capture the invocation before Click consumes known installer options."""
 
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: ClickContext, args: list[str]) -> list[str]:
         ctx.meta["apprc.installation.arguments"] = tuple(args)
         return super().parse_args(ctx, args)
 
@@ -62,6 +62,7 @@ def mount_installation_group(
     if installer_entrypoint is not None and not callable(installer_entrypoint):
         raise TypeError("installer_entrypoint must be callable.")
     if installer_entrypoint is not None or installation_management:
+
         @child.command(
             "install",
             cls=_InstallationCommand,
@@ -174,6 +175,7 @@ def mount_installation_group(
                 raise typer.Abort()
             migration_hook = _migration_bridge(context)
             if pending is not None:
+                assert inspection.revision is not None
                 result = manager.resume_migration(
                     operation_id=plan.operation_id,
                     expected_revision=inspection.revision,
@@ -187,16 +189,17 @@ def mount_installation_group(
             raise typer.BadParameter(str(exc)) from exc
         _emit(_inspection_payload(result), json_output)
 
-
     @child.command("repair")
     def repair(ctx: typer.Context) -> None:
         """Repair a managed runtime with its authenticated native manager."""
         context = _inspection(ctx)
-        if context.native_binding is None or context._native_manager_executable is None:
+        if (
+            context.native_binding is None
+            or context._native_manager_executable is None
+        ):
             record = context.inspection.record
-            if (
-                record is not None
-                and isinstance(record.active_runtime, EditableCheckout)
+            if record is not None and isinstance(
+                record.active_runtime, EditableCheckout
             ):
                 raise typer.BadParameter(
                     "This editable environment is owned by Git and uv. "
@@ -382,9 +385,7 @@ def _register_editable(
                 entry
                 for entry in installed_commands
                 if entry.dist is not None
-                and re.sub(
-                    r"[-_.]+", "-", entry.dist.metadata["Name"]
-                ).lower()
+                and re.sub(r"[-_.]+", "-", entry.dist.metadata["Name"]).lower()
                 == expected_identity.distribution
             )
         if len(installed_commands) != 1:
@@ -395,7 +396,9 @@ def _register_editable(
         installed_command = installed_commands[0]
         distribution = installed_command.dist
         if distribution is None:
-            raise ValueError("The mounted console command has no distribution owner.")
+            raise ValueError(
+                "The mounted console command has no distribution owner."
+            )
         installed_name = re.sub(
             r"[-_.]+", "-", distribution.metadata["Name"]
         ).lower()
@@ -415,12 +418,12 @@ def _register_editable(
         )
         if (
             source_root is None
+            or not isinstance(direct, dict)
             or not isinstance(direct.get("dir_info"), dict)
             or direct["dir_info"].get("editable") is not True
         ):
             raise ValueError(
-                "The installed distribution is not editable. "
-                f"{guidance}"
+                f"The installed distribution is not editable. {guidance}"
             )
         project_root = source_root.resolve(strict=True)
         distribution_spec = read_distribution_spec(project_root)
@@ -430,10 +433,7 @@ def _register_editable(
             or distribution.version != distribution_spec.metadata.version
             or identity.app_id != context.manager.spec.app_id
             or command not in identity.commands
-            or (
-                expected_identity is not None
-                and identity != expected_identity
-            )
+            or (expected_identity is not None and identity != expected_identity)
             or (
                 context.native_binding is not None
                 and distribution_spec.metadata.version
@@ -466,13 +466,19 @@ def _register_editable(
         importlib.metadata.PackageNotFoundError,
     ) as exc:
         raise ValueError(f"{exc} {guidance}") from exc
-    if project_root is None or distribution_spec is None or distribution is None:
+    if (
+        project_root is None
+        or distribution_spec is None
+        or distribution is None
+    ):
         raise ValueError(
             "The installed console command does not identify an editable checkout. "
             f"{guidance}"
         )
     if not prefix.is_dir() or not (project_root / "pyproject.toml").is_file():
-        raise ValueError(f"The checkout or its .venv is unavailable. {guidance}")
+        raise ValueError(
+            f"The checkout or its .venv is unavailable. {guidance}"
+        )
     try:
         with (project_root / "pyproject.toml").open("rb") as stream:
             project = tomllib.load(stream)["project"]
@@ -493,15 +499,20 @@ def _register_editable(
             )
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise ValueError(f"{exc} {guidance}") from exc
-    executable = prefix / (
-        "Scripts" if os.name == "nt" else "bin"
-    ) / (command + (".exe" if os.name == "nt" else ""))
+    executable = (
+        prefix
+        / ("Scripts" if os.name == "nt" else "bin")
+        / (command + (".exe" if os.name == "nt" else ""))
+    )
     if not executable.is_file():
         raise ValueError(
             f"Console command {command!r} is missing from the current .venv. {guidance}"
         )
 
-    from apprc.definition.installation import EditableCheckout, InstallationPlacement
+    from apprc.definition.installation import (
+        EditableCheckout,
+        InstallationPlacement,
+    )
     from apprc.definition.resolution import ResolveOptions
     from apprc.distribution.runtime.installation import (
         register_editable_application,
@@ -520,15 +531,14 @@ def _register_editable(
         ),
         context.environment,
     )
-    capabilities: frozenset[ResourceKind] = frozenset(
-        kind
-        for kind, enabled in (
-            ("config", context.manager.spec.paths.config),
-            ("appdata", context.manager.spec.paths.appdata),
-            ("cache", context.manager.spec.paths.cache),
-            ("state", context.manager.spec.paths.state),
-        )
-        if enabled
+    declared_capabilities: tuple[tuple[ResourceKind, bool], ...] = (
+        ("config", context.manager.spec.paths.config),
+        ("appdata", context.manager.spec.paths.appdata),
+        ("cache", context.manager.spec.paths.cache),
+        ("state", context.manager.spec.paths.state),
+    )
+    capabilities = frozenset(
+        kind for kind, enabled in declared_capabilities if enabled
     )
     placement = InstallationPlacement(
         layout=paths.layout,
@@ -556,7 +566,8 @@ def _register_editable(
     if (
         not command_directory.is_absolute()
         or not command_directory.is_dir()
-        or os.fspath(command_directory) not in context.environment.get("PATH", "").split(os.pathsep)
+        or os.fspath(command_directory)
+        not in context.environment.get("PATH", "").split(os.pathsep)
     ):
         raise ValueError(
             "The command directory must be an absolute existing directory on PATH. "
@@ -666,6 +677,7 @@ def _record_payload(
         ],
         "operation": record.operation.kind if record.operation else None,
     }
+
 
 def _migration_payload(plan: MigrationPlan) -> dict[str, object]:
     return {

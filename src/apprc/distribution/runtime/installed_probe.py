@@ -6,7 +6,8 @@ The metadata-only branch is stdlib-only, including when invoked by the bridge.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import cast
 
 import argparse
 import contextlib
@@ -86,9 +87,7 @@ def _distribution_observations(
         "version": distribution.version,
         "prefix": sys.prefix,
         "interpreter": sys.executable,
-        "python_version": ".".join(
-            str(part) for part in sys.version_info[:3]
-        ),
+        "python_version": ".".join(str(part) for part in sys.version_info[:3]),
         "commands": {command: entries[command] for command in commands},
     }
 
@@ -153,7 +152,10 @@ def _probe_request(request: object) -> int:
     ):
         raise ValueError("Probe identity is invalid.")
     command_name = request["command_name"]
-    if not isinstance(command_name, str) or command_name not in identity["commands"]:
+    if (
+        not isinstance(command_name, str)
+        or command_name not in identity["commands"]
+    ):
         raise ValueError("Probe command differs from declared identity.")
     if (
         not isinstance(request["directory"], str)
@@ -170,18 +172,24 @@ def _probe_request(request: object) -> int:
     ):
         raise ValueError("Probe request contains invalid unused fields.")
     hooks = request["hooks"]
-    if not isinstance(hooks, dict) or set(hooks) != {
-        "initialize",
-        "inventory",
-        "cleanup",
-        "migrate",
-    } or any(value is not None and not isinstance(value, str) for value in hooks.values()):
+    if (
+        not isinstance(hooks, dict)
+        or set(hooks)
+        != {
+            "initialize",
+            "inventory",
+            "cleanup",
+            "migrate",
+        }
+        or any(
+            value is not None and not isinstance(value, str)
+            for value in hooks.values()
+        )
+    ):
         raise ValueError("Probe hook declaration is invalid.")
 
     distribution = importlib.metadata.distribution(identity["distribution"])
-    result = _distribution_observations(
-        distribution, identity["commands"]
-    )
+    result = _distribution_observations(distribution, identity["commands"])
     print(json.dumps({"action": "probe", "result": result}, sort_keys=True))
     return 0
 
@@ -194,32 +202,58 @@ def _serve_request(request: object) -> int:
     """
     with contextlib.redirect_stdout(sys.stderr):
         from apprc.definition.installation import (
+            CleanupInventory,
             InstallationHooks,
             InstallationIdentity,
+            InstallationInspection,
             MigrationPlan,
+            OperationContext,
         )
         from apprc.definition.paths import ResourceKind
         from apprc.definition.resolution import _BridgeRuntimeOptions
         from apprc.user_files.installation import codec
 
+        initialize_hook = Callable[[OperationContext], None]
+        inventory_hook = Callable[
+            [InstallationInspection, frozenset[ResourceKind], bool],
+            CleanupInventory,
+        ]
+        migration_hook = Callable[[MigrationPlan, OperationContext], None]
+
         fields = {
-            "action", "identity", "command_name", "directory",
-            "expected_revision", "runtime_options", "operation_context",
-            "categories", "forget_retained", "migration_plan", "hooks",
+            "action",
+            "identity",
+            "command_name",
+            "directory",
+            "expected_revision",
+            "runtime_options",
+            "operation_context",
+            "categories",
+            "forget_retained",
+            "migration_plan",
+            "hooks",
         }
         if not isinstance(request, dict) or set(request) != fields:
             raise ValueError("Application bridge request fields are invalid.")
         action = request["action"]
         if not isinstance(action, str) or action not in {
-            "initialize", "doctor", "inventory", "cleanup", "migrate"
+            "initialize",
+            "doctor",
+            "inventory",
+            "cleanup",
+            "migrate",
         }:
             raise ValueError("Application bridge action is invalid.")
-        if action not in {"initialize", "cleanup", "migrate"} and request["operation_context"] is not None:
+        if (
+            action not in {"initialize", "cleanup", "migrate"}
+            and request["operation_context"] is not None
+        ):
             raise ValueError("Unexpected operation context for bridge action.")
         if action != "migrate" and request["migration_plan"] is not None:
             raise ValueError("Unexpected migration plan for bridge action.")
         if action != "inventory" and (
-            request["categories"] != [] or request["forget_retained"] is not False
+            request["categories"] != []
+            or request["forget_retained"] is not False
         ):
             raise ValueError("Unexpected cleanup options for bridge action.")
         if action == "inventory" and (
@@ -253,13 +287,22 @@ def _serve_request(request: object) -> int:
         categories: frozenset[ResourceKind] = frozenset()
         if action == "inventory":
             accepted = {"config", "appdata", "cache", "state"}
-            if not set(request["categories"]) <= accepted:
+            requested = request["categories"]
+            if (
+                not isinstance(requested, list)
+                or not all(isinstance(item, str) for item in requested)
+                or not set(requested) <= accepted
+            ):
                 raise ValueError("Unknown cleanup category.")
-            categories = frozenset(request["categories"])
+            categories = frozenset(
+                cast(ResourceKind, item) for item in requested
+            )
 
         reference = identity.apprc_reference
         if not reference or ":" not in reference:
-            raise ValueError("Application declaration reference is unavailable.")
+            raise ValueError(
+                "Application declaration reference is unavailable."
+            )
         module_name, attribute = reference.split(":", 1)
         application = vars(importlib.import_module(module_name))[attribute]
         from apprc import AppRC
@@ -284,21 +327,29 @@ def _serve_request(request: object) -> int:
             or record.identity != identity
             or record.command_name != command_name
         ):
-            raise ValueError("Application bridge identity differs from authority.")
+            raise ValueError(
+                "Application bridge identity differs from authority."
+            )
         if action in {"doctor", "inventory"}:
             inspection.require_usable()
         if action in {"doctor", "inventory", "cleanup", "migrate"}:
             if record.active_runtime is None:
                 raise ValueError("Application runtime is unavailable.")
             if record.active_runtime.hooks != hooks:
-                raise ValueError("Application hooks differ from runtime authority.")
+                raise ValueError(
+                    "Application hooks differ from runtime authority."
+                )
         if action == "initialize":
             operation = record.operation
             intended = operation.intended if operation is not None else None
             if intended is None or intended.identity != identity:
-                raise ValueError("Initialization does not address its pending identity.")
+                raise ValueError(
+                    "Initialization does not address its pending identity."
+                )
             if intended.runtime.hooks != hooks:
-                raise ValueError("Initialization hooks differ from candidate authority.")
+                raise ValueError(
+                    "Initialization hooks differ from candidate authority."
+                )
 
         context_value = request["operation_context"]
         context = (
@@ -309,7 +360,9 @@ def _serve_request(request: object) -> int:
         if action in {"initialize", "cleanup", "migrate"} and context is None:
             raise ValueError(f"{action} requires an operation context.")
         if context is not None:
-            from apprc.user_files.installation.validation import validate_snapshot
+            from apprc.user_files.installation.validation import (
+                validate_snapshot,
+            )
 
             validate_snapshot(
                 inspection.snapshot,
@@ -320,18 +373,27 @@ def _serve_request(request: object) -> int:
             if operation is None:
                 raise ValueError("Provider operation is no longer pending.")
             if action == "initialize" and operation.kind not in {
-                "install", "replace", "repair"
+                "install",
+                "replace",
+                "repair",
             }:
-                raise ValueError("Initialization does not match pending operation.")
+                raise ValueError(
+                    "Initialization does not match pending operation."
+                )
             expected_kind = {
                 "cleanup": "uninstall",
                 "migrate": "migrate",
             }.get(action)
             if expected_kind is not None and operation.kind != expected_kind:
-                raise ValueError("Provider callback does not match pending operation.")
-
+                raise ValueError(
+                    "Provider callback does not match pending operation."
+                )
         exit_status = 0
         if action == "initialize":
+            if context is None:
+                raise ValueError(
+                    "Initialization requires an operation context."
+                )
             observations = _distribution_observations(
                 importlib.metadata.distribution(identity.distribution),
                 identity.commands,
@@ -345,7 +407,7 @@ def _serve_request(request: object) -> int:
             }
             initialized = manager.initialize(context=context)
             if hooks.initialize:
-                _hook(hooks.initialize)(context)
+                cast(initialize_hook, _hook(hooks.initialize))(context)
             result = {
                 **observations,
                 "capabilities": capabilities,
@@ -361,7 +423,9 @@ def _serve_request(request: object) -> int:
             )
             if not isinstance(options, _BridgeRuntimeOptions):
                 raise ValueError("Bridge runtime options are invalid.")
-            distribution = importlib.metadata.distribution(identity.distribution)
+            distribution = importlib.metadata.distribution(
+                identity.distribution
+            )
             entry_points = [
                 entry
                 for entry in distribution.entry_points
@@ -369,7 +433,9 @@ def _serve_request(request: object) -> int:
                 and entry.name == command_name
             ]
             if len(entry_points) != 1:
-                raise ValueError("Primary application console entrypoint is ambiguous.")
+                raise ValueError(
+                    "Primary application console entrypoint is ambiguous."
+                )
             entry_point = entry_points[0]
             entrypoint = entry_point.load()
             old_argv = sys.argv
@@ -387,7 +453,10 @@ def _serve_request(request: object) -> int:
                     application_diagnostics_scope,
                 )
 
-                with application_diagnostics_scope(), contextlib.redirect_stdout(captured):
+                with (
+                    application_diagnostics_scope(),
+                    contextlib.redirect_stdout(captured),
+                ):
                     try:
                         entrypoint()
                     except SystemExit as error:
@@ -397,33 +466,50 @@ def _serve_request(request: object) -> int:
             finally:
                 sys.argv = old_argv
             if type(status) is not int or status not in {0, 1}:
-                raise ValueError("Application doctor returned an invalid status.")
+                raise ValueError(
+                    "Application doctor returned an invalid status."
+                )
             result = _loads_json(captured.getvalue())
             if (
                 not isinstance(result, dict)
                 or not isinstance(result.get("status"), str)
                 or result["status"]
-                not in {"ok", "warning", "error", "invalid", "provisional", "incomplete"}
+                not in {
+                    "ok",
+                    "warning",
+                    "error",
+                    "invalid",
+                    "provisional",
+                    "incomplete",
+                }
                 or not isinstance(result.get("checks"), list)
                 or not isinstance(result.get("details"), dict)
             ):
-                raise ValueError("Application doctor returned an invalid result.")
+                raise ValueError(
+                    "Application doctor returned an invalid result."
+                )
             exit_status = status
         elif action == "inventory":
             if not hooks.inventory:
-                raise ValueError("Application cleanup inventory hook is unavailable.")
-            inventory = _hook(hooks.inventory)(
-                inspection, categories, request["forget_retained"]
+                raise ValueError(
+                    "Application cleanup inventory hook is unavailable."
+                )
+            inventory = cast(inventory_hook, _hook(hooks.inventory))(
+                inspection,
+                categories,
+                cast(bool, request["forget_retained"]),
             )
             result = json.loads(codec.encode_cleanup_inventory(inventory))
         elif action == "cleanup":
-            if not hooks.cleanup:
-                raise ValueError("Application cleanup hook is unavailable.")
-            _hook(hooks.cleanup)(context)
+            if context is None:
+                raise ValueError("Cleanup requires an operation context.")
+            cast(initialize_hook, _hook(hooks.cleanup))(context)
             result = {"completed": True}
         else:
             if not hooks.migrate:
                 raise ValueError("Application migration hook is unavailable.")
+            if context is None:
+                raise ValueError("Migration requires an operation context.")
             plan = codec._decode(
                 request["migration_plan"], MigrationPlan, "migration_plan"
             )
@@ -440,14 +526,16 @@ def _serve_request(request: object) -> int:
                 or plan.inventory != migration.inventory
                 or not plan.quiescent
             ):
-                raise ValueError("Migration plan differs from pending authority.")
-            _hook(hooks.migrate)(plan, context)
+                raise ValueError(
+                    "Migration plan differs from pending authority."
+                )
+            cast(migration_hook, _hook(hooks.migrate))(plan, context)
             result = {"completed": True}
     print(json.dumps({"action": action, "result": result}, sort_keys=True))
     return exit_status
 
 
-def _hook(reference: str):
+def _hook(reference: str) -> Callable[..., object]:
     """Load exactly one importable module:function reference.
 
     :param reference: Authored callback reference from installation authority.

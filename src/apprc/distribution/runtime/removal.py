@@ -22,6 +22,7 @@ from apprc.definition.installation import (
     InstallationDiagnostic,
     InstallationError,
     InstallationIdentity,
+    InstallationInspection,
     InstallationRecord,
     InstallationSnapshot,
     InstallationWriteAuthority,
@@ -227,7 +228,9 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise InstallationError("Uninstall handoff plan has duplicate fields.")
+            raise InstallationError(
+                "Uninstall handoff plan has duplicate fields."
+            )
         result[key] = value
     return result
 
@@ -258,7 +261,9 @@ def _parse_plan(path: Path) -> HandoffPlan:
         "manager_executable_revision",
     }
     if not isinstance(value, dict) or set(value) != required:
-        raise InstallationError("Uninstall handoff plan has an incompatible schema.")
+        raise InstallationError(
+            "Uninstall handoff plan has an incompatible schema."
+        )
     directory = value["directory"]
     app_id = value["app_id"]
     generation_id = value["generation_id"]
@@ -303,14 +308,18 @@ def _parse_plan(path: Path) -> HandoffPlan:
     category_values: list[ResourceKind] = []
     for category in categories:
         if not _is_resource_kind(category):
-            raise InstallationError("Uninstall handoff plan has an unknown category.")
+            raise InstallationError(
+                "Uninstall handoff plan has an unknown category."
+            )
         category_values.append(category)
     if len(category_values) != len(set(category_values)):
         raise InstallationError("Uninstall handoff plan repeats a category.")
     manager_path: Path | None = None
     if manager_text is None:
         if manager_revision is not None:
-            raise InstallationError("Handoff manager revision has no executable.")
+            raise InstallationError(
+                "Handoff manager revision has no executable."
+            )
     else:
         if (
             not isinstance(manager_text, str)
@@ -321,7 +330,9 @@ def _parse_plan(path: Path) -> HandoffPlan:
             or not isinstance(manager_revision, str)
             or re.fullmatch(r"[0-9a-f]{64}", manager_revision) is None
         ):
-            raise InstallationError("Uninstall handoff manager binding is malformed.")
+            raise InstallationError(
+                "Uninstall handoff manager binding is malformed."
+            )
         manager_path = Path(manager_text)
         assert_no_links(manager_path)
         if (
@@ -344,7 +355,9 @@ def _parse_plan(path: Path) -> HandoffPlan:
         "forget_retained": forget_retained,
         "inventory": inventory,
         "retained": retained,
-        "manager_executable": str(manager_path) if manager_path is not None else None,
+        "manager_executable": str(manager_path)
+        if manager_path is not None
+        else None,
         "manager_executable_revision": manager_revision,
     }
 
@@ -433,6 +446,7 @@ def _remove_owned_outputs(
                 f"Recorded shortcut changed before removal: {path}."
             )
         path.unlink()
+
 
 def _restore_support(recovery: Path, directory: Path) -> None:
     """Restore exact saved support after a precommit failure; never overwrite edits."""
@@ -566,8 +580,6 @@ def _backup_support(
             os.fsync(stream.fileno())
 
 
-
-
 def execute_handoff(
     plan_file: Path,
     *,
@@ -580,7 +592,9 @@ def execute_handoff(
         expected_identity is not None
         and expected_identity.app_id != value["app_id"]
     ):
-        raise InstallationError("Handoff plan differs from the native product identity.")
+        raise InstallationError(
+            "Handoff plan differs from the native product identity."
+        )
     directory = Path(value["directory"])
     recovery = Path(value["recovery_directory"])
     if (
@@ -641,8 +655,13 @@ def _finalize_committed_handoff(
         "generation_id": value["generation_id"],
         "support": [],
     }
-    if json.loads(finalization_plan.read_text(encoding="utf-8")) != expected_plan:
-        raise InstallationError("External finalization plan changed after uninstall commit.")
+    if (
+        json.loads(finalization_plan.read_text(encoding="utf-8"))
+        != expected_plan
+    ):
+        raise InstallationError(
+            "External finalization plan changed after uninstall commit."
+        )
     roots = (directory.resolve(),)
     for path in (
         plan_file.parent,
@@ -709,7 +728,9 @@ def _prepare_pending_handoff(
         or record.operation.operation_id != operation_id
         or record.operation.kind != "uninstall"
     ):
-        raise InstallationError("Uninstall authority changed before handoff readiness.")
+        raise InstallationError(
+            "Uninstall authority changed before handoff readiness."
+        )
     inventory = CleanupInventory(
         _inventory(value, "inventory"), _inventory(value, "retained")
     )
@@ -760,6 +781,8 @@ def _prepare_pending_handoff(
     for path in (plan_file.parent, plan_file, recovery):
         assert_no_links(path)
     return _PendingHandoff(plan, record, manager)
+
+
 def _execute_pending_handoff(
     plan_file: Path,
     value: HandoffPlan,
@@ -797,7 +820,9 @@ def _execute_pending_handoff(
                 "Pending uninstall authority changed before removal."
             )
         if current.revision is None:
-            raise InstallationError("Pending uninstall has no authority revision.")
+            raise InstallationError(
+                "Pending uninstall has no authority revision."
+            )
         latest_revision = current.revision
 
         operation = record.operation
@@ -805,7 +830,11 @@ def _execute_pending_handoff(
         runtime = record.active_runtime
         needs_cleanup = plan.complete and (
             bool(data_categories)
-            or bool(plan.categories and runtime is not None and runtime.hooks.cleanup)
+            or bool(
+                plan.categories
+                and runtime is not None
+                and runtime.hooks.cleanup
+            )
         )
         if OperationStep.PROVIDER_CLEANUP not in operation.steps:
             runtime = record.active_runtime
@@ -878,7 +907,9 @@ def _execute_pending_handoff(
                 step=OperationStep.PROVIDER_CLEANUP,
             )
             if current.revision is None:
-                raise InstallationError("Cleanup checkpoint has no authority revision.")
+                raise InstallationError(
+                    "Cleanup checkpoint has no authority revision."
+                )
             latest_revision = current.revision
             record = current.record
             assert record is not None
@@ -918,13 +949,18 @@ def _execute_pending_handoff(
                 step=OperationStep.RUNTIME_REMOVED,
             )
             if current.revision is None:
-                raise InstallationError("Runtime absence checkpoint has no revision.")
+                raise InstallationError(
+                    "Runtime absence checkpoint has no revision."
+                )
             latest_revision = current.revision
             record = current.record
             assert record is not None
 
+        operation = record.operation
+        if operation is None:
+            raise InstallationError("Pending uninstall checkpoint disappeared.")
         if plan.complete:
-            if OperationStep.DATA_REMOVED not in record.operation.steps:
+            if OperationStep.DATA_REMOVED not in operation.steps:
                 _restore_support(recovery, directory)
                 _backup_support(inventory.entries, directory, recovery)
                 finalization_plan = recovery / "finalization.json"
@@ -936,10 +972,15 @@ def _execute_pending_handoff(
                 }
                 if finalization_plan.exists():
                     assert_no_links(finalization_plan)
-                    if json.loads(
-                        finalization_plan.read_text(encoding="utf-8")
-                    ) != expected_finalization:
-                        raise InstallationError("External finalization plan changed.")
+                    if (
+                        json.loads(
+                            finalization_plan.read_text(encoding="utf-8")
+                        )
+                        != expected_finalization
+                    ):
+                        raise InstallationError(
+                            "External finalization plan changed."
+                        )
                 else:
                     write_bytes_atomic(
                         finalization_plan,
@@ -974,7 +1015,9 @@ def _execute_pending_handoff(
                     step=OperationStep.DATA_REMOVED,
                 )
                 if current.revision is None:
-                    raise InstallationError("Data cleanup checkpoint has no revision.")
+                    raise InstallationError(
+                        "Data cleanup checkpoint has no revision."
+                    )
                 latest_revision = current.revision
                 record = current.record
                 assert record is not None
@@ -1038,6 +1081,8 @@ def _execute_pending_handoff(
     finally:
         if succeeded and plan_file.parent.exists():
             shutil.rmtree(plan_file.parent)
+
+
 def _wait_for_caller_exit(value: HandoffPlan) -> None:
     """Advertise readiness only after validation and wait for the exact caller."""
     waiter = _open_process_waiter(
@@ -1097,10 +1142,7 @@ def _recover_pending_uninstall(
             raise InstallationError(
                 "Pending uninstall recovery has no authority revision."
             )
-        if (
-            complete
-            and OperationStep.DATA_REMOVED not in operation.steps
-        ):
+        if complete and OperationStep.DATA_REMOVED not in operation.steps:
             _restore_support(recovery, directory)
         _restore_registry_outputs(registry_backup)
         fail_operation(
@@ -1132,11 +1174,12 @@ def _remove_registry_outputs(
     for output in record.owned_outputs:
         if output.kind != "hkcu":
             continue
-        if (
-            output.path != "HKCU\\" + expected_subkey
-            or dict(output.values).get("InstallLocation") != str(directory)
-        ):
-            raise InstallationError("Recorded HKCU registration path is malformed.")
+        if output.path != "HKCU\\" + expected_subkey or dict(output.values).get(
+            "InstallLocation"
+        ) != str(directory):
+            raise InstallationError(
+                "Recorded HKCU registration path is malformed."
+            )
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
@@ -1188,6 +1231,7 @@ def _restore_registry_outputs(
                     )
             for name, value in previous.items():
                 winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
+
 
 def main() -> int:
     """Run the independently staged controller command."""

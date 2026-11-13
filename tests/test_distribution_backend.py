@@ -43,10 +43,16 @@ from apprc.distribution.runtime.installation import (
     offer_configuration_setup,
 )
 from apprc.services.installation import InstallationManager
-from apprc.user_files.installation.coordination import installation_lock, write_record
+from apprc.user_files.installation.codec import decode_record, encode_record
+from apprc.user_files.installation.coordination import (
+    installation_lock,
+    write_record,
+)
 
 
-def test_runtime_environment_removes_manager_and_python_injection_only() -> None:
+def test_runtime_environment_removes_manager_and_python_injection_only() -> (
+    None
+):
     captured = {
         "PATH": "/usr/bin",
         "PYTHONPATH": "/injected",
@@ -74,7 +80,9 @@ def test_runtime_environment_removes_manager_and_python_injection_only() -> None
 def test_publication_intent_roundtrips_authenticated_old_and_new_images(
     tmp_path: Path,
 ) -> None:
-    identity = InstallationIdentity("fixture", "fixture", "fixture", None, ("fixture",))
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
     placement = InstallationPlacement(Layout.native())
     runtime = RuntimeSlot(
         uuid4(),
@@ -86,8 +94,12 @@ def test_publication_intent_roundtrips_authenticated_old_and_new_images(
     new_bytes = b"new editable launcher"
     output = PublicationOutput(
         tmp_path / "commands" / "fixture",
-        PublicationImage(hashlib.sha256(old_bytes).hexdigest(), ".publication-old"),
-        PublicationImage(hashlib.sha256(new_bytes).hexdigest(), ".publication-new"),
+        PublicationImage(
+            hashlib.sha256(old_bytes).hexdigest(), ".publication-old"
+        ),
+        PublicationImage(
+            hashlib.sha256(new_bytes).hexdigest(), ".publication-new"
+        ),
     )
     operation = InstallationOperation(
         operation_id,
@@ -159,9 +171,9 @@ def test_expected_version_comes_from_digest_verified_retained_archive(
         _snapshot_metadata(archive, runtime, identity)
 
 
-
-
-@pytest.mark.skipif(sys.platform != "win32", reason="requires a Windows HKCU registry")
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="requires a Windows HKCU registry"
+)
 def test_windows_registration_resumes_recorded_partial_recipe_and_rejects_subkeys(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -186,20 +198,29 @@ def test_windows_registration_resumes_recorded_partial_recipe_and_rejects_subkey
     try:
         monkeypatch.setattr(winreg, "SetValueEx", interrupt_after_first_value)
         with pytest.raises(RuntimeError, match="simulated"):
-            publish_windows_registration(tmp_path, identity, command, previous=(intent,))
+            publish_windows_registration(
+                tmp_path, identity, command, previous=(intent,)
+            )
         monkeypatch.setattr(winreg, "SetValueEx", original_set)
 
-        assert publish_windows_registration(
-            tmp_path, identity, command, previous=(intent,)
-        ) == intent
+        assert (
+            publish_windows_registration(
+                tmp_path, identity, command, previous=(intent,)
+            )
+            == intent
+        )
 
         with winreg.CreateKeyEx(
-            winreg.HKEY_CURRENT_USER, subkey + r"\unexpected",
-            0, winreg.KEY_SET_VALUE,
+            winreg.HKEY_CURRENT_USER,
+            subkey + r"\unexpected",
+            0,
+            winreg.KEY_SET_VALUE,
         ):
             pass
         with pytest.raises(InstallationError, match="subkeys"):
-            publish_windows_registration(tmp_path, identity, command, previous=(intent,))
+            publish_windows_registration(
+                tmp_path, identity, command, previous=(intent,)
+            )
         winreg.DeleteKey(winreg.HKEY_CURRENT_USER, subkey + r"\unexpected")
         assert remove_windows_registration(intent)
     finally:
@@ -262,7 +283,9 @@ def test_durable_publication_rollback_restores_only_its_exact_output(
     )
     (tmp_path / previous_name).write_bytes(previous_bytes)
     (tmp_path / intended_name).write_bytes(intended_bytes)
-    identity = InstallationIdentity("fixture", "fixture", "fixture", None, ("fixture",))
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
     placement = InstallationPlacement(Layout.native())
     runtime = RuntimeSlot(
         uuid4(),
@@ -281,10 +304,19 @@ def test_durable_publication_rollback_restores_only_its_exact_output(
         ),
     )
     record = InstallationRecord(
-        3, identity, "fixture", uuid4(), "1", placement, "incomplete",
+        3,
+        identity,
+        "fixture",
+        uuid4(),
+        "1",
+        placement,
+        "incomplete",
         active_runtime=RuntimeSlot(
-            uuid4(), runtime.source, runtime.selection,
-            version="1", python_version="3.12",
+            uuid4(),
+            runtime.source,
+            runtime.selection,
+            version="1",
+            python_version="3.12",
         ),
         operation=operation,
         owned_outputs=(
@@ -293,7 +325,8 @@ def test_durable_publication_rollback_restores_only_its_exact_output(
     )
     manager = InstallationManager(
         AppRC(app_id="fixture", paths=Paths()).schema,
-        environment={}, directory=tmp_path,
+        environment={},
+        directory=tmp_path,
     )
     with installation_lock(tmp_path):
         write_record(tmp_path, record, expected_revision=None)
@@ -319,7 +352,9 @@ def test_durable_publication_rollback_restores_only_its_exact_output(
 def test_zero_resource_capabilities_do_not_offer_configuration_setup(
     tmp_path: Path,
 ) -> None:
-    identity = InstallationIdentity("fixture", "fixture", "fixture", None, ("fixture",))
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
     runtime = RuntimeSlot(
         uuid4(),
         ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),

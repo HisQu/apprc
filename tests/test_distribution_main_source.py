@@ -59,9 +59,9 @@ def test_materialization_preserves_one_root_and_uses_shared_workspace_lock(
     assert (destination / "workspace/uv.lock").read_bytes() == entries[
         "workspace/uv.lock"
     ]
-    assert (destination / "workspace/apps/fixture/main.py").read_bytes() == entries[
-        "workspace/apps/fixture/main.py"
-    ]
+    assert (
+        destination / "workspace/apps/fixture/main.py"
+    ).read_bytes() == entries["workspace/apps/fixture/main.py"]
     assert (destination / "workspace/libs/shared.py").read_bytes() == entries[
         "workspace/libs/shared.py"
     ]
@@ -79,7 +79,9 @@ def test_unsafe_archive_member_is_rejected_before_materialization(
     source = _write_snapshot(archive, entries, project_path="workspace/app")
     destination = tmp_path / "materialized"
 
-    with pytest.raises(InstallationError, match="Unsafe source archive member path"):
+    with pytest.raises(
+        InstallationError, match="Unsafe source archive member path"
+    ):
         materialize_project_snapshot(archive, destination, source)
 
     assert not destination.exists()

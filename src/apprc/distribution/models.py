@@ -78,18 +78,40 @@ class DistributionSpec:
 
     def __post_init__(self) -> None:
         """Reject ambiguous commands and invalid portable declaration values."""
-        if self.metadata.command_name not in {None, *self.metadata.identity.commands}:
-            raise ValueError("command-name must name one declared console command.")
-        if self.metadata.command_name is None and len(self.metadata.identity.commands) != 1:
+        if self.metadata.command_name not in {
+            None,
+            *self.metadata.identity.commands,
+        }:
+            raise ValueError(
+                "command-name must name one declared console command."
+            )
+        if (
+            self.metadata.command_name is None
+            and len(self.metadata.identity.commands) != 1
+        ):
             raise ValueError("Multiple console commands require command-name.")
         if not self.metadata.version:
             raise ValueError("A native product requires an explicit version.")
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.bootstrap_env_prefix) is None:
-            raise ValueError("bootstrap_env_prefix must be an environment variable prefix.")
-        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name) is None:
-            raise ValueError("maintenance_group_name must be one CLI command name.")
+        if (
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.bootstrap_env_prefix)
+            is None
+        ):
+            raise ValueError(
+                "bootstrap_env_prefix must be an environment variable prefix."
+            )
+        if (
+            re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name
+            )
+            is None
+        ):
+            raise ValueError(
+                "maintenance_group_name must be one CLI command name."
+            )
         if self.layout.root is not None:
-            raise ValueError("Native products cannot embed an author's absolute layout root.")
+            raise ValueError(
+                "Native products cannot embed an author's absolute layout root."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,23 +136,43 @@ class NativeBinding:
         if self.command_name not in self.identity.commands:
             raise ValueError("Native command must belong to its distribution.")
         if not self.display_name or not self.version:
-            raise ValueError("Native display name and version must be nonempty.")
+            raise ValueError(
+                "Native display name and version must be nonempty."
+            )
         if self.layout.root is not None:
-            raise ValueError("Native bindings cannot contain author filesystem locations.")
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.bootstrap_env_prefix) is None:
+            raise ValueError(
+                "Native bindings cannot contain author filesystem locations."
+            )
+        if (
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.bootstrap_env_prefix)
+            is None
+        ):
             raise ValueError("Invalid native bootstrap environment prefix.")
-        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name) is None:
+        if (
+            re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name
+            )
+            is None
+        ):
             raise ValueError("Invalid native maintenance command.")
 
 
 def encode_native_binding(binding: NativeBinding) -> bytes:
     """Encode a binding using the SDK's deterministic dataclass codec."""
-    return (json.dumps(_encode(binding), sort_keys=True, separators=(",", ":")) + "\n").encode()
+    return (
+        json.dumps(_encode(binding), sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode()
 
 
 def decode_native_binding(data: bytes) -> NativeBinding:
     """Decode only the exact SDK binding schema, rejecting unknown fields."""
-    return cast(NativeBinding, _decode(json.loads(data, object_pairs_hook=_pairs), NativeBinding, "binding"))
+    return cast(
+        NativeBinding,
+        _decode(
+            json.loads(data, object_pairs_hook=_pairs), NativeBinding, "binding"
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)

@@ -49,6 +49,7 @@ def _without_extra_marker(
 ) -> tuple[bool, str | None]:
     """Select SDK extra requirements without discarding platform markers."""
     from packaging.markers import Marker
+
     if ";" not in value:
         return True, None
     _, expression = value.split(";", 1)
@@ -59,10 +60,14 @@ def _without_extra_marker(
     )
     if not extra_tests:
         if "extra" in expression:
-            raise ValueError(f"Unsupported extra selector in SDK metadata: {value}")
+            raise ValueError(
+                f"Unsupported extra selector in SDK metadata: {value}"
+            )
         return True, expression
     if " or " in expression:
-        raise ValueError(f"Unsupported OR extra selector in SDK metadata: {value}")
+        raise ValueError(
+            f"Unsupported OR extra selector in SDK metadata: {value}"
+        )
     if not any(
         all(
             (operator == "==" and extra == expected)
@@ -98,8 +103,13 @@ def _bootstrap_requirements() -> tuple[str, ...]:
             "from the maintained SDK workspace."
         ) from error
     if core.version != terminal.version:
-        raise ValueError("apprc-core and apprc authoring metadata versions do not match.")
-    for distribution, extras in ((core, {"", "distribution"}), (terminal, {""})):
+        raise ValueError(
+            "apprc-core and apprc authoring metadata versions do not match."
+        )
+    for distribution, extras in (
+        (core, {"", "distribution"}),
+        (terminal, {""}),
+    ):
         for raw in distribution.metadata.get_all("Requires-Dist") or ():
             requirement = Requirement(raw)
             if canonicalize_name(requirement.name) in {"apprc", "apprc-core"}:
@@ -109,9 +119,6 @@ def _bootstrap_requirements() -> tuple[str, ...]:
                 requirement.marker = Marker(marker) if marker else None
                 selected.append(str(requirement))
     return tuple(sorted(set(selected)))
-
-
-
 
 
 def _validate_prepared_project(
@@ -128,23 +135,33 @@ def _validate_prepared_project(
     repository = Path(result.stdout.strip()).resolve()
     root_relative = declared_root.relative_to(repository)
     explicit_path = spec.metadata.project_path
-    extra_parts = () if explicit_path == PurePosixPath(".") else explicit_path.parts
+    extra_parts = (
+        () if explicit_path == PurePosixPath(".") else explicit_path.parts
+    )
     expected_parts = (*root_relative.parts, *extra_parts)
     expected_project_path = (
         str(PurePosixPath(*expected_parts)) if expected_parts else "."
     )
     if project.source.project_path != expected_project_path:
-        raise ValueError("Prepared snapshot selects a different committed project path.")
-    staging = Path(tempfile.mkdtemp(prefix="apprc-author-check-", dir=workspace))
+        raise ValueError(
+            "Prepared snapshot selects a different committed project path."
+        )
+    staging = Path(
+        tempfile.mkdtemp(prefix="apprc-author-check-", dir=workspace)
+    )
     try:
         materialize_project_snapshot(project.archive, staging, project.source)
         project_path = PurePosixPath(project.source.project_path)
-        selected = staging if project_path == PurePosixPath(".") else (
-            staging.joinpath(*project_path.parts)
+        selected = (
+            staging
+            if project_path == PurePosixPath(".")
+            else (staging.joinpath(*project_path.parts))
         )
         _validate_project_declaration(spec, selected)
     finally:
         shutil.rmtree(staging)
+
+
 def _sdk_archive(
     spec: DistributionSpec,
     project: PreparedProject,
@@ -170,17 +187,22 @@ def _sdk_archive(
     add_tree(package, "apprc")
     for distribution in (core, terminal):
         metadata_files = [
-            item for item in distribution.files or ()
-            if item.name == "METADATA" and item.parent.name.endswith(".dist-info")
+            item
+            for item in distribution.files or ()
+            if item.name == "METADATA"
+            and item.parent.name.endswith(".dist-info")
         ]
         if len(metadata_files) != 1:
             raise ValueError(
                 f"Native authoring requires exact {distribution.metadata['Name']} distribution metadata."
             )
         item = metadata_files[0]
-        entries[str(item)] = distribution.locate_file(item).read_bytes()
+        with distribution.locate_file(item).open("rb") as stream:
+            entries[str(item)] = stream.read()
     if not entries.get("apprc/distribution/runtime/_manager.py"):
-        raise ValueError("SDK manager source is unavailable from the authoring package.")
+        raise ValueError(
+            "SDK manager source is unavailable from the authoring package."
+        )
     python = spec.metadata.runtime_python or "3.14"
     binding = NativeBinding(
         spec.metadata.identity,
@@ -198,7 +220,9 @@ def _sdk_archive(
     )
     project_bytes = project.archive.read_bytes()
     if hashlib.sha256(project_bytes).hexdigest() != project.source.digest:
-        raise ValueError("Prepared project archive digest changed before SDK packaging.")
+        raise ValueError(
+            "Prepared project archive digest changed before SDK packaging."
+        )
     entries["binding.json"] = encode_native_binding(binding)
     entries["project.zip"] = project_bytes
     entries["bootstrap-requirements.txt"] = (
@@ -216,7 +240,9 @@ def _parse_previous_checksums(
     result: dict[str, str] = {}
     lines = path.read_text(encoding="ascii").splitlines()
     if not lines:
-        raise ValueError("Existing SHA256SUMS is empty; refusing output replacement.")
+        raise ValueError(
+            "Existing SHA256SUMS is empty; refusing output replacement."
+        )
     allowed = {
         f"{app_id}-setup-linux-x86_64",
         f"{app_id}-setup-windows-x86_64.exe",
@@ -224,20 +250,29 @@ def _parse_previous_checksums(
     for line in lines:
         match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_.-]+)", line)
         if match is None or match.group(2) in result:
-            raise ValueError("Existing SHA256SUMS is malformed; refusing output replacement.")
+            raise ValueError(
+                "Existing SHA256SUMS is malformed; refusing output replacement."
+            )
         digest, name = match.groups()
         if name not in allowed:
             raise ValueError("Existing SHA256SUMS contains an unknown output.")
         output = dist / name
         assert_no_links(output)
-        if not output.is_file() or hashlib.sha256(output.read_bytes()).hexdigest() != digest:
+        if (
+            not output.is_file()
+            or hashlib.sha256(output.read_bytes()).hexdigest() != digest
+        ):
             raise ValueError(f"Existing checksum does not authenticate {name}.")
         result[name] = digest
     return result
 
 
-def _write_atomic(path: Path, content: bytes, *, executable: bool = False) -> None:
-    descriptor, temporary_name = tempfile.mkstemp(prefix=".apprc-", dir=path.parent)
+def _write_atomic(
+    path: Path, content: bytes, *, executable: bool = False
+) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".apprc-", dir=path.parent
+    )
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as stream:
@@ -261,7 +296,9 @@ def _publish(
         f"{app_id}-setup-windows-x86_64.exe",
     }
     if not outputs or set(outputs) - allowed:
-        raise ValueError("Native publication contains an unsupported setup output.")
+        raise ValueError(
+            "Native publication contains an unsupported setup output."
+        )
     assert_no_links(spec.metadata.project_root)
     root = spec.metadata.project_root.resolve()
     dist = root / "dist"
@@ -272,7 +309,9 @@ def _publish(
         previous_path, dist, app_id=spec.metadata.identity.app_id
     )
     existing_contents: dict[str, bytes | None] = {
-        "SHA256SUMS": previous_path.read_bytes() if previous_path.exists() else None
+        "SHA256SUMS": previous_path.read_bytes()
+        if previous_path.exists()
+        else None
     }
     for name, (content, _) in outputs.items():
         path = dist / name
@@ -285,7 +324,9 @@ def _publish(
         if old is not None and old != content:
             old_digest = hashlib.sha256(old).hexdigest()
             if previous.get(name) != old_digest:
-                raise FileExistsError(f"Refusing to replace unauthenticated native output: {path}")
+                raise FileExistsError(
+                    f"Refusing to replace unauthenticated native output: {path}"
+                )
     retained = {
         name: digest
         for name, digest in previous.items()
@@ -308,11 +349,13 @@ def _publish(
         raise
     staged: dict[str, Path] = {}
     backup = {
-        name: existing_contents[name]
-        for name in (*outputs, "SHA256SUMS")
+        name: existing_contents[name] for name in (*outputs, "SHA256SUMS")
     }
     try:
-        for name, (content, executable) in (*outputs.items(), ("SHA256SUMS", (checksums, False))):
+        for name, (content, executable) in (
+            *outputs.items(),
+            ("SHA256SUMS", (checksums, False)),
+        ):
             fd, temp_name = tempfile.mkstemp(prefix=".apprc-stage-", dir=dist)
             temp = Path(temp_name)
             staged[name] = temp
@@ -361,7 +404,10 @@ def build_native_distribution(
     """Build one reusable SDK manager and publish only canonical setup outputs."""
     if not targets or len(set(targets)) != len(targets):
         raise ValueError("Native builds require unique requested targets.")
-    if any(target not in ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc") for target in targets):
+    if any(
+        target not in ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc")
+        for target in targets
+    ):
         raise ValueError("Native build requested an unsupported target.")
     assert_no_links(uv)
     if not uv.is_absolute() or not uv.is_file():
@@ -369,15 +415,23 @@ def build_native_distribution(
     uv_version = subprocess.run(
         (str(uv), "--version"), check=False, capture_output=True, text=True
     )
-    if uv_version.returncode != 0 or not uv_version.stdout.strip().startswith(f"uv {UV_VERSION}"):
+    if uv_version.returncode != 0 or not uv_version.stdout.strip().startswith(
+        f"uv {UV_VERSION}"
+    ):
         raise ValueError(f"Native authoring requires uv {UV_VERSION}.")
-    if not project.archive.is_file() or hashlib.sha256(project.archive.read_bytes()).hexdigest() != project.source.digest:
+    if (
+        not project.archive.is_file()
+        or hashlib.sha256(project.archive.read_bytes()).hexdigest()
+        != project.source.digest
+    ):
         raise ValueError("Prepared project archive is missing or has changed.")
     workspace = workspace.expanduser().absolute()
     assert_no_links(workspace)
     workspace.mkdir(parents=True, mode=0o700, exist_ok=False)
     if os.name == "nt":
-        from apprc.user_files.app_home.permissions import set_windows_private_acl
+        from apprc.user_files.app_home.permissions import (
+            set_windows_private_acl,
+        )
 
         set_windows_private_acl(workspace)
     _validate_prepared_project(spec, project, workspace)
@@ -396,7 +450,8 @@ def build_native_distribution(
         windows = target == "x86_64-pc-windows-msvc"
         name = (
             f"{spec.metadata.identity.app_id}-setup-windows-x86_64.exe"
-            if windows else f"{spec.metadata.identity.app_id}-setup-linux-x86_64"
+            if windows
+            else f"{spec.metadata.identity.app_id}-setup-linux-x86_64"
         )
         compiled = workspace / "compiled" / name
         artifact = builder.build(

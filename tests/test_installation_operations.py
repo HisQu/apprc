@@ -38,6 +38,7 @@ from apprc.user_files.installation.operations import (
     plan_uninstall,
     record_owned_outputs,
     record_runtime_retired,
+    record_step,
 )
 from apprc.user_files.installation.validation import validate_snapshot
 
@@ -109,7 +110,9 @@ def _prepare(
             operation_id=plan.operation_id,
             expected_revision=inspection.revision,
             step=step,
-            observed=observed if step == OperationStep.RUNTIME_VALIDATED else None,
+            observed=observed
+            if step == OperationStep.RUNTIME_VALIDATED
+            else None,
         )
         assert inspection.revision is not None
     return plan, inspection.revision
@@ -164,9 +167,13 @@ def test_program_only_removal_retains_placement_without_active_runtime(
         expected_revision=absent.revision,
     )
     assert result.kind == "retained"
-    assert result.inspection is not None and result.inspection.record is not None
+    assert (
+        result.inspection is not None and result.inspection.record is not None
+    )
     assert result.inspection.record.active_runtime is None
-    assert result.inspection.record.placement == InstallationPlacement(Layout.native())
+    assert result.inspection.record.placement == InstallationPlacement(
+        Layout.native()
+    )
 
 
 def test_complete_uninstall_retires_authority_and_rejects_stale_retry(
@@ -198,7 +205,10 @@ def test_complete_uninstall_retires_authority_and_rejects_stale_retry(
         expected_revision=current.revision,
     )
     assert result.kind == "retired"
-    assert inspect_installation(directory, app_id=_identity().app_id).status == "missing"
+    assert (
+        inspect_installation(directory, app_id=_identity().app_id).status
+        == "missing"
+    )
     with pytest.raises(FileNotFoundError):
         fail_operation(
             directory,
@@ -206,6 +216,7 @@ def test_complete_uninstall_retires_authority_and_rejects_stale_retry(
             expected_revision=current.revision,
             diagnostic=InstallationDiagnostic("late", "late", "inspect"),
         )
+
 
 def test_failed_replacement_keeps_active_runtime_access_and_stale_writers_fail(
     tmp_path: Path,
@@ -229,7 +240,9 @@ def test_failed_replacement_keeps_active_runtime_access_and_stale_writers_fail(
         operation_id=plan.operation_id,
         expected_revision=pending.revision,
         diagnostic=InstallationDiagnostic(
-            "runtime-failed", "Runtime validation failed.", "Repair the saved candidate."
+            "runtime-failed",
+            "Runtime validation failed.",
+            "Repair the saved candidate.",
         ),
     )
     assert failed.record is not None and failed.record.operation is not None
@@ -249,17 +262,22 @@ def test_repair_resumes_exact_pending_candidate_without_reselecting_source(
 ) -> None:
     directory, active = _install(tmp_path)
     current = inspect_installation(directory, app_id=_identity().app_id)
+    assert current.record is not None
     candidate = _candidate(source=_source(commit="d" * 40))
     plan = plan_install(
         _identity(), candidate, current.record.placement, inspection=current
     )
     pending = begin_operation(plan)
+    assert pending.revision is not None
     failed = fail_operation(
         directory,
         operation_id=plan.operation_id,
         expected_revision=pending.revision,
-        diagnostic=InstallationDiagnostic("sync-failed", "sync failed", "retry"),
+        diagnostic=InstallationDiagnostic(
+            "sync-failed", "sync failed", "retry"
+        ),
     )
+    assert failed.record is not None
     repair = plan_repair(
         _identity(),
         _candidate(source=active.source),
@@ -277,6 +295,7 @@ def test_activation_lists_previous_managed_slot_and_clears_it_by_revision(
 ) -> None:
     directory, old = _install(tmp_path)
     before = inspect_installation(directory, app_id=_identity().app_id)
+    assert before.record is not None
     candidate = _candidate(source=_source(commit="d" * 40))
     plan, revision = _prepare(
         directory,
@@ -340,6 +359,7 @@ def test_owned_outputs_update_is_generation_and_revision_cas(
             owned_outputs=(),
         )
 
+
 def test_managed_to_editable_switch_retires_only_the_managed_slot(
     tmp_path: Path,
 ) -> None:
@@ -351,6 +371,7 @@ def test_managed_to_editable_switch_retires_only_the_managed_slot(
     sentinel = environment / "owned-by-developer"
     sentinel.write_text("keep", encoding="utf-8")
     inspection = inspect_installation(directory, app_id=_identity().app_id)
+    assert inspection.record is not None
     editable = EditableCheckout(checkout, environment)
     plan, revision = _prepare(
         directory,
@@ -400,6 +421,7 @@ def test_initial_resource_migration_requires_and_persists_real_identity(
     assert pending.record.command_name == "fixture"
     assert pending.record.operation is not None
 
+
 def test_migration_hook_is_pending_checkpointed_and_skipped_on_resume(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -411,9 +433,7 @@ def test_migration_hook_is_pending_checkpointed_and_skipped_on_resume(
     destination_root = tmp_path / "current"
     source_root.mkdir()
     destination_root.mkdir()
-    candidate = _candidate(
-        hooks=InstallationHooks(migrate="fixture:migrate")
-    )
+    candidate = _candidate(hooks=InstallationHooks(migrate="fixture:migrate"))
     plan, revision = _prepare(
         directory,
         identity=_identity(),
@@ -459,8 +479,7 @@ def test_migration_hook_is_pending_checkpointed_and_skipped_on_resume(
     assert failed.record is not None and failed.record.operation is not None
     assert failed.revision is not None
     assert (
-        OperationStep.MIGRATION_HOOK_COMPLETED
-        in failed.record.operation.steps
+        OperationStep.MIGRATION_HOOK_COMPLETED in failed.record.operation.steps
     )
     assert failed.record.operation.phase == "failed"
     assert len(bridge_calls) == 1
@@ -487,9 +506,7 @@ def test_migration_hook_failure_records_failed_pending_authority(
     destination_root = tmp_path / "current"
     source_root.mkdir()
     destination_root.mkdir()
-    candidate = _candidate(
-        hooks=InstallationHooks(migrate="fixture:migrate")
-    )
+    candidate = _candidate(hooks=InstallationHooks(migrate="fixture:migrate"))
     install_plan, revision = _prepare(
         directory,
         identity=_identity(),
@@ -535,4 +552,7 @@ def test_migration_hook_failure_records_failed_pending_authority(
     assert failed.record.operation.phase == "failed"
     assert failed.record.operation.diagnostic is not None
     assert failed.record.operation.diagnostic.code == "migration-failed"
-    assert OperationStep.MIGRATION_HOOK_COMPLETED not in failed.record.operation.steps
+    assert (
+        OperationStep.MIGRATION_HOOK_COMPLETED
+        not in failed.record.operation.steps
+    )

@@ -21,12 +21,16 @@ def test_bridge_rejects_unknown_action_before_subprocess(
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *_args, **_kwargs: pytest.fail("bridge must reject before spawn"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "bridge must reject before spawn"
+        ),
     )
     identity = InstallationIdentity(
         "fixture", "fixture", "fixture", "fixture_app:APP_RC", ("fixture",)
     )
-    with pytest.raises(InstallationError, match="Unknown application bridge action"):
+    with pytest.raises(
+        InstallationError, match="Unknown application bridge action"
+    ):
         application_bridge(
             tmp_path / "installation",
             identity,
@@ -37,16 +41,23 @@ def test_bridge_rejects_unknown_action_before_subprocess(
         )
     assert not (tmp_path / "installation").exists()
 
+
 def test_bridge_rejects_command_not_owned_by_identity_before_subprocess(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *_args, **_kwargs: pytest.fail("bridge must reject before spawn"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "bridge must reject before spawn"
+        ),
     )
-    identity = InstallationIdentity("fixture", "fixture", "fixture", None, ("fixture",))
-    with pytest.raises(InstallationError, match="does not match saved identity"):
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
+    with pytest.raises(
+        InstallationError, match="does not match saved identity"
+    ):
         application_bridge(
             tmp_path / "installation",
             identity,
@@ -59,7 +70,8 @@ def test_bridge_rejects_command_not_owned_by_identity_before_subprocess(
 
 
 def test_bridge_rejects_stale_authority_before_application_diagnostics(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import sys
     from types import ModuleType
@@ -99,7 +111,5 @@ def test_bridge_rejects_stale_authority_before_application_diagnostics(
         },
     }
 
-    with pytest.raises(
-        ValueError, match="authority revision changed"
-    ):
+    with pytest.raises(ValueError, match="authority revision changed"):
         installed_probe._serve_request(request)

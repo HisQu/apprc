@@ -108,14 +108,10 @@ def _validate_native_runtime_observations(
     commands = observations["commands"]
     if (
         not isinstance(distribution, str)
-        or re.sub(r"[-_.]+", "-", distribution).lower()
-        != identity.distribution
+        or re.sub(r"[-_.]+", "-", distribution).lower() != identity.distribution
         or not isinstance(version, str)
         or not version
-        or (
-            isinstance(runtime, RuntimeSlot)
-            and version != runtime.version
-        )
+        or (isinstance(runtime, RuntimeSlot) and version != runtime.version)
         or not isinstance(prefix, str)
         or not Path(prefix).is_absolute()
         or not isinstance(interpreter, str)
@@ -125,9 +121,13 @@ def _validate_native_runtime_observations(
         or not isinstance(commands, dict)
         or set(commands) != set(identity.commands)
         or command_name not in commands
-        or not all(isinstance(value, str) and value for value in commands.values())
+        or not all(
+            isinstance(value, str) and value for value in commands.values()
+        )
     ):
-        raise ValueError("Runtime probe observations differ from saved authority.")
+        raise ValueError(
+            "Runtime probe observations differ from saved authority."
+        )
     from apprc.distribution.runtime.backend import (
         runtime_interpreter,
         runtime_prefix,
@@ -136,17 +136,21 @@ def _validate_native_runtime_observations(
     try:
         observed_prefix = Path(prefix).resolve(strict=True)
         observed_interpreter = Path(interpreter).resolve(strict=True)
-        expected_prefix = runtime_prefix(directory, runtime).resolve(strict=True)
-        expected_interpreter = runtime_interpreter(
-            directory, runtime
-        ).resolve(strict=True)
+        expected_prefix = runtime_prefix(directory, runtime).resolve(
+            strict=True
+        )
+        expected_interpreter = runtime_interpreter(directory, runtime).resolve(
+            strict=True
+        )
     except OSError as exc:
         raise ValueError("Runtime probe paths are unavailable.") from exc
     if (
         observed_prefix != expected_prefix
         or observed_interpreter != expected_interpreter
     ):
-        raise ValueError("Runtime probe prefix or interpreter differs from authority.")
+        raise ValueError(
+            "Runtime probe prefix or interpreter differs from authority."
+        )
 
 
 def _doctor_payload(
@@ -163,8 +167,8 @@ def _doctor_payload(
 ) -> dict[str, object]:
     """Aggregate local installation, path, configuration, and provider checks."""
     if _APPLICATION_DIAGNOSTICS.get():
-        checks: list[dict[str, str]] = []
-        details: dict[str, object] = {"resources": {}, "host": {}}
+        application_checks: list[dict[str, str]] = []
+        application_details: dict[str, object] = {"resources": {}, "host": {}}
         runtime = cli_runtime_context_from(ctx)
         if runtime is not None:
             if apprc.schema.paths.config or apprc.schema.owners:
@@ -175,8 +179,10 @@ def _doctor_payload(
                     config_payload = build_config_doctor_payload(
                         apprc, manager=config_manager
                     )
-                    details["configuration"] = config_payload.to_payload()
-                    checks.extend(
+                    application_details["configuration"] = (
+                        config_payload.to_payload()
+                    )
+                    application_checks.extend(
                         {
                             "name": item.name,
                             "status": item.status,
@@ -185,21 +191,23 @@ def _doctor_payload(
                         for item in config_payload.checks
                     )
                 except (OSError, ValueError) as exc:
-                    checks.append(
+                    application_checks.append(
                         {
                             "name": "configuration",
                             "status": "error",
                             "message": str(exc),
                         }
                     )
-            resources = cast(dict[str, object], details["resources"])
+            application_resources = cast(
+                dict[str, object], application_details["resources"]
+            )
             for kind, callback in resource_diagnostics.items():
                 path = getattr(runtime.paths, f"{kind}_dir")
                 if path is None or not path.is_dir():
                     continue
                 try:
-                    resources[kind] = dict(callback(path))
-                    checks.append(
+                    application_resources[kind] = dict(callback(path))
+                    application_checks.append(
                         {
                             "name": f"resource_{kind}_provider",
                             "status": "ok",
@@ -207,7 +215,7 @@ def _doctor_payload(
                         }
                     )
                 except (OSError, ValueError) as exc:
-                    checks.append(
+                    application_checks.append(
                         {
                             "name": f"resource_{kind}_provider",
                             "status": "error",
@@ -216,17 +224,25 @@ def _doctor_payload(
                     )
         if host_diagnostics is not None:
             try:
-                details["host"] = dict(host_diagnostics())
+                application_details["host"] = dict(host_diagnostics())
             except (OSError, ValueError) as exc:
-                checks.append(
+                application_checks.append(
                     {
                         "name": "host_provider",
                         "status": "error",
                         "message": str(exc),
                     }
                 )
-        status = "error" if any(item["status"] == "error" for item in checks) else "ok"
-        return {"status": status, "checks": checks, "details": details}
+        status = (
+            "error"
+            if any(item["status"] == "error" for item in application_checks)
+            else "ok"
+        )
+        return {
+            "status": status,
+            "checks": application_checks,
+            "details": application_details,
+        }
     from apprc.interfaces.cli.installation_command import _inspection_payload
 
     diagnostic = installation_context(ctx)
@@ -403,12 +419,8 @@ def _doctor_payload(
                     "ownership": None,
                     "operations": operations_by_kind.get(kind, []),
                 }
-        if (
-            (apprc.schema.paths.config or apprc.schema.owners)
-            and not (
-                diagnostic is not None
-                and diagnostic.native_binding is not None
-            )
+        if (apprc.schema.paths.config or apprc.schema.owners) and not (
+            diagnostic is not None and diagnostic.native_binding is not None
         ):
             try:
                 config_manager = apprc._manage_with_paths(
@@ -573,7 +585,6 @@ def mount_maintenance_groups(
     )
 
     @maintenance.command("paths", rich_help_panel=maintenance_help_panel)
-
     def paths_command(
         ctx: typer.Context,
         category: Annotated[str | None, typer.Argument()] = None,
@@ -731,10 +742,14 @@ def mount_maintenance_groups(
                         )
                         app_checks = application.get("checks", [])
                         if isinstance(app_checks, list):
-                            cast(list[object], payload["checks"]).extend(app_checks)
+                            cast(list[object], payload["checks"]).extend(
+                                app_checks
+                            )
                         app_details = application.get("details", {})
                         if verbose and isinstance(app_details, dict):
-                            details = cast(dict[str, object], payload["details"])
+                            details = cast(
+                                dict[str, object], payload["details"]
+                            )
                             configuration = app_details.get("configuration")
                             if configuration is not None:
                                 details["configuration"] = configuration
@@ -752,7 +767,10 @@ def mount_maintenance_groups(
                             if isinstance(host_details, dict):
                                 host.update(host_details)
                         if application.get("status") in {
-                            "error", "invalid", "provisional", "incomplete"
+                            "error",
+                            "invalid",
+                            "provisional",
+                            "incomplete",
                         }:
                             payload["status"] = "error"
                         elif (

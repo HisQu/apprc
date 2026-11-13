@@ -34,7 +34,10 @@ from apprc.distribution.models import AppCapabilities, NativeBinding
 from apprc.distribution.runtime import _leases
 from apprc.distribution.runtime._manager import _forward
 from apprc.distribution.runtime.acquisition import materialize_project_snapshot
-from apprc.distribution.runtime.backend import runtime_command, runtime_environment
+from apprc.distribution.runtime.backend import (
+    runtime_command,
+    runtime_environment,
+)
 from apprc.services.installation import InstallationManager
 from apprc.user_files.installation.coordination import (
     installation_lock,
@@ -165,7 +168,9 @@ def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
     ) -> _leases.RuntimeLease:
         acquisition_paused.set()
         if not continue_selection.wait(timeout=5):
-            raise RuntimeError("Timed out waiting to continue runtime selection.")
+            raise RuntimeError(
+                "Timed out waiting to continue runtime selection."
+            )
         lease = acquire_lease(selected_slot)
 
         def close_parent_lease_after_child_starts() -> None:
@@ -173,7 +178,9 @@ def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
                 lease.close()
                 parent_lease_closed.set()
 
-        Thread(target=close_parent_lease_after_child_starts, daemon=True).start()
+        Thread(
+            target=close_parent_lease_after_child_starts, daemon=True
+        ).start()
         return lease
 
     monkeypatch.setattr(
@@ -194,7 +201,9 @@ def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
         forward = executor.submit(_forward, binding, manager, ["probe"])
         assert acquisition_paused.wait(timeout=5)
         parent.send("check-selection")
-        assert parent.poll(timeout=2), "Retirer did not report selection lock state."
+        assert parent.poll(timeout=2), (
+            "Retirer did not report selection lock state."
+        )
         assert parent.recv() == "selection-blocked"
 
         continue_selection.set()
@@ -205,7 +214,9 @@ def test_native_forward_selection_handoff_releases_namespace_before_child_wait(
         child_ready.set()
         assert parent_lease_closed.wait(timeout=2)
         parent.send("check-child")
-        assert parent.poll(timeout=2), "Retirer did not report child lock state."
+        assert parent.poll(timeout=2), (
+            "Retirer did not report child lock state."
+        )
         assert parent.recv() == ("retired", False)
         retirer.join(timeout=2)
         assert not retirer.is_alive()
@@ -269,7 +280,9 @@ def test_materialization_keeps_complete_snapshot_and_lock_unchanged(
     destination = tmp_path / "slot-source"
     materialize_project_snapshot(archive, destination, _snapshot(archive))
     assert (destination / "uv.lock").read_bytes() == lock
-    assert (destination / "workspace/member/source.py").read_text() == "VALUE = 7\n"
+    assert (
+        destination / "workspace/member/source.py"
+    ).read_text() == "VALUE = 7\n"
 
 
 def test_materialization_rejects_changed_lock_before_extraction(
@@ -301,7 +314,6 @@ def test_materialization_rejects_archive_digest_mismatch_before_extraction(
     assert not destination.exists()
 
 
-
 def test_materialization_selects_nested_workspace_project_and_shared_lock(
     tmp_path: Path,
 ) -> None:
@@ -323,7 +335,6 @@ def test_materialization_selects_nested_workspace_project_and_shared_lock(
     assert (destination / "uv.lock").read_bytes() == lock
 
 
-
 def test_runtime_environment_removes_interpreter_injection_only() -> None:
     captured = runtime_environment(
         {
@@ -343,8 +354,12 @@ def test_runtime_environment_removes_interpreter_injection_only() -> None:
     }
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX inherited descriptor semantics")
-def test_child_inherits_runtime_lease_after_parent_closes(tmp_path: Path) -> None:
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX inherited descriptor semantics"
+)
+def test_child_inherits_runtime_lease_after_parent_closes(
+    tmp_path: Path,
+) -> None:
     installation = tmp_path / "installation"
     installation.mkdir(mode=0o700)
     slot = installation / "runtimes" / str(uuid4())

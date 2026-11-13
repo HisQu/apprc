@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from uuid import uuid4
@@ -252,8 +253,11 @@ async def test_launcher_child_keeps_managed_runtime_leased_until_quit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _launcher_context(tmp_path)
-    slot = tmp_path / "installation" / "runtimes" / str(uuid4())
-    slot.mkdir(parents=True)
+    directory = tmp_path / "installation"
+    directory.mkdir(mode=0o700)
+    slot = directory / "runtimes" / str(uuid4())
+    slot.parent.mkdir(mode=0o700)
+    slot.mkdir(mode=0o700)
     prefix = slot / ".venv"
     prefix.mkdir()
     ready = tmp_path / "lease-child-ready"

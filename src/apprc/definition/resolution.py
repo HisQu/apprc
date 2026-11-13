@@ -53,7 +53,9 @@ def resolve_editable_environment(project: Path) -> Path:
             or not isinstance(excludes, list)
             or not all(isinstance(item, str) for item in excludes)
         ):
-            raise ValueError("uv workspace members and excludes must be strings.")
+            raise ValueError(
+                "uv workspace members and excludes must be strings."
+            )
         patterns = (*members, *excludes)
         for pattern in patterns:
             path = PurePosixPath(pattern)
@@ -84,7 +86,9 @@ def resolve_editable_environment(project: Path) -> Path:
             not path.is_relative_to(workspace_root)
             for path in member_matches | excluded_matches
         ):
-            raise ValueError("A uv workspace pattern escapes its workspace root.")
+            raise ValueError(
+                "A uv workspace pattern escapes its workspace root."
+            )
         if selected in excluded_matches:
             raise ValueError(
                 f"Selected project is excluded from its uv workspace: {relative}."
@@ -96,12 +100,12 @@ def resolve_editable_environment(project: Path) -> Path:
         selected_document = tomllib.load(stream)
     selected_tool = selected_document.get("tool", {})
     selected_uv = (
-        selected_tool.get("uv", {})
-        if isinstance(selected_tool, dict)
-        else {}
+        selected_tool.get("uv", {}) if isinstance(selected_tool, dict) else {}
     )
     selected_workspace = (
-        selected_uv.get("workspace", {}) if isinstance(selected_uv, dict) else {}
+        selected_uv.get("workspace", {})
+        if isinstance(selected_uv, dict)
+        else {}
     )
     selected_project = selected_document.get("project")
     if not saw_workspace or (
@@ -111,7 +115,9 @@ def resolve_editable_environment(project: Path) -> Path:
     ):
         return (selected / ".venv").resolve(strict=False)
 
-    raise ValueError("Selected project is not a declared member of a uv workspace.")
+    raise ValueError(
+        "Selected project is not a declared member of a uv workspace."
+    )
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -373,10 +379,15 @@ class _BridgeRuntimeOptions:
     maintenance_group_name: str = "app"
 
     def __post_init__(self) -> None:
-        if re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name
-        ) is None:
-            raise ValueError("maintenance_group_name must be one CLI command name.")
+        if (
+            re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_-]*", self.maintenance_group_name
+            )
+            is None
+        ):
+            raise ValueError(
+                "maintenance_group_name must be one CLI command name."
+            )
 
 
 @dataclass(frozen=True, slots=True)

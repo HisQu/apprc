@@ -27,11 +27,14 @@ from apprc.definition.installation import (
     RuntimeSlot,
     UninstallPlan,
 )
-from apprc.definition.paths import Layout
+from apprc.definition.paths import Layout, ResourceKind
 from apprc.distribution.runtime import _handoff, controllers, removal
 from apprc.distribution.runtime.controllers import (
     UninstallHandoff,
     prepare_uninstall,
+)
+from apprc.user_files.app_home.permissions import (
+    create_private_directory_if_missing,
 )
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.coordination import (
@@ -70,6 +73,7 @@ def _schema3_installation(
     ),
 ) -> tuple[Path, RuntimeSlot]:
     directory = tmp_path / "installation"
+    create_private_directory_if_missing(directory)
     identity = InstallationIdentity(
         "handoff-app",
         "handoff-test",
@@ -77,17 +81,16 @@ def _schema3_installation(
         None,
         ("handoff-app",),
     )
+    resources: tuple[tuple[ResourceKind, Path | None], ...] = (
+        ("config", config_root),
+        ("cache", cache_root),
+    )
     placement = InstallationPlacement(
         Layout.native(),
         config_dir=config_root,
         cache_dir=cache_root,
         capabilities=frozenset(
-            category
-            for category, root in (
-                ("config", config_root),
-                ("cache", cache_root),
-            )
-            if root is not None
+            category for category, root in resources if root is not None
         ),
         retired=retired,
     )

@@ -65,12 +65,13 @@ def test_bootstrap_requirements_select_extras_and_preserve_full_requirements(
 
     assert Requirement("attrs>=23") in requirements
     assert Requirement("typed-settings[dotenv]>=24") in requirements
-    assert Requirement(
-        'platformdirs>=4; sys_platform == "win32"'
-    ) in requirements
-    assert Requirement(
-        "local-plugin @ https://example.invalid/local_plugin.whl"
-    ) in requirements
+    assert (
+        Requirement('platformdirs>=4; sys_platform == "win32"') in requirements
+    )
+    assert (
+        Requirement("local-plugin @ https://example.invalid/local_plugin.whl")
+        in requirements
+    )
     assert Requirement("rich>=13") in requirements
     assert not any(
         item.name in {"test-only", "terminal-extra", "apprc-core"}
@@ -127,7 +128,9 @@ def test_publication_replaces_only_checksum_authenticated_output(
     original = b"previous authenticated setup"
     (dist / name).write_bytes(original)
     old_digest = hashlib.sha256(original).hexdigest()
-    (dist / "SHA256SUMS").write_text(f"{old_digest}  {name}\n", encoding="ascii")
+    (dist / "SHA256SUMS").write_text(
+        f"{old_digest}  {name}\n", encoding="ascii"
+    )
 
     content = b"new setup"
     manifest = frontends._publish(spec, {name: (content, True)})
@@ -139,9 +142,7 @@ def test_publication_replaces_only_checksum_authenticated_output(
     )
 
 
-@pytest.mark.parametrize(
-    "failure_number", (1, 2), ids=("setup", "manifest")
-)
+@pytest.mark.parametrize("failure_number", (1, 2), ids=("setup", "manifest"))
 def test_publication_restores_outputs_and_cleans_staging_on_replace_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -152,7 +153,9 @@ def test_publication_restores_outputs_and_cleans_staging_on_replace_failure(
     dist.mkdir()
     name = _linux_name(spec)
     old_output = b"old setup"
-    old_manifest = f"{hashlib.sha256(old_output).hexdigest()}  {name}\n".encode()
+    old_manifest = (
+        f"{hashlib.sha256(old_output).hexdigest()}  {name}\n".encode()
+    )
     (dist / name).write_bytes(old_output)
     (dist / "SHA256SUMS").write_bytes(old_manifest)
     unknown = dist / "preserve-me.txt"

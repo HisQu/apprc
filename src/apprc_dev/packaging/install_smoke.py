@@ -95,10 +95,17 @@ def verify_distribution_install() -> None:
     import subprocess
     from zipfile import ZipFile
 
-    from apprc.distribution import build_project_snapshot, read_distribution_spec
-    from apprc.distribution.runtime.acquisition import materialize_project_snapshot
+    from apprc.distribution import (
+        build_project_snapshot,
+        read_distribution_spec,
+    )
+    from apprc.distribution.runtime.acquisition import (
+        materialize_project_snapshot,
+    )
 
-    with tempfile.TemporaryDirectory(prefix="apprc-installed-snapshot-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="apprc-installed-snapshot-"
+    ) as temporary:
         root = Path(temporary)
         (root / "src" / "fixture").mkdir(parents=True)
         (root / "pyproject.toml").write_text(
@@ -120,7 +127,9 @@ def verify_distribution_install() -> None:
             "GIT_COMMITTER_NAME": "AppRC smoke",
             "GIT_COMMITTER_EMAIL": "smoke@example.invalid",
         }
-        subprocess.run(["git", "init", "-q", str(root)], env=environment, check=True)
+        subprocess.run(
+            ["git", "init", "-q", str(root)], env=environment, check=True
+        )
         subprocess.run(
             ["git", "-C", str(root), "add", "pyproject.toml", "uv.lock", "src"],
             env=environment,
@@ -138,12 +147,17 @@ def verify_distribution_install() -> None:
             destination=root / "project.zip",
         )
         materialized = root / "materialized"
-        materialize_project_snapshot(prepared.archive, materialized, prepared.source)
+        materialize_project_snapshot(
+            prepared.archive, materialized, prepared.source
+        )
         with ZipFile(prepared.archive) as package:
             assert "pyproject.toml" in package.namelist()
             assert "uv.lock" in package.namelist()
-        assert (materialized / "uv.lock").read_text(encoding="utf-8") == "version = 1\n"
+        assert (materialized / "uv.lock").read_text(
+            encoding="utf-8"
+        ) == "version = 1\n"
     print("apprc installed project snapshot passed")
+
 
 def main() -> None:
     """Select and run one installation check."""

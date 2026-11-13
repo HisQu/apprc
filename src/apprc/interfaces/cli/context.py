@@ -18,7 +18,7 @@ import typer
 # == Internal ================================
 from apprc.definition.app_config.spec import AppConfigSpec
 from apprc.definition.installation import InstallationInspection
-from apprc.definition.paths import AppPaths, Layout
+from apprc.definition.paths import AppPaths
 from apprc.definition.resolution import (
     CliRuntimeOptions,
     CliRuntimeOptionsProtocol,
@@ -319,9 +319,7 @@ def _cli_runtime_options_payload(
             path.expanduser().absolute() for path in captured.env_files
         ),
     )
-    payload = _encode(
-        _BridgeRuntimeOptions(runtime, maintenance_group_name)
-    )
+    payload = _encode(_BridgeRuntimeOptions(runtime, maintenance_group_name))
     if not isinstance(payload, dict):
         raise TypeError("Bridge runtime options did not encode as an object.")
     return payload

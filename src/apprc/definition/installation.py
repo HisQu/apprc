@@ -59,16 +59,31 @@ class InstallationIdentity:
         """Reject invalid package, import and console-script identities."""
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", self.app_id) is None:
             raise InstallationError("Application ID is invalid.")
-        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", self.distribution) is None:
+        if (
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", self.distribution)
+            is None
+        ):
             raise InstallationError("Distribution identity is invalid.")
-        if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", self.import_package, flags=re.ASCII) is None:
+        if (
+            re.fullmatch(
+                r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*",
+                self.import_package,
+                flags=re.ASCII,
+            )
+            is None
+        ):
             raise InstallationError("Import package identity is invalid.")
         if (
             not self.commands
             or len(set(self.commands)) != len(self.commands)
-            or any(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", command) is None for command in self.commands)
+            or any(
+                re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", command) is None
+                for command in self.commands
+            )
         ):
-            raise InstallationError("Console command identities must be valid and unique.")
+            raise InstallationError(
+                "Console command identities must be valid and unique."
+            )
         if self.apprc_reference is not None:
             module, separator, attribute = self.apprc_reference.partition(":")
             if (
@@ -77,7 +92,9 @@ class InstallationIdentity:
                 or not all(part.isidentifier() for part in module.split("."))
                 or not attribute.isidentifier()
             ):
-                raise InstallationError("AppRC reference must be a module:attribute.")
+                raise InstallationError(
+                    "AppRC reference must be a module:attribute."
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,18 +108,23 @@ class OwnedOutput:
 
     def _validate_registration(self) -> None:
         if self.kind != "hkcu" and self.values:
-            raise InstallationError("Only HKCU outputs may record registration values.")
+            raise InstallationError(
+                "Only HKCU outputs may record registration values."
+            )
         if self.kind == "hkcu" and (
             not self.path.startswith("HKCU\\")
             or not self.values
             or len({name for name, _ in self.values}) != len(self.values)
             or any(
-                not isinstance(name, str) or not name
+                not isinstance(name, str)
+                or not name
                 or not isinstance(value, str)
                 for name, value in self.values
             )
         ):
-            raise InstallationError("HKCU output requires an exact value recipe.")
+            raise InstallationError(
+                "HKCU output requires an exact value recipe."
+            )
 
     def __post_init__(self) -> None:
         self._validate_registration()
@@ -118,7 +140,9 @@ class OwnedOutput:
                 or any(character in self.path for character in '\\\x00<>:"|?*')
                 or str(path) != self.path
             ):
-                raise InstallationError("Owned support path must be portable and relative.")
+                raise InstallationError(
+                    "Owned support path must be portable and relative."
+                )
         elif self.kind in {"command", "shortcut"}:
             path = Path(self.path)
             if (
@@ -194,14 +218,23 @@ class InstallationHooks:
 
     def __post_init__(self) -> None:
         for reference in (
-            self.initialize, self.inventory, self.cleanup, self.migrate
+            self.initialize,
+            self.inventory,
+            self.cleanup,
+            self.migrate,
         ):
-            if reference is not None and re.fullmatch(
-                r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*",
-                reference,
-                flags=re.ASCII,
-            ) is None:
-                raise InstallationError("Hooks must be module:function references.")
+            if (
+                reference is not None
+                and re.fullmatch(
+                    r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*",
+                    reference,
+                    flags=re.ASCII,
+                )
+                is None
+            ):
+                raise InstallationError(
+                    "Hooks must be module:function references."
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,19 +249,30 @@ class ProjectSnapshot:
     def __post_init__(self) -> None:
         from pathlib import PurePosixPath
 
-        if any(re.fullmatch(r"[0-9a-f]{64}", value) is None
-               for value in (self.digest, self.lock_digest)):
-            raise InstallationError("Project and lock digests must be lowercase SHA-256.")
+        if any(
+            re.fullmatch(r"[0-9a-f]{64}", value) is None
+            for value in (self.digest, self.lock_digest)
+        ):
+            raise InstallationError(
+                "Project and lock digests must be lowercase SHA-256."
+            )
         if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", self.commit) is None:
-            raise InstallationError("Project commit must be a full lowercase Git commit ID.")
+            raise InstallationError(
+                "Project commit must be a full lowercase Git commit ID."
+            )
         path = PurePosixPath(self.project_path)
         if (
-            not self.project_path or path.is_absolute()
+            not self.project_path
+            or path.is_absolute()
             or ".." in path.parts
-            or any(character in self.project_path for character in '\\\x00<>:"|?*')
+            or any(
+                character in self.project_path for character in '\\\x00<>:"|?*'
+            )
             or str(path) != self.project_path
         ):
-            raise InstallationError("Project path must be normalized and relative.")
+            raise InstallationError(
+                "Project path must be normalized and relative."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,7 +284,9 @@ class RuntimeSelection:
 
     def __post_init__(self) -> None:
         if not self.python.strip() or "\x00" in self.python:
-            raise InstallationError("Runtime Python selection is empty or invalid.")
+            raise InstallationError(
+                "Runtime Python selection is empty or invalid."
+            )
         if len(set(self.extras)) != len(self.extras) or any(
             re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", extra) is None
             for extra in self.extras
@@ -260,8 +306,10 @@ class RuntimeSlot:
     hooks: InstallationHooks = InstallationHooks()
 
     def __post_init__(self) -> None:
-        if any(value is not None and not value.strip()
-               for value in (self.version, self.python_version)):
+        if any(
+            value is not None and not value.strip()
+            for value in (self.version, self.python_version)
+        ):
             raise InstallationError("Runtime observations cannot be empty.")
 
 
@@ -277,10 +325,7 @@ class EditableCheckout:
         paths = (self.project, self.environment)
         if any(not path.is_absolute() for path in paths):
             raise InstallationError("Editable checkout paths must be absolute.")
-        if any(
-            ".." in path.parts or "\x00" in str(path)
-            for path in paths
-        ):
+        if any(".." in path.parts or "\x00" in str(path) for path in paths):
             raise InstallationError(
                 "Editable checkout paths must be normalized and valid."
             )
@@ -357,24 +402,35 @@ class PublicationImage:
 
     def __post_init__(self) -> None:
         if re.fullmatch(r"[0-9a-f]{64}", self.digest) is None:
-            raise InstallationError("Publication image requires a lowercase SHA-256.")
+            raise InstallationError(
+                "Publication image requires a lowercase SHA-256."
+            )
         if self.mode is not None and (
-            type(self.mode) is not int or self.mode < 0 or self.mode > 0o7777
+            type(self.mode) is not int
+            or self.mode < 0
+            or self.mode > 0o7777
             or self.content is None
         ):
             raise InstallationError("Publication file mode is invalid.")
         if (self.content is None) == (self.link_target is None):
-            raise InstallationError("Publication image requires bytes or a symlink target.")
+            raise InstallationError(
+                "Publication image requires bytes or a symlink target."
+            )
         if self.content is not None and (
             not self.content.startswith(".publication-")
             or Path(self.content).name != self.content
             or any(character in self.content for character in "/\\\x00")
         ):
-            raise InstallationError("Publication bytes must use an owned local filename.")
+            raise InstallationError(
+                "Publication bytes must use an owned local filename."
+            )
         if self.link_target is not None and (
-            not Path(self.link_target).is_absolute() or "\x00" in self.link_target
+            not Path(self.link_target).is_absolute()
+            or "\x00" in self.link_target
         ):
-            raise InstallationError("Publication symlink target must be absolute.")
+            raise InstallationError(
+                "Publication symlink target must be absolute."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -424,38 +480,59 @@ class InstallationRecord:
     operation: InstallationOperation | None = None
     owned_outputs: tuple[OwnedOutput, ...] = ()
     migration: InstallationMigration | None = None
+
     def __post_init__(self) -> None:
         """Keep active authority distinct from unfinished replacement work."""
-        if not self.identity.app_id or self.command_name not in self.identity.commands:
-            raise InstallationError("Installation identity or primary command is invalid.")
+        if (
+            not self.identity.app_id
+            or self.command_name not in self.identity.commands
+        ):
+            raise InstallationError(
+                "Installation identity or primary command is invalid."
+            )
         if self.status == "ready" and (
             self.active_runtime is None or self.operation is not None
         ):
-            raise InstallationError("Ready installation requires an active runtime and no operation.")
+            raise InstallationError(
+                "Ready installation requires an active runtime and no operation."
+            )
         if self.status == "removed-retained" and (
-            self.active_runtime is not None or self.operation is not None
+            self.active_runtime is not None
+            or self.operation is not None
             or self.retiring_runtime_ids
         ):
-            raise InstallationError("Removed installation cannot retain live runtime work.")
+            raise InstallationError(
+                "Removed installation cannot retain live runtime work."
+            )
         if isinstance(self.active_runtime, RuntimeSlot) and (
             self.active_runtime.version is None
             or self.active_runtime.python_version is None
         ):
-            raise InstallationError("Active managed runtime requires both observed versions.")
+            raise InstallationError(
+                "Active managed runtime requires both observed versions."
+            )
         ids = list(self.retiring_runtime_ids)
         if isinstance(self.active_runtime, RuntimeSlot):
             ids.append(self.active_runtime.slot_id)
         if self.operation is not None and self.operation.intended is not None:
             target = self.operation.intended
-            if target.identity != self.identity or target.placement != self.operation.placement:
-                raise InstallationError("Pending target differs from its authority.")
+            if (
+                target.identity != self.identity
+                or target.placement != self.operation.placement
+            ):
+                raise InstallationError(
+                    "Pending target differs from its authority."
+                )
             if isinstance(target.runtime, RuntimeSlot):
-                if (target.runtime.version is None) != (target.runtime.python_version is None):
-                    raise InstallationError("Pending runtime observations must be both absent or both present.")
+                if (target.runtime.version is None) != (
+                    target.runtime.python_version is None
+                ):
+                    raise InstallationError(
+                        "Pending runtime observations must be both absent or both present."
+                    )
                 ids.append(target.runtime.slot_id)
         if len(ids) != len(set(ids)):
             raise InstallationError("Runtime slot IDs must be unique.")
-
 
 
 @dataclass(frozen=True, slots=True)

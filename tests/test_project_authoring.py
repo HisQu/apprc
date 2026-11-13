@@ -12,7 +12,10 @@ import pytest
 
 from apprc.definition.installation import InstallationHooks
 from apprc.definition.paths import Paths
-from apprc.distribution.metadata import read_distribution_spec, read_project_metadata
+from apprc.distribution.metadata import (
+    read_distribution_spec,
+    read_project_metadata,
+)
 from apprc.distribution.models import AppCapabilities, DistributionSpec
 from apprc.distribution.project import build_project_snapshot
 from apprc.distribution.runtime.acquisition import materialize_project_snapshot
@@ -74,8 +77,12 @@ def _committed_workspace(
         "GIT_COMMITTER_NAME": "AppRC snapshot fixture",
         "GIT_COMMITTER_EMAIL": "snapshot@example.invalid",
     }
-    subprocess.run(["git", "init", "-q", str(root)], env=environment, check=True)
-    subprocess.run(["git", "-C", str(root), "add", "."], env=environment, check=True)
+    subprocess.run(
+        ["git", "init", "-q", str(root)], env=environment, check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "add", "."], env=environment, check=True
+    )
     subprocess.run(
         ["git", "-C", str(root), "commit", "-q", "-m", "workspace fixture"],
         env=environment,
@@ -106,17 +113,22 @@ def test_builder_exports_virtual_root_and_nested_member_with_shared_lock(
         assert "libs/fixture-lib/pyproject.toml" in files
         helper = archive.getinfo("apps/fixture/src/fixture_app/build-helper")
         assert helper.external_attr >> 16 & 0o777 == 0o755
-        assert archive.read("apps/fixture/src/fixture_app/target/schema.json") == (
-            b'{"version": 1}\n'
-        )
+        assert archive.read(
+            "apps/fixture/src/fixture_app/target/schema.json"
+        ) == (b'{"version": 1}\n')
     materialized = tmp_path / "materialized"
-    materialize_project_snapshot(prepared.archive, materialized, prepared.source)
-    extracted_helper = materialized / "apps/fixture/src/fixture_app/build-helper"
+    materialize_project_snapshot(
+        prepared.archive, materialized, prepared.source
+    )
+    extracted_helper = (
+        materialized / "apps/fixture/src/fixture_app/build-helper"
+    )
     assert extracted_helper.stat().st_mode & 0o111
 
 
-
-def test_workspace_exclusion_precedes_member_metadata_validation(tmp_path: Path) -> None:
+def test_workspace_exclusion_precedes_member_metadata_validation(
+    tmp_path: Path,
+) -> None:
     repository = tmp_path / "workspace"
     repository.mkdir()
     _committed_workspace(repository, workspace_excludes="'apps/assets'")
@@ -160,23 +172,30 @@ def test_preparation_removes_generated_target_but_preserves_committed_resource(
         (environment / "marker").write_text("generated\n", encoding="utf-8")
 
     prepared = build_project_snapshot(
-        spec, revision="HEAD", destination=tmp_path / "project.zip", prepare=prepare
+        spec,
+        revision="HEAD",
+        destination=tmp_path / "project.zip",
+        prepare=prepare,
     )
     with ZipFile(prepared.archive) as archive:
-        assert archive.read("apps/fixture/src/fixture_app/target/schema.json") == (
-            b'{"version": 1}\n'
+        assert archive.read(
+            "apps/fixture/src/fixture_app/target/schema.json"
+        ) == (b'{"version": 1}\n')
+        assert (
+            "apps/fixture/src/fixture_app/target/generated.py"
+            not in archive.namelist()
         )
-        assert "apps/fixture/src/fixture_app/target/generated.py" not in archive.namelist()
         assert not any(
-            name.startswith("apps/fixture/.venv")
-            for name in archive.namelist()
+            name.startswith("apps/fixture/.venv") for name in archive.namelist()
         )
         assert archive.read("apps/fixture/src/fixture_app/_web/bundle.js") == (
             b"duplicate bundle"
         )
         assert "apps/fixture/dist/bundle.js" not in archive.namelist()
         assert not any(
-            name.startswith(("apps/fixture/node_modules", "apps/fixture/.cache"))
+            name.startswith(
+                ("apps/fixture/node_modules", "apps/fixture/.cache")
+            )
             for name in archive.namelist()
         )
 
@@ -210,7 +229,9 @@ def test_manually_composed_spec_preserves_committed_snapshot(
         spec, revision="HEAD", destination=tmp_path / "project.zip"
     )
     materialized = tmp_path / "materialized"
-    materialize_project_snapshot(prepared.archive, materialized, prepared.source)
+    materialize_project_snapshot(
+        prepared.archive, materialized, prepared.source
+    )
 
     assert prepared.source.project_path == "apps/fixture"
     for relative in (
@@ -221,7 +242,9 @@ def test_manually_composed_spec_preserves_committed_snapshot(
         "apps/fixture/src/fixture_app/target/schema.json",
         "libs/fixture-lib/src/fixture_lib/__init__.py",
     ):
-        assert (materialized / relative).read_bytes() == (repository / relative).read_bytes()
+        assert (materialized / relative).read_bytes() == (
+            repository / relative
+        ).read_bytes()
 
 
 @pytest.mark.parametrize(
@@ -293,13 +316,16 @@ def test_dirty_hook_declaration_rejected_and_explicit_composition_allowed(
     pyproject = project / "pyproject.toml"
     original = pyproject.read_text(encoding="utf-8")
     pyproject.write_text(
-        original + '\n[tool.apprc.distribution.hooks]\ninitialize = "fixture:dirty"\n',
+        original
+        + '\n[tool.apprc.distribution.hooks]\ninitialize = "fixture:dirty"\n',
         encoding="utf-8",
     )
     dirty_spec = read_distribution_spec(project)
     destination = tmp_path / "dirty.zip"
     with pytest.raises(ValueError, match="hook declarations"):
-        build_project_snapshot(dirty_spec, revision="HEAD", destination=destination)
+        build_project_snapshot(
+            dirty_spec, revision="HEAD", destination=destination
+        )
     assert not destination.exists()
 
     pyproject.write_text(original, encoding="utf-8")
@@ -343,7 +369,9 @@ def test_prepare_cannot_change_committed_project_configuration_or_lock(
             target = tree / "apps/fixture/pyproject.toml"
         else:
             target = tree / "uv.lock"
-        target.write_text(target.read_text(encoding="utf-8") + "# changed\n", encoding="utf-8")
+        target.write_text(
+            target.read_text(encoding="utf-8") + "# changed\n", encoding="utf-8"
+        )
 
     with pytest.raises(ValueError):
         build_project_snapshot(

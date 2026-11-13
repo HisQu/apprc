@@ -59,21 +59,32 @@ def finalize_namespace(
         or not directory.is_absolute()
         or ".." in directory.parts
     ):
-        raise ValueError("Finalization paths must be absolute without traversal.")
-    if plan_path.name != "finalization.json" or plan_path.parent.name != "recovery":
-        raise ValueError("Finalization plan is not at its exact recovery address.")
+        raise ValueError(
+            "Finalization paths must be absolute without traversal."
+        )
+    if (
+        plan_path.name != "finalization.json"
+        or plan_path.parent.name != "recovery"
+    ):
+        raise ValueError(
+            "Finalization plan is not at its exact recovery address."
+        )
     _assert_no_links(plan_path)
     if os.name != "nt" and (
         not plan_path.is_file() or plan_path.parent.stat().st_mode & 0o077
     ):
-        raise ValueError("Finalization plan is not in a private recovery directory.")
+        raise ValueError(
+            "Finalization plan is not in a private recovery directory."
+        )
     metadata = plan_path.stat()
     if os.name != "nt" and metadata.st_mode & 0o022:
         raise ValueError("Finalization plan is writable by another user.")
     value = json.loads(
         plan_path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object
     )
-    generation_id = value.get("generation_id") if isinstance(value, dict) else None
+    generation_id = (
+        value.get("generation_id") if isinstance(value, dict) else None
+    )
     app_id = value.get("app_id") if isinstance(value, dict) else None
     if (
         not isinstance(value, dict)
@@ -85,17 +96,27 @@ def finalize_namespace(
         or (expected_app_id is not None and app_id != expected_app_id)
         or not isinstance(generation_id, str)
     ):
-        raise ValueError("Finalization plan is malformed or grants support authority.")
+        raise ValueError(
+            "Finalization plan is malformed or grants support authority."
+        )
     try:
         if str(UUID(generation_id)) != generation_id:
-            raise ValueError("Finalization generation identity is not canonical.")
+            raise ValueError(
+                "Finalization generation identity is not canonical."
+            )
     except ValueError as error:
-        raise ValueError("Finalization generation identity is malformed.") from error
+        raise ValueError(
+            "Finalization generation identity is malformed."
+        ) from error
     saved_directory = Path(value["directory"])
     if not saved_directory.is_absolute() or ".." in saved_directory.parts:
-        raise ValueError("Finalization plan directory must be absolute without traversal.")
+        raise ValueError(
+            "Finalization plan directory must be absolute without traversal."
+        )
     if saved_directory != directory:
-        raise ValueError("Finalizer may act only on the exact installation address.")
+        raise ValueError(
+            "Finalizer may act only on the exact installation address."
+        )
     _assert_no_links(directory)
     try:
         metadata = directory.lstat()
@@ -127,6 +148,7 @@ def main() -> None:
     parser.add_argument("--directory", type=Path, required=True)
     arguments = parser.parse_args()
     finalize_namespace(arguments.plan, arguments.directory)
+
 
 if __name__ == "__main__":
     main()

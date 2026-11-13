@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from apprc.definition.paths import ResourceKind
 from typing import Any
 from apprc.definition.installation import (
     EditableCheckout,
@@ -54,8 +55,6 @@ raise SystemExit(namespace['main'](['--request',request]))
 """
 
 
-
-
 def _private_request_file(
     directory: Path,
     request: dict[str, object],
@@ -71,11 +70,19 @@ def _private_request_file(
             or resolved.is_relative_to(root.resolve(strict=False))
             for root in roots
         ):
-            raise InstallationError("Bridge request staging is inside a removal root.")
+            raise InstallationError(
+                "Bridge request staging is inside a removal root."
+            )
         path = temporary_root / "request.json"
         descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(request, stream, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            json.dump(
+                request,
+                stream,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
@@ -99,7 +106,7 @@ def application_bridge(
     expected_revision: str | None = None,
     runtime_options: object | None = None,
     operation_context: OperationContext | None = None,
-    categories: frozenset[object] = frozenset(),
+    categories: frozenset[ResourceKind] = frozenset(),
     forget_retained: bool = False,
     migration_plan: MigrationPlan | None = None,
 ) -> dict[str, object]:
@@ -137,10 +144,14 @@ def application_bridge(
         "directory": str(directory),
         "expected_revision": expected_revision,
         "runtime_options": runtime_options,
-        "operation_context": _encode(operation_context) if operation_context is not None else None,
-        "categories": sorted(getattr(category, "value", category) for category in categories),
+        "operation_context": _encode(operation_context)
+        if operation_context is not None
+        else None,
+        "categories": sorted(categories),
         "forget_retained": forget_retained,
-        "migration_plan": _encode(migration_plan) if migration_plan is not None else None,
+        "migration_plan": _encode(migration_plan)
+        if migration_plan is not None
+        else None,
         "hooks": _encode(runtime.hooks),
     }
     lease: RuntimeLease | None = None
@@ -150,9 +161,16 @@ def application_bridge(
         inspection = inspect_installation(directory, app_id=identity.app_id)
         record = inspection.record
         if record is None or inspection.revision is None:
-            raise InstallationError("Bridge requires valid installation authority.")
-        if expected_revision is not None and inspection.revision != expected_revision:
-            raise InstallationError("Installation changed before bridge runtime selection.")
+            raise InstallationError(
+                "Bridge requires valid installation authority."
+            )
+        if (
+            expected_revision is not None
+            and inspection.revision != expected_revision
+        ):
+            raise InstallationError(
+                "Installation changed before bridge runtime selection."
+            )
         authorized_runtime = record.active_runtime
         operation = record.operation
         if operation is not None and operation.intended is not None:
@@ -160,10 +178,13 @@ def application_bridge(
             if pending == runtime and action in {"probe", "initialize"}:
                 authorized_runtime = pending
         if authorized_runtime != runtime:
-            raise InstallationError("Bridge runtime is not the active or exact pending target.")
+            raise InstallationError(
+                "Bridge runtime is not the active or exact pending target."
+            )
         placement = record.placement
         protected_roots = tuple(
-            path for path in (
+            path
+            for path in (
                 placement.config_dir,
                 placement.appdata_dir,
                 placement.cache_dir,
@@ -176,28 +197,40 @@ def application_bridge(
         expected_revision = inspection.revision
         manager_digest: str | None = None
         if manager_executable is not None:
-            if not manager_executable.is_absolute() or not manager_executable.is_file():
-                raise InstallationError("Saved manager executable is unavailable.")
+            if (
+                not manager_executable.is_absolute()
+                or not manager_executable.is_file()
+            ):
+                raise InstallationError(
+                    "Saved manager executable is unavailable."
+                )
             assert_no_links(manager_executable)
             with manager_executable.open("rb") as stream:
-                manager_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                manager_digest = hashlib.file_digest(
+                    stream, "sha256"
+                ).hexdigest()
             if manager_executable.resolve(strict=True).is_relative_to(
                 directory.resolve(strict=False)
             ):
                 owned_paths = {str(manager_executable)}
                 try:
-                    owned_paths.add(str(manager_executable.relative_to(directory)))
+                    owned_paths.add(
+                        str(manager_executable.relative_to(directory))
+                    )
                 except ValueError:
                     pass
                 owned = next(
                     (
-                        item for item in record.owned_outputs
+                        item
+                        for item in record.owned_outputs
                         if item.path in owned_paths and item.digest is not None
                     ),
                     None,
                 )
                 if owned is None or owned.digest != manager_digest:
-                    raise InstallationError("Saved manager executable differs from owned bytes.")
+                    raise InstallationError(
+                        "Saved manager executable differs from owned bytes."
+                    )
         if isinstance(runtime, RuntimeSlot):
             slot_directory = directory / "runtimes" / str(runtime.slot_id)
             lease = authorized_runtime_quiescence(slot_directory)
@@ -238,14 +271,27 @@ def application_bridge(
         if manager_executable is not None:
             assert manager_digest is not None
             argv = [
-                str(interpreter), "-I", "-c", _LOADER,
-                str(manager_executable), str(request_path), manager_digest,
+                str(interpreter),
+                "-I",
+                "-c",
+                _LOADER,
+                str(manager_executable),
+                str(request_path),
+                manager_digest,
             ]
         else:
             bridge = Path(__file__).with_name("installed_probe.py")
             if not bridge.is_file():
-                raise InstallationError("Installed SDK application bridge is unavailable.")
-            argv = [str(interpreter), "-I", str(bridge), "--request", str(request_path)]
+                raise InstallationError(
+                    "Installed SDK application bridge is unavailable."
+                )
+            argv = [
+                str(interpreter),
+                "-I",
+                str(bridge),
+                "--request",
+                str(request_path),
+            ]
         result = subprocess.run(
             argv,
             env=child_environment,
@@ -266,7 +312,9 @@ def application_bridge(
             or response["action"] != action
             or not isinstance(response["result"], dict)
         ):
-            raise InstallationError(f"Application bridge returned an invalid {action} envelope.")
+            raise InstallationError(
+                f"Application bridge returned an invalid {action} envelope."
+            )
         if result.stderr:
             sys.stderr.write(result.stderr)
         payload = response["result"]
@@ -281,11 +329,17 @@ def application_bridge(
                     for check in checks
                 )
             ):
-                raise InstallationError("Application doctor returned invalid failure JSON.")
+                raise InstallationError(
+                    "Application doctor returned invalid failure JSON."
+                )
             if result.returncode == 1 and payload["status"] != "error":
-                raise InstallationError("Application doctor failed without valid failure checks.")
+                raise InstallationError(
+                    "Application doctor failed without valid failure checks."
+                )
         elif result.returncode != 0:
-            raise InstallationError(f"Application bridge {action} failed: {result.stderr.strip()}")
+            raise InstallationError(
+                f"Application bridge {action} failed: {result.stderr.strip()}"
+            )
         return payload
     finally:
         import shutil
@@ -293,6 +347,8 @@ def application_bridge(
         shutil.rmtree(request_path.parent, ignore_errors=True)
         if lease is not None and close_lease:
             lease.close()
+
+
 def _probe_runtime_observations(
     directory: Path,
     identity: InstallationIdentity,
@@ -306,7 +362,10 @@ def _probe_runtime_observations(
     """Return a validated runtime and its exact bridge observations."""
     import re
 
-    from apprc.distribution.runtime.backend import runtime_command, runtime_prefix
+    from apprc.distribution.runtime.backend import (
+        runtime_command,
+        runtime_prefix,
+    )
 
     result = application_bridge(
         directory,
@@ -328,12 +387,14 @@ def _probe_runtime_observations(
     }
     if not isinstance(result, dict) or set(result) != fields:
         raise InstallationError("Runtime probe returned incompatible metadata.")
+
     def normalized(value: str) -> str:
         return re.sub(r"[-_.]+", "-", value).lower()
 
     if (
         not isinstance(result["distribution"], str)
-        or normalized(result["distribution"]) != normalized(identity.distribution)
+        or normalized(result["distribution"])
+        != normalized(identity.distribution)
         or not isinstance(result["version"], str)
         or not result["version"]
         or not isinstance(result["python_version"], str)
@@ -344,26 +405,43 @@ def _probe_runtime_observations(
         raise InstallationError("Runtime probe identity or version is invalid.")
     prefix = Path(result["prefix"])
     expected_prefix = runtime_prefix(directory, runtime)
-    if (
-        not prefix.is_absolute()
-        or os.path.normcase(str(prefix.resolve(strict=False)))
-        != os.path.normcase(str(expected_prefix.resolve(strict=False)))
-    ):
-        raise InstallationError("Runtime interpreter prefix differs from its recorded environment.")
+    if not prefix.is_absolute() or os.path.normcase(
+        str(prefix.resolve(strict=False))
+    ) != os.path.normcase(str(expected_prefix.resolve(strict=False))):
+        raise InstallationError(
+            "Runtime interpreter prefix differs from its recorded environment."
+        )
     commands = result["commands"]
-    if not isinstance(commands, dict) or set(commands) != set(identity.commands):
-        raise InstallationError("Runtime probe command ownership is incomplete.")
-    if any(not isinstance(value, str) or not value for value in commands.values()):
-        raise InstallationError("Runtime probe returned invalid console entry points.")
+    if not isinstance(commands, dict) or set(commands) != set(
+        identity.commands
+    ):
+        raise InstallationError(
+            "Runtime probe command ownership is incomplete."
+        )
+    if any(
+        not isinstance(value, str) or not value for value in commands.values()
+    ):
+        raise InstallationError(
+            "Runtime probe returned invalid console entry points."
+        )
     for command in identity.commands:
         if not runtime_command(directory, runtime, command).is_file():
-            raise InstallationError(f"Runtime console command is missing: {command}.")
+            raise InstallationError(
+                f"Runtime console command is missing: {command}."
+            )
     if isinstance(runtime, EditableCheckout):
         return runtime, result
     if runtime.version is not None and runtime.version != result["version"]:
-        raise InstallationError("Installed version differs from the requested runtime version.")
-    if runtime.python_version is not None and runtime.python_version != result["python_version"]:
-        raise InstallationError("Installed Python version differs from the requested runtime version.")
+        raise InstallationError(
+            "Installed version differs from the requested runtime version."
+        )
+    if (
+        runtime.python_version is not None
+        and runtime.python_version != result["python_version"]
+    ):
+        raise InstallationError(
+            "Installed Python version differs from the requested runtime version."
+        )
     return RuntimeSlot(
         runtime.slot_id,
         runtime.source,

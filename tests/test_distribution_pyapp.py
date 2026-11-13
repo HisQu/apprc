@@ -43,7 +43,9 @@ def _require_serial_native_product(request: pytest.FixtureRequest) -> None:
 
 
 def _record(directory: Path) -> dict[str, Any]:
-    result = json.loads((directory / "installation.json").read_text(encoding="utf-8"))
+    result = json.loads(
+        (directory / "installation.json").read_text(encoding="utf-8")
+    )
     assert isinstance(result, dict)
     return result
 
@@ -78,12 +80,19 @@ def _host(root: Path) -> tuple[dict[str, str], Path]:
 
 def _install(setup: Path, command_directory: Path) -> list[str]:
     return [
-        str(setup), "app", "install", "--yes", "--skip-setup",
-        "--command-directory", str(command_directory),
+        str(setup),
+        "app",
+        "install",
+        "--yes",
+        "--skip-setup",
+        "--command-directory",
+        str(command_directory),
     ]
 
 
-def _inspect(command: Path, environment: dict[str, str], cwd: Path) -> dict[str, Any]:
+def _inspect(
+    command: Path, environment: dict[str, str], cwd: Path
+) -> dict[str, Any]:
     result = run([str(command), "inspect"], environment=environment, cwd=cwd)
     payload = json.loads(result.stdout)
     assert isinstance(payload, dict)
@@ -125,7 +134,9 @@ def test_native_authoring_fails_closed_on_stale_source_and_binding(
     with pytest.raises(ValueError):
         build_native_distribution(
             spec,
-            replace(project, source=replace(project.source, lock_digest="0" * 64)),
+            replace(
+                project, source=replace(project.source, lock_digest="0" * 64)
+            ),
             uv=uv,
             workspace=tmp_path / "stale-lock",
             environment=authoring_environment(),
@@ -146,13 +157,17 @@ def test_native_authoring_fails_closed_on_stale_source_and_binding(
 
 
 def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
-    tmp_path: Path, native_product: NativeProduct, request: pytest.FixtureRequest
+    tmp_path: Path,
+    native_product: NativeProduct,
+    request: pytest.FixtureRequest,
 ) -> None:
     project_root, uv, setup_a, checksums_a, spec, project = native_product
     command_name = spec.metadata.command_name
     assert command_name is not None
     setup_b = (
-        project_root.parent / "fixture-b" / "dist"
+        project_root.parent
+        / "fixture-b"
+        / "dist"
         / f"{spec.metadata.identity.app_id}-setup-linux-x86_64"
     )
     assert setup_b.is_file()
@@ -172,7 +187,10 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         assert set(manifest) == expected_outputs
         for name, expected_digest in manifest.items():
             with (checksums.parent / name).open("rb") as stream:
-                assert hashlib.file_digest(stream, "sha256").hexdigest() == expected_digest
+                assert (
+                    hashlib.file_digest(stream, "sha256").hexdigest()
+                    == expected_digest
+                )
     with ZipFile(setup_a) as native_archive:
         binding = decode_native_binding(native_archive.read("binding.json"))
         assert binding.identity == spec.metadata.identity
@@ -188,16 +206,18 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     first = _record(directory)
     slot_a = _active_slot(first)
     runtime_a = directory / "runtimes" / slot_a
-    assert hashlib.sha256((runtime_a / "project.zip").read_bytes()).hexdigest() == (
-        project.source.digest
-    )
+    assert hashlib.sha256(
+        (runtime_a / "project.zip").read_bytes()
+    ).hexdigest() == (project.source.digest)
     assert (runtime_a / "project.zip").is_file()
     assert (runtime_a / "source" / "uv.lock").read_bytes() == (
         project_root / "uv.lock"
     ).read_bytes()
     initialize_event = json.loads(
-        (Path(_record(directory)["placement"]["config_dir"]) / "native-hook.json")
-        .read_text(encoding="utf-8")
+        (
+            Path(_record(directory)["placement"]["config_dir"])
+            / "native-hook.json"
+        ).read_text(encoding="utf-8")
     )
     assert initialize_event["operation_id"]
     assert initialize_event["generation_id"] == first["generation_id"]
@@ -227,11 +247,16 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert Path(inspected["interpreter"]) == (
         runtime_a / ".venv" / "bin" / "python"
     )
-    assert Path(inspected["prefix"]).resolve() == (runtime_a / ".venv").resolve()
+    assert (
+        Path(inspected["prefix"]).resolve() == (runtime_a / ".venv").resolve()
+    )
     assert inspected["commands"] == [command_name]
     assert active_a["selection"]["extras"] == ["native-feature"]
     assert inspected["capabilities"] == {
-        "config": True, "appdata": True, "cache": False, "state": False
+        "config": True,
+        "appdata": True,
+        "cache": False,
+        "state": False,
     }
     assert inspected["paths"] == {
         "config": placement["config_dir"],
@@ -250,7 +275,9 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         cwd=outside,
         check=False,
     )
-    assert failed_command.returncode == 23, failed_command.stdout + failed_command.stderr
+    assert failed_command.returncode == 23, (
+        failed_command.stdout + failed_command.stderr
+    )
 
     healthy_doctor = run(
         [str(setup_a), "app", "doctor", "--json"],
@@ -264,7 +291,10 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         environment=environment,
         cwd=tmp_path,
     )
-    assert json.loads(verbose_doctor.stdout)["details"]["host"]["application"] == "fixture"
+    assert (
+        json.loads(verbose_doctor.stdout)["details"]["host"]["application"]
+        == "fixture"
+    )
     failed_doctor = run(
         [str(setup_a), "app", "doctor", "--json"],
         environment={**environment, "FIXTURE_DOCTOR_FAILURE": "1"},
@@ -316,6 +346,21 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     repaired = _record(directory)
     slot_a = _active_slot(repaired)
     runtime_a = directory / "runtimes" / slot_a
+    config_environment = conflicting.copy()
+    config_environment.pop("NATIVE_LABEL", None)
+    run(
+        [
+            str(manager),
+            "config",
+            "set",
+            "native.label",
+            "saved-a",
+            "--scope",
+            "user",
+        ],
+        environment=config_environment,
+        cwd=outside,
+    )
 
     marker = tmp_path / "active-child-ready"
     child = subprocess.Popen(
@@ -335,7 +380,9 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         forwarding_pid = child_identity["forwarder"]
         assert isinstance(forwarding_pid, int)
         assert forwarding_pid not in {os.getpid(), child_identity["process"]}
-        before_b_lock = (project_root.parent / "fixture-b" / "uv.lock").read_bytes()
+        before_b_lock = (
+            project_root.parent / "fixture-b" / "uv.lock"
+        ).read_bytes()
         failed_update = run(
             _install(setup_b, command_directory),
             environment={**environment, "FIXTURE_FAIL_INITIALIZE": "1"},
@@ -356,16 +403,47 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         assert pending["operation"]["phase"] == "failed"
         assert resource_sentinel.read_text(encoding="utf-8") == "retain me"
         assert _inspect(manager, conflicting, outside)["version"] == "1.0.0"
+        before_write = run(
+            [str(manager), "config", "show"],
+            environment=config_environment,
+            cwd=outside,
+        )
+        assert "saved-a" in before_write.stdout
+        run(
+            [
+                str(manager),
+                "config",
+                "set",
+                "native.label",
+                "live-a",
+                "--scope",
+                "user",
+            ],
+            environment=config_environment,
+            cwd=outside,
+        )
+        after_write = run(
+            [str(manager), "config", "show"],
+            environment=config_environment,
+            cwd=outside,
+        )
+        assert "live-a" in after_write.stdout
         # > The app child must protect its slot after its forwarding parent dies.
         os.kill(forwarding_pid, signal.SIGKILL)
         assert child.wait(timeout=30) != 0
 
-        run(_install(setup_b, command_directory), environment=environment, cwd=tmp_path)
+        run(
+            _install(setup_b, command_directory),
+            environment=environment,
+            cwd=tmp_path,
+        )
         updated = _record(directory)
         slot_b = _active_slot(updated)
         assert slot_b != slot_a
         assert slot_a in updated.get("retiring_runtime_ids", [])
-        assert (project_root.parent / "fixture-b" / "uv.lock").read_bytes() == before_b_lock
+        assert (
+            project_root.parent / "fixture-b" / "uv.lock"
+        ).read_bytes() == before_b_lock
         after_b = _inspect(manager, conflicting, outside)
         active_b = updated["active_runtime"]
         assert after_b["distribution"] == spec.metadata.identity.distribution
@@ -374,13 +452,17 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         assert Path(after_b["interpreter"]) == (
             directory / "runtimes" / slot_b / ".venv" / "bin" / "python"
         )
-        assert Path(after_b["prefix"]).resolve() == (
-            directory / "runtimes" / slot_b / ".venv"
-        ).resolve()
+        assert (
+            Path(after_b["prefix"]).resolve()
+            == (directory / "runtimes" / slot_b / ".venv").resolve()
+        )
         assert after_b["commands"] == [command_name]
         assert active_b["selection"]["extras"] == ["native-feature"]
         assert after_b["capabilities"] == {
-            "config": True, "appdata": True, "cache": False, "state": False
+            "config": True,
+            "appdata": True,
+            "cache": False,
+            "state": False,
         }
         assert after_b["paths"]["config"] == str(config_directory)
         assert after_b["feature_version"] == "1.0.0"
@@ -390,9 +472,10 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         child.stdin.flush()
         running_old = json.loads(child.stdout.readline())
         assert running_old["version"] == "1.0.0"
-        assert Path(running_old["prefix"]).resolve() == (
-            runtime_a / ".venv"
-        ).resolve()
+        assert (
+            Path(running_old["prefix"]).resolve()
+            == (runtime_a / ".venv").resolve()
+        )
         assert resource_sentinel.read_text(encoding="utf-8") == "retain me"
     finally:
         if child.stdin is not None:
@@ -413,7 +496,11 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
             child.stdout.close()
         if child.stderr is not None:
             child.stderr.close()
-    run(_install(setup_b, command_directory), environment=environment, cwd=tmp_path)
+    run(
+        _install(setup_b, command_directory),
+        environment=environment,
+        cwd=tmp_path,
+    )
     after_child_exit = _record(directory)
     assert slot_a not in after_child_exit.get("retiring_runtime_ids", [])
     assert not (directory / "runtimes" / slot_a).exists()
@@ -425,12 +512,23 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     provider_file.write_text('{"owned":true}', encoding="utf-8")
     unrelated_file.write_text("keep", encoding="utf-8")
     uninstall = [
-        str(manager), "app", "uninstall", "--complete", "--category", "config",
-        "--yes", "--forget-retained",
+        str(manager),
+        "app",
+        "uninstall",
+        "--complete",
+        "--category",
+        "config",
+        "--yes",
+        "--forget-retained",
     ]
     no_consent = run(
         [
-            str(manager), "app", "uninstall", "--complete", "--category", "config",
+            str(manager),
+            "app",
+            "uninstall",
+            "--complete",
+            "--category",
+            "config",
             "--forget-retained",
         ],
         environment=environment,
@@ -460,10 +558,14 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     hook_event = json.loads(
         (config_directory / "cleanup-hook.json").read_text(encoding="utf-8")
     )
-    assert hook_event["operation_id"] == failed_record["operation"]["operation_id"]
+    assert (
+        hook_event["operation_id"] == failed_record["operation"]["operation_id"]
+    )
     assert hook_event["generation_id"] == failed_record["generation_id"]
     assert hook_event["directory"] == str(directory)
-    completed = run(uninstall, environment=environment, cwd=tmp_path, check=False)
+    completed = run(
+        uninstall, environment=environment, cwd=tmp_path, check=False
+    )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert not provider_file.exists()
     assert unrelated_file.read_text(encoding="utf-8") == "keep"
@@ -481,18 +583,28 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     unknown_command = new_commands / "unrelated-command"
     unknown_command.write_text("preserve unrelated command", encoding="utf-8")
     unknown_installation_file = new_directory / "unrelated-file"
-    unknown_installation_file.write_text("preserve unrelated file", encoding="utf-8")
+    unknown_installation_file.write_text(
+        "preserve unrelated file", encoding="utf-8"
+    )
     program_only = run(
         [str(setup_a), "app", "uninstall", "--yes"],
         environment=new_host,
         cwd=tmp_path,
         check=False,
     )
-    assert program_only.returncode == 0, program_only.stdout + program_only.stderr
+    assert program_only.returncode == 0, (
+        program_only.stdout + program_only.stderr
+    )
     assert not (new_commands / command_name).exists()
     assert (new_directory / "installation.json").is_file()
-    assert unknown_command.read_text(encoding="utf-8") == "preserve unrelated command"
-    assert unknown_installation_file.read_text(encoding="utf-8") == "preserve unrelated file"
+    assert (
+        unknown_command.read_text(encoding="utf-8")
+        == "preserve unrelated command"
+    )
+    assert (
+        unknown_installation_file.read_text(encoding="utf-8")
+        == "preserve unrelated file"
+    )
 
     # * Editable registration uses the developer's existing environment.
     # * Preserve its package baseline and restore the source after the test.
@@ -513,8 +625,17 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     )
     editable_register = run(
         [
-            str(uv), "run", "--locked", "--no-sync", "fixture-app", "app", "install", "-e",
-            "--yes", "--command-directory", str(editable_commands),
+            str(uv),
+            "run",
+            "--locked",
+            "--no-sync",
+            "fixture-app",
+            "app",
+            "install",
+            "-e",
+            "--yes",
+            "--command-directory",
+            str(editable_commands),
         ],
         environment=editable_host,
         cwd=project_root,
@@ -531,13 +652,15 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert isinstance(editable_runtime, dict)
     assert editable_runtime.get("project") == str(project_root)
     assert editable_runtime.get("environment") == str(environment_root)
-    assert environment_root.is_dir() and sentinel.read_text(encoding="utf-8") == (
-        "keep this environment"
-    )
+    assert environment_root.is_dir() and sentinel.read_text(
+        encoding="utf-8"
+    ) == ("keep this environment")
     assert _package_metadata(project_root, editable_host) == baseline_packages
     editable_command = editable_commands / command_name
     editable_outside = _inspect(editable_command, editable_host, outside)
-    assert Path(editable_outside["prefix"]).resolve() == environment_root.resolve()
+    assert (
+        Path(editable_outside["prefix"]).resolve() == environment_root.resolve()
+    )
     assert Path(editable_outside["cwd"]) == outside
     changed_source = original_source.replace(
         b"'marker': 'committed-source'", b"'marker': 'editable-change'"
@@ -549,8 +672,17 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     )
     refresh = run(
         [
-            str(uv), "run", "--locked", "--no-sync", "fixture-app", "app", "install", "-e",
-            "--yes", "--command-directory", str(editable_commands),
+            str(uv),
+            "run",
+            "--locked",
+            "--no-sync",
+            "fixture-app",
+            "app",
+            "install",
+            "-e",
+            "--yes",
+            "--command-directory",
+            str(editable_commands),
         ],
         environment=editable_host,
         cwd=project_root,
@@ -559,10 +691,14 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert refresh.returncode == 0, refresh.stdout + refresh.stderr
     refreshed_record = _record(editable_directory)
     assert refreshed_record["generation_id"] == editable_record["generation_id"]
-    assert refreshed_record["active_runtime"] == editable_record["active_runtime"]
+    assert (
+        refreshed_record["active_runtime"] == editable_record["active_runtime"]
+    )
     assert _package_metadata(project_root, editable_host) == baseline_packages
     unrelated_editable_command = editable_commands / "unrelated-command"
-    unrelated_editable_command.write_text("keep unrelated command", encoding="utf-8")
+    unrelated_editable_command.write_text(
+        "keep unrelated command", encoding="utf-8"
+    )
     assert sentinel.read_text(encoding="utf-8") == "keep this environment"
 
     unregistered = run(
@@ -571,30 +707,52 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         cwd=outside,
         check=False,
     )
-    assert unregistered.returncode == 0, unregistered.stdout + unregistered.stderr
+    assert unregistered.returncode == 0, (
+        unregistered.stdout + unregistered.stderr
+    )
     assert not editable_command.exists() and not editable_command.is_symlink()
     assert (project_root / "fixture_app.py").read_bytes() == changed_source
     assert sentinel.read_text(encoding="utf-8") == "keep this environment"
     assert _package_metadata(project_root, editable_host) == baseline_packages
-    assert unrelated_editable_command.read_text(encoding="utf-8") == "keep unrelated command"
+    assert (
+        unrelated_editable_command.read_text(encoding="utf-8")
+        == "keep unrelated command"
+    )
     run(
         [
-            str(environment_root / "bin" / command_name), "app", "install", "-e",
-            "--yes", "--command-directory", str(editable_commands),
+            str(environment_root / "bin" / command_name),
+            "app",
+            "install",
+            "-e",
+            "--yes",
+            "--command-directory",
+            str(editable_commands),
         ],
         environment=editable_host,
         cwd=project_root,
     )
 
-    editable_config = Path(_record(editable_directory)["placement"]["config_dir"])
+    editable_config = Path(
+        _record(editable_directory)["placement"]["config_dir"]
+    )
     editable_provider = editable_config / "provider-owned.json"
     editable_unrelated = editable_config / "unrelated-user.json"
     editable_provider.write_text('{"owned":true}', encoding="utf-8")
     editable_unrelated.write_text("preserve", encoding="utf-8")
     editable_uninstall = run(
         [
-            str(uv), "run", "--locked", "--no-sync", "fixture-app", "app", "uninstall",
-            "--complete", "--category", "config", "--yes", "--forget-retained",
+            str(uv),
+            "run",
+            "--locked",
+            "--no-sync",
+            "fixture-app",
+            "app",
+            "uninstall",
+            "--complete",
+            "--category",
+            "config",
+            "--yes",
+            "--forget-retained",
         ],
         environment=editable_host,
         cwd=project_root,
@@ -612,7 +770,8 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
 
 
 def test_native_appdata_purge_executes_provider_and_preserves_unknown_data(
-    tmp_path: Path, native_product: NativeProduct,
+    tmp_path: Path,
+    native_product: NativeProduct,
 ) -> None:
     _project_root, _uv, setup, _checksums, spec, _project = native_product
     environment, commands = _host(tmp_path / "host")
@@ -629,13 +788,23 @@ def test_native_appdata_purge_executes_provider_and_preserves_unknown_data(
     unrelated.write_text("keep unrelated data", encoding="utf-8")
     removal = run(
         [
-            str(setup), "app", "uninstall", "--complete", "--category", "appdata",
-            "--yes", "--forget-retained",
+            str(setup),
+            "app",
+            "uninstall",
+            "--complete",
+            "--category",
+            "appdata",
+            "--yes",
+            "--forget-retained",
         ],
-        environment=environment, cwd=tmp_path, check=False,
+        environment=environment,
+        cwd=tmp_path,
+        check=False,
     )
     assert removal.returncode == 0, removal.stdout + removal.stderr
-    event = json.loads((config / "cleanup-hook.json").read_text(encoding="utf-8"))
+    event = json.loads(
+        (config / "cleanup-hook.json").read_text(encoding="utf-8")
+    )
     assert event["generation_id"] == record["generation_id"]
     assert event["directory"] == str(directory)
     assert not provider.exists()
@@ -644,7 +813,8 @@ def test_native_appdata_purge_executes_provider_and_preserves_unknown_data(
 
 
 def test_failed_editable_switch_restores_real_global_command_and_authority(
-    tmp_path: Path, native_product: NativeProduct,
+    tmp_path: Path,
+    native_product: NativeProduct,
 ) -> None:
     from apprc.definition.installation import EditableCheckout
     from apprc.distribution.runtime import _manager
@@ -657,7 +827,8 @@ def test_failed_editable_switch_restores_real_global_command_and_authority(
     for project in (project_a, project_b):
         run(
             [str(uv), "sync", "--locked", "--no-default-groups"],
-            environment=environment, cwd=project,
+            environment=environment,
+            cwd=project,
         )
     with ZipFile(setup) as archive:
         binding = decode_native_binding(archive.read("binding.json"))
@@ -669,10 +840,16 @@ def test_failed_editable_switch_restores_real_global_command_and_authority(
     run(
         [
             str(runtime_a.environment / "bin" / binding.command_name),
-            "app", "install", "-e", "--yes", "--skip-setup",
-            "--command-directory", str(commands),
+            "app",
+            "install",
+            "-e",
+            "--yes",
+            "--skip-setup",
+            "--command-directory",
+            str(commands),
         ],
-        environment=environment, cwd=project_a,
+        environment=environment,
+        cwd=project_a,
     )
     initial = manager.inspect().record
     assert initial is not None
@@ -706,17 +883,27 @@ def test_failed_editable_switch_restores_real_global_command_and_authority(
     )
     rejected = run(
         [
-            str(runtime_b.environment / "bin" / "python"), "-I", "-c", driver,
-            str(project_b), str(uv), str(commands), str(activation),
+            str(runtime_b.environment / "bin" / "python"),
+            "-I",
+            "-c",
+            driver,
+            str(project_b),
+            str(uv),
+            str(commands),
+            str(activation),
         ],
-        environment=environment, cwd=project_b, check=False,
+        environment=environment,
+        cwd=project_b,
+        check=False,
     )
     assert rejected.returncode == 23, rejected.stdout + rejected.stderr
     assert activation.read_text(encoding="utf-8") == "activation attempted"
     failed = manager.inspect().record
     assert failed is not None
     assert failed.active_runtime == initial.active_runtime == runtime_a
-    assert failed.operation is not None and failed.operation.intended is not None
+    assert (
+        failed.operation is not None and failed.operation.intended is not None
+    )
     assert failed.operation.intended.runtime == runtime_b
     assert os.readlink(command) == old_target
     observed = _inspect(command, environment, tmp_path)
@@ -726,14 +913,16 @@ def test_failed_editable_switch_restores_real_global_command_and_authority(
 
 
 def test_real_workspace_member_registration_uses_composed_hooks(
-    tmp_path: Path, native_product: NativeProduct,
+    tmp_path: Path,
+    native_product: NativeProduct,
 ) -> None:
     source, uv, _setup, _checksums, spec, _project = native_product
     workspace = tmp_path / "virtual-workspace"
     member = workspace / "applications" / "selected-member"
     member.parent.mkdir(parents=True)
     shutil.copytree(
-        source, member,
+        source,
+        member,
         ignore=shutil.ignore_patterns(".git", ".venv", ".cache", "dist"),
     )
     (workspace / "pyproject.toml").write_text(
@@ -756,14 +945,22 @@ def test_real_workspace_member_registration_uses_composed_hooks(
     environment["PATH"] += os.pathsep + str(uv.parent)
     run(
         [str(uv), "lock", "--project", str(member)],
-        environment=environment, cwd=workspace,
+        environment=environment,
+        cwd=workspace,
     )
     run(
         [
-            str(uv), "sync", "--locked", "--no-default-groups",
-            "--project", str(member), "--python", sys.executable,
+            str(uv),
+            "sync",
+            "--locked",
+            "--no-default-groups",
+            "--project",
+            str(member),
+            "--python",
+            sys.executable,
         ],
-        environment=environment, cwd=workspace,
+        environment=environment,
+        cwd=workspace,
     )
     environment_root = workspace / ".venv"
     original_environment = environment_root.stat().st_ino
@@ -775,12 +972,22 @@ def test_real_workspace_member_registration_uses_composed_hooks(
     member_command = environment_root / "bin" / command_name
     registration = run(
         [
-            str(member_command), "app", "install", "-e", "--yes",
-            "--skip-setup", "--command-directory", str(commands),
+            str(member_command),
+            "app",
+            "install",
+            "-e",
+            "--yes",
+            "--skip-setup",
+            "--command-directory",
+            str(commands),
         ],
-        environment=environment, cwd=workspace, check=False,
+        environment=environment,
+        cwd=workspace,
+        check=False,
     )
-    assert registration.returncode == 0, registration.stdout + registration.stderr
+    assert registration.returncode == 0, (
+        registration.stdout + registration.stderr
+    )
     directory = installation_directory(
         spec.metadata.identity.app_id, environment=environment
     )
@@ -789,10 +996,17 @@ def test_real_workspace_member_registration_uses_composed_hooks(
     assert record["active_runtime"]["environment"] == str(environment_root)
     run(
         [
-            str(member_command), "app", "install", "-e", "--yes",
-            "--skip-setup", "--command-directory", str(commands),
+            str(member_command),
+            "app",
+            "install",
+            "-e",
+            "--yes",
+            "--skip-setup",
+            "--command-directory",
+            str(commands),
         ],
-        environment=environment, cwd=member,
+        environment=environment,
+        cwd=member,
     )
     refreshed = _record(directory)
     assert refreshed["active_runtime"] == record["active_runtime"]
@@ -809,14 +1023,24 @@ def test_real_workspace_member_registration_uses_composed_hooks(
     unrelated.write_text("preserve unknown config", encoding="utf-8")
     removal = run(
         [
-            str(global_command), "app", "uninstall", "--complete",
-            "--category", "config", "--forget-retained", "--yes",
+            str(global_command),
+            "app",
+            "uninstall",
+            "--complete",
+            "--category",
+            "config",
+            "--forget-retained",
+            "--yes",
         ],
-        environment=environment, cwd=tmp_path, check=False,
+        environment=environment,
+        cwd=tmp_path,
+        check=False,
     )
     assert removal.returncode == 0, removal.stdout + removal.stderr
     assert not provider.exists()
-    event = json.loads((config / "cleanup-hook.json").read_text(encoding="utf-8"))
+    event = json.loads(
+        (config / "cleanup-hook.json").read_text(encoding="utf-8")
+    )
     assert event["generation_id"] == record["generation_id"]
     assert unrelated.read_text(encoding="utf-8") == "preserve unknown config"
     assert sentinel.read_bytes() == b"developer-owned environment"

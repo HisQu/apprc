@@ -159,9 +159,7 @@ def _support_inventory(
         known_slots.add(record.active_runtime.slot_id)
     if runtime_root.exists() or runtime_root.is_symlink():
         if runtime_root.is_symlink() or not runtime_root.is_dir():
-            diagnostics.append(
-                f"Saved runtime root is unsafe: {runtime_root}."
-            )
+            diagnostics.append(f"Saved runtime root is unsafe: {runtime_root}.")
         else:
             directories.add(runtime_root)
     for output in outputs:
@@ -323,11 +321,15 @@ def _inventory_from_application(
 ) -> CleanupInventory | None:
     """Request exact app-owned cleanup targets when the active runtime declares a hook."""
     record = inspection.record
-    runtime = record.active_runtime if record is not None else None
+    if record is None:
+        return None
+    runtime = record.active_runtime
     if runtime is None or runtime.hooks.inventory is None:
         return None
     if inspection.revision is None:
-        raise InstallationError("Inventory provider requires an authority revision.")
+        raise InstallationError(
+            "Inventory provider requires an authority revision."
+        )
     result = application_bridge(
         inspection.directory,
         record.identity,
@@ -525,17 +527,18 @@ def prepare_uninstall(
     data_categories = categories - {"config"}
     runtime = record.active_runtime
     if complete and data_categories:
-        if (
-            runtime is None
-            or runtime.hooks.cleanup is None
-        ):
+        if runtime is None or runtime.hooks.cleanup is None:
             diagnostic = InstallationDiagnostic(
                 "uninstall-provider-unavailable",
                 "Selected data purge has no recorded runtime cleanup hook.",
                 "Restore the recorded runtime or remove the program without purging data.",
             )
             return UninstallPreparation(
-                None, inspection, (), (*inspection.diagnostics, diagnostic), False
+                None,
+                inspection,
+                (),
+                (*inspection.diagnostics, diagnostic),
+                False,
             )
     try:
         validated_manager = _manager_executable(
@@ -676,7 +679,6 @@ def prepare_uninstall(
     )
 
 
-
 def stage_uninstall(
     plan: UninstallPlan,
     *,
@@ -726,7 +728,6 @@ def stage_uninstall(
     return replace(plan, expected_revision=current.revision)
 
 
-
 def _handoff_python(removal_roots: tuple[Path, ...]) -> Path:
     """Find a Python executable that will survive the requested removal."""
     candidates = (
@@ -768,7 +769,9 @@ def start_uninstall_handoff(
     observed = inspect_saved(directory)
     record = observed.record
     if record is None:
-        raise InstallationError("Uninstall requires valid installation authority.")
+        raise InstallationError(
+            "Uninstall requires valid installation authority."
+        )
     manager = _manager_executable(record, directory, manager_executable)
     removal_roots = _handoff.handoff_removal_roots(plan, record)
     python_executable = (
@@ -869,7 +872,9 @@ def start_uninstall_handoff(
                 str(manager_copy) if manager_copy is not None else None
             ),
             "manager_executable_revision": (
-                file_revision(manager_copy) if manager_copy is not None else None
+                file_revision(manager_copy)
+                if manager_copy is not None
+                else None
             ),
         }
         write_bytes_atomic(
@@ -878,7 +883,11 @@ def start_uninstall_handoff(
             private=True,
         )
         if manager_copy is not None:
-            command = (str(manager_copy), "--apprc-execute-handoff", str(plan_file))
+            command = (
+                str(manager_copy),
+                "--apprc-execute-handoff",
+                str(plan_file),
+            )
         else:
             assert python_executable is not None
             python = python_executable

@@ -28,17 +28,26 @@ from apprc.distribution.runtime._integration import (
     remove_owned_command,
 )
 from apprc.distribution.runtime._leases import try_retire_runtime_slot
-from apprc.distribution.runtime.backend import runtime_command, runtime_interpreter
+from apprc.distribution.runtime.backend import (
+    runtime_command,
+    runtime_interpreter,
+)
+from apprc.user_files.app_home.permissions import (
+    create_private_directory_if_missing,
+)
 from apprc.user_files.installation.operations import plan_repair
-
 
 
 def test_repair_resumes_pending_managed_candidate_before_active_editable_guidance(
     tmp_path: Path,
 ) -> None:
-    identity = InstallationIdentity("repair-fixture", "repair-fixture", "app", None, ("app",))
+    identity = InstallationIdentity(
+        "repair-fixture", "repair-fixture", "app", None, ("app",)
+    )
     placement = InstallationPlacement(Layout.native())
-    editable = EditableCheckout(tmp_path / "checkout", tmp_path / "checkout" / ".venv")
+    editable = EditableCheckout(
+        tmp_path / "checkout", tmp_path / "checkout" / ".venv"
+    )
     candidate = RuntimeSlot(
         uuid4(),
         ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
@@ -51,11 +60,22 @@ def test_repair_resumes_pending_managed_candidate_before_active_editable_guidanc
         operation_id, "replace", "failed", target, placement
     )
     record = InstallationRecord(
-        3, identity, "app", generation_id, "1", placement, "incomplete",
-        active_runtime=editable, operation=operation,
+        3,
+        identity,
+        "app",
+        generation_id,
+        "1",
+        placement,
+        "incomplete",
+        active_runtime=editable,
+        operation=operation,
     )
     inspection = InstallationInspection(
-        "incomplete", tmp_path / "installation", "revision", identity.app_id, record
+        "incomplete",
+        tmp_path / "installation",
+        "revision",
+        identity.app_id,
+        record,
     )
 
     resumed = plan_repair(identity, candidate, placement, inspection=inspection)
@@ -68,7 +88,13 @@ def test_repair_resumes_pending_managed_candidate_before_active_editable_guidanc
     assert resumed.target.runtime.slot_id == candidate.slot_id
 
     pure_editable = InstallationRecord(
-        3, identity, "app", generation_id, "1", placement, "ready",
+        3,
+        identity,
+        "app",
+        generation_id,
+        "1",
+        placement,
+        "ready",
         active_runtime=editable,
     )
     with pytest.raises(InstallationError, match="uv sync --locked"):
@@ -77,9 +103,14 @@ def test_repair_resumes_pending_managed_candidate_before_active_editable_guidanc
             candidate,
             placement,
             inspection=InstallationInspection(
-                "ready", tmp_path / "installation", "revision", identity.app_id, pure_editable
+                "ready",
+                tmp_path / "installation",
+                "revision",
+                identity.app_id,
+                pure_editable,
             ),
         )
+
 
 def test_editable_runtime_uses_recorded_environment_without_copying_checkout(
     tmp_path: Path,
@@ -93,10 +124,12 @@ def test_editable_runtime_uses_recorded_environment_without_copying_checkout(
     runtime = EditableCheckout(project, environment)
 
     assert runtime_interpreter(tmp_path / "installation", runtime) == (
-        environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        environment
+        / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     )
     assert runtime_command(tmp_path / "installation", runtime, "fixture") == (
-        environment / ("Scripts/fixture.exe" if os.name == "nt" else "bin/fixture")
+        environment
+        / ("Scripts/fixture.exe" if os.name == "nt" else "bin/fixture")
     )
     assert sentinel.read_text(encoding="utf-8") == "VALUE = 1\n"
     assert set(project.iterdir()) == {environment, sentinel}
@@ -104,9 +137,12 @@ def test_editable_runtime_uses_recorded_environment_without_copying_checkout(
         runtime_command(tmp_path / "installation", runtime, "../outside")
 
 
-
-@pytest.mark.skipif(os.name == "nt", reason="POSIX global commands are symlinks")
-def test_global_command_removal_requires_exact_recorded_symlink(tmp_path: Path) -> None:
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX global commands are symlinks"
+)
+def test_global_command_removal_requires_exact_recorded_symlink(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "checkout" / ".venv" / "bin" / "fixture"
     source.parent.mkdir(parents=True)
     source.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -117,7 +153,9 @@ def test_global_command_removal_requires_exact_recorded_symlink(tmp_path: Path) 
     assert command.is_symlink()
     assert command.readlink() == source
 
-    with pytest.raises(InstallationError, match="Refusing to replace an unowned command"):
+    with pytest.raises(
+        InstallationError, match="Refusing to replace an unowned command"
+    ):
         publish_global_command(command, source)
     assert remove_owned_command(output)
     assert not command.exists()
@@ -126,7 +164,9 @@ def test_global_command_removal_requires_exact_recorded_symlink(tmp_path: Path) 
 def test_retirement_unlinks_slot_symlinks_without_touching_external_target(
     tmp_path: Path,
 ) -> None:
-    slot = tmp_path / "installation" / "runtimes" / str(uuid4())
+    directory = tmp_path / "installation"
+    create_private_directory_if_missing(directory)
+    slot = directory / "runtimes" / str(uuid4())
     outside = tmp_path / "user-data"
     outside.mkdir(parents=True)
     marker = outside / "keep.txt"

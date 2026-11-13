@@ -492,9 +492,7 @@ class LauncherHomeScreen(Screen[None]):
                 preparation.plan,
                 original_pid=os.getpid(),
             )
-            ready = asyncio.create_task(
-                asyncio.to_thread(handoff.wait_ready)
-            )
+            ready = asyncio.create_task(asyncio.to_thread(handoff.wait_ready))
             try:
                 await asyncio.shield(ready)
             except asyncio.CancelledError:

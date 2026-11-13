@@ -20,7 +20,6 @@ from apprc.definition.installation import (
     InstallationIdentity,
     InstallationInspection,
     InstallationPlacement,
-    InstallationRecord,
     InstallPlan,
     InventoryEntry,
     MigrationInventory,
@@ -219,7 +218,9 @@ class InstallationManager:
         generation_id: UUID,
     ) -> InstallationInspection:
         """Remove one confirmed-retired managed slot from durable authority."""
-        from apprc.user_files.installation.operations import record_runtime_retired
+        from apprc.user_files.installation.operations import (
+            record_runtime_retired,
+        )
 
         return record_runtime_retired(
             self.directory,
@@ -251,7 +252,9 @@ class InstallationManager:
         command_name: str | None = None,
     ) -> MigrationPlan:
         """Plan an explicit migration with exact optional initial identity."""
-        from apprc.user_files.installation.migration import validate_migration_inventory
+        from apprc.user_files.installation.migration import (
+            validate_migration_inventory,
+        )
         from apprc.user_files.installation.operations import plan_migration
 
         validate_migration_inventory(inventory, directory=self.directory)

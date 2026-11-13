@@ -96,10 +96,7 @@ def test_bridge_preserves_relative_env_file_across_working_directory_change(
         environment=environment,
     )
 
-    assert (
-        resolved.build(ConfigOnlyExampleEnv).profile
-        == "from-captured-cwd"
-    )
+    assert resolved.build(ConfigOnlyExampleEnv).profile == "from-captured-cwd"
 
 
 def test_root_doctor_omits_verbose_details_without_verbose_option() -> None:
@@ -119,7 +116,6 @@ def test_root_doctor_omits_verbose_details_without_verbose_option() -> None:
     assert result.exit_code == 0, result.output
     report = json.loads(result.stdout)
     assert set(report) == {"status", "checks", "installation"}
-
 
 
 @pytest.mark.parametrize(

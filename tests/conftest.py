@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from tests.support_pyapp import native_product
+
+pytest_plugins = ("tests.support_pyapp",)
 
 
 def pytest_configure(config: pytest.Config) -> None:

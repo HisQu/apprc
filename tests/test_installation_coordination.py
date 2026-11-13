@@ -146,7 +146,9 @@ def test_acquired_old_inode_is_rejected_before_observing_new_authority(
         process.join(10)
         assert process.exitcode == 0
         assert (
-            inspect_installation(directory, app_id=record.identity.app_id).record
+            inspect_installation(
+                directory, app_id=record.identity.app_id
+            ).record
             == record
         )
     finally:
@@ -193,7 +195,10 @@ def test_finalizer_never_removes_new_generation_support(tmp_path: Path) -> None:
     assert (
         directory / "saved-controller.py"
     ).read_text() == "new generation support"
-    assert inspect_installation(directory, app_id=newer.identity.app_id).record == newer
+    assert (
+        inspect_installation(directory, app_id=newer.identity.app_id).record
+        == newer
+    )
 
 
 def _queued_old_inode_writer(
@@ -315,7 +320,9 @@ def test_queued_old_inode_cannot_mutate_a_third_installers_generation(
         newer_process.start()
         newer_process.join(10)
         assert newer_process.exitcode == 0
-        replacement = inspect_installation(directory, app_id=newer.identity.app_id)
+        replacement = inspect_installation(
+            directory, app_id=newer.identity.app_id
+        )
         assert replacement.record == newer
         new_lock = (directory / "locks" / "operation.lock").stat()
         assert (new_lock.st_dev, new_lock.st_ino) != (
@@ -333,7 +340,8 @@ def test_queued_old_inode_cannot_mutate_a_third_installers_generation(
         process.join(10)
         assert process.exitcode == 0
         assert (
-            inspect_installation(directory, app_id=newer.identity.app_id) == replacement
+            inspect_installation(directory, app_id=newer.identity.app_id)
+            == replacement
         )
         assert support.read_text(encoding="utf-8") == "new generation support"
     finally:
@@ -367,7 +375,9 @@ def _competing_revision_writer(
 ) -> None:
     """Capture one revision before either actor is allowed to publish."""
     try:
-        planned = inspect_installation(directory, app_id=candidate.identity.app_id)
+        planned = inspect_installation(
+            directory, app_id=candidate.identity.app_id
+        )
         assert planned.revision is not None
         channel.send(("planned", planned.revision))
         assert _receive(channel) == "publish"
@@ -428,7 +438,9 @@ def test_spawned_writers_cannot_overwrite_the_same_authority_revision(
             for candidate, (status, _) in zip(candidates, results)
             if status == "saved"
         )
-        inspection = inspect_installation(directory, app_id=original.identity.app_id)
+        inspection = inspect_installation(
+            directory, app_id=original.identity.app_id
+        )
         assert inspection.record == winner
         assert inspection.revision != revision
         assert all(
@@ -510,7 +522,9 @@ def test_captured_resource_writer_cannot_recreate_a_retired_generation(
     record = replace(_record(), placement=placement)
     with installation_lock(directory):
         write_record(directory, record, expected_revision=None)
-    captured = inspect_installation(directory, app_id=record.identity.app_id).snapshot
+    captured = inspect_installation(
+        directory, app_id=record.identity.app_id
+    ).snapshot
     authority = InstallationWriteAuthority(record.identity.app_id, captured)
     with installation_lock(directory):
         with managed_write_lock(root):
@@ -554,7 +568,9 @@ def test_captured_resource_writer_revalidates_after_lock_before_mutation(
     old = replace(_record(), placement=placement)
     with installation_lock(directory):
         revision = write_record(directory, old, expected_revision=None)
-    captured = inspect_installation(directory, app_id=old.identity.app_id).snapshot
+    captured = inspect_installation(
+        directory, app_id=old.identity.app_id
+    ).snapshot
     authority = InstallationWriteAuthority(old.identity.app_id, captured)
     root.mkdir()
     payload = root / "payload.txt"
@@ -579,13 +595,12 @@ def test_captured_resource_writer_revalidates_after_lock_before_mutation(
         assert process.exitcode == 0
         assert payload.read_text(encoding="utf-8") == "replacement payload"
         assert (
-            inspect_installation(directory, app_id=newer.identity.app_id).record == newer
+            inspect_installation(directory, app_id=newer.identity.app_id).record
+            == newer
         )
     finally:
         _stop_process(process)
         parent.close()
-
-
 
 
 def test_active_runtime_remains_writable_during_failed_replacement(
@@ -623,7 +638,9 @@ def test_active_runtime_remains_writable_during_failed_replacement(
         active.identity,
         replacement,
         placement,
-        inspection=inspect_installation(directory, app_id=active.identity.app_id),
+        inspection=inspect_installation(
+            directory, app_id=active.identity.app_id
+        ),
     )
     pending = begin_operation(plan)
     assert pending.revision is not None
@@ -632,10 +649,15 @@ def test_active_runtime_remains_writable_during_failed_replacement(
         operation_id=plan.operation_id,
         expected_revision=pending.revision,
         diagnostic=InstallationDiagnostic(
-            "replacement-failed", "Candidate was rejected.", "Retry replacement."
+            "replacement-failed",
+            "Candidate was rejected.",
+            "Retry replacement.",
         ),
     )
-    assert failed.record is not None and failed.record.active_runtime == active_runtime
+    assert (
+        failed.record is not None
+        and failed.record.active_runtime == active_runtime
+    )
     assert failed.snapshot is not None
     root.mkdir()
     payload = root / "active-runtime-write.txt"

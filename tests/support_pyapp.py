@@ -94,6 +94,7 @@ def start_installation_driver(
     :param boundary: Mutation after which the child waits to be killed.
     :return: Started POSIX process; the caller owns termination and joining.
     """
+
     def install() -> None:
         import signal
         from zipfile import ZipFile
@@ -107,6 +108,7 @@ def start_installation_driver(
         os.chdir(cwd)
         with log_path.open("w", encoding="utf-8", buffering=1) as log:
             import sys
+
             original_stdout, original_stderr = sys.stdout, sys.stderr
 
             sys.stdout = sys.stderr = log
@@ -123,7 +125,9 @@ def start_installation_driver(
 
             def pause() -> None:
                 if ready is None:
-                    raise ValueError("A crash boundary requires readiness output.")
+                    raise ValueError(
+                        "A crash boundary requires readiness output."
+                    )
                 ready.write_text("ready", encoding="utf-8")
                 while True:
                     signal.pause()
@@ -141,7 +145,9 @@ def start_installation_driver(
                 original_publish = installation._publish_stable_command
 
                 def publish(
-                    destination: Path, executable: Path, *,
+                    destination: Path,
+                    executable: Path,
+                    *,
                     previous: tuple[OwnedOutput, ...],
                 ) -> OwnedOutput:
                     result = original_publish(
@@ -153,17 +159,23 @@ def start_installation_driver(
                 patch.setattr(installation, "_publish_stable_command", publish)
             patch.setattr(_manager, "_manager_uv", lambda: uv)
             patch.setattr(
-                _manager, "_read_product",
+                _manager,
+                "_read_product",
                 lambda *, include_project=False: (
-                    binding, project_bytes if include_project else None
+                    binding,
+                    project_bytes if include_project else None,
                 ),
             )
             try:
                 _manager._install(
-                    binding, manager, setup,
+                    binding,
+                    manager,
+                    setup,
                     (
-                        "--yes", "--skip-setup",
-                        "--command-directory", str(command_directory),
+                        "--yes",
+                        "--skip-setup",
+                        "--command-directory",
+                        str(command_directory),
                     ),
                 )
             except BaseException:
@@ -377,7 +389,11 @@ def native_product(
     )
     run(
         [
-            str(uv), "build", "--wheel", "--out-dir", str(vendor),
+            str(uv),
+            "build",
+            "--wheel",
+            "--out-dir",
+            str(vendor),
         ],
         environment=build_environment,
         cwd=repository / "src" / "apprc_dev" / "packaging" / "terminal",
@@ -445,6 +461,7 @@ def native_product(
         "from apprc.definition.installation import InstallationHooks\n"
         "from apprc.interfaces.cli.context import CliRuntimeOptions\n"
         "from apprc.interfaces.cli.runtime import CliRuntime\n"
+        "from apprc.interfaces.tui.launcher.model import LauncherSpec\n"
         "from fixture_config import APP_RC\n"
         "cli = typer.Typer()\n"
         "runtime = CliRuntime(APP_RC)\n"
@@ -532,14 +549,18 @@ def native_product(
         "installation_hooks=InstallationHooks("
         "initialize='fixture_app:initialize', inventory='fixture_app:inventory', "
         "cleanup='fixture_app:cleanup'), "
-        "host_diagnostics=host_diagnostics)\n"
+        "host_diagnostics=host_diagnostics, "
+        "launcher_spec=LauncherSpec(title='Native fixture launcher'))\n"
         "def main(): cli()\n",
         encoding="utf-8",
     )
     (project_root / "fixture_config.py").write_text(
-        "from apprc import AppRC, Paths\n"
-        "APP_RC = AppRC(app_id='fixture-app', paths=Paths(config=True, appdata=True), "
-        "command_name='fixture-app')\n",
+        "import apprc as rc\n"
+        "APP_RC = rc.AppRC(app_id='fixture-app', paths=rc.Paths(config=True, appdata=True), "
+        "command_name='fixture-app', user_dotenv=rc.UserDotenv())\n"
+        "@APP_RC.config('native', prefix='NATIVE_')\n"
+        "class NativeConfig(rc.Config):\n"
+        "    label: str = rc.field('NATIVE_LABEL', default='default')\n",
         encoding="utf-8",
     )
     environment = authoring_environment()
@@ -554,9 +575,18 @@ def native_product(
     run(["git", "init", "-q", str(project_root)], environment=git_environment)
     run(
         [
-            "git", "-C", str(project_root), "add",
-            "pyproject.toml", "uv.lock", "fixture_app.py", "fixture_config.py",
-            "vendor", "feature-dependency", "dev-dependency", "fixture_backend.py",
+            "git",
+            "-C",
+            str(project_root),
+            "add",
+            "pyproject.toml",
+            "uv.lock",
+            "fixture_app.py",
+            "fixture_config.py",
+            "vendor",
+            "feature-dependency",
+            "dev-dependency",
+            "fixture_backend.py",
         ],
         environment=git_environment,
     )
@@ -580,10 +610,13 @@ def native_product(
         extras=("native-feature",),
     )
     linux_setup = next(
-        artifact.path for artifact in product.artifacts
+        artifact.path
+        for artifact in product.artifacts
         if artifact.target == "x86_64-unknown-linux-gnu"
     )
-    checksum_path = product.checksums.project_root / product.checksums.destination
+    checksum_path = (
+        product.checksums.project_root / product.checksums.destination
+    )
     project_b = base / "fixture-b"
     shutil.copytree(
         project_root,
@@ -601,9 +634,18 @@ def native_product(
     run(["git", "init", "-q", str(project_b)], environment=git_environment)
     run(
         [
-            "git", "-C", str(project_b), "add", "pyproject.toml", "uv.lock",
-            "fixture_app.py", "fixture_config.py", "vendor",
-            "feature-dependency", "dev-dependency", "fixture_backend.py",
+            "git",
+            "-C",
+            str(project_b),
+            "add",
+            "pyproject.toml",
+            "uv.lock",
+            "fixture_app.py",
+            "fixture_config.py",
+            "vendor",
+            "feature-dependency",
+            "dev-dependency",
+            "fixture_backend.py",
         ],
         environment=git_environment,
     )
@@ -626,6 +668,7 @@ def native_product(
         extras=("native-feature",),
     )
     return project_root, uv, linux_setup, checksum_path, spec, project
+
 
 def disk_bytes(root: Path) -> int:
     """Count regular on-disk fixture bytes without following directory links."""

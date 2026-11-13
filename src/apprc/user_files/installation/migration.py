@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -150,20 +149,14 @@ def _run_migration_hook(
     *,
     operation_id: UUID,
     expected_revision: str,
-    migration_hook: (
-        Callable[[MigrationPlan, OperationContext], None] | None
-    ),
+    migration_hook: (Callable[[MigrationPlan, OperationContext], None] | None),
 ) -> str:
     """Run the captured provider only after exact pending authority is durable."""
     record = _pending(directory, operation_id, expected_revision)
     operation = record.operation
     migration = record.migration
     runtime = record.active_runtime
-    if (
-        operation is None
-        or operation.kind != "migrate"
-        or migration is None
-    ):
+    if operation is None or operation.kind != "migrate" or migration is None:
         raise InstallationError("No matching migration is pending.")
     if (
         runtime is None
@@ -265,7 +258,9 @@ def _resume_migration(
             activated = replace(
                 record,
                 placement=operation.placement,
-                status="ready" if record.active_runtime is not None else "removed-retained",
+                status="ready"
+                if record.active_runtime is not None
+                else "removed-retained",
                 operation=None,
                 migration=replace(migration, phase="activated"),
             )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -46,7 +47,9 @@ def test_broken_pending_candidate_repair_waits_for_busy_runtime_child(
     archive.write_bytes(b"retained immutable project")
     uv = tmp_path / "uv"
     uv.write_bytes(b"uv test executable")
-    identity = InstallationIdentity("fixture", "fixture", "fixture", None, ("fixture",))
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
 
     monkeypatch.setattr(
         installation,
@@ -65,8 +68,12 @@ def test_broken_pending_candidate_repair_waits_for_busy_runtime_child(
             {"PATH": os.environ.get("PATH", "")},
         )
 
-    assert source_marker.read_text(encoding="utf-8") == "retained candidate source"
-    assert environment_marker.read_text(encoding="utf-8") == "partially prepared"
+    assert (
+        source_marker.read_text(encoding="utf-8") == "retained candidate source"
+    )
+    assert (
+        environment_marker.read_text(encoding="utf-8") == "partially prepared"
+    )
     assert archive.read_bytes() == b"retained immutable project"
 
 
@@ -92,7 +99,9 @@ def test_global_command_rejection_preserves_unknown_symlink(
     assert unknown_target.read_bytes() == b"keep this user command"
 
 
-def test_stable_command_rejection_preserves_unknown_file(tmp_path: Path) -> None:
+def test_stable_command_rejection_preserves_unknown_file(
+    tmp_path: Path,
+) -> None:
     destination = tmp_path / "installation" / "fixture"
     destination.parent.mkdir()
     destination.write_bytes(b"user-owned command")
@@ -189,7 +198,9 @@ sync_runtime_slot(Path({str(uv)!r}), directory, identity, runtime, environment=d
                 retired = True
                 break
             time.sleep(0.01)
-        assert retired, "Runtime lease remained held after the UV delegate exited."
+        assert retired, (
+            "Runtime lease remained held after the UV delegate exited."
+        )
     finally:
         if not released:
             os.write(release_fd, b"R")

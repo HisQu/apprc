@@ -94,9 +94,7 @@ def test_installer_preserves_click_consumed_options_in_order(
     ]
     app = _app(
         args=args,
-        installer_entrypoint=lambda values: (
-            calls.append(tuple(values)) or 0
-        ),
+        installer_entrypoint=lambda values: calls.append(tuple(values)) or 0,
     )
 
     result = CliRunner().invoke(app, args)
@@ -116,12 +114,24 @@ def test_installer_preserves_click_consumed_options_in_order(
     ]
 
 
-def test_noneditable_install_without_delegate_requires_native_setup() -> None:
+def test_noneditable_install_without_delegate_requires_native_setup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = {
+        "HOME": str(tmp_path),
+        "XDG_DATA_HOME": str(tmp_path / "xdg-data"),
+    }
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    directory = installation_directory(
+        "installation-cli", environment=environment
+    )
     args = ["app", "install"]
     result = CliRunner().invoke(_app(args=args), args)
 
     assert result.exit_code != 0
-    assert "native setup executable" in result.output
+    assert not directory.exists()
 
 
 def test_root_doctor_reports_invalid_authority_without_paths(

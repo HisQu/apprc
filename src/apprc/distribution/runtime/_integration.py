@@ -30,7 +30,10 @@ def _bytes_digest(path: Path) -> str:
 
 
 def validate_command_directory(
-    directory: Path, *, forbidden: tuple[Path, ...], path_entries: tuple[Path, ...],
+    directory: Path,
+    *,
+    forbidden: tuple[Path, ...],
+    path_entries: tuple[Path, ...],
 ) -> None:
     """Require an existing absolute command directory on PATH and outside owned trees."""
     if not directory.is_absolute():
@@ -38,8 +41,12 @@ def validate_command_directory(
     assert_no_links(directory)
     resolved = directory.resolve(strict=True)
     if not resolved.is_dir():
-        raise InstallationError("Global command destination is not a directory.")
-    if not any(resolved == entry.resolve(strict=False) for entry in path_entries):
+        raise InstallationError(
+            "Global command destination is not a directory."
+        )
+    if not any(
+        resolved == entry.resolve(strict=False) for entry in path_entries
+    ):
         raise InstallationError(
             f"Add {directory} to PATH before registering the global command."
         )
@@ -48,11 +55,14 @@ def validate_command_directory(
         or resolved.is_relative_to(root.resolve(strict=False))
         for root in forbidden
     ):
-        raise InstallationError("Global command directory must be outside the checkout and environment.")
+        raise InstallationError(
+            "Global command directory must be outside the checkout and environment."
+        )
 
 
 def _authorized_existing(
-    destination: Path, previous: tuple[OwnedOutput, ...],
+    destination: Path,
+    previous: tuple[OwnedOutput, ...],
 ) -> bool:
     try:
         metadata = destination.lstat()
@@ -62,9 +72,12 @@ def _authorized_existing(
         item.kind == "command" and item.path == str(destination)
         for item in previous
     ):
-        raise InstallationError(f"Refusing to replace an unowned command: {destination}.")
+        raise InstallationError(
+            f"Refusing to replace an unowned command: {destination}."
+        )
     item = next(
-        item for item in previous
+        item
+        for item in previous
         if item.kind == "command" and item.path == str(destination)
     )
     if stat.S_ISLNK(metadata.st_mode):
@@ -72,18 +85,31 @@ def _authorized_existing(
     elif stat.S_ISREG(metadata.st_mode):
         actual = _bytes_digest(destination)
     else:
-        raise InstallationError("Recorded global command has an unsafe file type.")
+        raise InstallationError(
+            "Recorded global command has an unsafe file type."
+        )
     if item.digest is None or actual != item.digest:
-        raise InstallationError("Recorded global command changed outside AppRC ownership.")
+        raise InstallationError(
+            "Recorded global command changed outside AppRC ownership."
+        )
     return True
 
 
 def publish_global_command(
-    command: Path, source: Path, *, previous: tuple[OwnedOutput, ...] = (),
+    command: Path,
+    source: Path,
+    *,
+    previous: tuple[OwnedOutput, ...] = (),
 ) -> OwnedOutput:
     """Publish a POSIX symlink or Windows byte copy after checking exact ownership."""
-    if not command.is_absolute() or not source.is_absolute() or not source.is_file():
-        raise InstallationError("Global command source and destination must be absolute files.")
+    if (
+        not command.is_absolute()
+        or not source.is_absolute()
+        or not source.is_file()
+    ):
+        raise InstallationError(
+            "Global command source and destination must be absolute files."
+        )
     parent = command.parent
     assert_no_links(parent)
     if not parent.is_dir():
@@ -113,7 +139,10 @@ def publish_global_command(
         )
         temporary = Path(temporary_name)
         try:
-            with os.fdopen(descriptor, "wb") as stream, source.open("rb") as origin:
+            with (
+                os.fdopen(descriptor, "wb") as stream,
+                source.open("rb") as origin,
+            ):
                 shutil.copyfileobj(origin, stream)
                 stream.flush()
                 os.fsync(stream.fileno())
@@ -127,7 +156,9 @@ def publish_global_command(
 def remove_owned_command(output: OwnedOutput) -> bool:
     """Remove a global command only while its exact link target or bytes still match."""
     if output.kind not in {"command", "shortcut"} or output.digest is None:
-        raise InstallationError("Owned command or shortcut declaration is malformed.")
+        raise InstallationError(
+            "Owned command or shortcut declaration is malformed."
+        )
     destination = Path(output.path)
     assert_no_links(destination.parent)
     try:
@@ -147,7 +178,9 @@ def remove_owned_command(output: OwnedOutput) -> bool:
 
 
 def validate_global_command(
-    command: Path, *, previous: tuple[OwnedOutput, ...] = (),
+    command: Path,
+    *,
+    previous: tuple[OwnedOutput, ...] = (),
 ) -> None:
     """Check an existing command collision before lifecycle resource mutation."""
     if not command.is_absolute():
@@ -188,20 +221,29 @@ def publish_windows_registration(
     import winreg
 
     output = windows_registration_intent(
-        directory, identity, command, maintenance_group_name=maintenance_group_name
+        directory,
+        identity,
+        command,
+        maintenance_group_name=maintenance_group_name,
     )
     if output not in previous:
-        raise InstallationError("Refusing to claim an unowned Windows uninstall key.")
+        raise InstallationError(
+            "Refusing to claim an unowned Windows uninstall key."
+        )
     subkey = output.path.removeprefix("HKCU\\")
     expected = dict(output.values)
     try:
         with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, subkey, 0,
+            winreg.HKEY_CURRENT_USER,
+            subkey,
+            0,
             winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
         ) as key:
             subkey_count, value_count, _ = winreg.QueryInfoKey(key)
             if subkey_count:
-                raise InstallationError("Windows uninstall key contains unknown subkeys.")
+                raise InstallationError(
+                    "Windows uninstall key contains unknown subkeys."
+                )
             values = {
                 name: (value, kind)
                 for name, value, kind in (
@@ -209,21 +251,29 @@ def publish_windows_registration(
                 )
             }
             if any(
-                name not in expected or value != expected[name] or kind != winreg.REG_SZ
+                name not in expected
+                or value != expected[name]
+                or kind != winreg.REG_SZ
                 for name, (value, kind) in values.items()
             ):
-                raise InstallationError("Windows uninstall registration changed outside AppRC ownership.")
+                raise InstallationError(
+                    "Windows uninstall registration changed outside AppRC ownership."
+                )
             for name, value in expected.items():
                 if name not in values:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
     except FileNotFoundError:
         with winreg.CreateKeyEx(
-            winreg.HKEY_CURRENT_USER, subkey, 0,
+            winreg.HKEY_CURRENT_USER,
+            subkey,
+            0,
             winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
         ) as key:
             subkey_count, value_count, _ = winreg.QueryInfoKey(key)
             if subkey_count:
-                raise InstallationError("Windows uninstall key contains unknown subkeys.")
+                raise InstallationError(
+                    "Windows uninstall key contains unknown subkeys."
+                )
             values = {
                 name: (value, kind)
                 for name, value, kind in (
@@ -235,7 +285,9 @@ def publish_windows_registration(
                 for name, value in expected.items()
                 if name in values
             ) or any(name not in expected for name in values):
-                raise InstallationError("Windows uninstall registration changed outside AppRC ownership.")
+                raise InstallationError(
+                    "Windows uninstall registration changed outside AppRC ownership."
+                )
             for name, value in expected.items():
                 if name not in values:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
@@ -247,7 +299,9 @@ def remove_windows_registration(output: OwnedOutput) -> bool:
     if os.name != "nt":
         return True
     if output.kind != "hkcu" or output.digest is not None:
-        raise InstallationError("Registry removal requires exact HKCU ownership.")
+        raise InstallationError(
+            "Registry removal requires exact HKCU ownership."
+        )
     import winreg
 
     key_path = output.path.removeprefix("HKCU\\")
@@ -265,11 +319,17 @@ def remove_windows_registration(output: OwnedOutput) -> bool:
                 winreg.EnumValue(key, index) for index in range(value_count)
             )
         }
-        if subkey_count or set(values) != set(expected) or any(
-            values[name] != (value, winreg.REG_SZ)
-            for name, value in expected.items()
+        if (
+            subkey_count
+            or set(values) != set(expected)
+            or any(
+                values[name] != (value, winreg.REG_SZ)
+                for name, value in expected.items()
+            )
         ):
-            raise InstallationError("Refusing to delete a modified Windows uninstall registration.")
+            raise InstallationError(
+                "Refusing to delete a modified Windows uninstall registration."
+            )
         winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
     return True
 
@@ -288,7 +348,10 @@ def _desktop_path(value: Path) -> str:
 
 
 def _shortcut_destination(
-    identity: InstallationIdentity, *, start_menu: bool, desktop: bool,
+    identity: InstallationIdentity,
+    *,
+    start_menu: bool,
+    desktop: bool,
 ) -> tuple[Path | None, ...]:
     destinations: list[Path | None] = []
     if os.name == "nt":
@@ -298,7 +361,10 @@ def _shortcut_destination(
         shell = ctypes.WinDLL("shell32", use_last_error=True)
         get_folder = shell.SHGetFolderPathW
         get_folder.argtypes = [
-            wintypes.HWND, ctypes.c_int, wintypes.HANDLE, wintypes.DWORD,
+            wintypes.HWND,
+            ctypes.c_int,
+            wintypes.HANDLE,
+            wintypes.DWORD,
             wintypes.LPWSTR,
         ]
         get_folder.restype = ctypes.c_long
@@ -307,7 +373,9 @@ def _shortcut_destination(
             output = ctypes.create_unicode_buffer(32768)
             result = get_folder(None, csidl, None, 0, output)
             if result != 0:
-                raise OSError(result, "Windows shortcut directory is unavailable.")
+                raise OSError(
+                    result, "Windows shortcut directory is unavailable."
+                )
             return Path(output.value)
 
         if start_menu:
@@ -315,22 +383,43 @@ def _shortcut_destination(
         if desktop:
             destinations.append(known_folder(0x0010) / f"{identity.app_id}.lnk")
     else:
-        data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+        data_home = Path(
+            os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")
+        )
         if start_menu:
-            destinations.append(data_home / "applications" / f"{identity.app_id}.desktop")
+            destinations.append(
+                data_home / "applications" / f"{identity.app_id}.desktop"
+            )
         if desktop:
             desktop_value = os.environ.get("XDG_DESKTOP_DIR")
             if desktop_value is None:
-                user_dirs = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "user-dirs.dirs"
+                user_dirs = (
+                    Path(
+                        os.environ.get(
+                            "XDG_CONFIG_HOME", Path.home() / ".config"
+                        )
+                    )
+                    / "user-dirs.dirs"
+                )
                 if user_dirs.is_file():
-                    for line in user_dirs.read_text(encoding="utf-8").splitlines():
+                    for line in user_dirs.read_text(
+                        encoding="utf-8"
+                    ).splitlines():
                         if line.startswith("XDG_DESKTOP_DIR="):
-                            desktop_value = line.partition("=")[2].strip().strip('"')
-                            desktop_value = desktop_value.replace("$HOME", str(Path.home()))
+                            desktop_value = (
+                                line.partition("=")[2].strip().strip('"')
+                            )
+                            desktop_value = desktop_value.replace(
+                                "$HOME", str(Path.home())
+                            )
                             break
             if not desktop_value:
-                raise InstallationError("Desktop shortcut location is not configured.")
-            destinations.append(Path(desktop_value).expanduser() / f"{identity.app_id}.desktop")
+                raise InstallationError(
+                    "Desktop shortcut location is not configured."
+                )
+            destinations.append(
+                Path(desktop_value).expanduser() / f"{identity.app_id}.desktop"
+            )
     return tuple(destinations)
 
 
@@ -355,21 +444,27 @@ def publish_shortcuts(
             assert_no_links(destination.parent)
             old = next(
                 (
-                    item for item in previous
+                    item
+                    for item in previous
                     if item.kind == "shortcut" and item.path == str(destination)
                 ),
                 None,
             )
             if destination.exists() or destination.is_symlink():
                 metadata = destination.lstat()
-                actual = _bytes_digest(destination) if stat.S_ISREG(metadata.st_mode) else None
+                actual = (
+                    _bytes_digest(destination)
+                    if stat.S_ISREG(metadata.st_mode)
+                    else None
+                )
                 if old is None or old.digest != actual:
                     raise InstallationError(
                         f"Refusing to replace an unowned shortcut: {destination}."
                     )
                 continue
             descriptor, temporary_name = tempfile.mkstemp(
-                prefix=f".{destination.name}.", suffix=".apprc-tmp",
+                prefix=f".{destination.name}.",
+                suffix=".apprc-tmp",
                 dir=destination.parent,
             )
             os.close(descriptor)
@@ -378,7 +473,9 @@ def publish_shortcuts(
                 if os.name == "nt":
                     from win32com.client import Dispatch
 
-                    shortcut = Dispatch("WScript.Shell").CreateShortcut(str(temporary))
+                    shortcut = Dispatch("WScript.Shell").CreateShortcut(
+                        str(temporary)
+                    )
                     shortcut.TargetPath = str(command)
                     shortcut.Arguments = "launch" if launch_enabled else ""
                     shortcut.WorkingDirectory = str(command.parent)
@@ -401,7 +498,9 @@ def publish_shortcuts(
             finally:
                 temporary.unlink(missing_ok=True)
             outputs.append(
-                OwnedOutput("shortcut", str(destination), _bytes_digest(destination))
+                OwnedOutput(
+                    "shortcut", str(destination), _bytes_digest(destination)
+                )
             )
     except BaseException:
         for output in reversed(outputs):

@@ -21,7 +21,6 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import BinaryIO, Literal, NotRequired, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
-from apprc.distribution._archives import _deterministic_zip
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import (
     set_windows_private_acl,
@@ -419,14 +418,19 @@ class NativeFrontendBuilder:
             requirements = archive.read("bootstrap-requirements.txt")
         requirements_text = requirements.decode("utf-8")
         requirement_lines = tuple(
-            line.strip() for line in requirements_text.splitlines() if line.strip()
+            line.strip()
+            for line in requirements_text.splitlines()
+            if line.strip()
         )
         uv_lines = [
-            line for line in requirement_lines
+            line
+            for line in requirement_lines
             if re.match(r"(?i)^uv(?:\[|[<=>!~; ]|$)", line)
         ]
         if uv_lines != [f"uv=={UV_VERSION}"]:
-            raise ValueError("Native SDK archive must contain exactly one pinned uv requirement.")
+            raise ValueError(
+                "Native SDK archive must contain exactly one pinned uv requirement."
+            )
         bootstrap_inputs = {
             "pyapp_version": PYAPP_VERSION,
             "pyapp_source_sha256": PYAPP_SOURCE_SHA256,

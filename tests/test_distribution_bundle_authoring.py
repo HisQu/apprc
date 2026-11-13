@@ -58,8 +58,7 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
     with ZipFile(BytesIO(sdk_bytes)) as sdk:
         names = set(sdk.namelist())
         metadata_names = {
-            name for name in names
-            if name.endswith(".dist-info/METADATA")
+            name for name in names if name.endswith(".dist-info/METADATA")
         }
         assert "binding.json" in names
         assert "project.zip" in names

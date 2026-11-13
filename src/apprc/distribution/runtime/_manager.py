@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import os
 import subprocess
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from collections.abc import Callable
+from typing import cast
 from uuid import uuid4
-from apprc.definition.installation import InstallationPlacement, OwnedOutput, RuntimeSlot
+from apprc.definition.installation import (
+    InstallationPlacement,
+    OwnedOutput,
+    RuntimeSlot,
+)
+from apprc.definition.paths import ResourceKind
 from apprc.distribution.models import NativeBinding, decode_native_binding
 from apprc.services.installation import InstallationManager
 
@@ -35,7 +43,9 @@ def _read_product(
         or not isinstance(expected_digest, str)
         or len(expected_digest) != 64
     ):
-        raise RuntimeError("Native manager archive verification metadata is unavailable.")
+        raise RuntimeError(
+            "Native manager archive verification metadata is unavailable."
+        )
     size = executable.stat().st_size
     start = size - expected_size
     if start < 0:
@@ -50,8 +60,13 @@ def _read_product(
     with zipfile.ZipFile(executable) as archive:
         binding = decode_native_binding(archive.read("binding.json"))
         project = archive.read("project.zip") if include_project else None
-    if project is not None and hashlib.sha256(project).hexdigest() != binding.source.digest:
-        raise RuntimeError("Embedded project snapshot differs from its binding.")
+    if (
+        project is not None
+        and hashlib.sha256(project).hexdigest() != binding.source.digest
+    ):
+        raise RuntimeError(
+            "Embedded project snapshot differs from its binding."
+        )
     return binding, project
 
 
@@ -70,12 +85,20 @@ def _application(binding: NativeBinding):
 
 def _manager_uv() -> Path:
     """Resolve only the uv package and executable owned by this manager."""
-    import uv
-
+    uv = importlib.import_module("uv")
+    package_file = vars(uv).get("__file__")
+    find_uv_bin = vars(uv).get("find_uv_bin")
+    if not isinstance(package_file, str) or not callable(find_uv_bin):
+        raise RuntimeError("The manager-owned uv package is unavailable.")
+    executable_file = cast(Callable[[], object], find_uv_bin)()
+    if not isinstance(executable_file, str):
+        raise RuntimeError("The manager-owned uv executable is unavailable.")
     prefix = Path(sys.prefix).resolve(strict=True)
-    package = Path(uv.__file__).resolve(strict=True)
-    executable = Path(uv.find_uv_bin()).resolve(strict=True)
-    if not package.is_relative_to(prefix) or not executable.is_relative_to(prefix):
+    package = Path(package_file).resolve(strict=True)
+    executable = Path(executable_file).resolve(strict=True)
+    if not package.is_relative_to(prefix) or not executable.is_relative_to(
+        prefix
+    ):
         raise RuntimeError("The manager-owned uv executable is unavailable.")
     return executable
 
@@ -96,6 +119,7 @@ def _install(
     )
     from apprc.interfaces.cli.context import CliRuntimeOptions
     from apprc.user_files.app_home.layouts import resolve_app_paths
+
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--command-directory", type=Path)
     parser.add_argument("--yes", "-y", action="store_true")
@@ -113,14 +137,18 @@ def _install(
     parser.add_argument("--log-level")
     options, extras = parser.parse_known_args(args)
     if extras:
-        raise ValueError("Native install received unsupported arguments: " + " ".join(extras))
+        raise ValueError(
+            "Native install received unsupported arguments: " + " ".join(extras)
+        )
 
     runtime_parser = argparse.ArgumentParser(add_help=False)
     runtime_parser.add_argument("--env-file", action="append", type=Path)
     runtime_parser.add_argument(
         "--env-file-overrides-os-environ", "-o", action="store_true"
     )
-    runtime_parser.add_argument("--skip-dotenv-layers", "-s", action="store_true")
+    runtime_parser.add_argument(
+        "--skip-dotenv-layers", "-s", action="store_true"
+    )
     runtime_parser.add_argument("--workspace")
     runtime_parser.add_argument("--layout")
     runtime_parser.add_argument("--app-root", type=Path)
@@ -141,7 +169,9 @@ def _install(
         previous.identity != binding.identity
         or previous.command_name != binding.command_name
     ):
-        raise RuntimeError("Saved installation belongs to another native product.")
+        raise RuntimeError(
+            "Saved installation belongs to another native product."
+        )
     if previous is not None:
         placement = previous.placement
     else:
@@ -160,6 +190,12 @@ def _install(
         )
 
         capabilities = binding.capabilities.paths
+        resource_capabilities: tuple[tuple[ResourceKind, bool], ...] = (
+            ("config", capabilities.config),
+            ("appdata", capabilities.appdata),
+            ("cache", capabilities.cache),
+            ("state", capabilities.state),
+        )
         placement = InstallationPlacement(
             layout=paths.layout,
             config_dir=paths.config_dir if capabilities.config else None,
@@ -168,14 +204,7 @@ def _install(
             state_dir=paths.state_dir if capabilities.state else None,
             logs_dir=paths.logs_dir if capabilities.state else None,
             capabilities=frozenset(
-                kind
-                for kind, enabled in (
-                    ("config", capabilities.config),
-                    ("appdata", capabilities.appdata),
-                    ("cache", capabilities.cache),
-                    ("state", capabilities.state),
-                )
-                if enabled
+                kind for kind, enabled in resource_capabilities if enabled
             ),
         )
 
@@ -216,9 +245,7 @@ def _install(
         inspection = publish_optional_shortcuts(
             manager,
             manager.directory
-            / (
-                binding.command_name + (".exe" if os.name == "nt" else "")
-            ),
+            / (binding.command_name + (".exe" if os.name == "nt" else "")),
             binding.identity,
             display_name=binding.display_name,
             start_menu=options.start_menu,
@@ -333,7 +360,12 @@ def _forward(
             )
             environment = runtime_environment(dict(os.environ))
             if isinstance(runtime, RuntimeSlot):
-                prefix = manager.directory / "runtimes" / str(runtime.slot_id) / ".venv"
+                prefix = (
+                    manager.directory
+                    / "runtimes"
+                    / str(runtime.slot_id)
+                    / ".venv"
+                )
                 lease = acquire_runtime_lease_locked(
                     manager.directory / "runtimes" / str(runtime.slot_id)
                 )
@@ -370,13 +402,13 @@ def main() -> int:
         binding, _ = _read_product()
         from apprc.distribution.runtime.removal import execute_handoff
 
-        execute_handoff(
-            Path(argv[1]), expected_identity=binding.identity
-        )
+        execute_handoff(Path(argv[1]), expected_identity=binding.identity)
         return 0
     if argv and argv[0] == "--apprc-finalize-namespace":
         if len(argv) != 3:
-            raise ValueError("Native namespace-finalizer arguments are invalid.")
+            raise ValueError(
+                "Native namespace-finalizer arguments are invalid."
+            )
         binding, _ = _read_product()
         from apprc.distribution.runtime.namespace_finalizer import (
             finalize_namespace,
@@ -394,15 +426,26 @@ def main() -> int:
     os.environ["_APPRC_NATIVE_MANAGER"] = "1"
     os.environ["_APPRC_NATIVE_EXECUTABLE"] = str(executable)
     application = _application(binding)
-    manager = InstallationManager(application.schema, environment=dict(os.environ))
+    manager = InstallationManager(
+        application.schema, environment=dict(os.environ)
+    )
     owned = _owned_manager_invocation(executable, manager, binding)
     group = binding.maintenance_group_name
     core_actions = {
-        "doctor", "paths", "repair", "uninstall", "migrate", "install"
+        "doctor",
+        "paths",
+        "repair",
+        "uninstall",
+        "migrate",
+        "install",
     }
     group_args = None
     value_options = {
-        "--env-file", "--log-level", "--workspace", "--layout", "--app-root"
+        "--env-file",
+        "--log-level",
+        "--workspace",
+        "--layout",
+        "--app-root",
     }
     index = 0
     while index < len(argv):
@@ -414,14 +457,9 @@ def main() -> int:
             break
         if token.startswith("-"):
             option = token.split("=", maxsplit=1)[0]
-            index += (
-                2
-                if option in value_options and "=" not in token
-                else 1
-            )
+            index += 2 if option in value_options and "=" not in token else 1
             continue
         break
-
 
     if (
         not owned
@@ -438,9 +476,12 @@ def main() -> int:
         return 2
     if not owned and not argv:
         return _install(binding, manager, executable, ())
-    if not owned and group_args is None and argv and argv[0] not in {
-        "--help", "-h", "--version"
-    }:
+    if (
+        not owned
+        and group_args is None
+        and argv
+        and argv[0] not in {"--help", "-h", "--version"}
+    ):
         return _install(binding, manager, executable, tuple(argv))
 
     if owned:
@@ -523,7 +564,8 @@ def main() -> int:
     from apprc.interfaces.cli.context import _authenticated_native_manager_scope
 
     with _authenticated_native_manager_scope(executable):
-        return run_typer_app(app, args=argv, prog_name=binding.command_name)
+        run_typer_app(app, args=argv, prog_name=binding.command_name)
+    return 0
 
 
 if __name__ == "__main__":

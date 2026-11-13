@@ -45,7 +45,9 @@ def _sha256_file(path: Path) -> str:
 
 
 def _archive_paths(
-    names: Sequence[tuple[str, bool]], *, strip_wrapper: bool = True,
+    names: Sequence[tuple[str, bool]],
+    *,
+    strip_wrapper: bool = True,
 ) -> tuple[tuple[Path, ...], str | None]:
     """Validate portable member names and remove only an unambiguous wrapper."""
     paths = []
@@ -99,7 +101,8 @@ def _archive_paths(
     roots = {path.parts[0] for path in paths if path.parts}
     wrapper = (
         next(iter(roots))
-        if strip_wrapper and len(roots) == 1
+        if strip_wrapper
+        and len(roots) == 1
         and all(
             not path.parts or len(path.parts) > 1 or directory
             for path, (_, directory) in zip(paths, names, strict=True)
@@ -116,7 +119,11 @@ def _archive_paths(
 
 
 def _archive_inputs(
-    archive: Path, root: Path, *, extract: bool, strip_wrapper: bool = True,
+    archive: Path,
+    root: Path,
+    *,
+    extract: bool,
+    strip_wrapper: bool = True,
 ) -> None:
     """Extract or compare original regular inputs, never backend-created files.
 
@@ -128,7 +135,10 @@ def _archive_inputs(
             with ZipFile(archive) as package:
                 members = package.infolist()
                 paths, _ = _archive_paths(
-                    [(member.orig_filename, member.is_dir()) for member in members],
+                    [
+                        (member.orig_filename, member.is_dir())
+                        for member in members
+                    ],
                     strip_wrapper=strip_wrapper,
                 )
                 if any(
@@ -220,7 +230,9 @@ def _archive_input(
 
 
 def materialize_project_snapshot(
-    archive: Path, destination: Path, source: ProjectSnapshot,
+    archive: Path,
+    destination: Path,
+    source: ProjectSnapshot,
 ) -> None:
     """Verify an immutable project ZIP before materializing its original tree.
 
@@ -275,14 +287,23 @@ def materialize_project_snapshot(
             if lock is None:
                 raise InstallationError("Project snapshot has no uv.lock.")
             with package.open(lock) as stream:
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                lock_digest = hashlib.sha256()
+                while chunk := stream.read(1024 * 1024):
+                    lock_digest.update(chunk)
+                digest = lock_digest.hexdigest()
             if digest != source.lock_digest:
-                raise InstallationError("Project snapshot lock SHA-256 differs.")
+                raise InstallationError(
+                    "Project snapshot lock SHA-256 differs."
+                )
     except (OSError, ValueError, BadZipFile) as error:
         raise InstallationError(f"Invalid project snapshot: {error}") from error
     _assert_private_staging(destination)
     if any(destination.iterdir()):
-        raise InstallationError("Project materialization directory is not empty.")
+        raise InstallationError(
+            "Project materialization directory is not empty."
+        )
     _archive_inputs(archive, destination, extract=True, strip_wrapper=False)
     if _sha256_file(archive) != source.digest:
-        raise InstallationError("Project snapshot changed during materialization.")
+        raise InstallationError(
+            "Project snapshot changed during materialization."
+        )

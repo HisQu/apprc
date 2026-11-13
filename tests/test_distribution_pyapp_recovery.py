@@ -109,12 +109,12 @@ def _wait_for_initialization_gate(
                 + (output[1] or "")
             )
         time.sleep(0.05)
-    pytest.fail("Native setup did not reach the initialization barrier in time.")
+    pytest.fail(
+        "Native setup did not reach the initialization barrier in time."
+    )
 
 
-def _stop_process_group(
-    process: subprocess.Popen[str], release: Path
-) -> None:
+def _stop_process_group(process: subprocess.Popen[str], release: Path) -> None:
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -179,8 +179,8 @@ def test_interrupted_initialized_candidate_resumes_exact_retained_slot(
 
         os.killpg(process.pid, signal.SIGKILL)
         stdout, stderr = process.communicate(timeout=30)
-        assert process.returncode == -signal.SIGKILL, (
-            (stdout or "") + (stderr or "")
+        assert process.returncode == -signal.SIGKILL, (stdout or "") + (
+            stderr or ""
         )
 
         run(install, environment=environment, cwd=tmp_path)
@@ -196,11 +196,12 @@ def test_interrupted_initialized_candidate_resumes_exact_retained_slot(
         assert source.get("lock_digest") == project.source.lock_digest
         assert source.get("commit") == project.source.commit
         assert source.get("project_path") == project.source.project_path
-        assert hashlib.sha256((slot / "project.zip").read_bytes()).hexdigest() == (
-            project.source.digest
-        )
+        assert hashlib.sha256(
+            (slot / "project.zip").read_bytes()
+        ).hexdigest() == (project.source.digest)
         runtime_slots = {
-            path.name for path in (directory / "runtimes").iterdir()
+            path.name
+            for path in (directory / "runtimes").iterdir()
             if path.is_dir()
         }
         assert runtime_slots == {candidate_slot}
@@ -250,9 +251,10 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
     )
     result_payload = json.loads(result.stdout)
     assert result_payload["marker"] == "committed-source"
-    assert Path(result_payload["prefix"]).resolve() == (
-        directory / "runtimes" / old_slot / ".venv"
-    ).resolve()
+    assert (
+        Path(result_payload["prefix"]).resolve()
+        == (directory / "runtimes" / old_slot / ".venv").resolve()
+    )
 
     stable_manager = directory / command_name
     assert stable_manager.is_file()
@@ -297,7 +299,9 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
 
 
 def _wait_for_driver_gate(
-    process: BaseProcess, ready: Path, log_path: Path,
+    process: BaseProcess,
+    ready: Path,
+    log_path: Path,
 ) -> None:
     deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
@@ -306,8 +310,12 @@ def _wait_for_driver_gate(
         if not process.is_alive():
             break
         time.sleep(0.05)
-    diagnostics = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
-    pytest.fail(f"Installation driver did not reach its boundary.\n{diagnostics}")
+    diagnostics = (
+        log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    )
+    pytest.fail(
+        f"Installation driver did not reach its boundary.\n{diagnostics}"
+    )
 
 
 def _stop_driver(process: BaseProcess) -> None:
@@ -323,7 +331,9 @@ def _stop_driver(process: BaseProcess) -> None:
     process.close()
 
 
-@pytest.mark.parametrize("replacement", [False, True], ids=["first", "replacement"])
+@pytest.mark.parametrize(
+    "replacement", [False, True], ids=["first", "replacement"]
+)
 @pytest.mark.parametrize("boundary", ["candidate", "publication"])
 def test_killed_installation_resumes_exact_candidate_at_durable_boundaries(
     tmp_path: Path,
@@ -335,7 +345,9 @@ def test_killed_installation_resumes_exact_candidate_at_durable_boundaries(
     command_name = spec.metadata.command_name
     assert command_name is not None
     setup_b = (
-        project_root.parent / "fixture-b" / "dist"
+        project_root.parent
+        / "fixture-b"
+        / "dist"
         / f"{spec.metadata.identity.app_id}-setup-linux-x86_64"
     )
     setup = setup_b if replacement else setup_a
@@ -347,14 +359,23 @@ def test_killed_installation_resumes_exact_candidate_at_durable_boundaries(
     stable = directory / command_name
     old_slot: str | None = None
     if replacement:
-        run(_install_command(setup_a, commands), environment=environment, cwd=tmp_path)
+        run(
+            _install_command(setup_a, commands),
+            environment=environment,
+            cwd=tmp_path,
+        )
         old_slot = _active_slot(_record(directory))
     ready = tmp_path / "mutation-ready"
     log_path = tmp_path / "driver.log"
     process = start_installation_driver(
-        setup, uv, commands,
-        environment=environment, cwd=tmp_path, log_path=log_path,
-        ready=ready, boundary=boundary,
+        setup,
+        uv,
+        commands,
+        environment=environment,
+        cwd=tmp_path,
+        log_path=log_path,
+        ready=ready,
+        boundary=boundary,
     )
     try:
         _wait_for_driver_gate(process, ready, log_path)
@@ -384,7 +405,10 @@ def test_killed_installation_resumes_exact_candidate_at_durable_boundaries(
                     assert isinstance(content, str)
                     retained = directory / content
                     assert retained.parent == directory
-                    assert hashlib.sha256(retained.read_bytes()).hexdigest() == image["digest"]
+                    assert (
+                        hashlib.sha256(retained.read_bytes()).hexdigest()
+                        == image["digest"]
+                    )
                     retained_images.add(retained)
             assert any(
                 hashlib.sha256(path.read_bytes()).hexdigest()
@@ -403,18 +427,26 @@ def test_killed_installation_resumes_exact_candidate_at_durable_boundaries(
         elif boundary == "publication":
             doctor = run(
                 [str(stable), "app", "doctor", "--json"],
-                environment=environment, cwd=tmp_path, check=False,
+                environment=environment,
+                cwd=tmp_path,
+                check=False,
             )
             assert isinstance(json.loads(doctor.stdout)["installation"], dict)
         if boundary == "candidate":
             rejected = run(
                 _install_command(other_setup, commands),
-                environment=environment, cwd=tmp_path, check=False,
+                environment=environment,
+                cwd=tmp_path,
+                check=False,
             )
             assert rejected.returncode != 0
             assert _pending_slot(_record(directory)) == candidate
             assert not (slot / "project.zip").exists()
-        run(_install_command(setup, commands), environment=environment, cwd=tmp_path)
+        run(
+            _install_command(setup, commands),
+            environment=environment,
+            cwd=tmp_path,
+        )
         recovered = _record(directory)
         assert recovered["status"] == "ready"
         assert recovered["operation"] is None
@@ -432,21 +464,23 @@ def test_killed_installation_resumes_exact_candidate_at_durable_boundaries(
             )
         observed = run(
             [str(commands / command_name), "inspect"],
-            environment=environment, cwd=tmp_path,
+            environment=environment,
+            cwd=tmp_path,
         )
         assert json.loads(observed.stdout)["version"] == (
             "2.0.0" if replacement else "1.0.0"
         )
         if not replacement:
-            assert hashlib.sha256((slot / "project.zip").read_bytes()).hexdigest() == (
-                project_a.source.digest
-            )
+            assert hashlib.sha256(
+                (slot / "project.zip").read_bytes()
+            ).hexdigest() == (project_a.source.digest)
     finally:
         _stop_driver(process)
 
 
 def test_real_uv_build_keeps_candidate_lease_after_installer_death(
-    tmp_path: Path, native_product: NativeProduct,
+    tmp_path: Path,
+    native_product: NativeProduct,
 ) -> None:
     _project_root, uv, setup, _checksums, spec, _project = native_product
     environment, commands = _host_environment(tmp_path / "host")
@@ -454,13 +488,16 @@ def test_real_uv_build_keeps_candidate_lease_after_installer_death(
     release = tmp_path / "build-release"
     log_path = tmp_path / "driver.log"
     process = start_installation_driver(
-        setup, uv, commands,
+        setup,
+        uv,
+        commands,
         environment={
             **environment,
             "APPRC_FIXTURE_BUILD_READY": str(ready),
             "APPRC_FIXTURE_BUILD_RELEASE": str(release),
         },
-        cwd=tmp_path, log_path=log_path,
+        cwd=tmp_path,
+        log_path=log_path,
     )
     try:
         _wait_for_driver_gate(process, ready, log_path)
@@ -482,7 +519,9 @@ def test_real_uv_build_keeps_candidate_lease_after_installer_death(
             if _leases.try_retire_runtime_slot(slot):
                 break
             time.sleep(0.05)
-        assert not slot.exists(), "Real uv retained its lease after the build completed."
+        assert not slot.exists(), (
+            "Real uv retained its lease after the build completed."
+        )
     finally:
         release.write_text("release", encoding="utf-8")
         _stop_driver(process)

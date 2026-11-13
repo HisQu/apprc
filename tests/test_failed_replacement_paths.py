@@ -19,7 +19,10 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.definition.paths import Layout
-from apprc.user_files.installation.coordination import installation_lock, write_record
+from apprc.user_files.installation.coordination import (
+    installation_lock,
+    write_record,
+)
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.operations import (
     begin_operation,
@@ -37,6 +40,7 @@ def test_config_read_and_write_use_active_runtime_after_failed_replacement(
     app = rc.AppRC(
         app_id="replacement-fixture",
         paths=rc.Paths(config=True),
+        user_dotenv=rc.UserDotenv(),
         layout=Layout.single_root(resource_root),
     )
 
@@ -106,7 +110,9 @@ def test_config_read_and_write_use_active_runtime_after_failed_replacement(
         operation_id=plan.operation_id,
         expected_revision=pending.revision,
         diagnostic=InstallationDiagnostic(
-            "sync-failed", "Replacement sync failed.", "Repair the saved candidate."
+            "sync-failed",
+            "Replacement sync failed.",
+            "Repair the saved candidate.",
         ),
     )
     assert failed.record is not None
@@ -117,10 +123,18 @@ def test_config_read_and_write_use_active_runtime_after_failed_replacement(
     current_manager = app.manage(environment=environment)
     assert current_manager.resolve().build(Settings).value == "old-runtime"
     current_manager.apply_edit(
-        current_manager.plan_update("value", "saved-after-failure", scope="user")
+        current_manager.plan_update(
+            "value", "saved-after-failure", scope="user"
+        )
     )
-    assert current_manager.resolve().build(Settings).value == "saved-after-failure"
+    assert (
+        current_manager.resolve().build(Settings).value == "saved-after-failure"
+    )
     with pytest.raises(InstallationError):
         stale_manager.apply_edit(stale_write)
-    assert current_manager.resolve().build(Settings).value == "saved-after-failure"
-    assert inspect_installation(directory, app_id=identity.app_id).record.active_runtime == active
+    assert (
+        current_manager.resolve().build(Settings).value == "saved-after-failure"
+    )
+    inspection = inspect_installation(directory, app_id=identity.app_id)
+    assert inspection.record is not None
+    assert inspection.record.active_runtime == active

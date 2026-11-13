@@ -43,7 +43,9 @@ def record(tmp_path: Path) -> InstallationRecord:
     """Use a valid retained cache-only installation, independent of appdata."""
     return InstallationRecord(
         schema_version=3,
-        identity=InstallationIdentity("fixture-app", "fixture-app", "fixture", None, ("fixture-app",)),
+        identity=InstallationIdentity(
+            "fixture-app", "fixture-app", "fixture", None, ("fixture-app",)
+        ),
         command_name="fixture-app",
         generation_id=uuid4(),
         support_version="0.31.0",
@@ -127,7 +129,10 @@ def test_invalid_authority_is_diagnostic_not_fallback(
         }
     directory = tmp_path / "installation"
     directory.mkdir()
-    (directory / "installation.json").write_text(json.dumps(value), encoding="utf-8")
+    content = json.dumps(value)
+    if corruption == "duplicate":
+        content = '{"schema_version": 3,' + content[1:]
+    (directory / "installation.json").write_text(content, encoding="utf-8")
     inspection = inspect_installation(directory, app_id=record.identity.app_id)
     assert inspection.status == "invalid"
     assert inspection.record is None
@@ -142,7 +147,10 @@ def test_discovery_does_not_create_a_missing_installation(
     directory = installation_directory(
         "fixture-app", environment={"HOME": str(tmp_path)}
     )
-    assert inspect_installation(directory, app_id="fixture-app").status == "missing"
+    assert (
+        inspect_installation(directory, app_id="fixture-app").status
+        == "missing"
+    )
     assert not directory.exists()
 
 
@@ -166,7 +174,10 @@ def test_pending_authority_cannot_supply_ordinary_paths(
     record: InstallationRecord,
 ) -> None:
     pending = replace(record, status="provisional")
-    assert decode_record(encode_record(pending), app_id=record.identity.app_id) == pending
+    assert (
+        decode_record(encode_record(pending), app_id=record.identity.app_id)
+        == pending
+    )
     with pytest.raises(InstallationError):
         replace(record, status="ready")
 
@@ -187,7 +198,9 @@ def test_saved_native_paths_remain_sticky_with_changed_xdg(
     directory = app.installation(environment=environment).directory
     saved = InstallationRecord(
         schema_version=3,
-        identity=InstallationIdentity("fixture-app", "fixture-app", "fixture", None, ("fixture-app",)),
+        identity=InstallationIdentity(
+            "fixture-app", "fixture-app", "fixture", None, ("fixture-app",)
+        ),
         command_name="fixture-app",
         generation_id=uuid4(),
         support_version="0.31.0",
@@ -241,14 +254,14 @@ def test_new_capability_requires_explicit_reconciliation(
         "HOME": str(tmp_path),
         "XDG_DATA_HOME": str(tmp_path / "data"),
     }
-    app = AppRC(app_id=record.identity.app_id, paths=Paths(config=True, cache=True))
+    app = AppRC(
+        app_id=record.identity.app_id, paths=Paths(config=True, cache=True)
+    )
     directory = app.installation(environment=environment).directory
     with installation_lock(directory):
         write_record(directory, record, expected_revision=None)
     with pytest.raises(InstallationError, match="reconciliation"):
         app.paths(environment=environment)
-
-
 
 
 def test_captured_resource_writer_rejects_retired_generation(

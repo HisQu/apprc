@@ -91,19 +91,21 @@ coordination belong in `user_files/installation`; application-bound orchestratio
 belongs in `services/installation.py`. Do not put business configuration or
 generator dependencies into those lower layers.
 
-Current installation recovery resumes only operations represented by schema-2
+Current installation recovery resumes only operations represented by schema-3
 authority. Resource/layout migration still moves explicitly enumerated,
 revision-checked files and preserves unknown content; it is not receipt adoption.
 Validate the inventory before publishing pending authority and again when
-resuming it: decoded path types alone do not establish containment. Schema-1
-installation records require the explicit
-[reinstallation procedure](How-To-User-Guides.md#from-installation-record-schema-1),
+resuming it: decoded path types alone do not establish containment. Schema-1 and
+schema-2 installation records require the explicit
+[reinstallation procedure](How-To-User-Guides.md#from-installation-record-schema-1-or-2),
 not a version-number edit or automatic conversion.
 
-Package reuse, installation, verification, and package checkpoints belong to one
-reconciliation stage in `runtime/installation.py`. Its caller owns the operation,
-support publication, registration, and commit. If reconciliation fails after
-advancing a checkpoint, failure journaling reads the latest on-disk revision.
+Managed candidate preparation in `_prepare_candidate()` in
+`distribution/runtime/installation.py` owns project materialization, locked
+synchronization, validation, and resource initialization. Its caller owns the
+operation, durable support-publication intent, registration, and activation.
+If preparation fails after advancing a checkpoint, failure journaling reads the
+latest on-disk revision.
 In `runtime/removal.py`, pending uninstall preparation validates authority and
 containment before the caller-exit handshake. Execution waits outside the
 installation lock, then rechecks authority under the lock before mutation.

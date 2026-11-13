@@ -659,6 +659,14 @@ def test_release_payload_requires_matching_manifest_before_authored_install(
         "release-app", "release-app", "release_app", None, ("release-app",)
     )
     metadata = ProjectMetadata(project, identity, "1.0.0")
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+        content = b'[project]\nname = "release-app"\nversion = "1.0.0"\n'
+        member = tarfile.TarInfo("release-app-1.0.0/pyproject.toml")
+        member.size = len(content)
+        archive.addfile(member, io.BytesIO(content))
+    source_bytes = archive_buffer.getvalue()
+    source_digest = hashlib.sha256(source_bytes).hexdigest()
     spec = DistributionSpec(
         metadata,
         source_mode="release",
@@ -666,12 +674,13 @@ def test_release_payload_requires_matching_manifest_before_authored_install(
         release_version="1.0.0",
         release_commit="a" * 40,
         release_asset="https://github.com/example/release-app/releases/download/v1.0.0/release-app-1.0.0.tar.gz",
-        release_digest="b" * 64,
-        runtime_requirements=("apprc-core==0.31.0",),
+        release_digest=source_digest,
     )
     script = standalone_script(spec, payload, entry=payload.entry_module)
     release_dir = tmp_path / "published release"
     release_dir.mkdir()
+    source_archive = release_dir / "release-app-1.0.0.tar.gz"
+    source_archive.write_bytes(source_bytes)
     script_path = release_dir / "main-installer.py"
     script_path.write_bytes(script)
     manifest = {
@@ -689,8 +698,8 @@ def test_release_payload_requires_matching_manifest_before_authored_install(
             },
             {
                 "filename": "release-app-1.0.0.tar.gz",
-                "size": 64,
-                "sha256": "b" * 64,
+                "size": len(source_bytes),
+                "sha256": source_digest,
             },
         ],
     }
@@ -702,9 +711,16 @@ def test_release_payload_requires_matching_manifest_before_authored_install(
         [sys.executable, str(script_path)], env=environment, check=True
     )
     assert marker.read_text(encoding="utf-8") == "ran"
+    marker.unlink()
+    source_archive.write_bytes(source_bytes + b"\ntampered\n")
+    result = subprocess.run(
+        [sys.executable, str(script_path)], env=environment, check=False
+    )
+    assert result.returncode != 0
+    assert not marker.exists()
+    source_archive.write_bytes(source_bytes)
     manifest["version"] = "2.0.0"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    marker.unlink()
     result = subprocess.run(
         [sys.executable, str(script_path)], env=environment, check=False
     )

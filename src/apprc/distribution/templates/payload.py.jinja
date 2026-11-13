@@ -89,7 +89,7 @@ def main():
     if any(name == "apprc" or name.startswith("apprc.") for name in sys.modules):
         raise RuntimeError("Management entry requires a clean interpreter, not an imported AppRC runtime.")
     with tempfile.TemporaryDirectory(prefix="apprc-management-") as temporary:
-        root = Path(temporary)
+        root = Path(temporary).resolve(strict=True)
         os.chmod(root, 0o700)
         with ZipFile(io.BytesIO(base64.b64decode(_ARCHIVE, validate=True))) as archive:
             seen = set()

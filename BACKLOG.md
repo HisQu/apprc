@@ -73,9 +73,23 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-09](#2026-11-09)
+2. [2026-11-13](#2026-11-13)
+   1. [P2 / E2 \[Bug risk\] - *Metadata-only version commands resolve appdata ownership*](#p2--e2-bug-risk---metadata-only-version-commands-resolve-appdata-ownership)
+3. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 
+
+<br>
+
+# 2026-11-13
+
+## P2 / E2 [Bug risk] - *Metadata-only version commands resolve appdata ownership*
+- **Area:** `src/apprc/interfaces/cli/runtime.py`, `src/apprc/interfaces/cli/context.py`, and `src/apprc/user_files/installation/validation.py`.
+- **Observed while:** Running an installed application's metadata-only `version` command with AppRC 0.34.0.
+- **Why not fixed now:** The SDK release is already published. Changing CLI preparation needs a focused regression and an explicitly scoped maintenance change; existing application data must remain untouched.
+- **Evidence:** The command raised `InstallationError: Nonempty native appdata container requires project-owned migration or adoption.` The same installed version query succeeded with an explicit fresh single-root layout.
+- **Context:** CLI preparation resolves application paths before returning package metadata, so unrelated existing appdata can prevent a version query. The appdata ownership guard itself must remain strict.
+- **Suggested next step:** Add an existing-suite CLI regression with an unknown appdata entry. Separate metadata-only command preparation from managed-path resolution without bypassing ownership checks for filesystem operations.
 
 <br>
 

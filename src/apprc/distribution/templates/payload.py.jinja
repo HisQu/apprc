@@ -14,6 +14,7 @@ import json
 import os
 import re
 import runpy
+import stat
 import sys
 import tempfile
 from pathlib import Path, PurePosixPath
@@ -69,6 +70,19 @@ def _validate_release():
         raise RuntimeError("Release installer payload differs from its selected manifest asset.")
     if package_asset is None or package_asset["sha256"] != _RELEASE["package_digest"]:
         raise RuntimeError("Release package asset differs from its selected manifest identity.")
+    package = payload.with_name(_RELEASE["package_filename"])
+    try:
+        metadata = package.lstat()
+        if (not stat.S_ISREG(metadata.st_mode)
+                or (os.name == "nt"
+                    and metadata.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)):
+            raise RuntimeError("Release package asset must be an ordinary file.")
+        package_bytes = package.read_bytes()
+    except OSError as error:
+        raise RuntimeError(f"Matching release package is unavailable: {error}") from error
+    if (package_asset["size"] != len(package_bytes)
+            or package_asset["sha256"] != hashlib.sha256(package_bytes).hexdigest()):
+        raise RuntimeError("Release package bytes differ from their selected manifest asset.")
 
 def main():
     _validate_release()

@@ -139,10 +139,8 @@ def verify_distribution_install() -> None:
         write_artifacts(artifacts)
         write_artifacts(artifacts, check=True)
         for filename in (
-            "app-install.sh",
-            "app-install.cmd",
-            "app-launch.sh",
-            "app-launch.cmd",
+            "app-install.py",
+            "app-launch.py",
             "app-uninstall.sh",
             "app-uninstall.cmd",
         ):

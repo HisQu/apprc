@@ -398,6 +398,8 @@ def native_product(
         environment=build_environment,
         cwd=repository / "src" / "apprc_dev" / "packaging" / "terminal",
     )
+    # > These wheels are committed fixture inputs, not release outputs.
+    (vendor / ".gitignore").unlink()
     core_wheel = next(vendor.glob("apprc_core-*.whl")).name
     terminal_wheel = next(vendor.glob("apprc-*.whl")).name
     (project_root / "pyproject.toml").write_text(

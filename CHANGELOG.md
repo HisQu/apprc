@@ -68,6 +68,7 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
+- Reordered opt-in root help to show host commands and options first, AppRC commands and runtime options next, and common help/completion options last. Cyan host and magenta AppRC headings and borders distinguish ownership; common controls are dim, descriptions remain neutral, and terminal color controls are respected.
 
 <br>
 

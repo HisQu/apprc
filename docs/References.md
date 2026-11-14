@@ -678,9 +678,12 @@ filtering; returned mounted groups remain directly accessible.
 ### Root help and runtime options
 
 Opt in with `typer.Typer(cls=rc.cli.AppRCRootGroup, ...)` for the ordered,
-nonempty panels `Options`, `Commands`, `AppRC: Runtime Options`, and
-`AppRC: Commands`. Host options/commands remain in the first two panels;
-AppRC options and injected entries use the latter two. Applications that do not
+nonempty panels `Commands`, `Options`, `AppRC: Commands`,
+`AppRC: Runtime Options`, and `Help & Completion`. Host commands and options
+appear first with cyan headings and borders; AppRC entries follow in magenta.
+Common `--help`, `--install-completion`, and `--show-completion` options appear
+last in a dim panel. Descriptions retain neutral styling. Color follows the
+active terminal and Click color setting; `NO_COLOR` suppresses styling. Applications that do not
 opt in retain ordinary Typer help. Nested help, parsing, completion, no-color
 output, and eager help exits retain normal Typer behavior. Root help never
 expands nested commands into extra root rows.

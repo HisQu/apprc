@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import StringIO
+import os
 from typing import Protocol
 
 import typer
@@ -18,7 +19,7 @@ class _HelpWriter(Protocol):
 
 
 class AppRCRootGroup(TyperGroup):
-    """Interleave host and AppRC help panels on an application's root group.
+    """Separate host, AppRC, and common help panels on an application's root group.
 
     Opt in with ``typer.Typer(cls=AppRCRootGroup)``. Nested contexts retain
     Typer's normal help rendering, parsing, and completion behavior.
@@ -43,17 +44,24 @@ class AppRCRootGroup(TyperGroup):
         from rich.text import Text
 
         panels: dict[str, list[tuple[str, str]]] = {
-            "Options": [],
             "Commands": [],
-            "AppRC: Runtime Options": [],
+            "Options": [],
             "AppRC: Commands": [],
+            "AppRC: Runtime Options": [],
+            "Help & Completion": [],
         }
         for param in self.get_params(ctx):
             record = param.get_help_record(ctx)
             if record is None:
                 continue
             panel = "Options"
-            if (
+            if any(
+                option
+                in {"--help", "--install-completion", "--show-completion"}
+                for option in param.opts
+            ):
+                panel = "Help & Completion"
+            elif (
                 isinstance(param, (TyperOption, TyperArgument))
                 and param.rich_help_panel == "AppRC: Runtime Options"
             ):
@@ -80,20 +88,32 @@ class AppRCRootGroup(TyperGroup):
         self.format_usage(ctx, formatter)
         self.format_help_text(ctx, formatter)
 
-        # > A local, unstyled console preserves plain output without modifying
-        # > Typer's console or process-wide terminal and color settings.
+        # > Capture panels locally while detecting the actual output terminal.
+        # > Rich honors NO_COLOR; explicit Click color settings override detection.
         output = StringIO()
+        use_color = (
+            ctx.color
+            if ctx.color is not None
+            else typer.get_text_stream("stdout").isatty()
+        ) and "NO_COLOR" not in os.environ
         console = Console(
             file=output,
             width=formatter.width,
-            color_system=None,
-            force_terminal=False,
+            force_terminal=use_color,
+            color_system="standard" if use_color else None,
             markup=False,
             highlight=False,
         )
         for title, rows in panels.items():
             if not rows:
                 continue
+            style = (
+                "magenta"
+                if title.startswith("AppRC:")
+                else "dim"
+                if title == "Help & Completion"
+                else "cyan"
+            )
             table = Table.grid(padding=(0, 2), expand=True)
             table.add_column(
                 max_width=max(12, formatter.width // 3), overflow="fold"
@@ -101,7 +121,14 @@ class AppRCRootGroup(TyperGroup):
             table.add_column(ratio=1)
             for name, help_text in rows:
                 table.add_row(Text(name), Text(help_text))
-            console.print(Panel(table, title=Text(title), title_align="left"))
+            console.print(
+                Panel(
+                    table,
+                    title=Text(title, style=style),
+                    title_align="left",
+                    border_style=style,
+                )
+            )
         if output.tell():
             formatter.write_paragraph()
             formatter.write(output.getvalue())

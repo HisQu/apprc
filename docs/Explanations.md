@@ -513,8 +513,11 @@ A host may provide `launcher_spec` and `launcher_handlers` to add root `launch`,
 which opens the existing Textual management launcher. It is not the host's
 foreground command launcher or saved distribution launch support. Root help
 panels are opt-in through `typer.Typer(cls=rc.cli.AppRCRootGroup)` and appear in
-order as `Options`, `Commands`, `AppRC: Runtime Options`, and
-`AppRC: Commands`; nested help remains standard.
+order as `Commands`, `Options`, `AppRC: Commands`, `AppRC: Runtime Options`,
+and `Help & Completion`. Host headings and borders are cyan, AppRC headings
+and borders are magenta, and common help/completion is dim. See
+[root help and runtime options](References.md#root-help-and-runtime-options)
+for color controls; nested help remains standard.
 
 Diagnostics run only explicitly supplied `host_diagnostics` and
 `resource_diagnostics`; resource diagnostics additionally require

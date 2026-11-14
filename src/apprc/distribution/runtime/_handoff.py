@@ -12,6 +12,7 @@ from pathlib import Path
 from apprc.definition.installation import (
     InstallationError,
     InstallationRecord,
+    RuntimeSlot,
     UninstallPlan,
 )
 from apprc.user_files.installation.planning import resource_roots
@@ -20,30 +21,33 @@ from apprc.user_files.installation.planning import resource_roots
 def handoff_removal_roots(
     plan: UninstallPlan, record: InstallationRecord
 ) -> tuple[Path, ...]:
-    """Return only paths the pending uninstall can actually delete."""
-    target = record.current or record.last_successful
-    if target is None:
-        raise InstallationError(
-            "No recorded backend is available for an independent controller."
-        )
-    roots = [
-        Path(target.prefix).resolve(),
-        *(
-            Path(os.path.normpath(os.fspath(path))).absolute()
-            for path in target.commands
-        ),
-    ]
+    """Return only paths the pending uninstall can actually delete.
+
+    Editable checkouts and their environments are never removal roots. Managed
+    slots enter only by their active or explicitly retiring record IDs.
+    """
+    slot_ids = set(record.retiring_runtime_ids)
+    if isinstance(record.active_runtime, RuntimeSlot):
+        slot_ids.add(record.active_runtime.slot_id)
+    roots = [plan.directory / "runtimes" / str(slot_id) for slot_id in slot_ids]
+    for output in record.owned_outputs:
+        if output.kind == "shortcut" or (
+            plan.complete and output.kind == "command"
+        ):
+            path = Path(output.path)
+            if path.is_absolute():
+                roots.append(Path(os.path.normpath(os.fspath(path))))
     if plan.complete:
-        roots.append(plan.directory.resolve())
+        roots.append(plan.directory)
         retained_roots = {
             item.path.resolve() for item in plan.inventory.retained
         }
         roots.extend(
-            path.resolve()
+            path
             for kind, path in resource_roots(plan.placement)
             if kind in plan.categories and path.resolve() not in retained_roots
         )
-        roots.extend(item.path.resolve() for item in plan.inventory.entries)
+        roots.extend(item.path for item in plan.inventory.entries)
     return tuple(dict.fromkeys(roots))
 
 

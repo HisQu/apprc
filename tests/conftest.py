@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+pytest_plugins = ("tests.support_pyapp",)
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Expose the example package for repository-local tests."""

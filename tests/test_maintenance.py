@@ -538,14 +538,12 @@ def test_pending_operation_context_initializes_captured_maintenance_paths(
         InstallationError,
         InstallationIdentity,
         InstallationPlacement,
-        InstallationSource,
         OperationContext,
-        UvToolTarget,
+        ProjectSnapshot,
+        RuntimeSelection,
+        RuntimeSlot,
     )
-    from apprc.user_files.installation.operations import (
-        begin_operation,
-        plan_install,
-    )
+    from apprc.user_files.installation.operations import begin_operation
 
     environment = {
         "HOME": str(tmp_path),
@@ -565,13 +563,12 @@ def test_pending_operation_context_initializes_captured_maintenance_paths(
         None,
         ("example-command",),
     )
-    source = InstallationSource("editable", str(tmp_path / "project"))
-    backend = UvToolTarget(
-        tmp_path / "uv", tmp_path / "tools", tmp_path / "tool-bin"
+    runtime = RuntimeSlot(
+        uuid4(),
+        ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+        RuntimeSelection("3.14"),
     )
-    plan = plan_install(
-        identity, source, placement, backend, inspection=installation.inspect()
-    )
+    plan = installation.plan_install(identity, runtime, placement)
     begin_operation(plan)
     context = OperationContext(
         installation.directory, plan.operation_id, plan.generation_id, placement

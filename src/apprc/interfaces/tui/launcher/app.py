@@ -343,10 +343,17 @@ class LauncherHomeScreen(Screen[None]):
 
         async def launch_and_wait() -> int:
             try:
+                from apprc.distribution.runtime._leases import (
+                    inherited_runtime_lease_options,
+                )
+
                 process = await asyncio.create_subprocess_exec(
                     *argv,
                     cwd=cwd or self.context.cwd,
                     env=dict(self.context.environment),
+                    **inherited_runtime_lease_options(
+                        environment=dict(self.context.environment)
+                    ),
                 )
             except OSError as exc:
                 self.notify(str(exc), severity="error", markup=False)
@@ -407,19 +414,23 @@ class LauncherHomeScreen(Screen[None]):
         )
 
     async def _repair(self) -> None:
-        """Invoke only the saved matching installer for this installation."""
-        try:
-            from apprc.distribution.runtime import controllers
+        """Explain which owner can repair the captured application runtime."""
+        from apprc.definition.installation import EditableCheckout
 
-            argv = controllers.repair_saved(self.context.inspection.directory)
-        except (OSError, ValueError) as exc:
-            self.notify(str(exc), severity="error", markup=False)
-            return
-        status = await self._run_child(argv, interactive=True)
-        if status:
-            self.notify(
-                f"Repair exited with status {status}.", severity="error"
+        record = self.context.inspection.record
+        if record is not None and isinstance(
+            record.active_runtime, EditableCheckout
+        ):
+            message = (
+                "This editable environment is owned by Git and uv. Restore it "
+                "with `uv sync --locked` in the recorded checkout."
             )
+        else:
+            message = (
+                "Managed repair requires the matching native setup executable. "
+                "Run that setup executable to repair the installation."
+            )
+        self.notify(message, severity="warning", markup=False)
 
     async def _uninstall(self) -> None:
         """Guard the complete saved-uninstall interaction against competing actions."""
@@ -430,7 +441,7 @@ class LauncherHomeScreen(Screen[None]):
             self._uninstall_pending = False
 
     async def _uninstall_saved_entry(self) -> None:
-        """Preview, obtain consent, and await the verified authored procedure."""
+        """Preview, obtain consent, and await the native removal handoff."""
         try:
             from apprc.distribution.runtime import controllers
 
@@ -460,8 +471,8 @@ class LauncherHomeScreen(Screen[None]):
             ConfirmScreen(
                 title="Remove application program",
                 message=Text(
-                    "The installation's saved procedure will remove the program "
-                    "and preserve user data by default. Exact targets:\n"
+                    "The native manager will remove the program and preserve "
+                    "user data by default. Exact targets:\n"
                     + (detail or "No data targets are selected.")
                 ),
                 actions=(("remove", "Remove program", "warning"),),
@@ -471,26 +482,28 @@ class LauncherHomeScreen(Screen[None]):
             return
         if preparation.plan is None or not preparation.can_execute:
             self.notify(
-                "The saved procedure cannot safely execute this removal.",
+                "The native manager cannot safely execute this removal.",
                 severity="error",
             )
-            return
-        try:
-            argv = controllers.uninstall_saved(
-                self.context.inspection.directory,
-                original_pid=os.getpid(),
-                expected_revision=preparation.plan.expected_revision,
-            )
-        except (OSError, ValueError) as exc:
-            self.notify(str(exc), severity="error", markup=False)
             return
         await self._stop_owned_children()
-        status = await self._run_child(argv, interactive=False)
-        if status:
-            self.notify(
-                f"Saved uninstall exited with status {status}.",
-                severity="error",
+        try:
+            handoff = controllers.start_uninstall_handoff(
+                preparation.plan,
+                original_pid=os.getpid(),
             )
+            ready = asyncio.create_task(asyncio.to_thread(handoff.wait_ready))
+            try:
+                await asyncio.shield(ready)
+            except asyncio.CancelledError:
+                await asyncio.gather(ready, return_exceptions=True)
+                if not ready.cancelled() and ready.exception() is None:
+                    handoff.signal_exit()
+                    self.app.exit(result=_SAVED_UNINSTALL_REQUESTED)
+                raise
+            handoff.signal_exit()
+        except (OSError, ValueError) as exc:
+            self.notify(str(exc), severity="error", markup=False)
             return
         self.app.exit(result=_SAVED_UNINSTALL_REQUESTED)
 

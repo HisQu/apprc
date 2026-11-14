@@ -95,7 +95,6 @@ dependencies = [
 
 [package.optional-dependencies]
 distribution = [
-    { name = "jinja2" },
     { name = "packaging" },
 ]
 
@@ -127,7 +126,6 @@ gui-test = [
 [package.metadata]
 requires-dist = [
     { name = "filelock", specifier = ">=3.32.7,<4" },
-    { name = "jinja2", marker = "extra == 'distribution'", specifier = ">=3.1.6,<4" },
     { name = "packaging", marker = "extra == 'distribution'", specifier = ">=26.2,<27" },
     { name = "platformdirs", specifier = ">=4,<5" },
     { name = "python-dotenv" },

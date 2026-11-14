@@ -5,10 +5,11 @@ from __future__ import annotations
 # == Standard Library ========================
 import inspect
 import sys
+from os import environ
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
@@ -18,13 +19,11 @@ import typer
 from typer.core import TyperGroup
 
 from apprc.definition.installation import (
-    CleanupInventory,
+    InstallationHooks,
     InstallationError,
-    InstallationInspection,
 )
 from apprc.definition.resolution import ResolveOptions
 from apprc.definition.maintenance import MaintenanceHandlers
-from apprc.definition.paths import ResourceKind
 from apprc.interfaces.cli._typer_utils import (
     args_after_cli_command,
     parse_leading_options,
@@ -33,12 +32,14 @@ from apprc.interfaces.cli._typer_utils import (
     structural_help_requested,
 )
 from apprc.interfaces.cli.context import (
+    APPRC_CONTEXT_META_KEY,
     CliRuntimeContext,
     CliRuntimeOptionsProtocol,
     InstallationCommandContext,
     installation_command_context_from,
     prepare_cli_runtime_context,
     prepare_installation_command_context,
+    prepare_native_installation_context,
 )
 from apprc.interfaces.cli.config_command.state import (
     DEFAULT_CONFIG_RUNTIME_INDEPENDENT_ACTIONS,
@@ -54,6 +55,7 @@ from apprc.runtime.logging import ResolutionLogger
 
 
 if TYPE_CHECKING:
+    from apprc.distribution.models import NativeBinding
     from apprc.interfaces.cli.config_command import ConfigSelectorContext
     from apprc.interfaces.tui import ConfigEditorApp
     from apprc.interfaces.tui.launcher.model import (
@@ -66,10 +68,6 @@ StateT = TypeVar("StateT")
 
 type CliArgvProvider = Callable[[], Sequence[str]]
 
-type InstallationInventoryProvider = Callable[
-    [InstallationInspection, frozenset[ResourceKind], bool],
-    CleanupInventory,
-]
 type MountCliRuntimeStateFactory[StateT] = Callable[
     [CliRuntimeContext[Any]],
     StateT,
@@ -382,6 +380,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
     setup_logging: Callable[..., Any] | None = None
     logger: ResolutionLogger | None = None
     maintenance_group_name: str = field(default="app", kw_only=True)
+    native_binding: NativeBinding | None = field(default=None, kw_only=True)
     _forwarded_args: ContextVar[tuple[str, ...] | None] = field(
         default_factory=lambda: ContextVar(
             "apprc_cli_runtime_forwarded_args",
@@ -422,6 +421,29 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 "runtime_policy.config_group_name."
             )
 
+    def _installation_context(
+        self,
+        ctx: typer.Context,
+        options: OptionsT,
+        *,
+        path_error: str | None = None,
+    ) -> InstallationCommandContext:
+        """Select host recovery context or declaration-only native recovery."""
+        if self.native_binding is None:
+            return prepare_installation_command_context(
+                ctx, self.apprc, options, path_error=path_error
+            )
+        context = prepare_native_installation_context(
+            ctx,
+            self.native_binding,
+            options,
+            environment=environ,
+        )
+        if path_error is not None:
+            context = replace(context, path_error=path_error)
+            ctx.meta[APPRC_CONTEXT_META_KEY] = context
+        return context
+
     def prepare(
         self,
         ctx: typer.Context,
@@ -434,23 +456,17 @@ class CliRuntime(Generic[OptionsT, StateT]):
         :return: Prepared session metadata and optional app state.
         """
         if ctx.resilient_parsing:
-            context = prepare_installation_command_context(
-                ctx, self.apprc, options
-            )
+            context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=context)
         if self._installation_command_requested(ctx):
-            diagnostic_context = prepare_installation_command_context(
-                ctx, self.apprc, options
-            )
+            diagnostic_context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=diagnostic_context)
         skip_runtime_setup = self._request_skips_runtime(ctx)
         if skip_runtime_setup and help_requested_before_separator(
             self.current_args(),
             value_options=self.cli_value_options,
         ):
-            context = prepare_installation_command_context(
-                ctx, self.apprc, options
-            )
+            context = self._installation_context(ctx, options)
             return CliRuntimeSession(apprc_context=context)
         try:
             apprc_context = prepare_cli_runtime_context(
@@ -461,12 +477,17 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 workspace_required=self.workspace_required,
                 setup_logging=self.setup_logging,
                 logger=self.logger,
+                installation_context=(
+                    self._installation_context(ctx, options)
+                    if self.native_binding is not None
+                    else None
+                ),
             )
         except (InstallationError, OSError, ValueError) as error:
             if not self._doctor_requested(ctx):
                 raise
-            diagnostic_context = prepare_installation_command_context(
-                ctx, self.apprc, options, path_error=str(error)
+            diagnostic_context = self._installation_context(
+                ctx, options, path_error=str(error)
             )
             return CliRuntimeSession(apprc_context=diagnostic_context)
 
@@ -502,7 +523,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
         handlers: MaintenanceHandlers = MaintenanceHandlers(),
         maintenance_help_panel: str = "AppRC: Commands",
         installation_management: bool = False,
-        installation_inventory: InstallationInventoryProvider | None = None,
+        installation_hooks: InstallationHooks = InstallationHooks(),
         installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
         host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
         resource_diagnostics: Mapping[
@@ -545,7 +566,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             maintenance_help_panel=maintenance_help_panel,
             maintenance_group_name=self.maintenance_group_name,
             installation_management=installation_management,
-            installation_inventory=installation_inventory,
+            installation_hooks=installation_hooks,
             installer_entrypoint=installer_entrypoint,
             host_diagnostics=host_diagnostics,
             resource_diagnostics=resource_diagnostics,

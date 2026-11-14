@@ -8,6 +8,7 @@ import pytest
 from apprc import AppRC, Paths
 from apprc.definition.installation import (
     InstallationError,
+    InstallationIdentity,
     InstallationPlacement,
     InventoryEntry,
     MigrationInventory,
@@ -23,6 +24,15 @@ from apprc.user_files.installation.migration import (
     resume_migration,
 )
 from apprc.user_files.installation.operations import begin_operation
+
+
+_IDENTITY = InstallationIdentity(
+    "migration-fixture",
+    "migration-fixture",
+    "migration_fixture",
+    None,
+    ("migration-fixture",),
+)
 
 
 def _fixture(
@@ -66,7 +76,12 @@ def test_legacy_parent_needs_explicit_inventory_and_quiescence(
     with pytest.raises(InstallationError):
         app.paths(environment=environment)
     manager = app.installation(environment=environment)
-    plan = manager.plan_migration(placement, inventory=inventory)
+    plan = manager.plan_migration(
+        placement,
+        inventory=inventory,
+        identity=_IDENTITY,
+        command_name=_IDENTITY.commands[0],
+    )
     assert not manager.directory.exists()
     with pytest.raises(InstallationError):
         execute_migration(plan)
@@ -74,7 +89,11 @@ def test_legacy_parent_needs_explicit_inventory_and_quiescence(
         inventory.source_root / "database.sqlite"
     ).read_bytes() == b"persistent user work"
     approved = manager.plan_migration(
-        placement, inventory=inventory, quiescent=True
+        placement,
+        inventory=inventory,
+        quiescent=True,
+        identity=_IDENTITY,
+        command_name=_IDENTITY.commands[0],
     )
     result = execute_migration(approved)
     assert result.status == "removed-retained"
@@ -94,7 +113,11 @@ def test_resume_matches_moved_file_and_preserves_unknown_content(
     app, environment, inventory, placement = _fixture(tmp_path)
     manager = app.installation(environment=environment)
     plan = manager.plan_migration(
-        placement, inventory=inventory, quiescent=True
+        placement,
+        inventory=inventory,
+        quiescent=True,
+        identity=_IDENTITY,
+        command_name=_IDENTITY.commands[0],
     )
     pending = begin_operation(plan)
     inventory.destination_root.mkdir()
@@ -121,7 +144,11 @@ def test_resume_rejects_persisted_out_of_root_inventory_before_any_move(
     app, environment, inventory, placement = _fixture(tmp_path)
     manager = app.installation(environment=environment)
     plan = manager.plan_migration(
-        placement, inventory=inventory, quiescent=True
+        placement,
+        inventory=inventory,
+        quiescent=True,
+        identity=_IDENTITY,
+        command_name=_IDENTITY.commands[0],
     )
     pending = begin_operation(plan)
     assert pending.record is not None
@@ -184,7 +211,11 @@ def test_destination_conflict_keeps_incomplete_authority_and_source(
     app, environment, inventory, placement = _fixture(tmp_path)
     manager = app.installation(environment=environment)
     plan = manager.plan_migration(
-        placement, inventory=inventory, quiescent=True
+        placement,
+        inventory=inventory,
+        quiescent=True,
+        identity=_IDENTITY,
+        command_name=_IDENTITY.commands[0],
     )
     inventory.destination_root.mkdir()
     inventory.destinations[0].write_bytes(b"newer user work")
@@ -211,7 +242,13 @@ def test_migration_plan_rejects_resource_roots_overlapping_authority(
     )
 
     with pytest.raises(InstallationError, match="overlaps"):
-        manager.plan_migration(placement, inventory=inventory, quiescent=True)
+        manager.plan_migration(
+            placement,
+            inventory=inventory,
+            quiescent=True,
+            identity=_IDENTITY,
+            command_name=_IDENTITY.commands[0],
+        )
 
     assert not manager.directory.exists()
 
@@ -234,7 +271,11 @@ def test_linux_migration_resumes_at_each_payload_and_marker_move_boundary(
     app, environment, inventory, placement = _fixture(tmp_path)
     manager = app.installation(environment=environment)
     plan = manager.plan_migration(
-        placement, inventory=inventory, quiescent=True
+        placement,
+        inventory=inventory,
+        quiescent=True,
+        identity=_IDENTITY,
+        command_name=_IDENTITY.commands[0],
     )
     source = inventory.source_root / source_name
     original_rename = Path.rename
@@ -282,7 +323,9 @@ def test_appdata_preview_migration_is_read_only_until_explicit_execution(
     inventory.entries[0].path.unlink()
     manager = app.installation(environment=environment)
 
-    plan = manager.preview_migration()
+    plan = manager.preview_migration(
+        identity=_IDENTITY, command_name=_IDENTITY.commands[0]
+    )
     assert not manager.directory.exists()
     assert not inventory.destination_root.exists()
     result = manager.migrate(plan, quiescent=True)
@@ -317,22 +360,25 @@ def test_appdata_preview_allows_only_a_valid_known_sibling_installation(
         encoding="utf-8",
     )
     record = InstallationRecord(
-        2,
-        app.schema.app_id,
-        uuid4(),
-        "0.31.0",
-        InstallationPlacement(
+        schema_version=3,
+        identity=_IDENTITY,
+        command_name=_IDENTITY.commands[0],
+        generation_id=uuid4(),
+        support_version="0.31.0",
+        placement=InstallationPlacement(
             Layout.native(),
             appdata_dir=parent / "appdata",
             capabilities=frozenset({"appdata"}),
         ),
-        "removed-retained",
+        status="removed-retained",
     )
     with installation_lock(manager.directory):
         write_record(manager.directory, record, expected_revision=None)
 
     before = manager.inspect()
-    plan = manager.preview_migration()
+    plan = manager.preview_migration(
+        identity=_IDENTITY, command_name=_IDENTITY.commands[0]
+    )
 
     assert plan.inventory.unknown == ()
     assert manager.inspect() == before
@@ -350,7 +396,9 @@ def test_appdata_preview_does_not_ignore_an_invalid_sibling_installation(
     with pytest.raises(
         InstallationError, match="Unknown native appdata payload"
     ):
-        manager.preview_migration()
+        manager.preview_migration(
+            identity=_IDENTITY, command_name=_IDENTITY.commands[0]
+        )
     assert not (manager.directory / "installation.json").exists()
     assert not (manager.directory / "locks").exists()
     assert not inventory.destination_root.exists()

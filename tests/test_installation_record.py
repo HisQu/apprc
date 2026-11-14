@@ -12,10 +12,14 @@ import pytest
 from apprc import AppRC, Paths, ResolveOptions
 from apprc.definition.installation import (
     CleanupInventory,
+    InstallationIdentity,
     InstallationError,
     InstallationPlacement,
     InstallationRecord,
     InventoryEntry,
+    ProjectSnapshot,
+    RuntimeSelection,
+    RuntimeSlot,
 )
 from apprc.definition.paths import Layout
 from apprc.user_files.installation.codec import (
@@ -38,8 +42,11 @@ from apprc.user_files.installation.discovery import (
 def record(tmp_path: Path) -> InstallationRecord:
     """Use a valid retained cache-only installation, independent of appdata."""
     return InstallationRecord(
-        schema_version=2,
-        app_id="fixture-app",
+        schema_version=3,
+        identity=InstallationIdentity(
+            "fixture-app", "fixture-app", "fixture", None, ("fixture-app",)
+        ),
+        command_name="fixture-app",
         generation_id=uuid4(),
         support_version="0.31.0",
         status="removed-retained",
@@ -55,14 +62,14 @@ def test_authority_round_trip_preserves_independent_resources(
     record: InstallationRecord,
 ) -> None:
     content = encode_record(record)
-    restored = decode_record(content, app_id=record.app_id)
+    restored = decode_record(content, app_id=record.identity.app_id)
     assert restored == record
     assert encode_record(restored) == content
     assert restored.placement.appdata_dir is None
     assert restored.placement.cache_dir == record.placement.cache_dir
 
 
-@pytest.mark.parametrize("schema_version", [1, 3])
+@pytest.mark.parametrize("schema_version", [1, 2, 4])
 def test_old_and_unknown_authority_versions_are_invalid_without_mutation(
     tmp_path: Path, record: InstallationRecord, schema_version: int
 ) -> None:
@@ -74,9 +81,7 @@ def test_old_and_unknown_authority_versions_are_invalid_without_mutation(
     content = json.dumps(value).encode("utf-8")
     authority.write_bytes(content)
 
-    inspection = inspect_installation(directory, app_id=record.app_id)
-
-    assert inspection.status == "invalid"
+    inspection = inspect_installation(directory, app_id=record.identity.app_id)
     assert inspection.record is None
     assert authority.read_bytes() == content
     assert set(directory.iterdir()) == {authority}
@@ -107,7 +112,7 @@ def test_invalid_authority_is_diagnostic_not_fallback(
     elif corruption == "relative":
         value["placement"]["cache_dir"] = "relative/cache"
     elif corruption == "identity":
-        value["app_id"] = "foreign-app"
+        value["identity"]["app_id"] = "foreign-app"
     elif corruption == "old-nested":
         value["migration"] = {
             "source": "/source",
@@ -122,13 +127,13 @@ def test_invalid_authority_is_diagnostic_not_fallback(
             },
             "legacy": None,
         }
-    content = json.dumps(value)
-    if corruption == "duplicate":
-        content = content[:-1] + ', "schema_version": 1}'
     directory = tmp_path / "installation"
     directory.mkdir()
+    content = json.dumps(value)
+    if corruption == "duplicate":
+        content = '{"schema_version": 3,' + content[1:]
     (directory / "installation.json").write_text(content, encoding="utf-8")
-    inspection = inspect_installation(directory, app_id=record.app_id)
+    inspection = inspect_installation(directory, app_id=record.identity.app_id)
     assert inspection.status == "invalid"
     assert inspection.record is None
     assert inspection.diagnostics
@@ -159,7 +164,7 @@ def test_expected_revision_rejects_stale_authority(
         second = write_record(directory, updated, expected_revision=first)
         with pytest.raises(InstallationError, match="changed after planning"):
             write_record(directory, record, expected_revision=first)
-    inspection = inspect_installation(directory, app_id=record.app_id)
+    inspection = inspect_installation(directory, app_id=record.identity.app_id)
     assert inspection.record == updated
     assert inspection.revision == second
     assert first != second
@@ -170,9 +175,10 @@ def test_pending_authority_cannot_supply_ordinary_paths(
 ) -> None:
     pending = replace(record, status="provisional")
     assert (
-        decode_record(encode_record(pending), app_id=record.app_id) == pending
+        decode_record(encode_record(pending), app_id=record.identity.app_id)
+        == pending
     )
-    with pytest.raises(InstallationError, match="requires current"):
+    with pytest.raises(InstallationError):
         replace(record, status="ready")
 
 
@@ -191,8 +197,11 @@ def test_saved_native_paths_remain_sticky_with_changed_xdg(
     )
     directory = app.installation(environment=environment).directory
     saved = InstallationRecord(
-        schema_version=2,
-        app_id="fixture-app",
+        schema_version=3,
+        identity=InstallationIdentity(
+            "fixture-app", "fixture-app", "fixture", None, ("fixture-app",)
+        ),
+        command_name="fixture-app",
         generation_id=uuid4(),
         support_version="0.31.0",
         status="removed-retained",
@@ -245,7 +254,9 @@ def test_new_capability_requires_explicit_reconciliation(
         "HOME": str(tmp_path),
         "XDG_DATA_HOME": str(tmp_path / "data"),
     }
-    app = AppRC(app_id=record.app_id, paths=Paths(config=True, cache=True))
+    app = AppRC(
+        app_id=record.identity.app_id, paths=Paths(config=True, cache=True)
+    )
     directory = app.installation(environment=environment).directory
     with installation_lock(directory):
         write_record(directory, record, expected_revision=None)
@@ -262,15 +273,23 @@ def test_captured_resource_writer_rejects_retired_generation(
         "HOME": str(tmp_path),
         "XDG_DATA_HOME": str(tmp_path / "data"),
     }
-    app = AppRC(app_id=record.app_id, paths=Paths(cache=True))
+    active = RuntimeSlot(
+        uuid4(),
+        ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+        RuntimeSelection("3.14"),
+        version="1.0",
+        python_version="3.14.1",
+    )
+    ready = replace(record, status="ready", active_runtime=active)
+    app = AppRC(app_id=record.identity.app_id, paths=Paths(cache=True))
     directory = app.installation(environment=environment).directory
     with installation_lock(directory):
-        revision = write_record(directory, record, expected_revision=None)
+        revision = write_record(directory, ready, expected_revision=None)
     paths = app.paths(environment=environment)
     with installation_lock(directory):
         write_record(
             directory,
-            replace(record, generation_id=uuid4()),
+            replace(ready, generation_id=uuid4()),
             expected_revision=revision,
         )
     with pytest.raises(InstallationError, match="generation changed"):

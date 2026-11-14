@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
+import re
 import sys
-from pathlib import Path
 from typing import Annotated, Any, Callable, Literal, cast
+from pathlib import Path
 
 # == 3rd Party ===============================
 import typer
 
 # == Internal ================================
 from apprc.definition.installation import (
-    CleanupInventory,
-    InstallationInspection,
+    EditableCheckout,
+    InstallationHooks,
+    InstallationIdentity,
+    RuntimeSlot,
 )
 from apprc.definition.maintenance import (
     MaintenanceHandlers,
@@ -54,6 +59,99 @@ from apprc.interfaces.cli.diagnostics.payload import (
 from apprc.interfaces.cli.diagnostics.status import ConfigDoctorStatus
 from apprc.interfaces.cli.doctor_output import print_doctor_report
 
+_APPLICATION_DIAGNOSTICS: ContextVar[bool] = ContextVar(
+    "apprc_application_diagnostics", default=False
+)
+
+
+@contextmanager
+def application_diagnostics_scope() -> Iterator[None]:
+    """Restrict doctor to application providers for one in-process invocation."""
+    token = _APPLICATION_DIAGNOSTICS.set(True)
+    try:
+        yield
+    finally:
+        _APPLICATION_DIAGNOSTICS.reset(token)
+
+
+def _validate_native_runtime_observations(
+    observations: Mapping[str, object],
+    *,
+    directory: Path,
+    identity: InstallationIdentity,
+    runtime: RuntimeSlot | EditableCheckout,
+    command_name: str,
+) -> None:
+    """Require live probe observations to match the saved runtime authority.
+
+    :param observations: Metadata returned by the target interpreter probe.
+    :param directory: Installation directory containing the active runtime.
+    :param identity: Saved application and distribution identity.
+    :param runtime: Active managed slot or editable checkout.
+    :param command_name: Saved primary console command.
+    """
+    fields = {
+        "distribution",
+        "version",
+        "prefix",
+        "interpreter",
+        "python_version",
+        "commands",
+    }
+    if set(observations) != fields:
+        raise ValueError("Runtime probe returned an invalid observation shape.")
+    distribution = observations["distribution"]
+    version = observations["version"]
+    prefix = observations["prefix"]
+    interpreter = observations["interpreter"]
+    python_version = observations["python_version"]
+    commands = observations["commands"]
+    if (
+        not isinstance(distribution, str)
+        or re.sub(r"[-_.]+", "-", distribution).lower() != identity.distribution
+        or not isinstance(version, str)
+        or not version
+        or (isinstance(runtime, RuntimeSlot) and version != runtime.version)
+        or not isinstance(prefix, str)
+        or not Path(prefix).is_absolute()
+        or not isinstance(interpreter, str)
+        or not Path(interpreter).is_absolute()
+        or not isinstance(python_version, str)
+        or not python_version
+        or not isinstance(commands, dict)
+        or set(commands) != set(identity.commands)
+        or command_name not in commands
+        or not all(
+            isinstance(value, str) and value for value in commands.values()
+        )
+    ):
+        raise ValueError(
+            "Runtime probe observations differ from saved authority."
+        )
+    from apprc.distribution.runtime.backend import (
+        runtime_interpreter,
+        runtime_prefix,
+    )
+
+    try:
+        observed_prefix = Path(prefix).resolve(strict=True)
+        observed_interpreter = Path(interpreter).resolve(strict=True)
+        expected_prefix = runtime_prefix(directory, runtime).resolve(
+            strict=True
+        )
+        expected_interpreter = runtime_interpreter(directory, runtime).resolve(
+            strict=True
+        )
+    except OSError as exc:
+        raise ValueError("Runtime probe paths are unavailable.") from exc
+    if (
+        observed_prefix != expected_prefix
+        or observed_interpreter != expected_interpreter
+    ):
+        raise ValueError(
+            "Runtime probe prefix or interpreter differs from authority."
+        )
+
 
 def _doctor_payload(
     ctx: typer.Context,
@@ -68,6 +166,85 @@ def _doctor_payload(
     resource_groups: Mapping[Literal["appdata", "cache", "state"], typer.Typer],
 ) -> dict[str, object]:
     """Aggregate local installation, path, configuration, and provider checks."""
+    if _APPLICATION_DIAGNOSTICS.get():
+        application_checks: list[dict[str, str]] = []
+        application_details: dict[str, object] = {"resources": {}, "host": {}}
+        runtime = cli_runtime_context_from(ctx)
+        if runtime is not None:
+            if apprc.schema.paths.config or apprc.schema.owners:
+                try:
+                    config_manager = apprc._manage_with_paths(
+                        _options(runtime), runtime.environment, runtime.paths
+                    )
+                    config_payload = build_config_doctor_payload(
+                        apprc, manager=config_manager
+                    )
+                    application_details["configuration"] = (
+                        config_payload.to_payload()
+                    )
+                    application_checks.extend(
+                        {
+                            "name": item.name,
+                            "status": item.status,
+                            "message": item.message,
+                        }
+                        for item in config_payload.checks
+                    )
+                except (OSError, ValueError) as exc:
+                    application_checks.append(
+                        {
+                            "name": "configuration",
+                            "status": "error",
+                            "message": str(exc),
+                        }
+                    )
+            application_resources = cast(
+                dict[str, object], application_details["resources"]
+            )
+            for kind, callback in resource_diagnostics.items():
+                path = getattr(runtime.paths, f"{kind}_dir")
+                if path is None or not path.is_dir():
+                    continue
+                try:
+                    application_resources[kind] = dict(callback(path))
+                    application_checks.append(
+                        {
+                            "name": f"resource_{kind}_provider",
+                            "status": "ok",
+                            "message": "Provider inspection completed.",
+                        }
+                    )
+                except (OSError, ValueError) as exc:
+                    application_checks.append(
+                        {
+                            "name": f"resource_{kind}_provider",
+                            "status": "error",
+                            "message": str(exc),
+                        }
+                    )
+        if host_diagnostics is not None:
+            try:
+                application_details["host"] = dict(host_diagnostics())
+            except (OSError, ValueError) as exc:
+                application_checks.append(
+                    {
+                        "name": "host_provider",
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                )
+        status = (
+            "error"
+            if any(item["status"] == "error" for item in application_checks)
+            else "warning"
+            if any(item["status"] == "warning" for item in application_checks)
+            else "ok"
+        )
+        return {
+            "status": status,
+            "checks": application_checks,
+            "details": application_details,
+        }
     from apprc.interfaces.cli.installation_command import _inspection_payload
 
     diagnostic = installation_context(ctx)
@@ -244,7 +421,9 @@ def _doctor_payload(
                     "ownership": None,
                     "operations": operations_by_kind.get(kind, []),
                 }
-        if apprc.schema.paths.config or apprc.schema.owners:
+        if (apprc.schema.paths.config or apprc.schema.owners) and not (
+            diagnostic is not None and diagnostic.native_binding is not None
+        ):
             try:
                 config_manager = apprc._manage_with_paths(
                     _options(runtime), runtime.environment, runtime.paths
@@ -362,13 +541,9 @@ def mount_maintenance_groups(
     maintenance_help_panel: str = "AppRC: Commands",
     maintenance_group_name: str = "app",
     installation_management: bool = False,
-    installation_inventory: Callable[
-        [InstallationInspection, frozenset[ResourceKind], bool],
-        CleanupInventory,
-    ]
-    | None = None,
-    installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
+    installation_hooks: InstallationHooks = InstallationHooks(),
     host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
+    installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     resource_diagnostics: Mapping[
         Literal["appdata", "cache", "state"],
         Callable[[Path], Mapping[str, object]],
@@ -405,9 +580,10 @@ def mount_maintenance_groups(
     ] = {}
     mount_installation_group(
         maintenance,
+        maintenance_group_name=maintenance_group_name,
         installation_management=installation_management,
         installer_entrypoint=installer_entrypoint,
-        installation_inventory=installation_inventory,
+        installation_hooks=installation_hooks,
     )
 
     @maintenance.command("paths", rich_help_panel=maintenance_help_panel)
@@ -475,6 +651,151 @@ def mount_maintenance_groups(
             resource_diagnostics=resource_diagnostics or {},
             resource_groups=resource_groups,
         )
+        diagnostic = installation_context(ctx)
+        if diagnostic is not None and diagnostic.native_binding is not None:
+            record = diagnostic.inspection.record
+            if record is None or record.active_runtime is None:
+                cast(list[object], payload["checks"]).extend(
+                    [
+                        {
+                            "name": "runtime_health",
+                            "status": "error",
+                            "message": "No active runtime is available to probe.",
+                        },
+                        {
+                            "name": "application_runtime",
+                            "status": "warning",
+                            "message": "Application checks are unavailable because no runtime is active.",
+                        },
+                    ]
+                )
+                payload["status"] = "error"
+            else:
+                from apprc.distribution.runtime.probe import application_bridge
+
+                manager_executable = diagnostic._native_manager_executable
+                try:
+                    observations = application_bridge(
+                        diagnostic.inspection.directory,
+                        record.identity,
+                        record.active_runtime,
+                        command_name=record.command_name,
+                        action="probe",
+                        environment=dict(diagnostic.environment),
+                        manager_executable=manager_executable,
+                        expected_revision=diagnostic.inspection.revision,
+                    )
+                    _validate_native_runtime_observations(
+                        observations,
+                        directory=diagnostic.inspection.directory,
+                        identity=record.identity,
+                        runtime=record.active_runtime,
+                        command_name=record.command_name,
+                    )
+                    cast(list[object], payload["checks"]).append(
+                        {
+                            "name": "runtime_health",
+                            "status": "ok",
+                            "message": (
+                                "The active interpreter, distribution, and "
+                                "declared console commands match installation authority."
+                            ),
+                        }
+                    )
+                    if verbose:
+                        details = cast(dict[str, object], payload["details"])
+                        host = cast(dict[str, object], details["host"])
+                        host["runtime"] = observations
+                except (OSError, ValueError) as exc:
+                    cast(list[object], payload["checks"]).extend(
+                        [
+                            {
+                                "name": "runtime_health",
+                                "status": "error",
+                                "message": f"Active runtime probe failed: {exc}",
+                            },
+                            {
+                                "name": "application_runtime",
+                                "status": "warning",
+                                "message": "Application checks are unavailable because the active runtime probe failed.",
+                            },
+                        ]
+                    )
+                    payload["status"] = "error"
+                else:
+                    try:
+                        from apprc.interfaces.cli.context import (
+                            _cli_runtime_options_payload,
+                        )
+
+                        application = application_bridge(
+                            diagnostic.inspection.directory,
+                            record.identity,
+                            record.active_runtime,
+                            command_name=record.command_name,
+                            action="doctor",
+                            environment=dict(diagnostic.environment),
+                            manager_executable=manager_executable,
+                            expected_revision=diagnostic.inspection.revision,
+                            runtime_options=_cli_runtime_options_payload(
+                                diagnostic.runtime_options,
+                                maintenance_group_name,
+                            ),
+                        )
+                        app_checks = application.get("checks", [])
+                        if isinstance(app_checks, list):
+                            cast(list[object], payload["checks"]).extend(
+                                app_checks
+                            )
+                        app_details = application.get("details", {})
+                        if verbose and isinstance(app_details, dict):
+                            details = cast(
+                                dict[str, object], payload["details"]
+                            )
+                            configuration = app_details.get("configuration")
+                            if configuration is not None:
+                                details["configuration"] = configuration
+                            resource_details = app_details.get("resources", {})
+                            resources = cast(
+                                dict[str, object], details["resources"]
+                            )
+                            if isinstance(resource_details, dict):
+                                for kind, provider in resource_details.items():
+                                    resource = resources.get(kind)
+                                    if isinstance(resource, dict):
+                                        resource["provider"] = provider
+                            host_details = app_details.get("host", {})
+                            host = cast(dict[str, object], details["host"])
+                            if isinstance(host_details, dict):
+                                host.update(host_details)
+                        if application.get("status") in {
+                            "error",
+                            "invalid",
+                            "provisional",
+                            "incomplete",
+                        }:
+                            payload["status"] = "error"
+                        elif (
+                            application.get("status") == "warning"
+                            and payload["status"] == "ok"
+                        ):
+                            payload["status"] = "warning"
+                    except (OSError, ValueError) as exc:
+                        cast(list[object], payload["checks"]).append(
+                            {
+                                "name": "application_runtime",
+                                "status": "warning",
+                                "message": f"Application checks are unavailable: {exc}",
+                            }
+                        )
+                        if payload["status"] == "ok":
+                            payload["status"] = "warning"
+            if diagnostic.inspection.status in {
+                "invalid",
+                "provisional",
+                "incomplete",
+            }:
+                payload["status"] = diagnostic.inspection.status
         if json_output:
             _emit(payload, True)
         else:

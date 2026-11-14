@@ -244,6 +244,7 @@ def run_typer_app(
     :param target_app: Typer app to execute.
     :param args: Argument tokens for the target app.
     :param prog_name: Display program name for help and errors.
+    :raises typer.Exit: If the command returns a nonzero status or a CLI error.
     """
     command = typer.main.get_command(target_app)
     try:
@@ -252,10 +253,8 @@ def run_typer_app(
             prog_name=prog_name,
             standalone_mode=False,
         )
-        if isinstance(exit_code, int) and exit_code != 0:
-            raise typer.Exit(code=exit_code)
-    except click.exceptions.Exit as exc:
-        raise typer.Exit(code=exc.exit_code) from exc
     except click.ClickException as exc:
         exc.show()
         raise typer.Exit(code=exc.exit_code) from exc
+    if isinstance(exit_code, int) and exit_code != 0:
+        raise typer.Exit(code=exit_code)

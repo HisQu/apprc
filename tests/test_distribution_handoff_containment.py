@@ -5,9 +5,9 @@ from __future__ import annotations
 import io
 import os
 import sys
-from dataclasses import replace
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -15,32 +15,36 @@ from apprc.definition.installation import (
     CleanupInventory,
     InstallationDiagnostic,
     InstallationError,
+    InstallationHooks,
+    InstallationIdentity,
     InstallationPlacement,
+    InstallationRecord,
     InventoryEntry,
     OperationStep,
+    ProjectSnapshot,
     RetiredResource,
+    RuntimeSelection,
+    RuntimeSlot,
     UninstallPlan,
 )
-from apprc.definition.paths import Layout
+from apprc.definition.paths import Layout, ResourceKind
 from apprc.distribution.runtime import _handoff, controllers, removal
-from apprc.distribution.runtime.backend import external_base_python
 from apprc.distribution.runtime.controllers import (
     UninstallHandoff,
     prepare_uninstall,
 )
+from apprc.user_files.app_home.permissions import (
+    create_private_directory_if_missing,
+)
 from apprc.user_files.app_home.writes import file_revision
+from apprc.user_files.installation.coordination import (
+    installation_lock,
+    write_record,
+)
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.operations import fail_operation
+from apprc.distribution.runtime import namespace_finalizer
 from tests.test_distribution_process_waiter import _owned_child
-from tests.test_distribution_support_recovery import (
-    _run as install_fixture,
-)
-from tests.test_distribution_support_recovery import (
-    _scenario as install_scenario,
-)
-from tests.test_distribution_support_recovery import (
-    _stub_backend,
-)
 
 
 def _clear_controller_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -58,38 +62,84 @@ def _clear_controller_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
+def _schema3_installation(
+    tmp_path: Path,
+    *,
+    cache_root: Path | None = None,
+    config_root: Path | None = None,
+    retired: tuple[RetiredResource, ...] = (),
+    hooks: InstallationHooks = InstallationHooks(
+        cleanup="handoff_test.hooks:cleanup"
+    ),
+) -> tuple[Path, RuntimeSlot]:
+    directory = tmp_path / "installation"
+    create_private_directory_if_missing(directory)
+    identity = InstallationIdentity(
+        "handoff-app",
+        "handoff-test",
+        "handoff_test",
+        None,
+        ("handoff-app",),
+    )
+    resources: tuple[tuple[ResourceKind, Path | None], ...] = (
+        ("config", config_root),
+        ("cache", cache_root),
+    )
+    placement = InstallationPlacement(
+        Layout.native(),
+        config_dir=config_root,
+        cache_dir=cache_root,
+        capabilities=frozenset(
+            category for category, root in resources if root is not None
+        ),
+        retired=retired,
+    )
+    slot_id = uuid4()
+    slot_directory = directory / "runtimes" / str(slot_id)
+    slot_directory.mkdir(parents=True)
+    (slot_directory / ".apprc-runtime-lease").touch()
+    runtime = RuntimeSlot(
+        slot_id,
+        ProjectSnapshot("0" * 64, "1" * 64, "2" * 40),
+        RuntimeSelection("3.12"),
+        version="1.0",
+        python_version="3.12.1",
+        hooks=hooks,
+    )
+    record = InstallationRecord(
+        schema_version=3,
+        identity=identity,
+        command_name=identity.commands[0],
+        generation_id=uuid4(),
+        support_version="0.31.0",
+        placement=placement,
+        status="ready",
+        active_runtime=runtime,
+    )
+    with installation_lock(directory):
+        write_record(directory, record, expected_revision=None)
+    return directory, runtime
+
+
 def _installed_removal_scenario(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     _clear_controller_environment(monkeypatch)
-    directory, install_plan, snapshot, environment = install_scenario(tmp_path)
     cache_root = tmp_path / "owned-cache"
     cache_root.mkdir()
     cache_payload = cache_root / "owned.json"
     cache_payload.write_text('{"keep":true}\n', encoding="utf-8")
     absent_cache_root = tmp_path / "selected-but-absent-cache"
     retained_root = tmp_path / "retained-cache"
-    placement = InstallationPlacement(
-        Layout.native(),
-        cache_dir=cache_root,
-        capabilities=frozenset({"cache"}),
+    directory, runtime = _schema3_installation(
+        tmp_path,
+        cache_root=cache_root,
         retired=(
             RetiredResource("cache", absent_cache_root),
             RetiredResource("cache", retained_root),
         ),
     )
-    install_plan = replace(
-        install_plan,
-        target=replace(install_plan.target, placement=placement),
-    )
-    snapshot = replace(snapshot, placement=placement)
-    _stub_backend(monkeypatch, snapshot)
-    support = {PurePosixPath("controller.py"): b"# saved controller\n"}
-    installed = install_fixture(install_plan, environment, support)
-    assert installed.status == "ready"
-
-    program_prefix = snapshot.prefix
-    program_prefix.mkdir(parents=True, exist_ok=True)
+    program_prefix = directory / "runtimes" / str(runtime.slot_id)
     program_marker = program_prefix / "program-marker"
     program_marker.write_text("installed program", encoding="utf-8")
     retained = InventoryEntry(retained_root, "directory", None, "cache")
@@ -123,12 +173,8 @@ def _installed_zero_capability_scenario(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     _clear_controller_environment(monkeypatch)
-    directory, install_plan, snapshot, environment = install_scenario(tmp_path)
-    _stub_backend(monkeypatch, snapshot)
-    support = {PurePosixPath("controller.py"): b"# saved controller\n"}
-    installed = install_fixture(install_plan, environment, support)
-    assert installed.status == "ready"
-    return directory, snapshot
+    directory, runtime = _schema3_installation(tmp_path)
+    return directory, directory / "runtimes" / str(runtime.slot_id)
 
 
 def _pending_receiver_handoff(
@@ -137,7 +183,7 @@ def _pending_receiver_handoff(
     monkeypatch: pytest.MonkeyPatch,
     original_pid: int,
 ) -> UninstallHandoff:
-    """Stage real uninstall authority and its private envelope without launching UV."""
+    """Stage exact schema-3 authority and private inputs without launching code."""
     safe_temp = tmp_path / "receiver-safe-temp"
     safe_temp.mkdir()
     process = SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO())
@@ -146,17 +192,11 @@ def _pending_receiver_handoff(
             controllers.tempfile, "gettempdir", lambda: str(safe_temp)
         )
         launch.setattr(
-            controllers,
-            "external_base_python",
-            lambda *_args, **_kwargs: Path(sys.executable),
-        )
-        launch.setattr(
             controllers.subprocess, "Popen", lambda *_args, **_kwargs: process
         )
         handoff = controllers.start_uninstall_handoff(
             plan,
             original_pid=original_pid,
-            provider_cleanup=lambda _context: None,
         )
 
     envelope = removal._parse_plan(handoff.plan_file)
@@ -167,11 +207,11 @@ def _pending_receiver_handoff(
     assert operation.operation_id == plan.operation_id
     assert pending.revision is not None
     assert pending.revision != plan.expected_revision
-    assert OperationStep.PROVIDER_CLEANUP in operation.steps
+    assert OperationStep.PROVIDER_CLEANUP not in operation.steps
     assert envelope["expected_revision"] == pending.revision
     assert envelope["operation_id"] == str(operation.operation_id)
     assert envelope["generation_id"] == str(pending.record.generation_id)
-    assert envelope["app_id"] == pending.record.app_id == plan.app_id
+    assert envelope["app_id"] == pending.record.identity.app_id == plan.app_id
     assert envelope["original_pid"] == original_pid
     assert envelope["original_start"] == _handoff.process_start_token(
         original_pid
@@ -196,8 +236,77 @@ def _pending_receiver_handoff(
     controllers._assert_private_directory(handoff.plan_file.parent)
     recovery = handoff.plan_file.parent / "recovery"
     controllers._assert_private_directory(recovery)
-    assert (recovery / "controller.py").is_file()
+    assert not (recovery / "controller.py").exists()
     return handoff
+
+
+def test_namespace_finalizer_rejects_substituted_product_identity(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "installation"
+    directory.mkdir()
+    recovery = tmp_path / "recovery"
+    recovery.mkdir(mode=0o700)
+    plan = recovery / "finalization.json"
+    plan.write_text(
+        removal.json.dumps(
+            {
+                "directory": str(directory),
+                "app_id": "saved-product",
+                "generation_id": str(uuid4()),
+                "support": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    plan.chmod(0o600)
+
+    with pytest.raises(ValueError, match="malformed or grants support"):
+        namespace_finalizer.finalize_namespace(
+            plan, directory, expected_app_id="different-product"
+        )
+
+    assert directory.is_dir()
+
+
+def test_config_only_removal_needs_no_custom_provider(
+    tmp_path: Path,
+) -> None:
+    config_root = tmp_path / "config"
+    config_root.mkdir()
+    marker = config_root / ".apprc-owner.json"
+    marker.write_text(
+        '{"schema_version":1,"app_id":"handoff-app","category":"config"}\n',
+        encoding="utf-8",
+    )
+    config_payload = config_root / "apprc.user.env"
+    config_payload.write_text("VALUE=remove\n", encoding="utf-8")
+    directory, _runtime = _schema3_installation(
+        tmp_path, config_root=config_root, hooks=InstallationHooks()
+    )
+
+    preparation = prepare_uninstall(
+        directory, categories=frozenset({"config"}), complete=True
+    )
+
+    assert preparation.can_execute
+    assert preparation.plan is not None
+    config_entries = tuple(
+        entry
+        for entry in preparation.plan.inventory.entries
+        if entry.resource == "config"
+    )
+    assert {entry.path for entry in config_entries} == {
+        config_root,
+        marker,
+        config_payload,
+    }
+    assert next(
+        entry for entry in config_entries if entry.path == marker
+    ).revision == file_revision(marker)
+    assert next(
+        entry for entry in config_entries if entry.path == config_payload
+    ).revision == file_revision(config_payload)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX private directory modes")
@@ -392,18 +501,18 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
         stdin = io.StringIO("EXIT\n")
         monkeypatch.setattr(removal.sys, "stdin", stdin)
 
-        with pytest.raises(
-            InstallationError,
-            match="authority changed before handoff readiness",
-        ):
-            removal.execute_handoff(handoff.plan_file)
+        with pytest.raises(InstallationError):
+            removal.execute_handoff(
+                handoff.plan_file,
+                expected_identity=authority.record.identity,
+            )
 
         assert stdin.tell() == 0
         assert "APPRC-UNINSTALL-READY:" not in capsys.readouterr().out
         assert original.poll() is None
         assert handoff.plan_file.read_bytes() == envelope_before
         assert recovery.is_dir()
-        assert (recovery / "controller.py").is_file()
+        assert not (recovery / "controller.py").exists()
         assert program_marker.read_bytes() == b"installed program"
         assert cache_root.is_dir()
         assert cache_payload.read_bytes() == b'{"keep":true}\n'
@@ -411,7 +520,7 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
         assert not retained_root.exists()
 
 
-def test_sender_rejects_tempdir_under_program_prefix_before_cleanup(
+def test_sender_rejects_tempdir_under_program_prefix_before_staging(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -437,15 +546,8 @@ def test_sender_rejects_tempdir_under_program_prefix_before_cleanup(
     monkeypatch.setattr(
         controllers.tempfile, "gettempdir", lambda: str(unsafe_temp)
     )
-    cleanup_calls: list[bool] = []
-
     with pytest.raises(InstallationError, match="removal target"):
-        controllers.start_uninstall_handoff(
-            plan,
-            provider_cleanup=lambda _context: cleanup_calls.append(True),
-        )
-
-    assert not cleanup_calls
+        controllers.start_uninstall_handoff(plan)
     assert (
         inspect_installation(directory, app_id=plan.app_id).revision
         == before_revision
@@ -485,16 +587,8 @@ def test_sender_rejects_managed_environment_root_under_absent_selected_root(
     before_revision = inspection.revision
     authority = directory / "installation.json"
     authority_before = authority.read_bytes()
-    cleanup_calls: list[bool] = []
-
     with pytest.raises(InstallationError, match="removal target"):
-        controllers.start_uninstall_handoff(
-            plan,
-            provider_cleanup=lambda _context: cleanup_calls.append(True),
-        )
-
-    assert not absent_cache_root.exists()
-    assert not cleanup_calls
+        controllers.start_uninstall_handoff(plan)
     assert (
         inspect_installation(directory, app_id=plan.app_id).revision
         == before_revision
@@ -503,7 +597,7 @@ def test_sender_rejects_managed_environment_root_under_absent_selected_root(
     assert cache_payload.read_text(encoding="utf-8") == '{"keep":true}\n'
 
 
-def test_safe_temp_alias_preserves_interrupted_provider_cleanup(
+def test_safe_temp_alias_preserves_pending_handoff_without_provider_call(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -525,22 +619,24 @@ def test_safe_temp_alias_preserves_interrupted_provider_cleanup(
     alias.symlink_to(physical_temp, target_is_directory=True)
     monkeypatch.setattr(controllers.tempfile, "gettempdir", lambda: str(alias))
     monkeypatch.setenv("TMPDIR", str(alias))
+    process = SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO())
+    launch_environments: list[dict[str, str]] = []
 
-    def interrupted_cleanup(_context):
-        cache_payload.unlink()
-        raise RuntimeError("Application cleanup interrupted.")
+    def record_launch(_command, **kwargs):
+        launch_environments.append(kwargs["env"])
+        return process
 
-    with pytest.raises(RuntimeError):
-        controllers.start_uninstall_handoff(
-            plan, provider_cleanup=interrupted_cleanup
-        )
+    monkeypatch.setattr(controllers.subprocess, "Popen", record_launch)
+    handoff = controllers.start_uninstall_handoff(plan)
 
-    failed = inspect_installation(directory, app_id=plan.app_id)
-    assert failed.status == "incomplete"
-    assert failed.record is not None and failed.record.operation is not None
-    assert failed.record.operation.operation_id == plan.operation_id
-    assert OperationStep.PROVIDER_CLEANUP not in failed.record.operation.steps
-    assert not cache_payload.exists()
+    pending = inspect_installation(directory, app_id=plan.app_id)
+    assert pending.status == "incomplete"
+    assert pending.record is not None and pending.record.operation is not None
+    assert pending.record.operation.operation_id == plan.operation_id
+    assert OperationStep.PROVIDER_CLEANUP not in pending.record.operation.steps
+    assert launch_environments[0]["TMPDIR"] == str(physical_temp.resolve())
+    controllers._assert_private_directory(handoff.plan_file.parent)
+    assert cache_payload.read_text(encoding="utf-8") == '{"keep":true}\n'
     assert program_marker.read_bytes() == b"installed program"
     assert alias.is_symlink() and alias.resolve() == physical_temp
 
@@ -572,8 +668,8 @@ def test_actual_selected_and_retained_roots_and_program_only_plan(
         _handoff.assert_outside_removal(directory, roots)
     _handoff.assert_outside_removal(retained_root, roots)
     assert program_prefix in roots
-    assert inspection.record.current is not None
-    assert set(inspection.record.current.commands).issubset(roots)
+    assert directory in roots
+    assert cache_root in roots
 
     program_only = prepare_uninstall(directory)
     assert program_only.can_execute and program_only.plan is not None
@@ -606,48 +702,50 @@ def test_actual_selected_and_retained_roots_and_program_only_plan(
         _handoff.assert_outside_removal(absent_cache_root, retained_roots)
 
 
-def test_zero_capability_install_only_excludes_program_and_commands(
+def test_zero_capability_install_removes_only_managed_runtime_slot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    directory, snapshot = _installed_zero_capability_scenario(
+    directory, slot_directory = _installed_zero_capability_scenario(
         tmp_path, monkeypatch
     )
     preparation = prepare_uninstall(directory)
     assert preparation.can_execute and preparation.plan is not None
     assert preparation.inspection.record is not None
-    installed = preparation.inspection.record.current
-    assert installed is not None
-    assert installed.placement.capabilities == frozenset()
+    installed = preparation.inspection.record.active_runtime
+    assert isinstance(installed, RuntimeSlot)
+    assert preparation.inspection.record.placement.capabilities == frozenset()
 
     roots = _handoff.handoff_removal_roots(
         preparation.plan, preparation.inspection.record
     )
-    expected_roots = {
-        snapshot.prefix.resolve(),
-        *(
-            Path(os.path.normpath(os.fspath(command))).absolute()
-            for command in snapshot.commands
-        ),
-    }
-    assert set(roots) == expected_roots
+    assert set(roots) == {slot_directory.resolve()}
     _handoff.assert_outside_removal(directory, roots)
     _handoff.assert_outside_removal(tmp_path / "unselected-cache", roots)
 
 
-def test_external_base_python_rejects_managed_executable_before_probe(
+def test_handoff_python_rejects_managed_executable_before_launch(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     managed = tmp_path / "uv-managed-python"
-    managed.mkdir()
-    executable = managed / ("python.exe" if os.name == "nt" else "python")
+    binary_directory = managed / "bin"
+    binary_directory.mkdir(parents=True)
+    executable = binary_directory / "python"
     executable.write_bytes(b"managed interpreter")
+    monkeypatch.setattr(
+        controllers,
+        "sys",
+        SimpleNamespace(
+            executable=str(executable),
+            base_prefix=str(managed),
+        ),
+    )
 
-    with pytest.raises(InstallationError, match="removal target"):
-        external_base_python(
-            tmp_path / "application-prefix",
-            executable=executable,
-            forbidden_roots=(managed,),
-        )
+    with pytest.raises(
+        InstallationError,
+        match="No external Python executable is available",
+    ):
+        controllers._handoff_python((managed,))
 
     assert executable.read_bytes() == b"managed interpreter"

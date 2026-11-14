@@ -12,6 +12,7 @@ import typer
 
 # == Internal ================================
 from apprc.definition.maintenance import MaintenanceHandlers
+from apprc.definition.installation import InstallationHooks
 from apprc.interfaces.cli.config_command.state import (
     ConfigRuntimePolicy,
     DefaultConfigCliState,
@@ -30,13 +31,13 @@ from apprc.interfaces.cli.runtime import (
     CliArgvProvider,
     CliRuntime,
     CliRuntimePolicy,
-    InstallationInventoryProvider,
     MountCliRuntimeStateFactory,
 )
 from apprc.public.app_rc import AppRC
 from apprc.runtime.logging import ResolutionLogger
 
 if TYPE_CHECKING:
+    from apprc.distribution.models import NativeBinding
     from apprc.interfaces.tui.launcher.model import (
         LauncherHandler,
         LauncherSpec,
@@ -57,7 +58,8 @@ def mount_app_cli(
     maintenance_help_panel: str = "AppRC: Commands",
     maintenance_group_name: str = "app",
     installation_management: bool = False,
-    installation_inventory: InstallationInventoryProvider | None = None,
+    native_binding: NativeBinding | None = None,
+    installation_hooks: InstallationHooks = InstallationHooks(),
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
     resource_diagnostics: Mapping[
@@ -93,10 +95,11 @@ def mount_app_cli(
     :param runtime_policy: Optional policy for skipping host business setup.
     :param workspace_required: Whether business commands require a workspace.
     :param handlers: Explicit application maintenance operations.
-    :param installation_inventory: Optional exact owned-resource inventory provider for complete uninstall previews.
+    :param installation_hooks: Importable application lifecycle hooks captured per runtime.
     :param maintenance_help_panel: Rich help panel for AppRC maintenance groups.
     :param maintenance_group_name: Public name for the maintenance subtree.
     :param installation_management: Enable saved installation recovery commands.
+    :param native_binding: Immutable declaration used only by native recovery.
     :param installer_entrypoint: Explicit host-authored installer delegate.
     :param host_diagnostics: Read-only metadata provider for verbose doctor.
     :param resource_diagnostics: Read-only details for declared resource roots.
@@ -134,6 +137,7 @@ def mount_app_cli(
         ),
         config_group_name=config_group_name,
         maintenance_group_name=maintenance_group_name,
+        native_binding=native_binding,
         runtime_policy=runtime_policy,
         workspace_required=workspace_required,
         args_provider=args_provider,
@@ -152,7 +156,7 @@ def mount_app_cli(
         handlers=handlers,
         maintenance_help_panel=maintenance_help_panel,
         installation_management=installation_management,
-        installation_inventory=installation_inventory,
+        installation_hooks=installation_hooks,
         installer_entrypoint=installer_entrypoint,
         host_diagnostics=host_diagnostics,
         resource_diagnostics=resource_diagnostics,

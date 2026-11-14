@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,14 +16,23 @@ from typer.testing import CliRunner
 import apprc as rc
 from apprc.definition.installation import (
     CleanupInventory,
+    EditableCheckout,
     InstallationDiagnostic,
     InstallationInspection,
+    InstallationIdentity,
     InstallationPlacement,
     InstallationRecord,
+    ProjectSnapshot,
+    RuntimeSelection,
+    RuntimeSlot,
     UninstallPlan,
 )
 from apprc.definition.paths import Layout, Paths
 from apprc.definition.resolution import ResolveOptions
+from apprc.distribution.runtime._leases import (
+    acquire_runtime_lease,
+    try_retire_runtime_slot,
+)
 from apprc.distribution.runtime import controllers
 from apprc.distribution.runtime.controllers import UninstallPreparation
 from apprc.interfaces.tui._primitives import ConfirmScreen
@@ -55,6 +65,7 @@ def _launcher_context(
     }
     apprc = rc.AppRC(
         app_id="launcher-test",
+        command_name="launcher-test",
         paths=Paths(cache=True) if cache_only else Paths(config=True),
         user_dotenv=None if cache_only else rc.UserDotenv(),
     )
@@ -168,13 +179,21 @@ async def test_launcher_quit_stops_and_awaits_its_owned_foreground_child(
     tmp_path: Path, viewport: tuple[int, int]
 ) -> None:
     context = _launcher_context(tmp_path)
+    child_environment = dict(context.environment)
+    child_environment["LAUNCHER_CHILD_TOKEN"] = "captured-value"
+    marker = tmp_path / "child-environment.txt"
+    child_code = (
+        "import os,time; "
+        f"open({str(marker)!r}, 'w').write(os.environ['LAUNCHER_CHILD_TOKEN']); "
+        "time.sleep(30)"
+    )
     action = LauncherAction(
         id="long_running",
         label="Long-running command",
         argv=lambda _context, _interactive: (
             sys.executable,
             "-c",
-            "import time; time.sleep(30)",
+            child_code,
         ),
         interactive=False,
     )
@@ -182,7 +201,7 @@ async def test_launcher_quit_stops_and_awaits_its_owned_foreground_child(
         apprc=context.apprc,
         spec=LauncherSpec(actions=(action,), title=context.spec.title),
         options=context.options,
-        environment=context.environment,
+        environment=child_environment,
         inspection=context.inspection,
         paths=context.paths,
         cwd=context.cwd,
@@ -202,6 +221,11 @@ async def test_launcher_quit_stops_and_awaits_its_owned_foreground_child(
             processes = tuple(app.home._children.values())
             assert len(processes) == 1
             owned_process = processes[0]
+            for _ in range(100):
+                if marker.exists():
+                    break
+                await asyncio.sleep(0.01)
+            assert marker.read_text(encoding="utf-8") == "captured-value"
             quit_button = app.home.query_one("#launcher-quit", Button)
             for _ in range(len(app.home.query(Button))):
                 if app.focused is quit_button:
@@ -218,6 +242,100 @@ async def test_launcher_quit_stops_and_awaits_its_owned_foreground_child(
             if owned_process is not None and owned_process.returncode is None:
                 owned_process.terminate()
                 await owned_process.wait()
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Managed lease inheritance uses POSIX descriptors."
+)
+@pytest.mark.asyncio
+async def test_launcher_child_keeps_managed_runtime_leased_until_quit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _launcher_context(tmp_path)
+    directory = tmp_path / "installation"
+    directory.mkdir(mode=0o700)
+    slot = directory / "runtimes" / str(uuid4())
+    slot.parent.mkdir(mode=0o700)
+    slot.mkdir(mode=0o700)
+    prefix = slot / ".venv"
+    prefix.mkdir()
+    ready = tmp_path / "lease-child-ready"
+    gate = tmp_path / "lease-child-gate"
+    os.mkfifo(gate)
+    lease = acquire_runtime_lease(slot)
+    monkeypatch.setattr(sys, "prefix", str(prefix))
+    child_environment = lease.environment(dict(context.environment))
+    child_code = (
+        "from pathlib import Path; "
+        f"Path({str(ready)!r}).write_text('ready'); "
+        f"open({str(gate)!r}, 'rb').read()"
+    )
+    action = LauncherAction(
+        id="lease_child",
+        label="Lease child",
+        argv=lambda _context, _interactive: (
+            sys.executable,
+            "-c",
+            child_code,
+        ),
+        interactive=False,
+    )
+    context = LauncherContext(
+        apprc=context.apprc,
+        spec=LauncherSpec(actions=(action,)),
+        options=context.options,
+        environment=child_environment,
+        inspection=context.inspection,
+        paths=context.paths,
+        cwd=context.cwd,
+    )
+    app = LauncherApp(context=context, handlers={})
+    owned_process = None
+
+    try:
+        async with app.run_test() as pilot:
+            action_button = app.home.query_one(
+                "#launcher-action-lease_child", Button
+            )
+            action_button.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+            processes = tuple(app.home._children.values())
+            assert len(processes) == 1
+            owned_process = processes[0]
+            for _ in range(100):
+                if ready.exists():
+                    break
+                await asyncio.sleep(0.01)
+            assert ready.read_text(encoding="utf-8") == "ready"
+            assert owned_process.returncode is None
+
+            lease.close()
+            assert not try_retire_runtime_slot(slot)
+
+            quit_button = app.home.query_one("#launcher-quit", Button)
+            for _ in range(len(app.home.query(Button))):
+                if app.focused is quit_button:
+                    break
+                await pilot.press("tab")
+            assert app.focused is quit_button
+            await pilot.click(quit_button)
+            await pilot.pause()
+            assert owned_process.returncode is not None
+            assert owned_process.pid not in app.home._children
+            assert not app.home._children
+
+        assert try_retire_runtime_slot(slot)
+    finally:
+        if lease.handle >= 0:
+            lease.close()
+        if owned_process is not None and owned_process.returncode is None:
+            owned_process.terminate()
+            await owned_process.wait()
+        if slot.exists():
+            assert try_retire_runtime_slot(slot)
+        gate.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
@@ -253,19 +371,40 @@ async def test_launcher_editor_opens_field_modal_in_the_existing_app(
         assert isinstance(app.screen, ConfigValueEditScreen)
 
 
+@pytest.mark.parametrize("editable", [False, True], ids=["managed", "editable"])
 @pytest.mark.asyncio
 async def test_launcher_uninstall_cancellation_does_not_start_handoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    editable: bool,
 ) -> None:
     context = _launcher_context(tmp_path)
+    identity = InstallationIdentity(
+        "launcher-test",
+        "launcher-test",
+        "launcher_test",
+        None,
+        ("launcher-test",),
+    )
     record = InstallationRecord(
-        schema_version=2,
-        app_id=context.apprc.schema.app_id,
+        schema_version=3,
+        identity=identity,
+        command_name="launcher-test",
         generation_id=uuid4(),
-        support_version="0.31.0",
+        support_version="0.34.0",
         placement=InstallationPlacement(Layout.native()),
-        status="removed-retained",
+        status="ready",
+        active_runtime=(
+            EditableCheckout(tmp_path / "checkout", tmp_path / "checkout/.venv")
+            if editable
+            else RuntimeSlot(
+                slot_id=uuid4(),
+                source=ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+                selection=RuntimeSelection("3.14"),
+                version="1.0.0",
+                python_version="3.14.0",
+            )
+        ),
     )
     manager = context.apprc.installation(environment=context.environment)
     with installation_lock(manager.directory):
@@ -289,7 +428,7 @@ async def test_launcher_uninstall_cancellation_does_not_start_handoff(
         directory=inspection.directory,
         expected_revision=inspection.revision or "",
         expected_generation=record.generation_id,
-        app_id=record.app_id,
+        app_id=record.identity.app_id,
         operation_id=uuid4(),
         placement=record.placement,
         inventory=CleanupInventory(),
@@ -432,15 +571,27 @@ def test_launcher_reports_unusable_placement_without_invalidating_record(
             "LOCALAPPDATA": str(tmp_path / "local"),
         }
     )
-    apprc = rc.AppRC(app_id="launcher-path-error", paths=rc.Paths(cache=True))
+    apprc = rc.AppRC(
+        app_id="launcher-path-error",
+        command_name="launcher-path-error",
+        paths=rc.Paths(cache=True),
+    )
     manager = apprc.installation(environment=environment)
+    identity = rc.InstallationIdentity(
+        "launcher-path-error",
+        "launcher-path-error",
+        "launcher_path_error",
+        None,
+        ("launcher-path-error",),
+    )
     record = rc.InstallationRecord(
-        2,
-        apprc.schema.app_id,
-        uuid4(),
-        "0.31.0",
-        InstallationPlacement(rc.Layout.native()),
-        "removed-retained",
+        schema_version=3,
+        identity=identity,
+        command_name="launcher-path-error",
+        generation_id=uuid4(),
+        support_version="0.34.0",
+        placement=InstallationPlacement(rc.Layout.native()),
+        status="removed-retained",
     )
     with installation_lock(manager.directory):
         write_record(manager.directory, record, expected_revision=None)

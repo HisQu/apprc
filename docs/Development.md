@@ -67,8 +67,8 @@ locate project tools; use `.venv/bin/<tool>`.
 | `src/apprc/interfaces` | Typer and Textual adapters |
 | `src/apprc/public` | Application declaration facade |
 | `src/apprc/scaffold` | Small generated application layout |
-| `src/apprc/distribution` | Author APIs, external templates and the explicit standalone module/resource closure |
-| `src/apprc/distribution/runtime` | Ordinary composable acquisition, probing, saved management and removal code; no Jinja dependency |
+| `src/apprc/distribution` | Project metadata, verified source snapshots and explicit native setup authoring |
+| `src/apprc/distribution/runtime` | Locked slots, editable registration, independent management and ownership-aware recovery/removal |
 | `src/apprc/user_files/installation` | Strict installation authority I/O, revision checks, locks and migration |
 | `src/apprc/interfaces/tui/launcher` | Optional single-event-loop management and foreground-command interface |
 | `src/apprc_dev/packaging` | Metadata generation, install checks, release helpers |
@@ -91,19 +91,21 @@ coordination belong in `user_files/installation`; application-bound orchestratio
 belongs in `services/installation.py`. Do not put business configuration or
 generator dependencies into those lower layers.
 
-Current installation recovery resumes only operations represented by schema-2
+Current installation recovery resumes only operations represented by schema-3
 authority. Resource/layout migration still moves explicitly enumerated,
 revision-checked files and preserves unknown content; it is not receipt adoption.
 Validate the inventory before publishing pending authority and again when
-resuming it: decoded path types alone do not establish containment. Schema-1
-installation records require the explicit
-[reinstallation procedure](How-To-User-Guides.md#from-installation-record-schema-1),
+resuming it: decoded path types alone do not establish containment. Schema-1 and
+schema-2 installation records require the explicit
+[reinstallation procedure](How-To-User-Guides.md#from-installation-record-schema-1-or-2),
 not a version-number edit or automatic conversion.
 
-Package reuse, installation, verification, and package checkpoints belong to one
-reconciliation stage in `runtime/installation.py`. Its caller owns the operation,
-support publication, registration, and commit. If reconciliation fails after
-advancing a checkpoint, failure journaling reads the latest on-disk revision.
+Managed candidate preparation in `_prepare_candidate()` in
+`distribution/runtime/installation.py` owns project materialization, locked
+synchronization, validation, and resource initialization. Its caller owns the
+operation, durable support-publication intent, registration, and activation.
+If preparation fails after advancing a checkpoint, failure journaling reads the
+latest on-disk revision.
 In `runtime/removal.py`, pending uninstall preparation validates authority and
 containment before the caller-exit handshake. Execution waits outside the
 installation lock, then rechecks authority under the lock before mutation.
@@ -135,30 +137,27 @@ and validates the candidate schema before committing those entries and the
 binding. A rejected import does not reserve its owner key or prefix, so callers
 can correct the declaration and retry.
 
-Application packaging/release manifests and business actions remain in the
-consuming repository. Its `_distr` generator and payload are author inputs,
-not installed application imports. Maintain substantial lifecycle logic as
-ordinary Python and serialize complete explicitly included files into standalone
-support. Never extract function source, rewrite Python, or create a second
-installer implementation as a large template.
+Application build composition and business actions remain in the consuming
+repository. Its authored `<app>_distr` package prepares source snapshots and
+prebuilt frontend assets; installed provider callbacks belong in the application
+package. Do not copy generic installer implementations into applications.
 
-`distribution/runtime/saved_management.py` is the canonical stdlib-only saved
-program. Rendering copies that source and serializes portable `management.json`
-data; `runtime/installation.py::bind_install_support()` binds the validated
-external interpreter in JSON, not by inspecting or rewriting Python. Native
-frontend path escaping is a separate binding concern. Keep both program and
-binding data in the record's exact support-digest inventory.
+The native archive contains ordinary SDK modules, immutable binding data and
+the verified project snapshot. Its small PyApp loader verifies archive size and
+digest before importing the SDK. Do not serialize Python source as base64,
+extract function bodies or generate parallel saved management scripts.
 
-Materialized immutable-main and release-sdist source proof belongs to
-`distribution/runtime/probe.py::_verify_materialized_directory_source()`.
-Both source branches keep their installed `RECORD` checks before that proof;
-`runtime/acquisition.py::_validate_content_addressed_origin()` remains the owner
-of content-addressed origin validation.
+`distribution/project.py` exports committed source into private staging.
+Preparation retains workspace metadata and the exact lock, builds any declared
+non-Python assets, and removes authoring dependency/cache directories before
+serialization. `distribution/_archives.py` owns deterministic ZIP writing.
+Runtime repair uses the retained verified archive, not mutable build output.
 
-`distribution/standalone.py::_deterministic_zip()` serializes payload,
-inspection, and zipapp entries with the same sorted paths, fixed timestamp,
-Unix file metadata, and compression settings. Entry collection, namespace
-package synthesis, and payload collision checks remain with the callers.
+Runtime leases protect executing managed slots independently of lifecycle
+mutation locks. Select the active slot and obtain its lease under the
+installation lock, propagate the actual handle to children, then release the
+lifecycle lock before waiting. Retirement claims only recorded old slot IDs;
+unknown installation content is not an implicit cleanup target.
 
 `user_files/app_home/permissions.py::_path_permissions_are_private()` checks
 file or directory privacy through Windows ACLs or POSIX mode bits. Callers
@@ -345,66 +344,59 @@ The equivalent uv build commands use `uv build --no-sources --package` with
 
 ## Native application frontends
 
-Ordinary artifact generation and `build_main_installer()` remain Rust-free.
-Generated application checkouts use `app-install.py` and `app-launch.py`, invoked
-with `uv run --script`; these entries preserve the actual editable source tree and
-use the authored installer's PEP 723 dependencies. Recipients use uv for the
-application environment. PyApp manages only the native frontend's Python
-bootstrap.
+Native setup authoring is explicit. Applications compose
+`build_project_snapshot()` and `build_native_distribution()` in their authored
+`<app>_distr` build command; normal editable registration does not invoke Rust.
+The snapshot comes from one committed Git tree and includes the complete uv
+workspace, lockfile and prebuilt package assets.
 
-Native release executables are optional and built only through
-`apprc.distribution.frontends.build_native_installers`. The call requires a
-`DistributionSpec`, explicit `PayloadTree`, original release SDIST, uv executable,
-new private workspace, and optionally runtime extras, target tuple, and authoring
-environment. The spec must identify the exact immutable HTTPS release SDIST,
-including matching version, full commit and digest. The default target set returns
-app-specific Linux and Windows installer and launcher executables. `NativeDistribution`
-contains the compiled `frontends` and public `payload_files` for the existing
-release staging; that staging separately creates the outer release manifest.
-
-Declare the managed application's CPython minor before native authoring:
+Declare the application Python minor and primary console command:
 
 ```toml
 [tool.apprc.distribution]
 runtime-python = "3.13"
+command-name = "demo"
 ```
 
-`runtime-python` selects the application's uv-managed interpreter, wheel builds,
-and compatibility checks. It must satisfy the package's `requires-python`
-compatibility range; selecting a minor does not remove a declared patch-version
-minimum. Native authoring requires this setting. Ordinary Python artifact
-generation may omit it and retain the package's interpreter requirement.
-The application interpreter remains separate from PyApp's Python 3.14 bootstrap.
+The Python selector must satisfy the application's `requires-python`; it is
+separate from the native manager's Python 3.14 bootstrap. Managed environments
+use locked non-editable sync with no default groups and only selected extras.
+Editable registration uses the developer's existing `.venv` without syncing or
+copying it.
 
-The compiler pins PyApp 0.31.0 source, Python 3.14, management requirements and
-uv 0.13.6. Linux compilation requires Rust and LLVM; Windows cross-compilation
-uses Cargo-xwin 0.23.1, `x86_64-pc-windows-msvc`, and Microsoft SDK inputs. A
-compiled Windows PE is not executed or promoted as a saved launcher, so this
-does not establish Windows runtime behavior.
+The compiler authenticates pinned PyApp 0.31.0 source and uses uv 0.13.6.
+Authoring requires the matching core/terminal SDK metadata and existing Rust/LLVM
+toolchain. Windows x86-64 cross-compilation uses Cargo-xwin 0.23.1,
+`x86_64-pc-windows-msvc` and Microsoft SDK inputs. It produces a Windows console
+executable but does not execute it from WSL or establish native Windows behavior.
+macOS remains deferred; do not introduce platform runners implicitly.
 
-The `bundle-repositories` array in `[tool.apprc.distribution]` is an explicit
-allow-list of credential-free HTTPS Git URLs. Native compilation resolves the
-locked selected application graph and requested extras; it excludes development
-and default groups and unrelated workspace projects. Needed selected Git and
-declared workspace projects use their real build backends. Unsupported
-non-default indexes and external local sources are rejected. The producer
-derives runtime requirements and lowered constraints from the lock and rejects
-manual runtime requirement or override values.
+Final application outputs are `dist/<app-id>-setup-linux-x86_64`,
+`dist/<app-id>-setup-windows-x86_64.exe` and `dist/SHA256SUMS`. Intermediates,
+source archives, reports and Cargo workspaces belong in ignored `.cache/apprc/`.
+No private dependency wheels, standalone installer programs, duplicated native
+launchers or generated shell/CMD/PowerShell support are published.
 
-Native installers retain one digest-owned `installer-payload.zip` containing
-verified wheels, original source metadata and an optional Linux launch binary.
-The native frontend's embedded manifest authenticates the original installer and
-SDIST; payload script overlays are authenticated separately. The retained ZIP
-contains source metadata and a wheel inventory, not another release manifest.
-The existing release staging manifest authenticates finished native assets.
-Native output examples are `appid-install-linux-x86_64`,
-`appid-launch-linux-x86_64`,
-`appid-install-windows-x86_64.exe`, and `appid-launch-windows-x86_64.exe`.
-Windows `launch.cmd` and `launch.ps1` saved wrappers remain; root `launch.sh` is
-not generated. Public dependencies and Python may still be downloaded online.
-POSIX launch dispatch replaces its validated wrappers with the application, so
-signals sent to the launcher reach the application process.
-Do not commit private wheels, executable bytes, or encoded copies.
+The installed stable command is the same prebuilt manager executable. Its
+maintenance implementation does not import application dependencies; normal
+commands and optional application validators/hooks execute in the recorded
+runtime. Hybrid frontend builds run only on the authoring copy. Ensure the
+resulting HTML/JS assets are real Python package data and that recipient launch
+does not invoke Bun.
+
+Use the maintained native fixtures serially:
+
+```shell
+APPRC_TEST_PYAPP=1 .venv/bin/pytest -n 0 tests/test_distribution_pyapp.py tests/test_distribution_pyapp_recovery.py
+```
+
+These checks may download pinned compilation inputs and ordinary dependencies;
+they are not part of a normal import or editable-registration command. Keep
+fixture homes, commands and resource directories isolated. Exercise actual
+install/update/repair/uninstall and child lifetime, not only executable headers.
+Windows self-removal, leases, registration and shortcuts require separately
+authorized native Windows evidence. Never run Windows test executables through
+WSL interop or weaken ownership/ACL/link checks to make a fixture pass.
 
 ## Release procedure
 

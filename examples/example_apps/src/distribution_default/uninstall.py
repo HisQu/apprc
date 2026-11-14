@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 from typing import NoReturn
 
 from apprc.definition.installation import InstallationError
 from apprc.distribution.runtime.controllers import (
     UninstallPreparation,
-    parse_uninstall_handoff_args,
     prepare_uninstall,
     start_uninstall_handoff,
 )
-from apprc.user_files.installation.codec import decode_cleanup_inventory
 
 
 def uninstall_default(
@@ -35,49 +32,3 @@ def uninstall_default(
     handoff.wait_ready()
     handoff.signal_exit()
     raise SystemExit(0)
-
-
-def main(argv: list[str] | None = None) -> NoReturn:
-    """Parse private routing metadata before invoking this authored entry."""
-    original_pid, expected_revision, forwarded = parse_uninstall_handoff_args(
-        argv
-    )
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--directory", type=Path, required=True)
-    parser.add_argument("--complete", action="store_true")
-    parser.add_argument(
-        "--category",
-        action="append",
-        choices=("config", "appdata", "cache", "state"),
-    )
-    parser.add_argument("--forget-retained", action="store_true")
-    parser.add_argument("--inventory", type=Path)
-    args = parser.parse_args(forwarded)
-    if args.forget_retained and not args.complete:
-        parser.error("--forget-retained requires --complete")
-    inventory = (
-        decode_cleanup_inventory(args.inventory.read_bytes())
-        if args.inventory is not None
-        else None
-    )
-    preparation = prepare_uninstall(
-        args.directory,
-        categories=frozenset(args.category or ()),
-        complete=args.complete,
-        forget_retained=args.forget_retained,
-        inventory=inventory,
-    )
-    if expected_revision is not None and (
-        preparation.plan is None
-        or preparation.plan.expected_revision != expected_revision
-    ):
-        raise InstallationError("Installation changed after uninstall preview.")
-    uninstall_default(
-        args.directory,
-        original_pid=original_pid,
-        preparation=preparation,
-    )
-
-
-if __name__ == "__main__":
-    main()

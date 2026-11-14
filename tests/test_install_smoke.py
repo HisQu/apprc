@@ -197,9 +197,8 @@ def test_release_prepare_restores_metadata_after_uv_lock_failure(
     release_version = f"{major}.{minor + 1}.0"
     expected_tag = f"v{release_version}"
     source, count = re.subn(
-        r"(?m)^\[tool\.uv\.workspace\]$",
-        '[tool.uv]\nconstraint-dependencies = ["filelock==0.0.1"]\n\n'
-        "[tool.uv.workspace]",
+        r"(?m)^dependencies = \[$",
+        'dependencies = [\n    "apprc-release-failure-fixture>=1,<1",',
         source,
         count=1,
     )

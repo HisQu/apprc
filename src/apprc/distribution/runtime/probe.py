@@ -1,491 +1,476 @@
-"""Validate target-interpreter observations before committing ready authority."""
+"""Private request transport to the target interpreter's sole app bridge."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-import re
 import subprocess
-from collections.abc import Mapping
-from dataclasses import replace
+import sys
+import tempfile
 from pathlib import Path
-from typing import Literal
-from urllib.parse import unquote, urlsplit
-from urllib.request import url2pathname
-
-from apprc.definition._source_identity import parse_immutable_github_source
+from apprc.definition.paths import ResourceKind
+from typing import Any
 from apprc.definition.installation import (
+    EditableCheckout,
     InstallationError,
     InstallationIdentity,
-    InstallationPlacement,
-    InstallationSource,
-    InstalledSnapshot,
-    UvToolTarget,
+    MigrationPlan,
+    OperationContext,
+    RuntimeSlot,
 )
-from apprc.distribution.runtime.acquisition import (
-    _validate_content_addressed_origin,
-)
+
+from apprc.distribution.runtime.acquisition import _assert_private_staging
 from apprc.distribution.runtime.backend import (
-    backend_environment,
-    tool_interpreter,
+    runtime_environment,
+    runtime_interpreter,
+    runtime_prefix,
+)
+from apprc.distribution.runtime._leases import (
+    RuntimeLease,
+    acquire_runtime_lease_locked,
+    authorized_runtime_quiescence,
 )
 from apprc.user_files.app_home.locations import assert_no_links
-from apprc.user_files.app_home.writes import file_revision
+from apprc.user_files.installation.codec import _encode
+from apprc.user_files.installation.coordination import installation_lock
+from apprc.user_files.installation.discovery import inspect_installation
+
+_ACTIONS = frozenset(
+    {"probe", "initialize", "doctor", "inventory", "cleanup", "migrate"}
+)
+
+_LOADER = """import hashlib,sys,zipfile
+executable,request,expected=sys.argv[1:4]
+with open(executable,'rb') as stream:
+ actual=hashlib.file_digest(stream,'sha256').hexdigest()
+if actual != expected:
+ raise RuntimeError('Manager executable changed before bridge dispatch')
+with zipfile.ZipFile(executable) as archive:
+ source=archive.read('apprc/distribution/runtime/installed_probe.py')
+filename=executable+'/apprc/distribution/runtime/installed_probe.py'
+namespace={'__name__':'_apprc_installed_probe','__file__':filename,'__package__':None,'__spec__':None}
+exec(compile(source,filename,'exec'),namespace,namespace)
+raise SystemExit(namespace['main'](['--request',request]))
+"""
 
 
-def _validate_command_ownership(entry: Path, owned: Path) -> None:
-    """Require the exposed command to remain owned by this environment.
-
-    :param entry: Command file exposed in the backend's bin directory.
-    :param owned: Corresponding file inside the exact tool environment.
-    """
-    if not entry.is_file() or not owned.is_file():
-        raise InstallationError("Installed console command is missing.")
-    if entry.is_symlink():
-        if entry.resolve() != owned.resolve():
-            raise InstallationError(
-                "Console command points outside the recorded tool environment."
-            )
-    elif file_revision(entry) != file_revision(owned):
-        raise InstallationError(
-            "Console command differs from its installed package executable."
-        )
-
-
-def _repository_identity(
-    address: str,
-) -> tuple[str, str, int | None, str] | None:
-    """Normalize only public repository URL components for VCS provenance checks."""
-    parsed = urlsplit(address)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-    ):
-        return None
+def _private_request_file(
+    directory: Path,
+    request: dict[str, object],
+    forbidden_roots: tuple[Path, ...],
+) -> Path:
+    temporary_root = Path(tempfile.mkdtemp(prefix="apprc-request-"))
     try:
-        port = parsed.port
-    except ValueError:
-        return None
-    path = parsed.path.rstrip("/")
-    if path.casefold().endswith(".git"):
-        path = path[:-4]
-    return parsed.scheme, parsed.hostname.casefold(), port, path
-
-
-def _archive_sha256(direct: object) -> str | None:
-    """Read consistent SHA-256 values from PEP 610 archive metadata.
-
-    :param direct: PEP 610 direct-URL observation.
-    :return: Observed lowercase SHA-256, or ``None`` if absent or conflicting.
-    """
-    archive = direct.get("archive_info") if isinstance(direct, dict) else None
-    if not isinstance(archive, dict):
-        return None
-    observed: list[str] = []
-    hashes = archive.get("hashes")
-    if isinstance(hashes, dict) and isinstance(hashes.get("sha256"), str):
-        observed.append(hashes["sha256"])
-    legacy_hash = archive.get("hash")
-    if isinstance(legacy_hash, str):
-        algorithm, separator, digest = legacy_hash.partition("=")
-        if algorithm == "sha256" and separator:
-            observed.append(digest)
-    if not observed or any(value != observed[0] for value in observed[1:]):
-        return None
-    return observed[0]
-
-
-def _verify_materialized_directory_source(
-    source: InstallationSource,
-    direct: object,
-    *,
-    digest: str | None,
-    acquisition_requirement: str | None,
-    expected_record_digest: str | None,
-    source_label: Literal["main", "release"],
-) -> str:
-    """Verify non-editable directory provenance using acquisition's origin policy.
-
-    :param source: Selected immutable archive source.
-    :param direct: Installed PEP 610 direct-URL observation.
-    :param digest: Independently verified or saved archive SHA-256.
-    :param acquisition_requirement: Acquired project directory, if still available.
-    :param expected_record_digest: Saved installed RECORD fingerprint, if any.
-    :param source_label: Source-specific label used in existing diagnostics.
-    :return: Verified archive SHA-256.
-    """
-    installed_label = "main source" if source_label == "main" else "release"
-    direct_url = direct.get("url") if isinstance(direct, dict) else None
-    dir_info = direct.get("dir_info") if isinstance(direct, dict) else None
-    if (
-        not isinstance(direct, dict)
-        or set(direct) != {"url", "dir_info"}
-        or not isinstance(direct_url, str)
-        or not isinstance(dir_info, dict)
-        or dir_info.get("editable") is True
-        or digest is None
-        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
-    ):
-        raise InstallationError(
-            f"Installed {installed_label} lacks verified local-directory metadata."
-        )
-    url = urlsplit(direct_url)
-    if url.scheme != "file" or url.fragment or url.query:
-        raise InstallationError(
-            f"Installed {installed_label} does not identify a local directory."
-        )
-    actual = Path(url2pathname(url.path))
-    if url.netloc and url.netloc != "localhost":
-        actual = Path("//" + url.netloc + str(actual))
-    if acquisition_requirement is None:
-        if expected_record_digest is None:
+        _assert_private_staging(temporary_root)
+        resolved = temporary_root.resolve()
+        roots = (directory, *forbidden_roots)
+        if any(
+            resolved == root.resolve(strict=False)
+            or resolved.is_relative_to(root.resolve(strict=False))
+            for root in roots
+        ):
             raise InstallationError(
-                f"Saved {source_label} source lacks its installed RECORD fingerprint."
+                "Bridge request staging is inside a removal root."
             )
-        _validate_content_addressed_origin(source, digest, actual)
-        expected = actual
-    else:
-        expected = Path(acquisition_requirement)
-        _validate_content_addressed_origin(source, digest, expected)
-        assert_no_links(actual)
-        if not actual.is_dir():
-            raise InstallationError(
-                f"Installed {source_label} source directory is unavailable."
+        path = temporary_root / "request.json"
+        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(
+                request,
+                stream,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
             )
-    if os.path.normcase(str(actual.resolve(strict=False))) != os.path.normcase(
-        str(expected.resolve(strict=False))
-    ):
-        raise InstallationError(
-            f"Installed {installed_label} differs from its content-addressed project."
-        )
-    return digest
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        return path
+    except BaseException:
+        import shutil
+
+        shutil.rmtree(temporary_root, ignore_errors=True)
+        raise
 
 
-def probe_installed_tool(
-    target: UvToolTarget,
+def application_bridge(
+    directory: Path,
     identity: InstallationIdentity,
-    source: InstallationSource,
-    placement: InstallationPlacement,
+    runtime: RuntimeSlot | EditableCheckout,
     *,
-    probe_path: Path,
-    environment: Mapping[str, str],
-    operation_context: Path | None = None,
-    acquisition_requirement: str | None = None,
-    acquisition_digest: str | None = None,
-    expected_record_digest: str | None = None,
-) -> InstalledSnapshot:
-    """Execute the staged probe with the target's own isolated interpreter.
+    command_name: str,
+    action: str,
+    environment: dict[str, str],
+    manager_executable: Path | None = None,
+    expected_revision: str | None = None,
+    runtime_options: dict[str, object] | None = None,
+    operation_context: OperationContext | None = None,
+    categories: frozenset[ResourceKind] = frozenset(),
+    forget_retained: bool = False,
+    migration_plan: MigrationPlan | None = None,
+) -> dict[str, object]:
+    """Execute one strict app-bridge request with the recorded interpreter.
 
-    :param target: Selected or recorded uv backend.
-    :param identity: Expected host/package/import/commands declaration.
-    :param source: Exact acquisition input to validate against metadata.
-    :param placement: Intended captured resource addresses.
-    :param probe_path: Absolute ordinary-Python installed_probe.py file.
-    :param environment: Captured invocation environment.
-    :param operation_context: Private pending authorization for resource setup.
-    :param acquisition_requirement: Optional local source directory path for this install.
-    :param acquisition_digest: SHA-256 of the independently validated original archive.
-    :param expected_record_digest: Previously observed installed RECORD SHA-256.
-    :return: Actual validated snapshot, never a prediction from uv's exit code.
+    :param directory: Installation authority directory used by the bridge.
+    :param identity: Saved application and distribution identities.
+    :param runtime: Exact active managed slot or editable checkout.
+    :param command_name: Saved primary console command.
+    :param action: One fixed bridge action.
+    :param environment: Captured environment with ordinary credentials preserved.
+    :param runtime: Exact active managed slot or editable checkout, including its captured hooks.
+    :param manager_executable: Optional manager whose verified ZIP contains the bridge.
+    :param expected_revision: Authority revision for mutation validation.
+    :param runtime_options: Encoded captured CLI options for application doctor.
+    :param operation_context: Exact authorization for resource initialization.
+    :param categories: Provider cleanup categories.
+    :param forget_retained: Whether accepted cleanup forgets retained targets.
+    :param migration_plan: Explicit resource migration authority.
+    :return: The bridge's typed-by-action result object.
     """
-    if (
-        expected_record_digest is not None
-        and re.fullmatch(r"[0-9a-f]{64}", expected_record_digest) is None
-    ):
-        raise InstallationError(
-            "Expected distribution RECORD digest must be SHA-256."
+    if action not in _ACTIONS:
+        raise InstallationError("Unknown application bridge action.")
+    if not command_name or command_name not in identity.commands:
+        raise InstallationError("Bridge command does not match saved identity.")
+    if runtime_options is None:
+        from apprc.definition.resolution import _BridgeRuntimeOptions
+
+        runtime_options_payload = _encode(_BridgeRuntimeOptions())
+    else:
+        runtime_options_payload = runtime_options
+    request: dict[str, object] = {
+        "action": action,
+        "identity": _encode(identity),
+        "command_name": command_name,
+        "directory": str(directory),
+        "expected_revision": expected_revision,
+        "runtime_options": runtime_options_payload,
+        "operation_context": _encode(operation_context)
+        if operation_context is not None
+        else None,
+        "categories": sorted(categories),
+        "forget_retained": forget_retained,
+        "migration_plan": _encode(migration_plan)
+        if migration_plan is not None
+        else None,
+        "hooks": _encode(runtime.hooks),
+    }
+    lease: RuntimeLease | None = None
+    close_lease = True
+    protected_roots: tuple[Path, ...] = ()
+    with installation_lock(directory):
+        inspection = inspect_installation(directory, app_id=identity.app_id)
+        record = inspection.record
+        if record is None or inspection.revision is None:
+            raise InstallationError(
+                "Bridge requires valid installation authority."
+            )
+        if (
+            expected_revision is not None
+            and inspection.revision != expected_revision
+        ):
+            raise InstallationError(
+                "Installation changed before bridge runtime selection."
+            )
+        authorized_runtime = record.active_runtime
+        operation = record.operation
+        if operation is not None and operation.intended is not None:
+            pending = operation.intended.runtime
+            if pending == runtime and action in {"probe", "initialize"}:
+                authorized_runtime = pending
+        if authorized_runtime != runtime:
+            raise InstallationError(
+                "Bridge runtime is not the active or exact pending target."
+            )
+        placement = record.placement
+        protected_roots = tuple(
+            path
+            for path in (
+                placement.config_dir,
+                placement.appdata_dir,
+                placement.cache_dir,
+                placement.state_dir,
+                placement.logs_dir,
+                *(resource.path for resource in placement.retired),
+            )
+            if path is not None
         )
-    interpreter = tool_interpreter(target, identity.distribution)
-    argv = [
-        str(interpreter),
-        "-I",
-        str(probe_path),
-        "--distribution",
-        identity.distribution,
-        "--app-id",
-        identity.app_id,
-        "--import-package",
-        identity.import_package,
-    ]
-    for command in identity.commands:
-        argv.extend(("--command", command))
-    if identity.apprc_reference is not None:
-        argv.extend(("--apprc-reference", identity.apprc_reference))
-    if operation_context is not None:
-        argv.extend(("--operation-context", str(operation_context)))
-    result = subprocess.run(
-        argv,
-        env=backend_environment(target, environment),
-        capture_output=True,
-        text=True,
-        check=True,
+        expected_revision = inspection.revision
+        manager_digest: str | None = None
+        if manager_executable is not None:
+            if (
+                not manager_executable.is_absolute()
+                or not manager_executable.is_file()
+            ):
+                raise InstallationError(
+                    "Saved manager executable is unavailable."
+                )
+            assert_no_links(manager_executable)
+            with manager_executable.open("rb") as stream:
+                manager_digest = hashlib.file_digest(
+                    stream, "sha256"
+                ).hexdigest()
+            if manager_executable.resolve(strict=True).is_relative_to(
+                directory.resolve(strict=False)
+            ):
+                owned_paths = {str(manager_executable)}
+                try:
+                    owned_paths.add(
+                        str(manager_executable.relative_to(directory))
+                    )
+                except ValueError:
+                    pass
+                owned = next(
+                    (
+                        item
+                        for item in record.owned_outputs
+                        if item.path in owned_paths and item.digest is not None
+                    ),
+                    None,
+                )
+                if owned is None or owned.digest != manager_digest:
+                    raise InstallationError(
+                        "Saved manager executable differs from owned bytes."
+                    )
+        if isinstance(runtime, RuntimeSlot):
+            slot_directory = directory / "runtimes" / str(runtime.slot_id)
+            lease = authorized_runtime_quiescence(slot_directory)
+            if lease is None:
+                lease = acquire_runtime_lease_locked(slot_directory)
+            else:
+                close_lease = False
+    if lease is not None:
+        captured_environment = lease.environment(environment)
+        spawn_options = lease.subprocess_options()
+    else:
+        captured_environment = dict(environment)
+        spawn_options = {}
+        captured_environment.pop("_APPRC_RUNTIME_LEASE_HANDLE", None)
+    request["expected_revision"] = expected_revision
+    forbidden = protected_roots + (
+        (runtime.project, runtime.environment)
+        if isinstance(runtime, EditableCheckout)
+        else (runtime_prefix(directory, runtime).parent,)
     )
-    value = json.loads(result.stdout)
-    expected_fields = {
+    try:
+        request_path = _private_request_file(directory, request, forbidden)
+    except BaseException:
+        if lease is not None and close_lease:
+            lease.close()
+        raise
+    try:
+        interpreter = runtime_interpreter(directory, runtime)
+        child_environment = runtime_environment(captured_environment)
+        if lease is not None:
+            child_environment = lease.environment(child_environment)
+        prefix = runtime_prefix(directory, runtime)
+        command_bin = prefix / ("Scripts" if os.name == "nt" else "bin")
+        child_environment["VIRTUAL_ENV"] = str(prefix)
+        child_environment["PATH"] = (
+            str(command_bin) + os.pathsep + child_environment.get("PATH", "")
+        )
+        if manager_executable is not None:
+            assert manager_digest is not None
+            argv = [
+                str(interpreter),
+                "-I",
+                "-c",
+                _LOADER,
+                str(manager_executable),
+                str(request_path),
+                manager_digest,
+            ]
+        else:
+            bridge = Path(__file__).with_name("installed_probe.py")
+            if not bridge.is_file():
+                raise InstallationError(
+                    "Installed SDK application bridge is unavailable."
+                )
+            argv = [
+                str(interpreter),
+                "-I",
+                str(bridge),
+                "--request",
+                str(request_path),
+            ]
+        result = subprocess.run(
+            argv,
+            env=child_environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            **spawn_options,
+        )
+        try:
+            response: Any = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise InstallationError(
+                f"Application bridge returned invalid {action} JSON."
+            ) from error
+        if (
+            not isinstance(response, dict)
+            or set(response) != {"action", "result"}
+            or response["action"] != action
+            or not isinstance(response["result"], dict)
+        ):
+            raise InstallationError(
+                f"Application bridge returned an invalid {action} envelope."
+            )
+        if result.stderr:
+            sys.stderr.write(result.stderr)
+        payload = response["result"]
+        if action == "doctor":
+            checks = payload.get("checks")
+            if (
+                not isinstance(payload.get("status"), str)
+                or not isinstance(checks, list)
+                or any(
+                    not isinstance(check, dict)
+                    or not isinstance(check.get("status"), str)
+                    for check in checks
+                )
+            ):
+                raise InstallationError(
+                    "Application doctor returned invalid failure JSON."
+                )
+            if result.returncode == 1 and payload["status"] != "error":
+                raise InstallationError(
+                    "Application doctor failed without valid failure checks."
+                )
+        elif result.returncode != 0:
+            raise InstallationError(
+                f"Application bridge {action} failed: {result.stderr.strip()}"
+            )
+        return payload
+    finally:
+        import shutil
+
+        shutil.rmtree(request_path.parent, ignore_errors=True)
+        if lease is not None and close_lease:
+            lease.close()
+
+
+def _probe_runtime_observations(
+    directory: Path,
+    identity: InstallationIdentity,
+    runtime: RuntimeSlot | EditableCheckout,
+    *,
+    command_name: str,
+    environment: dict[str, str],
+    manager_executable: Path | None = None,
+    expected_revision: str | None = None,
+) -> tuple[RuntimeSlot | EditableCheckout, dict[str, object]]:
+    """Return a validated runtime and its exact bridge observations."""
+    import re
+
+    from apprc.distribution.runtime.backend import (
+        runtime_command,
+        runtime_prefix,
+    )
+
+    result = application_bridge(
+        directory,
+        identity,
+        runtime,
+        command_name=command_name,
+        action="probe",
+        environment=environment,
+        manager_executable=manager_executable,
+        expected_revision=expected_revision,
+    )
+    fields = {
         "distribution",
         "version",
         "prefix",
         "interpreter",
+        "python_version",
         "commands",
-        "direct_url",
-        "capabilities",
-        "initialized",
-        "distribution_record_digest",
     }
-    if not isinstance(value, dict) or set(value) != expected_fields:
-        raise InstallationError(
-            "Installed probe returned an incompatible observation."
-        )
-    record_digest = value["distribution_record_digest"]
-    if record_digest is not None and (
-        not isinstance(record_digest, str)
-        or re.fullmatch(r"[0-9a-f]{64}", record_digest) is None
-    ):
-        raise InstallationError(
-            "Installed distribution RECORD digest is invalid."
-        )
+    if not isinstance(result, dict) or set(result) != fields:
+        raise InstallationError("Runtime probe returned incompatible metadata.")
+
+    def normalized(value: str) -> str:
+        return re.sub(r"[-_.]+", "-", value).lower()
+
     if (
-        expected_record_digest is not None
-        and record_digest != expected_record_digest
+        not isinstance(result["distribution"], str)
+        or normalized(result["distribution"])
+        != normalized(identity.distribution)
+        or not isinstance(result["version"], str)
+        or not result["version"]
+        or not isinstance(result["python_version"], str)
+        or re.fullmatch(r"\d+\.\d+\.\d+", result["python_version"]) is None
+        or not isinstance(result["prefix"], str)
+        or not isinstance(result["interpreter"], str)
     ):
+        raise InstallationError("Runtime probe identity or version is invalid.")
+    prefix = Path(result["prefix"])
+    expected_prefix = runtime_prefix(directory, runtime)
+    if not prefix.is_absolute() or os.path.normcase(
+        str(prefix.resolve(strict=False))
+    ) != os.path.normcase(str(expected_prefix.resolve(strict=False))):
         raise InstallationError(
-            "Installed distribution RECORD digest differs from the saved observation."
+            "Runtime interpreter prefix differs from its recorded environment."
         )
-    archive_requires_record = source.kind in {"release-sdist", "wheel"} or (
-        source.kind == "index"
-        and (
-            source.digest is not None
-            or acquisition_requirement is not None
-            or acquisition_digest is not None
-        )
-        and parse_immutable_github_source(source.requirement) is not None
-    )
-    if archive_requires_record and record_digest is None:
-        raise InstallationError(
-            "Installed archive distribution has no verifiable RECORD fingerprint."
-        )
-    if (
-        not isinstance(value["distribution"], str)
-        or re.sub(r"[-_.]+", "-", value["distribution"]).lower()
-        != re.sub(r"[-_.]+", "-", identity.distribution).lower()
-    ):
-        raise InstallationError(
-            "Installed distribution identity differs from intended package."
-        )
-    if not isinstance(value["version"], str) or not value["version"]:
-        raise InstallationError("Installed package version is unavailable.")
-    if source.version is not None and value["version"] != source.version:
-        raise InstallationError(
-            "Installed package version differs from the verified source."
-        )
-    if (
-        source.digest is not None
-        and re.fullmatch(r"[0-9a-f]{64}", source.digest) is None
-    ):
-        raise InstallationError("Selected source digest must be SHA-256.")
-    if source.kind == "editable" and source.digest is not None:
-        raise InstallationError(
-            "Editable sources do not carry archive digests."
-        )
-    if (
-        source.digest is not None
-        and acquisition_digest is not None
-        and source.digest != acquisition_digest
-    ):
-        raise InstallationError(
-            "Verified acquisition digest differs from the selected source."
-        )
-    prefix = target.tool_dir / identity.distribution
-    if value["prefix"] != str(prefix) or value["interpreter"] != str(
-        interpreter
-    ):
-        raise InstallationError(
-            "Target interpreter reports a different environment; refusing adoption."
-        )
-    capabilities = value["capabilities"]
-    if (
-        not isinstance(capabilities, dict)
-        or set(capabilities) != {"config", "appdata", "cache", "state"}
-        or any(type(enabled) is not bool for enabled in capabilities.values())
-        or frozenset(kind for kind, enabled in capabilities.items() if enabled)
-        != placement.capabilities
-    ):
-        raise InstallationError(
-            "Installed capabilities differ from the intended declaration."
-        )
-    commands = value["commands"]
+    commands = result["commands"]
     if not isinstance(commands, dict) or set(commands) != set(
         identity.commands
     ):
         raise InstallationError(
-            "Installed console entry inventory differs from intended commands."
+            "Runtime probe command ownership is incomplete."
         )
-    observed_digest: str | None = None
-    direct = value["direct_url"]
-    if source.kind == "editable":
-        if (
-            not isinstance(direct, dict)
-            or not isinstance(direct.get("url"), str)
-            or not isinstance(direct.get("dir_info"), dict)
-            or direct["dir_info"].get("editable") is not True
-        ):
-            raise InstallationError(
-                "Backend did not establish an editable application source."
-            )
-        url = urlsplit(direct["url"])
-        if url.scheme != "file":
-            raise InstallationError(
-                "Editable metadata does not address a local project."
-            )
-        installed_source = Path(url2pathname(url.path))
-        if url.netloc and url.netloc != "localhost":
-            installed_source = Path("//" + url.netloc + str(installed_source))
-        if os.path.normcase(
-            str(installed_source.resolve())
-        ) != os.path.normcase(str(Path(source.requirement).resolve())):
-            raise InstallationError(
-                "Editable metadata points to another checkout."
-            )
-    elif (
-        source.kind == "index"
-        and parse_immutable_github_source(source.requirement) is not None
-        and (
-            source.digest is not None
-            or acquisition_requirement is not None
-            or acquisition_digest is not None
-        )
+    if any(
+        not isinstance(value, str) or not value for value in commands.values()
     ):
-        observed_digest = _verify_materialized_directory_source(
-            source,
-            direct,
-            digest=acquisition_digest or source.digest,
-            acquisition_requirement=acquisition_requirement,
-            expected_record_digest=expected_record_digest,
-            source_label="main",
-        )
-    elif source.kind == "index" and source.requirement.startswith("git+"):
-        durable_locator, _, project_fragment = source.requirement.partition("#")
-        expected_repository, separator, expected_commit = durable_locator[
-            4:
-        ].rpartition("@")
-        if (
-            not separator
-            or re.fullmatch(r"[0-9a-f]{40}", expected_commit) is None
-        ):
-            raise InstallationError(
-                "Remote VCS source must retain one full immutable commit."
-            )
-        vcs = direct.get("vcs_info") if isinstance(direct, dict) else None
-        remote = direct.get("url") if isinstance(direct, dict) else None
-        expected_subdirectory = (
-            unquote(project_fragment.partition("=")[2])
-            if project_fragment.startswith("subdirectory=")
-            else None
-        )
-        expected_fields = {"url", "vcs_info"}
-        if expected_subdirectory is not None:
-            expected_fields.add("subdirectory")
-        actual_subdirectory = (
-            direct.get("subdirectory") if isinstance(direct, dict) else None
-        )
-        if (
-            not isinstance(direct, dict)
-            or set(direct) != expected_fields
-            or not isinstance(vcs, dict)
-            or vcs.get("vcs") != "git"
-            or vcs.get("commit_id") != expected_commit
-            or not isinstance(remote, str)
-            or _repository_identity(remote)
-            != _repository_identity(expected_repository)
-            or (
-                expected_subdirectory is None
-                and actual_subdirectory is not None
-            )
-            or (
-                expected_subdirectory is not None
-                and (
-                    not isinstance(actual_subdirectory, str)
-                    or actual_subdirectory != expected_subdirectory
-                )
-            )
-        ):
-            raise InstallationError(
-                "Installed VCS source differs from the recorded repository commit or subdirectory."
-            )
-    elif source.kind == "wheel":
-        direct_url = direct.get("url") if isinstance(direct, dict) else None
-        digest = acquisition_digest or source.digest
-        if (
-            not isinstance(direct, dict)
-            or not isinstance(direct_url, str)
-            or digest is None
-            or (
-                acquisition_requirement is None
-                and expected_record_digest is None
-            )
-        ):
-            raise InstallationError("Installed wheel lacks saved source proof.")
-        url = urlsplit(direct_url)
-        if url.scheme != "file" or url.query or url.fragment:
-            raise InstallationError("Installed wheel origin is not local.")
-        actual = Path(url2pathname(url.path))
-        if url.netloc and url.netloc != "localhost":
-            actual = Path("//" + url.netloc + str(actual))
-        _validate_content_addressed_origin(source, digest, actual)
-        if acquisition_requirement is not None:
-            if actual != Path(acquisition_requirement) or not actual.is_file():
-                raise InstallationError(
-                    "Installed wheel differs from acquired wheel."
-                )
-            assert_no_links(actual)
-        observed_digest = digest
-    elif source.kind == "release-sdist":
-        observed_digest = _verify_materialized_directory_source(
-            source,
-            direct,
-            digest=acquisition_digest or source.digest,
-            acquisition_requirement=acquisition_requirement,
-            expected_record_digest=expected_record_digest,
-            source_label="release",
-        )
-    elif source.kind == "index" and source.digest is not None:
-        if _archive_sha256(direct) != source.digest:
-            raise InstallationError(
-                "Installed direct-source digest does not match the selected source."
-            )
-        observed_digest = source.digest
-    elif source.digest is not None:
         raise InstallationError(
-            "Selected archive source lacks a verifiable materialized project."
+            "Runtime probe returned invalid console entry points."
         )
-    observed_source = (
-        replace(source, digest=observed_digest)
-        if observed_digest is not None and source.digest is None
-        else source
-    )
-    observed_commands = []
     for command in identity.commands:
-        suffix = ".exe" if os.name == "nt" else ""
-        entry = target.bin_dir / (command + suffix)
-        owned = (
-            prefix
-            / ("Scripts" if os.name == "nt" else "bin")
-            / (command + suffix)
+        if not runtime_command(directory, runtime, command).is_file():
+            raise InstallationError(
+                f"Runtime console command is missing: {command}."
+            )
+    if isinstance(runtime, EditableCheckout):
+        return runtime, result
+    if runtime.version is not None and runtime.version != result["version"]:
+        raise InstallationError(
+            "Installed version differs from the requested runtime version."
         )
-        _validate_command_ownership(entry, owned)
-        observed_commands.append(entry)
-    return InstalledSnapshot(
+    if (
+        runtime.python_version is not None
+        and runtime.python_version != result["python_version"]
+    ):
+        raise InstallationError(
+            "Installed Python version differs from the requested runtime version."
+        )
+    return RuntimeSlot(
+        runtime.slot_id,
+        runtime.source,
+        runtime.selection,
+        result["version"],
+        result["python_version"],
+        runtime.hooks,
+    ), result
+
+
+def probe_runtime(
+    directory: Path,
+    identity: InstallationIdentity,
+    runtime: RuntimeSlot | EditableCheckout,
+    *,
+    command_name: str,
+    environment: dict[str, str],
+    manager_executable: Path | None = None,
+    expected_revision: str | None = None,
+) -> RuntimeSlot | EditableCheckout:
+    """Return a managed slot with actual interpreter/package observations."""
+    observed, _metadata = _probe_runtime_observations(
+        directory,
         identity,
-        value["version"],
-        observed_source,
-        placement,
-        target,
-        prefix,
-        interpreter,
-        tuple(observed_commands),
-        distribution_record_digest=record_digest,
+        runtime,
+        command_name=command_name,
+        environment=environment,
+        manager_executable=manager_executable,
+        expected_revision=expected_revision,
     )
+    return observed

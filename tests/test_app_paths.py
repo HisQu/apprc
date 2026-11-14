@@ -86,17 +86,15 @@ def test_paths_capture_only_enabled_components(
 def test_native_installation_reuses_owned_appdata_with_persistent_lock(
     tmp_path: Path,
 ) -> None:
+    from uuid import uuid4
     from apprc.definition.installation import (
         InstallationIdentity,
         InstallationPlacement,
-        InstallationSource,
-        UvToolTarget,
+        ProjectSnapshot,
+        RuntimeSelection,
+        RuntimeSlot,
     )
     from apprc.user_files.app_home.writes import managed_lock_path
-    from apprc.user_files.installation.operations import (
-        begin_operation,
-        plan_install,
-    )
 
     app = _app((False, True, False, False))
     environment = {
@@ -111,20 +109,23 @@ def test_native_installation_reuses_owned_appdata_with_persistent_lock(
     placement = InstallationPlacement(
         Layout.native(), appdata_dir=data, capabilities=frozenset({"appdata"})
     )
-    plan = plan_install(
-        InstallationIdentity(
-            app.schema.app_id,
-            "path-matrix-test",
-            "path_matrix_test",
-            None,
-            ("path-matrix-test",),
-        ),
-        InstallationSource("index", "path-matrix-test==1.0"),
-        placement,
-        UvToolTarget(tmp_path / "uv", tmp_path / "tools", tmp_path / "bin"),
-        inspection=app.installation(environment=environment).inspect(),
+    manager = app.installation(environment=environment)
+    identity = InstallationIdentity(
+        app.schema.app_id,
+        "path-matrix-test",
+        "path_matrix_test",
+        None,
+        ("path-matrix-test",),
     )
-    pending = begin_operation(plan)
+    runtime = RuntimeSlot(
+        uuid4(),
+        ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+        RuntimeSelection("3.14"),
+    )
+    plan = manager.plan_install(
+        identity, runtime, placement, command_name="path-matrix-test"
+    )
+    pending = manager.begin_operation(plan)
     assert pending.record is not None and pending.record.operation is not None
     assert pending.record.placement.appdata_dir == data
     assert retained.read_bytes() == b"retained work"

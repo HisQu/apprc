@@ -147,8 +147,10 @@ def inspect_saved(directory: Path) -> InstallationInspection:
 def _support_inventory(
     record: InstallationRecord,
     directory: Path,
+    *,
+    complete: bool,
 ) -> tuple[tuple[InventoryEntry, ...], tuple[str, ...]]:
-    """Capture only exact saved support and reject unrecorded install contents."""
+    """Capture owned outputs; complete removal also rejects unknown files."""
     outputs = record.owned_outputs
     files: dict[Path, str] = {}
     directories: set[Path] = set()
@@ -210,6 +212,8 @@ def _support_inventory(
             )
             continue
         entries.append(InventoryEntry(path, "file", digest))
+    if not complete:
+        return tuple(entries), tuple(dict.fromkeys(diagnostics))
     for path in directories:
         if path.exists() or path.is_symlink():
             if path.is_symlink() or not path.is_dir():
@@ -579,28 +583,27 @@ def prepare_uninstall(
         return UninstallPreparation(
             None, inspection, (), (*inspection.diagnostics, diagnostic), False
         )
-    if complete:
-        support_entries, support_errors = _support_inventory(record, directory)
-        if support_errors:
-            diagnostics = tuple(
-                InstallationDiagnostic(
-                    "uninstall-support-inventory",
-                    message,
-                    "Repair or inspect unowned/changed support before complete removal.",
-                )
-                for message in support_errors
+    support_entries, support_errors = _support_inventory(
+        record, directory, complete=complete
+    )
+    if support_errors:
+        diagnostics = tuple(
+            InstallationDiagnostic(
+                "uninstall-support-inventory",
+                message,
+                "Repair or inspect changed owned program files before removal.",
             )
-            return UninstallPreparation(
-                None,
-                inspection,
-                support_entries,
-                (*inspection.diagnostics, *diagnostics),
-                False,
-            )
-    else:
-        support_entries = ()
+            for message in support_errors
+        )
+        return UninstallPreparation(
+            None,
+            inspection,
+            support_entries,
+            (*inspection.diagnostics, *diagnostics),
+            False,
+        )
     accepted_inventory_has_support = False
-    if inventory is not None and complete:
+    if inventory is not None:
         accepted_support = tuple(
             entry for entry in inventory.entries if entry.resource is None
         )

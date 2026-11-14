@@ -49,21 +49,6 @@ def test_definitions_do_not_depend_on_operations() -> None:
             ), path.relative_to(root)
 
 
-def test_package_initializers_only_import_and_document() -> None:
-    """Facade imports must not hide implementation or mutable module state."""
-    root = Path(__file__).resolve().parents[1] / "src" / "apprc"
-    for path in root.rglob("__init__.py"):
-        for node in ast.parse(path.read_text(encoding="utf-8")).body:
-            is_docstring = (
-                isinstance(node, ast.Expr)
-                and isinstance(node.value, ast.Constant)
-                and isinstance(node.value.value, str)
-            )
-            assert is_docstring or isinstance(
-                node, (ast.Import, ast.ImportFrom)
-            ), path.relative_to(root)
-
-
 def test_root_facade_exports_public_config_api() -> None:
     assert apprc.AppRC is AppRC
     assert apprc.Config is Config

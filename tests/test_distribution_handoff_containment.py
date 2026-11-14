@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -21,6 +22,7 @@ from apprc.definition.installation import (
     InstallationRecord,
     InventoryEntry,
     OperationStep,
+    OwnedOutput,
     ProjectSnapshot,
     RetiredResource,
     RuntimeSelection,
@@ -28,7 +30,12 @@ from apprc.definition.installation import (
     UninstallPlan,
 )
 from apprc.definition.paths import Layout, ResourceKind
-from apprc.distribution.runtime import _handoff, controllers, removal
+from apprc.distribution.runtime import (
+    _handoff,
+    controllers,
+    namespace_finalizer,
+    removal,
+)
 from apprc.distribution.runtime.controllers import (
     UninstallHandoff,
     prepare_uninstall,
@@ -43,7 +50,6 @@ from apprc.user_files.installation.coordination import (
 )
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.operations import fail_operation
-from apprc.distribution.runtime import namespace_finalizer
 from tests.test_distribution_process_waiter import _owned_child
 
 
@@ -700,6 +706,56 @@ def test_actual_selected_and_retained_roots_and_program_only_plan(
     _handoff.assert_outside_removal(cache_root, retained_roots)
     with pytest.raises(InstallationError, match="removal target"):
         _handoff.assert_outside_removal(absent_cache_root, retained_roots)
+
+
+def test_program_only_removes_exact_owned_outputs_and_preserves_unknown_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory, _slot = _installed_zero_capability_scenario(
+        tmp_path, monkeypatch
+    )
+    stable = directory / "fixture"
+    stable.write_bytes(b"stable manager")
+    unknown = directory / "operator-note.txt"
+    unknown.write_text("preserve", encoding="utf-8")
+    global_command = tmp_path / "bin" / "fixture"
+    global_command.parent.mkdir()
+    global_command.write_bytes(b"global command")
+
+    inspection = inspect_installation(directory, app_id="handoff-app")
+    assert inspection.record is not None and inspection.revision is not None
+    outputs = (
+        OwnedOutput("command", str(stable), file_revision(stable)),
+        OwnedOutput(
+            "command", str(global_command), file_revision(global_command)
+        ),
+    )
+    record = replace(inspection.record, owned_outputs=outputs)
+    with installation_lock(directory):
+        write_record(
+            directory,
+            record,
+            expected_revision=inspection.revision,
+        )
+
+    preparation = prepare_uninstall(directory)
+
+    assert preparation.can_execute and preparation.plan is not None
+    assert preparation.plan.inventory.entries == (
+        InventoryEntry(stable, "file", file_revision(stable)),
+    )
+    roots = _handoff.handoff_removal_roots(preparation.plan, record)
+    assert stable in roots
+    assert global_command in roots
+    _handoff.assert_outside_removal(directory, roots)
+    removal._remove_inventory(preparation.plan.inventory.entries)
+    removal._remove_owned_outputs(record.owned_outputs, directory=directory)
+
+    assert not stable.exists()
+    assert not global_command.exists()
+    assert unknown.read_text(encoding="utf-8") == "preserve"
+    assert (directory / "installation.json").is_file()
 
 
 def test_zero_capability_install_removes_only_managed_runtime_slot(

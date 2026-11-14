@@ -898,8 +898,9 @@ def _snapshot_metadata(
                     raise InstallationError(
                         "Retained project lock was modified."
                     )
+        temporary_parent = Path(tempfile.gettempdir()).resolve(strict=True)
         with tempfile.TemporaryDirectory(
-            prefix="apprc-snapshot-metadata-"
+            prefix="apprc-snapshot-metadata-", dir=temporary_parent
         ) as stage:
             root = Path(stage)
             (root / "pyproject.toml").write_bytes(metadata)

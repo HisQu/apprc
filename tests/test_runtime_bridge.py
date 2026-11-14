@@ -1,7 +1,7 @@
 """Validate fixed bridge actions before invoking the recorded runtime."""
 
-from __future__ import annotations
-
+import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -12,7 +12,32 @@ from apprc.definition.installation import (
     InstallationError,
     InstallationIdentity,
 )
+from apprc.distribution.runtime import probe
+
 from apprc.distribution.runtime.probe import application_bridge
+
+
+def test_bridge_request_uses_physical_temp_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    physical_parent = tmp_path / "physical-temp"
+    physical_parent.mkdir()
+    linked_parent = tmp_path / "linked-temp"
+    linked_parent.symlink_to(physical_parent, target_is_directory=True)
+    monkeypatch.setattr(
+        probe.tempfile, "gettempdir", lambda: str(linked_parent)
+    )
+    request = probe._private_request_file(
+        tmp_path / "installation", {"action": "probe"}, ()
+    )
+    try:
+        assert request.parent.parent == physical_parent
+        assert not request.is_symlink()
+        assert json.loads(request.read_text(encoding="utf-8")) == {
+            "action": "probe"
+        }
+    finally:
+        shutil.rmtree(request.parent)
 
 
 def test_bridge_rejects_unknown_action_before_subprocess(

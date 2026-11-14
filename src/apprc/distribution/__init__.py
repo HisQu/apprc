@@ -33,7 +33,7 @@ from apprc.distribution.project import (
     build_project_snapshot,
 )
 
-__all__ = [
+__all__ = (
     "AppCapabilities",
     "Artifact",
     "DistributionSpec",
@@ -54,4 +54,4 @@ __all__ = [
     "inspect_capabilities",
     "read_distribution_spec",
     "read_project_metadata",
-]
+)

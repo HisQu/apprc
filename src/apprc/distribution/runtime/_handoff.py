@@ -31,12 +31,15 @@ def handoff_removal_roots(
         slot_ids.add(record.active_runtime.slot_id)
     roots = [plan.directory / "runtimes" / str(slot_id) for slot_id in slot_ids]
     for output in record.owned_outputs:
-        if output.kind == "shortcut" or (
-            plan.complete and output.kind == "command"
-        ):
+        if output.kind in {"shortcut", "command"}:
             path = Path(output.path)
             if path.is_absolute():
                 roots.append(Path(os.path.normpath(os.fspath(path))))
+    roots.extend(
+        entry.path
+        for entry in plan.inventory.entries
+        if plan.complete or entry.resource is None
+    )
     if plan.complete:
         roots.append(plan.directory)
         retained_roots = {
@@ -47,7 +50,6 @@ def handoff_removal_roots(
             for kind, path in resource_roots(plan.placement)
             if kind in plan.categories and path.resolve() not in retained_roots
         )
-        roots.extend(item.path for item in plan.inventory.entries)
     return tuple(dict.fromkeys(roots))
 
 

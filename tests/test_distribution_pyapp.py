@@ -156,10 +156,14 @@ def test_native_authoring_fails_closed_on_stale_source_and_binding(
     assert checksums.read_bytes() == original_checksums
 
 
+@pytest.mark.parametrize(
+    "linked_temp_parent", [False, True], ids=["physical-temp", "linked-temp"]
+)
 def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     tmp_path: Path,
     native_product: NativeProduct,
     request: pytest.FixtureRequest,
+    linked_temp_parent: bool,
 ) -> None:
     project_root, uv, setup_a, checksums_a, spec, project = native_product
     command_name = spec.metadata.command_name
@@ -198,6 +202,14 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         assert binding.selection.extras == ("native-feature",)
 
     environment, command_directory = _host(tmp_path / "host")
+    physical_temp = tmp_path / "physical-temp"
+    physical_temp.mkdir()
+    if linked_temp_parent:
+        temporary_parent = tmp_path / "linked-temp"
+        temporary_parent.symlink_to(physical_temp, target_is_directory=True)
+    else:
+        temporary_parent = physical_temp
+    environment["TMPDIR"] = str(temporary_parent)
     installer = _install(setup_a, command_directory)
     run(installer, environment=environment, cwd=tmp_path)
     directory = installation_directory(

@@ -145,8 +145,20 @@ def _install(tmp_path: Path) -> tuple[Path, RuntimeSlot]:
 def test_program_only_removal_retains_placement_without_active_runtime(
     tmp_path: Path,
 ) -> None:
-    directory, active = _install(tmp_path)
+    directory, _active = _install(tmp_path)
     inspection = inspect_installation(directory, app_id=_identity().app_id)
+    assert inspection.record is not None and inspection.revision is not None
+    stable = directory / "fixture"
+    stable.write_bytes(b"owned stable manager")
+    inspection = record_owned_outputs(
+        directory,
+        app_id=_identity().app_id,
+        expected_revision=inspection.revision,
+        generation_id=inspection.record.generation_id,
+        owned_outputs=(
+            OwnedOutput("command", str(stable), file_revision(stable)),
+        ),
+    )
     assert inspection.record is not None and inspection.revision is not None
     plan = plan_uninstall(
         inspection.record,
@@ -163,6 +175,7 @@ def test_program_only_removal_retains_placement_without_active_runtime(
         step=OperationStep.RUNTIME_REMOVED,
     )
     assert absent.revision is not None
+    stable.unlink()
     result = commit_uninstall(
         directory,
         operation_id=plan.operation_id,
@@ -176,6 +189,7 @@ def test_program_only_removal_retains_placement_without_active_runtime(
     assert result.inspection.record.placement == InstallationPlacement(
         Layout.native()
     )
+    assert result.inspection.record.owned_outputs == ()
 
 
 def test_complete_uninstall_retires_authority_and_rejects_stale_retry(

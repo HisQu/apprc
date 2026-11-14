@@ -60,7 +60,10 @@ def _private_request_file(
     request: dict[str, object],
     forbidden_roots: tuple[Path, ...],
 ) -> Path:
-    temporary_root = Path(tempfile.mkdtemp(prefix="apprc-request-"))
+    temporary_parent = Path(tempfile.gettempdir()).resolve(strict=True)
+    temporary_root = Path(
+        tempfile.mkdtemp(prefix="apprc-request-", dir=temporary_parent)
+    )
     try:
         _assert_private_staging(temporary_root)
         resolved = temporary_root.resolve()

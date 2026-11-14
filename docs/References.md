@@ -732,6 +732,12 @@ does not become nullable. Advanced adapters can use
 `installation_command_context_from(ctx)` and
 `prepare_installation_command_context(...)`.
 
+For a native manager, successful path resolution retains the captured installation
+authority in `CliRuntimeContext.installation_context`.
+`installation_command_context_from(ctx)` retrieves either form, so doctor can
+probe the active runtime even when application paths resolve successfully.
+Ordinary application invocations leave `installation_context` as `None`.
+
 ### Command tree
 
 Paths below use default group names. Only host commands, enabled `config`,

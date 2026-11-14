@@ -95,6 +95,11 @@ def installation_command_context_from(
         context = getattr(current, "meta", {}).get(APPRC_CONTEXT_META_KEY)
         if isinstance(context, InstallationCommandContext):
             return context
+        if (
+            isinstance(context, CliRuntimeContext)
+            and context.installation_context is not None
+        ):
+            return context.installation_context
         current = getattr(current, "parent", None)
     return None
 
@@ -168,7 +173,11 @@ def prepare_native_installation_context(
 
 @dataclass(slots=True)
 class CliRuntimeContext(Generic[OptionsT]):
-    """Captured bootstrap state stored on Typer context metadata."""
+    """Captured bootstrap state stored on Typer context metadata.
+
+    :param installation_context: Native installation authority retained alongside
+        successfully resolved application paths.
+    """
 
     runtime_options: CliRuntimeOptions
     cli_options: OptionsT
@@ -177,6 +186,7 @@ class CliRuntimeContext(Generic[OptionsT]):
     resolved: ResolvedConfig | None = None
     runtime_setup_skipped: bool = False
     workspace_required: bool = False
+    installation_context: InstallationCommandContext | None = None
 
 
 def resolve_cli_options(
@@ -216,8 +226,13 @@ def prepare_cli_runtime_context(
     workspace_required: bool = False,
     setup_logging: Callable[..., Any] | None = None,
     logger: ResolutionLogger | None = None,
+    installation_context: InstallationCommandContext | None = None,
 ) -> CliRuntimeContext[OptionsT]:
-    """Capture bootstrap paths/environment before optional runtime setup."""
+    """Capture bootstrap paths/environment before optional runtime setup.
+
+    :param installation_context: Captured native authority to retain after path
+        resolution replaces the installation-only context on Typer metadata.
+    """
     parsed = CliRuntimeOptions.from_options(options)
     environment = MappingProxyType(dict(environ))
     resolve_options = ResolveOptions(
@@ -247,6 +262,7 @@ def prepare_cli_runtime_context(
         resolved=resolved,
         runtime_setup_skipped=skip_runtime_setup,
         workspace_required=workspace_required,
+        installation_context=installation_context,
     )
     _store_apprc_context(ctx, context)
     return context

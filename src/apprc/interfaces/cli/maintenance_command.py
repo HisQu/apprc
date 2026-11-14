@@ -236,6 +236,8 @@ def _doctor_payload(
         status = (
             "error"
             if any(item["status"] == "error" for item in application_checks)
+            else "warning"
+            if any(item["status"] == "warning" for item in application_checks)
             else "ok"
         )
         return {
@@ -788,6 +790,12 @@ def mount_maintenance_groups(
                         )
                         if payload["status"] == "ok":
                             payload["status"] = "warning"
+            if diagnostic.inspection.status in {
+                "invalid",
+                "provisional",
+                "incomplete",
+            }:
+                payload["status"] = diagnostic.inspection.status
         if json_output:
             _emit(payload, True)
         else:

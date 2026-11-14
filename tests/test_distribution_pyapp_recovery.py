@@ -265,8 +265,10 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
         cwd=tmp_path,
         check=False,
     )
-    assert doctor.returncode == 0, doctor.stdout + doctor.stderr
+    assert doctor.returncode == 1, doctor.stdout + doctor.stderr
+    assert doctor.stderr == ""
     doctor_payload = json.loads(doctor.stdout)
+    assert doctor_payload["status"] == "incomplete"
     assert doctor_payload["details"]["host"]["application"] == "fixture"
     assert not stable_manager.exists()
 

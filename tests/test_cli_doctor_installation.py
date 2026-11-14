@@ -13,18 +13,25 @@ from typer.testing import CliRunner
 
 import apprc as rc
 from apprc.definition.installation import (
+    EditableCheckout,
     InstallationIdentity,
     InstallationPlacement,
     InstallationRecord,
+    ProjectSnapshot,
+    RuntimeSelection,
 )
 from apprc.definition.paths import Layout, Paths
 from apprc.definition.resolution import (
     CliRuntimeOptions,
     _BridgeRuntimeOptions,
 )
+from apprc.distribution.models import AppCapabilities, NativeBinding
 from apprc.interfaces.cli.context import (
     _cli_runtime_options_payload,
     resolve_cli_options,
+)
+from apprc.interfaces.cli.maintenance_command import (
+    application_diagnostics_scope,
 )
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
@@ -116,6 +123,134 @@ def test_root_doctor_omits_verbose_details_without_verbose_option() -> None:
     assert result.exit_code == 0, result.output
     report = json.loads(result.stdout)
     assert set(report) == {"status", "checks", "installation"}
+
+
+@pytest.mark.parametrize("provider_fails", [False, True])
+def test_application_doctor_preserves_warnings_and_provider_failures(
+    provider_fails: bool,
+) -> None:
+    declaration = build_config_only_example_app()
+    arguments = ["app", "doctor", "--json", "--verbose"]
+
+    def host_diagnostics() -> dict[str, object]:
+        if provider_fails:
+            raise ValueError("application diagnostic unavailable")
+        return {"application": "config-only"}
+
+    app = typer.Typer()
+    rc.cli.mount_app_cli(
+        app,
+        declaration,
+        args_provider=lambda: arguments,
+        host_diagnostics=host_diagnostics,
+    )
+
+    with application_diagnostics_scope():
+        result = CliRunner().invoke(app, arguments, env=native_environment())
+
+    assert result.exit_code == (1 if provider_fails else 0), result.output
+    report = json.loads(result.stdout)
+    assert report["status"] == ("error" if provider_fails else "warning")
+    assert any(
+        check["name"] == "user_dotenv" and check["status"] == "warning"
+        for check in report["checks"]
+    )
+    if provider_fails:
+        assert any(
+            check["name"] == "host_provider"
+            and check["status"] == "error"
+            and check["message"] == "application diagnostic unavailable"
+            for check in report["checks"]
+        )
+    else:
+        assert report["details"]["host"] == {"application": "config-only"}
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_native_doctor_keeps_paths_when_active_interpreter_is_missing(
+    tmp_path: Path,
+    verbose: bool,
+) -> None:
+    environment = native_environment()
+    app_id = "native-doctor-missing-interpreter"
+    declaration = rc.AppRC(
+        app_id=app_id, paths=Paths(appdata=True), command_name=app_id
+    )
+    manager = declaration.installation(environment=environment)
+    identity = InstallationIdentity(
+        app_id, app_id, "doctor_fixture", "doctor_fixture:APP_RC", (app_id,)
+    )
+    project = tmp_path / "checkout"
+    runtime = EditableCheckout(project, project / ".venv")
+    resource_root = tmp_path / "appdata"
+    record = InstallationRecord(
+        schema_version=3,
+        identity=identity,
+        command_name=app_id,
+        generation_id=uuid4(),
+        support_version="0.34.0",
+        placement=InstallationPlacement(
+            Layout.native(),
+            appdata_dir=resource_root,
+            capabilities=frozenset({"appdata"}),
+        ),
+        status="ready",
+        active_runtime=runtime,
+    )
+    with installation_lock(manager.directory):
+        write_record(manager.directory, record, expected_revision=None)
+    binding = NativeBinding(
+        identity=identity,
+        command_name=app_id,
+        display_name="Native doctor fixture",
+        version="1.0",
+        source=ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),
+        selection=RuntimeSelection("3.14"),
+        capabilities=AppCapabilities(paths=Paths(appdata=True)),
+        layout=Layout.native(),
+        bootstrap_env_prefix="APPRC",
+    )
+    arguments = ["app", "doctor", "--json", *(["--verbose"] if verbose else [])]
+    app = typer.Typer()
+    rc.cli.mount_app_cli(
+        app,
+        declaration,
+        native_binding=binding,
+        args_provider=lambda: arguments,
+    )
+    authority = (manager.directory / "installation.json").read_bytes()
+
+    result = CliRunner().invoke(app, arguments, env=environment)
+
+    assert result.exit_code == 1, result.output
+    assert result.stderr == ""
+    report = json.loads(result.stdout)
+    assert report["status"] == "error"
+    assert report["installation"]["status"] == "ready"
+    assert any(
+        check["name"] == "runtime_health" and check["status"] == "error"
+        for check in report["checks"]
+    )
+    assert any(
+        check["name"] == "application_runtime" and check["status"] == "warning"
+        for check in report["checks"]
+    )
+    if verbose:
+        assert set(report["details"]) == {
+            "paths",
+            "configuration",
+            "resources",
+            "host",
+        }
+        assert report["details"]["paths"]["paths"]["appdata"] == str(
+            resource_root
+        )
+    else:
+        assert "details" not in report
+    assert not resource_root.exists()
+    assert not project.exists()
+    assert (manager.directory / "installation.json").read_bytes() == authority
 
 
 @pytest.mark.parametrize(

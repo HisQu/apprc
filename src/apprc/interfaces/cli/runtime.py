@@ -477,6 +477,11 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 workspace_required=self.workspace_required,
                 setup_logging=self.setup_logging,
                 logger=self.logger,
+                installation_context=(
+                    self._installation_context(ctx, options)
+                    if self.native_binding is not None
+                    else None
+                ),
             )
         except (InstallationError, OSError, ValueError) as error:
             if not self._doctor_requested(ctx):

@@ -547,10 +547,12 @@ def main() -> int:
             except (OSError, ValueError, RuntimeError):
                 pass
 
+    import typer
+
     from apprc.interfaces.cli.mount import mount_app_cli
     from apprc.interfaces.cli._typer_utils import run_typer_app
 
-    app = __import__("typer").Typer(no_args_is_help=True)
+    app = typer.Typer(no_args_is_help=True)
     mount_app_cli(
         app,
         application,
@@ -563,8 +565,11 @@ def main() -> int:
     )
     from apprc.interfaces.cli.context import _authenticated_native_manager_scope
 
-    with _authenticated_native_manager_scope(executable):
-        run_typer_app(app, args=argv, prog_name=binding.command_name)
+    try:
+        with _authenticated_native_manager_scope(executable):
+            run_typer_app(app, args=argv, prog_name=binding.command_name)
+    except typer.Exit as exit_request:
+        return exit_request.exit_code
     return 0
 
 

@@ -17,6 +17,7 @@ from apprc.definition.installation import (
     InstallationIdentity,
     InstallationPlacement,
     InstallPlan,
+    InventoryEntry,
     MigrationInventory,
     MigrationPlan,
     OperationStep,
@@ -26,6 +27,7 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.definition.paths import Layout
+from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.operations import (
     begin_operation,
@@ -216,6 +218,76 @@ def test_complete_uninstall_retires_authority_and_rejects_stale_retry(
             expected_revision=current.revision,
             diagnostic=InstallationDiagnostic("late", "late", "inspect"),
         )
+
+
+def test_complete_removal_requires_exact_unselected_root_forgetting(
+    tmp_path: Path,
+) -> None:
+    directory, _ = _install(tmp_path)
+    inspection = inspect_installation(directory, app_id=_identity().app_id)
+    assert inspection.record is not None and inspection.revision is not None
+    config_root = tmp_path / "config"
+    appdata_root = tmp_path / "appdata"
+    config_root.mkdir()
+    appdata_root.mkdir()
+    provider_file = appdata_root / "provider-owned.json"
+    provider_file.write_bytes(b"provider data")
+    config_unknown = config_root / "unknown.txt"
+    appdata_unknown = appdata_root / "unknown.txt"
+    config_unknown.write_bytes(b"keep config")
+    appdata_unknown.write_bytes(b"keep appdata")
+    record = replace(
+        inspection.record,
+        placement=InstallationPlacement(
+            Layout.native(),
+            config_dir=config_root,
+            appdata_dir=appdata_root,
+            capabilities=frozenset({"config", "appdata"}),
+        ),
+    )
+    selected = (
+        InventoryEntry(
+            provider_file, "file", file_revision(provider_file), "appdata"
+        ),
+    )
+    retained = (
+        InventoryEntry(config_root, "directory", None, "config"),
+        InventoryEntry(appdata_root, "directory", None, "appdata"),
+    )
+    with pytest.raises(InstallationError):
+        plan_uninstall(
+            record,
+            directory=directory,
+            revision=inspection.revision,
+            categories=frozenset({"appdata"}),
+            complete=True,
+            forget_retained=True,
+            inventory=CleanupInventory(selected, retained[1:]),
+        )
+    with pytest.raises(InstallationError):
+        plan_uninstall(
+            record,
+            directory=directory,
+            revision=inspection.revision,
+            categories=frozenset({"appdata"}),
+            complete=True,
+            inventory=CleanupInventory(selected, retained),
+        )
+    plan = plan_uninstall(
+        record,
+        directory=directory,
+        revision=inspection.revision,
+        categories=frozenset({"appdata"}),
+        complete=True,
+        forget_retained=True,
+        inventory=CleanupInventory(selected, retained),
+    )
+    assert plan.categories == frozenset({"appdata"})
+    assert plan.inventory.entries == selected
+    assert plan.inventory.retained == retained
+    assert provider_file.read_bytes() == b"provider data"
+    assert config_unknown.read_bytes() == b"keep config"
+    assert appdata_unknown.read_bytes() == b"keep appdata"
 
 
 def test_failed_replacement_keeps_active_runtime_access_and_stale_writers_fail(

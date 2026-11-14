@@ -245,7 +245,7 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
 
     command = command_directory / command_name
     result = run(
-        [str(command), "inspect", "after-failed-replacement"],
+        [str(command), "inspect", "--value", "after-failed-replacement"],
         environment=environment,
         cwd=tmp_path,
     )

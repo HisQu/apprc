@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+import typer
+
 from apprc.interfaces.cli.config_command import (
     config_request_skips_runtime,
 )
@@ -8,6 +11,7 @@ from apprc.interfaces.cli._typer_utils import (
     args_after_cli_command,
     help_requested_before_separator,
     parse_leading_options,
+    run_typer_app,
     strip_leading_options,
     structural_help_requested,
 )
@@ -173,3 +177,57 @@ def test_config_request_skips_runtime_for_setup_only_commands() -> None:
     assert skips(tokens=["config", "setup"])
     assert skips(tokens=["config", "show"]) is False
     assert skips(tokens=["tool", "run"]) is False
+
+
+@pytest.mark.parametrize("status", [7, 23])
+def test_forwarded_typer_callback_preserves_nonzero_status(status: int) -> None:
+    app = typer.Typer()
+
+    @app.command()
+    def command() -> int:
+        return status
+
+    with pytest.raises(typer.Exit) as error:
+        run_typer_app(app, args=[], prog_name="forwarded")
+
+    assert error.value.exit_code == status
+
+
+def test_forwarded_typer_callback_preserves_explicit_exit() -> None:
+    app = typer.Typer()
+
+    @app.command()
+    def command() -> None:
+        raise typer.Exit(code=19)
+
+    with pytest.raises(typer.Exit) as error:
+        run_typer_app(app, args=[], prog_name="forwarded")
+
+    assert error.value.exit_code == 19
+
+
+def test_forwarded_typer_usage_error_preserves_exit_status() -> None:
+    app = typer.Typer()
+
+    @app.command()
+    def command(value: int) -> None:
+        pass
+
+    with pytest.raises(typer.Exit) as error:
+        run_typer_app(app, args=["not-an-integer"], prog_name="forwarded")
+
+    assert error.value.exit_code == 2
+
+
+def test_forwarded_typer_callback_does_not_suppress_programming_error() -> None:
+    app = typer.Typer()
+    failure = RuntimeError("callback failed")
+
+    @app.command()
+    def command() -> None:
+        raise failure
+
+    with pytest.raises(RuntimeError) as error:
+        run_typer_app(app, args=[], prog_name="forwarded")
+
+    assert error.value is failure

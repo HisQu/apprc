@@ -21,10 +21,10 @@ ConfigTypeT = TypeVar("ConfigTypeT")
 def resolve_editable_environment(project: Path) -> Path:
     """Select the existing environment for a PEP 621 project or uv member.
 
-    Workspace environments are shared by their declared members. Matching the
-    project against the workspace member patterns before selecting the root
-    environment prevents an unrelated ancestor ``.venv`` from being treated as
-    the application's environment.
+    Workspace members share the root environment; excluded and unrelated
+    projects use their own environment. Like uv, discovery stops at the first
+    ancestor ``pyproject.toml`` rather than crossing an independent project.
+    The caller must validate the interpreter and editable distribution owner.
 
     :param project: Selected project directory containing ``pyproject.toml``.
     :return: Canonical expected environment path, which may not exist yet.
@@ -33,8 +33,8 @@ def resolve_editable_environment(project: Path) -> Path:
     if not (selected / "pyproject.toml").is_file():
         raise ValueError("Selected project has no pyproject.toml.")
 
-    saw_workspace = False
-    for candidate in selected.parents:
+    environment_root = selected
+    for candidate in (selected, *selected.parents):
         metadata_path = candidate / "pyproject.toml"
         if not metadata_path.is_file():
             continue
@@ -42,7 +42,11 @@ def resolve_editable_environment(project: Path) -> Path:
             document = tomllib.load(stream)
         tool = document.get("tool", {})
         uv = tool.get("uv", {}) if isinstance(tool, dict) else {}
-        workspace = uv.get("workspace", {}) if isinstance(uv, dict) else {}
+        if not isinstance(uv, dict) or "workspace" not in uv:
+            if candidate == selected:
+                continue
+            break
+        workspace = uv["workspace"]
         if not isinstance(workspace, dict):
             raise ValueError("tool.uv.workspace must be a table.")
         members = workspace.get("members", [])
@@ -67,19 +71,25 @@ def resolve_editable_environment(project: Path) -> Path:
                 or PureWindowsPath(pattern).drive
             ):
                 raise ValueError(f"Unsafe uv workspace pattern: {pattern}.")
-        saw_workspace = saw_workspace or bool(members)
-        if not members:
-            continue
-        relative = selected.relative_to(candidate).as_posix()
         member_matches = {
-            Path(match).resolve(strict=False)
+            (candidate / match).resolve(strict=False)
             for pattern in members
-            for match in glob.glob(str(candidate / pattern), recursive=True)
+            for match in glob.glob(
+                pattern,
+                root_dir=candidate,
+                recursive=True,
+                include_hidden=True,
+            )
         }
         excluded_matches = {
-            Path(match).resolve(strict=False)
+            (candidate / match).resolve(strict=False)
             for pattern in excludes
-            for match in glob.glob(str(candidate / pattern), recursive=True)
+            for match in glob.glob(
+                pattern,
+                root_dir=candidate,
+                recursive=True,
+                include_hidden=True,
+            )
         }
         workspace_root = candidate.resolve()
         if any(
@@ -89,35 +99,16 @@ def resolve_editable_environment(project: Path) -> Path:
             raise ValueError(
                 "A uv workspace pattern escapes its workspace root."
             )
-        if selected in excluded_matches:
-            raise ValueError(
-                f"Selected project is excluded from its uv workspace: {relative}."
-            )
-        if selected in member_matches:
-            return (candidate / ".venv").resolve(strict=False)
+        if candidate == selected:
+            break
+        if selected not in excluded_matches and selected in member_matches:
+            environment_root = candidate
+        break
 
-    with (selected / "pyproject.toml").open("rb") as stream:
-        selected_document = tomllib.load(stream)
-    selected_tool = selected_document.get("tool", {})
-    selected_uv = (
-        selected_tool.get("uv", {}) if isinstance(selected_tool, dict) else {}
-    )
-    selected_workspace = (
-        selected_uv.get("workspace", {})
-        if isinstance(selected_uv, dict)
-        else {}
-    )
-    selected_project = selected_document.get("project")
-    if not saw_workspace or (
-        isinstance(selected_workspace, dict)
-        and isinstance(selected_workspace.get("members"), list)
-        and isinstance(selected_project, dict)
-    ):
-        return (selected / ".venv").resolve(strict=False)
-
-    raise ValueError(
-        "Selected project is not a declared member of a uv workspace."
-    )
+    environment = environment_root / ".venv"
+    if environment.is_symlink():
+        raise ValueError("The editable environment must not be a symlink.")
+    return environment.resolve(strict=False)
 
 
 @dataclass(frozen=True, slots=True, eq=False)

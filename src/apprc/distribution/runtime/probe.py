@@ -104,7 +104,7 @@ def application_bridge(
     environment: dict[str, str],
     manager_executable: Path | None = None,
     expected_revision: str | None = None,
-    runtime_options: object | None = None,
+    runtime_options: dict[str, object] | None = None,
     operation_context: OperationContext | None = None,
     categories: frozenset[ResourceKind] = frozenset(),
     forget_retained: bool = False,
@@ -121,7 +121,7 @@ def application_bridge(
     :param runtime: Exact active managed slot or editable checkout, including its captured hooks.
     :param manager_executable: Optional manager whose verified ZIP contains the bridge.
     :param expected_revision: Authority revision for mutation validation.
-    :param runtime_options: Private native command options.
+    :param runtime_options: Encoded captured CLI options for application doctor.
     :param operation_context: Exact authorization for resource initialization.
     :param categories: Provider cleanup categories.
     :param forget_retained: Whether accepted cleanup forgets retained targets.
@@ -135,15 +135,16 @@ def application_bridge(
     if runtime_options is None:
         from apprc.definition.resolution import _BridgeRuntimeOptions
 
-        runtime_options = _BridgeRuntimeOptions()
-    runtime_options = _encode(runtime_options)
+        runtime_options_payload = _encode(_BridgeRuntimeOptions())
+    else:
+        runtime_options_payload = runtime_options
     request: dict[str, object] = {
         "action": action,
         "identity": _encode(identity),
         "command_name": command_name,
         "directory": str(directory),
         "expected_revision": expected_revision,
-        "runtime_options": runtime_options,
+        "runtime_options": runtime_options_payload,
         "operation_context": _encode(operation_context)
         if operation_context is not None
         else None,

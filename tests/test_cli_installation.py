@@ -50,7 +50,7 @@ def test_explicit_installer_forwards_arguments_and_status() -> None:
     assert calls == [("--feature", "value", "package.whl")]
 
 
-def test_editable_workspace_resolves_member_project_to_root_environment(
+def test_editable_workspace_uses_root_environment_only_for_members(
     tmp_path: Path,
 ) -> None:
     from apprc.definition.resolution import resolve_editable_environment
@@ -58,22 +58,58 @@ def test_editable_workspace_resolves_member_project_to_root_environment(
     root = tmp_path / "workspace"
     member = root / "apps" / "application"
     excluded = root / "apps" / "excluded"
-    member.mkdir(parents=True)
-    excluded.mkdir()
+    unrelated = root / "checkouts" / "independent"
+    for project in (member, excluded, unrelated):
+        project.mkdir(parents=True)
+        (project / "pyproject.toml").write_text(
+            '[project]\nname = "application"\nversion = "1.0"\n',
+            encoding="utf-8",
+        )
     (root / "pyproject.toml").write_text(
         '[tool.uv.workspace]\nmembers = ["apps/*"]\n'
         'exclude = ["apps/excluded"]\n',
         encoding="utf-8",
     )
-    for project in (member, excluded):
-        (project / "pyproject.toml").write_text(
-            '[project]\nname = "application"\nversion = "1.0"\n',
-            encoding="utf-8",
-        )
 
     assert resolve_editable_environment(member) == root / ".venv"
-    with pytest.raises(ValueError, match="excluded"):
-        resolve_editable_environment(excluded)
+    assert resolve_editable_environment(excluded) == excluded / ".venv"
+    assert resolve_editable_environment(unrelated) == unrelated / ".venv"
+
+
+def test_editable_workspace_rejects_unsafe_patterns_and_linked_environment(
+    tmp_path: Path,
+) -> None:
+    from apprc.definition.resolution import resolve_editable_environment
+
+    root = tmp_path / "workspace"
+    member = root / "apps" / "application"
+    member.mkdir(parents=True)
+    (member / "pyproject.toml").write_text(
+        '[project]\nname = "application"\nversion = "1.0"\n',
+        encoding="utf-8",
+    )
+    workspace_file = root / "pyproject.toml"
+    workspace_file.write_text(
+        '[tool.uv.workspace]\nmembers = ["../outside"]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Unsafe uv workspace pattern"):
+        resolve_editable_environment(member)
+
+    workspace_file.write_text(
+        '[tool.uv.workspace]\nmembers = ["apps/*"]\n',
+        encoding="utf-8",
+    )
+    external_environment = tmp_path / "external-venv"
+    external_environment.mkdir()
+    try:
+        (root / ".venv").symlink_to(
+            external_environment, target_is_directory=True
+        )
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Directory symlinks are unavailable: {exc}")
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        resolve_editable_environment(member)
 
 
 def test_installer_preserves_click_consumed_options_in_order(

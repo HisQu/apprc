@@ -302,8 +302,9 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         check=False,
     )
     assert failed_doctor.returncode == 1
+    assert failed_doctor.stderr == ""
     assert "controlled application diagnostic failure" in failed_doctor.stdout
-    assert json.loads(failed_doctor.stdout)
+    assert json.loads(failed_doctor.stdout)["status"] != "ok"
 
     before_tampering = (directory / "installation.json").read_bytes()
     tampered_setup = tmp_path / "tampered-setup"
@@ -332,6 +333,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         check=False,
     )
     assert unavailable.returncode != 0
+    assert unavailable.stderr == ""
     unavailable_report = json.loads(unavailable.stdout)
     assert unavailable_report["status"] != "ok"
     assert "checks" in unavailable_report

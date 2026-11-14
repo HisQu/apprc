@@ -189,7 +189,7 @@ sync_runtime_slot(Path({str(uv)!r}), directory, identity, runtime, environment=d
             time.sleep(0.01)
         assert ready, "UV delegate did not reach its controlled wait."
         process.kill()
-        process.communicate(timeout=10)
+        process.wait(timeout=10)
         assert not try_retire_runtime_slot(slot)
 
         os.write(release_fd, b"R")

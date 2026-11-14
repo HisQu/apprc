@@ -77,6 +77,7 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🗑️ Removed
+- Removed the initializer AST test that rejected explicit distribution facade exports.
 
 <br>
 

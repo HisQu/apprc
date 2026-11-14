@@ -73,11 +73,25 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-13](#2026-11-13)
+2. [2026-11-14](#2026-11-14)
+   1. [P3 / E2 \[Code smell\] - *Distribution exports fail the initializer architecture check*](#p3--e2-code-smell---distribution-exports-fail-the-initializer-architecture-check)
+3. [2026-11-13](#2026-11-13)
    1. [P2 / E2 \[Bug risk\] - *Metadata-only version commands resolve appdata ownership*](#p2--e2-bug-risk---metadata-only-version-commands-resolve-appdata-ownership)
-3. [2026-11-09](#2026-11-09)
+4. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 
+
+<br>
+
+# 2026-11-14
+
+## P3 / E2 [Code smell] - *Distribution exports fail the initializer architecture check*
+- **Area:** `src/apprc/distribution/__init__.py` and `tests/test_architecture_public_api.py::test_package_initializers_only_import_and_document`.
+- **Observed while:** Running the full Python suite for the root CLI help change.
+- **Why not fixed now:** Distribution export ownership is outside the CLI presentation change; preserve the public exports until a focused fix verifies their contract.
+- **Evidence:** The architecture test rejects the existing `__all__` assignment in the distribution initializer, which this pass did not change.
+- **Context:** Repository conventions restrict package initializers to imports and module docstrings. The distribution facade currently declares its export list directly, so the full suite cannot pass this check.
+- **Suggested next step:** Bring the distribution facade into the established initializer convention while preserving its public imports and typed export behavior; rerun the architecture and distribution public-API tests.
 
 <br>
 

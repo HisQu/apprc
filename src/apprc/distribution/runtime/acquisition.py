@@ -131,7 +131,9 @@ def _archive_inputs(
     resolution nor platform-specific ZIP attributes may redirect writes.
     """
     try:
-        if is_zipfile(archive):
+        # > ZIP probing can recognize a wheel embedded near the end of a TAR.
+        # > Prefer the outer TAR so its project inputs are not skipped.
+        if not tarfile.is_tarfile(archive) and is_zipfile(archive):
             with ZipFile(archive) as package:
                 members = package.infolist()
                 paths, _ = _archive_paths(

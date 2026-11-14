@@ -126,6 +126,44 @@ def test_builder_exports_virtual_root_and_nested_member_with_shared_lock(
     assert extracted_helper.stat().st_mode & 0o111
 
 
+def test_builder_preserves_project_with_trailing_wheel_resource(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "workspace"
+    repository.mkdir()
+    # > Git orders this resource last, leaving its ZIP footer near the TAR end.
+    resource = repository / "zz-resource.whl"
+    with ZipFile(resource, "w") as wheel:
+        wheel.writestr("opaque.bin", b"\x00opaque wheel resource\xff\n")
+    _committed_workspace(repository)
+    expected = {
+        name: (repository / name).read_bytes()
+        for name in (
+            "pyproject.toml",
+            "uv.lock",
+            "apps/fixture/pyproject.toml",
+            "apps/fixture/src/fixture_app/main.py",
+            "libs/fixture-lib/src/fixture_lib/__init__.py",
+            resource.name,
+        )
+    }
+    prepared = build_project_snapshot(
+        read_distribution_spec(repository / "apps" / "fixture"),
+        revision="HEAD",
+        destination=tmp_path / "project.zip",
+    )
+
+    with ZipFile(prepared.archive) as archive:
+        for name, content in expected.items():
+            assert archive.read(name) == content
+    materialized = tmp_path / "materialized"
+    materialize_project_snapshot(
+        prepared.archive, materialized, prepared.source
+    )
+    for name, content in expected.items():
+        assert (materialized / name).read_bytes() == content
+
+
 def test_workspace_exclusion_precedes_member_metadata_validation(
     tmp_path: Path,
 ) -> None:

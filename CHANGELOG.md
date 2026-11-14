@@ -61,6 +61,7 @@ All notable changes to `AppRC` will be documented in this file.
 ### ➕ Added
 - Added opt-in ordered root help through `rc.cli.AppRCRootGroup`, with separate application and AppRC panels while preserving normal Typer parsing and nested help.
 - Added optional root `launch` through an explicitly supplied `LauncherSpec`, opening the existing Textual management launcher without resolving business settings. Explicit installer and local diagnostic registrations integrate existing application-owned behavior without discovering or replacing it.
+- Added committed project snapshots with their exact `uv.lock`, workspace members and package resources, including ZIP assets, while excluding generated environments and build caches.
 - Added first-class `app install -e` registration of an existing developer-owned checkout environment, without duplicating it or taking ownership of the checkout.
 - Added an independent native management command that forwards application commands to the recorded active runtime, with runtime leases, recoverable slot activation and explicit reporting of unavailable application checks.
 

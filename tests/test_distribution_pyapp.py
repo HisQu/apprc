@@ -338,7 +338,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert unavailable_report["status"] != "ok"
     assert "checks" in unavailable_report
     repair = run(
-        [str(setup_a), "app", "repair", "--yes"],
+        [str(setup_a), "app", "repair"],
         environment=environment,
         cwd=tmp_path,
         check=False,

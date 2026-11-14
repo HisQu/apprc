@@ -351,6 +351,11 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     config_environment = conflicting.copy()
     config_environment.pop("NATIVE_LABEL", None)
     run(
+        [str(manager), "config", "setup", "--yes"],
+        environment=config_environment,
+        cwd=outside,
+    )
+    run(
         [
             str(manager),
             "config",
@@ -547,16 +552,39 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     )
     assert preflight.returncode != 0
     assert provider_file.is_file() and unrelated_file.is_file()
+    before_cleanup = _record(directory)
+    assert before_cleanup["status"] == "ready"
+    assert before_cleanup["operation"] is None
     cleanup_failure = run(
         uninstall,
         environment={**environment, "FIXTURE_FAIL_CLEANUP": "1"},
         cwd=tmp_path,
         check=False,
     )
-    assert cleanup_failure.returncode != 0
+    # * The caller acknowledges the handoff before exiting; cleanup runs only
+    # * afterward. Captured stderr stays open until the finalizer exits, so run()
+    # * returns after its durable failure is available, not just after readiness.
+    assert cleanup_failure.returncode == 0, (
+        cleanup_failure.stdout + cleanup_failure.stderr
+    )
     assert provider_file.is_file() and unrelated_file.is_file()
     failed_record = _record(directory)
     assert failed_record.get("status") == "incomplete"
+    assert failed_record["generation_id"] == before_cleanup["generation_id"]
+    assert failed_record["active_runtime"] == before_cleanup["active_runtime"]
+    failed_operation = failed_record["operation"]
+    assert failed_operation["kind"] == "uninstall"
+    assert failed_operation["phase"] == "failed"
+    assert failed_operation["categories"] == ["config"]
+    assert failed_operation["diagnostic"]["code"] == "uninstall-incomplete"
+    assert "provider_cleanup" not in failed_operation["steps"]
+    assert "runtime_removed" not in failed_operation["steps"]
+    assert "data_removed" not in failed_operation["steps"]
+    assert manager.is_file()
+    assert (command_directory / command_name).is_symlink()
+    assert (
+        directory / "runtimes" / _active_slot(before_cleanup) / ".venv"
+    ).is_dir()
     hook_event = json.loads(
         (config_directory / "cleanup-hook.json").read_text(encoding="utf-8")
     )

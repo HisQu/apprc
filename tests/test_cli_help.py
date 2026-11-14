@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from io import StringIO
+
+import pytest
 import typer
+from rich.console import Console
+from rich.text import Text
 from typer.testing import CliRunner
 
 from apprc.cli import AppRCRootGroup
@@ -20,10 +25,13 @@ from apprc.interfaces.cli.options import (
 
 def _build_app(
     maintenance_commands: tuple[str, ...] = ("doctor", "paths"),
+    *,
+    color: bool | None = None,
 ) -> typer.Typer:
     """Build a small host app with AppRC's runtime and maintenance panels."""
     app = typer.Typer(
         cls=AppRCRootGroup,
+        context_settings={"color": color},
         help="Host application help text.",
         epilog="Host application epilog.",
     )
@@ -100,10 +108,11 @@ def test_root_help_interleaves_host_and_apprc_panels() -> None:
 
     assert result.exit_code == 0, result.output
     headings = [
-        "Options",
         "Commands",
-        "AppRC: Runtime Options",
+        "Options",
         "AppRC: Commands",
+        "AppRC: Runtime Options",
+        "Help & Completion",
     ]
     positions = [result.output.index(heading) for heading in headings]
     assert positions == sorted(positions)
@@ -129,7 +138,18 @@ def test_root_help_interleaves_host_and_apprc_panels() -> None:
     assert "--install-completion" in result.output
     assert "--show-completion" in result.output
     assert "Host application help text." in result.output
-    assert "Host application epilog." in result.output
+    assert result.output.rstrip().endswith("Host application epilog.")
+    commands, options, apprc_commands, runtime, common = [
+        result.output.index(heading) for heading in headings
+    ]
+    assert commands < result.output.index("serve") < options
+    assert options < result.output.index("--host-option") < apprc_commands
+    assert (
+        apprc_commands < result.output.index("config", apprc_commands) < runtime
+    )
+    assert runtime < result.output.index("--env-file") < common
+    for option in ("--help", "--install-completion", "--show-completion"):
+        assert result.output.index(option) > common
     assert "\x1b[" not in result.output
 
 
@@ -166,7 +186,7 @@ def test_root_help_maintenance_summary_uses_available_order_without_truncation()
 
 def test_root_help_wraps_to_requested_width() -> None:
     """Root panels fit the active Click formatter width at common terminals."""
-    for width in (80, 120):
+    for width in (60, 80, 120):
         result = CliRunner().invoke(
             _build_app(
                 (
@@ -210,7 +230,8 @@ def test_root_help_is_eager_and_renders_only_nonempty_panels() -> None:
     result = CliRunner().invoke(app, ["--help"], color=False)
 
     assert result.exit_code == 0, result.output
-    assert "Options" in result.output
+    assert "Help & Completion" in result.output
+    assert "Options" not in result.output
     assert "Commands" not in result.output
     assert "AppRC: Runtime Options" not in result.output
     assert "AppRC: Commands" not in result.output
@@ -231,3 +252,75 @@ def test_non_opted_in_typer_keeps_its_normal_help() -> None:
     assert "serve" in result.output
     assert "AppRC: Runtime Options" not in result.output
     assert "AppRC: Commands" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("color", "no_color", "terminal", "expected"),
+    [
+        (True, False, False, True),
+        (False, False, True, False),
+        (None, False, False, False),
+        (None, False, True, True),
+        (True, True, True, False),
+        (None, True, True, False),
+    ],
+)
+def test_root_help_respects_color_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    color: bool | None,
+    no_color: bool,
+    terminal: bool,
+    expected: bool,
+) -> None:
+    """Color distinguishes panels only when terminal policy permits it."""
+    stream = StringIO()
+    monkeypatch.setattr(stream, "isatty", lambda: terminal)
+    monkeypatch.setattr(typer, "get_text_stream", lambda name: stream)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    if no_color:
+        monkeypatch.setenv("NO_COLOR", "1")
+    else:
+        monkeypatch.delenv("NO_COLOR", raising=False)
+    result = CliRunner().invoke(_build_app(color=color), ["--help"], color=True)
+    assert result.exit_code == 0, result.output
+    assert ("\x1b[" in result.output) is expected
+    if expected:
+        assert "\x1b[36m Commands" in result.output
+        assert "\x1b[35m AppRC: Commands" in result.output
+        assert "\x1b[2m Help & Completion" in result.output
+        assert "\x1b[36m╭" in result.output
+        assert "\x1b[35m╭" in result.output
+        assert "\x1b[2m╭" in result.output
+        rendered = Text.from_ansi(result.output)
+        description_style = rendered.get_style_at_offset(
+            Console(), rendered.plain.index("Host option.")
+        )
+        assert description_style.color is None
+        assert not description_style.dim
+        assert (
+            Text.from_ansi(result.output)
+            .plain.rstrip()
+            .endswith("Host application epilog.")
+        )
+
+
+def test_root_help_does_not_run_callbacks_or_change_parsing() -> None:
+    """Eager help bypasses required options and preserves normal invocations."""
+    app = typer.Typer(cls=AppRCRootGroup)
+    calls: list[str] = []
+
+    @app.callback()
+    def root(required: str = typer.Option(...)) -> None:
+        calls.append(required)
+
+    @app.command()
+    def serve() -> None:
+        calls.append("serve")
+
+    runner = CliRunner()
+    assert runner.invoke(app, ["--help"]).exit_code == 0
+    assert calls == []
+    assert runner.invoke(app, ["serve"]).exit_code == 2
+    assert calls == []
+    assert runner.invoke(app, ["--required", "value", "serve"]).exit_code == 0
+    assert calls == ["value", "serve"]

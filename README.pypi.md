@@ -260,7 +260,10 @@ Passing `launcher_spec` and `launcher_handlers` adds optional root `launch`,
 which opens the existing Textual management launcher. It is separate from a
 foreground application command and from saved distribution launch support.
 Hosts can opt into separated root help panels with
-`typer.Typer(cls=rc.cli.AppRCRootGroup)`; nested help stays standard.
+`typer.Typer(cls=rc.cli.AppRCRootGroup)`: host commands and options appear first
+in cyan, AppRC panels follow in magenta, and common help/completion options
+appear last in a dim panel. Descriptions stay neutral; nested help stays standard.
+See [root help and color controls](https://github.com/HisQu/apprc/blob/main/docs/References.md#root-help-and-runtime-options).
 
 The [Textual editor](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#config-editor) and
 [Gradio editor](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#gradio-editor) edit config settings; when a

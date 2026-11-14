@@ -23,8 +23,7 @@ from apprc.user_files.app_home.permissions import (
 
 def _assert_private_staging(staging: Path) -> None:
     """Create and validate a private operation-owned staging directory."""
-    if not staging.is_absolute():
-        raise InstallationError("Source staging directory must be absolute.")
+    assert_no_links(staging)
     create_private_directory_if_missing(staging)
     assert_no_links(staging)
     if not _path_permissions_are_private(staging):

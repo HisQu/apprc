@@ -43,6 +43,105 @@ from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
 )
+from types import SimpleNamespace
+
+from apprc.distribution.runtime import _manager
+
+
+def test_native_install_extracts_payload_below_physical_temp_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_id = "temporary-root-fixture"
+    identity = InstallationIdentity(
+        app_id, app_id, "temporary_root_fixture", None, (app_id,)
+    )
+    source_archive = tmp_path / "source.zip"
+    lock = b"version = 1\n"
+    with ZipFile(source_archive, "w") as package:
+        package.writestr("pyproject.toml", '[project]\nname="fixture"\n')
+        package.writestr("uv.lock", lock)
+        package.writestr("fixture.py", "VALUE = 7\n")
+    source = _snapshot(source_archive)
+    project_bytes = source_archive.read_bytes()
+    binding = NativeBinding(
+        identity=identity,
+        command_name=app_id,
+        display_name="Temporary root fixture",
+        version="1.0.0",
+        source=source,
+        selection=RuntimeSelection(sys.executable),
+        capabilities=AppCapabilities(),
+        layout=Layout.native(),
+        bootstrap_env_prefix="APPRC",
+    )
+    environment = {"PATH": os.environ.get("PATH", "")}
+    manager = InstallationManager(
+        _manager._application(binding).schema,
+        environment=environment,
+        directory=tmp_path / "managed",
+    )
+    physical_temp = tmp_path / "physical-temp"
+    physical_temp.mkdir()
+    linked_temp = tmp_path / "linked-temp"
+    linked_temp.symlink_to(physical_temp, target_is_directory=True)
+    monkeypatch.setattr(
+        _manager.tempfile, "gettempdir", lambda: str(linked_temp)
+    )
+    monkeypatch.setattr(_manager, "_manager_uv", lambda: tmp_path / "uv")
+    monkeypatch.setattr(
+        _manager,
+        "_read_product",
+        lambda *, include_project=False: (binding, project_bytes),
+    )
+    monkeypatch.setattr(
+        "apprc.user_files.app_home.layouts.resolve_app_paths",
+        lambda *args, **kwargs: SimpleNamespace(
+            layout=Layout.native(),
+            config_dir=None,
+            appdata_dir=None,
+            cache_dir=None,
+            state_dir=None,
+            logs_dir=None,
+        ),
+    )
+    from apprc.distribution.runtime import installation
+
+    monkeypatch.setattr(
+        installation,
+        "publish_optional_shortcuts",
+        lambda *args, **kwargs: manager.inspect(),
+    )
+    monkeypatch.setattr(
+        installation,
+        "offer_configuration_setup",
+        lambda *args, **kwargs: False,
+    )
+
+    observed: list[Path] = []
+
+    def capture_install(*args, project_archive: Path, **kwargs):
+        assert project_archive.parent.parent == physical_temp
+        assert not project_archive.is_symlink()
+        destination = tmp_path / "materialized"
+        materialize_project_snapshot(project_archive, destination, source)
+        assert (destination / "fixture.py").read_bytes() == b"VALUE = 7\n"
+        observed.append(project_archive)
+        return manager.inspect()
+
+    monkeypatch.setattr(installation, "install_application", capture_install)
+    _manager._install(binding, manager, tmp_path / "setup", ())
+    assert len(observed) == 1
+
+    linked_managed = tmp_path / "linked-managed"
+    managed_target = tmp_path / "managed-target"
+    managed_target.mkdir()
+    linked_managed.symlink_to(managed_target, target_is_directory=True)
+    with pytest.raises(ValueError):
+        materialize_project_snapshot(
+            source_archive, linked_managed / "source", source
+        )
+    assert not (managed_target / "source").exists()
 
 
 def _retirement_probe_worker(

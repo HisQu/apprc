@@ -1036,6 +1036,15 @@ def _execute_pending_handoff(
                 committed = True
                 retire_held_operation_lock(directory)
         else:
+            _restore_support(recovery, directory)
+            _backup_support(inventory.entries, directory, recovery)
+            _remove_inventory(
+                tuple(
+                    entry
+                    for entry in inventory.entries
+                    if entry.resource is None
+                )
+            )
             _remove_registry_outputs(record, directory, registry_backup)
             _remove_owned_outputs(record.owned_outputs, directory=directory)
             commit_uninstall(
@@ -1142,7 +1151,7 @@ def _recover_pending_uninstall(
             raise InstallationError(
                 "Pending uninstall recovery has no authority revision."
             )
-        if complete and OperationStep.DATA_REMOVED not in operation.steps:
+        if not complete or OperationStep.DATA_REMOVED not in operation.steps:
             _restore_support(recovery, directory)
         _restore_registry_outputs(registry_backup)
         fail_operation(

@@ -213,7 +213,10 @@ def _install(
     if project_bytes is None:
         raise RuntimeError("The embedded project snapshot is unavailable.")
 
-    with tempfile.TemporaryDirectory(prefix="apprc-native-project-") as stage:
+    temp_parent = Path(tempfile.gettempdir()).resolve(strict=True)
+    with tempfile.TemporaryDirectory(
+        prefix="apprc-native-project-", dir=temp_parent
+    ) as stage:
         project_archive = Path(stage) / "project.zip"
         project_archive.write_bytes(project_bytes)
         runtime = RuntimeSlot(

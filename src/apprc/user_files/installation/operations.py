@@ -840,11 +840,7 @@ def commit_uninstall(
                 record,
                 status="removed-retained",
                 operation=None,
-                owned_outputs=tuple(
-                    output
-                    for output in record.owned_outputs
-                    if output.kind != "shortcut"
-                ),
+                owned_outputs=(),
             )
             write_record(
                 directory, retained, expected_revision=expected_revision

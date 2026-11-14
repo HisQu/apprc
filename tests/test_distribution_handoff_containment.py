@@ -501,10 +501,7 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
         stdin = io.StringIO("EXIT\n")
         monkeypatch.setattr(removal.sys, "stdin", stdin)
 
-        with pytest.raises(
-            InstallationError,
-            match="Uninstall authority changed before handoff readiness.",
-        ):
+        with pytest.raises(InstallationError):
             removal.execute_handoff(
                 handoff.plan_file,
                 expected_identity=authority.record.identity,

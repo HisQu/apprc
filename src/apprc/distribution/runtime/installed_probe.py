@@ -213,13 +213,6 @@ def _serve_request(request: object) -> int:
         from apprc.definition.resolution import _BridgeRuntimeOptions
         from apprc.user_files.installation import codec
 
-        initialize_hook = Callable[[OperationContext], None]
-        inventory_hook = Callable[
-            [InstallationInspection, frozenset[ResourceKind], bool],
-            CleanupInventory,
-        ]
-        migration_hook = Callable[[MigrationPlan, OperationContext], None]
-
         fields = {
             "action",
             "identity",
@@ -407,7 +400,10 @@ def _serve_request(request: object) -> int:
             }
             initialized = manager.initialize(context=context)
             if hooks.initialize:
-                cast(initialize_hook, _hook(hooks.initialize))(context)
+                initialize_callback = cast(
+                    Callable[[OperationContext], None], _hook(hooks.initialize)
+                )
+                initialize_callback(context)
             result = {
                 **observations,
                 "capabilities": capabilities,
@@ -494,7 +490,14 @@ def _serve_request(request: object) -> int:
                 raise ValueError(
                     "Application cleanup inventory hook is unavailable."
                 )
-            inventory = cast(inventory_hook, _hook(hooks.inventory))(
+            inventory_callback = cast(
+                Callable[
+                    [InstallationInspection, frozenset[ResourceKind], bool],
+                    CleanupInventory,
+                ],
+                _hook(hooks.inventory),
+            )
+            inventory = inventory_callback(
                 inspection,
                 categories,
                 cast(bool, request["forget_retained"]),
@@ -503,15 +506,23 @@ def _serve_request(request: object) -> int:
         elif action == "cleanup":
             if context is None:
                 raise ValueError("Cleanup requires an operation context.")
-            cast(initialize_hook, _hook(hooks.cleanup))(context)
+            if not hooks.cleanup:
+                raise ValueError("Application cleanup hook is unavailable.")
+            cleanup_callback = cast(
+                Callable[[OperationContext], None], _hook(hooks.cleanup)
+            )
+            cleanup_callback(context)
             result = {"completed": True}
         else:
             if not hooks.migrate:
                 raise ValueError("Application migration hook is unavailable.")
             if context is None:
                 raise ValueError("Migration requires an operation context.")
-            plan = codec._decode(
-                request["migration_plan"], MigrationPlan, "migration_plan"
+            plan = cast(
+                MigrationPlan,
+                codec._decode(
+                    request["migration_plan"], MigrationPlan, "migration_plan"
+                ),
             )
             migration = record.migration
             if (
@@ -529,7 +540,11 @@ def _serve_request(request: object) -> int:
                 raise ValueError(
                     "Migration plan differs from pending authority."
                 )
-            cast(migration_hook, _hook(hooks.migrate))(plan, context)
+            migration_callback = cast(
+                Callable[[MigrationPlan, OperationContext], None],
+                _hook(hooks.migrate),
+            )
+            migration_callback(plan, context)
             result = {"completed": True}
     print(json.dumps({"action": action, "result": result}, sort_keys=True))
     return exit_status

@@ -197,8 +197,7 @@ def _sdk_archive(
                 f"Native authoring requires exact {distribution.metadata['Name']} distribution metadata."
             )
         item = metadata_files[0]
-        with distribution.locate_file(item).open("rb") as stream:
-            entries[str(item)] = stream.read()
+        entries[str(item)] = item.read_binary()
     if not entries.get("apprc/distribution/runtime/_manager.py"):
         raise ValueError(
             "SDK manager source is unavailable from the authoring package."

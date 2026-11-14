@@ -279,14 +279,20 @@ integration.
 
 AppRC's optional
 [`apprc.distribution`](https://github.com/HisQu/apprc/blob/main/docs/References.md#distribution-generation) authoring APIs
-generate Rust-free Python developer entries and standalone lifecycle support.
-In a generated application checkout, use `uv run --script app-install.py` and
-`uv run --script app-launch.py`; installation preserves the actual editable
-checkout, including dirty source. Native release executables are a separate,
-explicit [authoring build](https://github.com/HisQu/apprc/blob/main/docs/Development.md#native-application-frontends),
-not a prerequisite for normal generation. Recipients use uv for the application
-environment; PyApp manages only the native frontend's Python bootstrap.
-Applications still own lifecycle actions and Windows `Setup.exe` builds.
+build platform-specific setup executables from complete, prebuilt project
+snapshots. Final artifacts belong in ignored `dist/`; build intermediates stay
+in `.cache/apprc/`, never in application source directories.
+
+Managed installations use locked, non-editable runtime slots. The stable native
+command handles installation diagnostics, repair and removal independently of
+the application's environment, and forwards normal commands—including
+`launch`—to the recorded active slot. Updates use a newer setup executable.
+
+For development, `uv run --locked <app> app install -e` registers the checkout's
+existing `.venv` and initializes declared resources without copying or owning
+the checkout or its environment. Git and uv remain responsible for updating it.
+See the [installation guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#install-from-a-checkout)
+and [native authoring requirements](https://github.com/HisQu/apprc/blob/main/docs/Development.md#native-application-frontends).
 
 <!-- ====================================================================== -->
 <br>

@@ -120,10 +120,13 @@ def test_sync_delegate_holds_runtime_lease_after_driver_death(
     tmp_path: Path,
 ) -> None:
     directory = tmp_path / "installation"
+    directory.mkdir(mode=0o700)
     runtime = _runtime(ProjectSnapshot("a" * 64, "b" * 64, "c" * 40))
     slot = directory / "runtimes" / str(runtime.slot_id)
+    slot.parent.mkdir(mode=0o700)
+    slot.mkdir(mode=0o700)
     project = slot / "source"
-    project.mkdir(parents=True)
+    project.mkdir()
     (project / "pyproject.toml").write_text(
         "[project]\nname='fixture'\nversion='1.0'\n",
         encoding="utf-8",

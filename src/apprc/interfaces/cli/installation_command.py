@@ -537,7 +537,7 @@ def _register_editable(
         ("cache", context.manager.spec.paths.cache),
         ("state", context.manager.spec.paths.state),
     )
-    capabilities = frozenset(
+    capabilities: frozenset[ResourceKind] = frozenset(
         kind for kind, enabled in declared_capabilities if enabled
     )
     placement = InstallationPlacement(

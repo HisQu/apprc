@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextvars
 import hashlib
 import json
+import logging
 import os
 import shutil
 import stat
@@ -23,6 +24,7 @@ from apprc.definition.installation import (
     InstallationDiagnostic,
     InstallationError,
     InstallationInspection,
+    InstallationWriteAuthority,
     InstallPlan,
     InstallationIdentity,
     InstallationPlacement,
@@ -35,10 +37,11 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import ResourceKind
 from apprc.distribution.runtime._integration import (
+    capture_windows_registration,
     publish_global_command,
     publish_windows_registration,
     windows_registration_intent,
-    remove_windows_registration,
+    restore_windows_registration,
     validate_command_directory,
     validate_global_command,
 )
@@ -64,15 +67,30 @@ from apprc.distribution.runtime.probe import (
     application_bridge,
 )
 from apprc.user_files.app_home.locations import assert_no_links
+from apprc.user_files.app_home.writes import (
+    file_revision,
+    managed_lock_path,
+    managed_write_lock,
+)
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.operations import (
+    _matches_candidate,
     record_owned_outputs,
     record_publication,
 )
 
 if TYPE_CHECKING:
     from apprc.services.installation import InstallationManager
+    from apprc.distribution.runtime._integration import (
+        WindowsRegistrationSnapshot,
+    )
+
+LOG = logging.getLogger(__name__)
+
+_ResourceSnapshot = tuple[
+    tuple[Path, ResourceKind | None, bool, str | None], ...
+]
 
 _MAINTENANCE_GROUP: contextvars.ContextVar[str] = contextvars.ContextVar(
     "apprc_installation_maintenance_group", default="app"
@@ -562,17 +580,26 @@ def _cleanup_publication_images(
 def _restore_pending_publication(
     manager: InstallationManager,
     path: Path,
-    published: OwnedOutput,
+    published: OwnedOutput | None = None,
 ) -> bool:
+    """Restore recorded command intent, including publishers that raised early.
+
+    :param manager: Locked installation owning the pending publication.
+    :param path: Exact destination recorded before publication.
+    :param published: Optional expected ownership of an already returned output.
+    :return: Whether the destination now matches its recorded previous image.
+    """
     record = manager.inspect().record
     operation = record.operation if record is not None else None
-    if operation is None or published.digest is None:
+    if operation is None:
         return False
     intent = next(
         (item for item in operation.publication if item.path == path),
         None,
     )
-    if intent is None or intent.intended.digest != published.digest:
+    if intent is None or (
+        published is not None and intent.intended.digest != published.digest
+    ):
         return False
     assert_no_links(path.parent)
     if path.is_symlink():
@@ -580,8 +607,21 @@ def _restore_pending_publication(
     elif path.is_file():
         actual = _sha256_file(path)
     else:
-        return False
+        return not path.exists() and intent.previous is None
+    previous = intent.previous
+    if previous is not None and actual == previous.digest:
+        if previous.link_target is not None:
+            return (
+                path.is_symlink() and os.readlink(path) == previous.link_target
+            )
+        if not path.is_symlink() and (
+            previous.mode is None
+            or stat.S_IMODE(path.stat().st_mode) == previous.mode
+        ):
+            return True
     if actual != intent.intended.digest:
+        return False
+    if path.is_symlink() != (intent.intended.link_target is not None):
         return False
     if intent.previous is None:
         path.unlink()
@@ -605,7 +645,10 @@ def _restore_pending_publication(
             os.fsync(stream.fileno())
         if intent.previous.mode is not None:
             os.chmod(temporary, intent.previous.mode)
-    os.replace(temporary, path)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
     return True
 
 
@@ -846,29 +889,295 @@ def _retire_recorded_runtimes(
         return inspection
 
 
+def _resource_snapshot(placement: InstallationPlacement) -> _ResourceSnapshot:
+    """Capture SDK resource existence before an installation initializes them.
+
+    :param placement: Validated intended resource locations.
+    :return: Roots, marker categories, prior existence and marker revisions.
+    """
+    roots: list[tuple[Path | None, ResourceKind | None]] = [
+        (placement.config_dir, "config"),
+        (placement.appdata_dir, "appdata"),
+        (placement.cache_dir, "cache"),
+        (placement.state_dir, "state"),
+    ]
+    if "state" in placement.capabilities and placement.logs_dir is not None:
+        state = placement.state_dir
+        logs = placement.logs_dir
+        roots.append(
+            (
+                logs,
+                None
+                if state is not None and logs.is_relative_to(state)
+                else "state",
+            )
+        )
+    captured: dict[
+        Path, tuple[Path, ResourceKind | None, bool, str | None]
+    ] = {}
+    for root, category in roots:
+        if root is None or (
+            category is not None and category not in placement.capabilities
+        ):
+            continue
+        assert_no_links(root)
+        captured.setdefault(
+            root,
+            (
+                root,
+                category,
+                root.exists(),
+                file_revision(root / ".apprc-owner.json"),
+            ),
+        )
+    return tuple(captured.values())
+
+
+def _rollback_resources(
+    manager: InstallationManager,
+    plan: InstallPlan,
+    inspection: InstallationInspection,
+    resources: _ResourceSnapshot,
+) -> None:
+    """Remove only new SDK markers and empty directories, preserving payload.
+
+    :param manager: Installation whose namespace is locked by the caller.
+    :param plan: Pending operation authorizing resource lock acquisition.
+    :param inspection: Current pending authority snapshot.
+    :param resources: Existence captured before initialization.
+    """
+    from apprc.user_files.app_home.ownership import inspect_ownership
+
+    changed = tuple(
+        item
+        for item in resources
+        if (not item[2] and item[0].exists())
+        or file_revision(item[0] / ".apprc-owner.json") != item[3]
+    )
+    if not changed:
+        return
+    context = _context(
+        manager.directory,
+        plan.operation_id,
+        plan.generation_id,
+        plan.target.placement,
+    )
+    controls = {managed_lock_path(item[0]) for item in resources}
+    with managed_write_lock(
+        *(item[0] for item in changed),
+        authority=InstallationWriteAuthority(
+            manager.spec.app_id, inspection.snapshot, context
+        ),
+    ):
+        for root, category, existed, marker_revision in sorted(
+            changed, key=lambda item: len(item[0].parts), reverse=True
+        ):
+            assert_no_links(root)
+            marker = root / ".apprc-owner.json"
+            actual_marker = file_revision(marker)
+            if marker_revision is not None:
+                if actual_marker != marker_revision:
+                    raise InstallationError(
+                        f"Resource ownership changed during installation: {root}."
+                    )
+                continue
+            if actual_marker is not None:
+                if (
+                    category is None
+                    or inspect_ownership(root, manager.spec.app_id, category)
+                    != "owned"
+                ):
+                    raise InstallationError(
+                        f"Resource ownership cannot be rolled back: {root}."
+                    )
+                payload = tuple(
+                    path for path in root.iterdir() if path != marker
+                )
+                if payload and all(
+                    path in controls
+                    and path.is_file()
+                    and not path.is_symlink()
+                    for path in payload
+                ):
+                    # > Stable subordinate locks may still be open on Windows.
+                    # > Keep their owned container so a fresh retry can reuse it.
+                    continue
+                if payload:
+                    raise InstallationError(
+                        f"New resource contains application or unknown data: {root}."
+                    )
+                marker.unlink()
+            if not existed and root.exists():
+                root.rmdir()
+
+
+def _finish_installation(
+    manager: InstallationManager, inspection: InstallationInspection
+) -> InstallationInspection:
+    """Keep activation successful when postcommit housekeeping needs a retry."""
+    try:
+        inspection = _cleanup_publication_images(manager, inspection)
+        return (
+            _retire_recorded_runtimes(manager)
+            if inspection.record
+            else inspection
+        )
+    except Exception as error:
+        LOG.warning(
+            "Installation succeeded; cleanup remains pending: %s", error
+        )
+        return inspection
+
+
 def _failed_operation(
     manager: InstallationManager,
-    operation_id: UUID,
+    plan: InstallPlan,
+    prior: InstallationInspection,
     error: BaseException,
-) -> None:
-    latest = manager.inspect()
-    record = latest.record
-    if (
-        record is None
-        or record.operation is None
-        or record.operation.operation_id != operation_id
-        or latest.revision is None
-    ):
-        return
-    manager.fail_operation(
-        operation_id=operation_id,
-        expected_revision=latest.revision,
-        diagnostic=InstallationDiagnostic(
-            "runtime-incomplete",
-            str(error),
-            "Use the original setup to resume this exact runtime candidate or inspect and repair the installation.",
-        ),
-    )
+    *,
+    resources: _ResourceSnapshot,
+    registry: WindowsRegistrationSnapshot | None,
+    candidate_existed: bool,
+    activation_started: bool,
+) -> InstallationInspection | None:
+    """Restore one caught install failure or retain honest recovery authority.
+
+    Authority is restored last, only after exact-owned effects were reversed.
+    Application callbacks remain responsible for their own data and side effects.
+
+    :param manager: Installation whose lifecycle lock is already held.
+    :param plan: Exact operation this invocation attempted.
+    :param prior: Authority captured before this attempt.
+    :param error: Original failure, preserved if rollback succeeds.
+    :param resources: Resource existence before initialization.
+    :param registry: Registry state captured before publication.
+    :param candidate_existed: Whether the managed candidate predates this attempt.
+    :param activation_started: Whether activation was called before the failure.
+    :return: Committed success after a read-back failure, otherwise ``None``.
+    """
+    try:
+        latest = manager.inspect()
+        record = latest.record
+        if (
+            activation_started
+            and record is not None
+            and record.status == "ready"
+            and record.operation is None
+            and record.generation_id == plan.generation_id
+            and record.identity == plan.target.identity
+            and record.command_name == plan.command_name
+            and record.active_runtime is not None
+            and _matches_candidate(plan.target.runtime, record.active_runtime)
+        ):
+            LOG.warning(
+                "Installation succeeded despite activation read-back error: %s",
+                error,
+            )
+            return _finish_installation(manager, latest)
+        if (
+            (prior.record is None or prior.record.operation is None)
+            and latest.revision == prior.revision
+            and record == prior.record
+        ):
+            error.add_note("AppRC installation changes were rolled back.")
+            return None
+        if (
+            record is None
+            or record.operation is None
+            or record.operation.operation_id != plan.operation_id
+            or record.generation_id != plan.generation_id
+            or latest.revision is None
+        ):
+            raise InstallationError(
+                "Installation authority changed; rollback was not authorized."
+            )
+        operation = record.operation
+        if registry is not None:
+            restore_windows_registration(registry)
+        for item in reversed(operation.publication):
+            if not _restore_pending_publication(manager, item.path):
+                raise InstallationError(
+                    f"Command changed outside this installation attempt: {item.path}."
+                )
+        _rollback_resources(manager, plan, latest, resources)
+        runtime = plan.target.runtime
+        if isinstance(runtime, RuntimeSlot):
+            if candidate_existed:
+                raise InstallationError(
+                    "The resumed runtime candidate retains preparation effects; resume or repair this exact attempt."
+                )
+            if not try_retire_runtime_slot(
+                manager.directory / "runtimes" / str(runtime.slot_id)
+            ):
+                raise InstallationError(
+                    "New runtime candidate is busy; retry recovery after its processes exit."
+                )
+        previous_operation = (
+            prior.record.operation if prior.record is not None else None
+        )
+        prior_images = {
+            image.content
+            for item in (
+                previous_operation.publication
+                if previous_operation is not None
+                else ()
+            )
+            for image in (item.previous, item.intended)
+            if image is not None and image.content is not None
+        }
+        for item in operation.publication:
+            for image in (item.previous, item.intended):
+                if (
+                    image is None
+                    or image.content is None
+                    or image.content in prior_images
+                ):
+                    continue
+                path = manager.directory / image.content
+                assert_no_links(path)
+                if path.exists():
+                    if not path.is_file() or _sha256_file(path) != image.digest:
+                        raise InstallationError(
+                            f"Publication recovery image changed: {path}."
+                        )
+                    path.unlink()
+        manager.rollback_installation(
+            operation_id=plan.operation_id,
+            expected_revision=latest.revision,
+            previous=prior.record,
+        )
+        error.add_note("AppRC installation changes were rolled back.")
+        return None
+    except BaseException as rollback_error:
+        failures = [error, rollback_error]
+        message = f"{error} AppRC installation rollback is incomplete: {rollback_error}"
+        try:
+            latest = manager.inspect()
+            record = latest.record
+            if (
+                record is not None
+                and record.operation is not None
+                and record.operation.operation_id == plan.operation_id
+                and latest.revision is not None
+            ):
+                manager.fail_operation(
+                    operation_id=plan.operation_id,
+                    expected_revision=latest.revision,
+                    diagnostic=InstallationDiagnostic(
+                        "runtime-incomplete",
+                        message,
+                        "Inspect the installation and retry the matching checkout command or original setup to resume recovery.",
+                    ),
+                )
+        except BaseException as journal_error:
+            failures.append(journal_error)
+            message += f" Failure recording also failed: {journal_error}"
+        raise InstallationError(
+            message
+            + " Inspect the installation and retry the matching checkout command or original setup to resume recovery."
+        ) from BaseExceptionGroup(
+            "Installation and rollback failures", failures
+        )
 
 
 def _snapshot_metadata(
@@ -1035,38 +1344,43 @@ def _repair_managed_application(
             plan = manager.plan_repair(
                 record.identity, runtime, record.placement
             )
-        if record.operation is not None:
-            candidate_archive = (
-                directory / "runtimes" / str(runtime.slot_id) / "project.zip"
-            )
-            archive = (
-                _retained_archive(directory, runtime)
-                if candidate_archive.exists()
-                else _restore_pending_candidate_archive(
-                    manager, runtime, manager_executable
-                )
-            )
-        else:
-            archive = _retained_archive(directory, active)
-        current = manager.begin_operation(plan)
-        if current.revision is None:
-            raise InstallationError("Managed repair has no authority revision.")
-        prior_outputs = record.owned_outputs
-        pending_publication = _existing_publication(manager)
-        _check_owned_command(
-            stable,
-            (
-                *prior_outputs,
-                *_publication_authorized_outputs(pending_publication),
-            ),
-        )
-        committed = False
-        published: OwnedOutput | None = None
-        published_commands: list[tuple[Path, OwnedOutput]] = []
-        windows_output: OwnedOutput | None = None
-        windows_registered = False
-        outputs: list[OwnedOutput] = []
+        resources = _resource_snapshot(plan.target.placement)
+        candidate_existed = (
+            directory / "runtimes" / str(runtime.slot_id)
+        ).exists()
+        registry: WindowsRegistrationSnapshot | None = None
+        activation_started = False
         try:
+            current = manager.begin_operation(plan)
+            if current.revision is None:
+                raise InstallationError(
+                    "Managed repair has no authority revision."
+                )
+            if record.operation is not None:
+                candidate_archive = (
+                    directory
+                    / "runtimes"
+                    / str(runtime.slot_id)
+                    / "project.zip"
+                )
+                archive = (
+                    _retained_archive(directory, runtime)
+                    if candidate_archive.exists()
+                    else _restore_pending_candidate_archive(
+                        manager, runtime, manager_executable
+                    )
+                )
+            else:
+                archive = _retained_archive(directory, active)
+            prior_outputs = record.owned_outputs
+            pending_publication = _existing_publication(manager)
+            _check_owned_command(
+                stable,
+                (
+                    *prior_outputs,
+                    *_publication_authorized_outputs(pending_publication),
+                ),
+            )
             observed, revision = _prepare_candidate(
                 manager,
                 plan,
@@ -1106,7 +1420,6 @@ def _repair_managed_application(
                 _publication_source(directory, pending_publication[0]),
                 previous=(*prior_outputs, *publication_authority),
             )
-            published_commands.append((stable, published))
             outputs = [published]
             for item in pending_publication[1:]:
                 if item.intended.link_target is not None:
@@ -1121,7 +1434,6 @@ def _repair_managed_application(
                         _publication_source(directory, item),
                         previous=(*prior_outputs, *publication_authority),
                     )
-                published_commands.append((item.path, output))
                 outputs.append(output)
             registration_intent, revision = _ensure_registration_intent(
                 manager,
@@ -1131,6 +1443,8 @@ def _repair_managed_application(
                 stable,
                 prior_outputs,
             )
+            if registration_intent is not None:
+                registry = capture_windows_registration(registration_intent)
             windows_output = publish_windows_registration(
                 directory,
                 record.identity,
@@ -1144,10 +1458,6 @@ def _repair_managed_application(
                     ),
                 ),
                 maintenance_group_name=_MAINTENANCE_GROUP.get(),
-            )
-            windows_registered = (
-                windows_output is not None
-                and windows_output not in prior_outputs
             )
             if windows_output is not None:
                 outputs.append(windows_output)
@@ -1167,24 +1477,27 @@ def _repair_managed_application(
                 current.revision or "",
                 OperationStep.REGISTRATION_READY,
             )
+            activation_started = True
             result = manager.commit_install(
                 operation_id=plan.operation_id,
                 expected_revision=current.revision or "",
                 observed=observed,
                 owned_outputs=tuple(outputs),
             )
-            committed = True
-            result = _cleanup_publication_images(manager, result)
-            return (
-                _retire_recorded_runtimes(manager) if result.record else result
-            )
+            return _finish_installation(manager, result)
         except BaseException as error:
-            if not committed:
-                for path, output in published_commands:
-                    _restore_pending_publication(manager, path, output)
-                if windows_registered and windows_output is not None:
-                    remove_windows_registration(windows_output)
-                _failed_operation(manager, plan.operation_id, error)
+            committed = _failed_operation(
+                manager,
+                plan,
+                prior,
+                error,
+                resources=resources,
+                registry=registry,
+                candidate_existed=candidate_existed,
+                activation_started=activation_started,
+            )
+            if committed is not None:
+                return committed
             raise
 
 
@@ -1488,18 +1801,19 @@ def install_application(
             plan = manager.plan_install(
                 identity, runtime, placement, command_name=command_name
             )
-        current = manager.begin_operation(plan)
-        if current.revision is None:
-            raise InstallationError(
-                "Pending managed installation has no revision."
-            )
         operation_id = plan.operation_id
-        stable_output: OwnedOutput | None = None
-        global_output: OwnedOutput | None = None
-        committed = False
-        windows_output: OwnedOutput | None = None
-        windows_registered = False
+        resources = _resource_snapshot(plan.target.placement)
+        candidate_existed = (
+            directory / "runtimes" / str(runtime.slot_id)
+        ).exists()
+        registry: WindowsRegistrationSnapshot | None = None
+        activation_started = False
         try:
+            current = manager.begin_operation(plan)
+            if current.revision is None:
+                raise InstallationError(
+                    "Pending managed installation has no revision."
+                )
             observed, revision = _prepare_candidate(
                 manager,
                 plan,
@@ -1555,6 +1869,8 @@ def install_application(
             registration_intent, revision = _ensure_registration_intent(
                 manager, operation_id, revision, identity, stable, prior_outputs
             )
+            if registration_intent is not None:
+                registry = capture_windows_registration(registration_intent)
             windows_output = publish_windows_registration(
                 directory,
                 identity,
@@ -1571,10 +1887,6 @@ def install_application(
             )
             if windows_output is not None:
                 outputs.append(windows_output)
-                windows_registered = not any(
-                    item.kind == "hkcu" and item.path == windows_output.path
-                    for item in prior_outputs
-                )
             output_paths = {item.path for item in outputs}
             outputs.extend(
                 item for item in prior_outputs if item.path not in output_paths
@@ -1593,28 +1905,27 @@ def install_application(
                 OperationStep.REGISTRATION_READY,
             )
             revision = current.revision or ""
+            activation_started = True
             result = manager.commit_install(
                 operation_id=operation_id,
                 expected_revision=revision,
                 observed=observed,
                 owned_outputs=tuple(outputs),
             )
-            committed = True
-            result = _cleanup_publication_images(manager, result)
-            return (
-                _retire_recorded_runtimes(manager) if result.record else result
-            )
+            return _finish_installation(manager, result)
         except BaseException as error:
-            if not committed:
-                if stable_output is not None:
-                    _restore_pending_publication(manager, stable, stable_output)
-                if global_output is not None and global_command is not None:
-                    _restore_pending_publication(
-                        manager, global_command, global_output
-                    )
-                if windows_registered and windows_output is not None:
-                    remove_windows_registration(windows_output)
-                _failed_operation(manager, operation_id, error)
+            committed = _failed_operation(
+                manager,
+                plan,
+                prior,
+                error,
+                resources=resources,
+                registry=registry,
+                candidate_existed=candidate_existed,
+                activation_started=activation_started,
+            )
+            if committed is not None:
+                return committed
             raise
 
 
@@ -1735,11 +2046,16 @@ def register_editable_application(
                 and prior_runtime.environment.resolve(strict=False)
                 == environment_path
             )
-            if not same_checkout and not assume_yes:
+            if (
+                prior_runtime is not None
+                and not same_checkout
+                and not assume_yes
+            ):
                 raise InstallationError(
                     "Switching installation ownership requires --yes confirmation."
                 )
-            placement = previous.placement
+            if previous.operation is None:
+                placement = previous.placement
         selected_directory = _editable_command_directory(
             manager, runtime, uv, command_directory
         )
@@ -1754,24 +2070,46 @@ def register_editable_application(
             previous=(*prior_outputs, *publication_authority),
         )
         if previous is not None and previous.operation is not None:
-            plan = manager.plan_repair(identity, runtime, placement)
-            if plan.target.runtime != runtime:
+            operation = previous.operation
+            intended = operation.intended
+            if (
+                operation.kind not in {"install", "replace", "repair"}
+                or intended is None
+                or previous.identity != identity
+                or intended.identity != identity
+                or previous.command_name != command_name
+                or intended.runtime != runtime
+                or intended.placement != placement
+                or operation.placement != placement
+            ):
                 raise InstallationError(
                     "Pending registration addresses another checkout."
                 )
+            # > Resume registration authority, not the developer-owned environment
+            # > repair that the public managed-runtime planner deliberately rejects.
+            plan = InstallPlan(
+                directory=manager.directory,
+                expected_revision=prior.revision,
+                expected_generation=previous.generation_id,
+                target=intended,
+                operation_id=operation.operation_id,
+                generation_id=previous.generation_id,
+                kind="repair",
+                command_name=previous.command_name,
+            )
         else:
             plan = manager.plan_install(
                 identity, runtime, placement, command_name=command_name
             )
-        current = manager.begin_operation(plan)
-        if current.revision is None:
-            raise InstallationError(
-                "Pending editable registration has no revision."
-            )
         operation_id = plan.operation_id
-        committed = False
-        published: OwnedOutput | None = None
+        resources = _resource_snapshot(plan.target.placement)
+        activation_started = False
         try:
+            current = manager.begin_operation(plan)
+            if current.revision is None:
+                raise InstallationError(
+                    "Pending editable registration has no revision."
+                )
             observed, observations = _probe_runtime_observations(
                 manager.directory,
                 identity,
@@ -1845,7 +2183,6 @@ def register_editable_application(
                     ),
                     previous=(*prior_outputs, *publication_authority),
                 )
-            published = output
             outputs = [
                 *(item for item in prior_outputs if item.path != output.path),
                 output,
@@ -1864,24 +2201,27 @@ def register_editable_application(
                 OperationStep.REGISTRATION_READY,
             )
             revision = current.revision or ""
+            activation_started = True
             result = manager.commit_install(
                 operation_id=operation_id,
                 expected_revision=revision,
                 observed=observed,
                 owned_outputs=tuple(outputs),
             )
-            committed = True
-            result = _cleanup_publication_images(manager, result)
-            return (
-                _retire_recorded_runtimes(manager) if result.record else result
-            )
+            return _finish_installation(manager, result)
         except BaseException as error:
-            if not committed:
-                if published is not None:
-                    _restore_pending_publication(
-                        manager, global_command, published
-                    )
-                _failed_operation(manager, operation_id, error)
+            committed = _failed_operation(
+                manager,
+                plan,
+                prior,
+                error,
+                resources=resources,
+                registry=None,
+                candidate_existed=False,
+                activation_started=activation_started,
+            )
+            if committed is not None:
+                return committed
             raise
 
 

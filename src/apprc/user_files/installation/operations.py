@@ -34,6 +34,7 @@ from apprc.definition.installation import (
     UninstallPlan,
 )
 from apprc.definition.paths import ResourceKind
+from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
@@ -833,6 +834,57 @@ def fail_operation(
             ),
         )
         write_record(directory, failed, expected_revision=expected_revision)
+        return inspect_installation(directory, app_id=record.identity.app_id)
+
+
+def rollback_installation(
+    directory: Path,
+    *,
+    operation_id: UUID,
+    expected_revision: str,
+    previous: InstallationRecord | None,
+) -> InstallationInspection:
+    """Restore pre-attempt authority after its managed effects are restored.
+
+    The runtime controller owns filesystem and integration recovery. It calls
+    this transition last, while the exact pending installation still authorizes
+    that recovery. Committed, unrelated, or changed authority is never replaced.
+
+    :param directory: Installation namespace addressed by the controller.
+    :param operation_id: Exact pending install, replacement, or repair.
+    :param expected_revision: Revision observed after effect recovery.
+    :param previous: Captured pre-attempt record, or initial absence.
+    :return: Restored inspection, including missing authority on a first install.
+    """
+    with installation_lock(directory):
+        path = directory / "installation.json"
+        assert_no_links(path)
+        record = _pending(directory, operation_id, expected_revision)
+        operation = record.operation
+        assert operation is not None
+        if operation.kind not in {"install", "replace", "repair"}:
+            raise InstallationError(
+                "Only pending installation work can restore prior authority."
+            )
+        if previous is None:
+            if record.active_runtime is not None:
+                raise InstallationError(
+                    "A previously active installation cannot restore absence."
+                )
+            path.unlink()
+        else:
+            if (
+                previous.identity != record.identity
+                or previous.generation_id != record.generation_id
+                or previous.command_name != record.command_name
+                or previous.active_runtime != record.active_runtime
+            ):
+                raise InstallationError(
+                    "Prior authority belongs to a different installation."
+                )
+            write_record(
+                directory, previous, expected_revision=expected_revision
+            )
         return inspect_installation(directory, app_id=record.identity.app_id)
 
 

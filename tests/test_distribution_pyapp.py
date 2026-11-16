@@ -402,6 +402,8 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         before_b_lock = (
             project_root.parent / "fixture-b" / "uv.lock"
         ).read_bytes()
+        before_failure = _record(directory)
+        before_slots = set((directory / "runtimes").iterdir())
         failed_update = run(
             _install(setup_b, command_directory),
             environment={**environment, "FIXTURE_FAIL_INITIALIZE": "1"},
@@ -409,17 +411,8 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
             check=False,
         )
         assert failed_update.returncode != 0
-        pending = _record(directory)
-        assert pending.get("status") == "incomplete"
-        assert pending.get("active_runtime") is not None
-        assert _active_slot(pending) == slot_a
-        candidate_slot = _pending_slot(pending)
-        assert candidate_slot != slot_a
-        candidate = directory / "runtimes" / candidate_slot
-        assert (candidate / "project.zip").is_file()
-        assert (candidate / ".venv").is_dir()
-        assert pending["operation"]["kind"] == "replace"
-        assert pending["operation"]["phase"] == "failed"
+        assert _record(directory) == before_failure
+        assert set((directory / "runtimes").iterdir()) == before_slots
         assert resource_sentinel.read_text(encoding="utf-8") == "retain me"
         assert _inspect(manager, conflicting, outside)["version"] == "1.0.0"
         before_write = run(
@@ -918,12 +911,9 @@ def test_failed_editable_switch_restores_real_global_command_and_authority(
     assert rejected.returncode == 23, rejected.stdout + rejected.stderr
     assert activation.read_text(encoding="utf-8") == "activation attempted"
     failed = manager.inspect().record
-    assert failed is not None
-    assert failed.active_runtime == initial.active_runtime == runtime_a
-    assert (
-        failed.operation is not None and failed.operation.intended is not None
-    )
-    assert failed.operation.intended.runtime == runtime_b
+    assert failed == initial
+    assert failed is not None and failed.active_runtime == runtime_a
+    assert failed.operation is None
     assert os.readlink(command) == old_target
     observed = _inspect(command, environment, tmp_path)
     assert observed["version"] == "1.0.0"

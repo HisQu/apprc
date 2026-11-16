@@ -107,6 +107,18 @@ synchronization, validation, and resource initialization. Its caller owns the
 operation, durable support-publication intent, registration, and activation.
 If preparation fails after advancing a checkpoint, failure journaling reads the
 latest on-disk revision.
+For caught pre-activation errors, the installer restores recorded command
+before-images, captured Windows registration, and newly created empty resource
+artifacts before restoring prior authority. Use the existing shared failure
+path rather than a second transaction framework. A publisher can mutate and
+then raise, so recovery follows recorded intent rather than returned-output
+flags. Recheck saved authority after activation errors; successful activation
+must survive housekeeping failures. Application hook effects and database
+compatibility remain application responsibilities. Incomplete rollback and
+process interruption retain honest recovery checkpoints.
+Stable resource locks are never unlinked during rollback. A newly initialized
+state root may retain its owner marker and known subordinate lock files after
+empty logs removal; this inert coordination residue must remain retryable.
 In `runtime/removal.py`, pending uninstall preparation validates authority and
 containment before the caller-exit handshake. Execution waits outside the
 installation lock, then rechecks authority under the lock before mutation.

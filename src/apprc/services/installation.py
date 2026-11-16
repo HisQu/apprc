@@ -20,6 +20,7 @@ from apprc.definition.installation import (
     InstallationIdentity,
     InstallationInspection,
     InstallationPlacement,
+    InstallationRecord,
     InstallPlan,
     InventoryEntry,
     MigrationInventory,
@@ -193,6 +194,42 @@ class InstallationManager:
             operation_id=operation_id,
             expected_revision=expected_revision,
             diagnostic=diagnostic,
+        )
+
+    def rollback_installation(
+        self,
+        *,
+        operation_id: UUID,
+        expected_revision: str,
+        previous: InstallationRecord | None,
+    ) -> InstallationInspection:
+        """Restore captured authority after controller-owned effect recovery.
+
+        :param operation_id: Pending installation being rolled back.
+        :param expected_revision: Exact authority after managed effect recovery.
+        :param previous: Pre-attempt record, or initial absence.
+        :return: Restored installation inspection.
+        """
+        if (
+            previous is not None
+            and previous.identity.app_id != self.spec.app_id
+        ):
+            raise InstallationError(
+                "Prior installation belongs to another application."
+            )
+        if self.inspect().record is None:
+            raise InstallationError(
+                "Rollback requires this application's pending authority."
+            )
+        from apprc.user_files.installation.operations import (
+            rollback_installation,
+        )
+
+        return rollback_installation(
+            self.directory,
+            operation_id=operation_id,
+            expected_revision=expected_revision,
+            previous=previous,
         )
 
     def commit_uninstall(

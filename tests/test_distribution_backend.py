@@ -9,6 +9,7 @@ import stat
 import sys
 import zipfile
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -31,9 +32,12 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import Layout
 from apprc.distribution.runtime.backend import runtime_environment
+from apprc.distribution.runtime import _integration
 from apprc.distribution.runtime._integration import (
+    capture_windows_registration,
     publish_windows_registration,
     remove_windows_registration,
+    restore_windows_registration,
     windows_registration_intent,
 )
 from apprc.distribution.runtime.installation import (
@@ -48,6 +52,189 @@ from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
 )
+
+
+class _RegistryKey:
+    def __init__(self) -> None:
+        self.values: dict[str, tuple[object, int]] = {}
+        self.subkeys = 0
+
+    def __enter__(self) -> _RegistryKey:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        pass
+
+
+class _WindowsRegistry(ModuleType):
+    HKEY_CURRENT_USER = 1
+    KEY_QUERY_VALUE = 1
+    KEY_SET_VALUE = 2
+    REG_SZ = 1
+
+    def __init__(self) -> None:
+        super().__init__("winreg")
+        self.keys: dict[str, _RegistryKey] = {}
+        self.writes = 0
+        self.fail_after: int | None = None
+
+    def OpenKey(
+        self, _root: int, path: str, _reserved: int, _access: int
+    ) -> _RegistryKey:
+        try:
+            return self.keys[path]
+        except KeyError:
+            raise FileNotFoundError(path) from None
+
+    def CreateKeyEx(
+        self, _root: int, path: str, _reserved: int, _access: int
+    ) -> _RegistryKey:
+        return self.keys.setdefault(path, _RegistryKey())
+
+    def QueryInfoKey(self, key: _RegistryKey) -> tuple[int, int, int]:
+        return key.subkeys, len(key.values), 0
+
+    def EnumValue(
+        self, key: _RegistryKey, index: int
+    ) -> tuple[str, object, int]:
+        name, (value, kind) = tuple(key.values.items())[index]
+        return name, value, kind
+
+    def SetValueEx(
+        self,
+        key: _RegistryKey,
+        name: str,
+        _reserved: int,
+        kind: int,
+        value: str,
+    ) -> None:
+        key.values[name] = (value, kind)
+        self.writes += 1
+        if self.writes == self.fail_after:
+            raise OSError("registry write failed after mutation")
+
+    def DeleteValue(self, key: _RegistryKey, name: str) -> None:
+        del key.values[name]
+
+    def DeleteKey(self, _root: int, path: str) -> None:
+        if self.keys[path].subkeys:
+            raise OSError("registry key has subkeys")
+        del self.keys[path]
+
+
+@pytest.fixture
+def windows_registry(monkeypatch: pytest.MonkeyPatch) -> _WindowsRegistry:
+    registry = _WindowsRegistry()
+    monkeypatch.setitem(sys.modules, "winreg", registry)
+    monkeypatch.setattr(_integration, "os", SimpleNamespace(name="nt"))
+    return registry
+
+
+@pytest.mark.parametrize("existing_values", (-1, 0, 1, 3))
+@pytest.mark.parametrize("fail_after", (1, 2, 3))
+def test_registry_rollback_restores_absence_empty_partial_or_full_recipe(
+    tmp_path: Path,
+    windows_registry: _WindowsRegistry,
+    existing_values: int,
+    fail_after: int,
+) -> None:
+    identity = InstallationIdentity("fixture", "fixture", "app", None, ("app",))
+    command = tmp_path / "app.exe"
+    intent = windows_registration_intent(tmp_path, identity, command)
+    subkey = intent.path.removeprefix("HKCU\\")
+    previous = {
+        name: (value, windows_registry.REG_SZ)
+        for name, value in intent.values[: max(existing_values, 0)]
+    }
+    if existing_values >= 0:
+        key = windows_registry.CreateKeyEx(1, subkey, 0, 3)
+        key.values.update(previous)
+    snapshot = capture_windows_registration(intent)
+    assert snapshot is not None
+    windows_registry.fail_after = fail_after
+
+    if len(intent.values) - max(existing_values, 0) >= fail_after:
+        with pytest.raises(OSError, match="after mutation"):
+            publish_windows_registration(
+                tmp_path, identity, command, previous=(intent,)
+            )
+    else:
+        assert (
+            publish_windows_registration(
+                tmp_path, identity, command, previous=(intent,)
+            )
+            == intent
+        )
+    restore_windows_registration(snapshot)
+
+    if existing_values < 0:
+        assert subkey not in windows_registry.keys
+    else:
+        assert windows_registry.keys[subkey].values == previous
+
+
+@pytest.mark.parametrize("foreign_change", ("value", "type", "extra", "subkey"))
+def test_registry_capture_and_rollback_preserve_foreign_changes(
+    tmp_path: Path,
+    windows_registry: _WindowsRegistry,
+    foreign_change: str,
+) -> None:
+    identity = InstallationIdentity("fixture", "fixture", "app", None, ("app",))
+    command = tmp_path / "app.exe"
+    intent = windows_registration_intent(tmp_path, identity, command)
+    snapshot = capture_windows_registration(intent)
+    assert snapshot is not None
+    publish_windows_registration(
+        tmp_path, identity, command, previous=(intent,)
+    )
+    subkey = intent.path.removeprefix("HKCU\\")
+    key = windows_registry.keys[subkey]
+    if foreign_change == "value":
+        key.values["DisplayName"] = (
+            "foreign application",
+            windows_registry.REG_SZ,
+        )
+    elif foreign_change == "type":
+        key.values["DisplayName"] = (identity.app_id, 4)
+    elif foreign_change == "extra":
+        key.values["ForeignValue"] = ("keep", windows_registry.REG_SZ)
+    else:
+        key.subkeys = 1
+    before = dict(key.values)
+
+    with pytest.raises(InstallationError):
+        capture_windows_registration(intent)
+    with pytest.raises(InstallationError):
+        restore_windows_registration(snapshot)
+    assert windows_registry.keys[subkey].values == before
+    assert key.subkeys == (foreign_change == "subkey")
+
+
+@pytest.mark.parametrize("missing", ("value", "key"))
+def test_registry_rollback_restores_missing_preexisting_values(
+    tmp_path: Path,
+    windows_registry: _WindowsRegistry,
+    missing: str,
+) -> None:
+    identity = InstallationIdentity("fixture", "fixture", "app", None, ("app",))
+    command = tmp_path / "app.exe"
+    intent = windows_registration_intent(tmp_path, identity, command)
+    publish_windows_registration(
+        tmp_path, identity, command, previous=(intent,)
+    )
+    snapshot = capture_windows_registration(intent)
+    assert snapshot is not None
+    subkey = intent.path.removeprefix("HKCU\\")
+    if missing == "key":
+        del windows_registry.keys[subkey]
+    else:
+        del windows_registry.keys[subkey].values["DisplayName"]
+
+    restore_windows_registration(snapshot)
+
+    assert windows_registry.keys[subkey].values == {
+        name: (value, windows_registry.REG_SZ) for name, value in intent.values
+    }
 
 
 def test_runtime_environment_removes_manager_and_python_injection_only() -> (
@@ -169,6 +356,67 @@ def test_expected_version_comes_from_digest_verified_retained_archive(
     archive.write_bytes(archive.read_bytes() + b"changed")
     with pytest.raises(InstallationError, match="archive was modified"):
         _snapshot_metadata(archive, runtime, identity)
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="requires a Windows HKCU registry"
+)
+@pytest.mark.parametrize("existing_values", (-1, 0, 1, 3))
+@pytest.mark.parametrize("fail_after", (1, 2, 3))
+def test_windows_registration_rollback_after_each_partial_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    existing_values: int,
+    fail_after: int,
+) -> None:
+    import winreg
+
+    app_id = f"apprc-test-{uuid4().hex}"
+    identity = InstallationIdentity(app_id, app_id, "app", None, ("app",))
+    command = tmp_path / "app.exe"
+    intent = windows_registration_intent(tmp_path, identity, command)
+    subkey = intent.path.removeprefix("HKCU\\")
+    absent = capture_windows_registration(intent)
+    assert absent is not None and absent.values is None
+    original_set = winreg.SetValueEx
+    writes = 0
+
+    def interrupt_after_write(key, name, reserved, kind, value):
+        nonlocal writes
+        original_set(key, name, reserved, kind, value)
+        writes += 1
+        if writes == fail_after:
+            raise OSError("registry write failed after mutation")
+
+    try:
+        if existing_values >= 0:
+            with winreg.CreateKeyEx(
+                winreg.HKEY_CURRENT_USER, subkey, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                for name, value in intent.values[:existing_values]:
+                    original_set(key, name, 0, winreg.REG_SZ, value)
+        previous = capture_windows_registration(intent)
+        assert previous is not None
+        monkeypatch.setattr(winreg, "SetValueEx", interrupt_after_write)
+        if len(intent.values) - max(existing_values, 0) >= fail_after:
+            with pytest.raises(OSError, match="after mutation"):
+                publish_windows_registration(
+                    tmp_path, identity, command, previous=(intent,)
+                )
+        else:
+            publish_windows_registration(
+                tmp_path, identity, command, previous=(intent,)
+            )
+        monkeypatch.setattr(winreg, "SetValueEx", original_set)
+
+        restore_windows_registration(previous)
+
+        restored = capture_windows_registration(intent)
+        assert restored is not None
+        assert restored.values == previous.values
+    finally:
+        monkeypatch.setattr(winreg, "SetValueEx", original_set)
+        restore_windows_registration(absent)
 
 
 @pytest.mark.skipif(

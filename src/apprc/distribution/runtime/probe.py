@@ -32,6 +32,7 @@ from apprc.distribution.runtime._leases import (
     authorized_runtime_quiescence,
 )
 from apprc.user_files.app_home.locations import assert_no_links
+from apprc.user_files.app_home.permissions import set_windows_private_acl
 from apprc.user_files.installation.codec import _encode
 from apprc.user_files.installation.coordination import installation_lock
 from apprc.user_files.installation.discovery import inspect_installation
@@ -65,7 +66,14 @@ def _private_request_file(
         tempfile.mkdtemp(prefix="apprc-request-", dir=temporary_parent)
     )
     try:
-        _assert_private_staging(temporary_root)
+        try:
+            if os.name == "nt":
+                set_windows_private_acl(temporary_root)
+            _assert_private_staging(temporary_root)
+        except Exception as error:
+            raise InstallationError(
+                f"Cannot prepare private bridge request directory {temporary_root}: {error}"
+            ) from error
         resolved = temporary_root.resolve()
         roots = (directory, *forbidden_roots)
         if any(

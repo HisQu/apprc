@@ -6,11 +6,12 @@ import os
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from zipfile import ZipFile
 
 import pytest
 
-from apprc.definition.installation import InstallationHooks
+from apprc.definition.installation import InstallationError, InstallationHooks
 from apprc.definition.paths import Paths
 from apprc.distribution.metadata import (
     read_distribution_spec,
@@ -18,6 +19,7 @@ from apprc.distribution.metadata import (
 )
 from apprc.distribution.models import AppCapabilities, DistributionSpec
 from apprc.distribution.project import build_project_snapshot
+from apprc.distribution import project as project_builder
 from apprc.distribution.runtime.acquisition import materialize_project_snapshot
 
 
@@ -88,6 +90,57 @@ def _committed_workspace(
         env=environment,
         check=True,
     )
+
+
+@pytest.mark.parametrize("acl_failure", [False, True, "native-error"])
+def test_project_export_secures_windows_staging_before_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    acl_failure: bool | str,
+) -> None:
+    repository = tmp_path / "workspace"
+    repository.mkdir()
+    _committed_workspace(repository)
+    spec = read_distribution_spec(repository / "apps" / "fixture")
+    staged: list[Path] = []
+    set_private_acl = project_builder.set_windows_private_acl
+
+    def private_acl(directory: Path) -> None:
+        staged.append(directory)
+        assert tuple(directory.iterdir()) == ()
+        if acl_failure == "native-error":
+            raise RuntimeError("ACL update denied by native API")
+        if acl_failure:
+            raise PermissionError(13, "ACL update denied", str(directory))
+        if os.name == "nt":
+            set_private_acl(directory)
+
+    monkeypatch.setattr(
+        project_builder, "os", SimpleNamespace(**{**vars(os), "name": "nt"})
+    )
+    monkeypatch.setattr(project_builder, "set_windows_private_acl", private_acl)
+    destination = tmp_path / "project.zip"
+    if acl_failure:
+        with pytest.raises(
+            InstallationError, match="private project staging directory"
+        ) as failure:
+            build_project_snapshot(
+                spec, revision="HEAD", destination=destination
+            )
+        assert "ACL update denied" in str(failure.value)
+        expected_error = (
+            RuntimeError if acl_failure == "native-error" else PermissionError
+        )
+        assert isinstance(failure.value.__cause__, expected_error)
+        assert not destination.exists()
+    else:
+        prepared = build_project_snapshot(
+            spec, revision="HEAD", destination=destination
+        )
+        with ZipFile(prepared.archive) as archive:
+            assert "uv.lock" in archive.namelist()
+    assert len(staged) == 1
+    assert not staged[0].exists()
 
 
 def test_builder_exports_virtual_root_and_nested_member_with_shared_lock(

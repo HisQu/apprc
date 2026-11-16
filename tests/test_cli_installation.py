@@ -9,6 +9,7 @@ import typer
 from typer.testing import CliRunner
 
 import apprc as rc
+from apprc.interfaces.cli.context import InstallationCommandContext
 from apprc.user_files.installation.discovery import installation_directory
 
 
@@ -602,3 +603,196 @@ def test_editable_environment_error_reports_paths_and_guidance_once(
         assert "running environment:" in message
         assert str(running) in message
     assert message.count("install -e` from the checkout.") == 1
+
+
+def _pending_editable_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[InstallationCommandContext, Path]:
+    """Capture a real failed registration for the current fixture checkout."""
+    import importlib.metadata
+    import os
+    import sys
+
+    from apprc.definition.installation import (
+        EditableCheckout,
+        InstallationDiagnostic,
+        InstallationPlacement,
+    )
+    from apprc.definition.resolution import CliRuntimeOptions
+    from apprc.distribution.metadata import read_distribution_spec
+    from apprc.interfaces.cli import installation_command
+    from apprc.services.installation import InstallationManager
+
+    checkout = tmp_path / "checkout"
+    prefix = checkout / ".venv"
+    binary = prefix / ("Scripts" if os.name == "nt" else "bin")
+    binary.mkdir(parents=True)
+    (binary / ("fixture.exe" if os.name == "nt" else "fixture")).touch()
+    (checkout / "pyproject.toml").write_text(
+        '[project]\nname="fixture"\nversion="1.0"\n'
+        '[project.scripts]\nfixture="fixture:main"\n',
+        encoding="utf-8",
+    )
+    metadata = tmp_path / "fixture-1.0.dist-info"
+    metadata.mkdir()
+    for name, content in {
+        "METADATA": "Metadata-Version: 2.1\nName: fixture\nVersion: 1.0\n",
+        "entry_points.txt": "[console_scripts]\nfixture = fixture:main\n",
+        "direct_url.json": json.dumps(
+            {"url": checkout.as_uri(), "dir_info": {"editable": True}}
+        ),
+    }.items():
+        (metadata / name).write_text(content, encoding="utf-8")
+    distribution = importlib.metadata.Distribution.at(metadata)
+    monkeypatch.setattr(
+        importlib.metadata,
+        "entry_points",
+        lambda **selection: distribution.entry_points.select(**selection),
+    )
+    monkeypatch.setattr(sys, "prefix", str(prefix))
+    monkeypatch.chdir(checkout)
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    uv = tmp_path / "uv"
+    uv.touch()
+    monkeypatch.setattr(
+        installation_command.shutil, "which", lambda *a, **k: str(uv)
+    )
+    manager = InstallationManager(
+        rc.AppRC(
+            app_id="fixture",
+            command_name="fixture",
+            paths=rc.Paths(config=True),
+        ).schema,
+        directory=tmp_path / "installation",
+        environment={"PATH": str(commands)},
+    )
+    spec = read_distribution_spec(checkout)
+    placement = InstallationPlacement(
+        rc.Layout.single_root(tmp_path / "saved-resources"),
+        config_dir=tmp_path / "saved-resources" / "config",
+        capabilities=frozenset({"config"}),
+    )
+    plan = manager.plan_install(
+        spec.metadata.identity,
+        EditableCheckout(checkout, prefix, spec.hooks),
+        placement,
+        command_name="fixture",
+    )
+    pending = manager.begin_operation(plan)
+    assert pending.revision is not None
+    failed = manager.fail_operation(
+        operation_id=plan.operation_id,
+        expected_revision=pending.revision,
+        diagnostic=InstallationDiagnostic(
+            "runtime-incomplete",
+            "Earlier staging ACL failure.",
+            "Retry installation.",
+        ),
+    )
+    context = InstallationCommandContext(
+        runtime_options=CliRuntimeOptions(),
+        cli_options=None,
+        environment=manager.environment,
+        inspection=failed,
+        manager=manager,
+    )
+    monkeypatch.setattr(installation_command, "_inspection", lambda _: context)
+    return context, commands
+
+
+@pytest.mark.parametrize("conflict", [None, "layout", "checkout"])
+def test_editable_retry_uses_only_exact_pending_placement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, conflict: str | None
+) -> None:
+    from dataclasses import replace
+
+    from apprc.definition.installation import EditableCheckout
+    from apprc.definition.resolution import CliRuntimeOptions
+    from apprc.distribution.runtime import installation
+    from apprc.interfaces.cli import installation_command
+    from typer.main import get_command
+
+    context, commands = _pending_editable_context(tmp_path, monkeypatch)
+    record = context.inspection.record
+    assert record is not None and record.operation is not None
+    intended = record.operation.intended
+    assert intended is not None and isinstance(
+        intended.runtime, EditableCheckout
+    )
+    if conflict == "layout":
+        context = replace(
+            context,
+            runtime_options=CliRuntimeOptions(layout=rc.Layout.native()),
+        )
+    elif conflict == "checkout":
+        operation = replace(
+            record.operation,
+            intended=replace(
+                intended,
+                runtime=replace(
+                    intended.runtime, project=tmp_path / "other-checkout"
+                ),
+            ),
+        )
+        context = replace(
+            context,
+            inspection=replace(
+                context.inspection, record=replace(record, operation=operation)
+            ),
+        )
+    monkeypatch.setattr(installation_command, "_inspection", lambda _: context)
+    observed = []
+
+    def register(manager, identity, runtime, placement, **kwargs):
+        observed.append((identity, runtime, placement))
+        return manager.inspect()
+
+    monkeypatch.setattr(installation, "register_editable_application", register)
+    ctx = typer.Context(get_command(_app(args=[])))
+    if conflict is not None:
+        with pytest.raises(
+            ValueError,
+            match="differs from captured|another operation or checkout",
+        ):
+            installation_command._register_editable(
+                ctx, command_directory=commands, assume_yes=False
+            )
+        assert observed == []
+    else:
+        result = installation_command._register_editable(
+            ctx, command_directory=commands, assume_yes=False
+        )
+        assert result == context.manager.inspect()
+        assert observed == [
+            (intended.identity, intended.runtime, record.operation.placement)
+        ]
+    assert context.manager.inspect().status == "incomplete"
+
+
+def test_editable_install_reports_rollback_notes_and_guidance_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apprc.distribution.runtime import installation
+
+    _context, commands = _pending_editable_context(tmp_path, monkeypatch)
+    outcome = "AppRC installation changes were rolled back."
+
+    def fail_registration(*args, **kwargs):
+        error = ValueError("controlled publication failure")
+        error.add_note(outcome)
+        raise error
+
+    monkeypatch.setattr(
+        installation, "register_editable_application", fail_registration
+    )
+    args = ["app", "install", "-e", "--command-directory", str(commands)]
+    result = CliRunner().invoke(_app(args=args), args, terminal_width=1000)
+    assert result.exit_code == 2, result.output
+    error = (
+        result.exception.__context__ if result.exception is not None else None
+    )
+    assert isinstance(error, typer.BadParameter), result.output
+    assert "controlled publication failure" in str(error)
+    assert str(error).count(outcome) == 1
+    assert str(error).count("install -e` from the checkout.") == 1

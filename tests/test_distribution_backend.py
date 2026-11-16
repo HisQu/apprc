@@ -635,3 +635,35 @@ def test_zero_resource_capabilities_do_not_offer_configuration_setup(
 
     assert not offered
     assert output.getvalue() == ""
+
+
+@pytest.mark.parametrize("link", [False, True])
+def test_command_ownership_accepts_prior_or_pending_image(
+    tmp_path: Path,
+    link: bool,
+) -> None:
+    """Pending publication can be current even when the prior digest comes first."""
+    if link and sys.platform == "win32":
+        pytest.skip("POSIX global command link semantics")
+    from apprc.distribution.runtime.installation import _check_owned_command
+
+    destination = tmp_path / "command"
+    if link:
+        destination.symlink_to(tmp_path / "target")
+        digest = _integration._link_digest(str(tmp_path / "target"))
+    else:
+        destination.write_bytes(b"pending")
+        digest = hashlib.sha256(b"pending").hexdigest()
+    previous = (
+        OwnedOutput("command", str(destination), "a" * 64),
+        OwnedOutput("command", str(destination), digest),
+    )
+    assert _integration._authorized_existing(destination, previous)
+    if link:
+        with pytest.raises(InstallationError, match="unsafe stable command"):
+            _check_owned_command(destination, previous)
+    else:
+        _check_owned_command(destination, previous)
+    foreign = (OwnedOutput("command", str(destination), "b" * 64),)
+    with pytest.raises(InstallationError, match="outside AppRC ownership"):
+        _integration._authorized_existing(destination, foreign)

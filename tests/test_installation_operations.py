@@ -37,6 +37,7 @@ from apprc.user_files.installation.operations import (
     plan_install,
     plan_migration,
     plan_repair,
+    plan_resume,
     plan_uninstall,
     record_owned_outputs,
     record_runtime_retired,
@@ -445,7 +446,7 @@ def test_failed_replacement_keeps_active_runtime_access_and_stale_writers_fail(
         validate_snapshot(stale_snapshot, app_id=_identity().app_id)
 
 
-def test_repair_resumes_exact_pending_candidate_without_reselecting_source(
+def test_explicit_resume_retains_exact_pending_candidate_without_reselecting_source(
     tmp_path: Path,
 ) -> None:
     directory, active = _install(tmp_path)
@@ -466,12 +467,15 @@ def test_repair_resumes_exact_pending_candidate_without_reselecting_source(
         ),
     )
     assert failed.record is not None
-    repair = plan_repair(
-        _identity(),
-        _candidate(source=active.source),
-        failed.record.placement,
-        inspection=failed,
-    )
+    with pytest.raises(InstallationError, match="plan_resume"):
+        plan_repair(
+            _identity(),
+            _candidate(source=active.source),
+            failed.record.placement,
+            inspection=failed,
+        )
+    repair = plan_resume(inspection=failed)
+    assert repair.kind == plan.kind
     assert repair.operation_id == plan.operation_id
     assert repair.target == plan.target
     resumed = begin_operation(repair)
@@ -847,3 +851,105 @@ def test_editable_unavailable_environment_preserves_filesystem_error(
     assert str(environment) in str(failure.value)
     assert isinstance(failure.value.__cause__, FileNotFoundError)
     assert not manager.directory.exists()
+
+
+@pytest.mark.parametrize(
+    ("kind", "editable"),
+    [
+        ("install", False),
+        ("install", True),
+        ("replace", False),
+        ("replace", True),
+        ("repair", False),
+    ],
+)
+def test_resume_preserves_saved_kind_target_and_checkpoints(
+    tmp_path: Path, kind: str, editable: bool
+) -> None:
+    """Managed and developer-owned candidates resume without new authority."""
+    placement = InstallationPlacement(Layout.native())
+    if kind == "install":
+        directory = tmp_path / "installation"
+    else:
+        directory, _active = _install(tmp_path)
+    before = inspect_installation(directory, app_id=_identity().app_id)
+    runtime = (
+        EditableCheckout(tmp_path / "checkout", tmp_path / "checkout" / ".venv")
+        if editable
+        else _candidate()
+    )
+    planned = (
+        plan_repair(_identity(), runtime, placement, inspection=before)
+        if kind == "repair"
+        else plan_install(_identity(), runtime, placement, inspection=before)
+    )
+    pending = begin_operation(planned)
+    assert pending.revision is not None
+    pending = record_step(
+        directory,
+        operation_id=planned.operation_id,
+        expected_revision=pending.revision,
+        step=OperationStep.SOURCE_VERIFIED,
+    )
+
+    resumed = plan_resume(inspection=pending)
+    assert resumed.kind == kind
+    assert resumed.target == planned.target
+    assert resumed.operation_id == planned.operation_id
+    assert resumed.generation_id == planned.generation_id
+    assert resumed.command_name == planned.command_name
+    assert begin_operation(resumed) == pending
+
+
+@pytest.mark.parametrize(
+    "changed",
+    ["kind", "operation_id", "generation_id", "command_name", "target"],
+)
+def test_resume_rejects_changed_plan_without_rewriting_pending_authority(
+    tmp_path: Path, changed: str
+) -> None:
+    directory = tmp_path / "installation"
+    before = inspect_installation(directory, app_id=_identity().app_id)
+    planned = plan_install(
+        _identity(),
+        _candidate(),
+        InstallationPlacement(Layout.native()),
+        inspection=before,
+    )
+    pending = begin_operation(planned)
+    resumed = plan_resume(inspection=pending)
+    changes = {
+        "kind": "repair",
+        "operation_id": uuid4(),
+        "generation_id": uuid4(),
+        "command_name": "another-command",
+        "target": replace(resumed.target, runtime=_candidate()),
+    }
+    changed_plan = replace(resumed, **{changed: changes[changed]})
+    with pytest.raises(InstallationError, match="changed after planning"):
+        begin_operation(changed_plan)
+    assert inspect_installation(directory, app_id=_identity().app_id) == pending
+
+
+def test_resume_rejects_ready_or_stale_authority(tmp_path: Path) -> None:
+    directory, _active = _install(tmp_path)
+    ready = inspect_installation(directory, app_id=_identity().app_id)
+    with pytest.raises(InstallationError, match="pending installation"):
+        plan_resume(inspection=ready)
+    planned = plan_install(
+        _identity(),
+        _candidate(),
+        InstallationPlacement(Layout.native()),
+        inspection=ready,
+    )
+    pending = begin_operation(planned)
+    assert pending.revision is not None
+    resumed = plan_resume(inspection=pending)
+    record_step(
+        directory,
+        operation_id=resumed.operation_id,
+        expected_revision=pending.revision,
+        step=OperationStep.SOURCE_VERIFIED,
+    )
+    with pytest.raises(InstallationError, match="changed after planning"):
+        begin_operation(resumed)

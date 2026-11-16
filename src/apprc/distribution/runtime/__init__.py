@@ -50,6 +50,7 @@ from apprc.user_files.installation.operations import (
     plan_install as plan_install,
     plan_migration as plan_migration,
     plan_repair as plan_repair,
+    plan_resume as plan_resume,
     record_runtime_retired as record_runtime_retired,
     record_step as record_step,
 )

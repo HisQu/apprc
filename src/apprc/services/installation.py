@@ -266,13 +266,19 @@ class InstallationManager:
             generation_id=generation_id,
         )
 
+    def plan_resume(self) -> InstallPlan:
+        """Plan resumption of the exact saved managed or editable candidate."""
+        from apprc.user_files.installation.operations import plan_resume
+
+        return plan_resume(inspection=self.inspect())
+
     def plan_repair(
         self,
         identity: InstallationIdentity,
         runtime: RuntimeSlot | EditableCheckout,
         placement: InstallationPlacement,
     ) -> InstallPlan:
-        """Plan repair by resuming or reconstructing the exact managed runtime."""
+        """Plan a new repair of the active managed runtime."""
         from apprc.user_files.installation.operations import plan_repair
 
         return plan_repair(

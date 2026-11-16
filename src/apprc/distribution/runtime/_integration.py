@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import apprc.utils as ut
+
 import hashlib
 import os
 import shutil
@@ -21,14 +23,6 @@ from apprc.user_files.app_home.locations import assert_no_links
 
 def _link_digest(target: str) -> str:
     return hashlib.sha256(os.fsencode(target)).hexdigest()
-
-
-def _bytes_digest(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(131072), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def validate_command_directory(
@@ -62,6 +56,20 @@ def validate_command_directory(
         )
 
 
+def command_is_owned(
+    destination: Path,
+    previous: tuple[OwnedOutput, ...],
+    digest: str,
+) -> bool:
+    """Match either prior or pending exact command bytes or link identity."""
+    return any(
+        item.kind == "command"
+        and item.path == str(destination)
+        and item.digest == digest
+        for item in previous
+    )
+
+
 def _authorized_existing(
     destination: Path,
     previous: tuple[OwnedOutput, ...],
@@ -77,20 +85,15 @@ def _authorized_existing(
         raise InstallationError(
             f"Refusing to replace an unowned command: {destination}."
         )
-    item = next(
-        item
-        for item in previous
-        if item.kind == "command" and item.path == str(destination)
-    )
     if stat.S_ISLNK(metadata.st_mode):
         actual = _link_digest(os.readlink(destination))
     elif stat.S_ISREG(metadata.st_mode):
-        actual = _bytes_digest(destination)
+        actual = ut.sha256_file(destination)
     else:
         raise InstallationError(
             "Recorded global command has an unsafe file type."
         )
-    if item.digest is None or actual != item.digest:
+    if not command_is_owned(destination, previous, actual):
         raise InstallationError(
             "Recorded global command changed outside AppRC ownership."
         )
@@ -135,7 +138,7 @@ def publish_global_command(
             if created_link:
                 temporary.unlink(missing_ok=True)
     else:
-        content_digest = _bytes_digest(source)
+        content_digest = ut.sha256_file(source)
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{command.name}.", suffix=".apprc-tmp", dir=parent
         )
@@ -170,7 +173,7 @@ def remove_owned_command(output: OwnedOutput) -> bool:
     if stat.S_ISLNK(metadata.st_mode):
         actual = _link_digest(os.readlink(destination))
     elif stat.S_ISREG(metadata.st_mode):
-        actual = _bytes_digest(destination)
+        actual = ut.sha256_file(destination)
     else:
         raise InstallationError("Owned global command has an unsafe file type.")
     if actual != output.digest:
@@ -546,7 +549,7 @@ def publish_shortcuts(
             if destination.exists() or destination.is_symlink():
                 metadata = destination.lstat()
                 actual = (
-                    _bytes_digest(destination)
+                    ut.sha256_file(destination)
                     if stat.S_ISREG(metadata.st_mode)
                     else None
                 )
@@ -592,7 +595,7 @@ def publish_shortcuts(
                 temporary.unlink(missing_ok=True)
             outputs.append(
                 OwnedOutput(
-                    "shortcut", str(destination), _bytes_digest(destination)
+                    "shortcut", str(destination), ut.sha256_file(destination)
                 )
             )
     except BaseException:

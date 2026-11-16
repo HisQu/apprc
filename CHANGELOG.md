@@ -53,6 +53,8 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+- Breaking: `InstallationManager.plan_repair()` now plans only a new managed-runtime repair. Call `plan_resume()` to resume an incomplete install, replacement, or repair; the saved operation ID, candidate, and operation kind remain unchanged.
+
 <br>
 
 ### ➕ Added
@@ -60,6 +62,8 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
+
+- Managed installation and repair share publication, registration, checkpoint, and activation handling while retaining distinct preparation and rollback evidence.
 
 <br>
 
@@ -72,6 +76,8 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+- A freshly rebuilt runtime candidate is no longer rebuilt again after a validation probe fails. Previously prepared candidates retain one recovery rebuild.
 
 <br>
 

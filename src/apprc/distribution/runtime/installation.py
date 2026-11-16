@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import apprc.utils as ut
+
 import contextvars
 import hashlib
 import json
@@ -38,6 +40,7 @@ from apprc.definition.installation import (
 from apprc.definition.paths import ResourceKind
 from apprc.distribution.runtime._integration import (
     capture_windows_registration,
+    command_is_owned,
     publish_global_command,
     publish_windows_registration,
     windows_registration_intent,
@@ -52,7 +55,6 @@ from apprc.distribution.runtime._leases import (
     try_retire_runtime_slot,
 )
 from apprc.distribution.runtime.acquisition import (
-    _sha256_file,
     materialize_project_snapshot,
 )
 from apprc.distribution.runtime.backend import (
@@ -167,13 +169,8 @@ def _check_owned_command(
         raise InstallationError(
             f"Refusing to replace unsafe stable command: {destination}."
         )
-    digest = _sha256_file(destination)
-    if not any(
-        item.kind == "command"
-        and item.path == str(destination)
-        and item.digest == digest
-        for item in previous
-    ):
+    digest = ut.sha256_file(destination)
+    if not command_is_owned(destination, previous, digest):
         raise InstallationError(
             f"Refusing to replace unowned stable command: {destination}."
         )
@@ -202,7 +199,7 @@ def _publish_stable_command(
             os.fsync(target.fileno())
         if os.name != "nt":
             temporary.chmod(0o700)
-        digest = _sha256_file(temporary)
+        digest = ut.sha256_file(temporary)
         os.replace(temporary, destination)
     finally:
         temporary.unlink(missing_ok=True)
@@ -394,7 +391,7 @@ def _publication_source(directory: Path, item: PublicationOutput) -> Path:
         )
     path = directory / item.intended.content
     assert_no_links(path)
-    if not path.is_file() or _sha256_file(path) != item.intended.digest:
+    if not path.is_file() or ut.sha256_file(path) != item.intended.digest:
         raise InstallationError(
             "Retained command publication bytes are unavailable or modified."
         )
@@ -432,12 +429,12 @@ def _ensure_command_publication(
                 image_path = manager.directory / image.content
                 assert_no_links(image_path)
                 if image_path.exists() and image_path.is_file():
-                    if _sha256_file(image_path) == image.digest:
+                    if ut.sha256_file(image_path) == image.digest:
                         continue
                 if candidate is None:
                     try:
                         if (
-                            _sha256_file(item.path) == image.digest
+                            ut.sha256_file(item.path) == image.digest
                             and item.path.is_file()
                         ):
                             candidate = item.path.read_bytes()
@@ -560,7 +557,7 @@ def _cleanup_publication_images(
         if (
             not path.is_file()
             or output.digest is None
-            or _sha256_file(path) != output.digest
+            or ut.sha256_file(path) != output.digest
         ):
             keep.append(output)
             continue
@@ -605,7 +602,7 @@ def _restore_pending_publication(
     if path.is_symlink():
         actual = hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
     elif path.is_file():
-        actual = _sha256_file(path)
+        actual = ut.sha256_file(path)
     else:
         return not path.exists() and intent.previous is None
     previous = intent.previous
@@ -1136,7 +1133,10 @@ def _failed_operation(
                 path = manager.directory / image.content
                 assert_no_links(path)
                 if path.exists():
-                    if not path.is_file() or _sha256_file(path) != image.digest:
+                    if (
+                        not path.is_file()
+                        or ut.sha256_file(path) != image.digest
+                    ):
                         raise InstallationError(
                             f"Publication recovery image changed: {path}."
                         )
@@ -1189,7 +1189,7 @@ def _snapshot_metadata(
     from apprc.distribution.metadata import read_project_metadata
 
     assert_no_links(archive)
-    if _sha256_file(archive) != runtime.source.digest:
+    if ut.sha256_file(archive) != runtime.source.digest:
         raise InstallationError("Retained project archive was modified.")
     selected = PurePosixPath(runtime.source.project_path)
     try:
@@ -1236,7 +1236,10 @@ def _snapshot_metadata(
 def _retained_archive(directory: Path, runtime: RuntimeSlot) -> Path:
     archive = directory / "runtimes" / str(runtime.slot_id) / "project.zip"
     assert_no_links(archive)
-    if not archive.is_file() or _sha256_file(archive) != runtime.source.digest:
+    if (
+        not archive.is_file()
+        or ut.sha256_file(archive) != runtime.source.digest
+    ):
         raise InstallationError(
             "Retained runtime project archive is unavailable or modified."
         )
@@ -1278,7 +1281,7 @@ def _restore_pending_candidate_archive(
     archive.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     assert_no_links(archive)
     if archive.exists():
-        if _sha256_file(archive) != runtime.source.digest:
+        if ut.sha256_file(archive) != runtime.source.digest:
             raise InstallationError(
                 "Exact pending candidate archive was modified."
             )
@@ -1288,6 +1291,164 @@ def _restore_pending_candidate_archive(
             stream.flush()
             os.fsync(stream.fileno())
     return archive
+
+
+def _install_managed_candidate(
+    manager: InstallationManager,
+    plan: InstallPlan,
+    prior: InstallationInspection,
+    runtime: RuntimeSlot,
+    *,
+    manager_executable: Path,
+    uv: Path,
+    archive: Path | None,
+    commands: tuple[tuple[Path, str | None], ...],
+) -> InstallationInspection:
+    """Prepare and activate one managed candidate under its lifecycle lock.
+
+    Callers select installation versus repair and exact command destinations.
+    This procedure owns publication, activation and their caught-failure evidence.
+
+    :param manager: Installation whose lifecycle lock is held by the caller.
+    :param plan: Fresh or exact resumed installation plan.
+    :param prior: Authority before beginning this attempt.
+    :param runtime: Exact managed candidate.
+    :param manager_executable: Authenticated native command to publish.
+    :param uv: Manager-owned runtime preparation executable.
+    :param archive: Setup snapshot, or ``None`` to recover the repair snapshot.
+    :param commands: Global command destinations and optional link targets.
+    :return: Activated installation, including deferred housekeeping.
+    """
+    directory = manager.directory
+    stable = directory / _command_filename(plan.command_name)
+    previous = prior.record
+    prior_outputs = previous.owned_outputs if previous is not None else ()
+    resources = _resource_snapshot(plan.target.placement)
+    candidate_existed = (directory / "runtimes" / str(runtime.slot_id)).exists()
+    registry: WindowsRegistrationSnapshot | None = None
+    activation_started = False
+    try:
+        current = manager.begin_operation(plan)
+        if current.revision is None:
+            raise InstallationError(
+                "Pending managed installation has no revision."
+            )
+        if archive is None:
+            candidate_archive = (
+                directory / "runtimes" / str(runtime.slot_id) / "project.zip"
+            )
+            if previous is not None and previous.operation is not None:
+                archive = (
+                    _retained_archive(directory, runtime)
+                    if candidate_archive.exists()
+                    else _restore_pending_candidate_archive(
+                        manager, runtime, manager_executable
+                    )
+                )
+            elif previous is not None and isinstance(
+                previous.active_runtime, RuntimeSlot
+            ):
+                archive = _retained_archive(directory, previous.active_runtime)
+            else:
+                raise InstallationError(
+                    "Managed repair requires an active or pending runtime."
+                )
+        pending = _existing_publication(manager)
+        _check_owned_command(
+            stable, (*prior_outputs, *_publication_authorized_outputs(pending))
+        )
+        observed, revision = _prepare_candidate(
+            manager,
+            plan,
+            runtime,
+            archive,
+            uv,
+            environment=manager.environment,
+            manager_executable=manager_executable,
+        )
+        content = manager_executable.read_bytes()
+        publication_specs = (
+            (stable, content, None),
+            *(
+                (path, None if target is not None else content, target)
+                for path, target in commands
+            ),
+        )
+        publication, revision = _ensure_command_publication(
+            manager, plan.operation_id, revision, publication_specs
+        )
+        authority = (
+            *prior_outputs,
+            *_publication_authorized_outputs(publication),
+        )
+        outputs = [
+            _publish_stable_command(
+                stable,
+                _publication_source(directory, publication[0]),
+                previous=authority,
+            )
+        ]
+        for item in publication[1:]:
+            source = (
+                Path(item.intended.link_target)
+                if item.intended.link_target is not None
+                else _publication_source(directory, item)
+            )
+            outputs.append(
+                publish_global_command(item.path, source, previous=authority)
+            )
+        registration, revision = _ensure_registration_intent(
+            manager,
+            plan.operation_id,
+            revision,
+            plan.target.identity,
+            stable,
+            prior_outputs,
+        )
+        if registration is not None:
+            registry = capture_windows_registration(registration)
+        windows_output = publish_windows_registration(
+            directory,
+            plan.target.identity,
+            stable,
+            previous=(
+                *prior_outputs,
+                *((registration,) if registration is not None else ()),
+            ),
+            maintenance_group_name=_MAINTENANCE_GROUP.get(),
+        )
+        if windows_output is not None:
+            outputs.append(windows_output)
+        paths = {item.path for item in outputs}
+        outputs.extend(item for item in prior_outputs if item.path not in paths)
+        for step in (
+            OperationStep.SUPPORT_READY,
+            OperationStep.REGISTRATION_READY,
+        ):
+            current = _checkpoint(manager, plan.operation_id, revision, step)
+            revision = current.revision or ""
+        activation_started = True
+        result = manager.commit_install(
+            operation_id=plan.operation_id,
+            expected_revision=revision,
+            observed=observed,
+            owned_outputs=tuple(outputs),
+        )
+        return _finish_installation(manager, result)
+    except BaseException as error:
+        committed = _failed_operation(
+            manager,
+            plan,
+            prior,
+            error,
+            resources=resources,
+            registry=registry,
+            candidate_existed=candidate_existed,
+            activation_started=activation_started,
+        )
+        if committed is not None:
+            return committed
+        raise
 
 
 def _repair_managed_application(
@@ -1322,16 +1483,7 @@ def _repair_managed_application(
                     "No managed candidate is available to resume."
                 )
             runtime = intended.runtime
-            plan = InstallPlan(
-                directory,
-                prior.revision,
-                record.generation_id,
-                intended,
-                record.operation.operation_id,
-                record.generation_id,
-                "repair",
-                record.command_name,
-            )
+            plan = manager.plan_resume()
         else:
             active = record.active_runtime
             if not isinstance(active, RuntimeSlot):
@@ -1344,161 +1496,20 @@ def _repair_managed_application(
             plan = manager.plan_repair(
                 record.identity, runtime, record.placement
             )
-        resources = _resource_snapshot(plan.target.placement)
-        candidate_existed = (
-            directory / "runtimes" / str(runtime.slot_id)
-        ).exists()
-        registry: WindowsRegistrationSnapshot | None = None
-        activation_started = False
-        try:
-            current = manager.begin_operation(plan)
-            if current.revision is None:
-                raise InstallationError(
-                    "Managed repair has no authority revision."
-                )
-            if record.operation is not None:
-                candidate_archive = (
-                    directory
-                    / "runtimes"
-                    / str(runtime.slot_id)
-                    / "project.zip"
-                )
-                archive = (
-                    _retained_archive(directory, runtime)
-                    if candidate_archive.exists()
-                    else _restore_pending_candidate_archive(
-                        manager, runtime, manager_executable
-                    )
-                )
-            else:
-                archive = _retained_archive(directory, active)
-            prior_outputs = record.owned_outputs
-            pending_publication = _existing_publication(manager)
-            _check_owned_command(
-                stable,
-                (
-                    *prior_outputs,
-                    *_publication_authorized_outputs(pending_publication),
-                ),
-            )
-            observed, revision = _prepare_candidate(
-                manager,
-                plan,
-                runtime,
-                archive,
-                uv,
-                environment=manager.environment,
-                manager_executable=manager_executable,
-            )
-            publication_specs: list[tuple[Path, bytes | None, str | None]] = [
-                (stable, manager_executable.read_bytes(), None)
-            ]
-            publication_specs.extend(
-                (
-                    item.path,
-                    (
-                        None
-                        if item.intended.link_target is not None
-                        else manager_executable.read_bytes()
-                    ),
-                    item.intended.link_target,
-                )
-                for item in pending_publication
+        return _install_managed_candidate(
+            manager,
+            plan,
+            prior,
+            runtime,
+            manager_executable=manager_executable,
+            uv=uv,
+            archive=None,
+            commands=tuple(
+                (item.path, item.intended.link_target)
+                for item in _existing_publication(manager)
                 if item.path != stable
-            )
-            pending_publication, revision = _ensure_command_publication(
-                manager,
-                plan.operation_id,
-                revision,
-                tuple(publication_specs),
-            )
-            publication_authority = _publication_authorized_outputs(
-                pending_publication
-            )
-            published = _publish_stable_command(
-                stable,
-                _publication_source(directory, pending_publication[0]),
-                previous=(*prior_outputs, *publication_authority),
-            )
-            outputs = [published]
-            for item in pending_publication[1:]:
-                if item.intended.link_target is not None:
-                    output = publish_global_command(
-                        item.path,
-                        Path(item.intended.link_target),
-                        previous=(*prior_outputs, *publication_authority),
-                    )
-                else:
-                    output = publish_global_command(
-                        item.path,
-                        _publication_source(directory, item),
-                        previous=(*prior_outputs, *publication_authority),
-                    )
-                outputs.append(output)
-            registration_intent, revision = _ensure_registration_intent(
-                manager,
-                plan.operation_id,
-                revision,
-                record.identity,
-                stable,
-                prior_outputs,
-            )
-            if registration_intent is not None:
-                registry = capture_windows_registration(registration_intent)
-            windows_output = publish_windows_registration(
-                directory,
-                record.identity,
-                stable,
-                previous=(
-                    *prior_outputs,
-                    *(
-                        (registration_intent,)
-                        if registration_intent is not None
-                        else ()
-                    ),
-                ),
-                maintenance_group_name=_MAINTENANCE_GROUP.get(),
-            )
-            if windows_output is not None:
-                outputs.append(windows_output)
-            output_paths = {item.path for item in outputs}
-            outputs.extend(
-                item for item in prior_outputs if item.path not in output_paths
-            )
-            current = _checkpoint(
-                manager,
-                plan.operation_id,
-                revision,
-                OperationStep.SUPPORT_READY,
-            )
-            current = _checkpoint(
-                manager,
-                plan.operation_id,
-                current.revision or "",
-                OperationStep.REGISTRATION_READY,
-            )
-            activation_started = True
-            result = manager.commit_install(
-                operation_id=plan.operation_id,
-                expected_revision=current.revision or "",
-                observed=observed,
-                owned_outputs=tuple(outputs),
-            )
-            return _finish_installation(manager, result)
-        except BaseException as error:
-            committed = _failed_operation(
-                manager,
-                plan,
-                prior,
-                error,
-                resources=resources,
-                registry=registry,
-                candidate_existed=candidate_existed,
-                activation_started=activation_started,
-            )
-            if committed is not None:
-                return committed
-            raise
+            ),
+        )
 
 
 def _rebuild_candidate_runtime(
@@ -1571,13 +1582,13 @@ def _prepare_candidate(
     archive_path = slot_directory / "project.zip"
     assert_no_links(archive_path)
     if archive_path.exists():
-        if _sha256_file(archive_path) != runtime.source.digest:
+        if ut.sha256_file(archive_path) != runtime.source.digest:
             raise InstallationError(
                 "Retained candidate project archive was modified."
             )
     else:
         assert_no_links(archive)
-        if _sha256_file(archive) != runtime.source.digest:
+        if ut.sha256_file(archive) != runtime.source.digest:
             raise InstallationError(
                 "Setup project archive differs from the runtime binding."
             )
@@ -1589,6 +1600,7 @@ def _prepare_candidate(
     source_root = slot_directory / "source"
     environment_path = slot_directory / ".venv"
     expected_version = _snapshot_metadata(archive_path, runtime, identity)
+    rebuilt = False
     if OperationStep.RUNTIME_PREPARED not in steps:
         _rebuild_candidate_runtime(
             slot_directory,
@@ -1599,6 +1611,7 @@ def _prepare_candidate(
             uv,
             environment,
         )
+        rebuilt = True
         current = _checkpoint(
             manager, operation_id, revision, OperationStep.SOURCE_VERIFIED
         )
@@ -1617,6 +1630,7 @@ def _prepare_candidate(
             uv,
             environment,
         )
+        rebuilt = True
     inspection = manager.inspect()
     revision = inspection.revision or revision
     try:
@@ -1630,6 +1644,8 @@ def _prepare_candidate(
             expected_revision=revision,
         )
     except InstallationError:
+        if rebuilt:
+            raise
         _rebuild_candidate_runtime(
             slot_directory,
             archive_path,
@@ -1778,155 +1794,34 @@ def install_application(
                 directory / "runtimes" / str(runtime.slot_id) / "project.zip"
             )
             if pending_archive.is_file():
-                if _sha256_file(pending_archive) != runtime.source.digest:
+                if ut.sha256_file(pending_archive) != runtime.source.digest:
                     raise InstallationError(
                         "Exact pending candidate archive was modified."
                     )
                 project_archive = pending_archive
-            elif _sha256_file(project_archive) != runtime.source.digest:
+            elif ut.sha256_file(project_archive) != runtime.source.digest:
                 raise InstallationError(
                     "Setup project snapshot differs from the exact pending candidate."
                 )
-            plan = InstallPlan(
-                directory,
-                prior.revision or "",
-                previous.generation_id,
-                intended,
-                previous.operation.operation_id,
-                previous.generation_id,
-                "repair",
-                previous.command_name,
-            )
+            plan = manager.plan_resume()
         else:
             plan = manager.plan_install(
                 identity, runtime, placement, command_name=command_name
             )
-        operation_id = plan.operation_id
-        resources = _resource_snapshot(plan.target.placement)
-        candidate_existed = (
-            directory / "runtimes" / str(runtime.slot_id)
-        ).exists()
-        registry: WindowsRegistrationSnapshot | None = None
-        activation_started = False
-        try:
-            current = manager.begin_operation(plan)
-            if current.revision is None:
-                raise InstallationError(
-                    "Pending managed installation has no revision."
-                )
-            observed, revision = _prepare_candidate(
-                manager,
-                plan,
-                runtime,
-                project_archive,
-                uv,
-                environment=environment,
-                manager_executable=manager_executable,
+        return _install_managed_candidate(
+            manager,
+            plan,
+            prior,
+            runtime,
+            manager_executable=manager_executable,
+            uv=uv,
+            archive=project_archive,
+            commands=(
+                (global_command, str(stable) if os.name != "nt" else None),
             )
-            publication_specs: tuple[
-                tuple[Path, bytes | None, str | None], ...
-            ] = ((stable, manager_executable.read_bytes(), None),)
-            if global_command is not None:
-                publication_specs += (
-                    (global_command, None, str(stable))
-                    if os.name != "nt"
-                    else (
-                        global_command,
-                        manager_executable.read_bytes(),
-                        None,
-                    ),
-                )
-            pending_publication, revision = _ensure_command_publication(
-                manager, operation_id, revision, publication_specs
-            )
-            publication_authority = _publication_authorized_outputs(
-                pending_publication
-            )
-            stable_output = _publish_stable_command(
-                stable,
-                _publication_source(directory, pending_publication[0]),
-                previous=(*prior_outputs, *publication_authority),
-            )
-            outputs = [stable_output]
-            if global_command is not None:
-                if len(pending_publication) < 2:
-                    raise InstallationError(
-                        "Pending global command publication is missing."
-                    )
-                if pending_publication[1].intended.link_target is not None:
-                    global_output = publish_global_command(
-                        global_command,
-                        stable,
-                        previous=(*prior_outputs, *publication_authority),
-                    )
-                else:
-                    global_output = publish_global_command(
-                        global_command,
-                        _publication_source(directory, pending_publication[1]),
-                        previous=(*prior_outputs, *publication_authority),
-                    )
-                outputs.append(global_output)
-            registration_intent, revision = _ensure_registration_intent(
-                manager, operation_id, revision, identity, stable, prior_outputs
-            )
-            if registration_intent is not None:
-                registry = capture_windows_registration(registration_intent)
-            windows_output = publish_windows_registration(
-                directory,
-                identity,
-                stable,
-                previous=(
-                    *prior_outputs,
-                    *(
-                        (registration_intent,)
-                        if registration_intent is not None
-                        else ()
-                    ),
-                ),
-                maintenance_group_name=_MAINTENANCE_GROUP.get(),
-            )
-            if windows_output is not None:
-                outputs.append(windows_output)
-            output_paths = {item.path for item in outputs}
-            outputs.extend(
-                item for item in prior_outputs if item.path not in output_paths
-            )
-            current = _checkpoint(
-                manager,
-                operation_id,
-                revision,
-                OperationStep.SUPPORT_READY,
-            )
-            revision = current.revision or ""
-            current = _checkpoint(
-                manager,
-                operation_id,
-                revision,
-                OperationStep.REGISTRATION_READY,
-            )
-            revision = current.revision or ""
-            activation_started = True
-            result = manager.commit_install(
-                operation_id=operation_id,
-                expected_revision=revision,
-                observed=observed,
-                owned_outputs=tuple(outputs),
-            )
-            return _finish_installation(manager, result)
-        except BaseException as error:
-            committed = _failed_operation(
-                manager,
-                plan,
-                prior,
-                error,
-                resources=resources,
-                registry=registry,
-                candidate_existed=candidate_existed,
-                activation_started=activation_started,
-            )
-            if committed is not None:
-                return committed
-            raise
+            if global_command is not None
+            else (),
+        )
 
 
 def _editable_command_directory(
@@ -2087,16 +1982,7 @@ def register_editable_application(
                 )
             # > Resume registration authority, not the developer-owned environment
             # > repair that the public managed-runtime planner deliberately rejects.
-            plan = InstallPlan(
-                directory=manager.directory,
-                expected_revision=prior.revision,
-                expected_generation=previous.generation_id,
-                target=intended,
-                operation_id=operation.operation_id,
-                generation_id=previous.generation_id,
-                kind="repair",
-                command_name=previous.command_name,
-            )
+            plan = manager.plan_resume()
         else:
             plan = manager.plan_install(
                 identity, runtime, placement, command_name=command_name

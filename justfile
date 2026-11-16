@@ -19,6 +19,8 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # > Include PyPI in normal tag releases. Keep this policy in version control.
 RELEASE_PYPI := "true"
+# Hosted CI is advisory during allowance outages; local tests remain required.
+RELEASE_REQUIRE_CI := "false"
 
 # Run `just` with no recipe to list tasks
 default:

@@ -27,7 +27,8 @@ from apprc.user_files.app_home.permissions import (
     windows_acl_is_private,
 )
 
-UV_VERSION = "0.13.6"
+UV_MIN_VERSION = "0.11.6"
+UV_REQUIREMENT = f"uv>={UV_MIN_VERSION}"
 PYAPP_VERSION = "0.31.0"
 PYAPP_SOURCE_SHA256 = (
     "16bc883dd936584eef8d0d838feef3e839c340f201f36cc05eb810f29df92c22"
@@ -242,7 +243,7 @@ class NativeFrontendBuilder:
             "pyapp_source_sha256": PYAPP_SOURCE_SHA256,
             "python_version": python_version,
             "management_requirements": (),
-            "uv_version": UV_VERSION,
+            "uv_requirement": UV_REQUIREMENT,
             "pip_extra_args": pip_extra_args,
         }
         digest = hashlib.sha256(
@@ -427,16 +428,16 @@ class NativeFrontendBuilder:
             for line in requirement_lines
             if re.match(r"(?i)^uv(?:\[|[<=>!~; ]|$)", line)
         ]
-        if uv_lines != [f"uv=={UV_VERSION}"]:
+        if uv_lines != [UV_REQUIREMENT]:
             raise ValueError(
-                "Native SDK archive must contain exactly one pinned uv requirement."
+                "Native SDK archive must contain exactly one supported uv requirement."
             )
         bootstrap_inputs = {
             "pyapp_version": PYAPP_VERSION,
             "pyapp_source_sha256": PYAPP_SOURCE_SHA256,
             "python_version": self._python_version,
             "requirements": requirement_lines,
-            "uv_version": UV_VERSION,
+            "uv_requirement": UV_REQUIREMENT,
             "pip_extra_args": self._pip_extra_args,
         }
         digest = hashlib.sha256(

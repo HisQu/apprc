@@ -78,7 +78,7 @@ def test_sdk_archive_contains_exact_binding_snapshot_and_sdk_metadata(
         requirements = (
             sdk.read("bootstrap-requirements.txt").decode().splitlines()
         )
-        assert sum(line.startswith("uv==") for line in requirements) == 1
+        assert sum(line.startswith("uv>=") for line in requirements) == 1
         assert not any(name.endswith("fixture_app.py") for name in names)
 
 

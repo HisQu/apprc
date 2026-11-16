@@ -26,7 +26,8 @@ from apprc.distribution.models import (
     encode_native_binding,
 )
 from apprc.distribution.native import (
-    UV_VERSION,
+    UV_MIN_VERSION,
+    UV_REQUIREMENT,
     NativeArtifact,
     NativeFrontendBuilder,
     NativeTarget,
@@ -225,7 +226,7 @@ def _sdk_archive(
     entries["binding.json"] = encode_native_binding(binding)
     entries["project.zip"] = project_bytes
     entries["bootstrap-requirements.txt"] = (
-        "\n".join((*requirements, f"uv=={UV_VERSION}")) + "\n"
+        "\n".join((*requirements, UV_REQUIREMENT)) + "\n"
     ).encode()
     return _deterministic_zip(entries.items())
 
@@ -414,10 +415,19 @@ def build_native_distribution(
     uv_version = subprocess.run(
         (str(uv), "--version"), check=False, capture_output=True, text=True
     )
-    if uv_version.returncode != 0 or not uv_version.stdout.strip().startswith(
-        f"uv {UV_VERSION}"
+    match = re.match(
+        r"^uv (\d+)\.(\d+)\.(\d+)(?:\s|$)", uv_version.stdout.strip()
+    )
+    minimum = tuple(int(part) for part in UV_MIN_VERSION.split("."))
+    if (
+        uv_version.returncode != 0
+        or match is None
+        or tuple(int(part) for part in match.groups()) < minimum
     ):
-        raise ValueError(f"Native authoring requires uv {UV_VERSION}.")
+        raise ValueError(
+            f"Native authoring requires {UV_REQUIREMENT}; "
+            f"found {uv_version.stdout.strip()!r}."
+        )
     if (
         not project.archive.is_file()
         or hashlib.sha256(project.archive.read_bytes()).hexdigest()

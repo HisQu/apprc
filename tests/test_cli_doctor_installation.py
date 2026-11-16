@@ -30,7 +30,7 @@ from apprc.interfaces.cli.context import (
     _cli_runtime_options_payload,
     resolve_cli_options,
 )
-from apprc.interfaces.cli.maintenance_command import (
+from apprc.interfaces.cli.diagnostics.application import (
     application_diagnostics_scope,
 )
 from apprc.user_files.app_home.permissions import (

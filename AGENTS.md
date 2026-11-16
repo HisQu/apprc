@@ -13,6 +13,7 @@
 - An active pass's `TODO.md` checklist belongs beside its `PLAN.md`, not in the durable backlog.
 
 ## Project rules
+- Keep install wizard prompts, completion text, verification commands, and next steps current whenever CLI commands, configuration, or installation behavior changes. Verify suggested commands against the mounted CLI; AppRC owns shared wizard/help text, and the host app owns its supplied next step. Follow the developer policy in [Development](docs/Development.md#lightweight-cli-startup).
 - Do not duplicate helpers or re-implement existing utilities without checking first.
 - Import `apprc`-owned utility helpers through the facade: `import apprc.utils as ut`.
 - AppRC production code must use stdlib `logging`; semantic logging helpers

@@ -1002,7 +1002,11 @@ The registered global `demo` command uses that repository environment even when
 another environment is active. Its command directory must already be on PATH;
 `--command-directory PATH` can select another safe existing directory without
 editing shell profiles. Unknown command collisions are errors, not replacements.
-Use `--skip-setup` to skip only the optional post-Ready configuration offer.
+At the end, AppRC offers `config setup` only when active, editable user settings
+are required, have no fallback, and remain missing after configuration resolution.
+Workspace-only and already supplied settings do not trigger the offer.
+Non-interactive installation skips it; `--skip-setup` explicitly skips it too.
+Declining or failing optional setup does not undo successful registration.
 
 Caught failures before activation restore AppRC's installation changes: prior
 registration and commands remain selected, and a failed first registration

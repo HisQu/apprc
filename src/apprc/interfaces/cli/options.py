@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, TypeAlias
+from typing import TYPE_CHECKING, Annotated, TypeAlias
 
 # == 3rd Party ===============================
 import typer
@@ -107,3 +107,27 @@ LogLevelOption: TypeAlias = Annotated[
         ),
     ),
 ]
+
+
+if TYPE_CHECKING:
+    import argparse
+
+
+def native_runtime_parser() -> argparse.ArgumentParser:
+    """Declare native selectors once for root capture and install validation.
+
+    :return: Parser usable as a parent without consuming installer arguments.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--env-file", action="append", type=Path)
+    parser.add_argument(
+        "--env-file-overrides-os-environ", "-o", action="store_true"
+    )
+    parser.add_argument("--skip-dotenv-layers", "-s", action="store_true")
+    parser.add_argument("--workspace")
+    parser.add_argument("--layout")
+    parser.add_argument("--app-root", type=Path)
+    parser.add_argument("--log-level")
+    return parser

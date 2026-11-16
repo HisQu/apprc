@@ -404,7 +404,7 @@ def test_verbose_doctor_skips_provider_for_unsafe_root(
             raise ValueError("overlapping roots")
 
         monkeypatch.setattr(
-            "apprc.interfaces.cli.maintenance_command.validate_category_root_boundaries",
+            "apprc.interfaces.cli.diagnostics.application.validate_category_root_boundaries",
             fail_boundary,
         )
 

@@ -31,6 +31,7 @@ class ConfigGroupOptions:
     :param setup_message: Optional setup text when the config directory is absent.
     :param runtime_error_param_hint: Parameter hint for runtime-payload
         validation errors.
+    :param maintenance_group_name: Mounted maintenance group used in guidance.
     :param config_group_name: Config command group name used in generated
         guidance.
     """
@@ -48,3 +49,4 @@ class ConfigGroupOptions:
     setup_message: str | None = None
     runtime_error_param_hint: str = "CONFIG"
     config_group_name: str = "config"
+    maintenance_group_name: str = "app"

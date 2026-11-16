@@ -563,6 +563,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
             handlers=handlers,
             maintenance_help_panel=maintenance_help_panel,
             maintenance_group_name=self.maintenance_group_name,
+            config_group_name=self.config_group_name,
             installation_management=installation_management,
             installer_entrypoint=installer_entrypoint,
             host_diagnostics=host_diagnostics,
@@ -586,6 +587,7 @@ class CliRuntime(Generic[OptionsT, StateT]):
                 setup_message=self.setup_message,
                 runtime_error_param_hint=self.runtime_error_param_hint,
                 config_group_name=self.config_group_name,
+                maintenance_group_name=self.maintenance_group_name,
             )
             staging.add_typer(
                 config_app,

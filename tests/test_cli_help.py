@@ -324,3 +324,47 @@ def test_root_help_does_not_run_callbacks_or_change_parsing() -> None:
     assert calls == []
     assert runner.invoke(app, ["--required", "value", "serve"]).exit_code == 0
     assert calls == ["value", "serve"]
+
+
+@pytest.mark.parametrize("registry", [True, False])
+def test_generated_parameters_have_help(registry: bool) -> None:
+    """Every SDK-generated option and argument explains itself to host users."""
+    import apprc as rc
+    from typer.core import TyperGroup
+    from typer.main import get_command
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Help must not invoke application maintenance")
+
+    operation = rc.RemovalOperation(plan=unexpected, apply=unexpected)
+    app = typer.Typer()
+    rc.cli.mount_app_cli(
+        app,
+        rc.AppRC(
+            app_id="help-coverage",
+            paths=rc.Paths(config=True, appdata=True, cache=True, state=True),
+            user_dotenv=rc.UserDotenv(),
+            workspaces=rc.Workspaces(registry=registry),
+        ),
+        installation_management=True,
+        handlers=rc.MaintenanceHandlers(
+            appdata=rc.AppDataOperations(backup=unexpected, restore=unexpected),
+            cache=rc.CacheOperations(prune=operation, clear=operation),
+            state=rc.StateOperations(prune=operation, reset=operation),
+        ),
+    )
+    runner = CliRunner()
+
+    def check(command, path: list[str]) -> None:
+        result = runner.invoke(app, [*path, "--help"])
+        assert result.exit_code == 0, result.output
+        for parameter in command.params:
+            assert parameter.help and parameter.help.strip(), (
+                path,
+                parameter.name,
+            )
+        if isinstance(command, TyperGroup):
+            for name, child in command.commands.items():
+                check(child, [*path, name])
+
+    check(get_command(app), [])

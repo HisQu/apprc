@@ -2115,9 +2115,19 @@ def offer_configuration_setup(
     inspection: InstallationInspection,
     *,
     skip: bool,
+    config_group_name: str = "config",
     input_stream: TextIO | None = None,
 ) -> bool:
-    """Offer the primary runtime's optional config setup after Ready."""
+    """Dispatch conditional configuration setup through the ready runtime.
+
+    The application runtime owns field eligibility and user confirmation.
+    Skipped and noninteractive invocations do not launch another process.
+
+    :param inspection: Captured ready installation authority.
+    :param skip: Whether the caller explicitly skipped optional setup.
+    :param input_stream: Input whose terminal capability controls dispatch.
+    :return: Whether the conditional setup command completed successfully.
+    """
     record = inspection.require_usable()
     if record is None or record.active_runtime is None:
         raise InstallationError(
@@ -2125,22 +2135,10 @@ def offer_configuration_setup(
         )
     if "config" not in record.placement.capabilities:
         return False
-    command_name = record.command_name
-    guidance = (
-        f"Run `{command_name} config setup` to configure the application."
-    )
-    if skip:
-        print(guidance)
-        return False
     stream = input_stream if input_stream is not None else sys.stdin
-    if not stream.isatty():
-        print(guidance)
+    if skip or not stream.isatty():
         return False
-    print(f"Run `{command_name} config setup` now? [y/N]")
-    answer = input_stream.readline() if input_stream is not None else input()
-    if answer.strip().lower() not in {"y", "yes"}:
-        print(guidance)
-        return False
+    command_name = record.command_name
     directory = inspection.directory
     with installation_lock(directory):
         latest = inspect_installation(directory, app_id=record.identity.app_id)
@@ -2148,7 +2146,6 @@ def offer_configuration_setup(
             latest.record is None
             or latest.record.active_runtime != record.active_runtime
         ):
-            print(guidance)
             return False
         lease: RuntimeLease | None = None
         if isinstance(record.active_runtime, RuntimeSlot):
@@ -2175,13 +2172,12 @@ def offer_configuration_setup(
     environment["PATH"] = binary + os.pathsep + environment.get("PATH", "")
     try:
         subprocess.run(
-            [str(command), "config", "setup"],
+            [str(command), config_group_name, "setup", "--offer-missing"],
             env=environment,
             check=True,
             **spawn_options,
         )
     except (OSError, subprocess.CalledProcessError):
-        print(guidance)
         return False
     finally:
         if lease is not None:

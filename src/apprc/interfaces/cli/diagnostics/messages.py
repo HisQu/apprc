@@ -28,15 +28,17 @@ def config_setup_message(
     apprc: "AppRC",
     *,
     config_group_name: str = "config",
+    maintenance_group_name: str = "app",
 ) -> str:
     """Return read-only guidance when a required configuration is absent.
 
     :param apprc: Application declaration.
     :param config_group_name: Mounted config command name.
+    :param maintenance_group_name: Mounted maintenance group used in guidance.
     :return: Human-readable inspection and setup commands.
     """
-    inspect = config_command_text(
-        apprc, "doctor", config_group_name=config_group_name
+    inspect = (
+        f"{apprc.schema.config_command_name()} {maintenance_group_name} doctor"
     )
     if apprc.schema.uses_user_dotenv():
         return (

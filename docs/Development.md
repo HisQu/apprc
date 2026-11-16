@@ -200,6 +200,20 @@ actually launches an editor or enters an interactive prompt. Use the existing
 lazy facade mechanism and matching typing stubs; inspect every parent package's
 `__init__.py`, because an eager ancestor defeats a lazy public facade.
 
+Keep installation wizard prompts, completion text, verification commands,
+and next steps aligned with the current mounted CLI whenever commands,
+configuration, or installation behavior changes. AppRC owns shared wizard text
+and descriptions for its generated CLI options; host applications supply their
+application-specific next step. Verify the suggested commands against mounted
+help and exercise setup completion in the existing tests, including configured
+command-group names.
+
+Post-install configuration is offered only for active, editable required user
+settings without fallbacks that remain missing in the captured configuration.
+Use the existing setup implementation; non-interactive input and explicit skips
+must not prompt. Diagnostic aggregation belongs in `interfaces/cli/diagnostics/`,
+separate from command declarations.
+
 Host applications own the same boundary for their callbacks: register a small
 function that imports database, browser, or provider code inside its body.
 Avoid importing a workflow store or cache implementation merely to construct

@@ -312,6 +312,39 @@ def _migration_bridge(
     return invoke
 
 
+def _editable_source_path(url: str) -> Path:
+    """Decode an editable file URL without dropping a network authority.
+
+    :param url: Installed distribution's direct source URL.
+    :return: Absolute source path in the current platform's filesystem.
+    """
+    parsed = urlsplit(url)
+    if parsed.scheme != "file" or parsed.query or parsed.fragment:
+        raise ValueError(
+            "Editable source must be a file URL without query or fragment."
+        )
+    path = parsed.path
+    if parsed.netloc and parsed.netloc.lower() != "localhost":
+        if os.name != "nt":
+            raise ValueError(
+                f"Cannot convert editable source URL {url!r} to a local "
+                "filesystem path on this platform. Use the network share's "
+                "mounted local path."
+            )
+        path = f"//{parsed.netloc}{path}"
+    try:
+        source = Path(url2pathname(path))
+    except OSError as exc:
+        raise ValueError(
+            f"Cannot convert editable source URL {url!r} to a filesystem path: {exc}"
+        ) from exc
+    if not source.is_absolute():
+        raise ValueError(
+            "Editable source file URL must identify an absolute path."
+        )
+    return source
+
+
 def _register_editable(
     ctx: typer.Context,
     *,
@@ -337,8 +370,16 @@ def _register_editable(
         f"Run `uv run --locked {command} {maintenance_group} "
         "install -e` from the checkout."
     )
-    cwd = Path.cwd().resolve()
-    prefix = Path(sys.prefix).resolve()
+    try:
+        cwd = Path.cwd().resolve(strict=True)
+        prefix = Path(sys.prefix).resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(
+            f"Cannot access the current checkout or interpreter environment {sys.prefix}: "
+            f"{exc}. {guidance}"
+        ) from exc
+    source_root: Path | None = None
+    expected_environment: Path | None = None
     project_root: Path | None = None
     distribution_spec = None
     distribution = None
@@ -384,16 +425,9 @@ def _register_editable(
         ).lower()
         direct_url = distribution.read_text("direct_url.json")
         direct = json.loads(direct_url) if direct_url is not None else None
-        parsed_url = (
-            urlsplit(direct["url"])
-            if isinstance(direct, dict) and isinstance(direct.get("url"), str)
-            else None
-        )
         source_root = (
-            Path(url2pathname(parsed_url.path))
-            if parsed_url is not None
-            and parsed_url.scheme == "file"
-            and parsed_url.netloc in {"", "localhost"}
+            _editable_source_path(direct["url"])
+            if isinstance(direct, dict) and isinstance(direct.get("url"), str)
             else None
         )
         if (
@@ -402,9 +436,7 @@ def _register_editable(
             or not isinstance(direct.get("dir_info"), dict)
             or direct["dir_info"].get("editable") is not True
         ):
-            raise ValueError(
-                f"The installed distribution is not editable. {guidance}"
-            )
+            raise ValueError("The installed distribution is not editable.")
         project_root = source_root.resolve(strict=True)
         distribution_spec = read_distribution_spec(project_root)
         identity = distribution_spec.metadata.identity
@@ -422,24 +454,40 @@ def _register_editable(
         ):
             raise ValueError(
                 "The installed distribution differs from the mounted "
-                f"identity or version. {guidance}"
+                "identity or version."
             )
         expected_environment = resolve_editable_environment(project_root)
-        if expected_environment != prefix:
+        if not expected_environment.samefile(prefix):
             raise ValueError(
                 "The selected checkout does not own the current interpreter. "
-                f"{guidance}"
+                f"Expected environment: {expected_environment}; "
+                f"running environment: {prefix}."
             )
-        if not (
-            cwd.is_relative_to(project_root)
-            or cwd.is_relative_to(expected_environment.parent)
+        if not any(
+            ancestor.samefile(root)
+            for ancestor in (cwd, *cwd.parents)
+            for root in (project_root, expected_environment.parent)
         ):
             raise ValueError(
                 "Run editable installation from the selected checkout or its "
-                f"workspace root. {guidance}"
+                "workspace root."
             )
+    except OSError as exc:
+        source_description = (
+            f"editable source {source_root}"
+            if source_root is not None
+            else "editable distribution metadata"
+        )
+        expected_description = (
+            f"expected environment: {expected_environment}; "
+            if expected_environment is not None
+            else ""
+        )
+        raise ValueError(
+            f"Cannot access {source_description}; {expected_description}"
+            f"running environment: {prefix}. {exc}. {guidance}"
+        ) from exc
     except (
-        OSError,
         ValueError,
         KeyError,
         TypeError,
@@ -457,7 +505,7 @@ def _register_editable(
         )
     if not prefix.is_dir() or not (project_root / "pyproject.toml").is_file():
         raise ValueError(
-            f"The checkout or its .venv is unavailable. {guidance}"
+            f"Checkout {project_root} or environment {prefix} is unavailable. {guidance}"
         )
     try:
         with (project_root / "pyproject.toml").open("rb") as stream:
@@ -475,7 +523,7 @@ def _register_editable(
         ):
             raise ValueError(
                 "The installed command entry point differs from checkout "
-                f"metadata. {guidance}"
+                "metadata."
             )
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise ValueError(f"{exc} {guidance}") from exc
@@ -486,7 +534,7 @@ def _register_editable(
     )
     if not executable.is_file():
         raise ValueError(
-            f"Console command {command!r} is missing from the current .venv. {guidance}"
+            f"Console command {command!r} is unavailable at {executable}. {guidance}"
         )
 
     from apprc.definition.installation import (

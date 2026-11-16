@@ -71,6 +71,7 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
+- CLI and launcher declarations defer editor and prompt implementations until use; help no longer imports those stacks. Editable registration compares existing environment directory identities and handles native Windows UNC file URLs with explicit platform and path diagnostics.
 - Reordered opt-in root help to show host commands and options first, AppRC commands and runtime options next, and common help/completion options last. Cyan host and magenta AppRC headings and borders distinguish ownership; common controls are dim, descriptions remain neutral, and terminal color controls are respected.
 
 <br>

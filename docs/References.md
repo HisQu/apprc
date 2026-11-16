@@ -288,7 +288,7 @@ binding and prebuilt project snapshot. It is also the installed stable native
 command; installation copies it rather than compiling another launcher.
 There are no standalone Python installer assets or shell/CMD/PowerShell wrappers.
 
-The compiler pins PyApp 0.31.0 and uv 0.13.6. Management uses its own Python 3.14
+The compiler pins PyApp 0.31.0 and requires uv >=0.11.6. Management uses its own Python 3.14
 bootstrap, independently of the selected application Python. Public SDK
 management dependencies come from the matching SDK package metadata, not the
 application graph. PyApp self-management commands are disabled; removal goes

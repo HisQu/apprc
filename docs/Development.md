@@ -406,7 +406,7 @@ use locked non-editable sync with no default groups and only selected extras.
 Editable registration uses the developer's existing `.venv` without syncing or
 copying it.
 
-The compiler authenticates pinned PyApp 0.31.0 source and uses uv 0.13.6.
+The compiler authenticates pinned PyApp 0.31.0 source and supports uv >=0.11.6 for authoring and the embedded manager.
 Authoring requires the matching core/terminal SDK metadata and existing Rust/LLVM
 toolchain. Windows x86-64 cross-compilation uses Cargo-xwin 0.23.1,
 `x86_64-pc-windows-msvc` and Microsoft SDK inputs. It produces a Windows console

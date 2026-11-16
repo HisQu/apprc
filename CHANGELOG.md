@@ -33,10 +33,11 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.35.0 - 2026-11-16](#0350---2026-11-16)
-4. [0.34.0 - 2026-11-13](#0340---2026-11-13)
-5. [0.33.0 - 2026-11-11](#0330---2026-11-11)
-6. [Older releases](CHANGELOG-ARCHIVE.md)
+3. [0.35.1 - 2026-11-16](#0351---2026-11-16)
+4. [0.35.0 - 2026-11-16](#0350---2026-11-16)
+5. [0.34.0 - 2026-11-13](#0340---2026-11-13)
+6. [0.33.0 - 2026-11-11](#0330---2026-11-11)
+7. [Older releases](CHANGELOG-ARCHIVE.md)
 
 <br>
 
@@ -75,6 +76,18 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+# 0.35.1 - 2026-11-16
+
+### 🔨 Fixed
+
+- Native authoring and the embedded manager now accept uv >=0.11.6 instead of requiring exactly 0.13.6. Newer uv versions no longer require an AppRC release just to pass the version check.
 
 <br>
 

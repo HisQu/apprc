@@ -28,7 +28,7 @@ from apprc.distribution import (
     read_distribution_spec,
 )
 from apprc.distribution.models import decode_native_binding
-from apprc.distribution.native import NativeFrontendBuilder, UV_VERSION
+from apprc.distribution.native import NativeFrontendBuilder, UV_MIN_VERSION
 from apprc.distribution.project import PreparedProject
 
 # > Pytest sandboxes HOME per test; native authoring must keep the host Rustup,
@@ -192,7 +192,7 @@ def start_installation_driver(
 
 
 def pinned_uv(root: Path) -> Path:
-    """Create or reuse only this fixture's environment containing exact uv 0.13.6.
+    """Create or reuse only this fixture's environment containing the minimum supported uv.
 
     :param root: Fixture-owned storage, separate from the PyApp runtime.
     :return: Absolute uv executable, with both package and binary version checked.
@@ -202,9 +202,9 @@ def pinned_uv(root: Path) -> Path:
     if root.is_symlink():
         raise FileExistsError(f"Fixture uv root must not be a symlink: {root}")
     root.mkdir(parents=True, exist_ok=True)
-    environment_root = root / f"uv-{UV_VERSION}"
+    environment_root = root / f"uv-{UV_MIN_VERSION}"
     marker = root / "pinned-uv.json"
-    expected = {"version": UV_VERSION, "environment": environment_root.name}
+    expected = {"version": UV_MIN_VERSION, "environment": environment_root.name}
     if environment_root.is_symlink() or marker.is_symlink():
         raise FileExistsError("Fixture uv state must not contain symlinks.")
     if environment_root.exists():
@@ -232,7 +232,7 @@ def pinned_uv(root: Path) -> Path:
                 "--isolated",
                 "install",
                 "--disable-pip-version-check",
-                f"uv=={UV_VERSION}",
+                f"uv=={UV_MIN_VERSION}",
             ]
         )
         marker.write_text(json.dumps(expected), encoding="utf-8")
@@ -250,10 +250,10 @@ def pinned_uv(root: Path) -> Path:
             "import importlib.metadata; print(importlib.metadata.version('uv'))",
         ]
     )
-    assert version.stdout.strip() == UV_VERSION
+    assert version.stdout.strip() == UV_MIN_VERSION
     assert run([str(executable), "--version"]).stdout.split()[:2] == [
         "uv",
-        UV_VERSION,
+        UV_MIN_VERSION,
     ]
     return executable.absolute()
 

@@ -43,6 +43,7 @@ from apprc.user_files.app_home.permissions import (
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.codec import decode_cleanup_inventory
+from apprc.user_files.installation.inventory import cleanup_entry_revision
 from apprc.user_files.installation.operations import (
     begin_operation,
     plan_uninstall,
@@ -631,7 +632,10 @@ def prepare_uninstall(
         else (*selected_inventory.entries, *support_entries)
     )
     for entry in all_entries:
-        if entry.kind == "file" and file_revision(entry.path) != entry.revision:
+        if (
+            entry.kind in {"file", "symlink"}
+            and cleanup_entry_revision(entry) != entry.revision
+        ):
             raise InstallationError(
                 f"Cleanup target changed after inventory preview: {entry.path}"
             )
@@ -719,8 +723,8 @@ def stage_uninstall(
             )
         for entry in plan.inventory.entries:
             if (
-                entry.kind == "file"
-                and file_revision(entry.path) != entry.revision
+                entry.kind in {"file", "symlink"}
+                and cleanup_entry_revision(entry) != entry.revision
             ):
                 raise InstallationError(
                     f"Accepted cleanup target changed: {entry.path}"

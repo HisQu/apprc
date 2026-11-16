@@ -43,14 +43,231 @@ from apprc.distribution.runtime.controllers import (
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
-from apprc.user_files.app_home.writes import file_revision
+from apprc.user_files.app_home.writes import file_revision, managed_write_lock
+from apprc.user_files.installation import symlink_revision
+from apprc.user_files.installation.planning import validate_cleanup
 from apprc.user_files.installation.coordination import (
     installation_lock,
     write_record,
 )
 from apprc.user_files.installation.discovery import inspect_installation
-from apprc.user_files.installation.operations import fail_operation
+from apprc.user_files.installation.operations import (
+    begin_operation,
+    fail_operation,
+)
 from tests.test_distribution_process_waiter import _owned_child
+
+
+def _symbolic_link(path: Path, target: Path | str) -> None:
+    try:
+        path.symlink_to(target)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"Symbolic links are unavailable: {error}")
+
+
+def _link_removal_scenario(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, dangling: bool = False
+):
+    _clear_controller_environment(monkeypatch)
+    root = tmp_path / "owned-cache"
+    root.mkdir()
+    target = tmp_path / "outside-target"
+    if not dangling:
+        target.write_text("external data", encoding="utf-8")
+    link = root / "owned-link"
+    _symbolic_link(link, target)
+    revision = symlink_revision(link)
+    assert revision is not None
+    entry = InventoryEntry(link, "symlink", revision, "cache")
+    directory, _ = _schema3_installation(tmp_path, cache_root=root)
+    preparation = prepare_uninstall(
+        directory,
+        categories=frozenset({"cache"}),
+        complete=True,
+        inventory=CleanupInventory(
+            (InventoryEntry(root, "directory", None, "cache"), entry)
+        ),
+    )
+    assert preparation.can_execute and preparation.plan is not None
+    return directory, root, link, target, entry, preparation.plan
+
+
+@pytest.mark.parametrize("dangling", [False, True])
+def test_symlink_inventory_round_trips_handoff_and_unlinks_only_the_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dangling: bool
+) -> None:
+    directory, root, link, target, entry, plan = _link_removal_scenario(
+        tmp_path, monkeypatch, dangling=dangling
+    )
+    handoff = _pending_receiver_handoff(
+        plan, tmp_path, monkeypatch, os.getpid()
+    )
+    envelope = removal._parse_plan(handoff.plan_file)
+    decoded = removal._inventory(envelope, "inventory")
+    assert entry in decoded
+    assert str(target) not in str(envelope["inventory"])
+    pending = removal._prepare_pending_handoff(
+        handoff.plan_file,
+        envelope,
+        handoff.plan_file.parent / "recovery",
+        inspect_installation(directory, app_id=plan.app_id),
+        expected_identity=None,
+    )
+    assert pending.plan.inventory.entries == decoded
+    data_entries = tuple(item for item in decoded if item.resource == "cache")
+    assert data_entries == (
+        InventoryEntry(root, "directory", None, "cache"),
+        entry,
+    )
+    if not dangling:
+        target.write_text("changed external data", encoding="utf-8")
+        assert symlink_revision(link) == entry.revision
+    with managed_write_lock(root):
+        removal._remove_inventory(data_entries)
+        removal._remove_inventory(data_entries)
+    assert not link.is_symlink() and not root.exists()
+    if dangling:
+        assert not target.exists()
+    else:
+        assert target.read_text(encoding="utf-8") == "changed external data"
+    assert (directory / "installation.json").is_file()
+
+
+@pytest.mark.parametrize(
+    "replacement", ["different-link", "same-target-link", "regular-file"]
+)
+def test_symlink_inventory_rejects_substitution_before_staging_and_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replacement: str
+) -> None:
+    directory, root, link, target, entry, plan = _link_removal_scenario(
+        tmp_path, monkeypatch
+    )
+    link.rename(root / "previous-link")
+    if replacement == "regular-file":
+        link.write_text("replacement data", encoding="utf-8")
+    else:
+        _symbolic_link(
+            link,
+            target
+            if replacement == "same-target-link"
+            else tmp_path / "other-target",
+        )
+    before = (directory / "installation.json").read_bytes()
+    with pytest.raises(
+        InstallationError,
+        match="symbolic link|Symbolic link|cleanup target changed",
+    ):
+        controllers.stage_uninstall(plan)
+    assert (directory / "installation.json").read_bytes() == before
+    with pytest.raises(InstallationError, match="symbolic link|Symbolic link"):
+        begin_operation(plan)
+    assert (directory / "installation.json").read_bytes() == before
+    with managed_write_lock(root):
+        with pytest.raises(
+            InstallationError, match="symbolic link|Symbolic link"
+        ):
+            removal._remove_inventory((entry,))
+    assert target.read_text(encoding="utf-8") == "external data"
+    if replacement == "regular-file":
+        assert link.read_text(encoding="utf-8") == "replacement data"
+    else:
+        assert link.is_symlink()
+
+
+def test_pending_handoff_rechecks_symlink_identity_before_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory, root, link, _target, _entry, plan = _link_removal_scenario(
+        tmp_path, monkeypatch
+    )
+    handoff = _pending_receiver_handoff(
+        plan, tmp_path, monkeypatch, os.getpid()
+    )
+    link.rename(root / "previous-link")
+    _symbolic_link(link, "replacement-target")
+    with pytest.raises(InstallationError, match="Symbolic link changed"):
+        removal._prepare_pending_handoff(
+            handoff.plan_file,
+            removal._parse_plan(handoff.plan_file),
+            handoff.plan_file.parent / "recovery",
+            inspect_installation(directory, app_id=plan.app_id),
+            expected_identity=None,
+        )
+    assert link.is_symlink()
+    pending = inspect_installation(directory, app_id=plan.app_id)
+    assert pending.record is not None and pending.record.operation is not None
+    assert OperationStep.PROVIDER_CLEANUP not in pending.record.operation.steps
+
+
+def test_symlink_inventory_rejects_ancestor_links_and_outside_entry_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _directory, root, _link, target, _entry, plan = _link_removal_scenario(
+        tmp_path, monkeypatch
+    )
+    alias = root / "alias"
+    _symbolic_link(alias, root)
+    with pytest.raises(ValueError, match="links"):
+        symlink_revision(alias / "owned-link")
+    outside_link = tmp_path / "outside-link"
+    _symbolic_link(outside_link, target)
+    revision = symlink_revision(outside_link)
+    assert revision is not None
+    with pytest.raises(
+        InstallationError, match="outside recorded resource ownership"
+    ):
+        validate_cleanup(
+            CleanupInventory(
+                (InventoryEntry(outside_link, "symlink", revision, "cache"),)
+            ),
+            placement=plan.placement,
+            directory=plan.directory,
+            categories=plan.categories,
+            complete=False,
+            forget_retained=False,
+        )
+    assert (
+        outside_link.is_symlink()
+        and target.read_text(encoding="utf-8") == "external data"
+    )
+    revision = symlink_revision(root / "owned-link")
+    assert revision is not None
+    with pytest.raises(InstallationError, match="category not selected"):
+        validate_cleanup(
+            CleanupInventory(
+                (
+                    InventoryEntry(
+                        root / "owned-link", "symlink", revision, "cache"
+                    ),
+                )
+            ),
+            placement=plan.placement,
+            directory=plan.directory,
+            categories=frozenset(),
+            complete=False,
+            forget_retained=False,
+        )
+
+
+def test_symlink_revision_rejects_change_during_target_inspection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apprc.user_files.installation import inventory
+
+    link = tmp_path / "link"
+    _symbolic_link(link, "first-target")
+    readlink = os.readlink
+
+    def replace_after_read(path: Path) -> str:
+        value = readlink(path)
+        link.rename(tmp_path / "previous")
+        _symbolic_link(link, "replacement-target")
+        return value
+
+    monkeypatch.setattr(inventory.os, "readlink", replace_after_read)
+    with pytest.raises(InstallationError, match="changed while inspecting"):
+        symlink_revision(link)
+    assert link.is_symlink()
 
 
 def _clear_controller_environment(monkeypatch: pytest.MonkeyPatch) -> None:

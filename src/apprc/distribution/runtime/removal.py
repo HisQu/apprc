@@ -59,7 +59,11 @@ from apprc.user_files.installation.operations import (
     record_runtime_retired,
     record_step,
 )
-from apprc.user_files.installation.planning import resource_roots
+from apprc.user_files.installation.planning import (
+    resource_roots,
+    validate_cleanup,
+)
+from apprc.user_files.installation.inventory import cleanup_entry_revision
 
 
 class HandoffPlan(TypedDict):
@@ -88,7 +92,7 @@ class _PendingHandoff:
     manager_executable: Path | None
 
 
-PathKind = Literal["file", "directory"]
+PathKind = Literal["file", "directory", "symlink"]
 
 
 def _is_resource_kind(value: object) -> TypeGuard[ResourceKind]:
@@ -101,7 +105,7 @@ def _is_resource_kind(value: object) -> TypeGuard[ResourceKind]:
 
 
 def _is_path_kind(value: object) -> TypeGuard[PathKind]:
-    return isinstance(value, str) and value in {"file", "directory"}
+    return isinstance(value, str) and value in {"file", "directory", "symlink"}
 
 
 def _is_uuid(value: object) -> TypeGuard[str]:
@@ -393,7 +397,7 @@ def _inventory(
 
 
 def _remove_inventory(entries: tuple[InventoryEntry, ...]) -> None:
-    """Remove only exact revision-checked files and empty directories."""
+    """Remove exact revision-checked files/links and empty directories."""
     ordered = sorted(
         entries,
         key=lambda item: (len(item.path.parts), item.path.parts),
@@ -401,6 +405,17 @@ def _remove_inventory(entries: tuple[InventoryEntry, ...]) -> None:
     )
     for entry in ordered:
         path = entry.path
+        if entry.kind == "symlink":
+            revision = cleanup_entry_revision(entry)
+            if revision is None:
+                continue
+            if revision != entry.revision:
+                raise InstallationError(
+                    f"Owned symbolic link changed after removal preview: {path}."
+                )
+            assert_no_links(path.parent)
+            path.unlink()
+            continue
         assert_no_links(path)
         if not path.exists() and not path.is_symlink():
             continue
@@ -759,6 +774,14 @@ def _prepare_pending_handoff(
         operation.complete,
         operation.forget_retained,
     )
+    validate_cleanup(
+        inventory,
+        placement=record.placement,
+        directory=directory,
+        categories=operation.categories,
+        complete=operation.complete,
+        forget_retained=operation.forget_retained,
+    )
     removal_roots = _handoff.handoff_removal_roots(plan, record)
     manager = (
         Path(value["manager_executable"])
@@ -1007,6 +1030,14 @@ def _execute_pending_handoff(
                     context,
                 )
                 with managed_write_lock(*roots, authority=authority):
+                    validate_cleanup(
+                        inventory,
+                        placement=record.placement,
+                        directory=directory,
+                        categories=plan.categories,
+                        complete=plan.complete,
+                        forget_retained=plan.forget_retained,
+                    )
                     _remove_inventory(inventory.entries)
                 current = record_step(
                     directory,

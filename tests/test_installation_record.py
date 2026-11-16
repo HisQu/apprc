@@ -309,6 +309,9 @@ def test_cleanup_inventory_codec_round_trip_and_rejects_unknown_fields(
                 "a" * 64,
                 "config",
             ),
+            InventoryEntry(
+                tmp_path / "owned-link", "symlink", "b" * 64, "cache"
+            ),
         ),
         retained=(
             InventoryEntry(tmp_path / "retained", "directory", None, "cache"),
@@ -323,3 +326,32 @@ def test_cleanup_inventory_codec_round_trip_and_rejects_unknown_fields(
     malformed["extra"] = 1
     with pytest.raises(InstallationError):
         decode_cleanup_inventory(json.dumps(malformed).encode("utf-8"))
+
+
+@pytest.mark.parametrize("revision", [None, "", "target-name", "A" * 64])
+def test_symlink_inventory_requires_an_opaque_digest(
+    tmp_path: Path, revision: str | None
+) -> None:
+    with pytest.raises(InstallationError, match="SHA-256"):
+        InventoryEntry(tmp_path / "owned-link", "symlink", revision, "cache")
+
+
+def test_symlink_inventory_cannot_claim_installation_support(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(InstallationError, match="recorded resource category"):
+        InventoryEntry(tmp_path / "support-link", "symlink", "a" * 64)
+    content = json.loads(
+        encode_cleanup_inventory(
+            CleanupInventory(
+                (
+                    InventoryEntry(
+                        tmp_path / "owned-link", "symlink", "a" * 64, "cache"
+                    ),
+                )
+            )
+        )
+    )
+    content["entries"][0]["resource"] = None
+    with pytest.raises(InstallationError, match="recorded resource category"):
+        decode_cleanup_inventory(json.dumps(content).encode("utf-8"))

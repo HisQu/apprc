@@ -59,6 +59,7 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### ➕ Added
+- Added explicit symbolic-link entries to cleanup inventories, with link identity checks and removal that leaves the target untouched.
 - Added opt-in ordered root help through `rc.cli.AppRCRootGroup`, with separate application and AppRC panels while preserving normal Typer parsing and nested help.
 - Added optional root `launch` through an explicitly supplied `LauncherSpec`, opening the existing Textual management launcher without resolving business settings. Explicit installer and local diagnostic registrations integrate existing application-owned behavior without discovering or replacing it.
 - Added committed project snapshots with their exact `uv.lock`, workspace members and package resources, including ZIP assets, while excluding generated environments and build caches.

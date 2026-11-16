@@ -393,6 +393,15 @@ def begin_operation(plan: OperationPlan) -> InstallationInspection:
             if isinstance(plan, InstallPlan)
             else plan.placement
         )
+        if isinstance(plan, UninstallPlan):
+            validate_cleanup(
+                plan.inventory,
+                placement=plan.placement,
+                directory=plan.directory,
+                categories=plan.categories,
+                complete=plan.complete,
+                forget_retained=plan.forget_retained,
+            )
         operation = InstallationOperation(
             operation_id=plan.operation_id,
             kind=plan.kind

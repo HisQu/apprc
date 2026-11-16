@@ -191,6 +191,10 @@ Local timings do not establish Windows/network-drive latency. Many small import
 and metadata reads can amplify network filesystem overhead, so avoid eager
 filesystem discovery as well as expensive module initialization.
 
+Check diagnostic content independently of ANSI styling and terminal line
+wrapping; exercise colored output as well as plain output. Reproduce CI's
+terminal settings locally before changing a message or retrying a failed job.
+
 <br>
 
 # Verify and update changes

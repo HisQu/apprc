@@ -475,12 +475,13 @@ def test_editable_conversion_error_names_source_url(
     assert isinstance(failure.value.__cause__, OSError)
 
 
+@pytest.mark.parametrize("color", [False, True])
 @pytest.mark.parametrize(
     "failure",
     ["mismatch", "unavailable-source", "stat-denied", "workspace-root"],
 )
 def test_editable_environment_error_reports_paths_and_guidance_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str, color: bool
 ) -> None:
     import importlib.metadata
     import sys
@@ -574,23 +575,30 @@ def test_editable_environment_error_reports_paths_and_guidance_once(
             "COLUMNS": "1000",
         },
         terminal_width=1000,
+        color=color,
     )
 
     assert result.exit_code == 2, result.output
+    # > Validate the actual CLI error independently of ANSI styling and wrapping.
+    error = (
+        result.exception.__context__ if result.exception is not None else None
+    )
+    assert isinstance(error, typer.BadParameter), result.output
+    message = str(error)
     if failure == "mismatch":
-        assert "Expected environment:" in result.output
-        assert str(expected) in result.output
+        assert "Expected environment:" in message
+        assert str(expected) in message
     elif failure == "workspace-root":
-        assert "Console command 'fixture' is unavailable at" in result.output
+        assert "Console command 'fixture' is unavailable at" in message
     else:
-        assert "Cannot access editable source" in result.output
-        assert str(source) in result.output
+        assert "Cannot access editable source" in message
+        assert str(source) in message
         if failure == "stat-denied":
-            assert "identity access denied" in result.output
-            assert str(expected) in result.output
+            assert "identity access denied" in message
+            assert str(expected) in message
         else:
-            assert "unavailable-source" in result.output
+            assert "unavailable-source" in message
     if failure != "workspace-root":
-        assert "running environment:" in result.output
-        assert str(running) in result.output
-    assert result.output.count("install -e` from the checkout.") == 1
+        assert "running environment:" in message
+        assert str(running) in message
+    assert message.count("install -e` from the checkout.") == 1

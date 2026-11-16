@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict, TypeGuard
@@ -33,7 +34,7 @@ from apprc.definition.installation import (
     UninstallPlan,
 )
 from apprc.distribution.models import relative_destination
-from apprc.distribution.runtime import _handoff, _integration
+from apprc.distribution.runtime import _handoff, _os_integration
 from apprc.distribution.runtime._process_waiter import (
     _open_process_waiter,
     _wait_open_process,
@@ -369,7 +370,7 @@ def _remove_owned_outputs(
     for output in outputs:
         if output.kind == "command":
             if Path(output.path).parent != directory:
-                _integration.remove_owned_command(output)
+                _os_integration.remove_owned_command(output)
             continue
         if output.kind != "shortcut":
             continue
@@ -762,6 +763,346 @@ def _prepare_pending_handoff(
     return _PendingHandoff(plan, record, manager)
 
 
+def _checkpoint_uninstall(
+    plan: UninstallPlan,
+    revision: str,
+    step: OperationStep,
+) -> tuple[InstallationRecord, str]:
+    """Advance one uninstall checkpoint and retain its exact authority revision.
+
+    :param plan: Exact pending uninstall selection.
+    :param revision: Revision authorizing this transition.
+    :param step: Completed lifecycle phase.
+    :return: Updated saved record and revision.
+    """
+    current = record_step(
+        plan.directory,
+        operation_id=plan.operation_id,
+        expected_revision=revision,
+        step=step,
+    )
+    if current.record is None or current.revision is None:
+        raise InstallationError(
+            "Uninstall checkpoint has no authority revision."
+        )
+    return current.record, current.revision
+
+
+def _cleanup_provider(
+    pending: _PendingHandoff,
+    record: InstallationRecord,
+    latest_revision: str,
+) -> tuple[InstallationRecord, str]:
+    """Run application cleanup before checkpointing provider completion.
+
+    :param pending: Validated exact uninstall plan and native support.
+    :param record: Latest record from the preceding phase.
+    :param latest_revision: Exact revision authorizing the next transition.
+    :return: Record and revision after this phase.
+    """
+    plan = pending.plan
+    directory = plan.directory
+    operation_id = plan.operation_id
+    operation = record.operation
+    assert operation is not None
+    runtime = record.active_runtime
+    needs_cleanup = bool(
+        plan.complete
+        and plan.categories
+        and runtime is not None
+        and runtime.hooks.cleanup
+    )
+    if OperationStep.PROVIDER_CLEANUP not in operation.steps:
+        runtime = record.active_runtime
+        claims = []
+        slot_ids = set(record.retiring_runtime_ids)
+        if isinstance(runtime, RuntimeSlot):
+            slot_ids.add(runtime.slot_id)
+        try:
+            for slot_id in sorted(slot_ids, key=str):
+                slot_directory = directory / "runtimes" / str(slot_id)
+                claim = try_acquire_runtime_quiescence(slot_directory)
+                if claim is None:
+                    raise InstallationError(
+                        "A managed runtime is busy; uninstall remains pending without deleting data or runtime files."
+                    )
+                claims.append(claim)
+            if needs_cleanup:
+                if runtime is None or runtime.hooks.cleanup is None:
+                    raise InstallationError(
+                        "Selected data purge has no recorded cleanup provider."
+                    )
+                context = OperationContext(
+                    directory,
+                    operation_id,
+                    plan.expected_generation,
+                    record.placement,
+                )
+                claim = (
+                    next(
+                        item
+                        for item in claims
+                        if item.directory
+                        == directory / "runtimes" / str(runtime.slot_id)
+                    )
+                    if isinstance(runtime, RuntimeSlot)
+                    else None
+                )
+                with (
+                    claim.authorize_bridge()
+                    if claim is not None
+                    else nullcontext()
+                ):
+                    result = application_bridge(
+                        directory,
+                        record.identity,
+                        runtime,
+                        command_name=record.command_name,
+                        action="cleanup",
+                        environment=dict(os.environ),
+                        manager_executable=pending.manager_executable,
+                        expected_revision=latest_revision,
+                        operation_context=context,
+                    )
+                if result != {"completed": True}:
+                    raise InstallationError(
+                        "Application cleanup provider did not confirm completion."
+                    )
+        finally:
+            for claim in reversed(claims):
+                claim.close()
+        record, latest_revision = _checkpoint_uninstall(
+            plan, latest_revision, OperationStep.PROVIDER_CLEANUP
+        )
+
+    return record, latest_revision
+
+
+def _retire_managed_runtimes(
+    pending: _PendingHandoff,
+    record: InstallationRecord,
+    latest_revision: str,
+) -> tuple[InstallationRecord, str]:
+    """Retire only recorded runtime slots, then checkpoint their absence.
+
+    :param pending: Validated exact uninstall plan and native support.
+    :param record: Latest record from the preceding phase.
+    :param latest_revision: Exact revision authorizing the next transition.
+    :return: Record and revision after this phase.
+    """
+    plan = pending.plan
+    directory = plan.directory
+    operation = record.operation
+    if operation is None:
+        raise InstallationError("Pending uninstall checkpoint disappeared.")
+    if OperationStep.RUNTIME_REMOVED not in operation.steps:
+        retiring = set(record.retiring_runtime_ids)
+        slot_ids = set(retiring)
+        if isinstance(record.active_runtime, RuntimeSlot):
+            slot_ids.add(record.active_runtime.slot_id)
+        for slot_id in sorted(slot_ids, key=str):
+            slot_directory = directory / "runtimes" / str(slot_id)
+            if not try_retire_runtime_slot(slot_directory):
+                raise InstallationError(
+                    f"Managed runtime slot is busy and remains intact: {slot_id}."
+                )
+            if slot_id in retiring:
+                current = record_runtime_retired(
+                    directory,
+                    slot_id=slot_id,
+                    expected_revision=latest_revision,
+                    generation_id=plan.expected_generation,
+                )
+                if current.revision is None:
+                    raise InstallationError(
+                        "Runtime retirement checkpoint has no revision."
+                    )
+                latest_revision = current.revision
+                updated_record = current.record
+                assert updated_record is not None
+                record = updated_record
+        record, latest_revision = _checkpoint_uninstall(
+            plan, latest_revision, OperationStep.RUNTIME_REMOVED
+        )
+
+    return record, latest_revision
+
+
+def _remove_selected_data(
+    pending: _PendingHandoff,
+    record: InstallationRecord,
+    latest_revision: str,
+    recovery: Path,
+) -> tuple[InstallationRecord, str]:
+    """Preserve recovery proof and remove only the selected owned data.
+
+    :param pending: Validated exact uninstall plan and native support.
+    :param record: Latest record from the preceding phase.
+    :param latest_revision: Exact revision authorizing the next transition.
+    :param recovery: External directory retaining finalization and support proof.
+    :return: Record and revision after this phase.
+    """
+    plan = pending.plan
+    directory = plan.directory
+    operation_id = plan.operation_id
+    inventory = plan.inventory
+    app_id = plan.app_id
+    operation = record.operation
+    assert operation is not None
+    if OperationStep.DATA_REMOVED not in operation.steps:
+        _restore_support(recovery, directory)
+        _backup_support(inventory.entries, directory, recovery)
+        finalization_plan = recovery / "finalization.json"
+        expected_finalization = {
+            "directory": str(directory),
+            "app_id": record.identity.app_id,
+            "generation_id": str(plan.expected_generation),
+            "support": [],
+        }
+        if finalization_plan.exists():
+            assert_no_links(finalization_plan)
+            if (
+                json.loads(finalization_plan.read_text(encoding="utf-8"))
+                != expected_finalization
+            ):
+                raise InstallationError("External finalization plan changed.")
+        else:
+            write_bytes_atomic(
+                finalization_plan,
+                (
+                    json.dumps(expected_finalization, sort_keys=True) + "\n"
+                ).encode("utf-8"),
+                private=True,
+            )
+        repository_entries = [
+            entry for entry in inventory.entries if entry.kind == "repository"
+        ]
+        if repository_entries:
+            repository_entry = repository_entries[0]
+            repository_proof = {
+                "directory": str(directory),
+                "app_id": app_id,
+                "generation_id": str(plan.expected_generation),
+                "repository": str(repository_entry.path),
+                "revision": repository_entry.revision,
+            }
+            write_bytes_atomic(
+                recovery / "repository.json",
+                (json.dumps(repository_proof, sort_keys=True) + "\n").encode(),
+                private=True,
+            )
+        roots = tuple(root for _, root in resource_roots(record.placement))
+        context = OperationContext(
+            directory,
+            operation_id,
+            plan.expected_generation,
+            record.placement,
+        )
+        authority = InstallationWriteAuthority(
+            app_id,
+            InstallationSnapshot(
+                directory, latest_revision, plan.expected_generation
+            ),
+            context,
+        )
+        with installation_lock(directory):
+            # > Release drained resource locks before removing log lock files on Windows.
+            with managed_write_lock(*roots, authority=authority):
+                validate_cleanup(
+                    inventory,
+                    placement=record.placement,
+                    directory=directory,
+                    categories=plan.categories,
+                    complete=plan.complete,
+                    forget_retained=plan.forget_retained,
+                )
+            for entry in inventory.entries:
+                if (
+                    entry.kind == "tree"
+                    and entry.resource is not None
+                    and entry.path.exists()
+                    and inspect_ownership(entry.path, app_id, entry.resource)
+                    != "owned"
+                ):
+                    raise InstallationError(
+                        "Managed directory ownership changed after consent."
+                    )
+            _remove_inventory(inventory.entries)
+            for lock_path in sorted(
+                {
+                    managed_lock_path(root)
+                    for root in roots
+                    if any(
+                        entry.kind == "tree"
+                        and (
+                            root == entry.path
+                            or root.is_relative_to(entry.path)
+                        )
+                        for entry in inventory.entries
+                    )
+                },
+                key=lambda path: len(path.parts),
+                reverse=True,
+            ):
+                assert_no_links(lock_path)
+                lock_path.unlink(missing_ok=True)
+        record, latest_revision = _checkpoint_uninstall(
+            plan, latest_revision, OperationStep.DATA_REMOVED
+        )
+    return record, latest_revision
+
+
+def _finish_removed_installation(
+    plan_file: Path,
+    value: HandoffPlan,
+    recovery: Path,
+    pending: _PendingHandoff,
+) -> None:
+    """Finish committed removal; failures must never restore pending authority.
+
+    :param plan_file: External handoff plan retained through finalization.
+    :param value: Validated caller handshake and recovery paths.
+    :param recovery: Retained finalization proof directory.
+    :param pending: Exact committed uninstall selection.
+    """
+    plan = pending.plan
+    directory = plan.directory
+    inventory = plan.inventory
+    app_id = plan.app_id
+    root = plan.placement.layout.root
+    if root is not None:
+        assert_no_links(root)
+        try:
+            root.rmdir()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            if error.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                raise
+    retirement = (
+        None
+        if any(entry.kind == "repository" for entry in inventory.entries)
+        else finish_namespace_retirement(
+            directory, generation_id=plan.expected_generation
+        )
+    )
+    if retirement is not None and retirement.container not in {
+        "removed",
+        "occupied",
+    }:
+        raise InstallationError(
+            retirement.diagnostic
+            or "Installation namespace cleanup left residue."
+        )
+    _finalize_committed_handoff(
+        plan_file,
+        value,
+        recovery,
+        expected_app_id=app_id,
+        caller_exited=True,
+    )
+
+
 def _execute_pending_handoff(
     plan_file: Path,
     value: HandoffPlan,
@@ -774,7 +1115,7 @@ def _execute_pending_handoff(
     app_id = plan.app_id
     operation_id = plan.operation_id
     inventory = plan.inventory
-    registry_backup: list[tuple[str, dict[str, str]]] = []
+    registry_backup: list[_os_integration.WindowsRegistrationSnapshot] = []
     committed = False
     succeeded = False
     latest_revision = plan.expected_revision
@@ -804,261 +1145,20 @@ def _execute_pending_handoff(
             )
         latest_revision = current.revision
 
-        operation = record.operation
-        runtime = record.active_runtime
-        needs_cleanup = bool(
-            plan.complete
-            and plan.categories
-            and runtime is not None
-            and runtime.hooks.cleanup
+        record, latest_revision = _cleanup_provider(
+            pending, record, latest_revision
         )
-        if OperationStep.PROVIDER_CLEANUP not in operation.steps:
-            runtime = record.active_runtime
-            claims = []
-            slot_ids = set(record.retiring_runtime_ids)
-            if isinstance(runtime, RuntimeSlot):
-                slot_ids.add(runtime.slot_id)
-            try:
-                for slot_id in sorted(slot_ids, key=str):
-                    slot_directory = directory / "runtimes" / str(slot_id)
-                    claim = try_acquire_runtime_quiescence(slot_directory)
-                    if claim is None:
-                        raise InstallationError(
-                            "A managed runtime is busy; uninstall remains pending without deleting data or runtime files."
-                        )
-                    claims.append(claim)
-                if needs_cleanup:
-                    if runtime is None or runtime.hooks.cleanup is None:
-                        raise InstallationError(
-                            "Selected data purge has no recorded cleanup provider."
-                        )
-                    context = OperationContext(
-                        directory,
-                        operation_id,
-                        plan.expected_generation,
-                        record.placement,
-                    )
-                    if isinstance(runtime, RuntimeSlot):
-                        claim = next(
-                            item
-                            for item in claims
-                            if item.directory
-                            == directory / "runtimes" / str(runtime.slot_id)
-                        )
-                        with claim.authorize_bridge():
-                            result = application_bridge(
-                                directory,
-                                record.identity,
-                                runtime,
-                                command_name=record.command_name,
-                                action="cleanup",
-                                environment=dict(os.environ),
-                                manager_executable=pending.manager_executable,
-                                expected_revision=latest_revision,
-                                operation_context=context,
-                            )
-                    else:
-                        result = application_bridge(
-                            directory,
-                            record.identity,
-                            runtime,
-                            command_name=record.command_name,
-                            action="cleanup",
-                            environment=dict(os.environ),
-                            manager_executable=pending.manager_executable,
-                            expected_revision=latest_revision,
-                            operation_context=context,
-                        )
-                    if result != {"completed": True}:
-                        raise InstallationError(
-                            "Application cleanup provider did not confirm completion."
-                        )
-            finally:
-                for claim in reversed(claims):
-                    claim.close()
-            current = record_step(
-                directory,
-                operation_id=operation_id,
-                expected_revision=latest_revision,
-                step=OperationStep.PROVIDER_CLEANUP,
-            )
-            if current.revision is None:
-                raise InstallationError(
-                    "Cleanup checkpoint has no authority revision."
-                )
-            latest_revision = current.revision
-            record = current.record
-            assert record is not None
-
-        operation = record.operation
-        if operation is None:
-            raise InstallationError("Pending uninstall checkpoint disappeared.")
-        if OperationStep.RUNTIME_REMOVED not in operation.steps:
-            retiring = set(record.retiring_runtime_ids)
-            slot_ids = set(retiring)
-            if isinstance(record.active_runtime, RuntimeSlot):
-                slot_ids.add(record.active_runtime.slot_id)
-            for slot_id in sorted(slot_ids, key=str):
-                slot_directory = directory / "runtimes" / str(slot_id)
-                if not try_retire_runtime_slot(slot_directory):
-                    raise InstallationError(
-                        f"Managed runtime slot is busy and remains intact: {slot_id}."
-                    )
-                if slot_id in retiring:
-                    current = record_runtime_retired(
-                        directory,
-                        slot_id=slot_id,
-                        expected_revision=latest_revision,
-                        generation_id=plan.expected_generation,
-                    )
-                    if current.revision is None:
-                        raise InstallationError(
-                            "Runtime retirement checkpoint has no revision."
-                        )
-                    latest_revision = current.revision
-                    record = current.record
-                    assert record is not None
-            current = record_step(
-                directory,
-                operation_id=operation_id,
-                expected_revision=latest_revision,
-                step=OperationStep.RUNTIME_REMOVED,
-            )
-            if current.revision is None:
-                raise InstallationError(
-                    "Runtime absence checkpoint has no revision."
-                )
-            latest_revision = current.revision
-            record = current.record
-            assert record is not None
+        record, latest_revision = _retire_managed_runtimes(
+            pending, record, latest_revision
+        )
 
         operation = record.operation
         if operation is None:
             raise InstallationError("Pending uninstall checkpoint disappeared.")
         if plan.complete:
-            if OperationStep.DATA_REMOVED not in operation.steps:
-                _restore_support(recovery, directory)
-                _backup_support(inventory.entries, directory, recovery)
-                finalization_plan = recovery / "finalization.json"
-                expected_finalization = {
-                    "directory": str(directory),
-                    "app_id": record.identity.app_id,
-                    "generation_id": str(plan.expected_generation),
-                    "support": [],
-                }
-                if finalization_plan.exists():
-                    assert_no_links(finalization_plan)
-                    if (
-                        json.loads(
-                            finalization_plan.read_text(encoding="utf-8")
-                        )
-                        != expected_finalization
-                    ):
-                        raise InstallationError(
-                            "External finalization plan changed."
-                        )
-                else:
-                    write_bytes_atomic(
-                        finalization_plan,
-                        (
-                            json.dumps(expected_finalization, sort_keys=True)
-                            + "\n"
-                        ).encode("utf-8"),
-                        private=True,
-                    )
-                repository_entries = [
-                    entry
-                    for entry in inventory.entries
-                    if entry.kind == "repository"
-                ]
-                if repository_entries:
-                    repository_entry = repository_entries[0]
-                    repository_proof = {
-                        "directory": str(directory),
-                        "app_id": app_id,
-                        "generation_id": str(plan.expected_generation),
-                        "repository": str(repository_entry.path),
-                        "revision": repository_entry.revision,
-                    }
-                    write_bytes_atomic(
-                        recovery / "repository.json",
-                        (
-                            json.dumps(repository_proof, sort_keys=True) + "\n"
-                        ).encode(),
-                        private=True,
-                    )
-                roots = tuple(
-                    root for _, root in resource_roots(record.placement)
-                )
-                context = OperationContext(
-                    directory,
-                    operation_id,
-                    plan.expected_generation,
-                    record.placement,
-                )
-                authority = InstallationWriteAuthority(
-                    app_id,
-                    InstallationSnapshot(
-                        directory, latest_revision, plan.expected_generation
-                    ),
-                    context,
-                )
-                with installation_lock(directory):
-                    # > Release drained resource locks before removing log lock files on Windows.
-                    with managed_write_lock(*roots, authority=authority):
-                        validate_cleanup(
-                            inventory,
-                            placement=record.placement,
-                            directory=directory,
-                            categories=plan.categories,
-                            complete=plan.complete,
-                            forget_retained=plan.forget_retained,
-                        )
-                    for entry in inventory.entries:
-                        if (
-                            entry.kind == "tree"
-                            and entry.resource is not None
-                            and entry.path.exists()
-                            and inspect_ownership(
-                                entry.path, app_id, entry.resource
-                            )
-                            != "owned"
-                        ):
-                            raise InstallationError(
-                                "Managed directory ownership changed after consent."
-                            )
-                    _remove_inventory(inventory.entries)
-                    for lock_path in sorted(
-                        {
-                            managed_lock_path(root)
-                            for root in roots
-                            if any(
-                                entry.kind == "tree"
-                                and (
-                                    root == entry.path
-                                    or root.is_relative_to(entry.path)
-                                )
-                                for entry in inventory.entries
-                            )
-                        },
-                        key=lambda path: len(path.parts),
-                        reverse=True,
-                    ):
-                        assert_no_links(lock_path)
-                        lock_path.unlink(missing_ok=True)
-                current = record_step(
-                    directory,
-                    operation_id=operation_id,
-                    expected_revision=latest_revision,
-                    step=OperationStep.DATA_REMOVED,
-                )
-                if current.revision is None:
-                    raise InstallationError(
-                        "Data cleanup checkpoint has no revision."
-                    )
-                latest_revision = current.revision
-                record = current.record
-                assert record is not None
+            record, latest_revision = _remove_selected_data(
+                pending, record, latest_revision, recovery
+            )
             _remove_registry_outputs(record, directory, registry_backup)
             _remove_owned_outputs(record.owned_outputs, directory=directory)
             with installation_lock(directory):
@@ -1102,40 +1202,7 @@ def _execute_pending_handoff(
             succeeded = True
 
         if plan.complete:
-            root = plan.placement.layout.root
-            if root is not None:
-                assert_no_links(root)
-                try:
-                    root.rmdir()
-                except FileNotFoundError:
-                    pass
-                except OSError as error:
-                    if error.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
-                        raise
-            retirement = (
-                None
-                if any(
-                    entry.kind == "repository" for entry in inventory.entries
-                )
-                else finish_namespace_retirement(
-                    directory, generation_id=plan.expected_generation
-                )
-            )
-            if retirement is not None and retirement.container not in {
-                "removed",
-                "occupied",
-            }:
-                raise InstallationError(
-                    retirement.diagnostic
-                    or "Installation namespace cleanup left residue."
-                )
-            _finalize_committed_handoff(
-                plan_file,
-                value,
-                recovery,
-                expected_app_id=app_id,
-                caller_exited=True,
-            )
+            _finish_removed_installation(plan_file, value, recovery, pending)
             succeeded = True
     except BaseException as error:
         if not committed:
@@ -1209,7 +1276,7 @@ def _recover_pending_uninstall(
     inventory: CleanupInventory,
     complete: bool,
     recovery: Path,
-    registry_backup: tuple[tuple[str, dict[str, str]], ...],
+    registry_backup: tuple[_os_integration.WindowsRegistrationSnapshot, ...],
     primary_error: BaseException,
 ) -> None:
     """Restore exact precommit state only while the same pending authority exists."""
@@ -1246,7 +1313,8 @@ def _recover_pending_uninstall(
             )
         if not complete or OperationStep.DATA_REMOVED not in operation.steps:
             _restore_support(recovery, directory)
-        _restore_registry_outputs(registry_backup)
+        for snapshot in registry_backup:
+            _os_integration.restore_windows_registration(snapshot)
         fail_operation(
             directory,
             operation_id=operation_id,
@@ -1262,77 +1330,35 @@ def _recover_pending_uninstall(
 def _remove_registry_outputs(
     record: InstallationRecord,
     directory: Path,
-    removed: list[tuple[str, dict[str, str]]],
+    removed: list[_os_integration.WindowsRegistrationSnapshot],
 ) -> None:
-    """Delete only the exact current-user registration owned by this record."""
+    """Capture and remove only this installation's exact owned HKCU recipe.
+
+    :param record: Latest uninstall authority with owned registration outputs.
+    :param directory: Expected recorded install location.
+    :param removed: Typed before-images retained for precommit recovery.
+    """
     if os.name != "nt":
         return
-    import winreg
-
-    expected_subkey = (
-        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
+    expected = (
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
         + record.identity.app_id
     )
     for output in record.owned_outputs:
         if output.kind != "hkcu":
             continue
-        if output.path != "HKCU\\" + expected_subkey or dict(output.values).get(
+        if output.path != expected or dict(output.values).get(
             "InstallLocation"
         ) != str(directory):
             raise InstallationError(
                 "Recorded HKCU registration path is malformed."
             )
-        try:
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                expected_subkey,
-                0,
-                winreg.KEY_QUERY_VALUE,
-            )
-        except FileNotFoundError:
+        snapshot = _os_integration.capture_windows_registration(output)
+        assert snapshot is not None
+        if snapshot.values is None:
             continue
-        with key:
-            count = winreg.QueryInfoKey(key)[1]
-            values = {
-                name: value
-                for name, value, _kind in (
-                    winreg.EnumValue(key, index) for index in range(count)
-                )
-            }
-        _integration.remove_windows_registration(output)
-        removed.append((expected_subkey, values))
-
-
-def _restore_registry_outputs(
-    values: tuple[tuple[str, dict[str, str]], ...],
-) -> None:
-    """Restore only exact values captured from previously owned keys."""
-    if os.name != "nt":
-        return
-    import winreg
-
-    for subkey, previous in values:
-        with winreg.CreateKeyEx(
-            winreg.HKEY_CURRENT_USER,
-            subkey,
-            0,
-            winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
-        ) as key:
-            count = winreg.QueryInfoKey(key)[1]
-            existing = {
-                name: value
-                for name, value, _kind in (
-                    winreg.EnumValue(key, index) for index in range(count)
-                )
-            }
-            for name, value in previous.items():
-                actual = existing.get(name)
-                if actual not in {None, value}:
-                    raise InstallationError(
-                        "Cannot restore registration over values changed by another owner."
-                    )
-            for name, value in previous.items():
-                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
+        removed.append(snapshot)
+        _os_integration.remove_windows_registration(output)
 
 
 def main() -> int:
@@ -1403,7 +1429,7 @@ def _launch_repository_finalizer(
         for entry in value["inventory"]
         if isinstance(entry, dict) and entry.get("kind") == "repository"
     )
-    from apprc.distribution.runtime.controllers import _handoff_python
+    from apprc.distribution.runtime._uninstall_controller import _handoff_python
 
     python = _handoff_python(roots)
     _REPOSITORY_FINALIZER = subprocess.Popen(

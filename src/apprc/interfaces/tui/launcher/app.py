@@ -443,11 +443,11 @@ class LauncherHomeScreen(Screen[None]):
     async def _uninstall_saved_entry(self) -> None:
         """Preview, obtain consent, and await the native removal handoff."""
         try:
-            from apprc.distribution.runtime import controllers
+            from apprc.distribution.runtime import _uninstall_controller
 
             preparation_task = asyncio.create_task(
                 asyncio.to_thread(
-                    controllers.prepare_uninstall,
+                    _uninstall_controller.prepare_uninstall,
                     self.context.inspection.directory,
                     keep_data=None,
                 )
@@ -501,7 +501,7 @@ class LauncherHomeScreen(Screen[None]):
         if result == "keep-data":
             try:
                 preparation = await asyncio.to_thread(
-                    controllers.prepare_uninstall,
+                    _uninstall_controller.prepare_uninstall,
                     self.context.inspection.directory,
                     keep_data=True,
                 )
@@ -535,7 +535,7 @@ class LauncherHomeScreen(Screen[None]):
             return
         await self._stop_owned_children()
         try:
-            handoff = controllers.start_uninstall_handoff(
+            handoff = _uninstall_controller.start_uninstall_handoff(
                 preparation.plan,
                 original_pid=os.getpid(),
             )

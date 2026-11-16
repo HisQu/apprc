@@ -23,7 +23,7 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.definition.paths import Layout
-from apprc.distribution.runtime._integration import (
+from apprc.distribution.runtime._os_integration import (
     publish_global_command,
     remove_owned_command,
 )

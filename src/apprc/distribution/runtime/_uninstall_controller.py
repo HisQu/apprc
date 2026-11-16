@@ -990,7 +990,7 @@ def start_uninstall_handoff(
             command = (
                 str(python),
                 "-m",
-                "apprc.distribution.runtime.removal",
+                "apprc.distribution.runtime.uninstall_handoff",
                 "--handoff-plan",
                 str(plan_file),
             )

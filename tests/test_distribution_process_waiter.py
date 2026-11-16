@@ -13,7 +13,11 @@ from ctypes import wintypes
 
 import pytest
 
-from apprc.distribution.runtime import _handoff, removal, _process_waiter
+from apprc.distribution.runtime import (
+    _handoff,
+    uninstall_handoff,
+    _process_waiter,
+)
 
 
 @contextmanager
@@ -51,7 +55,7 @@ def test_libc_pidfd_waits_for_owned_child_without_python_wrapper(
     _without_python_pidfd(monkeypatch)
     with _owned_child() as process:
         expected = _handoff.process_start_token(process.pid)
-        waiter = removal._open_process_waiter(process.pid, expected)
+        waiter = uninstall_handoff._open_process_waiter(process.pid, expected)
         assert waiter[0] == "pidfd"
         fd = waiter[1]
         assert isinstance(fd, int)
@@ -61,7 +65,7 @@ def test_libc_pidfd_waits_for_owned_child_without_python_wrapper(
             assert process.stdin is not None
             process.stdin.write("exit\n")
             process.stdin.flush()
-            removal._wait_open_process(waiter)
+            uninstall_handoff._wait_open_process(waiter)
             _assert_closed(fd)
             assert process.wait(timeout=5) == 0
         finally:
@@ -89,7 +93,7 @@ def test_pidfd_closes_when_process_start_identity_does_not_match(
     monkeypatch.setattr(_process_waiter, "_linux_pidfd_open", track_pidfd)
     try:
         with _owned_child() as process:
-            waiter = removal._open_process_waiter(
+            waiter = uninstall_handoff._open_process_waiter(
                 process.pid, "linux:wrong:identity"
             )
             assert waiter == ("already-exited", None)
@@ -136,7 +140,9 @@ def test_pidfd_closes_when_process_exits_during_identity_validation(
             monkeypatch.setattr(
                 _process_waiter, "_linux_process_token", exit_before_token_read
             )
-            waiter = removal._open_process_waiter(process.pid, "unused")
+            waiter = uninstall_handoff._open_process_waiter(
+                process.pid, "unused"
+            )
             assert observed == [process.pid]
             assert waiter == ("already-exited", None)
             assert len(opened) == 1
@@ -159,7 +165,7 @@ def test_windows_waiter_waits_for_exit_and_closes_handle() -> None:
     kernel32.GetHandleInformation.restype = wintypes.BOOL
     with _owned_child() as process:
         expected = _handoff.process_start_token(process.pid)
-        waiter = removal._open_process_waiter(process.pid, expected)
+        waiter = uninstall_handoff._open_process_waiter(process.pid, expected)
         assert waiter[0] == "windows"
         handle = waiter[1]
         flags = wintypes.DWORD()
@@ -169,7 +175,7 @@ def test_windows_waiter_waits_for_exit_and_closes_handle() -> None:
             assert process.stdin is not None
             process.stdin.write("exit\n")
             process.stdin.flush()
-            removal._wait_open_process(waiter)
+            uninstall_handoff._wait_open_process(waiter)
             ctypes.set_last_error(0)
             assert not kernel32.GetHandleInformation(
                 handle, ctypes.byref(flags)

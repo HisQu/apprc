@@ -53,6 +53,8 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💥 Breaking changes
 
+- Breaking: runtime implementation modules `controllers`, `removal`, and `_integration` are now `_uninstall_controller`, `uninstall_handoff`, and `_os_integration`. Update direct imports and handoff module invocations; runtime facade exports remain available.
+
 - Breaking: `InstallationManager.plan_repair()` now plans only a new managed-runtime repair. Call `plan_resume()` to resume an incomplete install, replacement, or repair; the saved operation ID, candidate, and operation kind remain unchanged.
 
 <br>
@@ -62,6 +64,8 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
+
+- Uninstall orchestration follows explicit existing checkpoint phases with shared Windows registry handling. Application bridge actions use focused handlers behind common request and authority validation.
 
 - Managed installation and repair share publication, registration, checkpoint, and activation handling while retaining distinct preparation and rollback evidence.
 

@@ -33,8 +33,10 @@ from apprc.distribution.runtime._leases import (
     acquire_runtime_lease,
     try_retire_runtime_slot,
 )
-from apprc.distribution.runtime import controllers
-from apprc.distribution.runtime.controllers import UninstallPreparation
+from apprc.distribution.runtime import _uninstall_controller
+from apprc.distribution.runtime._uninstall_controller import (
+    UninstallPreparation,
+)
 from apprc.interfaces.tui._primitives import ConfirmScreen
 from apprc.interfaces.tui.editor import ConfigEditorScreen
 from apprc.interfaces.tui.launcher.app import LauncherApp, LauncherInfoScreen
@@ -441,7 +443,7 @@ async def test_launcher_uninstall_cancellation_does_not_start_handoff(
         can_execute=True,
     )
     monkeypatch.setattr(
-        controllers,
+        _uninstall_controller,
         "prepare_uninstall",
         lambda *_args, **_kwargs: preparation,
     )
@@ -454,7 +456,7 @@ async def test_launcher_uninstall_cancellation_does_not_start_handoff(
         raise AssertionError("Canceled uninstall must not start a handoff.")
 
     monkeypatch.setattr(
-        controllers, "start_uninstall_handoff", fail_if_handoff_starts
+        _uninstall_controller, "start_uninstall_handoff", fail_if_handoff_starts
     )
 
     async with app.run_test() as pilot:

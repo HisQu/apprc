@@ -20,7 +20,9 @@ from apprc.definition.installation import (
     OperationContext,
 )
 from apprc.distribution.runtime import _process_waiter
-from apprc.distribution.runtime.removal import _stage_repository_finalizer
+from apprc.distribution.runtime.uninstall_handoff import (
+    _stage_repository_finalizer,
+)
 from apprc.user_files.app_home.writes import (
     managed_lock_path,
     managed_write_lock,

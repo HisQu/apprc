@@ -403,7 +403,7 @@ def main() -> int:
         if len(argv) != 2:
             raise ValueError("Native uninstall handoff arguments are invalid.")
         binding, _ = _read_product()
-        from apprc.distribution.runtime.removal import execute_handoff
+        from apprc.distribution.runtime.uninstall_handoff import execute_handoff
 
         execute_handoff(Path(argv[1]), expected_identity=binding.identity)
         return 0

@@ -35,7 +35,9 @@ from apprc.interfaces.cli.context import (
 )
 
 if TYPE_CHECKING:
-    from apprc.distribution.runtime.controllers import UninstallPreparation
+    from apprc.distribution.runtime._uninstall_controller import (
+        UninstallPreparation,
+    )
 
 
 def _installation_error_message(error: BaseException) -> str:
@@ -250,10 +252,10 @@ def mount_installation_group(
         inspection = command_context.inspection
         directory = inspection.directory
         try:
-            from apprc.distribution.runtime import controllers
+            from apprc.distribution.runtime import _uninstall_controller
 
             manager_executable = command_context._native_manager_executable
-            preparation = controllers.prepare_uninstall(
+            preparation = _uninstall_controller.prepare_uninstall(
                 directory,
                 keep_data=True if keep_data else None,
                 remove_repository=remove_repository,
@@ -276,7 +278,7 @@ def mount_installation_group(
             raise typer.Abort()
 
         try:
-            handoff = controllers.start_uninstall_handoff(
+            handoff = _uninstall_controller.start_uninstall_handoff(
                 preparation.plan,
                 original_pid=os.getpid(),
                 manager_executable=command_context._native_manager_executable,

@@ -38,7 +38,7 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.definition.paths import ResourceKind
-from apprc.distribution.runtime._integration import (
+from apprc.distribution.runtime._os_integration import (
     capture_windows_registration,
     command_is_owned,
     publish_global_command,
@@ -84,7 +84,7 @@ from apprc.user_files.installation.operations import (
 
 if TYPE_CHECKING:
     from apprc.services.installation import InstallationManager
-    from apprc.distribution.runtime._integration import (
+    from apprc.distribution.runtime._os_integration import (
         WindowsRegistrationSnapshot,
     )
 
@@ -2200,7 +2200,7 @@ def publish_optional_shortcuts(
     launch_enabled: bool,
 ) -> InstallationInspection:
     """Publish optional shortcuts after Ready and persist only owned outputs."""
-    from apprc.distribution.runtime._integration import publish_shortcuts
+    from apprc.distribution.runtime._os_integration import publish_shortcuts
     from apprc.user_files.installation.operations import record_owned_outputs
 
     directory = manager.directory
@@ -2248,7 +2248,7 @@ def publish_optional_shortcuts(
                 owned_outputs=outputs,
             )
         except Exception as error:
-            from apprc.distribution.runtime._integration import (
+            from apprc.distribution.runtime._os_integration import (
                 remove_owned_command,
             )
 

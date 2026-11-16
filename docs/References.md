@@ -471,6 +471,12 @@ runtime. Ready accepts either an observed managed slot or a validated editable
 checkout. Removal with retained resources clears the active target and records
 `removed-retained`; it does not claim the program still exists.
 
+Direct runtime implementation imports have changed: `controllers` is now
+`_uninstall_controller`, `removal` is `uninstall_handoff`, and `_integration` is
+`_os_integration` under `apprc.distribution.runtime`. Update direct imports and
+standalone handoff module invocations; the runtime facade retains its exported
+uninstall operations. There are no aliases for the old module paths.
+
 Lifecycle operations retain physical namespace locks, exact-revision CAS,
 operation-context checks and failure checkpoints. Candidate initialization
 requires its matching operation context. Ordinary access uses the committed

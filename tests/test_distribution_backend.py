@@ -16,6 +16,7 @@ import pytest
 
 from apprc import AppRC, Paths
 from apprc.definition.installation import (
+    EditableCheckout,
     InstallationError,
     InstallationIdentity,
     InstallationInspection,
@@ -32,8 +33,8 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import Layout
 from apprc.distribution.runtime.backend import runtime_environment
-from apprc.distribution.runtime import _integration
-from apprc.distribution.runtime._integration import (
+from apprc.distribution.runtime import _os_integration
+from apprc.distribution.runtime._os_integration import (
     capture_windows_registration,
     publish_windows_registration,
     remove_windows_registration,
@@ -126,7 +127,7 @@ class _WindowsRegistry(ModuleType):
 def windows_registry(monkeypatch: pytest.MonkeyPatch) -> _WindowsRegistry:
     registry = _WindowsRegistry()
     monkeypatch.setitem(sys.modules, "winreg", registry)
-    monkeypatch.setattr(_integration, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(_os_integration, "os", SimpleNamespace(name="nt"))
     return registry
 
 
@@ -650,7 +651,7 @@ def test_command_ownership_accepts_prior_or_pending_image(
     destination = tmp_path / "command"
     if link:
         destination.symlink_to(tmp_path / "target")
-        digest = _integration._link_digest(str(tmp_path / "target"))
+        digest = _os_integration._link_digest(str(tmp_path / "target"))
     else:
         destination.write_bytes(b"pending")
         digest = hashlib.sha256(b"pending").hexdigest()
@@ -658,7 +659,7 @@ def test_command_ownership_accepts_prior_or_pending_image(
         OwnedOutput("command", str(destination), "a" * 64),
         OwnedOutput("command", str(destination), digest),
     )
-    assert _integration._authorized_existing(destination, previous)
+    assert _os_integration._authorized_existing(destination, previous)
     if link:
         with pytest.raises(InstallationError, match="unsafe stable command"):
             _check_owned_command(destination, previous)
@@ -666,4 +667,79 @@ def test_command_ownership_accepts_prior_or_pending_image(
         _check_owned_command(destination, previous)
     foreign = (OwnedOutput("command", str(destination), "b" * 64),)
     with pytest.raises(InstallationError, match="outside AppRC ownership"):
-        _integration._authorized_existing(destination, foreign)
+        _os_integration._authorized_existing(destination, foreign)
+
+
+@pytest.mark.parametrize(
+    "failure", [None, "changed-type", "foreign-subkey", "delete-then-fail"]
+)
+def test_uninstall_registry_capture_uses_exact_typed_ownership(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    windows_registry: _WindowsRegistry,
+    failure: str | None,
+) -> None:
+    """Uninstall shares typed before-images without accepting changed keys."""
+    from apprc.distribution.runtime import uninstall_handoff
+
+    identity = InstallationIdentity(
+        "fixture", "fixture", "fixture", None, ("fixture",)
+    )
+    output = windows_registration_intent(
+        tmp_path, identity, tmp_path / "fixture"
+    )
+    publish_windows_registration(
+        tmp_path, identity, tmp_path / "fixture", previous=(output,)
+    )
+    key_path = output.path.removeprefix("HKCU\\")
+    key = windows_registry.keys[key_path]
+    if failure == "changed-type":
+        value, _kind = key.values["DisplayName"]
+        key.values["DisplayName"] = (value, 99)
+    elif failure == "foreign-subkey":
+        key.subkeys = 1
+    record = InstallationRecord(
+        3,
+        identity,
+        "fixture",
+        uuid4(),
+        "1",
+        InstallationPlacement(Layout.native()),
+        "ready",
+        active_runtime=EditableCheckout(tmp_path, tmp_path / ".venv"),
+        owned_outputs=(output,),
+    )
+    monkeypatch.setattr(uninstall_handoff, "os", SimpleNamespace(name="nt"))
+    removed = []
+    if failure == "delete-then-fail":
+        before = dict(key.values)
+        delete_key = windows_registry.DeleteKey
+
+        def delete_then_fail(root: int, path: str) -> None:
+            delete_key(root, path)
+            raise OSError("registry deletion failed after mutation")
+
+        monkeypatch.setattr(windows_registry, "DeleteKey", delete_then_fail)
+        with pytest.raises(OSError, match="after mutation"):
+            uninstall_handoff._remove_registry_outputs(
+                record, tmp_path, removed
+            )
+        assert key_path not in windows_registry.keys
+        assert len(removed) == 1
+        restore_windows_registration(removed[0])
+        assert windows_registry.keys[key_path].values == before
+        return
+    if failure is not None:
+        with pytest.raises(InstallationError):
+            uninstall_handoff._remove_registry_outputs(
+                record, tmp_path, removed
+            )
+        assert not removed
+        assert windows_registry.keys[key_path] is key
+    else:
+        before = dict(key.values)
+        uninstall_handoff._remove_registry_outputs(record, tmp_path, removed)
+        assert key_path not in windows_registry.keys
+        assert len(removed) == 1
+        restore_windows_registration(removed[0])
+        assert windows_registry.keys[key_path].values == before

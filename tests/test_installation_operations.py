@@ -642,3 +642,106 @@ def test_migration_hook_failure_records_failed_pending_authority(
         OperationStep.MIGRATION_HOOK_COMPLETED
         not in failed.record.operation.steps
     )
+
+
+@pytest.mark.parametrize("alias", [False, True])
+def test_editable_interpreter_identity_is_checked_before_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, alias: bool
+) -> None:
+    import os
+    import sys
+
+    import apprc as rc
+    from apprc.distribution.runtime import installation
+    from apprc.services.installation import InstallationManager
+
+    project = tmp_path / "checkout"
+    environment = project / ".venv"
+    environment.mkdir(parents=True)
+    (project / "pyproject.toml").write_text(
+        '[project]\nname="fixture"\nversion="1"\n', encoding="utf-8"
+    )
+    interpreter = environment / (
+        "Scripts/python.exe" if os.name == "nt" else "bin/python"
+    )
+    interpreter.parent.mkdir(exist_ok=True)
+    interpreter.touch()
+    selected = tmp_path / "interpreter-environment"
+    if alias:
+        try:
+            selected.symlink_to(environment, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Directory aliases unavailable: {error}")
+    else:
+        selected.mkdir()
+    monkeypatch.setattr(sys, "prefix", str(selected))
+    manager = InstallationManager(
+        rc.AppRC(app_id="lifecycle-fixture").schema,
+        directory=tmp_path / "installation",
+    )
+
+    class MetadataProbeReached(Exception):
+        pass
+
+    def stop_before_mutation(*args: object) -> None:
+        raise MetadataProbeReached
+
+    monkeypatch.setattr(
+        installation, "_validate_editable_metadata", stop_before_mutation
+    )
+    if alias:
+        with pytest.raises(MetadataProbeReached):
+            installation.register_editable_application(
+                manager,
+                _identity(),
+                EditableCheckout(project, environment),
+                InstallationPlacement(layout=Layout.native()),
+                command_name="fixture",
+                uv=tmp_path / "uv",
+            )
+    else:
+        with pytest.raises(
+            InstallationError,
+            match="Expected environment:.*running environment:",
+        ):
+            installation.register_editable_application(
+                manager,
+                _identity(),
+                EditableCheckout(project, environment),
+                InstallationPlacement(layout=Layout.native()),
+                command_name="fixture",
+                uv=tmp_path / "uv",
+            )
+    assert not manager.directory.exists()
+
+
+def test_editable_unavailable_environment_preserves_filesystem_error(
+    tmp_path: Path,
+) -> None:
+    import apprc as rc
+    from apprc.distribution.runtime.installation import (
+        register_editable_application,
+    )
+    from apprc.services.installation import InstallationManager
+
+    project = tmp_path / "checkout"
+    project.mkdir()
+    environment = project / ".venv"
+    manager = InstallationManager(
+        rc.AppRC(app_id="lifecycle-fixture").schema,
+        directory=tmp_path / "installation",
+    )
+    with pytest.raises(
+        InstallationError, match="Cannot access editable checkout"
+    ) as failure:
+        register_editable_application(
+            manager,
+            _identity(),
+            EditableCheckout(project, environment),
+            InstallationPlacement(layout=Layout.native()),
+            command_name="fixture",
+            uv=tmp_path / "uv",
+        )
+    assert str(environment) in str(failure.value)
+    assert isinstance(failure.value.__cause__, FileNotFoundError)
+    assert not manager.directory.exists()

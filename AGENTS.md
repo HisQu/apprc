@@ -3,6 +3,8 @@
 ## Repo routing
 - Warn me if the paths below appear outdated.
 - Reuse existing helpers and utilities before adding new helper functions.
+- Before changing CLI composition, facades, or help, follow [lightweight CLI startup](docs/Development.md#lightweight-cli-startup). Check transitive parent-package imports; declarations must not load editors, prompt engines, or host business implementations. Verify with a fresh-process help test before publishing.
+- For editable installation paths, follow the [checkout registration contract](docs/How-To-User-Guides.md#install-from-a-checkout). Distinguish filesystem identity from path spelling, preserve Windows UNC authorities, retain ownership/link safeguards, and include expected/actual paths in errors. Add guidance once at the CLI boundary.
 - Check these modules first:
   - `apprc.utils`
 - If a helper is broadly reusable, place it in the appropriate shared module.

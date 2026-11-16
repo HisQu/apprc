@@ -1693,27 +1693,35 @@ def register_editable_application(
         or not runtime.environment.is_absolute()
     ):
         raise InstallationError("Editable paths must be absolute.")
-    project = runtime.project.resolve(strict=True)
-    environment_path = runtime.environment.resolve(strict=True)
     from apprc.definition.resolution import resolve_editable_environment
 
-    if (
-        resolve_editable_environment(project).resolve(strict=True)
-        != environment_path
-        or not (project / "pyproject.toml").is_file()
-    ):
+    try:
+        project = runtime.project.resolve(strict=True)
+        environment_path = runtime.environment.resolve(strict=True)
+        expected_environment = resolve_editable_environment(project)
+        matches_project = expected_environment.samefile(environment_path)
+        matches_interpreter = Path(sys.prefix).samefile(environment_path)
+    except OSError as exc:
         raise InstallationError(
-            "Editable registration requires the selected project's existing workspace .venv."
+            f"Cannot access editable checkout {runtime.project} or environment "
+            f"{runtime.environment}; running environment: {sys.prefix}. {exc}"
+        ) from exc
+    if not matches_project or not (project / "pyproject.toml").is_file():
+        raise InstallationError(
+            f"Editable registration requires environment {expected_environment}; "
+            f"selected environment: {environment_path}."
         )
     runtime = EditableCheckout(project, environment_path, runtime.hooks)
-    if Path(sys.prefix).resolve(strict=True) != environment_path:
+    if not matches_interpreter:
         raise InstallationError(
-            "The current interpreter is not this checkout's .venv; run `uv run --locked <command> app install -e`."
+            "The current interpreter is not this checkout's .venv. "
+            f"Expected environment: {environment_path}; "
+            f"running environment: {Path(sys.prefix).resolve(strict=True)}."
         )
     interpreter = runtime_interpreter(manager.directory, runtime)
     if not interpreter.is_file():
         raise InstallationError(
-            "Editable environment is unavailable; run `uv run --locked <command> app install -e`."
+            f"Editable interpreter is unavailable: {interpreter}."
         )
     environment = manager.environment
     _validate_editable_metadata(interpreter, identity, environment)

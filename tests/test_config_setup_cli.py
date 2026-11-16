@@ -133,7 +133,7 @@ def test_setup_prompts_for_missing_field_despite_changed_display_prose(
 
     monkeypatch.setattr(manager, "inspect", inspect_with_changed_prose)
     monkeypatch.setattr(
-        setup_command, "prompt", lambda *args, **kwargs: "saved"
+        "prompt_toolkit.prompt", lambda *args, **kwargs: "saved"
     )
 
     setup_command._prompt_required_fields(manager)
@@ -162,6 +162,6 @@ def test_setup_does_not_prompt_for_invalid_field(
     def fail_prompt(*args, **kwargs):
         pytest.fail("invalid fields must not be prompted as missing")
 
-    monkeypatch.setattr(setup_command, "prompt", fail_prompt)
+    monkeypatch.setattr("prompt_toolkit.prompt", fail_prompt)
 
     setup_command._prompt_required_fields(manager)

@@ -714,6 +714,11 @@ build host business state; nested help and recovery must remain usable with
 broken business configuration or installation authority. See the
 [callback example](EXAMPLES.md#an-application-owned-cli-callback).
 
+Keep command declarations lightweight: import database, browser and provider
+implementations inside their command or maintenance callback. AppRC defers its
+own editors and interactive prompts. Follow the [startup boundary and fresh-process
+checks](Development.md#lightweight-cli-startup), including parent-package facades.
+
 ## Launch the optional Textual application screen
 
 Replace the earlier `rc.cli.mount_app_cli(app, MyRC)` line in `demo.py` with
@@ -997,6 +1002,19 @@ changes stay editable. If the environment breaks, restore it with uv before
 using its maintenance commands; editable registration does not add an independent
 native management environment. Ordinary unmanaged `pip install -e .` remains
 usable without an installation record.
+
+On Windows, editable source metadata may use either a mapped drive such as
+`file:///W:/project` or a UNC URL such as `file://server/share/project`.
+AppRC preserves the UNC server/share and compares existing environment
+directories by filesystem identity. On other platforms a remote file-URL host
+is rejected explicitly: use the path where that share is mounted locally.
+This does not bypass ownership, symlink/reparse-point, or private-directory
+checks. Network shares still need to satisfy the applicable filesystem policy.
+
+If interpreter ownership validation fails, the error reports the expected
+environment and actual interpreter prefix. Compare those paths before changing
+or reinstalling an environment; activating a shell environment does not change
+the interpreter already selected by `uv run`.
 
 For a managed release, verify the downloaded `SHA256SUMS`, then run its setup:
 

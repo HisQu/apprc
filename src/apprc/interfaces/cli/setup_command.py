@@ -4,7 +4,6 @@ from __future__ import annotations
 
 # == 3rd Party ===============================
 import typer
-from prompt_toolkit import prompt
 from rich.console import Console
 
 # == Internal ================================
@@ -80,6 +79,8 @@ def _prompt_required_fields(manager: ConfigManager) -> None:
 
     :param manager: Manager bound to the location initialized by setup.
     """
+    from prompt_toolkit import prompt
+
     for item in manager.inspect(include_workspace=False).fields:
         if (
             not item.active

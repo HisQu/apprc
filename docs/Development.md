@@ -5,6 +5,7 @@
 - [Work in the repository](#work-in-the-repository)
   - [Environment](#environment)
   - [Source ownership](#source-ownership)
+  - [Lightweight CLI startup](#lightweight-cli-startup)
 - [Verify and update changes](#verify-and-update-changes)
   - [Checks](#checks)
   - [Documentation checks](#documentation-checks)
@@ -164,6 +165,31 @@ file or directory privacy through Windows ACLs or POSIX mode bits. Callers
 retain link checks, creation, explicit repair, and operation-boundary
 revalidation. Installation coordination additionally requires POSIX ownership
 by the current user; other callers do not inherit that requirement.
+
+<br>
+
+## Lightweight CLI startup
+
+AppRC owns the import boundary for its CLI and optional interfaces. Importing
+CLI declarations, constructing `LauncherSpec`, and rendering help must not load
+Textual editors or Prompt Toolkit. Load those implementations when the user
+actually launches an editor or enters an interactive prompt. Use the existing
+lazy facade mechanism and matching typing stubs; inspect every parent package's
+`__init__.py`, because an eager ancestor defeats a lazy public facade.
+
+Host applications own the same boundary for their callbacks: register a small
+function that imports database, browser, or provider code inside its body.
+Avoid importing a workflow store or cache implementation merely to construct
+maintenance handlers. Help must remain available without resolving business
+settings or opening application resources.
+
+Before publishing, exercise the actual mounted CLI in a fresh Python process
+with unrelated UI/business imports unavailable. Keep this regression in the
+existing suite. Profile with `python -X importtime -m YOUR_APP --help`; compare
+the loaded modules and the same environment before and after the change.
+Local timings do not establish Windows/network-drive latency. Many small import
+and metadata reads can amplify network filesystem overhead, so avoid eager
+filesystem discovery as well as expensive module initialization.
 
 <br>
 

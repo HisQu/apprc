@@ -408,3 +408,189 @@ def test_native_cli_migrate_resumes_exact_pending_inventory_and_hook(
     assert (destination_root / source.name).read_bytes() == (
         b"preserved application data"
     )
+
+
+def test_editable_file_url_decodes_localhost_and_escaped_path(
+    tmp_path: Path,
+) -> None:
+    from apprc.interfaces.cli.installation_command import _editable_source_path
+
+    source = tmp_path / "checkout with spaces"
+    assert _editable_source_path(source.as_uri()) == source
+    localhost = source.as_uri().replace("file://", "file://localhost", 1)
+    assert _editable_source_path(localhost) == source
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        "https://example.invalid/app",
+        "file:relative",
+        "file:///checkout?query",
+        "file:///checkout#fragment",
+    ],
+)
+def test_editable_source_url_rejects_ambiguous_sources(url: str) -> None:
+    from apprc.interfaces.cli.installation_command import _editable_source_path
+
+    with pytest.raises(ValueError, match="file URL"):
+        _editable_source_path(url)
+
+
+def test_editable_network_source_is_explicit_about_platform() -> None:
+    import os
+
+    from apprc.interfaces.cli.installation_command import _editable_source_path
+
+    if os.name == "nt":
+        assert _editable_source_path("file://server/share/check%20out") == Path(
+            r"\\server\share\check out"
+        )
+    else:
+        with pytest.raises(
+            ValueError,
+            match="Cannot convert editable source URL.*mounted local path",
+        ):
+            _editable_source_path("file://server/share/check%20out")
+
+
+def test_editable_conversion_error_names_source_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apprc.interfaces.cli import installation_command
+
+    def unavailable_conversion(path: str) -> str:
+        raise OSError(22, "conversion failed", path)
+
+    monkeypatch.setattr(
+        installation_command, "url2pathname", unavailable_conversion
+    )
+    source = "file:///checkout"
+    with pytest.raises(
+        ValueError, match="Cannot convert editable source URL"
+    ) as failure:
+        installation_command._editable_source_path(source)
+    assert source in str(failure.value)
+    assert isinstance(failure.value.__cause__, OSError)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["mismatch", "unavailable-source", "stat-denied", "workspace-root"],
+)
+def test_editable_environment_error_reports_paths_and_guidance_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    import importlib.metadata
+    import sys
+
+    workspace = tmp_path / "workspace"
+    checkout = (
+        workspace if failure == "workspace-root" else tmp_path
+    ) / "checkout"
+    expected = (
+        workspace if failure == "workspace-root" else checkout
+    ) / ".venv"
+    expected.mkdir(parents=True)
+    checkout.mkdir(exist_ok=True)
+    if failure == "workspace-root":
+        (workspace / "pyproject.toml").write_text(
+            '[tool.uv.workspace]\nmembers=["checkout"]\n', encoding="utf-8"
+        )
+    (checkout / "pyproject.toml").write_text(
+        '[project]\nname="fixture"\nversion="1.0"\n'
+        '[project.scripts]\nfixture="fixture:main"\n',
+        encoding="utf-8",
+    )
+    metadata = tmp_path / "fixture-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: fixture\nVersion: 1.0\n", encoding="utf-8"
+    )
+    (metadata / "entry_points.txt").write_text(
+        "[console_scripts]\nfixture = fixture:main\n", encoding="utf-8"
+    )
+    (metadata / "direct_url.json").write_text(
+        json.dumps({"url": checkout.as_uri(), "dir_info": {"editable": True}}),
+        encoding="utf-8",
+    )
+    source = (
+        checkout / "unavailable-source"
+        if failure == "unavailable-source"
+        else checkout
+    )
+    (metadata / "direct_url.json").write_text(
+        json.dumps({"url": source.as_uri(), "dir_info": {"editable": True}}),
+        encoding="utf-8",
+    )
+    distribution = importlib.metadata.Distribution.at(metadata)
+
+    def installed_commands(
+        *, group: str, name: str
+    ) -> importlib.metadata.EntryPoints:
+        return distribution.entry_points.select(group=group, name=name)
+
+    args = ["app", "install", "-e"]
+    app = _app(
+        rc.AppRC(app_id="fixture", command_name="fixture", paths=rc.Paths()),
+        args=args,
+    )
+    running = (
+        expected
+        if failure == "workspace-root"
+        else tmp_path / "other-environment"
+    )
+    running.mkdir(exist_ok=True)
+    monkeypatch.setattr(sys, "prefix", str(running))
+    monkeypatch.setattr(importlib.metadata, "entry_points", installed_commands)
+    monkeypatch.chdir(workspace if failure == "workspace-root" else checkout)
+    if failure == "stat-denied":
+        original_samefile = Path.samefile
+
+        def inaccessible_identity(self: Path, other: str | Path) -> bool:
+            if self == expected:
+                raise PermissionError(13, "identity access denied", str(self))
+            return original_samefile(self, other)
+
+        monkeypatch.setattr(Path, "samefile", inaccessible_identity)
+    elif failure == "workspace-root":
+        original_samefile = Path.samefile
+
+        def workspace_identity(self: Path, other: str | Path) -> bool:
+            if not self.is_relative_to(workspace):
+                raise AssertionError(
+                    "Probed above the valid workspace boundary"
+                )
+            return original_samefile(self, other)
+
+        monkeypatch.setattr(Path, "samefile", workspace_identity)
+    result = CliRunner().invoke(
+        app,
+        args,
+        env={
+            "HOME": str(tmp_path),
+            "XDG_DATA_HOME": str(tmp_path / "data"),
+            "COLUMNS": "1000",
+        },
+        terminal_width=1000,
+    )
+
+    assert result.exit_code == 2, result.output
+    if failure == "mismatch":
+        assert "Expected environment:" in result.output
+        assert str(expected) in result.output
+    elif failure == "workspace-root":
+        assert "Console command 'fixture' is unavailable at" in result.output
+    else:
+        assert "Cannot access editable source" in result.output
+        assert str(source) in result.output
+        if failure == "stat-denied":
+            assert "identity access denied" in result.output
+            assert str(expected) in result.output
+        else:
+            assert "unavailable-source" in result.output
+    if failure != "workspace-root":
+        assert "running environment:" in result.output
+        assert str(running) in result.output
+    assert result.output.count("install -e` from the checkout.") == 1

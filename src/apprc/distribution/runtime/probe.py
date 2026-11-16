@@ -70,7 +70,7 @@ def _private_request_file(
             if os.name == "nt":
                 set_windows_private_acl(temporary_root)
             _assert_private_staging(temporary_root)
-        except (OSError, ValueError) as error:
+        except Exception as error:
             raise InstallationError(
                 f"Cannot prepare private bridge request directory {temporary_root}: {error}"
             ) from error

@@ -2046,11 +2046,16 @@ def register_editable_application(
                 and prior_runtime.environment.resolve(strict=False)
                 == environment_path
             )
-            if not same_checkout and not assume_yes:
+            if (
+                prior_runtime is not None
+                and not same_checkout
+                and not assume_yes
+            ):
                 raise InstallationError(
                     "Switching installation ownership requires --yes confirmation."
                 )
-            placement = previous.placement
+            if previous.operation is None:
+                placement = previous.placement
         selected_directory = _editable_command_directory(
             manager, runtime, uv, command_directory
         )
@@ -2065,11 +2070,33 @@ def register_editable_application(
             previous=(*prior_outputs, *publication_authority),
         )
         if previous is not None and previous.operation is not None:
-            plan = manager.plan_repair(identity, runtime, placement)
-            if plan.target.runtime != runtime:
+            operation = previous.operation
+            intended = operation.intended
+            if (
+                operation.kind not in {"install", "replace", "repair"}
+                or intended is None
+                or previous.identity != identity
+                or intended.identity != identity
+                or previous.command_name != command_name
+                or intended.runtime != runtime
+                or intended.placement != placement
+                or operation.placement != placement
+            ):
                 raise InstallationError(
                     "Pending registration addresses another checkout."
                 )
+            # > Resume registration authority, not the developer-owned environment
+            # > repair that the public managed-runtime planner deliberately rejects.
+            plan = InstallPlan(
+                directory=manager.directory,
+                expected_revision=prior.revision,
+                expected_generation=previous.generation_id,
+                target=intended,
+                operation_id=operation.operation_id,
+                generation_id=previous.generation_id,
+                kind="repair",
+                command_name=previous.command_name,
+            )
         else:
             plan = manager.plan_install(
                 identity, runtime, placement, command_name=command_name

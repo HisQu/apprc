@@ -382,7 +382,7 @@ def build_project_snapshot(
             if os.name == "nt":
                 set_windows_private_acl(stage)
             _assert_private_staging(stage)
-        except (OSError, ValueError) as error:
+        except Exception as error:
             raise InstallationError(
                 f"Cannot prepare private project staging directory {stage}: {error}"
             ) from error

@@ -372,10 +372,14 @@ def test_failed_rollback_preserves_payload_and_both_errors(
         assert payload.read_bytes() == b"application-owned data"
 
 
+@pytest.mark.parametrize(
+    "pending", (False, True), ids=("clean", "saved-incomplete")
+)
 def test_first_editable_probe_failure_is_clean_and_immediately_retryable(
     native_case: _NativeCase,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    pending: bool,
 ) -> None:
     """Exercise registration rollback without writing into the running venv."""
     from apprc.definition import resolution
@@ -441,6 +445,40 @@ def test_first_editable_probe_failure_is_clean_and_immediately_retryable(
         assert caught.value is failure
     assert manager.inspect().status == "missing"
     assert not tuple(commands.iterdir())
+    if pending:
+        from apprc.definition.installation import InstallationDiagnostic
+
+        plan = manager.plan_install(
+            native_case.identity,
+            runtime,
+            native_case.placement,
+            command_name="fixture",
+        )
+        started = manager.begin_operation(plan)
+        assert started.revision is not None
+        failed = manager.fail_operation(
+            operation_id=plan.operation_id,
+            expected_revision=started.revision,
+            diagnostic=InstallationDiagnostic(
+                "runtime-incomplete",
+                "Earlier staging failure.",
+                "Retry installation.",
+            ),
+        )
+        other_project = tmp_path / "other-checkout"
+        other_project.mkdir()
+        (other_project / "pyproject.toml").write_bytes(source_bytes)
+        with pytest.raises(InstallationError, match="another checkout"):
+            installation.register_editable_application(
+                manager,
+                native_case.identity,
+                replace(runtime, project=other_project),
+                native_case.placement,
+                command_name="fixture",
+                uv=native_case.uv,
+                command_directory=commands,
+            )
+        assert manager.inspect().record == failed.record
     registered = register()
     assert registered.status == "ready"
     assert (

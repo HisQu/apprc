@@ -92,11 +92,11 @@ def _committed_workspace(
     )
 
 
-@pytest.mark.parametrize("acl_failure", [False, True])
+@pytest.mark.parametrize("acl_failure", [False, True, "native-error"])
 def test_project_export_secures_windows_staging_before_writing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    acl_failure: bool,
+    acl_failure: bool | str,
 ) -> None:
     repository = tmp_path / "workspace"
     repository.mkdir()
@@ -108,6 +108,8 @@ def test_project_export_secures_windows_staging_before_writing(
     def private_acl(directory: Path) -> None:
         staged.append(directory)
         assert tuple(directory.iterdir()) == ()
+        if acl_failure == "native-error":
+            raise RuntimeError("ACL update denied by native API")
         if acl_failure:
             raise PermissionError(13, "ACL update denied", str(directory))
         if os.name == "nt":
@@ -126,7 +128,10 @@ def test_project_export_secures_windows_staging_before_writing(
                 spec, revision="HEAD", destination=destination
             )
         assert "ACL update denied" in str(failure.value)
-        assert isinstance(failure.value.__cause__, PermissionError)
+        expected_error = (
+            RuntimeError if acl_failure == "native-error" else PermissionError
+        )
+        assert isinstance(failure.value.__cause__, expected_error)
         assert not destination.exists()
     else:
         prepared = build_project_snapshot(

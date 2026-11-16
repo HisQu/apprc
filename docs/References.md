@@ -765,7 +765,7 @@ All seven public option annotations are accepted by
 | --- | --- | --- |
 | `EnvFilesOption` | `--env-file PATH` | Repeatable explicit files in order; later files win. Process environment wins unless `-o` is supplied. |
 | `EnvFileOverridesOption` | `--env-file-overrides-os-environ`, `-o` | Explicit files override captured process environment. |
-| `SkipDotenvLayersOption` | `--skip-dotenv-layers`, `-s` | Exclude managed dotenv layers, retaining explicit files and process environment. |
+| `SkipDotenvLayersOption` | `--skip-dotenv-layers`, `-s` | Exclude dotenv values from settings, including explicit files; retain process environment, Python fallbacks, and explicit-file path/workspace selectors. |
 | `WorkspaceOption` | `--workspace VALUE` | Select a registered workspace name or a direct path according to the declaration. |
 | `LayoutOption` | `--layout native\|single-root` | Override the layout for this invocation only. |
 | `AppRootOption` | `--app-root PATH` | Supply this invocation's single-root location; never rewrite saved placement. |

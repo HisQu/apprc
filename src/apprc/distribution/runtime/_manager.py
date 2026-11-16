@@ -226,7 +226,12 @@ def _install(
             f"Warning: optional shortcuts were not updated: {error}",
             file=sys.stderr,
         )
-    offer_configuration_setup(inspection, skip=options.skip_setup)
+    offer_configuration_setup(
+        inspection,
+        skip=options.skip_setup,
+        runtime_options=captured_options,
+        environment=environment,
+    )
     return 0
 
 

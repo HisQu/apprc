@@ -58,8 +58,8 @@ SkipDotenvLayersOption: TypeAlias = Annotated[
         "-s",
         rich_help_panel="AppRC: Runtime Options",
         help=(
-            "Exclude AppRC-managed dotenv layers from settings; explicitly "
-            "selected --env-file values are still loaded."
+            "Exclude dotenv layers from settings, including --env-file values; "
+            "explicit files still participate in path and workspace selectors."
         ),
     ),
 ]

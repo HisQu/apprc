@@ -129,10 +129,13 @@ def mount_installation_group(
                         offer_configuration_setup,
                     )
 
+                    context = _inspection(ctx)
                     offer_configuration_setup(
                         result,
                         skip=skip_setup,
                         config_group_name=config_group_name,
+                        runtime_options=context.runtime_options,
+                        environment=context.environment,
                     )
                 except (OSError, ValueError) as exc:
                     raise typer.BadParameter(

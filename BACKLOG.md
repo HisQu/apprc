@@ -87,7 +87,7 @@ Treat this as the parking lot for actionable problems discovered while working b
 # 2026-11-16
 
 ## P1 / E1 [Bug risk] - *Uninstall cleanup can race with new resource leases*
-- **Area:** `src/apprc/distribution/runtime/removal.py`, `src/apprc/services/maintenance.py`, and application resource-admission callbacks.
+- **Area:** `src/apprc/distribution/runtime/uninstall_handoff.py`, `src/apprc/services/maintenance.py`, and application resource-admission callbacks.
 - **Observed while:** Updating PersoDB to AppRC's whole-directory uninstall contract.
 - **Why not fixed now:** Explicitly deferred by the user so the PersoDB update can proceed.
 - **Evidence:** The uninstall controller invokes the application cleanup hook to check leases, then later drains resource locks and removes the selected directories. PersoDB has cache readers that acquire a lease under a resource lock without captured installation authority; such a reader can enter after the hook finishes. AppRC maintenance provider callbacks receive a path or plan, not the captured installation authority needed to reject that admission against the pending uninstall.

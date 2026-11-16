@@ -238,7 +238,9 @@ def test_optional_setup_skips_without_applicable_missing_settings(
 
             @app_rc.config("settings", prefix="OPTIONAL_SETUP_")
             class Settings(rc.Config):
-                value: str = rc.field("OPTIONAL_SETUP_VALUE", default="provided")
+                value: str = rc.field(
+                    "OPTIONAL_SETUP_VALUE", default="provided"
+                )
 
     manager = app_rc.manage(environment={})
     if scenario != "no-scope":

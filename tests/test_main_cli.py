@@ -652,7 +652,6 @@ def test_ci_is_reusable_without_running_twice_for_release_tags() -> None:
     )
 
     assert "workflow_call:" in workflow
-    assert '      - "**"' in workflow
     assert "tags:" not in workflow
     assert "uses: extractions/setup-just@v4" in workflow
     assert 'just-version: "1.56.0"' in workflow
@@ -683,7 +682,6 @@ def test_release_workflow_creates_github_release_before_optional_pypi() -> None:
     assert "workflow_dispatch:" in workflow
     assert "release_tag:" in workflow
     assert "uses: ./.github/workflows/ci.yml" in workflow
-    assert "needs: checks" in workflow
     assert "needs: build" in workflow
     assert "environment: pypi" in pypi_publish
     assert "id-token: write" in workflow

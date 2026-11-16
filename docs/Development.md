@@ -467,6 +467,11 @@ WSL interop or weaken ownership/ACL/link checks to make a fixture pass.
 
 ## Release procedure
 
+`RELEASE_REQUIRE_CI` controls whether release automation requires hosted CI.
+When false, run and pass the full local test suite before merge or release and
+report hosted CI status separately. When true, exact-commit hosted CI must pass.
+This setting is independent of `RELEASE_PYPI`.
+
 Update the changelog first. Any change requiring consumer code, configuration,
 or installation changes belongs under breaking changes with affected users and
 migration instructions. Keep the core, terminal, and GUI distribution versions

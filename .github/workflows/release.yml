@@ -18,17 +18,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  policy:
+    name: Read release CI policy
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      require_ci: ${{ steps.policy.outputs.require_ci }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: "1.56.0"
+      - id: policy
+        shell: bash
+        run: |
+          value="$(just --evaluate RELEASE_REQUIRE_CI)"
+          [[ "$value" == true || "$value" == false ]] || { echo "Invalid RELEASE_REQUIRE_CI: $value" >&2; exit 1; }
+          echo "require_ci=$value" >> "$GITHUB_OUTPUT"
+
   checks:
     name: Full CI
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.policy.outputs.require_ci == 'true'
+    needs: policy
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
 
   build:
     name: Build release artifacts
-    if: github.event_name == 'push'
-    needs: checks
+    if: >-
+      github.event_name == 'push' && always() && needs.policy.result == 'success' &&
+      (needs.policy.outputs.require_ci == 'false' || needs.checks.result == 'success')
+    needs: [policy, checks]
     runs-on: ubuntu-latest
     permissions:
       contents: read

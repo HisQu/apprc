@@ -73,11 +73,25 @@ Treat this as the parking lot for actionable problems discovered while working b
 
 1. [Backlog](#backlog)
    1. [Table Of Contents](#table-of-contents)
-2. [2026-11-13](#2026-11-13)
+2. [2026-11-16](#2026-11-16)
+   1. [P1 / E1 \[Bug risk\] - *Uninstall cleanup can race with new resource leases*](#p1--e1-bug-risk---uninstall-cleanup-can-race-with-new-resource-leases)
+3. [2026-11-13](#2026-11-13)
    1. [P2 / E2 \[Bug risk\] - *Metadata-only version commands resolve appdata ownership*](#p2--e2-bug-risk---metadata-only-version-commands-resolve-appdata-ownership)
-3. [2026-11-09](#2026-11-09)
+4. [2026-11-09](#2026-11-09)
    1. [P3 / E1 \[Tooling\] - *Windows and macOS installation validation is deferred*](#p3--e1-tooling---windows-and-macos-installation-validation-is-deferred)
 
+
+<br>
+
+# 2026-11-16
+
+## P1 / E1 [Bug risk] - *Uninstall cleanup can race with new resource leases*
+- **Area:** `src/apprc/distribution/runtime/removal.py`, `src/apprc/services/maintenance.py`, and application resource-admission callbacks.
+- **Observed while:** Updating PersoDB to AppRC's whole-directory uninstall contract.
+- **Why not fixed now:** Explicitly deferred by the user so the PersoDB update can proceed.
+- **Evidence:** The uninstall controller invokes the application cleanup hook to check leases, then later drains resource locks and removes the selected directories. PersoDB has cache readers that acquire a lease under a resource lock without captured installation authority; such a reader can enter after the hook finishes. AppRC maintenance provider callbacks receive a path or plan, not the captured installation authority needed to reject that admission against the pending uninstall.
+- **Context:** A new lease in this interval could leave a reader using files while uninstall removes their directory. Existing authority-bound admissions are rejected while the uninstall is pending. This is an observed coordination gap, not a demonstrated exploit.
+- **Suggested next step:** Establish an authority-aware admission and cleanup contract that prevents new resource leases between the final lease check and whole-directory deletion, including direct consumers and maintenance callbacks. Add a deterministic multi-process regression for a reader queued across uninstall, and verify retries and release paths do not deadlock.
 
 <br>
 

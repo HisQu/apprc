@@ -33,9 +33,9 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.34.0 - 2026-11-13](#0340---2026-11-13)
-4. [0.33.0 - 2026-11-11](#0330---2026-11-11)
-5. [0.32.0 - 2026-11-10](#0320---2026-11-10)
+3. [0.35.0 - 2026-11-16](#0350---2026-11-16)
+4. [0.34.0 - 2026-11-13](#0340---2026-11-13)
+5. [0.33.0 - 2026-11-11](#0330---2026-11-11)
 6. [Older releases](CHANGELOG-ARCHIVE.md)
 
 <br>
@@ -47,6 +47,42 @@ All notable changes to `AppRC` will be documented in this file.
 <!-- ======================================================== -->
 
 # [Unreleased]
+
+<br>
+
+### 💥 Breaking changes
+
+<br>
+
+### ➕ Added
+
+<br>
+
+### 💔 Changed
+
+<br>
+
+### ⚠️ Deprecated
+
+<br>
+
+### 🗑️ Removed
+
+<br>
+
+### 🔨 Fixed
+
+<br>
+
+### 🔒 Security
+
+<br>
+
+---
+
+<br>
+
+# 0.35.0 - 2026-11-16
 
 <br>
 
@@ -79,8 +115,6 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-### ⚠️ Deprecated
-
 <br>
 
 ### 🗑️ Removed
@@ -92,8 +126,6 @@ All notable changes to `AppRC` will be documented in this file.
 - Corrected the one-line installation requirement ranges to include the published 0.34 release.
 
 <br>
-
-### 🔒 Security
 
 <br>
 
@@ -258,147 +290,3 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 <!-- ======================================================== -->
-
-# 0.32.0 - 2026-11-10
-
-Includes the changes previously listed under unpublished 0.31.0 and Unreleased.
-
-<br>
-
-### 💥 Breaking changes
-
-- Breaking: Native Linux appdata now uses `<native-user-data>/<app-id>/appdata`,
-  beside durable `installation/`, instead of owning the whole app container.
-  Affected: applications and users with an existing native Linux appdata root.
-  Migration: stop old consumers, preview `installation migrate --dry-run`, and
-  execute an explicit ownership/provider-reviewed migration. Unknown payload
-  requires the owning application's inventory; startup never selects a new empty
-  store in place of a recognized legacy root.
-- Breaking: `AppPaths` now requires a captured `installation` snapshot and its
-  `source` can be `"installation"`. Affected: callers constructing `AppPaths`
-  directly or exhaustively handling layout provenance. Migration: prefer
-  `MyRC.paths(...)`; intentional manual construction must preserve the snapshot
-  from `MyRC.installation().inspect().snapshot`. Do not rediscover paths while
-  refreshing an existing invocation.
-
-- Breaking: Replaced `Storage`/`storage` and `ResolveOptions.storage` with
-  `Workspaces`/`workspace`, and replaced `ResolvedConfig.selection` with
-  `workspace`. Affected: applications declaring or selecting AppRC storage,
-  including section `requires_storage` declarations. Migration: declare
-  `Workspaces()` only when a workspace selector is needed; use `workspace=...`
-  and `workspace_required=True`; read `resolved.workspace` and
-  `resolved.workspace_issues`. Use `WorkspaceManager` for registry operations.
-  AppRC does not read or upgrade old `storages` TOML records or old storage
-  dotenv filenames.
-- Breaking: Replaced `apprc_dir`, `apprc_dir_env_key`, `legacy_app_ids`, and
-  storage-path resolution with `Paths`, `Layout`, `AppPaths`, `paths()`, and
-  `ensure_path()`. Affected: applications configuring managed directories or
-  relying on `*_APPRC_DIR`/old storage variables. Migration: independently
-  declare `Paths(config=True, appdata=True, cache=True, state=True)` for the
-  components actually used; choose `Layout.native()` or
-  `Layout.single_root(root)`; update users to the new `<PREFIX>_LAYOUT` and
-  `<PREFIX>_ROOT` pair. Normal startup never searches for or automatically
-  migrates legacy data; explicit migration is limited to reviewed supported
-  ownership/installation formats.
-- Breaking: Replaced `mount_config_cli`, `mount_appdata_cli`, and
-  `mount_config_group` with grouped `mount_app_cli`/`mount_app_groups`.
-  Affected: Typer applications mounting prior commands. Migration: mount the
-  new grouped adapter and update `appdata clean`/`appdata paths` to root
-  `purge`/`paths`; provide explicit maintenance handlers for application-owned
-  operations. No compatibility aliases remain.
-- Breaking: Replaced the old `apprc.toml` storage registry schema and
-  `apprc.storage.env` / `apprc.storage.secret.env` layer names. Affected:
-  applications reading or editing those AppRC-owned files. Migration: create a
-  new workspace registry through `WorkspaceManager` and use the documented
-  `apprc.workspace.env` / `apprc.workspace.secret.env` names. Do not rename or
-  convert old files in place; manually preserve or separately export any data
-  users choose to retain.
-
-<br>
-
-### ➕ Added
-
-- Added independent opt-in config, appdata, cache, and state paths using native
-  platform locations or an explicit single-root layout. Path inspection is
-  read-only; `ensure_path()` initializes only the requested enabled component
-  with an ownership marker.
-- Added explicit `WorkspaceManager` operations and category-specific maintenance
-  providers, plus grouped `paths`, `doctor`, category, workspace, and `purge`
-  commands. Unsupported provider operations are not mounted.
-- Added fixed native `installation/installation.json` authority independent of
-  config, appdata, cache and disposable state. Saved absolute placement survives
-  upgrades and outranks declared defaults; invocation/environment overrides
-  remain local to that invocation. Unmanaged editable pip use needs no record.
-- Added typed installation inspection, revision/generation-checked operations,
-  explicit legacy migration, resumable repair, reconnectable program-only
-  removal and confirmed complete removal that preserves unknown content.
-  Matching failed uninstalls reuse recorded checkpoints. Default complete-removal
-  inventories recognize owned standard config files and resource markers;
-  custom payload still requires provider inventory or retained-data consent.
-- Added native-appdata validation that recognizes the exact persistent sibling
-  resource lock while retaining unknown-content and link checks. Reinstall and
-  retained repair preserve both user work and the existing coordination inode.
-- Added explicit verified-source legacy replacement with independent historical
-  RECORD observation, preserved recorded interpreter/backend, a read-only pending
-  predicate and resumable pre-mutation authority. Recovery inputs and an owned
-  recovery entry precede initial pending-authority publication; strict new-source
-  observation precedes old-controller retirement. Historical source provenance
-  is never fabricated.
-- Added `apprc-core[distribution]` authoring APIs, strict external templates and
-  deterministic PEP 723/zipapp support bundling complete ordinary shared modules
-  with repository-owned install/uninstall composition. No lifecycle inheritance,
-  hook registry, installed-app bootstrap dependency or hidden AppRC download is
-  required; application-specific actions remain explicit Python calls.
-  Standalone management dependencies remain separate from exact application
-  runtime constraints, including applications with no runtime dependencies.
-- Added explicit typed re-exports from `apprc.distribution` and
-  `apprc.distribution.runtime`; consumers use the supported public facades rather
-  than implementation-module imports.
-- Added verified immutable-main, release-sdist and explicit-wheel acquisition
-  with operation-owned source staging and observed installed `RECORD`
-  fingerprints. Saved source checks remain usable after temporary sources are
-  removed.
-- Added public `bind_install_support()` composition for current-platform,
-  machine-bound recovery support before legacy activation. Remote Windows `.cmd`
-  entries carry the shared PowerShell bootstrap instead of requiring an adjacent
-  helper; remote PowerShell helpers also support downloaded-text invocation.
-- Added grouped `installation` management commands and an optional Textual
-  launcher with one reusable editor screen/event loop, foreground-child handling,
-  and actual-process removal handoff. CLI, launcher and wrappers share the saved
-  application-authored uninstaller, including its cleanup. Missing business
-  settings or invalid installation authority remain diagnosable without
-  manufacturing resource paths.
-
-- Added a separate Actions artifact round-trip diagnostic with manual invocation,
-  a narrowly scoped initial feature-branch push trigger, one-day retention, and
-  documented exact-artifact cleanup.
-- Added optional `installation_inventory` callbacks to the application CLI for
-  exact provider-owned cleanup previews. Confirmed removal transports the
-  accepted inventory to the saved controller; dry-run remains read-only, and
-  retries reuse the inventory persisted in the pending operation.
-- Added `default_cleanup_inventory()`, `encode_cleanup_inventory()`, and
-  `decode_cleanup_inventory()` for composing application-owned cleanup with
-  AppRC's default inventory and strict installation JSON transport.
-- Added application-supplied maintenance providers through
-  `AppRC.maintain(handlers=...)`, preserving the declared cleanup behavior in
-  both preview and execution.
-
-<br>
-
-### 💔 Changed
-
-- Restricted CI to Ubuntu: core checks retain Python 3.12, 3.13, and 3.14, and
-  GUI/browser checks retain Python 3.12. Windows and macOS runtime and installer
-  code remain, but those platforms are unverified by this CI policy;
-  [known native test failures](BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails)
-  remain unresolved. Green Linux CI does not establish native compatibility.
-- Retained the last three published minor release lines, including their patch
-  releases, in this changelog; older entries are preserved in the
-  [changelog archive](CHANGELOG-ARCHIVE.md).
-
-<br>
-
-
----
-
-<br>

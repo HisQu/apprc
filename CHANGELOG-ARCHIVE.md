@@ -8,39 +8,40 @@ patch releases; older entries move here without changing their text.
 
 1. [Changelog archive](#changelog-archive)
    1. [Table Of Contents](#table-of-contents)
-2. [0.29.0 - 2026-10-26](#0290---2026-10-26)
-3. [0.28.0 - 2026-10-02](#0280---2026-10-02)
-4. [0.27.4 - 2026-10-01](#0274---2026-10-01)
-5. [0.27.3 - 2026-10-01](#0273---2026-10-01)
-6. [0.27.2 - 2026-09-28](#0272---2026-09-28)
-7. [0.27.0 - 2026-09-24](#0270---2026-09-24)
-8. [0.26.0 - 2026-09-23](#0260---2026-09-23)
-9. [0.25.1 - 2026-09-23](#0251---2026-09-23)
-10. [0.25.0 - 2026-09-23](#0250---2026-09-23)
-11. [0.24.0 - 2026-09-11](#0240---2026-09-11)
-12. [0.23.7 - 2026-09-10](#0237---2026-09-10)
-13. [0.23.6 - 2026-09-10](#0236---2026-09-10)
-14. [0.23.5 - 2026-09-08](#0235---2026-09-08)
-15. [0.22.1 - 2026-09-04](#0221---2026-09-04)
-16. [0.22.0 - 2026-09-04](#0220---2026-09-04)
-17. [0.21.0 - 2026-09-04](#0210---2026-09-04)
-18. [0.20.0 - 2026-09-04](#0200---2026-09-04)
-19. [0.19.9 - 2026-09-02](#0199---2026-09-02)
-20. [0.19.8 - 2026-09-01](#0198---2026-09-01)
-21. [0.19.5 - 2026-07-14](#0195---2026-07-14)
-22. [0.19.4 - 2026-07-13](#0194---2026-07-13)
-23. [0.19.3 - 2026-07-13](#0193---2026-07-13)
-24. [0.19.2 - 2026-07-13](#0192---2026-07-13)
-25. [0.19.1 - 2026-07-03](#0191---2026-07-03)
-26. [0.19.0 - 2026-07-03](#0190---2026-07-03)
-27. [0.18.0 - 2026-07-02](#0180---2026-07-02)
-28. [0.17.0 - 2026-07-01](#0170---2026-07-01)
-29. [0.16.4 - 2026-06-30](#0164---2026-06-30)
-30. [0.16.3 - 2026-06-29](#0163---2026-06-29)
-31. [0.16.2 - 2026-06-28](#0162---2026-06-28)
-32. [0.16.1 - 2026-06-27](#0161---2026-06-27)
-33. [0.16.0 - 2026-06-26](#0160---2026-06-26)
-34. [0.1.0 - 2026-06-02](#010---2026-06-02)
+2. [0.32.0 - 2026-11-10](#0320---2026-11-10)
+3. [0.29.0 - 2026-10-26](#0290---2026-10-26)
+4. [0.28.0 - 2026-10-02](#0280---2026-10-02)
+5. [0.27.4 - 2026-10-01](#0274---2026-10-01)
+6. [0.27.3 - 2026-10-01](#0273---2026-10-01)
+7. [0.27.2 - 2026-09-28](#0272---2026-09-28)
+8. [0.27.0 - 2026-09-24](#0270---2026-09-24)
+9. [0.26.0 - 2026-09-23](#0260---2026-09-23)
+10. [0.25.1 - 2026-09-23](#0251---2026-09-23)
+11. [0.25.0 - 2026-09-23](#0250---2026-09-23)
+12. [0.24.0 - 2026-09-11](#0240---2026-09-11)
+13. [0.23.7 - 2026-09-10](#0237---2026-09-10)
+14. [0.23.6 - 2026-09-10](#0236---2026-09-10)
+15. [0.23.5 - 2026-09-08](#0235---2026-09-08)
+16. [0.22.1 - 2026-09-04](#0221---2026-09-04)
+17. [0.22.0 - 2026-09-04](#0220---2026-09-04)
+18. [0.21.0 - 2026-09-04](#0210---2026-09-04)
+19. [0.20.0 - 2026-09-04](#0200---2026-09-04)
+20. [0.19.9 - 2026-09-02](#0199---2026-09-02)
+21. [0.19.8 - 2026-09-01](#0198---2026-09-01)
+22. [0.19.5 - 2026-07-14](#0195---2026-07-14)
+23. [0.19.4 - 2026-07-13](#0194---2026-07-13)
+24. [0.19.3 - 2026-07-13](#0193---2026-07-13)
+25. [0.19.2 - 2026-07-13](#0192---2026-07-13)
+26. [0.19.1 - 2026-07-03](#0191---2026-07-03)
+27. [0.19.0 - 2026-07-03](#0190---2026-07-03)
+28. [0.18.0 - 2026-07-02](#0180---2026-07-02)
+29. [0.17.0 - 2026-07-01](#0170---2026-07-01)
+30. [0.16.4 - 2026-06-30](#0164---2026-06-30)
+31. [0.16.3 - 2026-06-29](#0163---2026-06-29)
+32. [0.16.2 - 2026-06-28](#0162---2026-06-28)
+33. [0.16.1 - 2026-06-27](#0161---2026-06-27)
+34. [0.16.0 - 2026-06-26](#0160---2026-06-26)
+35. [0.1.0 - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -49,6 +50,150 @@ patch releases; older entries move here without changing their text.
 <br>
 
 <!-- ======================================================== -->
+
+# 0.32.0 - 2026-11-10
+
+Includes the changes previously listed under unpublished 0.31.0 and Unreleased.
+
+<br>
+
+### 💥 Breaking changes
+
+- Breaking: Native Linux appdata now uses `<native-user-data>/<app-id>/appdata`,
+  beside durable `installation/`, instead of owning the whole app container.
+  Affected: applications and users with an existing native Linux appdata root.
+  Migration: stop old consumers, preview `installation migrate --dry-run`, and
+  execute an explicit ownership/provider-reviewed migration. Unknown payload
+  requires the owning application's inventory; startup never selects a new empty
+  store in place of a recognized legacy root.
+- Breaking: `AppPaths` now requires a captured `installation` snapshot and its
+  `source` can be `"installation"`. Affected: callers constructing `AppPaths`
+  directly or exhaustively handling layout provenance. Migration: prefer
+  `MyRC.paths(...)`; intentional manual construction must preserve the snapshot
+  from `MyRC.installation().inspect().snapshot`. Do not rediscover paths while
+  refreshing an existing invocation.
+
+- Breaking: Replaced `Storage`/`storage` and `ResolveOptions.storage` with
+  `Workspaces`/`workspace`, and replaced `ResolvedConfig.selection` with
+  `workspace`. Affected: applications declaring or selecting AppRC storage,
+  including section `requires_storage` declarations. Migration: declare
+  `Workspaces()` only when a workspace selector is needed; use `workspace=...`
+  and `workspace_required=True`; read `resolved.workspace` and
+  `resolved.workspace_issues`. Use `WorkspaceManager` for registry operations.
+  AppRC does not read or upgrade old `storages` TOML records or old storage
+  dotenv filenames.
+- Breaking: Replaced `apprc_dir`, `apprc_dir_env_key`, `legacy_app_ids`, and
+  storage-path resolution with `Paths`, `Layout`, `AppPaths`, `paths()`, and
+  `ensure_path()`. Affected: applications configuring managed directories or
+  relying on `*_APPRC_DIR`/old storage variables. Migration: independently
+  declare `Paths(config=True, appdata=True, cache=True, state=True)` for the
+  components actually used; choose `Layout.native()` or
+  `Layout.single_root(root)`; update users to the new `<PREFIX>_LAYOUT` and
+  `<PREFIX>_ROOT` pair. Normal startup never searches for or automatically
+  migrates legacy data; explicit migration is limited to reviewed supported
+  ownership/installation formats.
+- Breaking: Replaced `mount_config_cli`, `mount_appdata_cli`, and
+  `mount_config_group` with grouped `mount_app_cli`/`mount_app_groups`.
+  Affected: Typer applications mounting prior commands. Migration: mount the
+  new grouped adapter and update `appdata clean`/`appdata paths` to root
+  `purge`/`paths`; provide explicit maintenance handlers for application-owned
+  operations. No compatibility aliases remain.
+- Breaking: Replaced the old `apprc.toml` storage registry schema and
+  `apprc.storage.env` / `apprc.storage.secret.env` layer names. Affected:
+  applications reading or editing those AppRC-owned files. Migration: create a
+  new workspace registry through `WorkspaceManager` and use the documented
+  `apprc.workspace.env` / `apprc.workspace.secret.env` names. Do not rename or
+  convert old files in place; manually preserve or separately export any data
+  users choose to retain.
+
+<br>
+
+### ➕ Added
+
+- Added independent opt-in config, appdata, cache, and state paths using native
+  platform locations or an explicit single-root layout. Path inspection is
+  read-only; `ensure_path()` initializes only the requested enabled component
+  with an ownership marker.
+- Added explicit `WorkspaceManager` operations and category-specific maintenance
+  providers, plus grouped `paths`, `doctor`, category, workspace, and `purge`
+  commands. Unsupported provider operations are not mounted.
+- Added fixed native `installation/installation.json` authority independent of
+  config, appdata, cache and disposable state. Saved absolute placement survives
+  upgrades and outranks declared defaults; invocation/environment overrides
+  remain local to that invocation. Unmanaged editable pip use needs no record.
+- Added typed installation inspection, revision/generation-checked operations,
+  explicit legacy migration, resumable repair, reconnectable program-only
+  removal and confirmed complete removal that preserves unknown content.
+  Matching failed uninstalls reuse recorded checkpoints. Default complete-removal
+  inventories recognize owned standard config files and resource markers;
+  custom payload still requires provider inventory or retained-data consent.
+- Added native-appdata validation that recognizes the exact persistent sibling
+  resource lock while retaining unknown-content and link checks. Reinstall and
+  retained repair preserve both user work and the existing coordination inode.
+- Added explicit verified-source legacy replacement with independent historical
+  RECORD observation, preserved recorded interpreter/backend, a read-only pending
+  predicate and resumable pre-mutation authority. Recovery inputs and an owned
+  recovery entry precede initial pending-authority publication; strict new-source
+  observation precedes old-controller retirement. Historical source provenance
+  is never fabricated.
+- Added `apprc-core[distribution]` authoring APIs, strict external templates and
+  deterministic PEP 723/zipapp support bundling complete ordinary shared modules
+  with repository-owned install/uninstall composition. No lifecycle inheritance,
+  hook registry, installed-app bootstrap dependency or hidden AppRC download is
+  required; application-specific actions remain explicit Python calls.
+  Standalone management dependencies remain separate from exact application
+  runtime constraints, including applications with no runtime dependencies.
+- Added explicit typed re-exports from `apprc.distribution` and
+  `apprc.distribution.runtime`; consumers use the supported public facades rather
+  than implementation-module imports.
+- Added verified immutable-main, release-sdist and explicit-wheel acquisition
+  with operation-owned source staging and observed installed `RECORD`
+  fingerprints. Saved source checks remain usable after temporary sources are
+  removed.
+- Added public `bind_install_support()` composition for current-platform,
+  machine-bound recovery support before legacy activation. Remote Windows `.cmd`
+  entries carry the shared PowerShell bootstrap instead of requiring an adjacent
+  helper; remote PowerShell helpers also support downloaded-text invocation.
+- Added grouped `installation` management commands and an optional Textual
+  launcher with one reusable editor screen/event loop, foreground-child handling,
+  and actual-process removal handoff. CLI, launcher and wrappers share the saved
+  application-authored uninstaller, including its cleanup. Missing business
+  settings or invalid installation authority remain diagnosable without
+  manufacturing resource paths.
+
+- Added a separate Actions artifact round-trip diagnostic with manual invocation,
+  a narrowly scoped initial feature-branch push trigger, one-day retention, and
+  documented exact-artifact cleanup.
+- Added optional `installation_inventory` callbacks to the application CLI for
+  exact provider-owned cleanup previews. Confirmed removal transports the
+  accepted inventory to the saved controller; dry-run remains read-only, and
+  retries reuse the inventory persisted in the pending operation.
+- Added `default_cleanup_inventory()`, `encode_cleanup_inventory()`, and
+  `decode_cleanup_inventory()` for composing application-owned cleanup with
+  AppRC's default inventory and strict installation JSON transport.
+- Added application-supplied maintenance providers through
+  `AppRC.maintain(handlers=...)`, preserving the declared cleanup behavior in
+  both preview and execution.
+
+<br>
+
+### 💔 Changed
+
+- Restricted CI to Ubuntu: core checks retain Python 3.12, 3.13, and 3.14, and
+  GUI/browser checks retain Python 3.12. Windows and macOS runtime and installer
+  code remain, but those platforms are unverified by this CI policy;
+  [known native test failures](BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails)
+  remain unresolved. Green Linux CI does not establish native compatibility.
+- Retained the last three published minor release lines, including their patch
+  releases, in this changelog; older entries are preserved in the
+  [changelog archive](CHANGELOG-ARCHIVE.md).
+
+<br>
+
+
+---
+
+<br>
 
 # 0.29.0 - 2026-10-26
 

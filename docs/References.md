@@ -345,6 +345,13 @@ Pass the same declaration to `DistributionSpec.hooks` and CLI
 Runtime hooks must be packaged with the application, not merely present in an
 author-only `<app>_distr` package.
 
+Cleanup inventories may include an explicitly owned symbolic link inside a
+recorded resource root as an `InventoryEntry` with kind `symlink`. Links in the
+installation support namespace are not supported. Obtain the link revision with
+`apprc.user_files.installation.symlink_revision(path)`. AppRC checks the link's
+identity before removal and unlinks the link itself; it does not follow or remove
+the target. Linked ancestor paths remain invalid.
+
 The native command handles `app doctor`, `paths`, `repair`, `uninstall` and
 `migrate` through the same AppRC maintenance implementation as the app CLI.
 Normal application/config/workspace commands, application-owned data/cache/state

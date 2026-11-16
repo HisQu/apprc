@@ -9,6 +9,7 @@ from apprc.definition.installation import (
 )
 from apprc.definition.paths import ResourceKind
 from apprc.user_files.app_home.locations import assert_no_links
+from apprc.user_files.installation.inventory import cleanup_entry_revision
 
 
 def resource_roots(
@@ -85,10 +86,22 @@ def validate_cleanup(
     roots = resource_roots(placement)
     seen: set[Path] = set()
     for entry in (*inventory.entries, *inventory.retained):
-        assert_no_links(entry.path)
-        if not entry.path.is_absolute() or entry.path in seen:
+        if (
+            not entry.path.is_absolute()
+            or ".." in entry.path.parts
+            or entry.path in seen
+        ):
             raise InstallationError(
                 "Cleanup paths must be absolute and unique."
+            )
+        assert_no_links(
+            entry.path.parent if entry.kind == "symlink" else entry.path
+        )
+        if entry.kind == "symlink" and any(
+            entry.path == root for _, root in roots
+        ):
+            raise InstallationError(
+                "Resource roots cannot be symbolic-link cleanup entries."
             )
         seen.add(entry.path)
         if entry.resource is None:
@@ -117,6 +130,15 @@ def validate_cleanup(
             raise InstallationError(
                 "Cleanup includes a resource category not selected for removal."
             )
+        if entry.kind == "symlink":
+            actual_revision = cleanup_entry_revision(entry)
+            if (
+                actual_revision is not None
+                and actual_revision != entry.revision
+            ):
+                raise InstallationError(
+                    f"Symbolic link changed after cleanup inventory: {entry.path}."
+                )
     if complete:
         for kind, root in roots:
             if kind not in categories:

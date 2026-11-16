@@ -1103,6 +1103,11 @@ application-owned inventory and cleanup hook. Unavailable application code
 blocks that purge, not independent program-only removal. If the program was
 already removed, restore its environment before requesting provider cleanup.
 
+An application can include owned symbolic links in its cleanup inventory. The
+manager checks each link and removes the link itself without following its
+target. See [application hooks](References.md#application-hooks-and-command-dispatch)
+for the inventory API.
+
 Failed operations retain checkpoints. Retry with the same resource choices;
 stale revisions, changed inventories, unknown content and live runtime leases
 are not ignored. `--forget-retained` leaves explicitly retained files unmanaged,

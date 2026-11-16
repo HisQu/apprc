@@ -342,12 +342,29 @@ class InstallationTarget:
 
 @dataclass(frozen=True, slots=True)
 class InventoryEntry:
-    """A revision-checked owned target; unknown descendants are not implied."""
+    """A revision-checked owned target; unknown descendants are not implied.
+
+    Symbolic-link revisions digest the link's own identity and target data.
+    """
 
     path: Path
-    kind: Literal["file", "directory"]
+    kind: Literal["file", "directory", "symlink"]
     revision: str | None
     resource: ResourceKind | None = None
+
+    def __post_init__(self) -> None:
+        """Keep symbolic-link entries scoped and revision checked."""
+        if self.kind == "symlink" and self.resource is None:
+            raise InstallationError(
+                "Symbolic-link cleanup requires a recorded resource category."
+            )
+        if self.kind == "symlink" and (
+            self.revision is None
+            or re.fullmatch(r"[0-9a-f]{64}", self.revision) is None
+        ):
+            raise InstallationError(
+                "Symbolic-link inventory requires a SHA-256 revision."
+            )
 
 
 @dataclass(frozen=True, slots=True)

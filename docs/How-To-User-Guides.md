@@ -926,7 +926,7 @@ workspaces = MyRC.workspaces()  # only when Workspaces(registry=True) is declare
 with gr.Blocks() as page:
     gr.Markdown("# My App")
     with gr.Tab("Settings"):
-        ConfigEditor(manager, workspaces=workspaces).render()
+        ConfigEditor(manager, workspace_manager=workspaces).render()
 
 page.launch(server_name="127.0.0.1", share=False)
 ```
@@ -935,6 +935,13 @@ Config-only applications can pass just `manager`. Registry-backed workspace
 controls without a manager fail clearly rather than silently disappearing.
 The application owns the start callback and builds its runtime only after
 `manager.inspect().ready`.
+
+For a host-owned section, pass `section_renderers={owner_key: callback}`.
+The callback receives `ConfigSectionContext` and replaces that owner's field
+controls. Use `manager.plan_updates(values, scope=...)` followed by
+`manager.apply_updates(plan)` to save related fields together, then perform
+application-specific validation after the write locks have been released.
+Other sections keep the standard editor controls and source visibility.
 
 
 ## Build a Windows installer

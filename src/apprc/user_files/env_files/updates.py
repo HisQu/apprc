@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # == Standard Library ========================
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Iterable
@@ -12,7 +12,11 @@ from typing import Iterable
 from apprc.definition.env_config.lookup import resolve_config_field_reference
 from apprc.definition.env_config.schema import ConfigOwner
 from apprc.definition.installation import InstallationWriteAuthority
-from apprc.user_files.app_home.locations import write_text_atomic
+from apprc.user_files.app_home.locations import (
+    assert_no_links,
+    write_bytes_atomic,
+    write_text_atomic,
+)
 from apprc.user_files.app_home.writes import (
     StaleEditError,
     file_revision,
@@ -71,6 +75,147 @@ class EnvFileEditPlan:
     duplicate_lines: tuple[int, ...] = ()
     private_directories: tuple[Path, ...] = ()
     authority: InstallationWriteAuthority | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EnvFileBatchEditPlan:
+    """One revision-checked set of file writes and per-field results.
+
+    File contents and field values are excluded from representations. This is
+    caught-failure recovery, not a crash-atomic transaction across files.
+    """
+
+    edits: tuple[EnvFileEditPlan, ...] = field(repr=False)
+    updates: tuple[EnvFileUpdate, ...] = field(repr=False)
+
+
+def plan_env_file_batch(
+    edits: Iterable[EnvFileEditPlan],
+) -> EnvFileBatchEditPlan:
+    """Combine independent field plans without losing same-file changes.
+
+    :param edits: Validated plans captured from the same file revisions.
+    :return: One final write per path and results in original field order.
+    """
+    files: dict[Path, EnvFileEditPlan] = {}
+    results: list[EnvFileUpdate] = []
+    seen: set[tuple[Path, str]] = set()
+    for edit in edits:
+        identity = (edit.path, edit.env_key)
+        if identity in seen:
+            raise ValueError(
+                f"Duplicate field in grouped update: {edit.env_key}."
+            )
+        seen.add(identity)
+        previous = files.get(edit.path)
+        if previous is not None:
+            if (
+                previous.revision != edit.revision
+                or previous.private != edit.private
+            ):
+                raise ValueError(
+                    "Grouped settings changed during planning; inspect and retry."
+                )
+            changed = set_dotenv_document_value(
+                previous.text, env_key=edit.env_key, value=edit.value
+            )
+            edit = replace(edit, text=changed.text)
+        files[edit.path] = edit
+        results.append(
+            EnvFileUpdate(edit.path, edit.env_key, edit.value, edit.warnings)
+        )
+    if not files:
+        raise ValueError("A grouped update requires at least one field.")
+    return EnvFileBatchEditPlan(tuple(files.values()), tuple(results))
+
+
+def apply_env_file_batch(
+    plan: EnvFileBatchEditPlan,
+) -> tuple[EnvFileUpdate, ...]:
+    """Write validated files once each, restoring owned writes on failure.
+
+    :param plan: Coalesced file writes prepared by the configuration manager.
+    :return: Per-field saved values after every file write succeeds.
+    """
+    from apprc.user_files.env_files.secrets import inspect_secret_file
+
+    edits = plan.edits
+    if not edits:
+        raise ValueError("A grouped update requires at least one field.")
+    roots = tuple(
+        dict.fromkeys(
+            root
+            for edit in edits
+            for root in (edit.lock_roots or (edit.path.parent,))
+        )
+    )
+    directories = tuple(
+        dict.fromkeys(
+            root for edit in edits for root in edit.private_directories
+        )
+    )
+    authority = edits[0].authority
+    if any(edit.authority != authority for edit in edits):
+        raise ValueError(
+            "Grouped edits require the same installation authority."
+        )
+    with managed_write_lock(
+        *roots, private_directories=directories, authority=authority
+    ):
+        before: dict[Path, bytes | None] = {}
+        for edit in edits:
+            assert_no_links(edit.path)
+            revision = file_revision(edit.path)
+            if revision != edit.revision:
+                raise StaleEditError(edit.path, edit.revision, revision)
+            if edit.private:
+                status = inspect_secret_file(edit.path)
+                if not status.available:
+                    raise ValueError(status.issue or "Unsafe secret file.")
+            before[edit.path] = (
+                edit.path.read_bytes() if revision is not None else None
+            )
+        attempted: list[EnvFileEditPlan] = []
+        try:
+            for edit in edits:
+                revision = file_revision(edit.path)
+                if revision != edit.revision:
+                    raise StaleEditError(edit.path, edit.revision, revision)
+                attempted.append(edit)
+                write_text_atomic(edit.path, edit.text, private=edit.private)
+        except BaseException as original:
+            failures: list[BaseException] = []
+            for edit in reversed(attempted):
+                try:
+                    assert_no_links(edit.path)
+                    actual = file_revision(edit.path)
+                    previous = before[edit.path]
+                    previous_revision = (
+                        sha256(previous).hexdigest()
+                        if previous is not None
+                        else None
+                    )
+                    if actual == previous_revision:
+                        continue
+                    if actual != sha256(edit.text.encode("utf-8")).hexdigest():
+                        raise ValueError(
+                            f"Grouped update encountered changed file: {edit.path}."
+                        )
+                    if previous is None:
+                        edit.path.unlink()
+                    else:
+                        write_bytes_atomic(
+                            edit.path, previous, private=edit.private
+                        )
+                except BaseException as recovery_error:
+                    failures.append(recovery_error)
+            if failures:
+                raise BaseExceptionGroup(
+                    "Settings write failed and restoration is incomplete.",
+                    [original, *failures],
+                ) from None
+            raise
+    return plan.updates
 
 
 def plan_env_file_value_update(

@@ -19,6 +19,7 @@ from apprc.definition.config_filenames import (
 )
 from apprc.definition.installation import (
     CleanupInventory,
+    EditableCheckout,
     InstallationDiagnostic,
     InstallationError,
     InstallationInspection,
@@ -43,7 +44,7 @@ from apprc.user_files.app_home.permissions import (
 from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.codec import decode_cleanup_inventory
-from apprc.user_files.installation.inventory import cleanup_entry_revision
+from apprc.user_files.installation.inventory import cleanup_entry_revision, tree_revision, editable_repository
 from apprc.user_files.installation.operations import (
     begin_operation,
     plan_uninstall,
@@ -479,9 +480,11 @@ def prepare_uninstall(
     directory: Path,
     *,
     categories: frozenset[ResourceKind] = frozenset(),
-    complete: bool = False,
+    complete: bool | None = None,
     forget_retained: bool = False,
     inventory: CleanupInventory | None = None,
+    keep_data: bool | None = None,
+    remove_repository: bool = False,
     manager_executable: Path | None = None,
 ) -> UninstallPreparation:
     """Build a read-only uninstall plan from saved or caller-enumerated ownership.
@@ -500,6 +503,33 @@ def prepare_uninstall(
         return UninstallPreparation(
             None, inspection, (), inspection.diagnostics, False
         )
+    automatic = complete is None and inventory is None
+    repository = None
+    pending_operation = record.operation
+    saved_repositories = tuple(entry for entry in pending_operation.inventory.entries if entry.kind == "repository") if pending_operation is not None and pending_operation.kind == "uninstall" else ()
+    if remove_repository:
+        if keep_data:
+            raise InstallationError("--keep-data cannot be combined with --remove-repository.")
+        if pending_operation is not None and pending_operation.kind == "uninstall":
+            if not saved_repositories:
+                raise InstallationError("Repository deletion differs from the pending uninstall.")
+            repository = saved_repositories[0].path
+        else:
+            if not isinstance(record.active_runtime, EditableCheckout):
+                raise InstallationError("--remove-repository requires an editable installation.")
+            repository = editable_repository(record.active_runtime.project)
+        if directory == repository or directory.is_relative_to(repository):
+            raise InstallationError("Repository removal overlaps installation authority.")
+    if automatic:
+        if record.operation is not None and record.operation.kind == "uninstall":
+            complete = record.operation.complete if keep_data is None else not keep_data
+            categories = record.operation.categories
+            forget_retained = record.operation.forget_retained
+        else:
+            complete = not bool(keep_data)
+            categories = (record.placement.capabilities.union(item.kind for item in record.placement.retired)) if complete else frozenset()
+    else:
+        complete = bool(complete)
     try:
         resumed = _resume_uninstall(
             inspection,
@@ -529,22 +559,6 @@ def prepare_uninstall(
         return UninstallPreparation(
             None, inspection, (), inspection.diagnostics, False
         )
-    data_categories = categories - {"config"}
-    runtime = record.active_runtime
-    if complete and data_categories:
-        if runtime is None or runtime.hooks.cleanup is None:
-            diagnostic = InstallationDiagnostic(
-                "uninstall-provider-unavailable",
-                "Selected data purge has no recorded runtime cleanup hook.",
-                "Restore the recorded runtime or remove the program without purging data.",
-            )
-            return UninstallPreparation(
-                None,
-                inspection,
-                (),
-                (*inspection.diagnostics, diagnostic),
-                False,
-            )
     try:
         validated_manager = _manager_executable(
             record, directory, manager_executable
@@ -556,7 +570,7 @@ def prepare_uninstall(
                 forget_retained=forget_retained,
                 manager_executable=validated_manager,
             )
-            if complete and categories
+            if complete and categories and not automatic
             else None
         )
         if inventory is not None and provider_inventory is not None:
@@ -566,15 +580,12 @@ def prepare_uninstall(
                 )
         selected_inventory = inventory or provider_inventory
         if selected_inventory is None:
-            selected_inventory = (
-                default_cleanup_inventory(
-                    inspection,
-                    categories=categories,
-                    forget_retained=forget_retained,
-                )
-                if complete
-                else CleanupInventory()
-            )
+            if not complete:
+                selected_inventory = CleanupInventory()
+            elif automatic:
+                selected_inventory = _tree_cleanup_inventory(inspection)
+            else:
+                selected_inventory = default_cleanup_inventory(inspection, categories=categories, forget_retained=forget_retained)
     except (InstallationError, OSError, ValueError) as error:
         diagnostic = InstallationDiagnostic(
             "uninstall-owned-inventory",
@@ -583,6 +594,11 @@ def prepare_uninstall(
         )
         return UninstallPreparation(
             None, inspection, (), (*inspection.diagnostics, diagnostic), False
+        )
+    if repository is not None:
+        selected_inventory = CleanupInventory(
+            (*selected_inventory.entries, InventoryEntry(repository, "repository", tree_revision(repository))),
+            selected_inventory.retained,
         )
     support_entries, support_errors = _support_inventory(
         record, directory, complete=complete
@@ -633,7 +649,7 @@ def prepare_uninstall(
     )
     for entry in all_entries:
         if (
-            entry.kind in {"file", "symlink"}
+            entry.kind in {"file", "symlink", "tree", "repository"}
             and cleanup_entry_revision(entry) != entry.revision
         ):
             raise InstallationError(
@@ -723,7 +739,7 @@ def stage_uninstall(
             )
         for entry in plan.inventory.entries:
             if (
-                entry.kind in {"file", "symlink"}
+                entry.kind in {"file", "symlink", "tree", "repository"}
                 and cleanup_entry_revision(entry) != entry.revision
             ):
                 raise InstallationError(
@@ -781,8 +797,10 @@ def start_uninstall_handoff(
         )
     manager = _manager_executable(record, directory, manager_executable)
     removal_roots = _handoff.handoff_removal_roots(plan, record)
+    if any(entry.kind == "repository" for entry in plan.inventory.entries):
+        _handoff_python(removal_roots)
     python_executable = (
-        _handoff_python(removal_roots) if manager is None else None
+        _handoff_python(tuple(root for root in removal_roots if not any(entry.kind == "repository" and entry.path == root for entry in plan.inventory.entries))) if manager is None else None
     )
     temp_parent = Path(tempfile.gettempdir()).resolve(strict=True)
     _handoff.assert_outside_removal(temp_parent, removal_roots)
@@ -933,3 +951,34 @@ def start_uninstall_handoff(
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+
+
+def _tree_cleanup_inventory(inspection: InstallationInspection) -> CleanupInventory:
+    """Capture whole owned resource directories for ordinary uninstall.
+
+    :param inspection: Saved authority whose placement defines deletion scope.
+    :return: Explicit whole-directory targets.
+    """
+    record = inspection.record
+    if record is None:
+        raise InstallationError("Removal requires saved authority.")
+    entries: list[InventoryEntry] = []
+    runtime = record.active_runtime
+    for category, root in resource_roots(record.placement):
+        if any(root.is_relative_to(entry.path) for entry in entries):
+            continue
+        if isinstance(runtime, EditableCheckout) and any(
+            protected == root or protected.is_relative_to(root)
+            for protected in (runtime.project, runtime.environment)
+        ):
+            raise InstallationError("Managed data removal overlaps the preserved editable installation.")
+        ownership = inspect_ownership(root, record.identity.app_id, category)
+        if ownership == "missing":
+            continue
+        if ownership != "owned":
+            # > Subordinate logs inherit their owning state root's marker.
+            if category == "state" and record.placement.state_dir is not None and root.is_relative_to(record.placement.state_dir) and inspect_ownership(record.placement.state_dir, record.identity.app_id, category) == "owned":
+                continue
+            raise InstallationError(f"Refusing removal of an unowned {category} directory: {root}")
+        entries.append(InventoryEntry(root, "tree", tree_revision(root), category))
+    return CleanupInventory(tuple(entries))

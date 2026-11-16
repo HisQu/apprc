@@ -342,18 +342,24 @@ class InstallationTarget:
 
 @dataclass(frozen=True, slots=True)
 class InventoryEntry:
-    """A revision-checked owned target; unknown descendants are not implied.
+    """An exact target or explicitly authorized whole-directory removal.
+
+    Only tree and repository entries grant removal of descendants.
 
     Symbolic-link revisions digest the link's own identity and target data.
     """
 
     path: Path
-    kind: Literal["file", "directory", "symlink"]
+    kind: Literal["file", "directory", "symlink", "tree", "repository"]
     revision: str | None
     resource: ResourceKind | None = None
 
     def __post_init__(self) -> None:
         """Keep symbolic-link entries scoped and revision checked."""
+        if self.kind in {"tree", "repository"} and (self.revision is None or re.fullmatch(r"[0-9a-f]{64}", self.revision) is None):
+            raise InstallationError("Whole-directory removal requires its filesystem identity.")
+        if self.kind == "repository" and self.resource is not None:
+            raise InstallationError("Repository removal is separate from resource categories.")
         if self.kind == "symlink" and self.resource is None:
             raise InstallationError(
                 "Symbolic-link cleanup requires a recorded resource category."

@@ -334,7 +334,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     )
     assert rejected.returncode != 0
     assert (directory / "installation.json").read_bytes() == before_tampering
-    assert resource_sentinel.read_text(encoding="utf-8") == "retain me"
+    assert not resource_sentinel.exists()
 
     # > A missing managed venv is recovered from the retained authenticated archive.
     shutil.rmtree(runtime_a / ".venv")
@@ -420,7 +420,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         assert (candidate / ".venv").is_dir()
         assert pending["operation"]["kind"] == "replace"
         assert pending["operation"]["phase"] == "failed"
-        assert resource_sentinel.read_text(encoding="utf-8") == "retain me"
+        assert not resource_sentinel.exists()
         assert _inspect(manager, conflicting, outside)["version"] == "1.0.0"
         before_write = run(
             [str(manager), "config", "show"],
@@ -495,7 +495,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
             Path(running_old["prefix"]).resolve()
             == (runtime_a / ".venv").resolve()
         )
-        assert resource_sentinel.read_text(encoding="utf-8") == "retain me"
+        assert not resource_sentinel.exists()
     finally:
         if child.stdin is not None:
             try:
@@ -534,35 +534,24 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         str(manager),
         "app",
         "uninstall",
-        "--complete",
-        "--category",
-        "config",
+
+
         "--yes",
-        "--forget-retained",
+
     ]
     no_consent = run(
         [
             str(manager),
             "app",
             "uninstall",
-            "--complete",
-            "--category",
-            "config",
-            "--forget-retained",
+
+
         ],
         environment=environment,
         cwd=tmp_path,
         check=False,
     )
     assert no_consent.returncode != 0
-    assert provider_file.is_file() and unrelated_file.is_file()
-    preflight = run(
-        uninstall,
-        environment={**environment, "FIXTURE_FAIL_INVENTORY": "1"},
-        cwd=tmp_path,
-        check=False,
-    )
-    assert preflight.returncode != 0
     assert provider_file.is_file() and unrelated_file.is_file()
     before_cleanup = _record(directory)
     assert before_cleanup["status"] == "ready"
@@ -587,7 +576,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     failed_operation = failed_record["operation"]
     assert failed_operation["kind"] == "uninstall"
     assert failed_operation["phase"] == "failed"
-    assert failed_operation["categories"] == ["config"]
+    assert failed_operation["categories"] == ["appdata", "config"]
     assert failed_operation["diagnostic"]["code"] == "uninstall-incomplete"
     assert "provider_cleanup" not in failed_operation["steps"]
     assert "runtime_removed" not in failed_operation["steps"]
@@ -610,8 +599,8 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert not provider_file.exists()
-    assert unrelated_file.read_text(encoding="utf-8") == "keep"
-    assert resource_sentinel.read_text(encoding="utf-8") == "retain me"
+    assert not unrelated_file.exists()
+    assert not resource_sentinel.exists()
 
     # > Program-only uninstall works even when the application venv is absent.
     new_host, new_commands = _host(tmp_path / "program-only")
@@ -629,7 +618,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         "preserve unrelated file", encoding="utf-8"
     )
     program_only = run(
-        [str(setup_a), "app", "uninstall", "--yes"],
+        [str(setup_a), "app", "uninstall", "--keep-data", "--yes"],
         environment=new_host,
         cwd=tmp_path,
         check=False,
@@ -790,11 +779,10 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
             "fixture-app",
             "app",
             "uninstall",
-            "--complete",
-            "--category",
-            "config",
+
+
             "--yes",
-            "--forget-retained",
+
         ],
         environment=editable_host,
         cwd=project_root,
@@ -804,7 +792,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         editable_uninstall.stdout + editable_uninstall.stderr
     )
     assert not editable_provider.exists()
-    assert editable_unrelated.read_text(encoding="utf-8") == "preserve"
+    assert not editable_unrelated.exists()
     assert (project_root / "fixture_app.py").read_bytes() == changed_source
     assert environment_root.is_dir()
     assert sentinel.read_text(encoding="utf-8") == "keep this environment"
@@ -833,11 +821,10 @@ def test_native_appdata_purge_executes_provider_and_preserves_unknown_data(
             str(setup),
             "app",
             "uninstall",
-            "--complete",
-            "--category",
-            "appdata",
+
+
             "--yes",
-            "--forget-retained",
+
         ],
         environment=environment,
         cwd=tmp_path,
@@ -845,12 +832,12 @@ def test_native_appdata_purge_executes_provider_and_preserves_unknown_data(
     )
     assert removal.returncode == 0, removal.stdout + removal.stderr
     event = json.loads(
-        (config / "cleanup-hook.json").read_text(encoding="utf-8")
+        (Path(environment["APPRC_FIXTURE_ROOT"]) / "cleanup-hook.json").read_text(encoding="utf-8")
     )
     assert event["generation_id"] == record["generation_id"]
     assert event["directory"] == str(directory)
     assert not provider.exists()
-    assert unrelated.read_text(encoding="utf-8") == "keep unrelated data"
+    assert not unrelated.exists()
     assert not (commands / str(spec.metadata.command_name)).exists()
 
 
@@ -1068,10 +1055,8 @@ def test_real_workspace_member_registration_uses_composed_hooks(
             str(global_command),
             "app",
             "uninstall",
-            "--complete",
-            "--category",
-            "config",
-            "--forget-retained",
+
+
             "--yes",
         ],
         environment=environment,
@@ -1081,10 +1066,36 @@ def test_real_workspace_member_registration_uses_composed_hooks(
     assert removal.returncode == 0, removal.stdout + removal.stderr
     assert not provider.exists()
     event = json.loads(
-        (config / "cleanup-hook.json").read_text(encoding="utf-8")
+        (Path(environment["APPRC_FIXTURE_ROOT"]) / "cleanup-hook.json").read_text(encoding="utf-8")
     )
     assert event["generation_id"] == record["generation_id"]
-    assert unrelated.read_text(encoding="utf-8") == "preserve unknown config"
+    assert not unrelated.exists()
     assert sentinel.read_bytes() == b"developer-owned environment"
     assert member_command.is_file() and (member / "fixture_app.py").is_file()
     assert not global_command.exists() and not global_command.is_symlink()
+
+
+def test_editable_repository_removal_survives_its_environment(
+    tmp_path: Path, native_product: NativeProduct
+) -> None:
+    project_root, uv, _setup, _checksums, spec, _project = native_product
+    checkout = tmp_path / "disposable-checkout"
+    run(["git", "clone", "--no-hardlinks", str(project_root), str(checkout)], environment=authoring_environment(), cwd=tmp_path)
+    environment, commands = _host(tmp_path / "repository-host")
+    environment["PATH"] += os.pathsep + str(uv.parent)
+    run([str(uv), "sync", "--locked", "--no-default-groups"], environment=environment, cwd=checkout)
+    run([str(uv), "run", "--locked", "--no-sync", "fixture-app", "app", "install", "-e", "--yes", "--skip-setup", "--command-directory", str(commands)], environment=environment, cwd=checkout)
+    (checkout / "untracked-work.txt").write_text("explicitly selected local work")
+    external = tmp_path / "external-work"
+    external.write_text("preserve")
+    (checkout / "external-link").symlink_to(external)
+    command = commands / str(spec.metadata.command_name)
+    preview = run([str(command), "app", "uninstall", "--remove-repository", "--dry-run"], environment=environment, cwd=tmp_path)
+    assert str(checkout) in preview.stdout
+    assert checkout.is_dir()
+    removal = run([str(command), "app", "uninstall", "--remove-repository", "--yes"], environment=environment, cwd=tmp_path, check=False)
+    assert removal.returncode == 0, removal.stdout + removal.stderr
+    assert not checkout.exists(), removal.stderr
+    assert not command.exists() and not command.is_symlink()
+    assert external.read_text() == "preserve"
+    assert "Repository removed:" in removal.stderr

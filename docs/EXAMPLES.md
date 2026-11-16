@@ -293,18 +293,18 @@ not repository glue, owns candidate validation, activation, saved placement and
 failure recovery.
 
 The [default removal example](../examples/example_apps/src/distribution_default/uninstall.py)
-delegates program removal without claiming application data. Obtain consent and
-review the preview before requesting complete resource removal.
+delegates removal of the program and managed data. Obtain consent after
+reviewing its whole-directory targets; use `--keep-data` to preserve data.
 
-Applications declare `InstallationHooks` containing importable `module:function`
-providers for initialization, inventory, cleanup and migration. AppRC invokes
+Applications declare optional importable `module:function` callbacks for
+initialization, cleanup and migration in `[tool.apprc.distribution.hooks]`. AppRC invokes
 them through the recorded application environment. No application dependencies
-are required for independent core diagnosis or program-only removal.
+are required for independent core diagnosis or ordinary directory deletion.
 
-Inventory is an exact ownership contract, not a directory scan or permission to
-delete unknown files. The shared codec and operation checkpoints bind accepted
-inventory to the captured generation; pending removal must not replace it with
-an unreviewed rescan.
+AppRC owns ordinary file deletion within the whole managed directories named
+by the preview. Exact file inventories remain available to lower-level callers;
+their entries never implicitly claim additional descendants. Pending operations
+retain the scope accepted for their captured generation.
 
 
 ## Customized ordering
@@ -318,8 +318,8 @@ bootstrap environment.
 The [custom removal example](../examples/example_apps/src/distribution_custom/uninstall.py)
 keeps application-owned cleanup explicit. Cleanup must run while the recorded
 application environment is available and against the accepted operation context.
-An unavailable provider blocks dependent data deletion, not independent
-program-only removal.
+A declared cleanup callback that cannot run blocks dependent data deletion.
+`--keep-data` skips data cleanup and preserves resources.
 
 Keep ownership inventories, process quiescence and consent explicit when
 adapting these examples. Closing a screen is not process exit, and successful

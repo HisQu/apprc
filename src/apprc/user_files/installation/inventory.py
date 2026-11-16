@@ -75,7 +75,41 @@ def cleanup_entry_revision(entry: InventoryEntry) -> str | None:
     :param entry: An exact typed inventory entry, not a recursive root claim.
     :return: File or symbolic-link revision; directories have no content revision.
     """
+    if entry.kind in {"tree", "repository"}:
+        return tree_revision(entry.path)
     if entry.kind == "symlink":
         return symlink_revision(entry.path)
     assert_no_links(entry.path)
     return file_revision(entry.path) if entry.kind == "file" else None
+
+
+def tree_revision(path: Path) -> str | None:
+    """Bind whole-directory consent to its filesystem identity, not its contents.
+
+    :param path: Previously validated owned directory.
+    :return: Stable identity digest, or None for an absent directory.
+    """
+    assert_no_links(path)
+    try:
+        metadata = path.stat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise InstallationError(f"Cleanup root is not a directory: {path}.")
+    return hashlib.sha256(f"{metadata.st_dev}:{metadata.st_ino}".encode()).hexdigest()
+
+
+def editable_repository(project: Path) -> Path:
+    """Locate the nearest Git checkout containing an editable project.
+
+    :param project: Registered project directory, possibly a workspace member.
+    :return: Validated Git checkout root.
+    """
+    for candidate in (project, *project.parents):
+        assert_no_links(candidate)
+        marker = candidate / ".git"
+        if marker.is_dir() or marker.is_file():
+            if candidate in {Path(candidate.anchor), Path.home()}:
+                raise InstallationError("Refusing repository deletion at a filesystem or home root.")
+            return candidate
+    raise InstallationError("The editable project has no identifiable Git checkout.")

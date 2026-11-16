@@ -565,7 +565,7 @@ def test_receiver_rejects_management_prefix_under_program_only_target(
         retained_root,
         _preparation,
     ) = _installed_removal_scenario(tmp_path, monkeypatch)
-    preparation = prepare_uninstall(directory)
+    preparation = prepare_uninstall(directory, keep_data=True)
     assert preparation.can_execute and preparation.plan is not None
     plan = preparation.plan
     assert not plan.complete and not plan.categories
@@ -894,7 +894,7 @@ def test_actual_selected_and_retained_roots_and_program_only_plan(
     assert directory in roots
     assert cache_root in roots
 
-    program_only = prepare_uninstall(directory)
+    program_only = prepare_uninstall(directory, keep_data=True)
     assert program_only.can_execute and program_only.plan is not None
     program_roots = _handoff.handoff_removal_roots(
         program_only.plan, inspection.record
@@ -956,7 +956,7 @@ def test_program_only_removes_exact_owned_outputs_and_preserves_unknown_files(
             expected_revision=inspection.revision,
         )
 
-    preparation = prepare_uninstall(directory)
+    preparation = prepare_uninstall(directory, keep_data=True)
 
     assert preparation.can_execute and preparation.plan is not None
     assert preparation.plan.inventory.entries == (
@@ -982,7 +982,7 @@ def test_zero_capability_install_removes_only_managed_runtime_slot(
     directory, slot_directory = _installed_zero_capability_scenario(
         tmp_path, monkeypatch
     )
-    preparation = prepare_uninstall(directory)
+    preparation = prepare_uninstall(directory, keep_data=True)
     assert preparation.can_execute and preparation.plan is not None
     assert preparation.inspection.record is not None
     installed = preparation.inspection.record.active_runtime

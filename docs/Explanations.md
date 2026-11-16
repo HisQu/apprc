@@ -664,9 +664,11 @@ require application imports. Application validators and resource-provider hooks
 run in the recorded application runtime and report unavailable code explicitly.
 
 Editable registration owns only AppRC resources and integrations. It uses the
-repository's existing `.venv`; uninstall never deletes that environment or the
-checkout. If it breaks, the developer repairs it with uv rather than a second
-AppRC dependency manager.
+repository's existing `.venv`. Uninstall removes managed data while preserving
+that environment and checkout by default; `--remove-repository` explicitly
+includes the checkout and everything inside it. `--keep-data` preserves the
+managed data as well. If the environment breaks, the developer repairs it with
+uv rather than a second AppRC dependency manager.
 
 Both workflows preserve the same [resource layouts](#layouts) and
 ownership-aware cleanup. Python wheels and sdists remain normal packaging

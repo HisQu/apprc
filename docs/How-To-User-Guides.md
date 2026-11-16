@@ -1072,55 +1072,67 @@ old-record converter or permission to claim arbitrary database files.
 
 ## Remove a managed program
 
-Preview and then confirm program-only removal:
+Preview and then confirm removal of the program and its managed data:
 
 ```shell
 demo app uninstall --dry-run
 demo app uninstall
 ```
 
-Managed removal deletes only owned runtime slots, commands, shortcuts and
-registration. It preserves user configuration/data by default, including cache
-and state. An editable registration removes its integrations but never its
-checkout or `.venv`. Shared Python/uv/PyApp caches and unrelated commands are not
-implicit cleanup targets.
+Uninstall removes owned runtime slots, commands, shortcuts, configuration,
+appdata, cache, state and installation support. The preview identifies each
+managed directory as a whole-directory target: its contents are included,
+even when individual files were created by the application or added manually.
+AppRC validates directory ownership and removes contained symbolic links without
+following their targets. External workspaces, shared tools and unrelated
+commands are separate from these targets.
 
-If the stable managed command is missing, use the matching original setup's
-`app uninstall` recovery action. No root uninstall script or separate native
-uninstaller is required.
+An editable uninstall preserves the repository and its development environment
+by default. Managed single-root subdirectories inside the repository are still
+removed. AppRC removes the enclosing single-root folder only when empty; extra
+files in that folder are preserved. The completion message identifies the
+editable installation that remains.
 
-Complete removal is an explicit resource choice:
+To preserve configuration and data for a later reinstall, use:
 
 ```shell
-demo app uninstall --dry-run --complete --category cache
-demo app uninstall --complete --category cache
+demo app uninstall --keep-data --dry-run
+demo app uninstall --keep-data
 ```
 
-Select only declared/retired categories shown by the preview. Unattended
-confirmation additionally requires `--yes`. Ownership markers alone do not
-identify application databases or custom payload; those require an exact
-application-owned inventory and cleanup hook. Unavailable application code
-blocks that purge, not independent program-only removal. If the program was
-already removed, restore its environment before requesting provider cleanup.
+This retains reconnectable installation support. To also delete an editable
+repository, explicitly select it:
 
-An application can include owned symbolic links in its cleanup inventory. The
-manager checks each link and removes the link itself without following its
-target. See [application hooks](References.md#application-hooks-and-command-dispatch)
-for the inventory API.
+```shell
+demo app uninstall --remove-repository --dry-run
+demo app uninstall --remove-repository
+```
 
-Failed operations retain checkpoints. Retry with the same resource choices;
-stale revisions, changed inventories, unknown content and live runtime leases
-are not ignored. `--forget-retained` leaves explicitly retained files unmanaged,
-not deleted.
+The preview names the Git checkout containing the registered project. Removal
+includes local changes, ignored files and environments inside that checkout.
+External shared environments and Git metadata outside the checkout remain.
+`--remove-repository` is invalid for packaged installations and cannot be
+combined with `--keep-data`. Unattended confirmation additionally requires
+`--yes`.
+
+Ordinary directory deletion needs no application callbacks. Optional application
+cleanup, such as stopping owned services, runs before deletion; a declared
+callback that cannot run blocks dependent removal. If the stable managed command
+is missing, use the matching setup executable's `app uninstall` action.
+
+Failed operations retain their saved choices and checkpoints. Retry the pending
+operation without changing its options; a retry never expands its recorded
+scope. Preserve the reported external recovery information if a busy runtime,
+changed directory identity or failed cleanup prevents completion.
 
 > [!CAUTION]
-> Complete removal can delete explicitly selected configuration and appdata.
-> Back up user work first. Never interpret confirmation, a category name or a
-> missing application as permission to recursively delete unknown files.
+> Uninstall deletes configuration and application data by default. Back up work
+> outside the managed directories, or select `--keep-data`. The former
+> `--complete`, `--category` and `--forget-retained` switches are removed.
 
-Finalization uses a temporary copy of the same native manager outside removal
-targets and waits for its initiating process. Preserve its reported recovery
-state if a busy runtime or changed ownership prevents safe completion.
+The removal helper runs outside its immediate deletion targets. Repository
+removal is deferred to external finalization after the uninstall processes have
+exited, so it can also remove a development environment inside the checkout.
 
 <br>
 
@@ -1402,7 +1414,8 @@ authority with the new installer.
 
 1. With the old generation, record the enabled resource paths and finish any
    pending operation. Keep backups outside those managed roots.
-2. Use that generation's [program-only removal](#remove-a-managed-program).
+2. Use that generation's program-only removal command (the current equivalent
+   is [`app uninstall --keep-data`](#remove-a-managed-program)).
    Confirm its preview preserves the resources you need; program-only removal
    deliberately leaves reconnectable installation support behind.
 3. Once removal is complete and all old consumers are stopped, move only the

@@ -340,8 +340,11 @@ environment with uv before invoking its maintenance commands.
 | `cleanup` | `(context: OperationContext) -> None`; application-owned cleanup under persisted authority. |
 | `migrate` | `(plan: MigrationPlan, context: OperationContext) -> None`; application-specific migration in an application runtime. |
 
-Pass the same declaration to `DistributionSpec.hooks` and CLI
-`installation_hooks`. This replaces `installation_inventory`; no alias remains.
+Declare hooks once in `[tool.apprc.distribution.hooks]` in `pyproject.toml`.
+Packaged builds embed that declaration; editable registration reads and saves
+the same declaration. The Python CLI mounting argument `installation_hooks` is
+removed. AppRC validates declared callbacks in the application environment;
+omitted optional callbacks are allowed.
 Runtime hooks must be packaged with the application, not merely present in an
 author-only `<app>_distr` package.
 
@@ -629,7 +632,6 @@ following existing controls remain supported:
 | `workspace_required` | `False` | Require a workspace for ordinary business execution; requires a Workspaces declaration. |
 | `handlers` | `MaintenanceHandlers()` | Explicit supported appdata, cache, and state operations. |
 | `maintenance_help_panel` | `"AppRC: Commands"` | Help metadata panel for injected root entries. |
-| `installation_hooks` | `InstallationHooks()` | Importable application lifecycle providers; see the hook contract above. |
 | `runtime_payload` | `None` | Serialize application state for `config show`. |
 | `active_workspace_root_with_context` | `None` | Selector-aware active-workspace resolver for config commands. |
 | `initial_workspace_with_context` | `None` | Selector-aware initial workspace resolver for the config editor. |
@@ -655,7 +657,7 @@ The composition extension keywords have these exact types and defaults:
 
 `CliRuntime` accepts the runtime/config controls above on its constructor,
 including `maintenance_group_name`, but not the group-composition inputs
-`handlers`, `maintenance_help_panel`, `installation_hooks`,
+`handlers`, `maintenance_help_panel`,
 `installation_management`, `installer_entrypoint`, `host_diagnostics`,
 `resource_diagnostics`, `resource_group_extensions`, `launcher_spec`, or
 `launcher_handlers`. Pass those to `runtime.mount_app_groups(app, *, ...)`;
@@ -759,7 +761,7 @@ conditional `workspace`, `app`, and optional `launch` appear at the root.
 | `app paths [config\|appdata\|cache\|state\|logs] [--json] [--open]` | Always. Without a category, list all paths; a category prints its absolute path. Disabled category and invalid `--open` combinations exit 2. Open only an existing directory; never create it. Original authority/path failures exit nonzero without fallback locations. |
 | `app install [-e/--editable] [ARGS]...` | Enabled by installation management or an explicit installer delegate. Editable registration uses the invocation's actual checkout `.venv`; it never syncs/copies an environment. Other arguments go to the authored delegate, if present; otherwise explain how to run native setup. `--help` remains local. |
 | `app repair` | `installation_management=True`. Rebuild the recorded managed project through authenticated native support without selecting newer source or changing placement. Editable environments receive `uv sync --locked` guidance instead. |
-| `app uninstall [--dry-run] [--complete] [--category KIND] [--forget-retained] [--yes/-y]` | `installation_management=True`. Shared saved removal procedure; repeat categories for config/appdata/cache/state. Program-only is the default and retains resources. Complete removal requires exact preview/consent. |
+| `app uninstall [--dry-run] [--keep-data] [--remove-repository] [--yes/-y]` | `installation_management=True`. Remove program and managed data by default. `--keep-data` retains data and reconnectable support. Editable checkouts remain unless explicitly selected with `--remove-repository`; that option cannot be combined with `--keep-data`. |
 | `app migrate [--dry-run] [--yes/-y]` | `installation_management=True`. Preview/apply exact resource migration, or resume its saved pending inventory/revision, with confirmation and quiescence checks. Unrecognized data needs application-owned inventory; recovery never rescans it silently. |
 | `app data backup/restore` | Declared appdata and corresponding provider operations. Restore confirms unless `--yes`; data means AppRC appdata, never workspace/project payloads. |
 | `app cache prune/clear`, `app state prune/reset` | Declared category and supported provider operations; preserve dry-run, confirmation and JSON controls. Host resource extensions may provide application-specific commands. |
@@ -779,24 +781,22 @@ unchanged.
 
 ### Saved removal inventory
 
-Declare application-owned inventory through
-`InstallationHooks(inventory="package.module:function")`, not a live
-`installation_inventory` callback. The shared implementation imports the
-provider only inside the recorded application runtime. Native maintenance
-does not install or import application dependencies.
+Standard uninstall builds whole-directory targets from saved current and retired
+resource locations. It requires matching ownership markers and safe path
+boundaries, but no application-authored file inventory. A whole-directory target
+explicitly includes its contents; ordinary exact directory entries continue to
+mean empty-directory removal only. A retained editable repository is excluded.
 
-The inventory provider receives the captured installation, normalized resource
-categories and `forget_retained` choice. Return only exact owned resource
-entries; selected complete removal requires the provider before any purge.
-Program-only removal, help and independent diagnosis do not require it.
-Pending uninstall reuses its accepted persisted inventory rather than silently
-rescanning after consent.
+Optional application cleanup runs before directory removal. A declared callback
+failure blocks dependent removal; an absent callback does not prevent ordinary
+filesystem cleanup. See the [removal guide](How-To-User-Guides.md#remove-a-managed-program)
+for consent, data retention and repository removal.
 
-Providers can compose
-`apprc.distribution.runtime.default_cleanup_inventory(inspection, categories=categories, forget_retained=forget_retained)`.
-The shared strict codec, ownership/revision validation and operation checkpoints
-remain authoritative. A missing or failing provider prevents dependent cleanup;
-it does not justify treating a whole application directory as owned payload.
+The existing exact `CleanupInventory` APIs and `inventory` callback remain for
+lower-level callers and previously saved operations. Their file revisions,
+symbolic-link identities and empty-directory semantics remain unchanged.
+Pending operations retain their accepted targets and choices across retries;
+they are not upgraded to the new default removal scope.
 
 ### Doctor and paths JSON
 

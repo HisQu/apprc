@@ -449,9 +449,7 @@ class LauncherHomeScreen(Screen[None]):
                 asyncio.to_thread(
                     controllers.prepare_uninstall,
                     self.context.inspection.directory,
-                    categories=frozenset(),
-                    complete=False,
-                    forget_retained=False,
+                    keep_data=None,
                 )
             )
             try:
@@ -469,16 +467,29 @@ class LauncherHomeScreen(Screen[None]):
         detail = "\n".join(part for part in (entries, diagnostics) if part)
         result = await self.app.push_screen_wait(
             ConfirmScreen(
-                title="Remove application program",
+                title="Remove application and data",
                 message=Text(
-                    "The native manager will remove the program and preserve "
-                    "user data by default. Exact targets:\n"
+                    "The native manager will remove the program and managed data. "
+                    "Whole-directory targets include all contents:\n"
                     + (detail or "No data targets are selected.")
                 ),
-                actions=(("remove", "Remove program", "warning"),),
+                actions=(("remove", "Remove application and data", "warning"), ("keep-data", "Keep data", "primary")),
             )
         )
-        if result != "remove":
+        if result == "keep-data":
+            preparation = await asyncio.to_thread(
+                controllers.prepare_uninstall,
+                self.context.inspection.directory,
+                keep_data=True,
+            )
+            confirmed = await self.app.push_screen_wait(ConfirmScreen(
+                title="Remove program and keep data",
+                message=Text("Configuration and data will be preserved. Remove program entry points?"),
+                actions=(("remove", "Remove program", "warning"),),
+            ))
+            if confirmed != "remove":
+                return
+        elif result != "remove":
             return
         if preparation.plan is None or not preparation.can_execute:
             self.notify(

@@ -22,7 +22,6 @@ from typer.core import TyperCommand
 
 from apprc.definition.installation import (
     EditableCheckout,
-    InstallationHooks,
     InstallationInspection,
     InstallationRecord,
     MigrationPlan,
@@ -38,7 +37,6 @@ from apprc.interfaces.cli.context import (
 if TYPE_CHECKING:
     from apprc.distribution.runtime.controllers import UninstallPreparation
 
-_CATEGORIES: tuple[ResourceKind, ...] = ("config", "appdata", "cache", "state")
 
 
 class _InstallationCommand(TyperCommand):
@@ -55,7 +53,6 @@ def mount_installation_group(
     maintenance_group_name: str = "app",
     installation_management: bool = False,
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
-    installation_hooks: InstallationHooks = InstallationHooks(),
 ) -> typer.Typer:
     """Register explicitly enabled installation actions on a maintenance group."""
     child = app
@@ -91,7 +88,6 @@ def mount_installation_group(
                         ctx,
                         command_directory=command_directory,
                         assume_yes=assume_yes,
-                        installation_hooks=installation_hooks,
                     )
                     from apprc.distribution.runtime.installation import (
                         offer_configuration_setup,
@@ -228,43 +224,25 @@ def mount_installation_group(
     def uninstall(
         ctx: typer.Context,
         dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-        complete: Annotated[bool, typer.Option("--complete")] = False,
-        category: Annotated[
-            list[str] | None, typer.Option("--category")
-        ] = None,
-        forget_retained: Annotated[
-            bool, typer.Option("--forget-retained")
-        ] = False,
+        keep_data: Annotated[bool, typer.Option("--keep-data")] = False,
+        remove_repository: Annotated[bool, typer.Option("--remove-repository")] = False,
         assume_yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
         json_output: Annotated[bool, typer.Option("--json")] = False,
     ) -> None:
         """Preview or remove the program and only explicitly selected owned data."""
-        requested = frozenset(category or ())
-        invalid = requested - set(_CATEGORIES)
-        if invalid:
-            raise typer.BadParameter(
-                "Unknown category: " + ", ".join(sorted(invalid))
-            )
-        selected: frozenset[ResourceKind] = frozenset(
-            kind for kind in _CATEGORIES if kind in requested
-        )
-        if forget_retained and not complete:
-            raise typer.BadParameter("--forget-retained requires --complete.")
+        if keep_data and remove_repository:
+            raise typer.BadParameter("--keep-data cannot be combined with --remove-repository.")
         command_context = _inspection(ctx)
         inspection = command_context.inspection
         directory = inspection.directory
-        record = inspection.record
-        if complete and not requested and record is not None:
-            selected = record.placement.capabilities
         try:
             from apprc.distribution.runtime import controllers
 
             manager_executable = command_context._native_manager_executable
             preparation = controllers.prepare_uninstall(
                 directory,
-                categories=selected,
-                complete=complete,
-                forget_retained=forget_retained,
+                keep_data=True if keep_data else None,
+                remove_repository=remove_repository,
                 manager_executable=manager_executable,
             )
         except (OSError, ValueError) as exc:
@@ -336,7 +314,6 @@ def _register_editable(
     *,
     command_directory: Path | None,
     assume_yes: bool,
-    installation_hooks: InstallationHooks = InstallationHooks(),
 ) -> InstallationInspection:
     """Validate the mounted command's existing editable uv checkout."""
     context = _inspection(ctx)
@@ -590,7 +567,7 @@ def _register_editable(
             EditableCheckout(
                 project=project_root,
                 environment=prefix,
-                hooks=installation_hooks,
+                hooks=distribution_spec.hooks,
             ),
             placement,
             command_name=command,

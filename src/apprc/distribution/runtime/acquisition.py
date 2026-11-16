@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import apprc.utils as ut
+
 import hashlib
 import os
 import shutil
@@ -32,15 +34,6 @@ def _assert_private_staging(staging: Path) -> None:
                 "Source staging directory does not have a private Windows ACL."
             )
         raise InstallationError("Source staging directory must be private.")
-
-
-def _sha256_file(path: Path) -> str:
-    """Hash a file without loading its complete contents into memory."""
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _archive_paths(
@@ -224,7 +217,7 @@ def _archive_input(
         digest = hashlib.sha256()
         while chunk := stream.read(1024 * 1024):
             digest.update(chunk)
-        if digest.hexdigest() != _sha256_file(target):
+        if digest.hexdigest() != ut.sha256_file(target):
             raise InstallationError(
                 "Materialized source input differs from its verified archive."
             )
@@ -245,7 +238,7 @@ def materialize_project_snapshot(
     :param source: Validated immutable snapshot declaration.
     """
     assert_no_links(archive)
-    if _sha256_file(archive) != source.digest:
+    if ut.sha256_file(archive) != source.digest:
         raise InstallationError("Project snapshot SHA-256 does not match.")
     relative = (
         PurePosixPath(".")
@@ -304,7 +297,7 @@ def materialize_project_snapshot(
             "Project materialization directory is not empty."
         )
     _archive_inputs(archive, destination, extract=True, strip_wrapper=False)
-    if _sha256_file(archive) != source.digest:
+    if ut.sha256_file(archive) != source.digest:
         raise InstallationError(
             "Project snapshot changed during materialization."
         )

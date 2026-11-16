@@ -8,7 +8,9 @@ package instead of growing this module into a miscellaneous toolbox.
 
 from __future__ import annotations
 
+import hashlib
 import time
+from pathlib import Path
 from collections.abc import Hashable, Iterator, Mapping, MutableMapping
 from contextlib import contextmanager
 from typing import TypeVar, cast, overload
@@ -141,3 +143,13 @@ def timer(name: str = "block") -> Iterator[None]:
     finally:
         elapsed = time.perf_counter() - start
         print(f"{name} finished in {elapsed:0.4f}s")
+
+
+def sha256_file(path: Path) -> str:
+    """Hash file bytes without retaining the file in memory.
+
+    :param path: File whose contents are hashed.
+    :return: Lowercase SHA-256 digest.
+    """
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()

@@ -442,6 +442,13 @@ diagnostics without creating authority. Statuses remain `missing`, `invalid`,
 installations do not require a record. Invalid authority never authorizes a
 silent fallback to another resource location.
 
+`plan_resume()` reconstructs the exact pending install, replacement, or repair
+from captured authority. It retains the operation ID, target, placement, command,
+generation, and original operation kind. `plan_repair(identity, runtime, placement)`
+plans a new managed-runtime repair and rejects pending operations; callers that
+previously used it to resume must call `plan_resume()` instead. Planning resume
+does not advance checkpoints or select a new source.
+
 Schema `3` is strict: wrong types, duplicate/unknown fields, malformed identities
 or digests and invalid paths are rejected. Schema-2 managed installations must
 be retired with their matching old tools before reinstallation; no converter or

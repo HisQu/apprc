@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import apprc.utils as ut
+
 import glob
 import hashlib
 import os
@@ -20,7 +22,6 @@ from apprc.distribution.models import DistributionSpec, relative_destination
 from apprc.distribution.runtime.acquisition import (
     _archive_inputs,
     _assert_private_staging,
-    _sha256_file,
 )
 from apprc.user_files.app_home.locations import assert_no_links
 from apprc.user_files.app_home.permissions import set_windows_private_acl
@@ -219,7 +220,7 @@ def _remove_generated(
                     continue
                 assert_no_links(output)
                 address = PurePosixPath(output.relative_to(tree).as_posix())
-                if baseline_files.get(address) != _sha256_file(output):
+                if baseline_files.get(address) != ut.sha256_file(output):
                     output.unlink()
             for output in sorted(path.rglob("*"), reverse=True):
                 if output.is_symlink():
@@ -316,7 +317,7 @@ def _baseline_output_files(tree: Path) -> dict[PurePosixPath, str]:
             path = parent / name
             if path.is_file() and not path.is_symlink():
                 result[PurePosixPath(path.relative_to(tree).as_posix())] = (
-                    _sha256_file(path)
+                    ut.sha256_file(path)
                 )
     return result
 
@@ -398,7 +399,7 @@ def build_project_snapshot(
             )
         _validate_project_declaration(spec, selected)
         lock_path = _nearest_lockfile(tree, selected)
-        committed_lock_digest = _sha256_file(lock_path)
+        committed_lock_digest = ut.sha256_file(lock_path)
         _validate_workspace(tree)
         original_configuration = _project_configuration(tree)
         original_lockfiles = _project_lockfiles(tree)

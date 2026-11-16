@@ -78,7 +78,7 @@ def plan_install(
         )
     if record is not None and record.operation is not None:
         raise InstallationError(
-            "Resume or repair the pending operation before planning another install."
+            "Resume the pending operation with plan_resume before planning another install."
         )
     if placement.layout.mode == "native" and placement.appdata_dir is not None:
         import sys
@@ -119,6 +119,40 @@ def plan_install(
     )
 
 
+def plan_resume(*, inspection: InstallationInspection) -> InstallPlan:
+    """Resume the exact saved installation without selecting another candidate.
+
+    :param inspection: Captured pending installation authority.
+    :return: Existing operation identity, target and kind with exact revisions.
+    """
+    record = inspection.record
+    operation = record.operation if record is not None else None
+    if (
+        inspection.status not in {"provisional", "incomplete"}
+        or inspection.revision is None
+        or record is None
+        or record.identity.app_id != inspection.app_id
+        or operation is None
+        or operation.kind not in ("install", "replace", "repair")
+        or operation.intended is None
+        or operation.intended.identity != record.identity
+        or operation.intended.placement != operation.placement
+    ):
+        raise InstallationError(
+            "Resume requires an exact pending installation candidate."
+        )
+    return InstallPlan(
+        directory=inspection.directory,
+        expected_revision=inspection.revision,
+        expected_generation=record.generation_id,
+        target=operation.intended,
+        operation_id=operation.operation_id,
+        generation_id=record.generation_id,
+        kind=operation.kind,
+        command_name=record.command_name,
+    )
+
+
 def plan_repair(
     identity: InstallationIdentity,
     runtime: RuntimeSlot | EditableCheckout,
@@ -126,7 +160,7 @@ def plan_repair(
     *,
     inspection: InstallationInspection,
 ) -> InstallPlan:
-    """Resume the exact candidate or create a repair from active authority."""
+    """Plan a new managed runtime repair from active authority."""
     record = inspection.record
     if (
         record is None
@@ -138,40 +172,16 @@ def plan_repair(
         )
     if placement != record.placement:
         raise InstallationError("Repair cannot relocate recorded resources.")
-    if record.operation is not None and record.operation.kind not in {
-        "install",
-        "replace",
-        "repair",
-    }:
+    if record.operation is not None:
         raise InstallationError(
-            "Resume or complete the pending operation before repair."
-        )
-    if record.operation is not None and record.operation.intended is not None:
-        saved = record.operation.intended
-        if saved.identity != identity:
-            raise InstallationError("Pending candidate identity has changed.")
-        if not isinstance(saved.runtime, RuntimeSlot):
-            raise InstallationError(
-                "Editable environments are developer-owned; restore it with uv sync --locked."
-            )
-        return InstallPlan(
-            directory=inspection.directory,
-            expected_revision=inspection.revision,
-            expected_generation=record.generation_id,
-            target=saved,
-            operation_id=record.operation.operation_id,
-            generation_id=record.generation_id,
-            command_name=record.command_name,
-            kind="repair",
+            "Pending installation must be resumed with plan_resume before repair."
         )
     if isinstance(record.active_runtime, EditableCheckout):
         raise InstallationError(
             "Editable environments are developer-owned; restore it with uv sync --locked."
         )
     if not isinstance(record.active_runtime, RuntimeSlot):
-        raise InstallationError(
-            "Repair requires a managed active or pending runtime."
-        )
+        raise InstallationError("Repair requires a managed active runtime.")
     if not isinstance(runtime, RuntimeSlot):
         raise InstallationError(
             "Managed repair requires a runtime slot candidate."
@@ -350,36 +360,24 @@ def _checked(plan: OperationPlan) -> InstallationInspection:
         raise InstallationError(
             "Installation changed after planning; inspect and plan again."
         )
-    if isinstance(plan, InstallPlan) and plan.kind == "repair":
+    if isinstance(plan, InstallPlan):
         record = inspection.record
-        if record is None:
-            raise InstallationError(
-                "Repair requires a saved installation record."
-            )
-        if plan.generation_id != record.generation_id:
-            raise InstallationError(
-                "Repair cannot change the saved installation generation."
-            )
-        operation = record.operation
-        if operation is not None:
-            if (
-                inspection.status not in {"provisional", "incomplete"}
-                or operation.kind not in {"install", "replace", "repair"}
-                or operation.operation_id != plan.operation_id
-                or operation.intended is None
-                or operation.intended.identity != plan.target.identity
-                or operation.intended.runtime != plan.target.runtime
-                or operation.intended.placement != plan.target.placement
-                or plan.command_name != record.command_name
-            ):
+        if record is not None and record.operation is not None:
+            if plan != plan_resume(inspection=inspection):
                 raise InstallationError(
-                    "Pending repair operation changed after planning."
+                    "Pending installation operation changed after planning."
                 )
-        elif inspection.status not in {"ready", "removed-retained"}:
-            raise InstallationError(
-                "Repair requires a resumable operation or valid saved installation."
-            )
-        return inspection
+            return inspection
+        if plan.kind == "repair":
+            if record is None or plan.generation_id != record.generation_id:
+                raise InstallationError(
+                    "Repair requires the saved installation generation."
+                )
+            if inspection.status not in {"ready", "removed-retained"}:
+                raise InstallationError(
+                    "Repair requires valid saved installation authority."
+                )
+            return inspection
     inspection.require_usable()
     return inspection
 
@@ -395,7 +393,6 @@ def begin_operation(plan: OperationPlan) -> InstallationInspection:
         previous = inspection.record
         if (
             isinstance(plan, InstallPlan)
-            and plan.kind == "repair"
             and previous is not None
             and previous.operation is not None
         ):

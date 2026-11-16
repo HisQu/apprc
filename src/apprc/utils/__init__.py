@@ -9,4 +9,5 @@ from .stdlib import (
     deep_right_merge,
     deep_set,
     timer,
+    sha256_file,
 )

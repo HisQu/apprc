@@ -35,10 +35,10 @@ from apprc.distribution.runtime.backend import (
 from apprc.user_files.app_home.permissions import (
     create_private_directory_if_missing,
 )
-from apprc.user_files.installation.operations import plan_repair
+from apprc.user_files.installation.operations import plan_repair, plan_resume
 
 
-def test_repair_resumes_pending_managed_candidate_before_active_editable_guidance(
+def test_explicit_resume_uses_pending_managed_candidate_before_active_editable_guidance(
     tmp_path: Path,
 ) -> None:
     identity = InstallationIdentity(
@@ -78,7 +78,10 @@ def test_repair_resumes_pending_managed_candidate_before_active_editable_guidanc
         record,
     )
 
-    resumed = plan_repair(identity, candidate, placement, inspection=inspection)
+    with pytest.raises(InstallationError, match="plan_resume"):
+        plan_repair(identity, candidate, placement, inspection=inspection)
+    resumed = plan_resume(inspection=inspection)
+    assert resumed.kind == "replace"
 
     assert resumed.operation_id == operation_id
     assert resumed.target == target

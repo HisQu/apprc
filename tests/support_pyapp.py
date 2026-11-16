@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+from packaging.utils import parse_wheel_filename
 
 from apprc.definition.installation import (
     InstallationInspection,
@@ -402,11 +403,14 @@ def native_product(
     (vendor / ".gitignore").unlink()
     core_wheel = next(vendor.glob("apprc_core-*.whl")).name
     terminal_wheel = next(vendor.glob("apprc-*.whl")).name
+    core_version = parse_wheel_filename(core_wheel)[1]
+    terminal_version = parse_wheel_filename(terminal_wheel)[1]
     (project_root / "pyproject.toml").write_text(
         "[build-system]\nrequires = ['setuptools>=80']\n"
         "build-backend = 'fixture_backend'\nbackend-path = ['.']\n"
         "[project]\nname = 'fixture-app'\nversion = '1.0.0'\n"
-        f"requires-python = '>=3.12'\ndependencies = ['apprc-core==0.34.0', 'apprc==0.34.0']\n"
+        "requires-python = '>=3.12'\n"
+        f"dependencies = ['apprc-core=={core_version}', 'apprc=={terminal_version}']\n"
         "[project.optional-dependencies]\nnative-feature = ['fixture-feature-dependency==1.0.0']\n"
         "[dependency-groups]\ndev = ['fixture-dev-dependency==1.0.0']\n"
         "[tool.uv.sources]\n"

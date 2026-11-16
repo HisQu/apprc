@@ -105,6 +105,12 @@ Managed candidate preparation in `_prepare_candidate()` in
 `distribution/runtime/installation.py` owns project materialization, locked
 synchronization, validation, and resource initialization. Its caller owns the
 operation, durable support-publication intent, registration, and activation.
+Managed installation and repair share command publication, registration, final
+checkpoints, and activation; their candidate preparation remains explicit.
+Use `plan_resume()` for an exact pending operation and `plan_repair()` only for
+a new managed repair. A candidate rebuilt during the current invocation is not
+rebuilt again after a probe failure; previously prepared candidates can still be
+recovered once.
 If preparation fails after advancing a checkpoint, failure journaling reads the
 latest on-disk revision.
 For caught pre-activation errors, the installer restores recorded command

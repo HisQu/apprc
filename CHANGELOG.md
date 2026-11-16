@@ -115,17 +115,13 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-<br>
-
 ### 🗑️ Removed
 - Removed the initializer AST test that rejected explicit distribution facade exports.
 
 <br>
 
 ### 🔨 Fixed
-- Corrected the one-line installation requirement ranges to include the published 0.34 release.
-
-<br>
+- Corrected the one-line installation requirement ranges to select the 0.35 release.
 
 <br>
 

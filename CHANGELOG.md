@@ -65,6 +65,9 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### 💔 Changed
 
+- Native and editable installation reuse runtime-option declarations and placement construction. Diagnostic aggregation lives in the CLI diagnostics package; shared installation test fixtures no longer import other test modules.
+- Install completion offers configuration only for missing required user settings without fallbacks. Non-interactive and `--skip-setup` invocations skip the offer; explicit `config setup` remains available.
+
 - Uninstall orchestration follows explicit existing checkpoint phases with shared Windows registry handling. Application bridge actions use focused handlers behind common request and authority validation.
 
 - Managed installation and repair share publication, registration, checkpoint, and activation handling while retaining distinct preparation and rollback evidence.
@@ -80,6 +83,8 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 🔨 Fixed
+
+- Setup completion uses the mounted maintenance group for `app paths` and `app doctor` guidance. AppRC-generated installation, maintenance, and workspace options and arguments now include help descriptions.
 
 - A freshly rebuilt runtime candidate is no longer rebuilt again after a validation probe fails. Previously prepared candidates retain one recovery rebuild.
 

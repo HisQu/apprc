@@ -24,17 +24,18 @@ from apprc.definition.installation import (
     EditableCheckout,
     InstallationInspection,
     InstallationRecord,
+    InstallationPlacement,
     MigrationPlan,
     OperationContext,
     RuntimeSlot,
 )
-from apprc.definition.paths import ResourceKind
 from apprc.interfaces.cli.context import (
     InstallationCommandContext,
     installation_command_context_from,
 )
 
 if TYPE_CHECKING:
+    from apprc.distribution.models import DistributionSpec
     from apprc.distribution.runtime._uninstall_controller import (
         UninstallPreparation,
     )
@@ -61,6 +62,7 @@ def mount_installation_group(
     app: typer.Typer,
     *,
     maintenance_group_name: str = "app",
+    config_group_name: str = "config",
     installation_management: bool = False,
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
 ) -> typer.Typer:
@@ -80,12 +82,36 @@ def mount_installation_group(
         )
         def install(
             ctx: typer.Context,
-            editable: Annotated[bool, typer.Option("--editable", "-e")] = False,
+            editable: Annotated[
+                bool,
+                typer.Option(
+                    "--editable",
+                    "-e",
+                    help="Register this checkout and its existing environment.",
+                ),
+            ] = False,
             command_directory: Annotated[
-                Path | None, typer.Option("--command-directory")
+                Path | None,
+                typer.Option(
+                    "--command-directory",
+                    help="Publish the command in an existing directory on PATH.",
+                ),
             ] = None,
-            assume_yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
-            skip_setup: Annotated[bool, typer.Option("--skip-setup")] = False,
+            assume_yes: Annotated[
+                bool,
+                typer.Option(
+                    "--yes",
+                    "-y",
+                    help="Proceed without asking for confirmation.",
+                ),
+            ] = False,
+            skip_setup: Annotated[
+                bool,
+                typer.Option(
+                    "--skip-setup",
+                    help="Skip the optional configuration setup prompt.",
+                ),
+            ] = False,
         ) -> None:
             """Register the existing checkout or invoke an authored installer."""
             if editable:
@@ -103,7 +129,14 @@ def mount_installation_group(
                         offer_configuration_setup,
                     )
 
-                    offer_configuration_setup(result, skip=skip_setup)
+                    context = _inspection(ctx)
+                    offer_configuration_setup(
+                        result,
+                        skip=skip_setup,
+                        config_group_name=config_group_name,
+                        runtime_options=context.runtime_options,
+                        environment=context.environment,
+                    )
                 except (OSError, ValueError) as exc:
                     raise typer.BadParameter(
                         _installation_error_message(exc)
@@ -129,9 +162,22 @@ def mount_installation_group(
     @child.command("migrate")
     def migrate(
         ctx: typer.Context,
-        dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-        assume_yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
-        json_output: Annotated[bool, typer.Option("--json")] = False,
+        dry_run: Annotated[
+            bool,
+            typer.Option(
+                "--dry-run",
+                help="Show the planned changes without applying them.",
+            ),
+        ] = False,
+        assume_yes: Annotated[
+            bool,
+            typer.Option(
+                "--yes", "-y", help="Proceed without asking for confirmation."
+            ),
+        ] = False,
+        json_output: Annotated[
+            bool, typer.Option("--json", help="Emit machine-readable JSON.")
+        ] = False,
     ) -> None:
         """Preview or explicitly execute recognized AppRC placement migration."""
         context = _inspection(ctx)
@@ -235,13 +281,36 @@ def mount_installation_group(
     @child.command("uninstall")
     def uninstall(
         ctx: typer.Context,
-        dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-        keep_data: Annotated[bool, typer.Option("--keep-data")] = False,
-        remove_repository: Annotated[
-            bool, typer.Option("--remove-repository")
+        dry_run: Annotated[
+            bool,
+            typer.Option(
+                "--dry-run",
+                help="Show the planned changes without applying them.",
+            ),
         ] = False,
-        assume_yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
-        json_output: Annotated[bool, typer.Option("--json")] = False,
+        keep_data: Annotated[
+            bool,
+            typer.Option(
+                "--keep-data",
+                help="Remove the program while retaining application data and configuration.",
+            ),
+        ] = False,
+        remove_repository: Annotated[
+            bool,
+            typer.Option(
+                "--remove-repository",
+                help="Also remove the recorded editable checkout after ownership checks.",
+            ),
+        ] = False,
+        assume_yes: Annotated[
+            bool,
+            typer.Option(
+                "--yes", "-y", help="Proceed without asking for confirmation."
+            ),
+        ] = False,
+        json_output: Annotated[
+            bool, typer.Option("--json", help="Emit machine-readable JSON.")
+        ] = False,
     ) -> None:
         """Preview or remove the program and only explicitly selected owned data."""
         if keep_data and remove_repository:
@@ -383,6 +452,46 @@ def _register_editable(
         f"Run `uv run --locked {command} {maintenance_group} "
         "install -e` from the checkout."
     )
+    project_root, prefix, distribution_spec = _validate_editable_checkout(
+        context, command, guidance
+    )
+    placement = _editable_placement(
+        context, distribution_spec, project_root, prefix, guidance
+    )
+    uv, command_directory = _editable_command_destination(
+        context, project_root, prefix, command_directory, guidance
+    )
+    from apprc.distribution.runtime.installation import (
+        register_editable_application,
+    )
+
+    try:
+        return register_editable_application(
+            context.manager,
+            distribution_spec.metadata.identity,
+            EditableCheckout(
+                project=project_root,
+                environment=prefix,
+                hooks=distribution_spec.hooks,
+            ),
+            placement,
+            command_name=command,
+            uv=uv,
+            command_directory=command_directory,
+            assume_yes=assume_yes,
+        )
+    except (OSError, ValueError) as exc:
+        raise ValueError(
+            f"{_installation_error_message(exc)} {guidance}"
+        ) from exc
+
+
+def _validate_editable_checkout(
+    context: InstallationCommandContext,
+    command: str,
+    guidance: str,
+) -> tuple[Path, Path, DistributionSpec]:
+    """Authenticate installed checkout metadata and interpreter identity."""
     try:
         cwd = Path.cwd().resolve(strict=True)
         prefix = Path(sys.prefix).resolve(strict=True)
@@ -550,14 +659,18 @@ def _register_editable(
             f"Console command {command!r} is unavailable at {executable}. {guidance}"
         )
 
-    from apprc.definition.installation import (
-        EditableCheckout,
-        InstallationPlacement,
-    )
+    return project_root, prefix, distribution_spec
+
+
+def _editable_placement(
+    context: InstallationCommandContext,
+    distribution_spec: DistributionSpec,
+    project_root: Path,
+    prefix: Path,
+    guidance: str,
+) -> InstallationPlacement:
+    """Resolve placement under the exact pending operation, if present."""
     from apprc.definition.resolution import ResolveOptions
-    from apprc.distribution.runtime.installation import (
-        register_editable_application,
-    )
     from apprc.user_files.app_home.layouts import resolve_app_paths
 
     options = context.runtime_options
@@ -597,24 +710,17 @@ def _register_editable(
         context.environment,
         operation_context=operation_context,
     )
-    declared_capabilities: tuple[tuple[ResourceKind, bool], ...] = (
-        ("config", context.manager.spec.paths.config),
-        ("appdata", context.manager.spec.paths.appdata),
-        ("cache", context.manager.spec.paths.cache),
-        ("state", context.manager.spec.paths.state),
-    )
-    capabilities: frozenset[ResourceKind] = frozenset(
-        kind for kind, enabled in declared_capabilities if enabled
-    )
-    placement = InstallationPlacement(
-        layout=paths.layout,
-        config_dir=paths.config_dir if "config" in capabilities else None,
-        appdata_dir=paths.appdata_dir if "appdata" in capabilities else None,
-        cache_dir=paths.cache_dir if "cache" in capabilities else None,
-        state_dir=paths.state_dir if "state" in capabilities else None,
-        logs_dir=paths.logs_dir if "state" in capabilities else None,
-        capabilities=capabilities,
-    )
+    return InstallationPlacement.from_paths(paths, context.manager.spec.paths)
+
+
+def _editable_command_destination(
+    context: InstallationCommandContext,
+    project_root: Path,
+    prefix: Path,
+    command_directory: Path | None,
+    guidance: str,
+) -> tuple[Path, Path]:
+    """Select uv and an external existing command directory on PATH."""
     uv_name = shutil.which("uv", path=context.environment.get("PATH"))
     if uv_name is None:
         raise ValueError(f"uv is unavailable. {guidance}")
@@ -649,25 +755,7 @@ def _register_editable(
             "The command directory must be outside the checkout and .venv. "
             f"{guidance}"
         )
-    try:
-        return register_editable_application(
-            context.manager,
-            distribution_spec.metadata.identity,
-            EditableCheckout(
-                project=project_root,
-                environment=prefix,
-                hooks=distribution_spec.hooks,
-            ),
-            placement,
-            command_name=command,
-            uv=uv,
-            command_directory=command_directory,
-            assume_yes=assume_yes,
-        )
-    except (OSError, ValueError) as exc:
-        raise ValueError(
-            f"{_installation_error_message(exc)} {guidance}"
-        ) from exc
+    return uv, command_directory
 
 
 def installation_context(

@@ -60,6 +60,7 @@ class ConfigCommandBase:
         )
         self.missing_setup = missing_setup
         self.runtime_error_param_hint = options.runtime_error_param_hint
+        self.maintenance_group_name = options.maintenance_group_name
         self.config_group_name = options.config_group_name
         self.state_resolver = ConfigStateResolver(options.state_type)
         self.selector_context_reader = SelectorContextReader()

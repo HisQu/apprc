@@ -36,13 +36,16 @@ class ConfigCommandHandlers(
         *,
         assume_yes: bool,
         adopt: bool,
+        offer_missing: bool = False,
     ) -> None:
         """Initialize declared config files without creating a workspace."""
         run_config_setup(
             self.apprc,
             assume_yes=assume_yes,
             adopt=adopt,
+            offer_missing=offer_missing,
             manager=self.manager(ctx),
             config_group_name=self.config_group_name,
+            maintenance_group_name=self.maintenance_group_name,
             show_next_step=True,
         )

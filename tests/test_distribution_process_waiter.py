@@ -5,36 +5,18 @@ from __future__ import annotations
 import ctypes
 import os
 import select
-import subprocess
 import sys
-from collections.abc import Generator
-from contextlib import contextmanager
 from ctypes import wintypes
 
 import pytest
+
+from tests.support_installation import owned_child_process
 
 from apprc.distribution.runtime import (
     _handoff,
     uninstall_handoff,
     _process_waiter,
 )
-
-
-@contextmanager
-def _owned_child() -> Generator[subprocess.Popen[str], None, None]:
-    process = subprocess.Popen(
-        [sys.executable, "-c", "import sys; sys.stdin.readline()"],
-        stdin=subprocess.PIPE,
-        text=True,
-    )
-    try:
-        yield process
-    finally:
-        if process.poll() is None:
-            process.terminate()
-        process.wait(timeout=5)
-        if process.stdin is not None:
-            process.stdin.close()
 
 
 def _without_python_pidfd(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,7 +35,7 @@ def test_libc_pidfd_waits_for_owned_child_without_python_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _without_python_pidfd(monkeypatch)
-    with _owned_child() as process:
+    with owned_child_process() as process:
         expected = _handoff.process_start_token(process.pid)
         waiter = uninstall_handoff._open_process_waiter(process.pid, expected)
         assert waiter[0] == "pidfd"
@@ -92,7 +74,7 @@ def test_pidfd_closes_when_process_start_identity_does_not_match(
 
     monkeypatch.setattr(_process_waiter, "_linux_pidfd_open", track_pidfd)
     try:
-        with _owned_child() as process:
+        with owned_child_process() as process:
             waiter = uninstall_handoff._open_process_waiter(
                 process.pid, "linux:wrong:identity"
             )
@@ -124,7 +106,7 @@ def test_pidfd_closes_when_process_exits_during_identity_validation(
 
     monkeypatch.setattr(_process_waiter, "_linux_pidfd_open", track_pidfd)
     try:
-        with _owned_child() as process:
+        with owned_child_process() as process:
             original_token = _process_waiter._linux_process_token
             observed: list[int] = []
 
@@ -163,7 +145,7 @@ def test_windows_waiter_waits_for_exit_and_closes_handle() -> None:
         ctypes.POINTER(wintypes.DWORD),
     )
     kernel32.GetHandleInformation.restype = wintypes.BOOL
-    with _owned_child() as process:
+    with owned_child_process() as process:
         expected = _handoff.process_start_token(process.pid)
         waiter = uninstall_handoff._open_process_waiter(process.pid, expected)
         assert waiter[0] == "windows"

@@ -14,12 +14,13 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+
+from tests.support_installation import installation_record
 from filelock import FileLock, Timeout
 
 from apprc.definition.installation import (
     InstallationDiagnostic,
     InstallationError,
-    InstallationIdentity,
     InstallationPlacement,
     InstallationRecord,
     InstallationWriteAuthority,
@@ -59,25 +60,6 @@ def test_private_directory_requires_current_owner(
     assert (
         str(error.value)
         == f"Installation directory is not private: {directory}."
-    )
-
-
-def _record() -> InstallationRecord:
-    identity = InstallationIdentity(
-        "coordination-fixture",
-        "coordination-fixture",
-        "coordination_fixture",
-        None,
-        ("coordination-fixture",),
-    )
-    return InstallationRecord(
-        schema_version=3,
-        identity=identity,
-        command_name="coordination-fixture",
-        generation_id=uuid4(),
-        support_version="0.31.0",
-        placement=InstallationPlacement(Layout.native()),
-        status="removed-retained",
     )
 
 
@@ -135,7 +117,7 @@ def test_acquired_old_inode_is_rejected_before_observing_new_authority(
         )
         assert parent.recv() == "physical-lock-acquired"
         (directory / "locks" / "operation.lock").unlink()
-        record = _record()
+        record = installation_record()
         with installation_lock(directory):
             write_record(directory, record, expected_revision=None)
         parent.send("namespace-replaced")
@@ -175,7 +157,7 @@ def test_finalizer_never_removes_new_generation_support(tmp_path: Path) -> None:
     old_generation = uuid4()
     with installation_lock(directory):
         retire_held_operation_lock(directory)
-        newer = _record()
+        newer = installation_record()
         process = multiprocessing.get_context("spawn").Process(
             target=_publish_new_generation,
             args=(directory, newer),
@@ -283,7 +265,7 @@ def test_queued_old_inode_cannot_mutate_a_third_installers_generation(
     tmp_path: Path,
 ) -> None:
     directory = tmp_path / "installation"
-    original = _record()
+    original = installation_record()
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
     process: BaseProcess | None = None
@@ -313,7 +295,7 @@ def test_queued_old_inode_cannot_mutate_a_third_installers_generation(
         )
         assert retired.container == "removed"
         assert not directory.exists()
-        newer = _record()
+        newer = installation_record()
         newer_process = context.Process(
             target=_publish_new_generation, args=(directory, newer)
         )
@@ -401,7 +383,7 @@ def test_spawned_writers_cannot_overwrite_the_same_authority_revision(
     tmp_path: Path,
 ) -> None:
     directory = tmp_path / "installation"
-    original = _record()
+    original = installation_record()
     with installation_lock(directory):
         revision = write_record(directory, original, expected_revision=None)
     candidates = (
@@ -519,7 +501,7 @@ def test_captured_resource_writer_cannot_recreate_a_retired_generation(
     placement = InstallationPlacement(
         Layout.native(), cache_dir=root, capabilities=frozenset({"cache"})
     )
-    record = replace(_record(), placement=placement)
+    record = replace(installation_record(), placement=placement)
     with installation_lock(directory):
         write_record(directory, record, expected_revision=None)
     captured = inspect_installation(
@@ -565,7 +547,7 @@ def test_captured_resource_writer_finishes_before_namespace_replacement(
     placement = InstallationPlacement(
         Layout.native(), cache_dir=root, capabilities=frozenset({"cache"})
     )
-    old = replace(_record(), placement=placement)
+    old = replace(installation_record(), placement=placement)
     with installation_lock(directory):
         revision = write_record(directory, old, expected_revision=None)
     captured = inspect_installation(
@@ -632,7 +614,7 @@ def test_active_runtime_remains_writable_during_failed_replacement(
         python_version="3.14.1",
     )
     active = replace(
-        _record(),
+        installation_record(),
         placement=placement,
         status="ready",
         active_runtime=active_runtime,

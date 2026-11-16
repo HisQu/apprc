@@ -10,7 +10,7 @@ import pytest
 from apprc.definition.installation import InstallationError, InstallationHooks
 from apprc.distribution.runtime._uninstall_controller import prepare_uninstall
 from apprc.distribution.runtime.uninstall_handoff import _remove_inventory
-from tests.test_distribution_handoff_containment import _schema3_installation
+from tests.support_installation import managed_installation
 
 
 def _owned_cache(tmp_path: Path) -> tuple[Path, Path]:
@@ -22,7 +22,7 @@ def _owned_cache(tmp_path: Path) -> tuple[Path, Path]:
         )
     )
     (root / "payload").write_text("application data")
-    directory, _ = _schema3_installation(
+    directory, _ = managed_installation(
         tmp_path, cache_root=root, hooks=InstallationHooks()
     )
     return directory, root
@@ -155,7 +155,7 @@ def test_repository_finalizer_preserves_external_link_targets(
     )
     from apprc.user_files.installation.coordination import installation_lock
     from apprc.user_files.installation.inventory import tree_revision
-    from tests.test_distribution_process_waiter import _owned_child
+    from tests.support_installation import owned_child_process
 
     repository = tmp_path / "checkout"
     repository.mkdir()
@@ -181,7 +181,7 @@ def test_repository_finalizer_preserves_external_link_targets(
             }
         )
     )
-    with _owned_child() as process:
+    with owned_child_process() as process:
         token = _process_waiter.process_start_token(process.pid)
         assert process.stdin is not None
         process.stdin.write("exit\n")
@@ -300,7 +300,7 @@ def test_registration_rejects_unusable_callbacks_before_initializing_resources(
     from apprc.distribution.runtime.installation import _initialize_runtime
     from apprc.services.installation import InstallationManager
     from apprc.user_files.installation.operations import begin_operation
-    from tests.test_installation_coordination import _record
+    from tests.support_installation import installation_record
     from uuid import uuid4
 
     directory = tmp_path / "installation"
@@ -309,7 +309,7 @@ def test_registration_rejects_unusable_callbacks_before_initializing_resources(
         AppRC(app_id="coordination-fixture", paths=Paths(cache=True)).schema,
         directory=directory,
     )
-    identity = _record().identity
+    identity = installation_record().identity
     runtime = RuntimeSlot(
         uuid4(),
         ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),

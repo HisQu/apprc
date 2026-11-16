@@ -18,7 +18,6 @@ from apprc.definition.installation import (
     OwnedOutput,
     RuntimeSlot,
 )
-from apprc.definition.paths import ResourceKind
 from apprc.distribution.models import NativeBinding, decode_native_binding
 from apprc.services.installation import InstallationManager
 
@@ -120,39 +119,21 @@ def _install(
     from apprc.interfaces.cli.context import CliRuntimeOptions
     from apprc.user_files.app_home.layouts import resolve_app_paths
 
-    parser = argparse.ArgumentParser(add_help=False)
+    from apprc.interfaces.cli.options import native_runtime_parser
+
+    runtime_parser = native_runtime_parser()
+    parser = argparse.ArgumentParser(add_help=False, parents=[runtime_parser])
     parser.add_argument("--command-directory", type=Path)
     parser.add_argument("--yes", "-y", action="store_true")
     parser.add_argument("--skip-setup", action="store_true")
     parser.add_argument("--start-menu", action="store_true")
     parser.add_argument("--desktop", action="store_true")
-    parser.add_argument("--env-file", action="append", type=Path)
-    parser.add_argument(
-        "--env-file-overrides-os-environ", "-o", action="store_true"
-    )
-    parser.add_argument("--skip-dotenv-layers", "-s", action="store_true")
-    parser.add_argument("--workspace")
-    parser.add_argument("--layout")
-    parser.add_argument("--app-root", type=Path)
-    parser.add_argument("--log-level")
     options, extras = parser.parse_known_args(args)
     if extras:
         raise ValueError(
             "Native install received unsupported arguments: " + " ".join(extras)
         )
 
-    runtime_parser = argparse.ArgumentParser(add_help=False)
-    runtime_parser.add_argument("--env-file", action="append", type=Path)
-    runtime_parser.add_argument(
-        "--env-file-overrides-os-environ", "-o", action="store_true"
-    )
-    runtime_parser.add_argument(
-        "--skip-dotenv-layers", "-s", action="store_true"
-    )
-    runtime_parser.add_argument("--workspace")
-    runtime_parser.add_argument("--layout")
-    runtime_parser.add_argument("--app-root", type=Path)
-    runtime_parser.add_argument("--log-level")
     runtime_options, _ = runtime_parser.parse_known_args(sys.argv[1:])
     captured_options = CliRuntimeOptions.from_typer(
         env_files=runtime_options.env_file,
@@ -189,23 +170,8 @@ def _install(
             environment,
         )
 
-        capabilities = binding.capabilities.paths
-        resource_capabilities: tuple[tuple[ResourceKind, bool], ...] = (
-            ("config", capabilities.config),
-            ("appdata", capabilities.appdata),
-            ("cache", capabilities.cache),
-            ("state", capabilities.state),
-        )
-        placement = InstallationPlacement(
-            layout=paths.layout,
-            config_dir=paths.config_dir if capabilities.config else None,
-            appdata_dir=paths.appdata_dir if capabilities.appdata else None,
-            cache_dir=paths.cache_dir if capabilities.cache else None,
-            state_dir=paths.state_dir if capabilities.state else None,
-            logs_dir=paths.logs_dir if capabilities.state else None,
-            capabilities=frozenset(
-                kind for kind, enabled in resource_capabilities if enabled
-            ),
+        placement = InstallationPlacement.from_paths(
+            paths, binding.capabilities.paths
         )
 
     uv = _manager_uv()
@@ -260,7 +226,12 @@ def _install(
             f"Warning: optional shortcuts were not updated: {error}",
             file=sys.stderr,
         )
-    offer_configuration_setup(inspection, skip=options.skip_setup)
+    offer_configuration_setup(
+        inspection,
+        skip=options.skip_setup,
+        runtime_options=captured_options,
+        environment=environment,
+    )
     return 0
 
 

@@ -33,8 +33,8 @@ from apprc.user_files.installation.coordination import (
 )
 from apprc.user_files.installation.discovery import inspect_installation
 from apprc.user_files.installation.inventory import tree_revision
-from tests.test_distribution_process_waiter import _owned_child
-from tests.test_installation_coordination import _record
+from tests.support_installation import owned_child_process
+from tests.support_installation import installation_record
 
 pytestmark = pytest.mark.skipif(
     os.name == "nt", reason="POSIX fork coordination barriers"
@@ -151,7 +151,7 @@ def _finalization_fixture(tmp_path: Path) -> tuple[Path, Path, Path, int, str]:
             }
         )
     )
-    with _owned_child() as process:
+    with owned_child_process() as process:
         token = _process_waiter.process_start_token(process.pid)
         assert process.stdin is not None
         process.stdin.write("exit\n")
@@ -171,7 +171,9 @@ def test_repository_leaf_preserves_registration_that_wins_namespace_lock(
                 _child(_run_repository_leaf, (proof, pid, token))
             )
             assert channel.poll(5) and channel.recv() == "lock-attempt"
-            write_record(directory, _record(), expected_revision=None)
+            write_record(
+                directory, installation_record(), expected_revision=None
+            )
             # > The helper is blocked by the registration's physical lock.
             if channel.poll(0.1):
                 pytest.fail(
@@ -191,7 +193,7 @@ def test_waiting_stale_writer_cannot_recreate_retired_resource_parents(
     root = tmp_path / "single-root" / "state"
     root.mkdir(parents=True)
     with installation_lock(directory):
-        write_record(directory, _record(), expected_revision=None)
+        write_record(directory, installation_record(), expected_revision=None)
     inspection = inspect_installation(directory, app_id="coordination-fixture")
     authority = InstallationWriteAuthority(
         "coordination-fixture", inspection.snapshot
@@ -204,7 +206,7 @@ def test_waiting_stale_writer_cannot_recreate_retired_resource_parents(
             channel.poll(5) and channel.recv() == "initial-snapshot-validated"
         )
         with installation_lock(directory):
-            replacement = _record()
+            replacement = installation_record()
             write_record(
                 directory, replacement, expected_revision=inspection.revision
             )
@@ -252,7 +254,7 @@ def test_operation_probe_initializes_resources_while_parent_owns_namespace(
         Layout.native(), cache_dir=root, capabilities=frozenset({"cache"})
     )
     plan = plan_install(
-        _record().identity,
+        installation_record().identity,
         RuntimeSlot(
             uuid4(),
             ProjectSnapshot("a" * 64, "b" * 64, "c" * 40),

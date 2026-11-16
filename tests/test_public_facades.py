@@ -208,7 +208,14 @@ def test_internal_config_package_does_not_expose_legacy_declarations() -> None:
 
 @pytest.mark.parametrize(
     "arguments",
-    [["--help"], ["launch", "--help"], ["config", "setup", "--help"]],
+    [
+        ["--help"],
+        ["launch", "--help"],
+        ["config", "setup", "--help"],
+        ["app", "install", "--help"],
+        ["app", "uninstall", "--help"],
+        ["app", "paths", "--help"],
+    ],
 )
 def test_mounted_help_keeps_interactive_dependencies_unloaded(
     arguments: list[str],
@@ -234,6 +241,7 @@ rc.cli.mount_app_cli(
     app,
     rc.AppRC(app_id='lightweight-help', paths=rc.Paths(config=True)),
     launcher_spec=rc.tui.LauncherSpec(title='Launcher'),
+    installation_management=True,
 )
 result = CliRunner().invoke(app, sys.argv[1:])
 assert result.exit_code == 0, (result.output, result.exception)

@@ -511,7 +511,7 @@ def _serve_doctor(request: _ProviderRequest) -> tuple[dict[str, object], int]:
             "--json",
             "--verbose",
         ]
-        from apprc.interfaces.cli.maintenance_command import (
+        from apprc.interfaces.cli.diagnostics.application import (
             application_diagnostics_scope,
         )
 

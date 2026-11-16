@@ -42,6 +42,7 @@ def build_config_typer_app(
     setup_message: str | None = None,
     runtime_error_param_hint: str = "CONFIG",
     config_group_name: str = "config",
+    maintenance_group_name: str = "app",
 ) -> typer.Typer:
     """Build the reusable ``config`` command group.
 
@@ -60,6 +61,7 @@ def build_config_typer_app(
         validation errors.
     :param config_group_name: Config command group name used in generated
         guidance.
+    :param maintenance_group_name: Mounted maintenance group used in guidance.
     :return: Configured Typer app.
     """
     options = ConfigGroupOptions(
@@ -72,6 +74,7 @@ def build_config_typer_app(
         setup_message=setup_message,
         runtime_error_param_hint=runtime_error_param_hint,
         config_group_name=config_group_name,
+        maintenance_group_name=maintenance_group_name,
     )
     return build_config_typer_app_from_options(apprc, options=options)
 
@@ -122,6 +125,7 @@ def build_config_typer_app_from_options(
         or config_setup_message(
             apprc,
             config_group_name=options.config_group_name,
+            maintenance_group_name=options.maintenance_group_name,
         ),
     )
 
@@ -206,9 +210,21 @@ def build_config_typer_app_from_options(
                     help="Accept an existing unowned config directory.",
                 ),
             ] = False,
+            offer_missing: Annotated[
+                bool,
+                typer.Option(
+                    "--offer-missing",
+                    help="Offer interactive setup only for missing required user settings without defaults.",
+                ),
+            ] = False,
         ) -> None:
             """Initialize the declared user configuration files."""
-            handlers.setup(ctx, assume_yes=assume_yes, adopt=adopt)
+            handlers.setup(
+                ctx,
+                assume_yes=assume_yes,
+                adopt=adopt,
+                offer_missing=offer_missing,
+            )
 
     if apprc.schema.owners:
 

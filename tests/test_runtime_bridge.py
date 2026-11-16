@@ -149,9 +149,13 @@ def test_bridge_rejects_command_not_owned_by_identity_before_subprocess(
     assert not (tmp_path / "installation").exists()
 
 
+@pytest.mark.parametrize(
+    "action", ["initialize", "doctor", "inventory", "cleanup", "migrate"]
+)
 def test_bridge_rejects_stale_authority_before_application_diagnostics(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    action: str,
 ) -> None:
     import sys
     from types import ModuleType
@@ -173,7 +177,7 @@ def test_bridge_rejects_stale_authority_before_application_diagnostics(
         "commands": ["bridge-probe"],
     }
     request = {
-        "action": "doctor",
+        "action": action,
         "identity": identity,
         "command_name": "bridge-probe",
         "directory": str(tmp_path / "installation"),
@@ -191,5 +195,32 @@ def test_bridge_rejects_stale_authority_before_application_diagnostics(
         },
     }
 
+    for handler in ("initialize", "doctor", "inventory", "cleanup", "migrate"):
+        monkeypatch.setattr(
+            installed_probe,
+            f"_serve_{handler}",
+            lambda *_args: pytest.fail(
+                "Stale authority must not reach an action handler"
+            ),
+        )
+
     with pytest.raises(ValueError, match="authority revision changed"):
         installed_probe._serve_request(request)
+
+
+def test_embedded_bridge_loads_without_registered_module() -> None:
+    """The authenticated loader executes the bridge outside sys.modules."""
+    from apprc.distribution.runtime import installed_probe
+
+    source = Path(installed_probe.__file__).read_text(encoding="utf-8")
+    namespace = {
+        "__name__": "_apprc_embedded_probe_fixture",
+        "__file__": installed_probe.__file__,
+        "__package__": None,
+        "__spec__": None,
+    }
+    exec(
+        compile(source, installed_probe.__file__, "exec"), namespace, namespace
+    )
+    with pytest.raises(ValueError, match="request fields are invalid"):
+        namespace["_serve_request"]({})

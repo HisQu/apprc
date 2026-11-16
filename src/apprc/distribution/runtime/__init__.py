@@ -55,7 +55,7 @@ from apprc.user_files.installation.operations import (
     record_step as record_step,
 )
 
-from apprc.distribution.runtime.controllers import (
+from apprc.distribution.runtime._uninstall_controller import (
     UninstallHandoff as UninstallHandoff,
     UninstallPreparation as UninstallPreparation,
     prepare_uninstall as prepare_uninstall,

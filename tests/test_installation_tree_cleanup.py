@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from apprc.definition.installation import InstallationError, InstallationHooks
-from apprc.distribution.runtime.controllers import prepare_uninstall
-from apprc.distribution.runtime.removal import _remove_inventory
+from apprc.distribution.runtime._uninstall_controller import prepare_uninstall
+from apprc.distribution.runtime.uninstall_handoff import _remove_inventory
 from tests.test_distribution_handoff_containment import _schema3_installation
 
 
@@ -150,7 +150,9 @@ def test_repository_finalizer_preserves_external_link_targets(
     tmp_path: Path,
 ) -> None:
     from apprc.distribution.runtime import _process_waiter
-    from apprc.distribution.runtime.removal import _stage_repository_finalizer
+    from apprc.distribution.runtime.uninstall_handoff import (
+        _stage_repository_finalizer,
+    )
     from apprc.user_files.installation.coordination import installation_lock
     from apprc.user_files.installation.inventory import tree_revision
     from tests.test_distribution_process_waiter import _owned_child
@@ -219,7 +221,7 @@ def test_finalization_does_not_repeat_exit_handshake_for_running_removal(
     caller_exited: bool,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from apprc.distribution.runtime import removal
+    from apprc.distribution.runtime import uninstall_handoff
     from uuid import uuid4
 
     directory = tmp_path / "installation"
@@ -235,7 +237,7 @@ def test_finalization_does_not_repeat_exit_handshake_for_running_removal(
         "support": [],
     }
     (recovery / "finalization.json").write_text(json.dumps(proof))
-    value: removal.HandoffPlan = {
+    value: uninstall_handoff.HandoffPlan = {
         "directory": str(directory),
         "app_id": "fixture",
         "generation_id": generation,
@@ -255,11 +257,11 @@ def test_finalization_does_not_repeat_exit_handshake_for_running_removal(
     }
     waits: list[str] = []
     monkeypatch.setattr(
-        removal,
+        uninstall_handoff,
         "_wait_for_caller_exit",
         lambda payload: waits.append(payload["operation_id"]),
     )
-    removal._finalize_committed_handoff(
+    uninstall_handoff._finalize_committed_handoff(
         staging / "handoff.json",
         value,
         recovery,

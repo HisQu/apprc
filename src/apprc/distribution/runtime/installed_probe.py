@@ -7,7 +7,7 @@ The metadata-only branch is stdlib-only, including when invoked by the bridge.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 import argparse
 import contextlib
@@ -18,6 +18,35 @@ import json
 import os
 from pathlib import Path
 import sys
+
+
+if TYPE_CHECKING:
+    from apprc import AppRC
+    from apprc.definition.installation import (
+        InstallationHooks,
+        InstallationIdentity,
+        InstallationInspection,
+        OperationContext,
+    )
+    from apprc.definition.paths import ResourceKind
+    from apprc.services.installation import InstallationManager
+
+
+class _ProviderRequest(NamedTuple):
+    """Decoded provider inputs tied to one validated installation snapshot."""
+
+    action: str
+    application: AppRC
+    manager: InstallationManager
+    inspection: InstallationInspection
+    identity: InstallationIdentity
+    hooks: InstallationHooks
+    command_name: str
+    context: OperationContext | None
+    categories: frozenset[ResourceKind]
+    forget_retained: bool
+    runtime_options: object
+    migration_plan: object
 
 
 def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -195,367 +224,421 @@ def _probe_request(request: object) -> int:
 
 
 def _serve_request(request: object) -> int:
-    """Execute a provider request after validating installation authority.
+    """Validate one authority snapshot, then execute its provider action.
 
     :param request: Decoded 11-field application bridge request.
     :return: The request action's process status.
     """
     with contextlib.redirect_stdout(sys.stderr):
-        from apprc.definition.installation import (
-            CleanupInventory,
-            InstallationHooks,
-            InstallationIdentity,
-            InstallationInspection,
-            MigrationPlan,
-            OperationContext,
-        )
-        from apprc.definition.paths import ResourceKind
-        from apprc.definition.resolution import _BridgeRuntimeOptions
-        from apprc.user_files.installation import codec
-
-        fields = {
-            "action",
-            "identity",
-            "command_name",
-            "directory",
-            "expected_revision",
-            "runtime_options",
-            "operation_context",
-            "categories",
-            "forget_retained",
-            "migration_plan",
-            "hooks",
-        }
-        if not isinstance(request, dict) or set(request) != fields:
-            raise ValueError("Application bridge request fields are invalid.")
-        action = request["action"]
-        if not isinstance(action, str) or action not in {
-            "initialize",
-            "doctor",
-            "inventory",
-            "cleanup",
-            "migrate",
-        }:
-            raise ValueError("Application bridge action is invalid.")
-        if (
-            action not in {"initialize", "cleanup", "migrate"}
-            and request["operation_context"] is not None
-        ):
-            raise ValueError("Unexpected operation context for bridge action.")
-        if action != "migrate" and request["migration_plan"] is not None:
-            raise ValueError("Unexpected migration plan for bridge action.")
-        if action != "inventory" and (
-            request["categories"] != []
-            or request["forget_retained"] is not False
-        ):
-            raise ValueError("Unexpected cleanup options for bridge action.")
-        if action == "inventory" and (
-            type(request["forget_retained"]) is not bool
-            or not isinstance(request["categories"], list)
-            or not all(type(item) is str for item in request["categories"])
-            or len(set(request["categories"])) != len(request["categories"])
-        ):
-            raise ValueError("Invalid cleanup options.")
-
-        if not isinstance(request["runtime_options"], dict):
-            raise ValueError("Bridge runtime options must be an object.")
-        identity = codec._decode(
-            request["identity"], InstallationIdentity, "identity"
-        )
-        hooks = codec._decode(request["hooks"], InstallationHooks, "hooks")
-        command_name = request["command_name"]
-        directory_value = request["directory"]
-        expected_revision = request["expected_revision"]
-        if (
-            not isinstance(identity, InstallationIdentity)
-            or not isinstance(hooks, InstallationHooks)
-            or not isinstance(command_name, str)
-            or command_name not in identity.commands
-            or not isinstance(directory_value, str)
-            or not Path(directory_value).is_absolute()
-            or not isinstance(expected_revision, str)
-        ):
-            raise ValueError("Application bridge request is invalid.")
-        directory = Path(directory_value)
-        categories: frozenset[ResourceKind] = frozenset()
-        if action == "inventory":
-            accepted = {"config", "appdata", "cache", "state"}
-            requested = request["categories"]
-            if (
-                not isinstance(requested, list)
-                or not all(isinstance(item, str) for item in requested)
-                or not set(requested) <= accepted
-            ):
-                raise ValueError("Unknown cleanup category.")
-            categories = frozenset(
-                cast(ResourceKind, item) for item in requested
-            )
-
-        reference = identity.apprc_reference
-        if not reference or ":" not in reference:
-            raise ValueError(
-                "Application declaration reference is unavailable."
-            )
-        module_name, attribute = reference.split(":", 1)
-        application = vars(importlib.import_module(module_name))[attribute]
-        from apprc import AppRC
-        from apprc.services.installation import InstallationManager
-
-        if (
-            not isinstance(application, AppRC)
-            or application.schema.app_id != identity.app_id
-        ):
-            raise ValueError("Installed AppRC declaration identity mismatches.")
-        manager = InstallationManager(
-            application.schema,
-            environment=dict(os.environ),
-            directory=directory,
-        )
-        inspection = manager.inspect()
-        if inspection.revision != expected_revision:
-            raise ValueError("Application bridge authority revision changed.")
-        record = inspection.record
-        if (
-            record is None
-            or record.identity != identity
-            or record.command_name != command_name
-        ):
-            raise ValueError(
-                "Application bridge identity differs from authority."
-            )
-        if action in {"doctor", "inventory"}:
-            inspection.require_usable()
-        if action in {"doctor", "inventory", "cleanup", "migrate"}:
-            if record.active_runtime is None:
-                raise ValueError("Application runtime is unavailable.")
-            if record.active_runtime.hooks != hooks:
-                raise ValueError(
-                    "Application hooks differ from runtime authority."
-                )
-        if action == "initialize":
-            operation = record.operation
-            intended = operation.intended if operation is not None else None
-            if intended is None or intended.identity != identity:
-                raise ValueError(
-                    "Initialization does not address its pending identity."
-                )
-            if intended.runtime.hooks != hooks:
-                raise ValueError(
-                    "Initialization hooks differ from candidate authority."
-                )
-
-        context_value = request["operation_context"]
-        context = (
-            codec.decode_operation_context(json.dumps(context_value).encode())
-            if context_value is not None
-            else None
-        )
-        if action in {"initialize", "cleanup", "migrate"} and context is None:
-            raise ValueError(f"{action} requires an operation context.")
-        if context is not None:
-            from apprc.user_files.installation.validation import (
-                validate_snapshot,
-            )
-
-            validate_snapshot(
-                inspection.snapshot,
-                app_id=identity.app_id,
-                context=context,
-            )
-            operation = record.operation
-            if operation is None:
-                raise ValueError("Provider operation is no longer pending.")
-            if action == "initialize" and operation.kind not in {
-                "install",
-                "replace",
-                "repair",
-            }:
-                raise ValueError(
-                    "Initialization does not match pending operation."
-                )
-            expected_kind = {
-                "cleanup": "uninstall",
-                "migrate": "migrate",
-            }.get(action)
-            if expected_kind is not None and operation.kind != expected_kind:
-                raise ValueError(
-                    "Provider callback does not match pending operation."
-                )
-        exit_status = 0
-        if action == "initialize":
-            if context is None:
-                raise ValueError(
-                    "Initialization requires an operation context."
-                )
-            observations = _distribution_observations(
-                importlib.metadata.distribution(identity.distribution),
-                identity.commands,
-            )
-            paths = application.schema.paths
-            capabilities = {
-                "config": paths.config,
-                "appdata": paths.appdata,
-                "cache": paths.cache,
-                "state": paths.state,
-            }
-            for reference in (
-                hooks.initialize,
-                hooks.inventory,
-                hooks.cleanup,
-                hooks.migrate,
-            ):
-                if reference is not None:
-                    _hook(reference)
-            initialized = manager.initialize(context=context)
-            if hooks.initialize:
-                initialize_callback = cast(
-                    Callable[[OperationContext], None], _hook(hooks.initialize)
-                )
-                initialize_callback(context)
-            result = {
-                **observations,
-                "capabilities": capabilities,
-                "paths": [str(item) for item in initialized.paths],
-            }
-        elif action == "doctor":
-            from apprc.interfaces.cli.context import cli_runtime_options_to_args
-
-            options = codec._decode(
-                request["runtime_options"],
-                _BridgeRuntimeOptions,
-                "runtime_options",
-            )
-            if not isinstance(options, _BridgeRuntimeOptions):
-                raise ValueError("Bridge runtime options are invalid.")
-            distribution = importlib.metadata.distribution(
-                identity.distribution
-            )
-            entry_points = [
-                entry
-                for entry in distribution.entry_points
-                if entry.group == "console_scripts"
-                and entry.name == command_name
-            ]
-            if len(entry_points) != 1:
-                raise ValueError(
-                    "Primary application console entrypoint is ambiguous."
-                )
-            entry_point = entry_points[0]
-            entrypoint = entry_point.load()
-            old_argv = sys.argv
-            captured = io.StringIO()
-            try:
-                sys.argv = [
-                    entry_point.name,
-                    *cli_runtime_options_to_args(options.runtime),
-                    options.maintenance_group_name,
-                    "doctor",
-                    "--json",
-                    "--verbose",
-                ]
-                from apprc.interfaces.cli.maintenance_command import (
-                    application_diagnostics_scope,
-                )
-
-                with (
-                    application_diagnostics_scope(),
-                    contextlib.redirect_stdout(captured),
-                ):
-                    try:
-                        entrypoint()
-                    except SystemExit as error:
-                        status = 0 if error.code is None else error.code
-                    else:
-                        status = 0
-            finally:
-                sys.argv = old_argv
-            if type(status) is not int or status not in {0, 1}:
-                raise ValueError(
-                    "Application doctor returned an invalid status."
-                )
-            result = _loads_json(captured.getvalue())
-            if (
-                not isinstance(result, dict)
-                or not isinstance(result.get("status"), str)
-                or result["status"]
-                not in {
-                    "ok",
-                    "warning",
-                    "error",
-                    "invalid",
-                    "provisional",
-                    "incomplete",
-                }
-                or not isinstance(result.get("checks"), list)
-                or not isinstance(result.get("details"), dict)
-            ):
-                raise ValueError(
-                    "Application doctor returned an invalid result."
-                )
-            exit_status = status
-        elif action == "inventory":
-            if not hooks.inventory:
-                raise ValueError(
-                    "Application cleanup inventory hook is unavailable."
-                )
-            inventory_callback = cast(
-                Callable[
-                    [InstallationInspection, frozenset[ResourceKind], bool],
-                    CleanupInventory,
-                ],
-                _hook(hooks.inventory),
-            )
-            inventory = inventory_callback(
-                inspection,
-                categories,
-                cast(bool, request["forget_retained"]),
-            )
-            result = json.loads(codec.encode_cleanup_inventory(inventory))
-        elif action == "cleanup":
-            if context is None:
-                raise ValueError("Cleanup requires an operation context.")
-            if not hooks.cleanup:
-                raise ValueError("Application cleanup hook is unavailable.")
-            cleanup_callback = cast(
-                Callable[[OperationContext], None], _hook(hooks.cleanup)
-            )
-            cleanup_callback(context)
-            result = {"completed": True}
+        validated = _validate_provider_request(request)
+        if validated.action == "doctor":
+            result, status = _serve_doctor(validated)
         else:
-            if not hooks.migrate:
-                raise ValueError("Application migration hook is unavailable.")
-            if context is None:
-                raise ValueError("Migration requires an operation context.")
-            plan = cast(
-                MigrationPlan,
-                codec._decode(
-                    request["migration_plan"], MigrationPlan, "migration_plan"
-                ),
+            if validated.action == "initialize":
+                result = _serve_initialize(validated)
+            elif validated.action == "inventory":
+                result = _serve_inventory(validated)
+            elif validated.action == "cleanup":
+                result = _serve_cleanup(validated)
+            else:
+                result = _serve_migrate(validated)
+            status = 0
+    print(
+        json.dumps(
+            {"action": validated.action, "result": result}, sort_keys=True
+        )
+    )
+    return status
+
+
+def _validate_provider_request(request: object) -> _ProviderRequest:
+    """Decode inputs and authorize the action before any provider is invoked."""
+    from apprc.definition.installation import (
+        InstallationHooks,
+        InstallationIdentity,
+    )
+    from apprc.definition.paths import ResourceKind
+    from apprc.user_files.installation import codec
+
+    fields = {
+        "action",
+        "identity",
+        "command_name",
+        "directory",
+        "expected_revision",
+        "runtime_options",
+        "operation_context",
+        "categories",
+        "forget_retained",
+        "migration_plan",
+        "hooks",
+    }
+    if not isinstance(request, dict) or set(request) != fields:
+        raise ValueError("Application bridge request fields are invalid.")
+    action = request["action"]
+    if not isinstance(action, str) or action not in {
+        "initialize",
+        "doctor",
+        "inventory",
+        "cleanup",
+        "migrate",
+    }:
+        raise ValueError("Application bridge action is invalid.")
+    if (
+        action not in {"initialize", "cleanup", "migrate"}
+        and request["operation_context"] is not None
+    ):
+        raise ValueError("Unexpected operation context for bridge action.")
+    if action != "migrate" and request["migration_plan"] is not None:
+        raise ValueError("Unexpected migration plan for bridge action.")
+    if action != "inventory" and (
+        request["categories"] != [] or request["forget_retained"] is not False
+    ):
+        raise ValueError("Unexpected cleanup options for bridge action.")
+    if action == "inventory" and (
+        type(request["forget_retained"]) is not bool
+        or not isinstance(request["categories"], list)
+        or not all(type(item) is str for item in request["categories"])
+        or len(set(request["categories"])) != len(request["categories"])
+    ):
+        raise ValueError("Invalid cleanup options.")
+
+    if not isinstance(request["runtime_options"], dict):
+        raise ValueError("Bridge runtime options must be an object.")
+    identity = codec._decode(
+        request["identity"], InstallationIdentity, "identity"
+    )
+    hooks = codec._decode(request["hooks"], InstallationHooks, "hooks")
+    command_name = request["command_name"]
+    directory_value = request["directory"]
+    expected_revision = request["expected_revision"]
+    if (
+        not isinstance(identity, InstallationIdentity)
+        or not isinstance(hooks, InstallationHooks)
+        or not isinstance(command_name, str)
+        or command_name not in identity.commands
+        or not isinstance(directory_value, str)
+        or not Path(directory_value).is_absolute()
+        or not isinstance(expected_revision, str)
+    ):
+        raise ValueError("Application bridge request is invalid.")
+    directory = Path(directory_value)
+    categories: frozenset[ResourceKind] = frozenset()
+    if action == "inventory":
+        accepted = {"config", "appdata", "cache", "state"}
+        requested = request["categories"]
+        if (
+            not isinstance(requested, list)
+            or not all(isinstance(item, str) for item in requested)
+            or not set(requested) <= accepted
+        ):
+            raise ValueError("Unknown cleanup category.")
+        categories = frozenset(cast(ResourceKind, item) for item in requested)
+
+    reference = identity.apprc_reference
+    if not reference or ":" not in reference:
+        raise ValueError("Application declaration reference is unavailable.")
+    module_name, attribute = reference.split(":", 1)
+    application = vars(importlib.import_module(module_name))[attribute]
+    from apprc import AppRC
+    from apprc.services.installation import InstallationManager
+
+    if (
+        not isinstance(application, AppRC)
+        or application.schema.app_id != identity.app_id
+    ):
+        raise ValueError("Installed AppRC declaration identity mismatches.")
+    manager = InstallationManager(
+        application.schema,
+        environment=dict(os.environ),
+        directory=directory,
+    )
+    inspection = manager.inspect()
+    if inspection.revision != expected_revision:
+        raise ValueError("Application bridge authority revision changed.")
+    record = inspection.record
+    if (
+        record is None
+        or record.identity != identity
+        or record.command_name != command_name
+    ):
+        raise ValueError("Application bridge identity differs from authority.")
+    if action in {"doctor", "inventory"}:
+        inspection.require_usable()
+    if action in {"doctor", "inventory", "cleanup", "migrate"}:
+        if record.active_runtime is None:
+            raise ValueError("Application runtime is unavailable.")
+        if record.active_runtime.hooks != hooks:
+            raise ValueError("Application hooks differ from runtime authority.")
+    if action == "initialize":
+        operation = record.operation
+        intended = operation.intended if operation is not None else None
+        if intended is None or intended.identity != identity:
+            raise ValueError(
+                "Initialization does not address its pending identity."
             )
-            migration = record.migration
-            if (
-                migration is None
-                or plan.directory != directory
-                or plan.app_id != identity.app_id
-                or plan.operation_id != context.operation_id
-                or plan.generation_id != context.generation_id
-                or plan.placement != context.placement
-                or plan.identity != identity
-                or plan.command_name != command_name
-                or plan.inventory != migration.inventory
-                or not plan.quiescent
-            ):
-                raise ValueError(
-                    "Migration plan differs from pending authority."
-                )
-            migration_callback = cast(
-                Callable[[MigrationPlan, OperationContext], None],
-                _hook(hooks.migrate),
+        if intended.runtime.hooks != hooks:
+            raise ValueError(
+                "Initialization hooks differ from candidate authority."
             )
-            migration_callback(plan, context)
-            result = {"completed": True}
-    print(json.dumps({"action": action, "result": result}, sort_keys=True))
-    return exit_status
+
+    context_value = request["operation_context"]
+    context = (
+        codec.decode_operation_context(json.dumps(context_value).encode())
+        if context_value is not None
+        else None
+    )
+    if action in {"initialize", "cleanup", "migrate"} and context is None:
+        raise ValueError(f"{action} requires an operation context.")
+    if context is not None:
+        from apprc.user_files.installation.validation import (
+            validate_snapshot,
+        )
+
+        validate_snapshot(
+            inspection.snapshot,
+            app_id=identity.app_id,
+            context=context,
+        )
+        operation = record.operation
+        if operation is None:
+            raise ValueError("Provider operation is no longer pending.")
+        if action == "initialize" and operation.kind not in {
+            "install",
+            "replace",
+            "repair",
+        }:
+            raise ValueError("Initialization does not match pending operation.")
+        expected_kind = {
+            "cleanup": "uninstall",
+            "migrate": "migrate",
+        }.get(action)
+        if expected_kind is not None and operation.kind != expected_kind:
+            raise ValueError(
+                "Provider callback does not match pending operation."
+            )
+    return _ProviderRequest(
+        action,
+        application,
+        manager,
+        inspection,
+        identity,
+        hooks,
+        command_name,
+        context,
+        categories,
+        cast(bool, request["forget_retained"]),
+        request["runtime_options"],
+        request["migration_plan"],
+    )
+
+
+def _serve_initialize(request: _ProviderRequest) -> dict[str, object]:
+    """Execute the authorized initialize action using its captured inputs."""
+    from apprc.definition.installation import OperationContext
+
+    identity, hooks = request.identity, request.hooks
+    context = request.context
+    application, manager = request.application, request.manager
+    if context is None:
+        raise ValueError("Initialization requires an operation context.")
+    observations = _distribution_observations(
+        importlib.metadata.distribution(identity.distribution),
+        identity.commands,
+    )
+    paths = application.schema.paths
+    capabilities = {
+        "config": paths.config,
+        "appdata": paths.appdata,
+        "cache": paths.cache,
+        "state": paths.state,
+    }
+    for reference in (
+        hooks.initialize,
+        hooks.inventory,
+        hooks.cleanup,
+        hooks.migrate,
+    ):
+        if reference is not None:
+            _hook(reference)
+    initialized = manager.initialize(context=context)
+    if hooks.initialize:
+        initialize_callback = cast(
+            Callable[[OperationContext], None], _hook(hooks.initialize)
+        )
+        initialize_callback(context)
+    result: dict[str, object] = {
+        **observations,
+        "capabilities": capabilities,
+        "paths": [str(item) for item in initialized.paths],
+    }
+    return result
+
+
+def _serve_doctor(request: _ProviderRequest) -> tuple[dict[str, object], int]:
+    """Execute the authorized doctor action using its captured inputs."""
+    from apprc.definition.resolution import _BridgeRuntimeOptions
+    from apprc.user_files.installation import codec
+
+    identity, command_name = request.identity, request.command_name
+    from apprc.interfaces.cli.context import cli_runtime_options_to_args
+
+    options = codec._decode(
+        request.runtime_options,
+        _BridgeRuntimeOptions,
+        "runtime_options",
+    )
+    if not isinstance(options, _BridgeRuntimeOptions):
+        raise ValueError("Bridge runtime options are invalid.")
+    distribution = importlib.metadata.distribution(identity.distribution)
+    entry_points = [
+        entry
+        for entry in distribution.entry_points
+        if entry.group == "console_scripts" and entry.name == command_name
+    ]
+    if len(entry_points) != 1:
+        raise ValueError("Primary application console entrypoint is ambiguous.")
+    entry_point = entry_points[0]
+    entrypoint = entry_point.load()
+    old_argv = sys.argv
+    captured = io.StringIO()
+    try:
+        sys.argv = [
+            entry_point.name,
+            *cli_runtime_options_to_args(options.runtime),
+            options.maintenance_group_name,
+            "doctor",
+            "--json",
+            "--verbose",
+        ]
+        from apprc.interfaces.cli.maintenance_command import (
+            application_diagnostics_scope,
+        )
+
+        with (
+            application_diagnostics_scope(),
+            contextlib.redirect_stdout(captured),
+        ):
+            try:
+                entrypoint()
+            except SystemExit as error:
+                status = 0 if error.code is None else error.code
+            else:
+                status = 0
+    finally:
+        sys.argv = old_argv
+    if type(status) is not int or status not in {0, 1}:
+        raise ValueError("Application doctor returned an invalid status.")
+    result = _loads_json(captured.getvalue())
+    if (
+        not isinstance(result, dict)
+        or not isinstance(result.get("status"), str)
+        or result["status"]
+        not in {
+            "ok",
+            "warning",
+            "error",
+            "invalid",
+            "provisional",
+            "incomplete",
+        }
+        or not isinstance(result.get("checks"), list)
+        or not isinstance(result.get("details"), dict)
+    ):
+        raise ValueError("Application doctor returned an invalid result.")
+    return result, status
+
+
+def _serve_inventory(request: _ProviderRequest) -> dict[str, object]:
+    """Execute the authorized inventory action using its captured inputs."""
+    from apprc.definition.installation import (
+        CleanupInventory,
+        InstallationInspection,
+    )
+    from apprc.definition.paths import ResourceKind
+    from apprc.user_files.installation import codec
+
+    hooks, inspection, categories = (
+        request.hooks,
+        request.inspection,
+        request.categories,
+    )
+    if not hooks.inventory:
+        raise ValueError("Application cleanup inventory hook is unavailable.")
+    inventory_callback = cast(
+        Callable[
+            [InstallationInspection, frozenset[ResourceKind], bool],
+            CleanupInventory,
+        ],
+        _hook(hooks.inventory),
+    )
+    inventory = inventory_callback(
+        inspection,
+        categories,
+        request.forget_retained,
+    )
+    result: dict[str, object] = json.loads(
+        codec.encode_cleanup_inventory(inventory)
+    )
+    return result
+
+
+def _serve_cleanup(request: _ProviderRequest) -> dict[str, object]:
+    """Execute the authorized cleanup action using its captured inputs."""
+    from apprc.definition.installation import OperationContext
+
+    hooks, context = request.hooks, request.context
+    if context is None:
+        raise ValueError("Cleanup requires an operation context.")
+    if not hooks.cleanup:
+        raise ValueError("Application cleanup hook is unavailable.")
+    cleanup_callback = cast(
+        Callable[[OperationContext], None], _hook(hooks.cleanup)
+    )
+    cleanup_callback(context)
+    result: dict[str, object] = {"completed": True}
+    return result
+
+
+def _serve_migrate(request: _ProviderRequest) -> dict[str, object]:
+    """Execute the authorized migrate action using its captured inputs."""
+    from apprc.definition.installation import MigrationPlan, OperationContext
+    from apprc.user_files.installation import codec
+
+    hooks, context = request.hooks, request.context
+    identity, command_name = request.identity, request.command_name
+    directory = request.manager.directory
+    record = request.inspection.record
+    assert record is not None
+    if not hooks.migrate:
+        raise ValueError("Application migration hook is unavailable.")
+    if context is None:
+        raise ValueError("Migration requires an operation context.")
+    plan = cast(
+        MigrationPlan,
+        codec._decode(request.migration_plan, MigrationPlan, "migration_plan"),
+    )
+    migration = record.migration
+    if (
+        migration is None
+        or plan.directory != directory
+        or plan.app_id != identity.app_id
+        or plan.operation_id != context.operation_id
+        or plan.generation_id != context.generation_id
+        or plan.placement != context.placement
+        or plan.identity != identity
+        or plan.command_name != command_name
+        or plan.inventory != migration.inventory
+        or not plan.quiescent
+    ):
+        raise ValueError("Migration plan differs from pending authority.")
+    migration_callback = cast(
+        Callable[[MigrationPlan, OperationContext], None],
+        _hook(hooks.migrate),
+    )
+    migration_callback(plan, context)
+    result: dict[str, object] = {"completed": True}
+    return result
 
 
 def _hook(reference: str) -> Callable[..., object]:

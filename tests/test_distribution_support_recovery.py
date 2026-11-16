@@ -20,7 +20,7 @@ from apprc.definition.installation import (
     RuntimeSlot,
 )
 from apprc.distribution.runtime import installation
-from apprc.distribution.runtime._integration import publish_global_command
+from apprc.distribution.runtime._os_integration import publish_global_command
 from apprc.distribution.runtime._leases import try_retire_runtime_slot
 
 

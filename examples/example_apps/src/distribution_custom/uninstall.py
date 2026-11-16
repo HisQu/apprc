@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from apprc.definition.installation import InstallationError
-from apprc.distribution.runtime.controllers import (
+from apprc.distribution.runtime._uninstall_controller import (
     UninstallPreparation,
     prepare_uninstall,
     start_uninstall_handoff,

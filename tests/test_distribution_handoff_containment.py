@@ -32,11 +32,11 @@ from apprc.definition.installation import (
 from apprc.definition.paths import Layout, ResourceKind
 from apprc.distribution.runtime import (
     _handoff,
-    controllers,
+    _uninstall_controller,
     namespace_finalizer,
-    removal,
+    uninstall_handoff,
 )
-from apprc.distribution.runtime.controllers import (
+from apprc.distribution.runtime._uninstall_controller import (
     UninstallHandoff,
     prepare_uninstall,
 )
@@ -102,11 +102,11 @@ def test_symlink_inventory_round_trips_handoff_and_unlinks_only_the_link(
     handoff = _pending_receiver_handoff(
         plan, tmp_path, monkeypatch, os.getpid()
     )
-    envelope = removal._parse_plan(handoff.plan_file)
-    decoded = removal._inventory(envelope, "inventory")
+    envelope = uninstall_handoff._parse_plan(handoff.plan_file)
+    decoded = uninstall_handoff._inventory(envelope, "inventory")
     assert entry in decoded
     assert str(target) not in str(envelope["inventory"])
-    pending = removal._prepare_pending_handoff(
+    pending = uninstall_handoff._prepare_pending_handoff(
         handoff.plan_file,
         envelope,
         handoff.plan_file.parent / "recovery",
@@ -123,8 +123,8 @@ def test_symlink_inventory_round_trips_handoff_and_unlinks_only_the_link(
         target.write_text("changed external data", encoding="utf-8")
         assert symlink_revision(link) == entry.revision
     with managed_write_lock(root):
-        removal._remove_inventory(data_entries)
-        removal._remove_inventory(data_entries)
+        uninstall_handoff._remove_inventory(data_entries)
+        uninstall_handoff._remove_inventory(data_entries)
     assert not link.is_symlink() and not root.exists()
     if dangling:
         assert not target.exists()
@@ -157,7 +157,7 @@ def test_symlink_inventory_rejects_substitution_before_staging_and_removal(
         InstallationError,
         match="symbolic link|Symbolic link|cleanup target changed",
     ):
-        controllers.stage_uninstall(plan)
+        _uninstall_controller.stage_uninstall(plan)
     assert (directory / "installation.json").read_bytes() == before
     with pytest.raises(InstallationError, match="symbolic link|Symbolic link"):
         begin_operation(plan)
@@ -166,7 +166,7 @@ def test_symlink_inventory_rejects_substitution_before_staging_and_removal(
         with pytest.raises(
             InstallationError, match="symbolic link|Symbolic link"
         ):
-            removal._remove_inventory((entry,))
+            uninstall_handoff._remove_inventory((entry,))
     assert target.read_text(encoding="utf-8") == "external data"
     if replacement == "regular-file":
         assert link.read_text(encoding="utf-8") == "replacement data"
@@ -186,9 +186,9 @@ def test_pending_handoff_rechecks_symlink_identity_before_readiness(
     link.rename(root / "previous-link")
     _symbolic_link(link, "replacement-target")
     with pytest.raises(InstallationError, match="Symbolic link changed"):
-        removal._prepare_pending_handoff(
+        uninstall_handoff._prepare_pending_handoff(
             handoff.plan_file,
-            removal._parse_plan(handoff.plan_file),
+            uninstall_handoff._parse_plan(handoff.plan_file),
             handoff.plan_file.parent / "recovery",
             inspect_installation(directory, app_id=plan.app_id),
             expected_identity=None,
@@ -412,17 +412,19 @@ def _pending_receiver_handoff(
     process = SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO())
     with monkeypatch.context() as launch:
         launch.setattr(
-            controllers.tempfile, "gettempdir", lambda: str(safe_temp)
+            _uninstall_controller.tempfile, "gettempdir", lambda: str(safe_temp)
         )
         launch.setattr(
-            controllers.subprocess, "Popen", lambda *_args, **_kwargs: process
+            _uninstall_controller.subprocess,
+            "Popen",
+            lambda *_args, **_kwargs: process,
         )
-        handoff = controllers.start_uninstall_handoff(
+        handoff = _uninstall_controller.start_uninstall_handoff(
             plan,
             original_pid=original_pid,
         )
 
-    envelope = removal._parse_plan(handoff.plan_file)
+    envelope = uninstall_handoff._parse_plan(handoff.plan_file)
     pending = inspect_installation(plan.directory, app_id=plan.app_id)
     assert pending.record is not None and pending.record.operation is not None
     operation = pending.record.operation
@@ -440,11 +442,11 @@ def _pending_receiver_handoff(
         original_pid
     )
     assert (
-        tuple(removal._inventory(envelope, "inventory"))
+        tuple(uninstall_handoff._inventory(envelope, "inventory"))
         == operation.inventory.entries
     )
     assert (
-        tuple(removal._inventory(envelope, "retained"))
+        tuple(uninstall_handoff._inventory(envelope, "retained"))
         == operation.inventory.retained
     )
     assert (
@@ -456,9 +458,9 @@ def _pending_receiver_handoff(
         and operation.complete == envelope["complete"]
         and operation.forget_retained == envelope["forget_retained"]
     )
-    controllers._assert_private_directory(handoff.plan_file.parent)
+    _uninstall_controller._assert_private_directory(handoff.plan_file.parent)
     recovery = handoff.plan_file.parent / "recovery"
-    controllers._assert_private_directory(recovery)
+    _uninstall_controller._assert_private_directory(recovery)
     assert not (recovery / "controller.py").exists()
     return handoff
 
@@ -472,7 +474,7 @@ def test_namespace_finalizer_rejects_substituted_product_identity(
     recovery.mkdir(mode=0o700)
     plan = recovery / "finalization.json"
     plan.write_text(
-        removal.json.dumps(
+        uninstall_handoff.json.dumps(
             {
                 "directory": str(directory),
                 "app_id": "saved-product",
@@ -544,7 +546,7 @@ def test_handoff_directory_refuses_shared_permissions_without_mutation(
     mode = directory.stat().st_mode
 
     with pytest.raises(InstallationError) as error:
-        controllers._assert_private_directory(directory)
+        _uninstall_controller._assert_private_directory(directory)
     assert str(error.value) == "Uninstall handoff directory must be private."
 
     assert directory.stat().st_mode == mode
@@ -585,7 +587,7 @@ def test_receiver_rejects_management_prefix_under_program_only_target(
         plan_before = handoff.plan_file.read_bytes()
         stdin = io.StringIO("NOT-EXIT\n")
         monkeypatch.setattr(
-            removal,
+            uninstall_handoff,
             "sys",
             SimpleNamespace(
                 prefix=str(receiver_prefix),
@@ -599,7 +601,7 @@ def test_receiver_rejects_management_prefix_under_program_only_target(
             InstallationError,
             match="handoff location overlaps a removal target",
         ):
-            removal.execute_handoff(handoff.plan_file)
+            uninstall_handoff.execute_handoff(handoff.plan_file)
 
         assert stdin.tell() == 0
         assert handoff.plan_file.read_bytes() == plan_before
@@ -656,9 +658,9 @@ def test_receiver_rejects_execution_cwd_under_complete_selected_cache(
         plan_before = handoff.plan_file.read_bytes()
         stdin = io.StringIO("NOT-EXIT\n")
         with monkeypatch.context() as receiver_boundary:
-            receiver_boundary.setattr(removal.sys, "stdin", stdin)
+            receiver_boundary.setattr(uninstall_handoff.sys, "stdin", stdin)
             receiver_boundary.setattr(
-                removal.Path,
+                uninstall_handoff.Path,
                 "cwd",
                 classmethod(lambda _cls: receiver_cwd),
             )
@@ -666,7 +668,7 @@ def test_receiver_rejects_execution_cwd_under_complete_selected_cache(
                 InstallationError,
                 match="handoff location overlaps a removal target",
             ):
-                removal.execute_handoff(handoff.plan_file)
+                uninstall_handoff.execute_handoff(handoff.plan_file)
 
         assert Path.cwd() == actual_cwd
         assert stdin.tell() == 0
@@ -722,10 +724,10 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
         )
         assert changed.revision != authority.revision
         stdin = io.StringIO("EXIT\n")
-        monkeypatch.setattr(removal.sys, "stdin", stdin)
+        monkeypatch.setattr(uninstall_handoff.sys, "stdin", stdin)
 
         with pytest.raises(InstallationError):
-            removal.execute_handoff(
+            uninstall_handoff.execute_handoff(
                 handoff.plan_file,
                 expected_identity=authority.record.identity,
             )
@@ -767,10 +769,10 @@ def test_sender_rejects_tempdir_under_program_prefix_before_staging(
     unsafe_temp.mkdir()
     monkeypatch.setenv("TMPDIR", str(unsafe_temp))
     monkeypatch.setattr(
-        controllers.tempfile, "gettempdir", lambda: str(unsafe_temp)
+        _uninstall_controller.tempfile, "gettempdir", lambda: str(unsafe_temp)
     )
     with pytest.raises(InstallationError, match="removal target"):
-        controllers.start_uninstall_handoff(plan)
+        _uninstall_controller.start_uninstall_handoff(plan)
     assert (
         inspect_installation(directory, app_id=plan.app_id).revision
         == before_revision
@@ -803,7 +805,7 @@ def test_sender_rejects_managed_environment_root_under_absent_selected_root(
     safe_temp = tmp_path / "safe-temp"
     safe_temp.mkdir()
     monkeypatch.setattr(
-        controllers.tempfile, "gettempdir", lambda: str(safe_temp)
+        _uninstall_controller.tempfile, "gettempdir", lambda: str(safe_temp)
     )
     monkeypatch.setenv(managed_variable, str(absent_cache_root / "managed"))
     inspection = inspect_installation(directory, app_id=plan.app_id)
@@ -811,7 +813,7 @@ def test_sender_rejects_managed_environment_root_under_absent_selected_root(
     authority = directory / "installation.json"
     authority_before = authority.read_bytes()
     with pytest.raises(InstallationError, match="removal target"):
-        controllers.start_uninstall_handoff(plan)
+        _uninstall_controller.start_uninstall_handoff(plan)
     assert (
         inspect_installation(directory, app_id=plan.app_id).revision
         == before_revision
@@ -840,7 +842,9 @@ def test_safe_temp_alias_preserves_pending_handoff_without_provider_call(
     physical_temp.mkdir()
     alias = tmp_path / "safe-temp-alias"
     alias.symlink_to(physical_temp, target_is_directory=True)
-    monkeypatch.setattr(controllers.tempfile, "gettempdir", lambda: str(alias))
+    monkeypatch.setattr(
+        _uninstall_controller.tempfile, "gettempdir", lambda: str(alias)
+    )
     monkeypatch.setenv("TMPDIR", str(alias))
     process = SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO())
     launch_environments: list[dict[str, str]] = []
@@ -849,8 +853,10 @@ def test_safe_temp_alias_preserves_pending_handoff_without_provider_call(
         launch_environments.append(kwargs["env"])
         return process
 
-    monkeypatch.setattr(controllers.subprocess, "Popen", record_launch)
-    handoff = controllers.start_uninstall_handoff(plan)
+    monkeypatch.setattr(
+        _uninstall_controller.subprocess, "Popen", record_launch
+    )
+    handoff = _uninstall_controller.start_uninstall_handoff(plan)
 
     pending = inspect_installation(directory, app_id=plan.app_id)
     assert pending.status == "incomplete"
@@ -858,7 +864,7 @@ def test_safe_temp_alias_preserves_pending_handoff_without_provider_call(
     assert pending.record.operation.operation_id == plan.operation_id
     assert OperationStep.PROVIDER_CLEANUP not in pending.record.operation.steps
     assert launch_environments[0]["TMPDIR"] == str(physical_temp.resolve())
-    controllers._assert_private_directory(handoff.plan_file.parent)
+    _uninstall_controller._assert_private_directory(handoff.plan_file.parent)
     assert cache_payload.read_text(encoding="utf-8") == '{"keep":true}\n'
     assert program_marker.read_bytes() == b"installed program"
     assert alias.is_symlink() and alias.resolve() == physical_temp
@@ -966,8 +972,10 @@ def test_program_only_removes_exact_owned_outputs_and_preserves_unknown_files(
     assert stable in roots
     assert global_command in roots
     _handoff.assert_outside_removal(directory, roots)
-    removal._remove_inventory(preparation.plan.inventory.entries)
-    removal._remove_owned_outputs(record.owned_outputs, directory=directory)
+    uninstall_handoff._remove_inventory(preparation.plan.inventory.entries)
+    uninstall_handoff._remove_owned_outputs(
+        record.owned_outputs, directory=directory
+    )
 
     assert not stable.exists()
     assert not global_command.exists()
@@ -1007,7 +1015,7 @@ def test_handoff_python_rejects_managed_executable_before_launch(
     executable = binary_directory / "python"
     executable.write_bytes(b"managed interpreter")
     monkeypatch.setattr(
-        controllers,
+        _uninstall_controller,
         "sys",
         SimpleNamespace(
             executable=str(executable),
@@ -1019,6 +1027,6 @@ def test_handoff_python_rejects_managed_executable_before_launch(
         InstallationError,
         match="No external Python executable is available",
     ):
-        controllers._handoff_python((managed,))
+        _uninstall_controller._handoff_python((managed,))
 
     assert executable.read_bytes() == b"managed interpreter"

@@ -125,11 +125,16 @@ process interruption retain honest recovery checkpoints.
 Stable resource locks are never unlinked during rollback. A newly initialized
 state root may retain its owner marker and known subordinate lock files after
 empty logs removal; this inert coordination residue must remain retryable.
-In `runtime/removal.py`, pending uninstall preparation validates authority and
+In `runtime/uninstall_handoff.py`, pending uninstall preparation validates authority and
 containment before the caller-exit handshake. Execution waits outside the
 installation lock, then rechecks authority under the lock before mutation.
 Committed finalization instead requires its saved cleanup proof and never
 restores pending authority after commit.
+The handoff follows provider cleanup, runtime removal, data removal and
+finalization helpers using the existing checkpoints. `_uninstall_controller.py`
+prepares and starts the handoff; `_os_integration.py` owns command publication,
+registry access and shortcuts. Installed bridge handlers execute only after
+the common request and captured-authority validation succeeds.
 
 `ConfigEditorScreen` owns workspace presentation state and the single
 post-action refresh boundary. Workflows receive a fresh, read-only

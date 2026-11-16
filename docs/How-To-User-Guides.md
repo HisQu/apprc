@@ -997,6 +997,25 @@ another environment is active. Its command directory must already be on PATH;
 editing shell profiles. Unknown command collisions are errors, not replacements.
 Use `--skip-setup` to skip only the optional post-Ready configuration offer.
 
+Caught failures before activation restore AppRC's installation changes: prior
+registration and commands remain selected, and a failed first registration
+leaves no installation record. The checkout and its environment remain owned
+by the developer. Retry the same command after correcting the reported cause.
+Stable coordination locks and otherwise empty owned directories containing
+only those locks may remain; they do not register an installation.
+An existing interrupted registration resumes its exact recorded checkout and
+placement rather than selecting different resource paths.
+
+If rollback encounters changed files, nonempty new resources, or another
+restoration failure, AppRC preserves incomplete recovery authority and reports
+both failures. Process interruption also retains resumable checkpoints. A
+committed installation remains installed when later cleanup fails.
+
+Application initialization callbacks own their data changes and compatibility.
+Installer rollback does not restore databases or external systems. Existing
+resources are preserved; a deliberate clean reinstall can use the application's
+normal uninstall policy, with `--keep-data` when retention is wanted.
+
 Git and `uv sync --locked` remain responsible for developer updates. Source
 changes stay editable. If the environment breaks, restore it with uv before
 using its maintenance commands; editable registration does not add an independent

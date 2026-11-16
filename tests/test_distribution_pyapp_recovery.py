@@ -233,15 +233,10 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
         check=False,
     )
     assert failed.returncode != 0, failed.stdout + failed.stderr
-    incomplete = _record(directory)
-    operation = incomplete.get("operation")
-    assert isinstance(operation, dict)
-    assert incomplete.get("status") == "incomplete"
-    assert operation.get("kind") == "replace"
-    assert operation.get("phase") == "failed"
-    assert _active_slot(incomplete) == old_slot
-    candidate_slot = _pending_slot(incomplete)
-    assert candidate_slot != old_slot
+    assert _record(directory) == initial
+    assert {path.name for path in (directory / "runtimes").iterdir()} == {
+        old_slot
+    }
 
     command = command_directory / command_name
     result = run(
@@ -265,10 +260,11 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
         cwd=tmp_path,
         check=False,
     )
-    assert doctor.returncode == 1, doctor.stdout + doctor.stderr
+    assert doctor.returncode == 0, doctor.stdout + doctor.stderr
     assert doctor.stderr == ""
     doctor_payload = json.loads(doctor.stdout)
-    assert doctor_payload["status"] == "incomplete"
+    assert doctor_payload["installation"]["status"] == "ready"
+    assert doctor_payload["installation"]["record"]["operation"] is None
     assert doctor_payload["details"]["host"]["application"] == "fixture"
     assert not stable_manager.exists()
 
@@ -282,7 +278,8 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
     repaired = _record(directory)
     assert repaired.get("status") == "ready"
     assert repaired.get("operation") is None
-    assert _active_slot(repaired) == candidate_slot
+    repaired_slot = _active_slot(repaired)
+    assert repaired_slot != old_slot
     assert stable_manager.is_file()
 
     stable_manager.unlink()
@@ -296,7 +293,7 @@ def test_failed_replacement_keeps_old_runtime_and_setup_recovers_without_stable_
     assert uninstall.returncode == 0, uninstall.stdout + uninstall.stderr
     assert setup.is_file()
     assert not stable_manager.exists()
-    assert not (directory / "runtimes" / candidate_slot).exists()
+    assert not (directory / "runtimes" / repaired_slot).exists()
     assert not (command_directory / command_name).exists()
 
 

@@ -41,6 +41,7 @@ from apprc.user_files.installation.operations import (
     record_owned_outputs,
     record_runtime_retired,
     record_step,
+    rollback_installation,
 )
 from apprc.user_files.installation.validation import validate_snapshot
 
@@ -140,6 +141,107 @@ def _install(tmp_path: Path) -> tuple[Path, RuntimeSlot]:
     assert ready.status == "ready"
     assert ready.record is not None and ready.record.active_runtime == observed
     return directory, observed
+
+
+def test_first_install_rollback_restores_absence(tmp_path: Path) -> None:
+    directory = tmp_path / "installation"
+    plan = plan_install(
+        _identity(),
+        _candidate(),
+        InstallationPlacement(Layout.native()),
+        inspection=inspect_installation(directory, app_id=_identity().app_id),
+    )
+    pending = begin_operation(plan)
+    assert pending.revision is not None
+    result = rollback_installation(
+        directory,
+        operation_id=plan.operation_id,
+        expected_revision=pending.revision,
+        previous=None,
+    )
+    assert result.status == "missing"
+    assert not (directory / "installation.json").exists()
+
+
+def test_replacement_rollback_restores_exact_prior_authority(
+    tmp_path: Path,
+) -> None:
+    directory, _active = _install(tmp_path)
+    before = inspect_installation(directory, app_id=_identity().app_id)
+    assert before.record is not None
+    original = (directory / "installation.json").read_bytes()
+    plan = plan_install(
+        _identity(), _candidate(), before.record.placement, inspection=before
+    )
+    pending = begin_operation(plan)
+    assert pending.revision is not None
+    restored = rollback_installation(
+        directory,
+        operation_id=plan.operation_id,
+        expected_revision=pending.revision,
+        previous=before.record,
+    )
+    assert restored.record == before.record
+    assert restored.revision == before.revision
+    assert (directory / "installation.json").read_bytes() == original
+
+
+@pytest.mark.parametrize("changed", ("revision", "operation", "previous"))
+def test_rollback_rejects_changed_or_unrelated_authority(
+    tmp_path: Path, changed: str
+) -> None:
+    directory, _active = _install(tmp_path)
+    before = inspect_installation(directory, app_id=_identity().app_id)
+    assert before.record is not None
+    plan = plan_install(
+        _identity(), _candidate(), before.record.placement, inspection=before
+    )
+    pending = begin_operation(plan)
+    assert pending.revision is not None
+    original = (directory / "installation.json").read_bytes()
+    with pytest.raises(InstallationError):
+        rollback_installation(
+            directory,
+            operation_id=uuid4()
+            if changed == "operation"
+            else plan.operation_id,
+            expected_revision=before.revision or ""
+            if changed == "revision"
+            else pending.revision,
+            previous=replace(before.record, generation_id=uuid4())
+            if changed == "previous"
+            else before.record,
+        )
+    assert (directory / "installation.json").read_bytes() == original
+
+
+def test_rollback_does_not_undo_committed_activation(tmp_path: Path) -> None:
+    directory, _active = _install(tmp_path)
+    before = inspect_installation(directory, app_id=_identity().app_id)
+    assert before.record is not None
+    candidate = _candidate()
+    plan, revision = _prepare(
+        directory,
+        identity=_identity(),
+        runtime=candidate,
+        placement=before.record.placement,
+    )
+    ready = commit_installation(
+        directory,
+        operation_id=plan.operation_id,
+        expected_revision=revision,
+        observed=replace(candidate, version="1.0", python_version="3.14.1"),
+    )
+    assert ready.revision is not None
+    original = (directory / "installation.json").read_bytes()
+    with pytest.raises(InstallationError, match="no longer active"):
+        rollback_installation(
+            directory,
+            operation_id=plan.operation_id,
+            expected_revision=ready.revision,
+            previous=before.record,
+        )
+    assert (directory / "installation.json").read_bytes() == original
 
 
 def test_program_only_removal_retains_placement_without_active_runtime(

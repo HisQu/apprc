@@ -38,6 +38,15 @@ if TYPE_CHECKING:
     from apprc.distribution.runtime.controllers import UninstallPreparation
 
 
+def _installation_error_message(error: BaseException) -> str:
+    """Keep rollback outcome notes visible at the command's error boundary.
+
+    :param error: Original installation error, including recovery notes.
+    :return: Error and notes suitable for Typer's parameter error display.
+    """
+    return "\n".join((str(error), *getattr(error, "__notes__", ())))
+
+
 class _InstallationCommand(TyperCommand):
     """Capture the invocation before Click consumes known installer options."""
 
@@ -94,7 +103,9 @@ def mount_installation_group(
 
                     offer_configuration_setup(result, skip=skip_setup)
                 except (OSError, ValueError) as exc:
-                    raise typer.BadParameter(str(exc)) from exc
+                    raise typer.BadParameter(
+                        _installation_error_message(exc)
+                    ) from exc
                 return
             if installer_entrypoint is None:
                 command = (
@@ -216,7 +227,7 @@ def mount_installation_group(
                 uv=_manager_uv(),
             )
         except (OSError, ValueError) as exc:
-            raise typer.BadParameter(str(exc)) from exc
+            raise typer.BadParameter(_installation_error_message(exc)) from exc
         _emit(_inspection_payload(result), False)
 
     @child.command("uninstall")
@@ -548,6 +559,30 @@ def _register_editable(
     from apprc.user_files.app_home.layouts import resolve_app_paths
 
     options = context.runtime_options
+    operation_context = None
+    record = context.inspection.record
+    if record is not None and record.operation is not None:
+        operation = record.operation
+        intended = operation.intended
+        if (
+            operation.kind not in {"install", "replace", "repair"}
+            or intended is None
+            or not isinstance(intended.runtime, EditableCheckout)
+            or intended.identity != distribution_spec.metadata.identity
+            or intended.runtime.project != project_root
+            or intended.runtime.environment != prefix
+            or intended.runtime.hooks != distribution_spec.hooks
+        ):
+            raise ValueError(
+                "Pending installation addresses another operation or checkout. "
+                f"{guidance}"
+            )
+        operation_context = OperationContext(
+            directory=context.manager.directory,
+            operation_id=operation.operation_id,
+            generation_id=record.generation_id,
+            placement=operation.placement,
+        )
     paths = resolve_app_paths(
         context.manager.spec,
         ResolveOptions(
@@ -558,6 +593,7 @@ def _register_editable(
             layout=options.layout,
         ),
         context.environment,
+        operation_context=operation_context,
     )
     declared_capabilities: tuple[tuple[ResourceKind, bool], ...] = (
         ("config", context.manager.spec.paths.config),
@@ -627,7 +663,9 @@ def _register_editable(
             assume_yes=assume_yes,
         )
     except (OSError, ValueError) as exc:
-        raise ValueError(f"{exc} {guidance}") from exc
+        raise ValueError(
+            f"{_installation_error_message(exc)} {guidance}"
+        ) from exc
 
 
 def installation_context(

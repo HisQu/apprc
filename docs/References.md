@@ -485,6 +485,14 @@ only in its recorded runtime. The independent manager can diagnose, repair or
 remove a broken managed program without importing it, but cannot pretend that
 unavailable application-specific validators or cleanup hooks ran.
 
+`InstallationManager.rollback_installation(operation_id=..., expected_revision=...,
+previous=...)` is the controller's authority-only final recovery transition.
+The controller must first restore its filesystem and OS-integration effects.
+It accepts only the exact pending install, replacement, or repair, restoring the
+captured prior record or initial absence. It rejects committed activation and
+unrelated authority. Failure to restore managed effects retains incomplete
+recovery state; this operation does not undo application callbacks or databases.
+
 Program-only removal preserves user resources by default. Complete removal
 requires explicit choices and exact provider inventories; unknown files,
 changed ownership or unavailable required code block unsafe deletion. Temporary

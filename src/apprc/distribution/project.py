@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from apprc.definition.installation import ProjectSnapshot
+from apprc.definition.installation import InstallationError, ProjectSnapshot
 from apprc.distribution._archives import _deterministic_zip
 from apprc.distribution.metadata import _validate_project_declaration
 from apprc.distribution.models import DistributionSpec, relative_destination
@@ -23,6 +23,7 @@ from apprc.distribution.runtime.acquisition import (
     _sha256_file,
 )
 from apprc.user_files.app_home.locations import assert_no_links
+from apprc.user_files.app_home.permissions import set_windows_private_acl
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,10 +375,17 @@ def build_project_snapshot(
     stage = Path(
         tempfile.mkdtemp(prefix="apprc-project-", dir=destination.parent)
     )
-    stage.chmod(0o700)
-    _assert_private_staging(stage)
     created_output = False
     try:
+        try:
+            stage.chmod(0o700)
+            if os.name == "nt":
+                set_windows_private_acl(stage)
+            _assert_private_staging(stage)
+        except (OSError, ValueError) as error:
+            raise InstallationError(
+                f"Cannot prepare private project staging directory {stage}: {error}"
+            ) from error
         tarball = stage / "tree.tar"
         tarball.write_bytes(tar_bytes)
         tree = stage / "tree"

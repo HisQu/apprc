@@ -71,6 +71,8 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
+- Managed and editable installation restore AppRC-owned pre-activation changes on caught failure, including command publication and partial Windows registration. Incomplete rollback retains recovery evidence; committed activation survives cleanup failures. Application data compatibility remains application-owned.
+- Operation-created bridge and project staging directories apply private Windows ACLs before payload creation, and exact incomplete editable registrations can resume their recorded placement.
 - CLI and launcher declarations defer editor and prompt implementations until use; help no longer imports those stacks. Editable registration compares existing environment directory identities and handles native Windows UNC file URLs with explicit platform and path diagnostics.
 - Reordered opt-in root help to show host commands and options first, AppRC commands and runtime options next, and common help/completion options last. Cyan host and magenta AppRC headings and borders distinguish ownership; common controls are dim, descriptions remain neutral, and terminal color controls are respected.
 

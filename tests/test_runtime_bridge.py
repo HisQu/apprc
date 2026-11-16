@@ -1,9 +1,11 @@
 """Validate fixed bridge actions before invoking the recorded runtime."""
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -38,6 +40,54 @@ def test_bridge_request_uses_physical_temp_parent(
         }
     finally:
         shutil.rmtree(request.parent)
+
+
+@pytest.mark.parametrize("acl_failure", [False, True])
+def test_bridge_request_secures_windows_staging_before_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    acl_failure: bool,
+) -> None:
+    staged: list[Path] = []
+    set_private_acl = probe.set_windows_private_acl
+
+    def private_acl(directory: Path) -> None:
+        staged.append(directory)
+        assert directory.parent == tmp_path
+        assert tuple(directory.iterdir()) == ()
+        if acl_failure:
+            raise PermissionError(13, "ACL update denied", str(directory))
+        if os.name == "nt":
+            set_private_acl(directory)
+
+    monkeypatch.setattr(probe.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        probe, "os", SimpleNamespace(**{**vars(os), "name": "nt"})
+    )
+    monkeypatch.setattr(probe, "set_windows_private_acl", private_acl)
+    if acl_failure:
+        with pytest.raises(
+            InstallationError, match="private bridge request directory"
+        ) as failure:
+            probe._private_request_file(
+                tmp_path / "installation", {"action": "probe"}, ()
+            )
+        assert "ACL update denied" in str(failure.value)
+        assert isinstance(failure.value.__cause__, PermissionError)
+        assert len(staged) == 1
+        assert not staged[0].exists()
+        assert tuple(tmp_path.iterdir()) == ()
+    else:
+        request = probe._private_request_file(
+            tmp_path / "installation", {"action": "probe"}, ()
+        )
+        try:
+            assert staged == [request.parent]
+            assert json.loads(request.read_text(encoding="utf-8")) == {
+                "action": "probe"
+            }
+        finally:
+            shutil.rmtree(request.parent)
 
 
 def test_bridge_rejects_unknown_action_before_subprocess(

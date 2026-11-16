@@ -7,6 +7,8 @@ import os
 import shutil
 import stat
 import tempfile
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from apprc.definition.installation import (
@@ -207,6 +209,120 @@ def windows_registration_intent(
     return OwnedOutput("hkcu", rf"HKCU\{subkey}", None, expected)
 
 
+@dataclass(frozen=True, slots=True)
+class WindowsRegistrationSnapshot:
+    """Exact prepublication registration; ``None`` values mean key absence."""
+
+    intent: OwnedOutput
+    values: tuple[tuple[str, str, int], ...] | None
+
+
+def _validate_windows_registration(
+    intent: OwnedOutput,
+    subkeys: int,
+    values: Mapping[str, tuple[object, int]],
+) -> None:
+    """Require an unchanged full or partial recorded registration recipe."""
+    import winreg
+
+    if subkeys:
+        raise InstallationError(
+            "Windows uninstall key contains unknown subkeys."
+        )
+    expected = dict(intent.values)
+    if any(
+        name not in expected or pair != (expected[name], winreg.REG_SZ)
+        for name, pair in values.items()
+    ):
+        raise InstallationError(
+            "Windows uninstall registration changed outside AppRC ownership."
+        )
+
+
+def capture_windows_registration(
+    intent: OwnedOutput,
+) -> WindowsRegistrationSnapshot | None:
+    """Capture exact recipe values before publication, without claiming ownership.
+
+    The caller must separately authenticate the recorded publication intent.
+    Only its expected string values are accepted, including a partial recipe
+    retained by an interrupted attempt.
+
+    :param intent: Authenticated intended current-user registration recipe.
+    :return: Prior typed values or key absence, or ``None`` outside Windows.
+    """
+    if os.name != "nt":
+        return None
+    if intent.kind != "hkcu" or intent.digest is not None:
+        raise InstallationError(
+            "Registry capture requires exact HKCU ownership."
+        )
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            intent.path.removeprefix("HKCU\\"),
+            0,
+            winreg.KEY_QUERY_VALUE,
+        ) as key:
+            subkeys, count, _ = winreg.QueryInfoKey(key)
+            values = {
+                name: (value, kind)
+                for name, value, kind in (
+                    winreg.EnumValue(key, index) for index in range(count)
+                )
+            }
+            _validate_windows_registration(intent, subkeys, values)
+            expected = dict(intent.values)
+            previous = tuple(
+                (name, expected[name], winreg.REG_SZ) for name in values
+            )
+    except FileNotFoundError:
+        previous = None
+    return WindowsRegistrationSnapshot(intent, previous)
+
+
+def restore_windows_registration(snapshot: WindowsRegistrationSnapshot) -> None:
+    """Undo recipe publication while refusing changed values or foreign subkeys.
+
+    :param snapshot: Exact state captured before this attempt published values.
+    """
+    if os.name != "nt":
+        return
+    import winreg
+
+    current = capture_windows_registration(snapshot.intent)
+    assert current is not None
+    if current.values is None and snapshot.values is None:
+        return
+    subkey = snapshot.intent.path.removeprefix("HKCU\\")
+    previous = {
+        name: (value, kind) for name, value, kind in snapshot.values or ()
+    }
+    with winreg.CreateKeyEx(
+        winreg.HKEY_CURRENT_USER,
+        subkey,
+        0,
+        winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
+    ) as key:
+        subkeys, count, _ = winreg.QueryInfoKey(key)
+        values = {
+            name: (value, kind)
+            for name, value, kind in (
+                winreg.EnumValue(key, index) for index in range(count)
+            )
+        }
+        _validate_windows_registration(snapshot.intent, subkeys, values)
+        for name in values.keys() - previous.keys():
+            winreg.DeleteValue(key, name)
+        for name, (value, kind) in previous.items():
+            if name not in values:
+                winreg.SetValueEx(key, name, 0, kind, value)
+        if snapshot.values is None:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, subkey)
+
+
 def publish_windows_registration(
     directory: Path,
     identity: InstallationIdentity,
@@ -240,25 +356,13 @@ def publish_windows_registration(
             winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
         ) as key:
             subkey_count, value_count, _ = winreg.QueryInfoKey(key)
-            if subkey_count:
-                raise InstallationError(
-                    "Windows uninstall key contains unknown subkeys."
-                )
             values = {
                 name: (value, kind)
                 for name, value, kind in (
                     winreg.EnumValue(key, index) for index in range(value_count)
                 )
             }
-            if any(
-                name not in expected
-                or value != expected[name]
-                or kind != winreg.REG_SZ
-                for name, (value, kind) in values.items()
-            ):
-                raise InstallationError(
-                    "Windows uninstall registration changed outside AppRC ownership."
-                )
+            _validate_windows_registration(output, subkey_count, values)
             for name, value in expected.items():
                 if name not in values:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
@@ -270,24 +374,13 @@ def publish_windows_registration(
             winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
         ) as key:
             subkey_count, value_count, _ = winreg.QueryInfoKey(key)
-            if subkey_count:
-                raise InstallationError(
-                    "Windows uninstall key contains unknown subkeys."
-                )
             values = {
                 name: (value, kind)
                 for name, value, kind in (
                     winreg.EnumValue(key, index) for index in range(value_count)
                 )
             }
-            if any(
-                name not in expected or values[name] != (value, winreg.REG_SZ)
-                for name, value in expected.items()
-                if name in values
-            ) or any(name not in expected for name in values):
-                raise InstallationError(
-                    "Windows uninstall registration changed outside AppRC ownership."
-                )
+            _validate_windows_registration(output, subkey_count, values)
             for name, value in expected.items():
                 if name not in values:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)

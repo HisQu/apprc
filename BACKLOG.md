@@ -75,6 +75,7 @@ Treat this as the parking lot for actionable problems discovered while working b
    1. [Table Of Contents](#table-of-contents)
 2. [2026-11-16](#2026-11-16)
    1. [P1 / E1 \[Bug risk\] - *Uninstall cleanup can race with new resource leases*](#p1--e1-bug-risk---uninstall-cleanup-can-race-with-new-resource-leases)
+   2. [P2 / E2 \[Bug risk\] - *Literal secret interpolation needs an explicit contract*](#p2--e2-bug-risk---literal-secret-interpolation-needs-an-explicit-contract)
 3. [2026-11-13](#2026-11-13)
    1. [P2 / E2 \[Bug risk\] - *Metadata-only version commands resolve appdata ownership*](#p2--e2-bug-risk---metadata-only-version-commands-resolve-appdata-ownership)
 4. [2026-11-09](#2026-11-09)
@@ -92,6 +93,16 @@ Treat this as the parking lot for actionable problems discovered while working b
 - **Evidence:** The uninstall controller invokes the application cleanup hook to check leases, then later drains resource locks and removes the selected directories. PersoDB has cache readers that acquire a lease under a resource lock without captured installation authority; such a reader can enter after the hook finishes. AppRC maintenance provider callbacks receive a path or plan, not the captured installation authority needed to reject that admission against the pending uninstall.
 - **Context:** A new lease in this interval could leave a reader using files while uninstall removes their directory. Existing authority-bound admissions are rejected while the uninstall is pending. This is an observed coordination gap, not a demonstrated exploit.
 - **Suggested next step:** Establish an authority-aware admission and cleanup contract that prevents new resource leases between the final lease check and whole-directory deletion, including direct consumers and maintenance callbacks. Add a deterministic multi-process regression for a reader queued across uninstall, and verify retries and release paths do not deadlock.
+
+<br>
+
+## P2 / E2 [Bug risk] - *Literal secret interpolation needs an explicit contract*
+- **Area:** `src/apprc/user_files/env_files/values.py` and dotenv parsing/loading.
+- **Observed while:** Reviewing grouped GS Online credential saving and checking.
+- **Why not fixed now:** Changing existing global secret normalization or interpolation would expand the accepted grouped-edit feature into a configuration-policy change.
+- **Evidence:** String normalization strips surrounding whitespace, and existing dotenv loading expands literal `${VAR}` text in saved quoted values. The credential UI now checks normalized new values and retains existing secrets without rewriting them, using the manager's captured environment for retained-secret parsing.
+- **Context:** A newly entered literal secret containing interpolation syntax can differ when reloaded. This behavior predates grouped edits; no actual credentials or exploit are recorded here.
+- **Suggested next step:** Define literal-secret storage and reload semantics separately from ordinary configuration interpolation, then add round-trip tests for whitespace, dollar/braced text, and captured-versus-ambient environments without exposing values.
 
 <br>
 

@@ -232,6 +232,21 @@ def plan_uninstall(
         raise InstallationError(
             "Removal cannot enable unrecorded resource categories."
         )
+    repository_entries = [
+        entry for entry in inventory.entries if entry.kind == "repository"
+    ]
+    if repository_entries:
+        from apprc.user_files.installation.inventory import editable_repository
+
+        if (
+            not isinstance(record.active_runtime, EditableCheckout)
+            or len(repository_entries) != 1
+            or repository_entries[0].path
+            != editable_repository(record.active_runtime.project)
+        ):
+            raise InstallationError(
+                "Repository target differs from the registered editable checkout."
+            )
     validate_cleanup(
         inventory,
         placement=record.placement,
@@ -826,6 +841,7 @@ def commit_uninstall(
     *,
     operation_id: UUID,
     expected_revision: str,
+    repository_proof: Path | None = None,
 ) -> UninstallCommit:
     """Retain reconnectable placement or delete authority irreversibly last.
 
@@ -874,10 +890,46 @@ def commit_uninstall(
                 raise InstallationError(
                     "Tracked resource roots remain; authority retained."
                 )
+        repositories = [
+            entry
+            for entry in operation.inventory.entries
+            if entry.kind == "repository"
+        ]
+        if repositories:
+            import json
+            from apprc.user_files.app_home.locations import assert_no_links
+
+            if repository_proof is None or len(repositories) != 1:
+                raise InstallationError(
+                    "Repository retirement requires exact external recovery proof."
+                )
+            assert_no_links(repository_proof)
+            if (
+                not repository_proof.is_absolute()
+                or repository_proof.name != "repository.json"
+                or repository_proof.parent.name != "recovery"
+                or repository_proof.is_relative_to(repositories[0].path)
+                or repository_proof.is_relative_to(directory)
+            ):
+                raise InstallationError(
+                    "Repository retirement proof has an unsafe location."
+                )
+            expected_proof = {
+                "directory": str(directory),
+                "app_id": record.identity.app_id,
+                "generation_id": str(record.generation_id),
+                "repository": str(repositories[0].path),
+                "revision": repositories[0].revision,
+            }
+            if json.loads(repository_proof.read_text()) != expected_proof:
+                raise InstallationError(
+                    "Repository retirement proof differs from saved authority."
+                )
         leftovers = tuple(
             entry
             for entry in operation.inventory.entries
-            if entry.path.exists() or entry.path.is_symlink()
+            if entry.kind != "repository"
+            and (entry.path.exists() or entry.path.is_symlink())
         )
         if leftovers or (
             operation.inventory.retained and not operation.forget_retained

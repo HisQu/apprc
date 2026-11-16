@@ -19,7 +19,6 @@ import typer
 from typer.core import TyperGroup
 
 from apprc.definition.installation import (
-    InstallationHooks,
     InstallationError,
 )
 from apprc.definition.resolution import ResolveOptions
@@ -523,7 +522,6 @@ class CliRuntime(Generic[OptionsT, StateT]):
         handlers: MaintenanceHandlers = MaintenanceHandlers(),
         maintenance_help_panel: str = "AppRC: Commands",
         installation_management: bool = False,
-        installation_hooks: InstallationHooks = InstallationHooks(),
         installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
         host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
         resource_diagnostics: Mapping[
@@ -566,7 +564,6 @@ class CliRuntime(Generic[OptionsT, StateT]):
             maintenance_help_panel=maintenance_help_panel,
             maintenance_group_name=self.maintenance_group_name,
             installation_management=installation_management,
-            installation_hooks=installation_hooks,
             installer_entrypoint=installer_entrypoint,
             host_diagnostics=host_diagnostics,
             resource_diagnostics=resource_diagnostics,

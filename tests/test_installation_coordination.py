@@ -103,7 +103,7 @@ def _stale_namespace_consumer(
         return FileLock(*args, **kwargs)  # pyright: ignore[reportArgumentType]
 
     with patch(
-        "apprc.user_files.installation.coordination.FileLock",
+        "apprc.user_files.installation._namespace_lock.FileLock",
         side_effect=factory,
     ):
         with installation_lock(directory):
@@ -247,7 +247,7 @@ def _queued_old_inode_writer(
         with (
             patch("fcntl.flock", side_effect=flock),
             patch(
-                "apprc.user_files.installation.coordination.FileLock",
+                "apprc.user_files.installation._namespace_lock.FileLock",
                 side_effect=factory,
             ),
         ):
@@ -487,7 +487,7 @@ def _write_captured_resource(
                     if not paused:
                         paused = True
                         channel.send("resource-lock-acquired")
-                        assert _receive(channel) == "authority-replaced"
+                        assert _receive(channel) == "finish-write"
 
                 return original_file_lock(*args, on_acquired=acquired, **kwargs)  # pyright: ignore[reportArgumentType]
 
@@ -557,7 +557,7 @@ def test_captured_resource_writer_cannot_recreate_a_retired_generation(
         parent.close()
 
 
-def test_captured_resource_writer_revalidates_after_lock_before_mutation(
+def test_captured_resource_writer_finishes_before_namespace_replacement(
     tmp_path: Path,
 ) -> None:
     directory = tmp_path / "installation"
@@ -583,24 +583,37 @@ def test_captured_resource_writer_revalidates_after_lock_before_mutation(
         args=(authority, root, child),
         kwargs={"pause_after_lock": True},
     )
+    competing_parent, competing_child = context.Pipe()
+    competing = context.Process(
+        target=_competing_revision_writer,
+        args=(directory, newer, competing_child),
+    )
     process.start()
     child.close()
+    competing.start()
+    competing_child.close()
     try:
         assert _receive(parent) == "resource-lock-acquired"
-        with installation_lock(directory):
-            write_record(directory, newer, expected_revision=revision)
-        parent.send("authority-replaced")
-        assert _receive(parent) == "rejected"
+        assert _receive(competing_parent) == ("planned", revision)
+        competing_parent.send("publish")
+        assert not competing_parent.poll(0.1)
+        parent.send("finish-write")
+        assert _receive(parent) == "written"
+        result = _receive(competing_parent)
+        assert isinstance(result, tuple) and result[0] == "saved"
         process.join(10)
-        assert process.exitcode == 0
-        assert payload.read_text(encoding="utf-8") == "replacement payload"
+        competing.join(10)
+        assert process.exitcode == 0 and competing.exitcode == 0
+        assert payload.read_text(encoding="utf-8") == "old payload"
         assert (
             inspect_installation(directory, app_id=newer.identity.app_id).record
             == newer
         )
     finally:
         _stop_process(process)
+        _stop_process(competing)
         parent.close()
+        competing_parent.close()
 
 
 def test_active_runtime_remains_writable_during_failed_replacement(
@@ -764,12 +777,12 @@ def test_lifecycle_lock_cancels_after_real_process_contention(
 def test_lifecycle_retry_races_share_one_acquisition_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, race: str
 ) -> None:
-    import apprc.user_files.installation.coordination as coordination
-
     directory = tmp_path / "installation"
     operation_lock_path = directory / "locks" / "operation.lock"
     now = iter((0.0, 0.1, 0.75))
-    monkeypatch.setattr(coordination, "monotonic", lambda: next(now))
+    from apprc.user_files.installation import _namespace_lock
+
+    monkeypatch.setattr(_namespace_lock, "monotonic", lambda: next(now))
     original_file_lock = FileLock
     original_stat = Path.stat
 
@@ -796,7 +809,7 @@ def test_lifecycle_retry_races_share_one_acquisition_deadline(
         return original_stat(path, follow_symlinks=follow_symlinks)
 
     with patch(
-        "apprc.user_files.installation.coordination.FileLock",
+        "apprc.user_files.installation._namespace_lock.FileLock",
         side_effect=factory,
     ):
         if race == "setup-disappeared":
@@ -851,7 +864,7 @@ def test_acquired_callback_rollback_failure_preserves_both_errors(
     try:
         with (
             patch(
-                "apprc.user_files.installation.coordination.FileLock",
+                "apprc.user_files.installation._namespace_lock.FileLock",
                 side_effect=factory,
             ),
             patch("fcntl.flock", side_effect=flock),

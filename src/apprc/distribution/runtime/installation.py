@@ -716,11 +716,19 @@ def _initialize_runtime(
 ) -> None:
     hooks = runtime.hooks
     if identity.apprc_reference is None:
-        manager.initialize(context=context)
-        if hooks.initialize is not None:
-            raise InstallationError(
-                "An initialization hook requires an AppRC declaration."
+        if any(
+            reference is not None
+            for reference in (
+                hooks.initialize,
+                hooks.inventory,
+                hooks.cleanup,
+                hooks.migrate,
             )
+        ):
+            raise InstallationError(
+                "Lifecycle hooks require an AppRC declaration."
+            )
+        manager.initialize(context=context)
         _validate_selected_resource_ownership(identity, context.placement)
         return
     result = application_bridge(

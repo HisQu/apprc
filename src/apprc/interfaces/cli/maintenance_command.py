@@ -18,7 +18,6 @@ import typer
 # == Internal ================================
 from apprc.definition.installation import (
     EditableCheckout,
-    InstallationHooks,
     InstallationIdentity,
     RuntimeSlot,
 )
@@ -541,7 +540,6 @@ def mount_maintenance_groups(
     maintenance_help_panel: str = "AppRC: Commands",
     maintenance_group_name: str = "app",
     installation_management: bool = False,
-    installation_hooks: InstallationHooks = InstallationHooks(),
     host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     resource_diagnostics: Mapping[
@@ -583,7 +581,6 @@ def mount_maintenance_groups(
         maintenance_group_name=maintenance_group_name,
         installation_management=installation_management,
         installer_entrypoint=installer_entrypoint,
-        installation_hooks=installation_hooks,
     )
 
     @maintenance.command("paths", rich_help_panel=maintenance_help_panel)

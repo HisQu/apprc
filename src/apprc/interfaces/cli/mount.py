@@ -12,7 +12,6 @@ import typer
 
 # == Internal ================================
 from apprc.definition.maintenance import MaintenanceHandlers
-from apprc.definition.installation import InstallationHooks
 from apprc.interfaces.cli.config_command.state import (
     ConfigRuntimePolicy,
     DefaultConfigCliState,
@@ -59,7 +58,6 @@ def mount_app_cli(
     maintenance_group_name: str = "app",
     installation_management: bool = False,
     native_binding: NativeBinding | None = None,
-    installation_hooks: InstallationHooks = InstallationHooks(),
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
     host_diagnostics: Callable[[], Mapping[str, object]] | None = None,
     resource_diagnostics: Mapping[
@@ -95,7 +93,6 @@ def mount_app_cli(
     :param runtime_policy: Optional policy for skipping host business setup.
     :param workspace_required: Whether business commands require a workspace.
     :param handlers: Explicit application maintenance operations.
-    :param installation_hooks: Importable application lifecycle hooks captured per runtime.
     :param maintenance_help_panel: Rich help panel for AppRC maintenance groups.
     :param maintenance_group_name: Public name for the maintenance subtree.
     :param installation_management: Enable saved installation recovery commands.
@@ -156,7 +153,6 @@ def mount_app_cli(
         handlers=handlers,
         maintenance_help_panel=maintenance_help_panel,
         installation_management=installation_management,
-        installation_hooks=installation_hooks,
         installer_entrypoint=installer_entrypoint,
         host_diagnostics=host_diagnostics,
         resource_diagnostics=resource_diagnostics,

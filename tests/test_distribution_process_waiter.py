@@ -13,7 +13,7 @@ from ctypes import wintypes
 
 import pytest
 
-from apprc.distribution.runtime import _handoff, removal
+from apprc.distribution.runtime import _handoff, removal, _process_waiter
 
 
 @contextmanager
@@ -79,14 +79,14 @@ def test_pidfd_closes_when_process_start_identity_does_not_match(
 ) -> None:
     _without_python_pidfd(monkeypatch)
     opened: list[int] = []
-    open_pidfd = removal._linux_pidfd_open
+    open_pidfd = _process_waiter._linux_pidfd_open
 
     def track_pidfd(pid: int) -> int:
         fd = open_pidfd(pid)
         opened.append(fd)
         return fd
 
-    monkeypatch.setattr(removal, "_linux_pidfd_open", track_pidfd)
+    monkeypatch.setattr(_process_waiter, "_linux_pidfd_open", track_pidfd)
     try:
         with _owned_child() as process:
             waiter = removal._open_process_waiter(
@@ -111,17 +111,17 @@ def test_pidfd_closes_when_process_exits_during_identity_validation(
 ) -> None:
     _without_python_pidfd(monkeypatch)
     opened: list[int] = []
-    open_pidfd = removal._linux_pidfd_open
+    open_pidfd = _process_waiter._linux_pidfd_open
 
     def track_pidfd(pid: int) -> int:
         fd = open_pidfd(pid)
         opened.append(fd)
         return fd
 
-    monkeypatch.setattr(removal, "_linux_pidfd_open", track_pidfd)
+    monkeypatch.setattr(_process_waiter, "_linux_pidfd_open", track_pidfd)
     try:
         with _owned_child() as process:
-            original_token = _handoff._linux_process_token
+            original_token = _process_waiter._linux_process_token
             observed: list[int] = []
 
             def exit_before_token_read(pid: int) -> str:
@@ -134,7 +134,7 @@ def test_pidfd_closes_when_process_exits_during_identity_validation(
                 return original_token(pid)
 
             monkeypatch.setattr(
-                _handoff, "_linux_process_token", exit_before_token_read
+                _process_waiter, "_linux_process_token", exit_before_token_read
             )
             waiter = removal._open_process_waiter(process.pid, "unused")
             assert observed == [process.pid]
@@ -151,7 +151,7 @@ def test_pidfd_closes_when_process_exits_during_identity_validation(
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows process handle waiters")
 def test_windows_waiter_waits_for_exit_and_closes_handle() -> None:
-    kernel32, _ = _handoff._windows_api()
+    kernel32, _ = _process_waiter._windows_api()
     kernel32.GetHandleInformation.argtypes = (
         wintypes.HANDLE,
         ctypes.POINTER(wintypes.DWORD),

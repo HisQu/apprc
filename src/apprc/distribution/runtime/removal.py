@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import ctypes
 import errno
 import json
 import os
 import re
-import select
 import shutil
 import subprocess
 import sys
@@ -36,6 +34,10 @@ from apprc.definition.installation import (
 )
 from apprc.distribution.models import relative_destination
 from apprc.distribution.runtime import _handoff, _integration
+from apprc.distribution.runtime._process_waiter import (
+    _open_process_waiter,
+    _wait_open_process,
+)
 from apprc.distribution.runtime._leases import (
     try_acquire_runtime_quiescence,
     try_retire_runtime_slot,
@@ -46,7 +48,11 @@ from apprc.user_files.app_home.locations import (
     assert_no_links,
     write_bytes_atomic,
 )
-from apprc.user_files.app_home.writes import file_revision, managed_write_lock
+from apprc.user_files.app_home.writes import (
+    file_revision,
+    managed_write_lock,
+    managed_lock_path,
+)
 from apprc.user_files.installation.coordination import (
     finish_namespace_retirement,
     installation_lock,
@@ -64,6 +70,15 @@ from apprc.user_files.installation.planning import (
     validate_cleanup,
 )
 from apprc.user_files.installation.inventory import cleanup_entry_revision
+from apprc.user_files.app_home.ownership import inspect_ownership
+from apprc.user_files.app_home.permissions import (
+    create_private_directory_if_missing,
+)
+
+
+_UNKNOWN_EDITABLE_RETENTION = (
+    "Any retained editable checkout and development environment remain."
+)
 
 
 class HandoffPlan(TypedDict):
@@ -92,7 +107,7 @@ class _PendingHandoff:
     manager_executable: Path | None
 
 
-PathKind = Literal["file", "directory", "symlink"]
+PathKind = Literal["file", "directory", "symlink", "tree", "repository"]
 
 
 def _is_resource_kind(value: object) -> TypeGuard[ResourceKind]:
@@ -105,7 +120,13 @@ def _is_resource_kind(value: object) -> TypeGuard[ResourceKind]:
 
 
 def _is_path_kind(value: object) -> TypeGuard[PathKind]:
-    return isinstance(value, str) and value in {"file", "directory", "symlink"}
+    return isinstance(value, str) and value in {
+        "file",
+        "directory",
+        "symlink",
+        "tree",
+        "repository",
+    }
 
 
 def _is_uuid(value: object) -> TypeGuard[str]:
@@ -116,116 +137,6 @@ def _is_uuid(value: object) -> TypeGuard[str]:
     except ValueError:
         return False
     return True
-
-
-def _linux_pidfd_open(pid: int) -> int:
-    """Open an OS-bound process handle even when Python omits its wrapper."""
-    if hasattr(os, "pidfd_open"):
-        return os.pidfd_open(pid)
-    if pid < 0 or pid > 2**31 - 1:
-        raise ValueError("Process ID does not fit the Linux pid_t interface.")
-    try:
-        pidfd_open = ctypes.CDLL(None, use_errno=True).pidfd_open
-    except AttributeError as error:
-        raise InstallationError(
-            "Linux safe uninstall handoff requires libc pidfd_open support."
-        ) from error
-    pidfd_open.argtypes = (ctypes.c_int, ctypes.c_uint)
-    pidfd_open.restype = ctypes.c_int
-    handle = pidfd_open(pid, 0)
-    if handle == -1:
-        error_number = ctypes.get_errno()
-        if error_number == errno.ENOSYS:
-            raise InstallationError(
-                "Linux safe uninstall handoff requires kernel pidfd support."
-            ) from OSError(error_number, os.strerror(error_number))
-        raise OSError(error_number, os.strerror(error_number))
-    return handle
-
-
-def _open_process_waiter(pid: int, expected: str):
-    """Validate the original process before advertising receiver readiness."""
-    if os.name == "nt":
-        kernel32, _ = _handoff._windows_api()
-        handle = kernel32.OpenProcess(0x00100000 | 0x1000, False, pid)
-        if not handle:
-            if ctypes.get_last_error() == 87:
-                return "already-exited", None
-            raise OSError(
-                ctypes.get_last_error(),
-                "Could not open original process handle.",
-            )
-        if _handoff._windows_process_token(handle, pid) != expected:
-            kernel32.CloseHandle(handle)
-            return "already-exited", None
-        return "windows", handle
-    if sys.platform.startswith("linux"):
-        try:
-            handle = _linux_pidfd_open(pid)
-        except ProcessLookupError:
-            return "already-exited", None
-        try:
-            token = _handoff._linux_process_token(pid)
-        except FileNotFoundError:
-            os.close(handle)
-            return "already-exited", None
-        except BaseException:
-            os.close(handle)
-            raise
-        if token != expected:
-            os.close(handle)
-            return "already-exited", None
-        return "pidfd", handle
-    if sys.platform == "darwin":
-        watcher = select.kqueue()
-        try:
-            event = select.kevent(
-                pid,
-                filter=select.KQ_FILTER_PROC,
-                flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
-                fflags=select.KQ_NOTE_EXIT,
-            )
-            watcher.control([event], 0, 0)
-            if _handoff.process_start_token(pid) != expected:
-                watcher.close()
-                return "already-exited", None
-            return "kqueue", watcher
-        except OSError:
-            watcher.close()
-            if _handoff.process_start_token(pid) != expected:
-                return "already-exited", None
-            raise
-    raise InstallationError(
-        "This platform has no supported actual-process exit handshake."
-    )
-
-
-def _wait_open_process(waiter) -> None:
-    """Block until the already-validated process handle reports exit."""
-    kind, handle = waiter
-    if kind == "already-exited":
-        return
-    if kind == "windows":
-        kernel32, _ = _handoff._windows_api()
-        try:
-            result = kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
-            if result != 0:
-                raise OSError(
-                    ctypes.get_last_error(),
-                    "Waiting for original process failed.",
-                )
-        finally:
-            kernel32.CloseHandle(handle)
-    elif kind == "pidfd":
-        try:
-            select.select([handle], [], [])
-        finally:
-            os.close(handle)
-    else:
-        try:
-            handle.control(None, 1, None)
-        finally:
-            handle.close()
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -405,6 +316,18 @@ def _remove_inventory(entries: tuple[InventoryEntry, ...]) -> None:
     )
     for entry in ordered:
         path = entry.path
+        if entry.kind == "repository":
+            continue
+        if entry.kind == "tree":
+            revision = cleanup_entry_revision(entry)
+            if revision is None:
+                continue
+            if revision != entry.revision:
+                raise InstallationError(
+                    f"Cleanup directory changed after preview: {path}."
+                )
+            shutil.rmtree(path)
+            continue
         if entry.kind == "symlink":
             revision = cleanup_entry_revision(entry)
             if revision is None:
@@ -650,8 +573,12 @@ def _finalize_committed_handoff(
     recovery: Path,
     *,
     expected_app_id: str,
+    caller_exited: bool = False,
 ) -> None:
-    """Finish exact namespace retirement after the authority commit."""
+    """Finish retirement, waiting only for a separately launched recovery caller.
+
+    :param caller_exited: Whether the executing handoff already observed exit.
+    """
     directory = Path(value["directory"])
     finalization_plan = recovery / "finalization.json"
     if (
@@ -689,12 +616,19 @@ def _finalize_committed_handoff(
         Path.cwd(),
     ):
         _handoff.assert_outside_removal(path, roots)
-    _wait_for_caller_exit(value)
+    if not caller_exited:
+        _wait_for_caller_exit(value)
     manager = (
         Path(value["manager_executable"])
         if value["manager_executable"] is not None
         else None
     )
+    if any(
+        isinstance(entry, dict) and entry.get("kind") == "repository"
+        for entry in value["inventory"]
+    ):
+        _launch_repository_finalizer(plan_file, value, recovery)
+        return
     if manager is None:
         finalize_namespace(
             finalization_plan, directory, expected_app_id=expected_app_id
@@ -714,7 +648,15 @@ def _finalize_committed_handoff(
             env=environment,
             check=True,
         )
-    shutil.rmtree(plan_file.parent)
+    if any(
+        isinstance(entry, dict) and entry.get("kind") == "repository"
+        for entry in value["inventory"]
+    ):
+        _launch_repository_finalizer(plan_file, value, recovery)
+    else:
+        shutil.rmtree(plan_file.parent)
+        if not caller_exited:
+            print(_UNKNOWN_EDITABLE_RETENTION, file=sys.stderr, flush=True)
 
 
 def _prepare_pending_handoff(
@@ -788,6 +730,14 @@ def _prepare_pending_handoff(
         if value["manager_executable"] is not None
         else None
     )
+    immediate_roots = tuple(
+        root
+        for root in removal_roots
+        if not any(
+            entry.kind == "repository" and entry.path == root
+            for entry in inventory.entries
+        )
+    )
     receiver_paths = (
         Path(sys.prefix),
         Path(sys.base_prefix),
@@ -800,7 +750,13 @@ def _prepare_pending_handoff(
         *((manager,) if manager is not None else ()),
     )
     for path in receiver_paths:
-        _handoff.assert_outside_removal(path, removal_roots)
+        _handoff.assert_outside_removal(
+            path,
+            immediate_roots
+            if path
+            in (Path(sys.prefix), Path(sys.base_prefix), Path(sys.executable))
+            else removal_roots,
+        )
     for path in (plan_file.parent, plan_file, recovery):
         assert_no_links(path)
     return _PendingHandoff(plan, record, manager)
@@ -849,15 +805,12 @@ def _execute_pending_handoff(
         latest_revision = current.revision
 
         operation = record.operation
-        data_categories = plan.categories - {"config"}
         runtime = record.active_runtime
-        needs_cleanup = plan.complete and (
-            bool(data_categories)
-            or bool(
-                plan.categories
-                and runtime is not None
-                and runtime.hooks.cleanup
-            )
+        needs_cleanup = bool(
+            plan.complete
+            and plan.categories
+            and runtime is not None
+            and runtime.hooks.cleanup
         )
         if OperationStep.PROVIDER_CLEANUP not in operation.steps:
             runtime = record.active_runtime
@@ -1013,6 +966,27 @@ def _execute_pending_handoff(
                         ).encode("utf-8"),
                         private=True,
                     )
+                repository_entries = [
+                    entry
+                    for entry in inventory.entries
+                    if entry.kind == "repository"
+                ]
+                if repository_entries:
+                    repository_entry = repository_entries[0]
+                    repository_proof = {
+                        "directory": str(directory),
+                        "app_id": app_id,
+                        "generation_id": str(plan.expected_generation),
+                        "repository": str(repository_entry.path),
+                        "revision": repository_entry.revision,
+                    }
+                    write_bytes_atomic(
+                        recovery / "repository.json",
+                        (
+                            json.dumps(repository_proof, sort_keys=True) + "\n"
+                        ).encode(),
+                        private=True,
+                    )
                 roots = tuple(
                     root for _, root in resource_roots(record.placement)
                 )
@@ -1029,16 +1003,49 @@ def _execute_pending_handoff(
                     ),
                     context,
                 )
-                with managed_write_lock(*roots, authority=authority):
-                    validate_cleanup(
-                        inventory,
-                        placement=record.placement,
-                        directory=directory,
-                        categories=plan.categories,
-                        complete=plan.complete,
-                        forget_retained=plan.forget_retained,
-                    )
+                with installation_lock(directory):
+                    # > Release drained resource locks before removing log lock files on Windows.
+                    with managed_write_lock(*roots, authority=authority):
+                        validate_cleanup(
+                            inventory,
+                            placement=record.placement,
+                            directory=directory,
+                            categories=plan.categories,
+                            complete=plan.complete,
+                            forget_retained=plan.forget_retained,
+                        )
+                    for entry in inventory.entries:
+                        if (
+                            entry.kind == "tree"
+                            and entry.resource is not None
+                            and entry.path.exists()
+                            and inspect_ownership(
+                                entry.path, app_id, entry.resource
+                            )
+                            != "owned"
+                        ):
+                            raise InstallationError(
+                                "Managed directory ownership changed after consent."
+                            )
                     _remove_inventory(inventory.entries)
+                    for lock_path in sorted(
+                        {
+                            managed_lock_path(root)
+                            for root in roots
+                            if any(
+                                entry.kind == "tree"
+                                and (
+                                    root == entry.path
+                                    or root.is_relative_to(entry.path)
+                                )
+                                for entry in inventory.entries
+                            )
+                        },
+                        key=lambda path: len(path.parts),
+                        reverse=True,
+                    ):
+                        assert_no_links(lock_path)
+                        lock_path.unlink(missing_ok=True)
                 current = record_step(
                     directory,
                     operation_id=operation_id,
@@ -1059,13 +1066,22 @@ def _execute_pending_handoff(
                     directory,
                     operation_id=operation_id,
                     expected_revision=latest_revision,
+                    repository_proof=recovery / "repository.json"
+                    if any(
+                        entry.kind == "repository"
+                        for entry in inventory.entries
+                    )
+                    else None,
                 )
                 if result.kind != "retired":
                     raise InstallationError(
                         "Complete uninstall unexpectedly retained authority."
                     )
                 committed = True
-                retire_held_operation_lock(directory)
+                if not any(
+                    entry.kind == "repository" for entry in inventory.entries
+                ):
+                    retire_held_operation_lock(directory)
         else:
             _restore_support(recovery, directory)
             _backup_support(inventory.entries, directory, recovery)
@@ -1086,16 +1102,39 @@ def _execute_pending_handoff(
             succeeded = True
 
         if plan.complete:
-            retirement = finish_namespace_retirement(
-                directory, generation_id=plan.expected_generation
+            root = plan.placement.layout.root
+            if root is not None:
+                assert_no_links(root)
+                try:
+                    root.rmdir()
+                except FileNotFoundError:
+                    pass
+                except OSError as error:
+                    if error.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                        raise
+            retirement = (
+                None
+                if any(
+                    entry.kind == "repository" for entry in inventory.entries
+                )
+                else finish_namespace_retirement(
+                    directory, generation_id=plan.expected_generation
+                )
             )
-            if retirement.container not in {"removed", "occupied"}:
+            if retirement is not None and retirement.container not in {
+                "removed",
+                "occupied",
+            }:
                 raise InstallationError(
                     retirement.diagnostic
                     or "Installation namespace cleanup left residue."
                 )
             _finalize_committed_handoff(
-                plan_file, value, recovery, expected_app_id=app_id
+                plan_file,
+                value,
+                recovery,
+                expected_app_id=app_id,
+                caller_exited=True,
             )
             succeeded = True
     except BaseException as error:
@@ -1119,7 +1158,30 @@ def _execute_pending_handoff(
                 ) from error
         raise
     finally:
-        if succeeded and plan_file.parent.exists():
+        if succeeded:
+            from apprc.definition.installation import EditableCheckout
+
+            editable = pending.record.active_runtime
+            if not any(
+                entry.kind == "repository" for entry in inventory.entries
+            ):
+                if isinstance(editable, EditableCheckout):
+                    print(
+                        f"Editable installation remains at {editable.project}; its development environment was preserved at {editable.environment}.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                elif editable is None:
+                    print(
+                        _UNKNOWN_EDITABLE_RETENTION, file=sys.stderr, flush=True
+                    )
+        if (
+            succeeded
+            and plan_file.parent.exists()
+            and not any(
+                entry.kind == "repository" for entry in inventory.entries
+            )
+        ):
             shutil.rmtree(plan_file.parent)
 
 
@@ -1280,6 +1342,86 @@ def main() -> int:
     arguments = parser.parse_args()
     execute_handoff(arguments.handoff_plan)
     return 0
+
+
+_REPOSITORY_FINALIZER: subprocess.Popen[str] | None = None
+
+
+def _stage_repository_finalizer(staging: Path) -> Path:
+    """Stage the actual SDK leaf and its existing lock dependency.
+
+    Loader-backed source and resources also work inside a native archive.
+
+    :param staging: Private surviving handoff directory.
+    :return: Standalone leaf script address.
+    """
+    import inspect
+    from importlib import resources
+    import filelock
+    from apprc.distribution.runtime import namespace_finalizer, _process_waiter
+    from apprc.user_files.installation import _namespace_lock
+
+    leaf = staging / "repository_finalizer.py"
+    for module, target in (
+        (namespace_finalizer, leaf),
+        (_process_waiter, staging / "_process_waiter.py"),
+        (_namespace_lock, staging / "_namespace_lock.py"),
+    ):
+        write_bytes_atomic(
+            target, inspect.getsource(module).encode("utf-8"), private=True
+        )
+    from importlib.resources.abc import Traversable
+
+    def copy_dependency(source: Traversable, destination: Path) -> None:
+        create_private_directory_if_missing(destination)
+        for resource in source.iterdir():
+            if resource.name == "__pycache__":
+                continue
+            target = destination / resource.name
+            if resource.is_dir():
+                copy_dependency(resource, target)
+            elif resource.is_file():
+                write_bytes_atomic(target, resource.read_bytes(), private=True)
+
+    copy_dependency(resources.files(filelock), staging / "filelock")
+    return leaf
+
+
+def _launch_repository_finalizer(
+    plan_file: Path, value: HandoffPlan, recovery: Path
+) -> None:
+    """Hand committed checkout deletion to an externally locked process."""
+    global _REPOSITORY_FINALIZER
+    proof = recovery / "repository.json"
+    if not proof.is_file():
+        raise InstallationError(
+            "Committed repository removal has no recovery proof."
+        )
+    leaf = _stage_repository_finalizer(plan_file.parent)
+    roots = tuple(
+        Path(entry["path"])
+        for entry in value["inventory"]
+        if isinstance(entry, dict) and entry.get("kind") == "repository"
+    )
+    from apprc.distribution.runtime.controllers import _handoff_python
+
+    python = _handoff_python(roots)
+    _REPOSITORY_FINALIZER = subprocess.Popen(
+        [
+            str(python),
+            str(leaf),
+            "--repository-plan",
+            str(proof),
+            "--parent",
+            str(os.getpid()),
+            "--parent-token",
+            _handoff.process_start_token(os.getpid()),
+        ],
+        cwd=plan_file.parent,
+        stdout=sys.stderr,
+        stderr=sys.stderr,
+        text=True,
+    )
 
 
 if __name__ == "__main__":

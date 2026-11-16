@@ -22,7 +22,6 @@ from typer.core import TyperCommand
 
 from apprc.definition.installation import (
     EditableCheckout,
-    InstallationHooks,
     InstallationInspection,
     InstallationRecord,
     MigrationPlan,
@@ -37,8 +36,6 @@ from apprc.interfaces.cli.context import (
 
 if TYPE_CHECKING:
     from apprc.distribution.runtime.controllers import UninstallPreparation
-
-_CATEGORIES: tuple[ResourceKind, ...] = ("config", "appdata", "cache", "state")
 
 
 class _InstallationCommand(TyperCommand):
@@ -55,7 +52,6 @@ def mount_installation_group(
     maintenance_group_name: str = "app",
     installation_management: bool = False,
     installer_entrypoint: Callable[[Sequence[str]], int] | None = None,
-    installation_hooks: InstallationHooks = InstallationHooks(),
 ) -> typer.Typer:
     """Register explicitly enabled installation actions on a maintenance group."""
     child = app
@@ -91,7 +87,6 @@ def mount_installation_group(
                         ctx,
                         command_directory=command_directory,
                         assume_yes=assume_yes,
-                        installation_hooks=installation_hooks,
                     )
                     from apprc.distribution.runtime.installation import (
                         offer_configuration_setup,
@@ -228,43 +223,29 @@ def mount_installation_group(
     def uninstall(
         ctx: typer.Context,
         dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-        complete: Annotated[bool, typer.Option("--complete")] = False,
-        category: Annotated[
-            list[str] | None, typer.Option("--category")
-        ] = None,
-        forget_retained: Annotated[
-            bool, typer.Option("--forget-retained")
+        keep_data: Annotated[bool, typer.Option("--keep-data")] = False,
+        remove_repository: Annotated[
+            bool, typer.Option("--remove-repository")
         ] = False,
         assume_yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
         json_output: Annotated[bool, typer.Option("--json")] = False,
     ) -> None:
         """Preview or remove the program and only explicitly selected owned data."""
-        requested = frozenset(category or ())
-        invalid = requested - set(_CATEGORIES)
-        if invalid:
+        if keep_data and remove_repository:
             raise typer.BadParameter(
-                "Unknown category: " + ", ".join(sorted(invalid))
+                "--keep-data cannot be combined with --remove-repository."
             )
-        selected: frozenset[ResourceKind] = frozenset(
-            kind for kind in _CATEGORIES if kind in requested
-        )
-        if forget_retained and not complete:
-            raise typer.BadParameter("--forget-retained requires --complete.")
         command_context = _inspection(ctx)
         inspection = command_context.inspection
         directory = inspection.directory
-        record = inspection.record
-        if complete and not requested and record is not None:
-            selected = record.placement.capabilities
         try:
             from apprc.distribution.runtime import controllers
 
             manager_executable = command_context._native_manager_executable
             preparation = controllers.prepare_uninstall(
                 directory,
-                categories=selected,
-                complete=complete,
-                forget_retained=forget_retained,
+                keep_data=True if keep_data else None,
+                remove_repository=remove_repository,
                 manager_executable=manager_executable,
             )
         except (OSError, ValueError) as exc:
@@ -336,7 +317,6 @@ def _register_editable(
     *,
     command_directory: Path | None,
     assume_yes: bool,
-    installation_hooks: InstallationHooks = InstallationHooks(),
 ) -> InstallationInspection:
     """Validate the mounted command's existing editable uv checkout."""
     context = _inspection(ctx)
@@ -590,7 +570,7 @@ def _register_editable(
             EditableCheckout(
                 project=project_root,
                 environment=prefix,
-                hooks=installation_hooks,
+                hooks=distribution_spec.hooks,
             ),
             placement,
             command_name=command,
@@ -693,7 +673,28 @@ def _migration_payload(plan: MigrationPlan) -> dict[str, object]:
 def _preparation_payload(
     preparation: UninstallPreparation,
 ) -> dict[str, object]:
+    record = preparation.inspection.record
+    retained: list[dict[str, str]] = []
+    if record is not None:
+        if preparation.plan is not None and not preparation.plan.complete:
+            from apprc.user_files.installation.planning import resource_roots
+
+            retained.extend(
+                {"path": str(path), "reason": "--keep-data"}
+                for _, path in resource_roots(record.placement)
+            )
+        if isinstance(record.active_runtime, EditableCheckout) and not any(
+            entry.kind == "repository" for entry in preparation.entries
+        ):
+            retained.extend(
+                {"path": str(path), "reason": "editable installation"}
+                for path in (
+                    record.active_runtime.project,
+                    record.active_runtime.environment,
+                )
+            )
     return {
+        "preserved": retained,
         "inspection": _inspection_payload(preparation.inspection),
         "can_execute": preparation.can_execute,
         "entries": [

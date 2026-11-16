@@ -20,7 +20,7 @@ from textual.widgets import Button, Footer, Header, Select, Static
 from apprc.services.workspaces import WorkspaceManager
 
 
-from apprc.interfaces.tui._primitives import ConfirmScreen
+from apprc.interfaces.tui._primitives import ConfirmScreen, ButtonVariant
 from apprc.interfaces.tui.editor.app import ConfigEditorScreen
 from apprc.interfaces.tui.launcher.model import (
     LauncherAction,
@@ -449,9 +449,7 @@ class LauncherHomeScreen(Screen[None]):
                 asyncio.to_thread(
                     controllers.prepare_uninstall,
                     self.context.inspection.directory,
-                    categories=frozenset(),
-                    complete=False,
-                    forget_retained=False,
+                    keep_data=None,
                 )
             )
             try:
@@ -467,18 +465,67 @@ class LauncherHomeScreen(Screen[None]):
             item.message for item in preparation.diagnostics
         )
         detail = "\n".join(part for part in (entries, diagnostics) if part)
+        preserves_data = (
+            preparation.plan is not None and not preparation.plan.complete
+        )
+        title = (
+            "Remove program and keep data"
+            if preserves_data
+            else "Remove application and data"
+        )
+        explanation = (
+            "The native manager will remove program entry points and preserve managed data.\n"
+            if preserves_data
+            else "The native manager will remove the program and managed data. Whole-directory targets include all contents:\n"
+        )
+        actions: tuple[tuple[str, str, ButtonVariant], ...] = (
+            (
+                "remove",
+                "Remove program"
+                if preserves_data
+                else "Remove application and data",
+                "warning",
+            ),
+        )
+        if not preserves_data:
+            actions = (*actions, ("keep-data", "Keep data", "primary"))
         result = await self.app.push_screen_wait(
             ConfirmScreen(
-                title="Remove application program",
+                title=title,
                 message=Text(
-                    "The native manager will remove the program and preserve "
-                    "user data by default. Exact targets:\n"
-                    + (detail or "No data targets are selected.")
+                    explanation + (detail or "No data targets are selected.")
                 ),
-                actions=(("remove", "Remove program", "warning"),),
+                actions=actions,
             )
         )
-        if result != "remove":
+        if result == "keep-data":
+            try:
+                preparation = await asyncio.to_thread(
+                    controllers.prepare_uninstall,
+                    self.context.inspection.directory,
+                    keep_data=True,
+                )
+            except (OSError, ValueError) as exc:
+                self.notify(str(exc), severity="error", markup=False)
+                return
+            if not preparation.can_execute:
+                self.notify(
+                    "The saved operation cannot safely use these removal choices.",
+                    severity="error",
+                )
+                return
+            confirmed = await self.app.push_screen_wait(
+                ConfirmScreen(
+                    title="Remove program and keep data",
+                    message=Text(
+                        "Configuration and data will be preserved. Remove program entry points?"
+                    ),
+                    actions=(("remove", "Remove program", "warning"),),
+                )
+            )
+            if confirmed != "remove":
+                return
+        elif result != "remove":
             return
         if preparation.plan is None or not preparation.can_execute:
             self.notify(

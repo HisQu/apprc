@@ -6,12 +6,13 @@ import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from threading import local
-from time import monotonic
 from uuid import UUID
 from apprc.definition.installation import InstallationRetirement
 
-from filelock import FileLock, Timeout
+from apprc.user_files.installation._namespace_lock import (
+    namespace_lock,
+    retire_held_lock,
+)
 
 from apprc.definition.installation import InstallationError, InstallationRecord
 from apprc.user_files.app_home.locations import (
@@ -27,20 +28,8 @@ from apprc.user_files.app_home.writes import file_revision
 from apprc.user_files.installation.codec import encode_record
 
 
-class _ThreadLocks(local):
-    def __init__(self) -> None:
-        self.held: dict[tuple[int, Path], tuple[int, tuple[int, int]]] = {}
-
-
-_THREAD_LOCKS = _ThreadLocks()
-
-
 class StaleLockNamespace(InstallationError):
     """An acquired descriptor no longer names the active installation lock."""
-
-
-def _identity(info: os.stat_result) -> tuple[int, int]:
-    return info.st_dev, info.st_ino
 
 
 def _private_directory(directory: Path) -> None:
@@ -63,73 +52,22 @@ def installation_lock(
     timeout: float = 30,
     cancelled: Callable[[], bool] | None = None,
 ) -> Iterator[None]:
-    """Acquire the active physical namespace against one bounded deadline.
+    """Acquire the generation-safe physical installation namespace.
 
-    :param directory: Explicit fixed installation address.
-    :param timeout: Total acquisition/retry deadline in seconds.
-    :param cancelled: Optional cancellation predicate checked while acquiring.
-    :return: Exclusive lifecycle/support mutation context.
+    :param directory: Fixed installation namespace.
+    :param timeout: Bounded lock acquisition deadline in seconds.
+    :param cancelled: Optional cancellation predicate.
     """
-    deadline = monotonic() + timeout
-    path = directory / "locks" / "operation.lock"
-    key = (os.getpid(), directory)
-    held = _THREAD_LOCKS.held.get(key)
-    if held is not None:
-        fd, expected_identity = held
-        if _identity(directory.stat()) != expected_identity or _identity(
-            path.lstat()
-        ) != _identity(os.fstat(fd)):
-            raise StaleLockNamespace(
-                "Nested operation addresses a retired namespace."
-            )
+    with namespace_lock(
+        directory,
+        prepare_directory=_private_directory,
+        guard_path=assert_no_links,
+        error_type=InstallationError,
+        stale_error_type=StaleLockNamespace,
+        timeout=timeout,
+        cancelled=cancelled,
+    ):
         yield
-        return
-    acquired_fd: int | None = None
-    while True:
-        if cancelled is not None and cancelled():
-            raise InstallationError("Installation lock acquisition cancelled.")
-        remaining = deadline - monotonic()
-        if remaining <= 0:
-            raise Timeout(str(path))
-        try:
-            _private_directory(directory)
-            _private_directory(path.parent)
-            directory_identity = _identity(directory.stat())
-
-            def acquired(fd: int) -> None:
-                nonlocal acquired_fd
-                try:
-                    assert_no_links(path)
-                    if _identity(os.fstat(fd)) != _identity(
-                        path.lstat()
-                    ) or directory_identity != _identity(directory.stat()):
-                        raise StaleLockNamespace(
-                            "Installation lock namespace was retired."
-                        )
-                    acquired_fd = fd
-                except FileNotFoundError as error:
-                    raise StaleLockNamespace(
-                        "Installation lock namespace disappeared."
-                    ) from error
-
-            lock = FileLock(
-                path,
-                timeout=min(remaining, 0.1),
-                preserve_lock_file=True,
-                fallback_to_soft=False,
-                on_acquired=acquired,
-            )
-            lock.acquire()
-        except (StaleLockNamespace, FileNotFoundError, Timeout):
-            continue
-        break
-    assert acquired_fd is not None
-    _THREAD_LOCKS.held[key] = (acquired_fd, directory_identity)
-    try:
-        yield
-    finally:
-        _THREAD_LOCKS.held.pop(key, None)
-        lock.release()
 
 
 def write_record(
@@ -166,23 +104,9 @@ def retire_held_operation_lock(directory: Path) -> None:
 
     :param directory: Retired authority namespace, still locked by this thread.
     """
-    if os.name == "nt":
-        return
-    held = _THREAD_LOCKS.held.get((os.getpid(), directory))
-    if held is None:
-        raise InstallationError(
-            "Retirement requires the held installation lock."
-        )
-    if (directory / "installation.json").exists():
-        raise InstallationError("Cannot retire a lock while authority exists.")
-    descriptor, directory_identity = held
-    path = directory / "locks" / "operation.lock"
-    assert_no_links(path)
-    if _identity(directory.stat()) != directory_identity or _identity(
-        path.lstat()
-    ) != _identity(os.fstat(descriptor)):
-        raise StaleLockNamespace("Retirement no longer owns the named lock.")
-    path.unlink()
+    retire_held_lock(
+        directory, guard_path=assert_no_links, error_type=InstallationError
+    )
 
 
 def finish_namespace_retirement(

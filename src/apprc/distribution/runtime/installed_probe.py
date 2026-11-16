@@ -398,7 +398,12 @@ def _serve_request(request: object) -> int:
                 "cache": paths.cache,
                 "state": paths.state,
             }
-            for reference in (hooks.initialize, hooks.inventory, hooks.cleanup, hooks.migrate):
+            for reference in (
+                hooks.initialize,
+                hooks.inventory,
+                hooks.cleanup,
+                hooks.migrate,
+            ):
                 if reference is not None:
                     _hook(reference)
             initialized = manager.initialize(context=context)

@@ -106,7 +106,9 @@ def validate_cleanup(
         seen.add(entry.path)
         if entry.kind == "repository":
             if entry.resource is not None or not complete:
-                raise InstallationError("Repository removal requires complete removal.")
+                raise InstallationError(
+                    "Repository removal requires complete removal."
+                )
             continue
         if entry.resource is None:
             if (
@@ -154,7 +156,15 @@ def validate_cleanup(
                     )
             if (
                 root.exists()
-                and not any(entry.path == root or (entry.kind == "tree" and root.is_relative_to(entry.path) and entry.resource == kind) for entry in inventory.entries)
+                and not any(
+                    entry.path == root
+                    or (
+                        entry.kind == "tree"
+                        and root.is_relative_to(entry.path)
+                        and entry.resource == kind
+                    )
+                    for entry in inventory.entries
+                )
                 and not (
                     forget_retained
                     and any(entry.path == root for entry in inventory.retained)

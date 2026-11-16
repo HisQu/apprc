@@ -345,6 +345,9 @@ Packaged builds embed that declaration; editable registration reads and saves
 the same declaration. The Python CLI mounting argument `installation_hooks` is
 removed. AppRC validates declared callbacks in the application environment;
 omitted optional callbacks are allowed.
+Explicit lower-level `DistributionSpec` composition can override the packaged
+product's hooks. It does not change the checkout declaration used by editable
+registration.
 Runtime hooks must be packaged with the application, not merely present in an
 author-only `<app>_distr` package.
 

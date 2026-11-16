@@ -1,4 +1,4 @@
-"""Stdlib-only final step for an already-retired installation namespace."""
+"""External finalization for retired namespaces and selected checkouts."""
 
 from __future__ import annotations
 
@@ -151,57 +151,140 @@ def main() -> None:
     parser.add_argument("--parent-token")
     arguments = parser.parse_args()
     if arguments.repository_plan is not None:
-        finalize_repository(arguments.repository_plan, arguments.parent, arguments.parent_token)
+        if arguments.parent is None or arguments.parent_token is None:
+            parser.error("--parent and --parent-token are required")
+        finalize_repository(
+            arguments.repository_plan, arguments.parent, arguments.parent_token
+        )
     else:
         if arguments.plan is None or arguments.directory is None:
             parser.error("--plan and --directory are required")
         finalize_namespace(arguments.plan, arguments.directory)
 
 
-def finalize_repository(proof: Path, parent: int, token: str) -> None:
-    """Wait for the uninstall helper and delete its explicitly selected checkout.
+def _load_peer(name: str):
+    """Load one staged SDK module without importing the application package.
 
-    :param proof: Private committed deletion proof outside the repository.
+    :param name: Fixed SDK module name placed beside this leaf.
+    :return: The actual loader-backed module.
+    """
+    import importlib.util
+
+    path = Path(__file__).with_name(name + ".py")
+    _assert_no_links(path)
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ValueError("Staged finalization module is unavailable.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _existing_namespace_directory(directory: Path) -> None:
+    """Require the existing private namespace instead of recreating it.
+
+    :param directory: Namespace or lock directory retained for this finalizer.
+    """
+    _assert_no_links(directory)
+    metadata = directory.stat()
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError("Finalization namespace is not a directory.")
+    if os.name != "nt" and (
+        metadata.st_mode & 0o077 or metadata.st_uid != os.getuid()
+    ):
+        raise ValueError("Finalization namespace is not private.")
+
+
+def finalize_repository(proof: Path, parent: int, token: str) -> None:
+    """Delete an explicitly selected checkout under its installation lock.
+
+    :param proof: Private committed deletion proof outside the checkout.
     :param parent: Exact originating helper process.
     :param token: Captured process identity protecting against PID reuse.
     """
     import hashlib
+    import re
     import shutil
     import sys
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("_apprc_process_waiter", Path(__file__).with_name("_process_waiter.py"))
-    if spec is None or spec.loader is None:
-        raise ValueError("Staged process waiter is unavailable.")
-    process_waiter = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(process_waiter)
 
+    process_waiter = _load_peer("_process_waiter")
+    namespace = _load_peer("_namespace_lock")
     _assert_no_links(proof)
     if proof.name != "repository.json" or proof.parent.name != "recovery":
         raise ValueError("Repository proof has an invalid recovery address.")
-    if os.name != "nt" and proof.parent.stat().st_mode & 0o077:
+    if os.name != "nt" and (
+        proof.parent.stat().st_mode & 0o077 or proof.stat().st_mode & 0o022
+    ):
         raise ValueError("Repository proof is not private.")
     value = json.loads(proof.read_text(), object_pairs_hook=_unique_object)
-    if set(value) != {"directory", "app_id", "generation_id", "repository", "revision"}:
+    if not isinstance(value, dict) or set(value) != {
+        "directory",
+        "app_id",
+        "generation_id",
+        "repository",
+        "revision",
+    }:
         raise ValueError("Repository proof has incompatible fields.")
+    if (
+        any(not isinstance(value[key], str) for key in value)
+        or not value["app_id"]
+        or str(UUID(value["generation_id"])) != value["generation_id"]
+        or re.fullmatch(r"[0-9a-f]{64}", value["revision"]) is None
+    ):
+        raise ValueError("Repository proof has invalid identity fields.")
     repository = Path(value["repository"])
-    if not repository.is_absolute() or repository in {Path(repository.anchor), Path.home()}:
+    directory = Path(value["directory"])
+    if (
+        not directory.is_absolute()
+        or not repository.is_absolute()
+        or repository in {Path(repository.anchor), Path.home()}
+    ):
         raise ValueError("Repository deletion has an unsafe root.")
-    for survivor in (proof, Path(__file__), Path(sys.executable), Path(sys.prefix), Path(sys.base_prefix), Path.cwd()):
+    for survivor in (
+        directory,
+        proof,
+        Path(__file__),
+        Path(sys.executable),
+        Path(sys.prefix),
+        Path(sys.base_prefix),
+        Path.cwd(),
+    ):
         if survivor == repository or survivor.is_relative_to(repository):
             raise ValueError("Repository finalizer overlaps its target.")
-    if (Path(value["directory"]) / "installation.json").exists():
-        raise ValueError("Repository removal precedes installation retirement.")
     waiter = process_waiter._open_process_waiter(parent, token)
     process_waiter._wait_open_process(waiter)
-    if (Path(value["directory"]) / "installation.json").exists():
-        raise ValueError("A new installation exists; repository deletion was cancelled.")
-    _assert_no_links(repository)
-    if repository.exists():
-        metadata = repository.stat()
-        identity = hashlib.sha256(f"{metadata.st_dev}:{metadata.st_ino}".encode()).hexdigest()
-        if identity != value["revision"]:
-            raise ValueError("Repository directory changed after consent.")
-        shutil.rmtree(repository)
+    with namespace.namespace_lock(
+        directory,
+        prepare_directory=_existing_namespace_directory,
+        guard_path=_assert_no_links,
+    ):
+        if (directory / "installation.json").exists():
+            raise ValueError(
+                "A new installation exists; repository deletion was cancelled."
+            )
+        _assert_no_links(repository)
+        if repository.exists():
+            metadata = repository.stat()
+            identity = hashlib.sha256(
+                f"{metadata.st_dev}:{metadata.st_ino}".encode()
+            ).hexdigest()
+            if identity != value["revision"]:
+                raise ValueError("Repository directory changed after consent.")
+            shutil.rmtree(repository)
+        namespace.retire_held_lock(directory, guard_path=_assert_no_links)
+    # > Only empty namespace cleanup follows physical lock retirement.
+    if not (directory / "installation.json").exists():
+        lock = directory / "locks" / "operation.lock"
+        if os.name == "nt":
+            lock.unlink(missing_ok=True)
+        for candidate in (directory / "locks", directory):
+            try:
+                candidate.rmdir()
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                if error.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                    raise
     print(f"Repository removed: {repository}", file=sys.stderr, flush=True)
     shutil.rmtree(proof.parent.parent)
 

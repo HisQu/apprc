@@ -96,7 +96,9 @@ def tree_revision(path: Path) -> str | None:
         return None
     if not stat.S_ISDIR(metadata.st_mode):
         raise InstallationError(f"Cleanup root is not a directory: {path}.")
-    return hashlib.sha256(f"{metadata.st_dev}:{metadata.st_ino}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{metadata.st_dev}:{metadata.st_ino}".encode()
+    ).hexdigest()
 
 
 def editable_repository(project: Path) -> Path:
@@ -110,6 +112,10 @@ def editable_repository(project: Path) -> Path:
         marker = candidate / ".git"
         if marker.is_dir() or marker.is_file():
             if candidate in {Path(candidate.anchor), Path.home()}:
-                raise InstallationError("Refusing repository deletion at a filesystem or home root.")
+                raise InstallationError(
+                    "Refusing repository deletion at a filesystem or home root."
+                )
             return candidate
-    raise InstallationError("The editable project has no identifiable Git checkout.")
+    raise InstallationError(
+        "The editable project has no identifiable Git checkout."
+    )

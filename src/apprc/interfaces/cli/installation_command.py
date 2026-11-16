@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from apprc.distribution.runtime.controllers import UninstallPreparation
 
 
-
 class _InstallationCommand(TyperCommand):
     """Capture the invocation before Click consumes known installer options."""
 
@@ -225,13 +224,17 @@ def mount_installation_group(
         ctx: typer.Context,
         dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
         keep_data: Annotated[bool, typer.Option("--keep-data")] = False,
-        remove_repository: Annotated[bool, typer.Option("--remove-repository")] = False,
+        remove_repository: Annotated[
+            bool, typer.Option("--remove-repository")
+        ] = False,
         assume_yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
         json_output: Annotated[bool, typer.Option("--json")] = False,
     ) -> None:
         """Preview or remove the program and only explicitly selected owned data."""
         if keep_data and remove_repository:
-            raise typer.BadParameter("--keep-data cannot be combined with --remove-repository.")
+            raise typer.BadParameter(
+                "--keep-data cannot be combined with --remove-repository."
+            )
         command_context = _inspection(ctx)
         inspection = command_context.inspection
         directory = inspection.directory
@@ -670,7 +673,28 @@ def _migration_payload(plan: MigrationPlan) -> dict[str, object]:
 def _preparation_payload(
     preparation: UninstallPreparation,
 ) -> dict[str, object]:
+    record = preparation.inspection.record
+    retained: list[dict[str, str]] = []
+    if record is not None:
+        if preparation.plan is not None and not preparation.plan.complete:
+            from apprc.user_files.installation.planning import resource_roots
+
+            retained.extend(
+                {"path": str(path), "reason": "--keep-data"}
+                for _, path in resource_roots(record.placement)
+            )
+        if isinstance(record.active_runtime, EditableCheckout) and not any(
+            entry.kind == "repository" for entry in preparation.entries
+        ):
+            retained.extend(
+                {"path": str(path), "reason": "editable installation"}
+                for path in (
+                    record.active_runtime.project,
+                    record.active_runtime.environment,
+                )
+            )
     return {
+        "preserved": retained,
         "inspection": _inspection_payload(preparation.inspection),
         "can_execute": preparation.can_execute,
         "entries": [

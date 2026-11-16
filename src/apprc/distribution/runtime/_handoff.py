@@ -12,7 +12,7 @@ from apprc.definition.installation import (
     UninstallPlan,
 )
 from apprc.distribution.runtime._process_waiter import (
-    process_start_token,
+    process_start_token,  # noqa: F401
 )
 
 from apprc.user_files.installation.planning import resource_roots
@@ -65,5 +65,3 @@ def assert_outside_removal(path: Path, roots: tuple[Path, ...]) -> None:
         raise InstallationError(
             "Uninstall handoff location overlaps a removal target."
         )
-
-

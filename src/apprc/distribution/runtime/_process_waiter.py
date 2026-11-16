@@ -1,4 +1,5 @@
 """Stdlib-only process identity and actual-exit waiting shared by finalizers."""
+
 from __future__ import annotations
 import ctypes
 from ctypes import wintypes
@@ -10,6 +11,7 @@ import subprocess
 import sys
 
 InstallationError = ValueError
+
 
 def _windows_api():
     """Configure pointer-sized Win32 signatures for process identity lookup."""
@@ -216,5 +218,3 @@ def _wait_open_process(waiter) -> None:
             handle.control(None, 1, None)
         finally:
             handle.close()
-
-

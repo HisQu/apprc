@@ -1,4 +1,4 @@
-"""Default package-only removal through the independent saved controller."""
+"""Default program and managed-data removal through the saved controller."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def uninstall_default(
     original_pid: int | None = None,
     preparation: UninstallPreparation | None = None,
 ) -> NoReturn:
-    """Preview program-only removal, then hand off immediately before process exit."""
+    """Hand off the reviewed full-removal plan immediately before process exit."""
     preparation = preparation or prepare_uninstall(directory)
     if not preparation.can_execute or preparation.plan is None:
         detail = "; ".join(item.message for item in preparation.diagnostics)

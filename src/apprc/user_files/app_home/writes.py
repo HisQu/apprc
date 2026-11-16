@@ -61,6 +61,28 @@ def managed_write_lock(
     process_id = os.getpid()
     deadline = monotonic() + 10
     with ExitStack() as stack:
+        if (
+            authority is not None
+            and authority.context is None
+            and authority.snapshot.generation_id is not None
+        ):
+            from apprc.user_files.installation.coordination import (
+                installation_lock,
+            )
+
+            # > Ordinary writes exclude namespace retirement. Authorized operation
+            # > probes use resource locks while their parent owns the namespace.
+            stack.enter_context(
+                installation_lock(
+                    authority.snapshot.directory,
+                    timeout=max(0, deadline - monotonic()),
+                )
+            )
+            validate_snapshot(
+                authority.snapshot,
+                app_id=authority.app_id,
+                context=authority.context,
+            )
         if not MANAGED_WRITE_LOCK.acquire(
             timeout=max(0, deadline - monotonic())
         ):

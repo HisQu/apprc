@@ -241,6 +241,10 @@ Use `rc.cli.mount_app_cli(app, MyRC)` to add configuration and application
 maintenance alongside the host's commands. `config` and `workspace` appear when
 their capabilities exist; `app paths` and `app doctor` are always available.
 `config setup [--adopt] [--yes/-y]` initializes only enabled user configuration.
+Installation offers configuration only for missing required user settings without
+fallbacks, and skips the offer for non-interactive input.
+Setup completion points to `app paths --json` and `app doctor --json`; AppRC
+provides descriptions for its generated options in each command's `--help`.
 The maintenance group defaults to `app` and can be renamed with
 `maintenance_group_name`. The returned mapping identifies actual mounted paths,
 such as `app.cache`, for application extensions. See the
@@ -251,7 +255,8 @@ Resource commands are nested under `app`: `app data backup/restore`,
 `app cache prune/clear`, and `app state prune/reset` appear only for supported
 operations. Declaring a path alone does not enable these commands or create its
 directory. `app repair`, `app uninstall`, and `app migrate` require
-`installation_management=True`; `app install` additionally requires an explicit
+`installation_management=True`, which also enables editable `app install -e`.
+Managed installation uses the native setup executable or an explicit
 `installer_entrypoint` callable. There are no resource `init` or `purge` CLI
 aliases. Python `ensure_path` and maintenance purge planning remain available
 with their existing [ownership and safety boundaries](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#maintenance).

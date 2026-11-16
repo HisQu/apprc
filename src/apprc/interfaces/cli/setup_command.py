@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 # == 3rd Party ===============================
 import typer
 from rich.console import Console
@@ -11,7 +13,8 @@ from apprc.definition.resolution import ResolveOptions
 from apprc.interfaces._setup_text import setup_finish_text
 from apprc.interfaces.cli._errors import app_path_bad_parameter
 from apprc.public.app_rc import AppRC
-from apprc.services.manager import ConfigManager, WriteScope
+from apprc.services.manager import ConfigManager
+from apprc.services.inspection import FieldInspection
 from apprc.user_files.app_home.locations import AppRCDirectoryError
 
 
@@ -20,8 +23,10 @@ def run_config_setup(
     *,
     assume_yes: bool = False,
     adopt: bool = False,
+    offer_missing: bool = False,
     manager: ConfigManager | None = None,
     config_group_name: str = "config",
+    maintenance_group_name: str = "app",
     show_next_step: bool = False,
 ) -> None:
     """Initialize the declared config directory and user dotenv.
@@ -32,8 +37,10 @@ def run_config_setup(
     :param apprc: Application config facade mounted by the host CLI.
     :param assume_yes: Whether to skip setup's optional field prompts.
     :param adopt: Whether to accept an existing unowned config directory.
+    :param offer_missing: Offer setup only for missing required user settings.
     :param manager: Invocation-bound manager supplied by the config command.
     :param config_group_name: Config command group name used in guidance.
+    :param maintenance_group_name: Mounted maintenance group used in guidance.
     :param show_next_step: Whether to print the declaration's next step.
     :raises typer.BadParameter: If setup inputs or managed files are invalid.
     """
@@ -43,6 +50,15 @@ def run_config_setup(
             param_hint="setup",
         )
     active_manager = manager or apprc.manage(ResolveOptions())
+    if offer_missing:
+        if assume_yes or not sys.stdin.isatty():
+            return
+        if not _missing_required_fields(active_manager):
+            return
+        if not typer.confirm(
+            "Set up missing required settings now?", default=False
+        ):
+            return
     try:
         result = active_manager.setup(adopt=adopt)
     except (OSError, ValueError) as exc:
@@ -58,6 +74,7 @@ def run_config_setup(
             paths=paths,
             user_dotenv=result.user_dotenv,
             config_group_name=config_group_name,
+            maintenance_group_name=maintenance_group_name,
         )
     )
     if show_next_step:
@@ -74,30 +91,40 @@ def _print_setup_next_step(apprc: AppRC) -> None:
         typer.echo(f"\nNext step:\n  {next_step}")
 
 
+def _missing_required_fields(
+    manager: ConfigManager,
+) -> tuple[FieldInspection, ...]:
+    """Select missing user values that the shared setup implementation can save.
+
+    :param manager: Invocation-bound configuration manager.
+    :return: Active editable required fields without a supplied value or fallback.
+    """
+    if "user" not in manager.writable_scopes(include_workspace=False):
+        return ()
+    return tuple(
+        item
+        for item in manager.inspect(include_workspace=False).fields
+        if item.active
+        and not item.owner.requires_workspace
+        and item.reason == "missing"
+        and item.field.editable
+        and item.field.required
+        and not item.field.has_default()
+    )
+
+
 def _prompt_required_fields(manager: ConfigManager) -> None:
     """Save active missing values through the same manager as other editors.
 
     :param manager: Manager bound to the location initialized by setup.
     """
+    fields = _missing_required_fields(manager)
+    if not fields:
+        return
     from prompt_toolkit import prompt
 
-    for item in manager.inspect(include_workspace=False).fields:
-        if (
-            not item.active
-            or item.owner.requires_workspace
-            or item.reason != "missing"
-            or not item.field.editable
-        ):
-            continue
+    for item in fields:
         key = item.owner.env_key(item.field.name)
-        scopes = manager.writable_scopes(include_workspace=False)
-        scope: WriteScope = (
-            "workspace"
-            if item.owner.requires_workspace and "workspace" in scopes
-            else "user"
-            if "user" in scopes
-            else "workspace"
-        )
         typer.echo(item.issue)
         while True:
             try:
@@ -108,7 +135,7 @@ def _prompt_required_fields(manager: ConfigManager) -> None:
             except (EOFError, KeyboardInterrupt) as exc:
                 raise typer.Exit(code=1) from exc
             try:
-                plan = manager.plan_update(key, value, scope=scope)
+                plan = manager.plan_update(key, value, scope="user")
                 preview = manager.preview_edit(plan)
                 current = next(
                     field

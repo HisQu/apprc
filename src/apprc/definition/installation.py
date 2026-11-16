@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
-from apprc.definition.paths import Layout, ResourceKind
+from apprc.definition.paths import AppPaths, Layout, Paths, ResourceKind
 
 
 class InstallationError(ValueError):
@@ -176,6 +176,34 @@ class InstallationPlacement:
     logs_dir: Path | None = None
     capabilities: frozenset[ResourceKind] = frozenset()
     retired: tuple[RetiredResource, ...] = ()
+
+    @classmethod
+    def from_paths(
+        cls, paths: AppPaths, declared: Paths
+    ) -> InstallationPlacement:
+        """Capture resolved locations for only the declared capabilities.
+
+        :param paths: Invocation-bound resolved application paths.
+        :param declared: Independently enabled resource categories.
+        :return: Validated immutable placement, with disabled roots omitted.
+        """
+        enabled: tuple[tuple[ResourceKind, bool], ...] = (
+            ("config", declared.config),
+            ("appdata", declared.appdata),
+            ("cache", declared.cache),
+            ("state", declared.state),
+        )
+        return cls(
+            layout=paths.layout,
+            config_dir=paths.config_dir if declared.config else None,
+            appdata_dir=paths.appdata_dir if declared.appdata else None,
+            cache_dir=paths.cache_dir if declared.cache else None,
+            state_dir=paths.state_dir if declared.state else None,
+            logs_dir=paths.logs_dir if declared.state else None,
+            capabilities=frozenset(
+                kind for kind, selected in enabled if selected
+            ),
+        )
 
     def __post_init__(self) -> None:
         """Reject incomplete or contradictory resource declarations."""

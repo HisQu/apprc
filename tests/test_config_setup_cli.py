@@ -165,3 +165,170 @@ def test_setup_does_not_prompt_for_invalid_field(
     monkeypatch.setattr("prompt_toolkit.prompt", fail_prompt)
 
     setup_command._prompt_required_fields(manager)
+
+
+@pytest.mark.parametrize("maintenance_group", ["app", "manage"])
+def test_setup_guidance_uses_mounted_verification_commands(
+    tmp_path: Path, maintenance_group: str
+) -> None:
+    """The wizard's suggested commands resolve in the actual host CLI."""
+    import shlex
+
+    app_rc = rc.AppRC(
+        app_id="wizard-demo",
+        command_name="demo",
+        paths=Paths(config=True),
+        layout=Layout.single_root(tmp_path / "home"),
+        user_dotenv=rc.UserDotenv(),
+    )
+    app = typer.Typer()
+    mount_app_cli(app, app_rc, maintenance_group_name=maintenance_group)
+    runner = CliRunner()
+    result = runner.invoke(app, ["config", "setup", "--yes"])
+    assert result.exit_code == 0, result.output
+    guidance = result.output.split("Then verify:\n", 1)[1]
+    commands = [
+        shlex.split(line) for line in guidance.splitlines() if line.strip()
+    ]
+    assert commands == [
+        ["demo", maintenance_group, "paths", "--json"],
+        ["demo", maintenance_group, "doctor", "--json"],
+    ]
+    for _executable, *arguments in commands:
+        verified = runner.invoke(app, arguments)
+        assert verified.exit_code in {0, 1}, verified.output
+        assert "No such command" not in verified.output
+        assert "status" in verified.output or "paths" in verified.output
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "noninteractive",
+        "assume-yes",
+        "supplied",
+        "environment",
+        "no-fields",
+        "default",
+        "inactive",
+        "workspace",
+        "noneditable",
+        "invalid",
+        "no-scope",
+    ],
+)
+def test_optional_setup_skips_without_applicable_missing_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    scenario: str,
+) -> None:
+    """The installation offer uses effective field state, not config capability."""
+    import sys
+
+    app_rc = _app(tmp_path)
+    if scenario in {"no-fields", "default"}:
+        app_rc = rc.AppRC(
+            app_id="optional-setup",
+            paths=Paths(config=True),
+            layout=Layout.single_root(tmp_path / "optional"),
+            user_dotenv=rc.UserDotenv(),
+        )
+        if scenario == "default":
+
+            @app_rc.config("settings", prefix="OPTIONAL_SETUP_")
+            class Settings(rc.Config):
+                value: str = rc.field("OPTIONAL_SETUP_VALUE", default="provided")
+
+    manager = app_rc.manage(environment={})
+    if scenario != "no-scope":
+        manager.setup()
+    if scenario == "environment":
+        item = manager.inspect().fields[0]
+        manager = app_rc.manage(
+            environment={
+                item.owner.env_key(item.field.name): "from-environment"
+            }
+        )
+    if scenario == "supplied":
+        item = manager.inspect().fields[0]
+        manager.apply_edit(
+            manager.plan_update(
+                item.owner.env_key(item.field.name),
+                "already-saved",
+                scope="user",
+            )
+        )
+    if scenario in {"inactive", "workspace", "noneditable", "invalid"}:
+        original = manager.inspect
+
+        def inspect(*args, **kwargs):
+            result = original(*args, **kwargs)
+            item = result.fields[0]
+            if scenario == "inactive":
+                item = replace(item, active=False)
+            elif scenario == "workspace":
+                item = replace(
+                    item, owner=replace(item.owner, requires_workspace=True)
+                )
+            elif scenario == "noneditable":
+                item = replace(item, field=replace(item.field, editable=False))
+            else:
+                item = replace(item, reason="invalid")
+            return replace(result, fields=(item,))
+
+        monkeypatch.setattr(manager, "inspect", inspect)
+    monkeypatch.setattr(
+        sys.stdin, "isatty", lambda: scenario != "noninteractive"
+    )
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Optional setup must not prompt or initialize")
+
+    monkeypatch.setattr(typer, "confirm", unexpected)
+    monkeypatch.setattr(manager, "setup", unexpected)
+    setup_command.run_config_setup(
+        app_rc,
+        manager=manager,
+        offer_missing=True,
+        assume_yes=scenario == "assume-yes",
+    )
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("accept", [False, True])
+def test_optional_setup_offers_and_saves_missing_required_secret(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    accept: bool,
+) -> None:
+    """Accepted offers reuse normal validation and secret persistence."""
+    import sys
+
+    app_rc = _app(tmp_path)
+    manager = app_rc.manage(environment={})
+    manager.setup()
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    offers: list[str] = []
+
+    def confirm(message, **kwargs):
+        offers.append(message)
+        assert kwargs["default"] is False
+        return accept
+
+    prompts: list[bool] = []
+
+    def prompt(*args, **kwargs):
+        prompts.append(kwargs["is_password"])
+        return "saved-secret"
+
+    monkeypatch.setattr(typer, "confirm", confirm)
+    monkeypatch.setattr("prompt_toolkit.prompt", prompt)
+    setup_command.run_config_setup(app_rc, manager=manager, offer_missing=True)
+    assert "saved-secret" not in capsys.readouterr().out
+    assert len(offers) == 1
+    assert prompts == ([True] if accept else [])
+    assert manager.inspect().fields[0].value == (
+        "saved-secret" if accept else None
+    )

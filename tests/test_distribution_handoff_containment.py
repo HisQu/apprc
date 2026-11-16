@@ -12,24 +12,20 @@ from uuid import uuid4
 
 import pytest
 
+from tests.support_installation import managed_installation
+
 from apprc.definition.installation import (
     CleanupInventory,
     InstallationDiagnostic,
     InstallationError,
     InstallationHooks,
-    InstallationIdentity,
-    InstallationPlacement,
-    InstallationRecord,
     InventoryEntry,
     OperationStep,
     OwnedOutput,
-    ProjectSnapshot,
     RetiredResource,
-    RuntimeSelection,
     RuntimeSlot,
     UninstallPlan,
 )
-from apprc.definition.paths import Layout, ResourceKind
 from apprc.distribution.runtime import (
     _handoff,
     _uninstall_controller,
@@ -39,9 +35,6 @@ from apprc.distribution.runtime import (
 from apprc.distribution.runtime._uninstall_controller import (
     UninstallHandoff,
     prepare_uninstall,
-)
-from apprc.user_files.app_home.permissions import (
-    create_private_directory_if_missing,
 )
 from apprc.user_files.app_home.writes import file_revision, managed_write_lock
 from apprc.user_files.installation import symlink_revision
@@ -55,7 +48,7 @@ from apprc.user_files.installation.operations import (
     begin_operation,
     fail_operation,
 )
-from tests.test_distribution_process_waiter import _owned_child
+from tests.support_installation import owned_child_process
 
 
 def _symbolic_link(path: Path, target: Path | str) -> None:
@@ -79,7 +72,7 @@ def _link_removal_scenario(
     revision = symlink_revision(link)
     assert revision is not None
     entry = InventoryEntry(link, "symlink", revision, "cache")
-    directory, _ = _schema3_installation(tmp_path, cache_root=root)
+    directory, _ = managed_installation(tmp_path, cache_root=root)
     preparation = prepare_uninstall(
         directory,
         categories=frozenset({"cache"}),
@@ -285,65 +278,6 @@ def _clear_controller_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
-def _schema3_installation(
-    tmp_path: Path,
-    *,
-    cache_root: Path | None = None,
-    config_root: Path | None = None,
-    retired: tuple[RetiredResource, ...] = (),
-    hooks: InstallationHooks = InstallationHooks(
-        cleanup="handoff_test.hooks:cleanup"
-    ),
-) -> tuple[Path, RuntimeSlot]:
-    directory = tmp_path / "installation"
-    create_private_directory_if_missing(directory)
-    identity = InstallationIdentity(
-        "handoff-app",
-        "handoff-test",
-        "handoff_test",
-        None,
-        ("handoff-app",),
-    )
-    resources: tuple[tuple[ResourceKind, Path | None], ...] = (
-        ("config", config_root),
-        ("cache", cache_root),
-    )
-    placement = InstallationPlacement(
-        Layout.native(),
-        config_dir=config_root,
-        cache_dir=cache_root,
-        capabilities=frozenset(
-            category for category, root in resources if root is not None
-        ),
-        retired=retired,
-    )
-    slot_id = uuid4()
-    slot_directory = directory / "runtimes" / str(slot_id)
-    slot_directory.mkdir(parents=True)
-    (slot_directory / ".apprc-runtime-lease").touch()
-    runtime = RuntimeSlot(
-        slot_id,
-        ProjectSnapshot("0" * 64, "1" * 64, "2" * 40),
-        RuntimeSelection("3.12"),
-        version="1.0",
-        python_version="3.12.1",
-        hooks=hooks,
-    )
-    record = InstallationRecord(
-        schema_version=3,
-        identity=identity,
-        command_name=identity.commands[0],
-        generation_id=uuid4(),
-        support_version="0.31.0",
-        placement=placement,
-        status="ready",
-        active_runtime=runtime,
-    )
-    with installation_lock(directory):
-        write_record(directory, record, expected_revision=None)
-    return directory, runtime
-
-
 def _installed_removal_scenario(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -354,7 +288,7 @@ def _installed_removal_scenario(
     cache_payload.write_text('{"keep":true}\n', encoding="utf-8")
     absent_cache_root = tmp_path / "selected-but-absent-cache"
     retained_root = tmp_path / "retained-cache"
-    directory, runtime = _schema3_installation(
+    directory, runtime = managed_installation(
         tmp_path,
         cache_root=cache_root,
         retired=(
@@ -396,7 +330,7 @@ def _installed_zero_capability_scenario(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     _clear_controller_environment(monkeypatch)
-    directory, runtime = _schema3_installation(tmp_path)
+    directory, runtime = managed_installation(tmp_path)
     return directory, directory / "runtimes" / str(runtime.slot_id)
 
 
@@ -506,7 +440,7 @@ def test_config_only_removal_needs_no_custom_provider(
     )
     config_payload = config_root / "apprc.user.env"
     config_payload.write_text("VALUE=remove\n", encoding="utf-8")
-    directory, _runtime = _schema3_installation(
+    directory, _runtime = managed_installation(
         tmp_path, config_root=config_root, hooks=InstallationHooks()
     )
 
@@ -575,7 +509,7 @@ def test_receiver_rejects_management_prefix_under_program_only_target(
     receiver_prefix.mkdir()
     receiver_marker = receiver_prefix / "pyvenv.cfg"
     receiver_marker.write_bytes(b"receiver management environment\n")
-    with _owned_child() as original:
+    with owned_child_process() as original:
         handoff = _pending_receiver_handoff(
             plan, tmp_path, monkeypatch, original.pid
         )
@@ -646,7 +580,7 @@ def test_receiver_rejects_execution_cwd_under_complete_selected_cache(
     receiver_marker.write_bytes(b"receiver working directory\n")
     actual_cwd = Path.cwd()
 
-    with _owned_child() as original:
+    with owned_child_process() as original:
         handoff = _pending_receiver_handoff(
             plan, tmp_path, monkeypatch, original.pid
         )
@@ -704,7 +638,7 @@ def test_receiver_rejects_stale_revision_before_handoff_readiness(
     plan = preparation.plan
     assert preparation.can_execute and plan is not None
 
-    with _owned_child() as original:
+    with owned_child_process() as original:
         handoff = _pending_receiver_handoff(
             plan, tmp_path, monkeypatch, original.pid
         )

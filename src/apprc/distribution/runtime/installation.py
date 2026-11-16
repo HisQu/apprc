@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Iterator, TextIO
@@ -83,6 +84,7 @@ from apprc.user_files.installation.operations import (
 )
 
 if TYPE_CHECKING:
+    from apprc.definition.resolution import CliRuntimeOptionsProtocol
     from apprc.services.installation import InstallationManager
     from apprc.distribution.runtime._os_integration import (
         WindowsRegistrationSnapshot,
@@ -2115,9 +2117,24 @@ def offer_configuration_setup(
     inspection: InstallationInspection,
     *,
     skip: bool,
+    config_group_name: str = "config",
+    runtime_options: CliRuntimeOptionsProtocol | None = None,
+    environment: Mapping[str, str] | None = None,
     input_stream: TextIO | None = None,
 ) -> bool:
-    """Offer the primary runtime's optional config setup after Ready."""
+    """Dispatch conditional configuration setup through the ready runtime.
+
+    The application runtime owns field eligibility and user confirmation.
+    Skipped and noninteractive invocations do not launch another process.
+
+    :param inspection: Captured ready installation authority.
+    :param skip: Whether the caller explicitly skipped optional setup.
+    :param config_group_name: Mounted configuration command group.
+    :param runtime_options: Captured selectors, using the recorded layout.
+    :param environment: Captured invocation environment, or the current one.
+    :param input_stream: Input whose terminal capability controls dispatch.
+    :return: Whether the conditional setup command completed successfully.
+    """
     record = inspection.require_usable()
     if record is None or record.active_runtime is None:
         raise InstallationError(
@@ -2125,22 +2142,21 @@ def offer_configuration_setup(
         )
     if "config" not in record.placement.capabilities:
         return False
-    command_name = record.command_name
-    guidance = (
-        f"Run `{command_name} config setup` to configure the application."
-    )
-    if skip:
-        print(guidance)
-        return False
     stream = input_stream if input_stream is not None else sys.stdin
-    if not stream.isatty():
-        print(guidance)
+    if skip or not stream.isatty():
         return False
-    print(f"Run `{command_name} config setup` now? [y/N]")
-    answer = input_stream.readline() if input_stream is not None else input()
-    if answer.strip().lower() not in {"y", "yes"}:
-        print(guidance)
-        return False
+    arguments: list[str] = []
+    if runtime_options is not None:
+        from apprc.definition.resolution import CliRuntimeOptions
+        from apprc.interfaces.cli.context import cli_runtime_options_to_args
+
+        arguments = cli_runtime_options_to_args(
+            replace(
+                CliRuntimeOptions.from_options(runtime_options),
+                layout=record.placement.layout,
+            )
+        )
+    command_name = record.command_name
     directory = inspection.directory
     with installation_lock(directory):
         latest = inspect_installation(directory, app_id=record.identity.app_id)
@@ -2148,40 +2164,50 @@ def offer_configuration_setup(
             latest.record is None
             or latest.record.active_runtime != record.active_runtime
         ):
-            print(guidance)
             return False
         lease: RuntimeLease | None = None
         if isinstance(record.active_runtime, RuntimeSlot):
             lease = acquire_runtime_lease(
                 directory / "runtimes" / str(record.active_runtime.slot_id)
             )
-    runtime = record.active_runtime
-    command = runtime_command(directory, runtime, command_name)
-    environment = dict(os.environ)
-    if lease is not None:
-        environment = lease.environment(environment)
-        spawn_options = lease.subprocess_options()
-    else:
-        environment.pop("_APPRC_RUNTIME_LEASE_HANDLE", None)
-        spawn_options = {}
-    environment = runtime_environment(environment)
-    if lease is not None:
-        environment = lease.environment(environment)
-    environment["VIRTUAL_ENV"] = str(runtime_prefix(directory, runtime))
-    binary = str(
-        runtime_prefix(directory, runtime)
-        / ("Scripts" if os.name == "nt" else "bin")
-    )
-    environment["PATH"] = binary + os.pathsep + environment.get("PATH", "")
     try:
+        runtime = record.active_runtime
+        command = runtime_command(directory, runtime, command_name)
+        child_environment = dict(
+            environment if environment is not None else os.environ
+        )
+        if lease is not None:
+            child_environment = lease.environment(child_environment)
+            spawn_options = lease.subprocess_options()
+        else:
+            child_environment.pop("_APPRC_RUNTIME_LEASE_HANDLE", None)
+            spawn_options = {}
+        child_environment = runtime_environment(child_environment)
+        if lease is not None:
+            child_environment = lease.environment(child_environment)
+        child_environment["VIRTUAL_ENV"] = str(
+            runtime_prefix(directory, runtime)
+        )
+        binary = str(
+            runtime_prefix(directory, runtime)
+            / ("Scripts" if os.name == "nt" else "bin")
+        )
+        child_environment["PATH"] = (
+            binary + os.pathsep + child_environment.get("PATH", "")
+        )
         subprocess.run(
-            [str(command), "config", "setup"],
-            env=environment,
+            [
+                str(command),
+                *arguments,
+                config_group_name,
+                "setup",
+                "--offer-missing",
+            ],
+            env=child_environment,
             check=True,
             **spawn_options,
         )
     except (OSError, subprocess.CalledProcessError):
-        print(guidance)
         return False
     finally:
         if lease is not None:

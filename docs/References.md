@@ -369,7 +369,12 @@ cleanup/migration rather than silently succeeding.
 `app install -e` is available for installation-enabled application CLIs.
 `--command-directory` chooses an existing PATH directory without editing shell
 profiles; `--yes` confirms the reviewed operation and `--skip-setup` skips only
-the optional post-Ready configuration offer. Native setup installs its embedded
+the optional post-Ready configuration offer. The offer runs only for interactive
+input with missing, editable required user settings that have no fallback;
+already supplied values and workspace-only fields do not trigger it.
+`config setup --offer-missing` uses the same conditional behavior and skips
+interaction with `--yes`. Ordinary `config setup` keeps explicit initialization
+and prompting. Native setup installs its embedded
 release; updates use newer setup, not `--main`, `--version` or wheel/index input.
 
 <br>
@@ -431,6 +436,11 @@ resolving business settings or writing files. The fixed native authority remains
 | Windows | `%LOCALAPPDATA%/<app-id>/installation` |
 | macOS | `~/Library/Application Support/<app-id>/installation` |
 | Linux | `${XDG_DATA_HOME:-~/.local/share}/<app-id>/installation` |
+
+`InstallationPlacement.from_paths(paths, declared)` captures resolved `AppPaths`
+for the enabled `Paths` capabilities, omitting disabled roots and subordinate
+logs when state is disabled. Managed and editable registration share this
+construction; retained authority still takes precedence over a new selection.
 
 This address is independent of optional resource capabilities, native/single-root
 resource layout, checkout and CWD. A changed OS profile/discovery base requires
@@ -755,7 +765,7 @@ All seven public option annotations are accepted by
 | --- | --- | --- |
 | `EnvFilesOption` | `--env-file PATH` | Repeatable explicit files in order; later files win. Process environment wins unless `-o` is supplied. |
 | `EnvFileOverridesOption` | `--env-file-overrides-os-environ`, `-o` | Explicit files override captured process environment. |
-| `SkipDotenvLayersOption` | `--skip-dotenv-layers`, `-s` | Exclude managed dotenv layers, retaining explicit files and process environment. |
+| `SkipDotenvLayersOption` | `--skip-dotenv-layers`, `-s` | Exclude dotenv values from settings, including explicit files; retain process environment, Python fallbacks, and explicit-file path/workspace selectors. |
 | `WorkspaceOption` | `--workspace VALUE` | Select a registered workspace name or a direct path according to the declaration. |
 | `LayoutOption` | `--layout native\|single-root` | Override the layout for this invocation only. |
 | `AppRootOption` | `--app-root PATH` | Supply this invocation's single-root location; never rewrite saved placement. |
@@ -802,7 +812,7 @@ conditional `workspace`, `app`, and optional `launch` appear at the root.
 | `app migrate [--dry-run] [--yes/-y]` | `installation_management=True`. Preview/apply exact resource migration, or resume its saved pending inventory/revision, with confirmation and quiescence checks. Unrecognized data needs application-owned inventory; recovery never rescans it silently. |
 | `app data backup/restore` | Declared appdata and corresponding provider operations. Restore confirms unless `--yes`; data means AppRC appdata, never workspace/project payloads. |
 | `app cache prune/clear`, `app state prune/reset` | Declared category and supported provider operations; preserve dry-run, confirmation and JSON controls. Host resource extensions may provide application-specific commands. |
-| `config setup [--adopt] [--yes/-y]` | Config initialization or user-dotenv setup supported. Config-only declarations get idempotent initialization; user-dotenv declarations retain guided/noninteractive setup. Explicit adoption is required for nonempty unowned config. |
+| `config setup [--adopt] [--yes/-y] [--offer-missing]` | Config initialization or user-dotenv setup supported. Config-only declarations get idempotent initialization; user-dotenv declarations retain guided/noninteractive setup. Explicit adoption is required for nonempty unowned config. |
 | `config show`, `config set`, `config edit` | Typed schema available. Set scopes are `user` and `workspace`. |
 | `config secrets ...` | Supported config secret operations; no layout/old-registry migration. |
 | `workspace add/list/select/rename/repoint/move/remove/archive/restore` | Registry mode (`registry=True`); registry mutations require config enabled. |

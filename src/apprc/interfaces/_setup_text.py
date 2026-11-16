@@ -32,6 +32,7 @@ def setup_finish_text(
     paths: AppPaths,
     user_dotenv: Path | None = None,
     config_group_name: str = "config",
+    maintenance_group_name: str = "app",
 ) -> str:
     """Return setup completion copy for initialized user configuration.
 
@@ -39,6 +40,7 @@ def setup_finish_text(
     :param paths: Captured application locations for this setup invocation.
     :param user_dotenv: Per-user dotenv initialized by setup, if any.
     :param config_group_name: Config command group name used in guidance.
+    :param maintenance_group_name: Mounted maintenance group used in guidance.
     :return: Human-facing setup completion text.
     """
     lines = [f"{apprc.schema.display_name} AppRC setup complete.", ""]
@@ -50,7 +52,11 @@ def setup_finish_text(
         (
             "",
             "Then verify:",
-            *verification_commands(apprc, config_group_name=config_group_name),
+            *verification_commands(
+                apprc,
+                config_group_name=config_group_name,
+                maintenance_group_name=maintenance_group_name,
+            ),
         )
     )
     return "\n".join(lines)
@@ -86,13 +92,18 @@ def verification_commands(
     apprc: AppRC,
     *,
     config_group_name: str = "config",
+    maintenance_group_name: str = "app",
 ) -> list[str]:
     """Return commands that inspect the resulting setup.
 
     :param apprc: Application config facade.
     :param config_group_name: Retained config group name for integrations.
+    :param maintenance_group_name: Mounted maintenance group used in guidance.
     :return: Command lines.
     """
     del config_group_name
     executable = apprc.schema.config_command_name()
-    return [f"  {executable} paths --json", f"  {executable} doctor --json"]
+    return [
+        f"  {executable} {maintenance_group_name} paths --json",
+        f"  {executable} {maintenance_group_name} doctor --json",
+    ]

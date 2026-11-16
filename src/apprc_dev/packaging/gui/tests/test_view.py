@@ -5,9 +5,126 @@ from pathlib import Path
 
 import gradio as gr
 import pytest
-from apprc_gui import ConfigEditor
+from apprc_gui import ConfigEditor, ConfigSectionContext
 
 import apprc as rc
+
+
+def test_section_renderer_replaces_only_its_owner_and_keeps_shared_context(
+    tmp_path: Path,
+) -> None:
+    """A host can group one section while other secret controls stay private."""
+    app = rc.AppRC(
+        app_id="gui-section-renderer",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
+        user_dotenv=rc.UserDotenv(),
+        workspaces=rc.Workspaces(selector_env_key="GUI_SECTION_WORKSPACE"),
+    )
+
+    @app.config("access", prefix="GUI_ACCESS_")
+    class Access(rc.Config):
+        token: str = rc.field(
+            "GUI_ACCESS_TOKEN", default="", secret=True, title="Replaced token"
+        )
+
+    @app.config("other", prefix="GUI_OTHER_")
+    class Other(rc.Config):
+        token: str = rc.field(
+            "GUI_OTHER_TOKEN", default="", secret=True, title="Default token"
+        )
+
+    environment = {
+        "GUI_ACCESS_TOKEN": "hidden-access-value",
+        "GUI_OTHER_TOKEN": "hidden-other-value",
+    }
+    options = rc.ResolveOptions(workspace_required=True)
+    manager = app.manage(options, environment=environment)
+    workspace_manager = app.workspaces(options, environment=environment)
+    app.ensure_path("config")
+    received: list[ConfigSectionContext] = []
+
+    def render_access(context: ConfigSectionContext) -> None:
+        received.append(context)
+        gr.Textbox(value="Grouped controls", label="Host access section")
+
+    editor = ConfigEditor(
+        manager, workspace_manager, section_renderers={"access": render_access}
+    )
+    editor._create_workspace("review", str(tmp_path / "workspace"), 0)
+    inspection = manager.inspect(workspace=editor.selected_workspace)
+    with gr.Blocks() as blocks:
+        scope = gr.Dropdown(choices=["workspace"], value="workspace")
+        status = gr.Textbox()
+        revision = gr.State(0)
+        for owner in manager.schema.owners:
+            editor._render_section(
+                ConfigSectionContext(
+                    manager=manager,
+                    owner=owner,
+                    fields=tuple(
+                        item
+                        for item in inspection.fields
+                        if item.owner.key == owner.key
+                    ),
+                    workspace=editor.selected_workspace,
+                    scope=scope,
+                    status=status,
+                    revision=revision,
+                )
+            )
+    assert len(received) == 1
+    context = received[0]
+    assert context.manager is manager
+    assert context.owner.key == "access"
+    assert context.workspace == "review"
+    assert context.scope is scope and context.status is status
+    assert context.revision is revision
+    assert len(context.fields) == 1
+    assert context.fields[0].value == "hidden-access-value"
+    assert "hidden-access-value" not in repr(context)
+    controls = [item["props"] for item in blocks.config["components"]]
+    assert any(item.get("label") == "Host access section" for item in controls)
+    assert not any(item.get("label") == "Replaced token" for item in controls)
+    default = next(
+        item for item in controls if item.get("label") == "Default token"
+    )
+    assert default["type"] == "password" and default["value"] == ""
+    assert "hidden-access-value" not in str(blocks.config)
+    assert "hidden-other-value" not in str(blocks.config)
+
+
+def test_section_renderer_receives_absent_write_scope(tmp_path: Path) -> None:
+    """The extension can render read-only content before settings setup."""
+    app = rc.AppRC(
+        app_id="gui-readonly-section",
+        paths=rc.Paths(config=True),
+        layout=rc.Layout.single_root(tmp_path),
+    )
+
+    @app.config("access", prefix="GUI_READONLY_")
+    class Access(rc.Config):
+        user: str = rc.field("GUI_READONLY_USER", default="example")
+
+    manager = app.manage(environment={})
+    inspection = manager.inspect()
+    received: list[ConfigSectionContext] = []
+    editor = ConfigEditor(
+        manager, section_renderers={"access": received.append}
+    )
+    with gr.Blocks():
+        context = ConfigSectionContext(
+            manager=manager,
+            owner=manager.schema.owners[0],
+            fields=inspection.fields,
+            workspace=None,
+            scope=None,
+            status=gr.Textbox(),
+            revision=gr.State(0),
+        )
+        editor._render_section(context)
+    assert received == [context]
+    assert received[0].scope is None and received[0].workspace is None
 
 
 def test_editor_configures_workspace_and_saves_secret(tmp_path: Path) -> None:

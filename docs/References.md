@@ -514,6 +514,8 @@ initializes only enabled user config. Workspace registration belongs to
 | `plan_update(reference, raw_value, scope=...)` / `plan_removal(...)` | Validate a proposed write and capture the target file revision. |
 | `preview_edit(plan)` | Show candidate settings without writing. |
 | `apply_edit(plan)` | Apply only if the captured file revision still matches. |
+| `plan_updates(values, scope=..., workspace=None)` | Validate a mapping of field references to raw values and coalesce edits sharing a file. |
+| `apply_updates(plan)` | Recheck all captured revisions and private paths under shared locks; write each file once and restore earlier writes on caught failure. |
 | `setup(adopt=False)` | Initialize enabled user config and companions. |
 | `secret_status(scope)` / `repair_secret_permissions(scope)` | Inspect or explicitly repair current secret permissions. |
 | `plan_secret_migration(scope)` | Capture both file revisions and a value-preserving move to the private companion. |
@@ -523,6 +525,17 @@ A reference may be a dotted registered path, unambiguous field name, or complete
 environment key. Write scopes are `user` and `workspace`. Edit plans reject a
 changed file under the managed write lock. Ordinary config editing never adopts
 an unrelated nonempty root.
+
+Batch edits keep secrets in private companions. No connection test or other
+application action runs inside the write locks. Restoration refuses changed
+outputs and preserves the original and recovery failures; cross-file power-loss
+atomicity is not promised. Values and file contents are omitted from plan reprs.
+
+The optional Gradio editor accepts `section_renderers`, a mapping from owner
+keys to callbacks receiving `ConfigSectionContext`. Its manager, owner, field
+inspections, workspace, scope selector, status box and revision state support
+host-owned section controls. A renderer replaces only that section's fields;
+default setup, secret repair and other sections remain available.
 
 Field inspections expose `reason` as `None`, `"missing"`, or `"invalid"`.
 `issue` is display text; consumers must use `reason`, not parse its wording,

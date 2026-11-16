@@ -2,15 +2,46 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
+from types import MappingProxyType
 
 import gradio as gr
 
+from apprc.definition.env_config.schema import ConfigOwner
 from apprc.services.inspection import FieldInspection
 from apprc.services.manager import ConfigManager, WriteScope
 from apprc.services.workspaces import WorkspaceManager
 from apprc.user_files.app_home.application import AppFiles
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigSectionContext:
+    """Captured editor controls and inspection for one host-rendered section.
+
+    Host renderers receive trusted inspection values, including secrets. Use
+    ``display_value`` for visible output and never prefill a password control
+    with its saved value. The shared status and revision controls preserve the
+    editor's normal feedback and refresh behavior after a host action.
+
+    :param manager: Application-owned settings manager.
+    :param owner: Declaration for this section.
+    :param fields: Current inspection of this section's fields.
+    :param workspace: Selected workspace, if any.
+    :param scope: Existing write-scope selector, or no writable scope.
+    :param status: Shared action result display.
+    :param revision: Shared refresh state to increment after a saved change.
+    """
+
+    manager: ConfigManager = field(repr=False)
+    owner: ConfigOwner = field(repr=False)
+    fields: tuple[FieldInspection, ...] = field(repr=False)
+    workspace: str | None
+    scope: gr.Dropdown | None = field(repr=False)
+    status: gr.Textbox = field(repr=False)
+    revision: gr.State = field(repr=False)
 
 
 class ConfigEditor:
@@ -22,16 +53,22 @@ class ConfigEditor:
 
     :param manager: Application-bound configuration manager.
     :param workspace_manager: Optional manager for registry-backed workspaces.
+    :param section_renderers: Optional owner-key callbacks replacing that
+        section's field controls while retaining the shared editor shell.
     """
 
     def __init__(
         self,
         manager: ConfigManager,
         workspace_manager: WorkspaceManager | None = None,
+        *,
+        section_renderers: Mapping[str, Callable[[ConfigSectionContext], None]]
+        | None = None,
     ) -> None:
         self.manager = manager
         self.workspace_manager = workspace_manager
         self.selected_workspace = manager.options.workspace
+        self.section_renderers = MappingProxyType(dict(section_renderers or {}))
 
     def render(self) -> None:
         """Add controls to the current Gradio container."""
@@ -66,9 +103,35 @@ class ConfigEditor:
                 self._render_secret_actions(scopes, status, revision)
             for owner in self.manager.schema.owners:
                 gr.Markdown(f"### {owner.title or owner.key}")
-                for item in inspection.fields:
-                    if item.owner.key == owner.key:
-                        self._render_field(item, scope, status, revision)
+                self._render_section(
+                    ConfigSectionContext(
+                        manager=self.manager,
+                        owner=owner,
+                        fields=tuple(
+                            item
+                            for item in inspection.fields
+                            if item.owner.key == owner.key
+                        ),
+                        workspace=self.selected_workspace,
+                        scope=scope,
+                        status=status,
+                        revision=revision,
+                    )
+                )
+
+    def _render_section(self, context: ConfigSectionContext) -> None:
+        """Dispatch one section to its host renderer or the normal field UI.
+
+        :param context: Captured section and shared controls for this render.
+        """
+        renderer = self.section_renderers.get(context.owner.key)
+        if renderer is not None:
+            renderer(context)
+            return
+        for item in context.fields:
+            self._render_field(
+                item, context.scope, context.status, context.revision
+            )
 
     def _render_workspace(self, status: gr.Textbox, revision: gr.State) -> None:
         """Show the selected workspace and registry-backed workspace actions."""

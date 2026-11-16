@@ -49,6 +49,9 @@ from apprc.user_files.env_files.secrets import (
 )
 from apprc.user_files.env_files.updates import (
     EnvFileEditPlan,
+    EnvFileBatchEditPlan,
+    apply_env_file_batch,
+    plan_env_file_batch,
     EnvFileUpdate,
     apply_env_file_edit,
     plan_env_file_value_removal,
@@ -334,6 +337,58 @@ class ConfigManager:
                 else ()
             ),
         )
+
+    def plan_updates(
+        self,
+        values: Mapping[str, str],
+        *,
+        scope: WriteScope,
+        workspace: str | None = None,
+    ) -> EnvFileBatchEditPlan:
+        """Validate related fields and coalesce their managed file changes.
+
+        :param values: Field references and new raw values, in desired order.
+        :param scope: Initialized user or workspace layer.
+        :param workspace: Explicit workspace selector when applicable.
+        :return: Grouped revision-checked writes without filesystem changes.
+        """
+        edits: list[EnvFileEditPlan] = []
+        for reference, value in values.items():
+            owner, spec = resolve_config_field_reference(
+                self.schema.owners, reference
+            )
+            if spec.secret:
+                self._require_private_secret_edit(
+                    scope, owner.env_key(spec.name), workspace=workspace
+                )
+            try:
+                edits.append(
+                    self.plan_update(
+                        reference, value, scope=scope, workspace=workspace
+                    )
+                )
+            except ValueError:
+                if spec.secret:
+                    raise ValueError(
+                        f"Cannot prepare private value for {owner.env_key(spec.name)}; check its value and secret file status."
+                    ) from None
+                raise
+        return plan_env_file_batch(edits)
+
+    def apply_updates(
+        self, plan: EnvFileBatchEditPlan
+    ) -> tuple[EnvFileUpdate, ...]:
+        """Apply related edits under shared locks with caught-failure recovery.
+
+        :param plan: Grouped plan captured by :meth:`plan_updates`.
+        :return: Per-field saved values after all writes succeed.
+        """
+        config_root = self.paths.config_dir
+        if config_root is not None and any(
+            edit.path.is_relative_to(config_root) for edit in plan.edits
+        ):
+            ensure_owned_path(self.schema, self.paths, "config")
+        return apply_env_file_batch(plan)
 
     def plan_removal(
         self,

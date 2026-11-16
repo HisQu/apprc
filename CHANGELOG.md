@@ -71,6 +71,7 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 ### 💔 Changed
+- Added grouped configuration updates with revision-checked regular/private-file restoration, and optional host-owned Gradio section renderers for related settings and application validation.
 - Managed and editable installation restore AppRC-owned pre-activation changes on caught failure, including command publication and partial Windows registration. Incomplete rollback retains recovery evidence; committed activation survives cleanup failures. Application data compatibility remains application-owned.
 - Operation-created bridge and project staging directories apply private Windows ACLs before payload creation, and exact incomplete editable registrations can resume their recorded placement.
 - CLI and launcher declarations defer editor and prompt implementations until use; help no longer imports those stacks. Editable registration compares existing environment directory identities and handles native Windows UNC file URLs with explicit platform and path diagnostics.

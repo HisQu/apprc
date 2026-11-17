@@ -30,18 +30,22 @@ def sample_changelog(
     version: str = "1.2.3",
     unreleased_entry: str = "",
     release_entry: str = "  - Added a tested release workflow.",
-    toc_entry: bool = True,
+    toc_entry: bool | None = None,
 ) -> str:
     """Return a small changelog matching the repository layout.
 
     :param version: Released version heading and link value.
     :param unreleased_entry: Optional content left under ``[Unreleased]``.
     :param release_entry: Content placed in the released section.
-    :param toc_entry: Whether to include the released version in the TOC.
+    :param toc_entry: Whether to include the released version in the TOC; defaults
+        to whether the version is a major/minor release.
     :return: Changelog fixture text.
     """
+    anchor = f"#{version.replace('.', '')}---2026-07-13"
+    if toc_entry is None:
+        toc_entry = version.endswith(".0")
     version_toc = (
-        f"3. [\\[{version}\\] - 2026-07-13](#123---2026-07-13)\n" if toc_entry else ""
+        f"3. [\\[{version}\\] - 2026-07-13]({anchor})\n" if toc_entry else ""
     )
     return (
         "# Changelog\n\n"
@@ -85,21 +89,41 @@ def test_build_release_notes_extracts_and_cleans_version_section() -> None:
     )
 
 
+def test_repository_changelog_has_compact_toc_and_nearby_references() -> None:
+    module = load_release_notes_module()
+    markdown = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    toc = markdown.index("## Table Of Content")
+    references = markdown.index("[Unreleased]:")
+    unreleased = markdown.index("## [Unreleased]")
+
+    assert toc < references < unreleased
+    for match in module.RELEASE_HEADING_RE.finditer(markdown):
+        module._validate_toc_entry(markdown, match)
+
+
 def test_build_release_notes_accepts_yanked_heading_and_excludes_link_definitions() -> None:
     module = load_release_notes_module()
-    markdown = sample_changelog()
+    markdown = sample_changelog(version="1.2.0")
     markdown = markdown.replace(
-        "## [1.2.3] - 2026-07-13",
-        "## [1.2.3] - 2026-07-13 [YANKED]",
+        "## [1.2.0] - 2026-07-13",
+        "## [1.2.0] - 2026-07-13 [YANKED]",
     )
     markdown = markdown.replace(
-        "3. [\\[1.2.3\\] - 2026-07-13](#123---2026-07-13)",
-        "3. [\\[1.2.3\\] - 2026-07-13 [YANKED]](#123---2026-07-13-yanked)",
+        "3. [\\[1.2.0\\] - 2026-07-13](#120---2026-07-13)",
+        "3. [\\[1.2.0\\] - 2026-07-13 [YANKED]](#120---2026-07-13-yanked)",
     )
-    markdown = markdown.replace("\n## [1.2.2] - 2026-07-12\n", "\n")
-    markdown += "\n[Unreleased]: https://example.invalid/compare\n[1.2.3]: https://example.invalid/release\n"
+    markdown = markdown.replace(
+        "## [1.2.2] - 2026-07-12", "## [1.1.0] - 2026-07-12"
+    )
+    markdown = markdown.replace(
+        "## [Unreleased]\n",
+        "[Unreleased]: https://example.invalid/compare\n"
+        "[1.2.0]: https://example.invalid/release\n\n"
+        "## [Unreleased]\n",
+        1,
+    )
 
-    assert module.build_release_notes(markdown, "1.2.3") == (
+    assert module.build_release_notes(markdown, "1.2.0") == (
         "## ✨ Added\n\n  - Added a tested release workflow.\n"
     )
 
@@ -147,11 +171,30 @@ def test_build_release_notes_rejects_empty_release() -> None:
         module.build_release_notes(sample_changelog(release_entry=""), "1.2.3")
 
 
-def test_build_release_notes_rejects_missing_toc_entry() -> None:
+def test_patch_release_may_be_omitted_from_toc() -> None:
+    module = load_release_notes_module()
+
+    assert module.build_release_notes(
+        sample_changelog(version="1.2.3", toc_entry=False), "1.2.3"
+    ).startswith("## ✨ Added")
+
+
+def test_major_minor_release_requires_toc_entry() -> None:
     module = load_release_notes_module()
 
     with pytest.raises(ValueError, match="table of contents"):
-        module.build_release_notes(sample_changelog(toc_entry=False), "1.2.3")
+        module.build_release_notes(
+            sample_changelog(version="1.2.0", toc_entry=False), "1.2.0"
+        )
+
+
+def test_patch_release_must_not_be_listed_in_toc() -> None:
+    module = load_release_notes_module()
+
+    with pytest.raises(ValueError, match="Patch release"):
+        module.build_release_notes(
+            sample_changelog(version="1.2.3", toc_entry=True), "1.2.3"
+        )
 
 
 def test_build_release_notes_rejects_nonempty_unreleased_section() -> None:

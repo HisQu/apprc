@@ -141,7 +141,7 @@ def _release_heading(markdown: str, version: str) -> re.Match[str]:
 
 
 def _validate_toc_entry(markdown: str, match: re.Match[str]) -> None:
-    """Ensure the released heading is linked from the changelog table of contents."""
+    """Require major/minor releases, but not patches, in the changelog TOC."""
     version = match.group("version")
     date = match.group("date")
     yanked = match.group("yanked") or ""
@@ -150,9 +150,15 @@ def _validate_toc_entry(markdown: str, match: re.Match[str]) -> None:
     )
     label = rf"[\[{version}\] - {date}{yanked}]"
     entry = f"{label}({anchor})"
-    if markdown.count(entry) != 1:
+    occurrences = markdown.count(entry)
+    if version.endswith(".0") and occurrences != 1:
         raise ValueError(
-            f"Changelog table of contents must contain exactly one {entry!r} entry."
+            f"Changelog table of contents must contain exactly one major/minor "
+            f"release entry {entry!r}."
+        )
+    if not version.endswith(".0") and occurrences:
+        raise ValueError(
+            f"Patch release {version} must not appear in the table of contents."
         )
 
 

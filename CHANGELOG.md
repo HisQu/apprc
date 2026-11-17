@@ -13,9 +13,9 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 > 6. Use the emoji mapping informed by [Gitmoji](https://github.com/carloscuesta/gitmoji) and [conventional-changelog-emoji](https://github.com/favoloso/conventional-changelog-emoji): ✨ Added, 🛠️ Changed, 🗑️ Deprecated, 🔥 Removed, 🐛 Fixed, and 🔒 Security.
 > 7. Describe the final net difference from the previous released version. Do not list intermediate changes that were overwritten before release.
 > 8. Use 🐛 Fixed only for defects in previously released behavior; describe new features under ✨ Added.
-> 9. Maintain the version references at the bottom: [Unreleased] compares the latest existing release tag with HEAD; tagged releases compare with the previous existing tag, or link to the release page when no previous tag exists. Keep tagless historical headings navigable in the TOC without inventing external tag links.
+> 9. List [Unreleased] and major/minor `X.Y.0` releases in the TOC; omit patch releases. Place version reference definitions immediately after the TOC. [Unreleased] compares the latest existing release tag with HEAD; tagged releases compare with the previous existing tag, or link to the release page when no previous tag exists. Use only existing tags.
 >
-> Local presentation exceptions: retain the project header, rules block, table of contents, and `<br>` / `---` layout; use emoji-prefixed category headings and the inline 💥 breaking marker; keep all six category headings under [Unreleased] even when empty. These choices affect presentation only and do not change category meaning or SemVer.
+> Local presentation exceptions: retain the project header, rules block, TOC, and `<br>` / `---` layout; use emoji-prefixed category headings and the inline 💥 breaking marker; keep all six category headings under [Unreleased] even when empty; list only [Unreleased] and `X.Y.0` releases in the TOC, leaving patch releases in history but out of the TOC; place reference definitions immediately after the TOC instead of at the bottom.
 
 <br>
 
@@ -28,50 +28,60 @@ This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [\[0.35.1\] - 2026-11-16](#0351---2026-11-16)
-4. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
-5. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
-6. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
-7. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
-8. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
-9. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
-10. [\[0.27.4\] - 2026-10-01](#0274---2026-10-01)
-11. [\[0.27.3\] - 2026-10-01](#0273---2026-10-01)
-12. [\[0.27.2\] - 2026-09-28](#0272---2026-09-28)
-13. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
-14. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
-15. [\[0.25.1\] - 2026-09-23](#0251---2026-09-23)
-16. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
-17. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
-18. [\[0.23.7\] - 2026-09-10](#0237---2026-09-10)
-19. [\[0.23.6\] - 2026-09-10](#0236---2026-09-10)
-20. [\[0.23.5\] - 2026-09-08](#0235---2026-09-08)
-21. [\[0.22.1\] - 2026-09-04](#0221---2026-09-04)
-22. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
-23. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
-24. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
-25. [\[0.19.9\] - 2026-09-02](#0199---2026-09-02)
-26. [\[0.19.8\] - 2026-09-01](#0198---2026-09-01)
-27. [\[0.19.5\] - 2026-07-14](#0195---2026-07-14)
-28. [\[0.19.4\] - 2026-07-13](#0194---2026-07-13)
-29. [\[0.19.3\] - 2026-07-13](#0193---2026-07-13)
-30. [\[0.19.2\] - 2026-07-13](#0192---2026-07-13)
-31. [\[0.19.1\] - 2026-07-03](#0191---2026-07-03)
-32. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
-33. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
-34. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
-35. [\[0.16.4\] - 2026-06-30](#0164---2026-06-30)
-36. [\[0.16.3\] - 2026-06-29](#0163---2026-06-29)
-37. [\[0.16.2\] - 2026-06-28](#0162---2026-06-28)
-38. [\[0.16.1\] - 2026-06-27](#0161---2026-06-27)
-39. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
-40. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
+3. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
+4. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
+5. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
+6. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
+7. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
+8. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
+9. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
+10. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
+11. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
+12. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
+13. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
+14. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
+15. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
+16. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
+17. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
+18. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
+19. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
+20. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
 
 <br>
 
 ---
 
 <br>
+
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.35.1...HEAD
+[0.35.1]: https://github.com/HisQu/apprc/compare/v0.35.0...v0.35.1
+[0.35.0]: https://github.com/HisQu/apprc/compare/v0.34.0...v0.35.0
+[0.34.0]: https://github.com/HisQu/apprc/compare/v0.33.0...v0.34.0
+[0.33.0]: https://github.com/HisQu/apprc/compare/v0.32.0...v0.33.0
+[0.32.0]: https://github.com/HisQu/apprc/compare/v0.29.0...v0.32.0
+[0.29.0]: https://github.com/HisQu/apprc/compare/v0.28.0...v0.29.0
+[0.28.0]: https://github.com/HisQu/apprc/compare/v0.27.4...v0.28.0
+[0.27.4]: https://github.com/HisQu/apprc/compare/v0.27.3...v0.27.4
+[0.27.3]: https://github.com/HisQu/apprc/compare/v0.27.2...v0.27.3
+[0.27.2]: https://github.com/HisQu/apprc/compare/v0.27.1...v0.27.2
+[0.27.0]: https://github.com/HisQu/apprc/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/HisQu/apprc/compare/v0.25.1...v0.26.0
+[0.25.1]: https://github.com/HisQu/apprc/compare/v0.25.0...v0.25.1
+[0.25.0]: https://github.com/HisQu/apprc/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/HisQu/apprc/compare/v0.23.7...v0.24.0
+[0.23.7]: https://github.com/HisQu/apprc/compare/v0.23.6...v0.23.7
+[0.23.6]: https://github.com/HisQu/apprc/compare/v0.23.5...v0.23.6
+[0.23.5]: https://github.com/HisQu/apprc/compare/v0.23.4...v0.23.5
+[0.22.1]: https://github.com/HisQu/apprc/compare/v0.22.0...v0.22.1
+[0.22.0]: https://github.com/HisQu/apprc/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/HisQu/apprc/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/HisQu/apprc/compare/v0.19.9...v0.20.0
+[0.19.9]: https://github.com/HisQu/apprc/compare/v0.19.8...v0.19.9
+[0.19.8]: https://github.com/HisQu/apprc/compare/v0.19.7...v0.19.8
+[0.19.5]: https://github.com/HisQu/apprc/compare/v0.19.4...v0.19.5
+[0.19.4]: https://github.com/HisQu/apprc/compare/v0.19.3...v0.19.4
+[0.19.3]: https://github.com/HisQu/apprc/compare/v0.19.2...v0.19.3
+[0.19.2]: https://github.com/HisQu/apprc/releases/tag/v0.19.2
 
 <!-- ======================================================== -->
 
@@ -2191,33 +2201,3 @@ Includes the changes previously listed under unpublished 0.31.0 and Unreleased.
 - Added src-layout packaging, Typer CLI entrypoints, AppRC configuration, documentation, tests, and maintainer tooling.
 
 <br>
-
-[Unreleased]: https://github.com/HisQu/apprc/compare/v0.35.1...HEAD
-[0.35.1]: https://github.com/HisQu/apprc/compare/v0.35.0...v0.35.1
-[0.35.0]: https://github.com/HisQu/apprc/compare/v0.34.0...v0.35.0
-[0.34.0]: https://github.com/HisQu/apprc/compare/v0.33.0...v0.34.0
-[0.33.0]: https://github.com/HisQu/apprc/compare/v0.32.0...v0.33.0
-[0.32.0]: https://github.com/HisQu/apprc/compare/v0.29.0...v0.32.0
-[0.29.0]: https://github.com/HisQu/apprc/compare/v0.28.0...v0.29.0
-[0.28.0]: https://github.com/HisQu/apprc/compare/v0.27.4...v0.28.0
-[0.27.4]: https://github.com/HisQu/apprc/compare/v0.27.3...v0.27.4
-[0.27.3]: https://github.com/HisQu/apprc/compare/v0.27.2...v0.27.3
-[0.27.2]: https://github.com/HisQu/apprc/compare/v0.27.0...v0.27.2
-[0.27.0]: https://github.com/HisQu/apprc/compare/v0.26.0...v0.27.0
-[0.26.0]: https://github.com/HisQu/apprc/compare/v0.25.1...v0.26.0
-[0.25.1]: https://github.com/HisQu/apprc/compare/v0.25.0...v0.25.1
-[0.25.0]: https://github.com/HisQu/apprc/compare/v0.24.0...v0.25.0
-[0.24.0]: https://github.com/HisQu/apprc/compare/v0.23.7...v0.24.0
-[0.23.7]: https://github.com/HisQu/apprc/compare/v0.23.6...v0.23.7
-[0.23.6]: https://github.com/HisQu/apprc/compare/v0.23.5...v0.23.6
-[0.23.5]: https://github.com/HisQu/apprc/compare/v0.22.1...v0.23.5
-[0.22.1]: https://github.com/HisQu/apprc/compare/v0.22.0...v0.22.1
-[0.22.0]: https://github.com/HisQu/apprc/compare/v0.21.0...v0.22.0
-[0.21.0]: https://github.com/HisQu/apprc/compare/v0.20.0...v0.21.0
-[0.20.0]: https://github.com/HisQu/apprc/compare/v0.19.9...v0.20.0
-[0.19.9]: https://github.com/HisQu/apprc/compare/v0.19.8...v0.19.9
-[0.19.8]: https://github.com/HisQu/apprc/compare/v0.19.5...v0.19.8
-[0.19.5]: https://github.com/HisQu/apprc/compare/v0.19.4...v0.19.5
-[0.19.4]: https://github.com/HisQu/apprc/compare/v0.19.3...v0.19.4
-[0.19.3]: https://github.com/HisQu/apprc/compare/v0.19.2...v0.19.3
-[0.19.2]: https://github.com/HisQu/apprc/releases/tag/v0.19.2

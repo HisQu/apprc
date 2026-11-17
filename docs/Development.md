@@ -482,9 +482,10 @@ notable user or contributor effects; omit routine internal refactors and test-on
 work. Keep the core, terminal, and GUI distribution versions
 in sync. Release preparation syncs the GUI version and its exact `apprc-core`
 pin automatically.
-When preparing a release, add its table-of-contents entry and update the
-comparison references at the bottom of `CHANGELOG.md`. Link only existing
-tags; keep tagless historical sections navigable through the table of contents.
+When preparing a release, add an entry to the TOC only for a major/minor
+`X.Y.0` version; omit patch releases. Keep every release section in the history.
+Update comparison reference definitions immediately after the TOC. Link only
+existing tags; do not invent links for tagless history.
 
 `just publish-check` rehearses Linux Python 3.12–3.14 checks, generated metadata,
 all three distributions, pip installation checks, and publication dry runs. It

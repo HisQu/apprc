@@ -16,7 +16,7 @@ Treat this as the parking lot for actionable problems discovered while working b
 > 1) Newest at the top.
 > 1) Append a new entry only when the observation is real, actionable, not already listed, and out of scope for the current change. Do not modify `BACKLOG.md` when there is nothing useful to add.
 > 1) If an issue is new and related to another issue, reference it in the `Suggested next step`. Do not create a new entry for the same problem. Place the reference in both entries (bi-directional).
-> 1) If an issue was resolved, remove it and make an entry in the CHANGELOG.md.
+> 1) If an issue was resolved, remove it. Add a CHANGELOG.md entry only when the change has a notable user- or contributor-facing effect.
 > 1) **Types:**
 >       - **Bug risk**: Potential defect with concrete evidence, not yet confirmed.
 >       - **Code smell**: Implementation, architectural, maintainability or clarity issue that is not currently a defect.

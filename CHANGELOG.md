@@ -1,26 +1,21 @@
 # Changelog
 
 All notable changes to `AppRC` will be documented in this file.
+This changelog follows Keep a Changelog 2.0.0 and Semantic Versioning 2.0.0.
 
 > [!IMPORTANT]
 > ## Rules
-> 1) Do not remove or change this header and TOC without very good reason. 
-> 1) When bumping version, move the sub-sections from `[Unreleased]` to
->    the new version -section. Remove empty sub-sections under released
->    versions. Provide a new `[Unreleased]` section at the top of the
->    changelog with all sections empty (don't remove those).
-> 1) Keep only the last three minor releases, including all their patch releases.
->    Put older releases into [CHANGELOG-ARCHIVE.md](CHANGELOG-ARCHIVE.md).
-> 1) Do not remove emojis and use `<br>` and `---`.
-> 1) Changelog entries must describe the final net difference from the
->    previous released version. Do not list intermediate pre-release
->    names, helper shapes, fixes, or refactors that were overwritten
->    before release.
-> 1) Use `🔨 Fixed` only for defects in previously released behavior.
->    For new features, describe the final shipped behavior under `➕
->    Added`, even if the implementation went through pre-release fixes.
-
-
+> 1. Follow [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/) and [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
+> 2. Keep the project’s complete release history in this file. Do not move older releases to an archive.
+> 3. Use `## [VERSION] - YYYY-MM-DD [YANKED]` for released headings; include `[YANKED]` only for a yanked release. Keep empty categories under [Unreleased] and omit empty categories from released sections.
+> 4. Include only curated changes with a notable effect on users or contributors. Exclude routine internal refactors, test-only work, and other changes without a user- or contributor-facing effect; resolving an issue alone does not require an entry.
+> 5. File entries under their actual category. Start every breaking entry with **Breaking:** 💥 under that category, identify affected users, and include migration guidance when possible.
+> 6. Use the emoji mapping informed by [Gitmoji](https://github.com/carloscuesta/gitmoji) and [conventional-changelog-emoji](https://github.com/favoloso/conventional-changelog-emoji): ✨ Added, 🛠️ Changed, 🗑️ Deprecated, 🔥 Removed, 🐛 Fixed, and 🔒 Security.
+> 7. Describe the final net difference from the previous released version. Do not list intermediate changes that were overwritten before release.
+> 8. Use 🐛 Fixed only for defects in previously released behavior; describe new features under ✨ Added.
+> 9. List [Unreleased] and major/minor `X.Y.0` releases in the TOC; omit patch releases. Place version reference definitions immediately after the TOC. [Unreleased] compares the latest existing release tag with HEAD; tagged releases compare with the previous existing tag, or link to the release page when no previous tag exists. Use only existing tags.
+>
+> Local presentation exceptions: retain the project header, rules block, TOC, and `<br>` / `---` layout; use emoji-prefixed category headings and the inline 💥 breaking marker; keep all six category headings under [Unreleased] even when empty; list only [Unreleased] and `X.Y.0` releases in the TOC, leaving patch releases in history but out of the TOC; place reference definitions immediately after the TOC instead of at the bottom.
 
 <br>
 
@@ -33,11 +28,24 @@ All notable changes to `AppRC` will be documented in this file.
 1. [Changelog](#changelog)
    1. [Table Of Content](#table-of-content)
 2. [\[Unreleased\]](#unreleased)
-3. [0.35.1 - 2026-11-16](#0351---2026-11-16)
-4. [0.35.0 - 2026-11-16](#0350---2026-11-16)
-5. [0.34.0 - 2026-11-13](#0340---2026-11-13)
-6. [0.33.0 - 2026-11-11](#0330---2026-11-11)
-7. [Older releases](CHANGELOG-ARCHIVE.md)
+3. [\[0.35.0\] - 2026-11-16](#0350---2026-11-16)
+4. [\[0.34.0\] - 2026-11-13](#0340---2026-11-13)
+5. [\[0.33.0\] - 2026-11-11](#0330---2026-11-11)
+6. [\[0.32.0\] - 2026-11-10](#0320---2026-11-10)
+7. [\[0.29.0\] - 2026-10-26](#0290---2026-10-26)
+8. [\[0.28.0\] - 2026-10-02](#0280---2026-10-02)
+9. [\[0.27.0\] - 2026-09-24](#0270---2026-09-24)
+10. [\[0.26.0\] - 2026-09-23](#0260---2026-09-23)
+11. [\[0.25.0\] - 2026-09-23](#0250---2026-09-23)
+12. [\[0.24.0\] - 2026-09-11](#0240---2026-09-11)
+13. [\[0.22.0\] - 2026-09-04](#0220---2026-09-04)
+14. [\[0.21.0\] - 2026-09-04](#0210---2026-09-04)
+15. [\[0.20.0\] - 2026-09-04](#0200---2026-09-04)
+16. [\[0.19.0\] - 2026-07-03](#0190---2026-07-03)
+17. [\[0.18.0\] - 2026-07-02](#0180---2026-07-02)
+18. [\[0.17.0\] - 2026-07-01](#0170---2026-07-01)
+19. [\[0.16.0\] - 2026-06-26](#0160---2026-06-26)
+20. [\[0.1.0\] - 2026-06-02](#010---2026-06-02)
 
 <br>
 
@@ -45,31 +53,62 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
+[Unreleased]: https://github.com/HisQu/apprc/compare/v0.35.1...HEAD
+[0.35.1]: https://github.com/HisQu/apprc/compare/v0.35.0...v0.35.1
+[0.35.0]: https://github.com/HisQu/apprc/compare/v0.34.0...v0.35.0
+[0.34.0]: https://github.com/HisQu/apprc/compare/v0.33.0...v0.34.0
+[0.33.0]: https://github.com/HisQu/apprc/compare/v0.32.0...v0.33.0
+[0.32.0]: https://github.com/HisQu/apprc/compare/v0.29.0...v0.32.0
+[0.29.0]: https://github.com/HisQu/apprc/compare/v0.28.0...v0.29.0
+[0.28.0]: https://github.com/HisQu/apprc/compare/v0.27.4...v0.28.0
+[0.27.4]: https://github.com/HisQu/apprc/compare/v0.27.3...v0.27.4
+[0.27.3]: https://github.com/HisQu/apprc/compare/v0.27.2...v0.27.3
+[0.27.2]: https://github.com/HisQu/apprc/compare/v0.27.1...v0.27.2
+[0.27.0]: https://github.com/HisQu/apprc/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/HisQu/apprc/compare/v0.25.1...v0.26.0
+[0.25.1]: https://github.com/HisQu/apprc/compare/v0.25.0...v0.25.1
+[0.25.0]: https://github.com/HisQu/apprc/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/HisQu/apprc/compare/v0.23.7...v0.24.0
+[0.23.7]: https://github.com/HisQu/apprc/compare/v0.23.6...v0.23.7
+[0.23.6]: https://github.com/HisQu/apprc/compare/v0.23.5...v0.23.6
+[0.23.5]: https://github.com/HisQu/apprc/compare/v0.23.4...v0.23.5
+[0.22.1]: https://github.com/HisQu/apprc/compare/v0.22.0...v0.22.1
+[0.22.0]: https://github.com/HisQu/apprc/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/HisQu/apprc/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/HisQu/apprc/compare/v0.19.9...v0.20.0
+[0.19.9]: https://github.com/HisQu/apprc/compare/v0.19.8...v0.19.9
+[0.19.8]: https://github.com/HisQu/apprc/compare/v0.19.7...v0.19.8
+[0.19.5]: https://github.com/HisQu/apprc/compare/v0.19.4...v0.19.5
+[0.19.4]: https://github.com/HisQu/apprc/compare/v0.19.3...v0.19.4
+[0.19.3]: https://github.com/HisQu/apprc/compare/v0.19.2...v0.19.3
+[0.19.2]: https://github.com/HisQu/apprc/releases/tag/v0.19.2
+
 <!-- ======================================================== -->
 
-# [Unreleased]
+## [Unreleased]
 
 <br>
 
-### 💥 Breaking changes
+### ✨ Added
 
-- Breaking: runtime implementation modules `controllers`, `removal`, and `_integration` are now `_uninstall_controller`, `uninstall_handoff`, and `_os_integration`. Update direct imports and handoff module invocations; runtime facade exports remain available.
-
-- Breaking: `InstallationManager.plan_repair()` now plans only a new managed-runtime repair. Call `plan_resume()` to resume an incomplete install, replacement, or repair; the saved operation ID, candidate, and operation kind remain unchanged.
-
-<br>
-
-### ➕ Added
-
-- Windows installations attempt to display the application version in the global executable and Installed apps. Editable checkouts receive an uninstall entry too; optional metadata failures warn without failing installation.
+- Windows installations attempt to display the application version in the global
+  executable and in Installed apps. Editable checkouts receive an uninstall
+  entry too; optional metadata failures warn without failing installation.
 
 <br>
 
-### 💔 Changed
+### 🛠️ Changed
+
+- **Breaking:** 💥 runtime implementation modules `controllers`, `removal`, and `_integration` are now `_uninstall_controller`, `uninstall_handoff`, and `_os_integration`. Update direct imports and handoff module invocations; runtime facade exports remain available.
+
+- **Breaking:** 💥 `InstallationManager.plan_repair()` now plans only a new managed-runtime repair. Call `plan_resume()` to resume an incomplete install, replacement, or repair; the saved operation ID, candidate, and operation kind remain unchanged.
+
 - Checkout installation documentation now shows the command from an activated environment, with `uv run --locked` as an alternative.
+
 - CI now runs feature branches through pull requests and cancels superseded checks. Release hosted-CI gating is controlled separately by `RELEASE_REQUIRE_CI`.
 
 - Native and editable installation reuse runtime-option declarations and placement construction. Diagnostic aggregation lives in the CLI diagnostics package; shared installation test fixtures no longer import other test modules.
+
 - Install completion offers configuration only for missing required user settings without fallbacks. Non-interactive and `--skip-setup` invocations skip the offer; explicit `config setup` remains available.
 
 - Uninstall orchestration follows explicit existing checkpoint phases with shared Windows registry handling. Application bridge actions use focused handlers behind common request and authority validation.
@@ -78,15 +117,15 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-### ⚠️ Deprecated
+### 🗑️ Deprecated
 
 <br>
 
-### 🗑️ Removed
+### 🔥 Removed
 
 <br>
 
-### 🔨 Fixed
+### 🐛 Fixed
 
 - Editable installation reports its global command and checkout, and reports a failed optional config setup. Windows command replacement errors suggest stopping running application processes.
 
@@ -104,9 +143,9 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-# 0.35.1 - 2026-11-16
+## [0.35.1] - 2026-11-16
 
-### 🔨 Fixed
+### 🐛 Fixed
 
 - Native authoring and the embedded manager now accept uv >=0.11.6 instead of requiring exactly 0.13.6. Newer uv versions no longer require an AppRC release just to pass the version check.
 
@@ -116,45 +155,60 @@ All notable changes to `AppRC` will be documented in this file.
 
 <br>
 
-# 0.35.0 - 2026-11-16
+## [0.35.0] - 2026-11-16
 
 <br>
 
-### 💥 Breaking changes
-- Breaking: `app uninstall` now removes managed configuration, data, cache and state by default. Use `--keep-data` for the previous program-only behavior. Editable repositories remain by default; `--remove-repository` explicitly includes the checkout and its contents. The former `--complete`, `--category` and `--forget-retained` switches are removed.
-- Breaking: CLI mounting no longer accepts `installation_hooks`. Declare optional lifecycle callbacks once in `[tool.apprc.distribution.hooks]` in `pyproject.toml`; packaged and editable registration use that declaration. Ordinary managed directory deletion no longer requires application inventory or cleanup callbacks.
-- Breaking: Applications now mount `config`, optional `workspace`, and configurable `app` groups instead of root maintenance commands. Migrate `paths` to `app paths`, all diagnostic commands to `app doctor`, saved installation actions to `app repair|uninstall|migrate`, and resource operations to `app data|cache|state`. Use `config setup` instead of `config init`. Public `purge` and generic resource `info`/`init` commands are removed; their Python maintenance APIs remain available.
-- Breaking: CLI integrations must opt into saved installation management with `installation_management=True`, use nested returned-group keys such as `app.cache`, and register custom resource commands through `resource_group_extensions`. Doctor JSON now always includes `status`, `checks`, and `installation`; `--verbose` adds `details.paths`, `details.configuration`, `details.resources`, and `details.host`. No compatibility command aliases are retained.
-- Breaking: Managed installations now require a complete project snapshot embedded in native setup and use locked runtime slots instead of shared uv tools. Existing managed users must remove the old program using its matching old tools while retaining user data, then reinstall; schema-2 records are not converted automatically. Remote `--main`/`--version`, wheel/index installation, custom wheel compilation and runtime dependency injection are removed.
-- Breaking: Distribution authors must use the project-snapshot/native-distribution builders and keep generated outputs in ignored `dist/` and `.cache/apprc/`. Standalone Python installers, shell/CMD/PowerShell lifecycle wrappers and generated source-tree support copies are removed. CLI integrations replace `installation_inventory` with typed `InstallationHooks` declarations; no compatibility aliases remain.
+### ✨ Added
 
-<br>
-
-### ➕ Added
 - Added explicit symbolic-link entries to cleanup inventories, with link identity checks and removal that leaves the target untouched.
+
 - Added opt-in ordered root help through `rc.cli.AppRCRootGroup`, with separate application and AppRC panels while preserving normal Typer parsing and nested help.
+
 - Added optional root `launch` through an explicitly supplied `LauncherSpec`, opening the existing Textual management launcher without resolving business settings. Explicit installer and local diagnostic registrations integrate existing application-owned behavior without discovering or replacing it.
+
 - Added committed project snapshots with their exact `uv.lock`, workspace members and package resources, including ZIP assets, while excluding generated environments and build caches.
+
 - Added first-class `app install -e` registration of an existing developer-owned checkout environment, without duplicating it or taking ownership of the checkout.
+
 - Added an independent native management command that forwards application commands to the recorded active runtime, with runtime leases, recoverable slot activation and explicit reporting of unavailable application checks.
 
 <br>
 
-### 💔 Changed
+### 🛠️ Changed
+
+- **Breaking:** 💥 `app uninstall` now removes managed configuration, data, cache and state by default. Use `--keep-data` for the previous program-only behavior. Editable repositories remain by default; `--remove-repository` explicitly includes the checkout and its contents. The former `--complete`, `--category` and `--forget-retained` switches are removed.
+
+- **Breaking:** 💥 CLI mounting no longer accepts `installation_hooks`. Declare optional lifecycle callbacks once in `[tool.apprc.distribution.hooks]` in `pyproject.toml`; packaged and editable registration use that declaration. Ordinary managed directory deletion no longer requires application inventory or cleanup callbacks.
+
+- **Breaking:** 💥 Applications now mount `config`, optional `workspace`, and configurable `app` groups instead of root maintenance commands. Migrate `paths` to `app paths`, all diagnostic commands to `app doctor`, saved installation actions to `app repair|uninstall|migrate`, and resource operations to `app data|cache|state`. Use `config setup` instead of `config init`. Public `purge` and generic resource `info`/`init` commands are removed; their Python maintenance APIs remain available.
+
+- **Breaking:** 💥 CLI integrations must opt into saved installation management with `installation_management=True`, use nested returned-group keys such as `app.cache`, and register custom resource commands through `resource_group_extensions`. Doctor JSON now always includes `status`, `checks`, and `installation`; `--verbose` adds `details.paths`, `details.configuration`, `details.resources`, and `details.host`. No compatibility command aliases are retained.
+
+- **Breaking:** 💥 Managed installations now require a complete project snapshot embedded in native setup and use locked runtime slots instead of shared uv tools. Existing managed users must remove the old program using its matching old tools while retaining user data, then reinstall; schema-2 records are not converted automatically. Remote `--main`/`--version`, wheel/index installation, custom wheel compilation and runtime dependency injection are removed.
+
+- **Breaking:** 💥 Distribution authors must use the project-snapshot/native-distribution builders and keep generated outputs in ignored `dist/` and `.cache/apprc/`. Standalone Python installers, shell/CMD/PowerShell lifecycle wrappers and generated source-tree support copies are removed. CLI integrations replace `installation_inventory` with typed `InstallationHooks` declarations; no compatibility aliases remain.
+
 - Added grouped configuration updates with revision-checked regular/private-file restoration, and optional host-owned Gradio section renderers for related settings and application validation.
+
 - Managed and editable installation restore AppRC-owned pre-activation changes on caught failure, including command publication and partial Windows registration. Incomplete rollback retains recovery evidence; committed activation survives cleanup failures. Application data compatibility remains application-owned.
+
 - Operation-created bridge and project staging directories apply private Windows ACLs before payload creation, and exact incomplete editable registrations can resume their recorded placement.
+
 - CLI and launcher declarations defer editor and prompt implementations until use; help no longer imports those stacks. Editable registration compares existing environment directory identities and handles native Windows UNC file URLs with explicit platform and path diagnostics.
+
 - Reordered opt-in root help to show host commands and options first, AppRC commands and runtime options next, and common help/completion options last. Cyan host and magenta AppRC headings and borders distinguish ownership; common controls are dim, descriptions remain neutral, and terminal color controls are respected.
 
 <br>
 
-### 🗑️ Removed
+### 🔥 Removed
+
 - Removed the initializer AST test that rejected explicit distribution facade exports.
 
 <br>
 
-### 🔨 Fixed
+### 🐛 Fixed
+
 - Corrected the one-line installation requirement ranges to select the 0.35 release.
 
 <br>
@@ -165,13 +219,65 @@ All notable changes to `AppRC` will be documented in this file.
 
 <!-- ======================================================== -->
 
-# 0.34.0 - 2026-11-13
+## [0.34.0] - 2026-11-13
 
 <br>
 
-### 💥 Breaking changes
+### ✨ Added
 
-- Removed `render_bootstraps()` and the generated shell/PowerShell fetcher
+- Added verified prepared-wheel bundle inputs to managed installation, using
+  real uv overrides, exact runtime constraints and the complete locked graph.
+  Wheel bytes and metadata are revalidated at the existing mutation boundaries;
+  existing `runtime_overrides` retain their `--with` meaning.
+
+- Added explicit pinned PyApp frontend compilation for Linux and Windows console
+  targets, with authenticated dispatcher packaging and build reports. Ordinary
+  Python artifact generation remains independent of Rust.
+
+- Added the `runtime-python` distribution setting to select a managed CPython
+  minor consistently for native wheel builds and uv installation, independently
+  of the package compatibility range and PyApp's bootstrap interpreter.
+
+- Native POSIX launch dispatch preserves the application process identity, so
+  terminating the launcher stops the application instead of leaving it running.
+
+<br>
+
+### 🛠️ Changed
+
+- Gave package reconciliation one installation stage while keeping support
+  publication, registration, and transaction completion with its caller.
+
+- Separated pending uninstall preparation and execution from committed
+  finalization, preserving authority, containment, and recovery checks before
+  readiness or mutation.
+
+- Moved field-table widget population into the config editor's rendering layer,
+  keeping displayed rows and immutable selection keys aligned.
+
+- Grouped typed runtime facade exports without changing the public symbol set.
+
+- Prepared dependency-import schemas before committing registry updates and
+  removed the redundant combined dependency-key registry.
+
+- Extracted config normalization, dependency-import preparation, and config
+  bundle generation into private public-facade helpers, keeping registration
+  state and validation-before-commit schema construction in `AppRC`.
+
+- Shared materialized-directory source proof between immutable-main and
+  release-sdist probes, preserving installed `RECORD` checks and diagnostics.
+
+- Centralized deterministic ZIP serialization for standalone payloads,
+  inspection bundles, and zipapps without changing archive settings.
+
+- Shared file and directory privacy checks while preserving operation-boundary
+  validation, platform-specific diagnostics, and coordination's POSIX owner check.
+
+<br>
+
+### 🔥 Removed
+
+- **Breaking:** 💥 Removed `render_bootstraps()` and the generated shell/PowerShell fetcher
   templates and fetcher artifacts. Affected: application authors calling that
   API or committing generated root installers and launchers. Migration: generate
   `app-install.py` and `app-launch.py` with the Rust-free artifact APIs and invoke
@@ -179,60 +285,25 @@ All notable changes to `AppRC` will be documented in this file.
   release executables are required. The generated root `launch.sh` is no longer
   produced; Windows `launch.cmd` and `launch.ps1` remain.
 
-### ➕ Added
-
-- Added verified prepared-wheel bundle inputs to managed installation, using
-  real uv overrides, exact runtime constraints and the complete locked graph.
-  Wheel bytes and metadata are revalidated at the existing mutation boundaries;
-  existing `runtime_overrides` retain their `--with` meaning.
-- Added explicit pinned PyApp frontend compilation for Linux and Windows console
-  targets, with authenticated dispatcher packaging and build reports. Ordinary
-  Python artifact generation remains independent of Rust.
-- Added the `runtime-python` distribution setting to select a managed CPython
-  minor consistently for native wheel builds and uv installation, independently
-  of the package compatibility range and PyApp's bootstrap interpreter.
-- Native POSIX launch dispatch preserves the application process identity, so
-  terminating the launcher stops the application instead of leaving it running.
-
 <br>
 
-### 💔 Changed
-
-- Gave package reconciliation one installation stage while keeping support
-  publication, registration, and transaction completion with its caller.
-- Separated pending uninstall preparation and execution from committed
-  finalization, preserving authority, containment, and recovery checks before
-  readiness or mutation.
-- Moved field-table widget population into the config editor's rendering layer,
-  keeping displayed rows and immutable selection keys aligned.
-- Grouped typed runtime facade exports without changing the public symbol set.
-- Prepared dependency-import schemas before committing registry updates and
-  removed the redundant combined dependency-key registry.
-- Extracted config normalization, dependency-import preparation, and config
-  bundle generation into private public-facade helpers, keeping registration
-  state and validation-before-commit schema construction in `AppRC`.
-- Shared materialized-directory source proof between immutable-main and
-  release-sdist probes, preserving installed `RECORD` checks and diagnostics.
-- Centralized deterministic ZIP serialization for standalone payloads,
-  inspection bundles, and zipapps without changing archive settings.
-- Shared file and directory privacy checks while preserving operation-boundary
-  validation, platform-specific diagnostics, and coordination's POSIX owner check.
-
-<br>
-
-### 🔨 Fixed
+### 🐛 Fixed
 
 - Kept saved repair usable after an interrupted package checkpoint whose current
   snapshot has no published support inventory, while retaining digest checks
   that reject unknown or modified repair installers.
+
 - Reset inherited PowerShell module paths in checkout and standalone Windows
   CMD installers so PowerShell 7 callers cannot select incompatible built-in
   modules in Windows PowerShell. Caller environments and persistent execution
   policies remain unchanged.
+
 - Declared the Windows `CloseHandle` signature so native process handles are
   closed without truncating their pointer-sized values.
+
 - Selected all workspace projects in complete-development and CI sync commands,
   including the GUI from the locked workspace rather than a second install.
+
 - Aligned example-workspace CLI and GUI requirements during release preparation
   and restored them on failure, so minor and major bumps keep the workspace resolvable.
 
@@ -244,42 +315,27 @@ All notable changes to `AppRC` will be documented in this file.
 
 <!-- ======================================================== -->
 
-# 0.33.0 - 2026-11-11
+## [0.33.0] - 2026-11-11
 
 <br>
 
-### 💥 Breaking changes
+### ✨ Added
 
-- Breaking: Removed the unused `apprc.files.ConfigSetupError` export and
-  `run_config_setup(..., allow_interactive_secret_repair=...)` plumbing.
-  Affected: callers importing that error type or passing that setup parameter.
-  Migration: handle setup's existing `ValueError`/`OSError` failures and use
-  explicit `config secrets repair` for permission changes.
-- Breaking: Removed `apprc.provenance.with_field_origin`.
-  Affected: callers using that pure mapping-copy helper.
-  Migration: use `{**origins, field_name: origin}` for a new mapping.
-  `set_field_origin(instance, field_name, origin)` remains available for
-  updating an existing configuration instance's origin metadata.
-- Breaking: Removed the unused direct-dotenv helpers
-  `set_workspace_dotenv_value`, `set_env_file_value`,
-  `plan_workspace_dotenv_value_update`, `clear_workspace_dotenv_value`, and
-  `clear_env_file_value` from `apprc.user_files.env_files` and its `updates`
-  module. Affected: callers importing these low-level helpers.
-  Migration: use `ConfigManager.plan_update()` or `plan_removal()`, then
-  `apply_edit()`; the shared low-level plan/apply primitives remain available.
-- Breaking: Installation authority now uses strict schema `2`. Affected: managed
+- Added explicit `reason` values to field inspection and secret-file status.
+  CLI and GUI decisions no longer depend on the wording of display diagnostics.
+
+<br>
+
+### 🛠️ Changed
+
+- **Breaking:** 💥 Installation authority now uses strict schema `2`. Affected: managed
   applications with schema-1 records. Old/unknown records remain read-only
   diagnostics; the SDK no longer translates or adopts them.
   Migration: finish old operations, back up data, retire the previous generation
   and its saved authority without deleting preserved resources, then reinstall.
   See the [upgrade procedure](docs/How-To-User-Guides.md#migrate-existing-applications).
-- Breaking: Removed receipt adoption/replacement APIs and receipt-only migration
-  types/arguments, including `InstallationManager.migrate_legacy()` and the
-  `apprc.distribution.runtime` legacy receipt/replacement families.
-  Affected: installer authors and direct callers of those APIs.
-  Migration: remove legacy receipt cutover code and use a fresh current-format
-  installation; current resource/layout migration remains supported.
-- Breaking: Saved Python management support now uses canonical `management.py`
+
+- **Breaking:** 💥 Saved Python management support now uses canonical `management.py`
   and owned `management.json` binding data instead of generated launcher/uninstall
   policy and interpreter assignments in Python source.
   Affected: installer authors consuming private support filenames or parsing
@@ -287,31 +343,56 @@ All notable changes to `AppRC` will be documented in this file.
   `install_support_files()` and remove old filename/source-shape assumptions.
   Public root launch/uninstall wrappers remain unchanged.
 
-<br>
-
-### ➕ Added
-
-- Added explicit `reason` values to field inspection and secret-file status.
-  CLI and GUI decisions no longer depend on the wording of display diagnostics.
-
-<br>
-
-### 💔 Changed
-
 - Centralized immutable GitHub source identity parsing while retaining separate
   archive, installed RECORD, and filesystem verification.
+
 - Gave shared uninstall process-identity and containment mechanics a leaf owner,
   removing the controller/removal dependency cycle while preserving the typed
   public runtime facade.
+
 - Unified configuration origin tracking, preserving explicit overrides and
   Python-only field provenance when environment-backed settings are reloaded.
+
 - Documented fresh-plan recovery after an interrupted secret migration, including
   safe partial progress and rejection of the original stale plan.
+
 - Removed development import-path-absence and nonempty-facade assertions; supported
   API and installed-distribution ownership checks remain.
+
 - Gave editor workspace presentation one post-action owner. Workflows use fresh
   action inputs rather than capturing the screen, and a failed registry reload
   no longer leaves stale workspace state editable or valid user editing locked.
+
+<br>
+
+### 🔥 Removed
+
+- **Breaking:** 💥 Removed the unused `apprc.files.ConfigSetupError` export and
+  `run_config_setup(..., allow_interactive_secret_repair=...)` plumbing.
+  Affected: callers importing that error type or passing that setup parameter.
+  Migration: handle setup's existing `ValueError`/`OSError` failures and use
+  explicit `config secrets repair` for permission changes.
+
+- **Breaking:** 💥 Removed `apprc.provenance.with_field_origin`.
+  Affected: callers using that pure mapping-copy helper.
+  Migration: use `{**origins, field_name: origin}` for a new mapping.
+  `set_field_origin(instance, field_name, origin)` remains available for
+  updating an existing configuration instance's origin metadata.
+
+- **Breaking:** 💥 Removed the unused direct-dotenv helpers
+  `set_workspace_dotenv_value`, `set_env_file_value`,
+  `plan_workspace_dotenv_value_update`, `clear_workspace_dotenv_value`, and
+  `clear_env_file_value` from `apprc.user_files.env_files` and its `updates`
+  module. Affected: callers importing these low-level helpers.
+  Migration: use `ConfigManager.plan_update()` or `plan_removal()`, then
+  `apply_edit()`; the shared low-level plan/apply primitives remain available.
+
+- **Breaking:** 💥 Removed receipt adoption/replacement APIs and receipt-only migration
+  types/arguments, including `InstallationManager.migrate_legacy()` and the
+  `apprc.distribution.runtime` legacy receipt/replacement families.
+  Affected: installer authors and direct callers of those APIs.
+  Migration: remove legacy receipt cutover code and use a fresh current-format
+  installation; current resource/layout migration remains supported.
 
 <br>
 
@@ -320,3 +401,1803 @@ All notable changes to `AppRC` will be documented in this file.
 <br>
 
 <!-- ======================================================== -->
+
+## [0.32.0] - 2026-11-10
+
+Includes the changes previously listed under unpublished 0.31.0 and Unreleased.
+
+<br>
+
+### ✨ Added
+
+- Added independent opt-in config, appdata, cache, and state paths using native
+  platform locations or an explicit single-root layout. Path inspection is
+  read-only; `ensure_path()` initializes only the requested enabled component
+  with an ownership marker.
+
+- Added explicit `WorkspaceManager` operations and category-specific maintenance
+  providers, plus grouped `paths`, `doctor`, category, workspace, and `purge`
+  commands. Unsupported provider operations are not mounted.
+
+- Added fixed native `installation/installation.json` authority independent of
+  config, appdata, cache and disposable state. Saved absolute placement survives
+  upgrades and outranks declared defaults; invocation/environment overrides
+  remain local to that invocation. Unmanaged editable pip use needs no record.
+
+- Added typed installation inspection, revision/generation-checked operations,
+  explicit legacy migration, resumable repair, reconnectable program-only
+  removal and confirmed complete removal that preserves unknown content.
+  Matching failed uninstalls reuse recorded checkpoints. Default complete-removal
+  inventories recognize owned standard config files and resource markers;
+  custom payload still requires provider inventory or retained-data consent.
+
+- Added native-appdata validation that recognizes the exact persistent sibling
+  resource lock while retaining unknown-content and link checks. Reinstall and
+  retained repair preserve both user work and the existing coordination inode.
+
+- Added explicit verified-source legacy replacement with independent historical
+  RECORD observation, preserved recorded interpreter/backend, a read-only pending
+  predicate and resumable pre-mutation authority. Recovery inputs and an owned
+  recovery entry precede initial pending-authority publication; strict new-source
+  observation precedes old-controller retirement. Historical source provenance
+  is never fabricated.
+
+- Added `apprc-core[distribution]` authoring APIs, strict external templates and
+  deterministic PEP 723/zipapp support bundling complete ordinary shared modules
+  with repository-owned install/uninstall composition. No lifecycle inheritance,
+  hook registry, installed-app bootstrap dependency or hidden AppRC download is
+  required; application-specific actions remain explicit Python calls.
+  Standalone management dependencies remain separate from exact application
+  runtime constraints, including applications with no runtime dependencies.
+
+- Added explicit typed re-exports from `apprc.distribution` and
+  `apprc.distribution.runtime`; consumers use the supported public facades rather
+  than implementation-module imports.
+
+- Added verified immutable-main, release-sdist and explicit-wheel acquisition
+  with operation-owned source staging and observed installed `RECORD`
+  fingerprints. Saved source checks remain usable after temporary sources are
+  removed.
+
+- Added public `bind_install_support()` composition for current-platform,
+  machine-bound recovery support before legacy activation. Remote Windows `.cmd`
+  entries carry the shared PowerShell bootstrap instead of requiring an adjacent
+  helper; remote PowerShell helpers also support downloaded-text invocation.
+
+- Added grouped `installation` management commands and an optional Textual
+  launcher with one reusable editor screen/event loop, foreground-child handling,
+  and actual-process removal handoff. CLI, launcher and wrappers share the saved
+  application-authored uninstaller, including its cleanup. Missing business
+  settings or invalid installation authority remain diagnosable without
+  manufacturing resource paths.
+
+- Added a separate Actions artifact round-trip diagnostic with manual invocation,
+  a narrowly scoped initial feature-branch push trigger, one-day retention, and
+  documented exact-artifact cleanup.
+
+- Added optional `installation_inventory` callbacks to the application CLI for
+  exact provider-owned cleanup previews. Confirmed removal transports the
+  accepted inventory to the saved controller; dry-run remains read-only, and
+  retries reuse the inventory persisted in the pending operation.
+
+- Added `default_cleanup_inventory()`, `encode_cleanup_inventory()`, and
+  `decode_cleanup_inventory()` for composing application-owned cleanup with
+  AppRC's default inventory and strict installation JSON transport.
+
+- Added application-supplied maintenance providers through
+  `AppRC.maintain(handlers=...)`, preserving the declared cleanup behavior in
+  both preview and execution.
+
+<br>
+
+### 🛠️ Changed
+
+- **Breaking:** 💥 Native Linux appdata now uses `<native-user-data>/<app-id>/appdata`,
+  beside durable `installation/`, instead of owning the whole app container.
+  Affected: applications and users with an existing native Linux appdata root.
+  Migration: stop old consumers, preview `installation migrate --dry-run`, and
+  execute an explicit ownership/provider-reviewed migration. Unknown payload
+  requires the owning application's inventory; startup never selects a new empty
+  store in place of a recognized legacy root.
+
+- **Breaking:** 💥 `AppPaths` now requires a captured `installation` snapshot and its
+  `source` can be `"installation"`. Affected: callers constructing `AppPaths`
+  directly or exhaustively handling layout provenance. Migration: prefer
+  `MyRC.paths(...)`; intentional manual construction must preserve the snapshot
+  from `MyRC.installation().inspect().snapshot`. Do not rediscover paths while
+  refreshing an existing invocation.
+
+- **Breaking:** 💥 Replaced `Storage`/`storage` and `ResolveOptions.storage` with
+  `Workspaces`/`workspace`, and replaced `ResolvedConfig.selection` with
+  `workspace`. Affected: applications declaring or selecting AppRC storage,
+  including section `requires_storage` declarations. Migration: declare
+  `Workspaces()` only when a workspace selector is needed; use `workspace=...`
+  and `workspace_required=True`; read `resolved.workspace` and
+  `resolved.workspace_issues`. Use `WorkspaceManager` for registry operations.
+  AppRC does not read or upgrade old `storages` TOML records or old storage
+  dotenv filenames.
+
+- **Breaking:** 💥 Replaced `apprc_dir`, `apprc_dir_env_key`, `legacy_app_ids`, and
+  storage-path resolution with `Paths`, `Layout`, `AppPaths`, `paths()`, and
+  `ensure_path()`. Affected: applications configuring managed directories or
+  relying on `*_APPRC_DIR`/old storage variables. Migration: independently
+  declare `Paths(config=True, appdata=True, cache=True, state=True)` for the
+  components actually used; choose `Layout.native()` or
+  `Layout.single_root(root)`; update users to the new `<PREFIX>_LAYOUT` and
+  `<PREFIX>_ROOT` pair. Normal startup never searches for or automatically
+  migrates legacy data; explicit migration is limited to reviewed supported
+  ownership/installation formats.
+
+- **Breaking:** 💥 Replaced `mount_config_cli`, `mount_appdata_cli`, and
+  `mount_config_group` with grouped `mount_app_cli`/`mount_app_groups`.
+  Affected: Typer applications mounting prior commands. Migration: mount the
+  new grouped adapter and update `appdata clean`/`appdata paths` to root
+  `purge`/`paths`; provide explicit maintenance handlers for application-owned
+  operations. No compatibility aliases remain.
+
+- **Breaking:** 💥 Replaced the old `apprc.toml` storage registry schema and
+  `apprc.storage.env` / `apprc.storage.secret.env` layer names. Affected:
+  applications reading or editing those AppRC-owned files. Migration: create a
+  new workspace registry through `WorkspaceManager` and use the documented
+  `apprc.workspace.env` / `apprc.workspace.secret.env` names. Do not rename or
+  convert old files in place; manually preserve or separately export any data
+  users choose to retain.
+
+- Restricted CI to Ubuntu: core checks retain Python 3.12, 3.13, and 3.14, and
+  GUI/browser checks retain Python 3.12. Windows and macOS runtime and installer
+  code remain, but those platforms are unverified by this CI policy;
+  [known native test failures](BACKLOG.md#p2--e1-tooling---windows-and-macos-installation-ci-fails)
+  remain unresolved. Green Linux CI does not establish native compatibility.
+
+<br>
+
+---
+
+<br>
+
+## [0.29.0] - 2026-10-26
+
+<br>
+
+### ✨ Added
+
+- Added an opt-in application-data CLI with `appdata paths`, a structured
+  `appdata paths --json` cleanup inventory, and previewed, confirmed
+  `appdata clean` removal. It uses the existing managed-file and internal-storage
+  safety boundary without resolving application settings, retains external
+  payloads and unrelated files, and is demonstrated by all executable examples.
+
+<br>
+
+### 🛠️ Changed
+
+- **Breaking:** 💥 Renamed the durable repository backlog from `TODO.md` to
+  `BACKLOG.md`. Contributors and tooling using the old path must update their
+  links; existing entries are preserved. Reserve `TODO.md` for active-pass
+  checklists beside `PLAN.md`.
+
+<br>
+
+### 🔥 Removed
+
+- **Breaking:** 💥 Removed the `config purge` CLI command. Applications and scripts
+  using it must explicitly mount `rc.cli.mount_appdata_cli(app, MyRC)` and
+  invoke `appdata clean` instead; no alias remains. Add `paths` and `clean`
+  action prefixes to the application's existing runtime-independent policy.
+  Use each action's `--apprc-dir PATH` for explicit cleanup targeting rather
+  than root env-file or storage selectors. `config paths` remains configuration
+  diagnostics; manager-level `plan_purge()` and `apply_purge(plan)` are unchanged.
+
+<br>
+
+### 🐛 Fixed
+
+- Deferred release dependency locking until all three distribution versions are
+  regenerated, so minor releases do not resolve mismatched workspace metadata.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.28.0] - 2026-10-02
+
+<br>
+
+### ✨ Added
+
+- Added `AppRC.import_dependency_config()` so a parent can explicitly map a
+  dependency's leaf config section to parent-owned fields and build it from the
+  parent's `ResolvedConfig`. Parent fields own mapped defaults, validation,
+  secrets, and provenance; aliases are supported, and one dependency section
+  can have separate bindings in different parent namespaces. Dependency
+  environment, selectors, registries, user files, and storage files are
+  excluded. A storage-required section uses the parent's selected storage
+  after the parent enables and selects storage. Dependency packaged defaults
+  remain opt-in. Mapped dependency fields must be dataclass fields with
+  `init=True` so the parent can supply their values during construction.
+
+<br>
+
+### 🛠️ Changed
+
+- Clarified secret-directory permission prompts and repair guidance to name
+  this user, SYSTEM, and Administrators as the allowed Windows principals.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.27.4] - 2026-10-01
+
+<br>
+
+### ✨ Added
+
+- Added `restart_required=True` to `rc.field()` metadata. The Textual and
+  Gradio editors mark settings that need an application restart after a saved
+  change and show a restart notice after saving or clearing a saved value.
+
+<br>
+
+### 🐛 Fixed
+
+- Fixed the Gradio editor disabling prefilled editable fields, storage
+  selectors, and save-layer selectors by explicitly enabling those controls.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.27.3] - 2026-10-01
+
+<br>
+
+### ✨ Added
+
+- Interactive `config setup` and first-run setup now offer a confirmed repair
+  when the selected user secret directory is not private, then retry with the
+  same paths. Declining or passing `--yes` keeps the fail-closed behavior.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.27.2] - 2026-09-28
+
+<br>
+
+### ✨ Added
+
+- Added `AppRC.setup_next_step` for an application-specific command or
+  instruction after successful CLI setup.
+
+<br>
+
+### 🛠️ Changed
+
+- Storage setup now explains that its path holds persistent application data
+  and storage settings, and prints the suggested path on its own input line.
+
+- Setup completion guidance now appears after required-field prompts finish.
+
+<br>
+
+### 🐛 Fixed
+
+- Fixed release preparation so `apprc-gui` gets the matching core version and
+  exact `apprc-core` pin.
+
+- Setup, storage registration, and ordinary user edits create a private AppRC
+  directory when it is missing. Existing directories remain unchanged; user
+  secret setup reports the explicit repair command when privacy checks fail.
+  The Gradio editor explains secret save and repair failures without displaying
+  the submitted value.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.27.0] - 2026-09-24
+
+<br>
+
+### ✨ Added
+
+- Added a reusable Gradio settings editor that can initialize declared files,
+  choose storage, show effective sources, and save ordinary or secret values.
+
+- Added suggested directory values and completion to interactive setup prompts;
+  setup also asks for missing required editable fields.
+
+<br>
+
+### 🛠️ Changed
+
+- **Breaking:** 💥 `apprc-gui` now exports `ConfigEditor` for Gradio instead of
+  `ConfigView` for Toga. Affected: applications embedding the old native view.
+  Migration: replace the Toga window with application-owned Gradio `Blocks`
+  and call `ConfigEditor(MyRC.manage()).render()` inside them.
+
+- Grouped the six documentation pages under topical H1 headings, with nested
+  tables of contents and spacing between major sections. Removed an outdated
+  warning that said managed edits had no cross-process coordination.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.26.0] - 2026-09-23
+
+<br>
+
+### ✨ Added
+
+  - Added `apprc-gui`, a separate Toga settings view that applications can
+    embed in their own desktop window for setup and editing.
+  - Added private user and storage secret companions, explicit migration and
+    permission repair commands, and doctor guidance for unsafe files.
+  - Added cross-process locks for managed edits and a Windows MSI installer
+    guide for applications using AppRC.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 Saved `secret=True` fields now use the user or storage layer's
+    `.secret.env` companion, and AppRC blocks secret saves in shared directories.
+    Affected: Applications or scripts that read secret assignments directly
+    from `apprc.user.env` or `apprc.storage.env`, or save them in a shared
+    storage root.
+    Migration: Read fields through `AppRC.resolve()`; run
+    `config secrets migrate --scope user|storage` for old assignments, then
+    choose a private root or run `config secrets repair` after reviewing its
+    permission change.
+
+  - Storage archives exclude `apprc.storage.secret.env` and refuse legacy
+    secret assignments in `apprc.storage.env`; restore creates an empty
+    companion. Purge removes secret companions with other managed files.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.25.1] - 2026-09-23
+
+<br>
+
+### 🐛 Fixed
+
+  - Marked the public `apprc.schema` exports for downstream type checkers.
+    Pyright previously reported `ConfigOwner`, `ConfigField`, and
+    `CONFIG_MISSING` as private when AppRC was installed from its wheel.
+  - `just release-prepare` no longer passes conflicting options to `uv version`.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.25.0] - 2026-09-23
+
+<br>
+
+### ✨ Added
+
+  - Public re-export annotations let downstream type checkers accept the
+    documented `rc.AppRC`, `rc.Config`, and field declarations.
+  - Independent immutable source snapshots, explicit environment input, deliberate
+    export, atomic validated reloads, and archive-backed resource provenance.
+  - Shared noninteractive manager for inspection, preview, setup, editing,
+    registry operations, archive/restore, migration, and purge.
+  - `@AppRC.config(..., requires_storage=True)` marks sections that are inactive
+    without selected storage. Inspection and doctor skip validation of those
+    fields while continuing to check storage-independent settings. The new
+    importable-client example shows library-owned resolution without caller setup.
+  - Matching-distribution generation and isolated pip checks for both wheels and
+    source archives, package ownership, wrapper removal, and old-wheel migration.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 Replaced global bootstrap and cached environment mutation with
+    `AppRC.resolve()`, `ResolveOptions`, and `ResolvedConfig.build()`.
+    Affected: Applications using bootstrap, cache/result helpers, or constructing
+    settings after implicit environment loading.
+    Migration: Resolve per invocation, build registered sections or bundles from
+    the snapshot, and use `reload_from()` for managed-source reloads. Use explicit
+    `export_environment()` only for environment-only dependencies. Custom bundle
+    factories need explicitly resolved child injection.
+  - **Breaking:** 💥 CLI state now holds `.resolved`; doctor validates required fields
+    and accepts arbitrary application module layouts. Selector provenance is
+    `shell_storage_selector`.
+    Affected: State factories, diagnostic consumers, and provenance comparisons.
+    Migration: Replace `.env_bootstrap`, inspect `.resolved.selection`, handle
+    `config_invalid`, and update the selector origin literal.
+  - **Breaking:** 💥 Split packaging into `apprc-core`, which owns all Python modules,
+    and a metadata-only `apprc` requiring the exact core version and terminal
+    libraries, including Textual.
+    Affected: Upgrades from the old wheel, minimal installs, and source installs.
+    Migration: Uninstall old `apprc` before installing the new release, or use a
+    fresh environment. Use `apprc-core` for no terminal dependencies, plain
+    `apprc` instead of `apprc[tui]`, and install the local terminal wrapper for
+    terminal development. No managed filenames or registry formats changed.
+
+  - Separated validated declarations, runtime lifecycle, persistence, shared
+    operations, and terminal presentation. Package initializers contain imports
+    and docstrings only; declaration dependencies are enforced by tests.
+  - Rewrote the README and documentation in learning order, with fixed component
+    names, connected explanation and reference tables, independent runnable
+    guides, and an Examples page covering every supported application setup.
+    Documentation checks execute the examples and validate local links.
+  - Updated the example applications and added a two-section Python example.
+    Removed the overlapping kit facade and obsolete managed-file resolver.
+
+<br>
+
+### 🔥 Removed
+
+  - **Breaking:** 💥 Removed `.kit`, `.spec`, declaration-owned CLI mounting, capability
+    `required` flags, and public raw managed-write helpers.
+    Affected: Existing AppRC integrations and advanced file/storage callers.
+    Migration: Use `.schema`, `.manage()`, `rc.cli.mount_config_cli(app, MyRC)`,
+    and invocation `storage_required=True`. Missing user dotenv files are allowed;
+    required field values determine readiness. Textual exports moved to `rc.tui`.
+
+  - **Breaking:** 💥 Generated config packages no longer provide catalogs, lazy facade
+    exports, or facade stubs.
+    Affected: Consumers adopting regenerated application scaffolds.
+    Migration: Import sections and bundles from their leaf modules, then inspect
+    `MyRC.schema.owners`. See the [migration guide](docs/How-To-User-Guides.md#migrate-existing-applications).
+
+<br>
+
+### 🐛 Fixed
+
+  - Managed dotenv plans reject stale revisions, including a file created since
+    planning. Writes use unique temporary files, clean up failed replacements,
+    and serialize same-process management operations. Cross-process transactions
+    remain a separate TODO.
+  - Independent resolutions no longer share process-global provenance or loading
+    state. Editor setup relocation no longer mutates the process environment.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.24.0] - 2026-09-11
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 Renamed the public provenance origin
+    `python_envconfig_default` to `python_config_default`.
+    Affected: Code that compares, filters, or serializes exact
+    `ConfigProvenance.origin` values.
+    Migration: Replace the old literal with `python_config_default`.
+
+<br>
+
+### 🔥 Removed
+
+  - **Breaking:** 💥 Removed the duplicate `EnvConfig`, `env_owner`, `env_field`,
+    `EnvFieldSpec`, and `config_owner_for` declaration API from
+    `apprc.definition.env_config` and its concrete modules.
+    Affected: Code that imported AppRC's unsupported internal declaration
+    helpers instead of the root public API.
+    Migration: Declare env-backed settings with `rc.Config`, `rc.field(...)`,
+    and `@MyRC.config(...)`. Replace direct `config_owner_for(...)` calls with
+    `rc.schema.owner_for(...)`.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.23.7] - 2026-09-10
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed generated `config show` rejecting a missing storage even when the
+    application declared `Storage(required=False)`. Optional-storage apps can
+    now provide a storage-free runtime payload without creating AppRC files.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.23.6] - 2026-09-10
+
+<br>
+
+### ✨ Added
+
+  - Added `required=False` policies to `UserDotenv` and `Storage`. Optional
+    layers keep their setup, edit, migration, and storage-management commands
+    but do not block runtime when their files or selection are absent.
+  - Added `storage_required` runtime overrides to Python bootstrap, CLI
+    bootstrap, `CliRuntime`, and `mount_config_cli()`. One application can now
+    keep storage optional for core commands and require it at a storage-backed
+    command boundary.
+
+<br>
+
+### 🛠️ Changed
+
+  - Changed `config doctor` so missing optional layers are warnings with a
+    `runnable` status. JSON and human output now report
+    `user_dotenv_required` and `storage_required` explicitly.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed non-interactive first-use failures for required storage so they print
+    the exact `<app> config setup --yes` recovery command without writing.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.23.5] - 2026-09-08
+
+<br>
+
+### ✨ Added
+
+  - Added `just publish-pypi vX.Y.Z` to publish the validated wheel and source
+    archive attached to an existing non-draft GitHub Release without rebuilding.
+  - Added `config migrate --storage-root PATH` and
+    `--replace-storage OLD_NAME` for mapping an unregistered bare environment
+    selector to existing data without guessing whether to add or replace a
+    registry entry. Interactive migration provides path completion and the
+    same explicit choice.
+  - Added `rc.UserDotenv()` as the explicit declaration for a managed
+    `apprc.user.env`, independent of `rc.Storage()`.
+  - Added `--user-dotenv` to `apprc scaffold config` and coverage for all four
+    user-dotenv/storage declaration combinations.
+  - Added AppRC-directory selection with path completion to CLI and Textual
+    setup. A command-only custom path prints POSIX, PowerShell, and `cmd.exe`
+    assignments for the derived `<APP>_APPRC_DIR` key.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 `just release patch|minor|major` now pushes `main` and the created
+    tag after local preparation succeeds.
+    Affected: Maintainers who use `just release` only to prepare and inspect a
+    local version commit and tag.
+    Migration: Use `just release-prepare patch|minor|major` for local-only
+    preparation, then run `just release-push vX.Y.Z` when ready.
+  - **Breaking:** 💥 `rc.AppRC(...)` no longer implies a managed user dotenv, and
+    `storage=rc.Storage()` no longer creates or loads one implicitly.
+    Affected: Applications that rely on `apprc.user.env`, the user write
+    scope, or `config setup/set/edit/migrate` without declaring that feature.
+    Migration: Add `user_dotenv=rc.UserDotenv()` to preserve user-wide dotenv
+    behavior. Storage-only applications should keep only `rc.Storage()`.
+  - **Breaking:** 💥 The checkout example commands `apprc-config-only` and
+    `apprc-config-with-storage` were replaced by four capability-specific
+    commands.
+    Affected: Contributors and automation invoking the dev-only examples.
+    Migration: Use `apprc-process-env`, `apprc-user-dotenv`, `apprc-storage`,
+    or `apprc-user-dotenv-with-storage` according to the feature combination.
+
+  - Changed packaged `apprc.defaults.env` from a required resource to an
+    optional runtime layer.
+  - Changed the Textual editor to name missing setup work, show only declared
+    source columns, and display a field title together with its exact
+    environment key.
+  - Changed tag releases to create the GitHub Release and then follow
+    `RELEASE_PYPI` from the tagged justfile. AppRC keeps this tracked policy
+    enabled. Release artifact transfer now uses `actions/upload-artifact@v7`
+    and `actions/download-artifact@v8`.
+
+<br>
+
+### 🔥 Removed
+
+  - **Breaking:** 💥 Process-environment-only declarations no longer expose
+    `config setup`, `set`, `edit`, or `migrate`; unsupported paths in doctor
+    and paths JSON are now `null`, with `user_dotenv_enabled` identifying the
+    declared capability.
+    Affected: Scripts that invoke write commands or assume every diagnostics
+    payload contains an AppRC directory and user dotenv path.
+    Migration: Declare `rc.UserDotenv()` or `rc.Storage()` when the app owns
+    persistent files, and branch on the capability flags before reading paths.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed `config set` and editor writes creating a missing user dotenv
+    implicitly. Declared user dotenv writes now require setup first.
+  - Fixed storage-only setup and migration creating an unrelated
+    `apprc.user.env`.
+  - Fixed `config edit` describing an invalid storage override as incomplete
+    setup. The editor now reports the winning selector source and hidden TOML
+    selection, keeps valid registry entries usable, and reserves Setup for
+    files that AppRC can initialize.
+  - Fixed manually moved registered storage directories being sent through
+    Setup or Move. The editor now calls the registry-only action Reconnect,
+    while CLI and doctor output point to `config storage repoint` and do not
+    recreate a missing registered root.
+  - Fixed setup assuming the storage name `default` when repairing an existing
+    named storage. An empty registry may also adopt a bare environment selector
+    as its initial storage name.
+  - Fixed migration leaving a resolved storage without
+    `apprc.storage.env`; migration now creates the empty marker when needed so
+    the selected directory is immediately bootstrappable.
+  - Fixed stale `apprc.user.env` and `apprc.toml` files implying capabilities
+    that the application did not declare; doctor warns while purge remains
+    available for cleanup.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.22.1] - 2026-09-04
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed Windows CI fixtures so CRLF preservation is tested with exact bytes
+    and Windows storage paths are written through the TOML registry serializer.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.22.0] - 2026-09-04
+
+<br>
+
+### ✨ Added
+
+  - Added duplicate-assignment preflight to `config set` and the Textual
+    editor. Interactive writes require confirmation before later assignments
+    are commented out, while non-interactive writes report the cleanup after
+    completion.
+  - Added static constructor typing for classes registered through
+    `@MyRC.config(...)` and suppression-free typed bundle examples.
+  - Added `apprc-examples-lab`, which opens one example in a clean temporary
+    shell and removes its AppRC files when the shell exits.
+  - Added real subprocess smoke coverage for all four example CLIs, including
+    distinct shell and explicit-dotenv precedence outcomes.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 `@MyRC.bundle` now requires an explicit keyword-only dataclass,
+    and every eagerly constructed child requires `field(default_factory=...)`.
+    Affected: Applications using annotation-only bundle classes or positional
+    bundle fields.
+    Migration: Add `@dataclass(kw_only=True)` directly below
+    `@MyRC.bundle` and give each eager child its config class as
+    `default_factory`. Keep derived children as `field(init=False)`.
+  - **Breaking:** 💥 `rc.field()` rejects unknown keyword arguments and
+    `PublicFieldSpec` no longer has an unused `metadata` mapping.
+    Affected: Applications passing undocumented extension metadata, including
+    misspelled options that AppRC previously ignored.
+    Migration: Remove unknown arguments or replace them with documented
+    options. `shared_default`, `python_type`, `explanation_short`, and
+    `explanation_long` remain explicit supported parameters.
+  - **Breaking:** 💥 `config doctor` replaces `env_not_set` with
+    `storage_not_selected` and removes `missing_env_keys` from its JSON
+    payload.
+    Affected: Scripts matching the old status or reading that payload key.
+    Migration: Match `storage_not_selected` and inspect
+    `storage_selector_env_key`; the selector environment variable is optional
+    when `apprc.toml` has `selected_storage`.
+
+  - Changed one-key dotenv writes to preserve unrelated comments, blank lines,
+    ordering, quoting, `export` prefixes, malformed text, and line endings.
+  - Changed the example selector keys to use the same `<APP>_STORAGE`
+    terminology as normal integrations. Each example CLI is now self-contained
+    and can be copied without the lab or runner package.
+
+<br>
+
+### 🔥 Removed
+
+  - **Breaking:** 💥 `apprc.storage.app_data_dir()` was removed and
+    `suggested_storage_root()` no longer accepts an ignored environment
+    mapping.
+    Affected: Callers using these advanced path helpers directly.
+    Migration: Use `apprc.files.default_apprc_dir(app_id)` for the AppRC
+    directory or `apprc.storage.suggested_storage_root(app_id)` for its
+    initial `storage` child.
+
+  - **Breaking:** 💥 The checkout-only `.env.example_apps` file and
+    `apprc_dev.example_apps.bootstrap` module were removed.
+    Affected: Contributors using the former persistent example sandboxes.
+    Migration: Install the local example package and run
+    `apprc-examples-lab EXAMPLE` for disposable manual sessions, or
+    `apprc-examples-run-all` for the automated CLI smoke pass.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed `config doctor` treating `<APP>_STORAGE` as a required environment
+    variable when no storage was selected. Invalid selectors now remain
+    distinct from a genuinely missing selection.
+  - Fixed storage recovery messages that still documented `--storage` as a
+    name-only option after paths became valid selectors.
+  - Fixed `rc.field()` typos such as `secrte=True` being accepted while secret
+    redaction remained disabled.
+  - Fixed setup, lazy runtime setup, and the Textual editor suggesting a
+    default storage outside a relocated `<APP>_APPRC_DIR`. The suggestion is
+    now always `<resolved AppRC directory>/storage`.
+  - Fixed storage-free CLI help describing `--skip-dotenv-layers` as a storage
+    operation.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.21.0] - 2026-09-04
+
+<br>
+
+### ✨ Added
+
+  - Added filesystem paths as runtime selectors for both `--storage` and
+    `<APP>_STORAGE`. Relative paths resolve from `apprc.toml`; initialized
+    unregistered paths work without registry writes, and interactive CLIs can
+    register them under a user-approved name.
+  - Added a three-way first-run choice for the default directory, a custom
+    directory with cross-platform path completion, or cancellation.
+  - Added `storage_selector_kind` to bootstrap results and
+    `selected_storage_selector_kind` to doctor and paths JSON.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 `config storage add` and `config storage repoint` now reject a
+    resolved root already registered under another live name.
+    Affected: Users intentionally creating multiple aliases for one storage
+    directory.
+    Migration: Keep one name for each root, or point each name at a distinct
+    directory. Existing alias registries remain readable and `config doctor`
+    reports the ambiguity.
+
+  - Changed runtime storage readiness to require an existing directory with a
+    readable `apprc.storage.env`. Error messages now include the failed path
+    and exact setup command.
+  - Changed `config edit` to open in repair mode when selection, registry, or
+    storage readiness is invalid. Setup remains enabled while uninitialized
+    storage fields remain disabled.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed repeated bootstrap so unchanged values written by the prior AppRC
+    run are removed before reload while caller mutations are preserved; failed
+    reloads restore the prior successful process state.
+  - Fixed Textual duplicate registration and archive restoration. Duplicate
+    names are rejected before extraction, and archive installation, registry
+    registration, and archive-row cleanup now roll back together.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.20.0] - 2026-09-04
+
+<br>
+
+### ✨ Added
+
+  - Added a single named-storage registry model with explicit `add`, `select`,
+    `rename`, `repoint`, `move`, and `remove` operations shared by the CLI and
+    Textual editor. The first entry becomes selected, later additions preserve
+    selection, rename follows selection, and removing the selected entry
+    clears it with a warning.
+
+  - Added `config migrate` for released 0.19 platform directories, custom
+    `<APP>_APPRC_TOML` locations, legacy dotenv filenames, legacy app IDs, and
+    path-valued storage selectors. It preflights conflicts and never replaces
+    an existing destination.
+
+  - Added `config purge` with dry-run output, malformed-registry preflight,
+    symlink barriers, exact fixed-file removal, recursive deletion limited to
+    registered roots inside the AppRC directory, and preservation of external
+    storage data.
+
+  - Added parameterless `AppRC.ensure_bootstrapped()` and
+    `AppRC.bootstrap_result` for high-level convenience boundaries that use
+    default bootstrap policy.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 `AppRC(...)` now requires `app_id` and declares storage only
+    through optional `storage=rc.Storage(...)`; the 0.19 capability
+    constructors and `mode` model were removed.
+    Affected: Applications using `env_only`, `storage_only`,
+    `app_wide_config`, `app_wide_storage`, `app_name`, or `mode`.
+    Migration: Construct `rc.AppRC(app_id=..., config_package=...)` directly
+    and add `rc.Storage(selector_env_key=...)` only for persistent user data.
+
+  - **Breaking:** 💥 New installations use the fixed
+    `~/.local/share/<app-id>/` AppRC directory on every operating system, with
+    `apprc.user.env`, `apprc.toml`, and an initial `storage/` root; managed
+    filenames and platformdirs path selection were removed.
+    Affected: Applications and users relying on platform config/data paths,
+    filename overrides, `.env.apprc-app`, `.env.apprc-storage`, or
+    `<app>.apprc.toml`.
+    Migration: Rename packaged `.env.shared` to `apprc.defaults.env`, declare
+    stable `app_id` and optional `legacy_app_ids`, then run
+    `<app> config migrate --dry-run` and `<app> config migrate --yes`.
+
+  - **Breaking:** 💥 Runtime storage selectors now accept registered names only;
+    `selected_storage` in `apprc.toml` replaces path selectors persisted in a
+    user dotenv.
+    Affected: Users passing a path through `--storage`, `<APP>_STORAGE`, or an
+    explicit dotenv, and applications shipping a selector default.
+    Migration: Register the path with `config storage add NAME ROOT`, select
+    the name, and pass only `NAME`; `config migrate` converts a released 0.19
+    path selector into the named `default` storage.
+
+  - **Breaking:** 💥 User dotenv operations use `user` instead of `app`, and
+    storage-free declarations no longer expose `--storage`, `config storage`,
+    or `--scope storage` even when an old TOML file exists.
+    Affected: CLI scripts using `--scope app`, `config app init`, or storage
+    controls for an app that does not declare `Storage`.
+    Migration: Run `config setup` to create the always-present user dotenv and
+    use `--scope user`; add `storage=rc.Storage()` in Python only when the app
+    actually supports persistent storage.
+
+  - **Breaking:** 💥 Machine-readable paths, doctor statuses, and provenance now use
+    file-specific `apprc_dir`, `user_dotenv`, `storage_dotenv`,
+    `user_dotenv_not_ready`, `storage_registry_not_ready`, and
+    `shell_dotenv_user` names.
+    Affected: Code parsing config JSON or provenance origin literals.
+    Migration: Replace 0.19 config-home, app-config, named-storage, and
+    `shell_dotenv_app` keys with the corresponding file-specific names.
+
+  - **Breaking:** 💥 `rc.field(..., required=True)` and internal
+    `env_field(..., required=True)` now reject a Python `default` or
+    `default_factory`.
+    Affected: Config declarations that mark a field required while providing
+    every instance with a Python fallback.
+    Migration: Remove `required=True` when the fallback is intentional, or
+    remove the fallback and provide the value through the environment,
+    constructor, or `apprc.defaults.env`.
+
+  - Changed the default initial storage root to
+    `~/.local/share/<app-id>/storage/` without a redundant `default/`
+    component. Relative registry roots now resolve against `apprc.toml`.
+
+  - Changed setup to create an empty `apprc.user.env` for every app and to
+    register storage under the name `default` without writing structural
+    selectors into a managed dotenv.
+
+  - Changed selector precedence to preserve
+    `--env-file-overrides-os-environ`: `--storage` wins, process and explicit
+    dotenv selectors follow that option, and TOML selection is the fallback.
+
+  - Changed repeated explicit bootstrap calls to reload the process
+    environment while retaining the latest successful result; failed reloads
+    keep the preceding successful result.
+
+<br>
+
+### 🔥 Removed
+
+  - Removed the runtime `platformdirs` dependency and all current-layout
+    path abstraction. A small internal locator remains only to find released
+    0.19 files during explicit migration.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.19.9] - 2026-09-02
+
+<br>
+
+### ✨ Added
+
+  - Added an actionable `Setup` button to every Textual config editor. It runs
+    the declared env-only, app-wide, or storage setup route, reports required
+    shell selectors, and optionally registers a new storage under a name.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed the Textual editor so storage-capable apps can create and register
+    their first named storage without first creating the named-storage index
+    through a separate CLI command. Opening the editor remains zero-write.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.19.8] - 2026-09-01
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 Runtime bootstrap now rejects selected storage roots that do not
+    exist or are not directories.
+    Affected: Python callers that create their storage directory after calling
+    `AppConfigKit.bootstrap()` or `AppRC.bootstrap()`.
+    Migration: Create the directory before bootstrap or run the owning
+    application's `config setup --yes --storage-root STORAGE_ROOT` command.
+
+  - Updated Pyright to 1.1.411.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed storage-root failures so AppRC reports the owning application's
+    display name and `config setup` command before dependent runtime objects
+    are constructed.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.19.5] - 2026-07-14
+
+<br>
+
+### ✨ Added
+
+  - Added Textual editor controls to rename named storages, repoint their
+    registered locations, and move complete live storage directories.
+    Repointing changes only the registry; moves accept only new or empty safe
+    destinations, never merge or replace files, and leave the registry
+    unchanged if a cross-filesystem source changes during copying. AppRC does
+    not rewrite external `--storage`, environment, or dotenv selectors.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.19.4] - 2026-07-13
+
+<br>
+
+### 🛠️ Changed
+
+  - Changed the maintainer release entrypoint from `just bump` to
+    `just release` so its name reflects the full workflow. Its output now
+    distinguishes local commit and tag preparation from publication, gives the
+    exact tag-push command, and explains that GitHub publishes only after CI
+    and protected-environment approval succeed.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed AppRC's automatic dataclass generation so registered config and
+    bundle classes that define `__post_init__()` keep stable class identity.
+    This preserves normal `super().__post_init__()` behavior on Python 3.12
+    and 3.13 while keeping slotted dataclasses for classes without custom
+    post-init hooks.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.19.3] - 2026-07-13
+
+<br>
+
+### ✨ Added
+
+  - Added a tag-driven GitHub release pipeline that runs the complete CI
+    matrix, validates and preserves release artifacts, pauses for approval,
+    publishes to PyPI through Trusted Publishing, and creates a GitHub Release
+    from the curated changelog notes.
+
+<br>
+
+### 🛠️ Changed
+
+  - Changed release maintenance so `just bump` runs one complete local gate
+    across Python 3.12 through 3.14 before committing or tagging, restores
+    version files after failed checks, validates and smoke-tests the exact
+    release artifacts, keeps temporary environment setup concise, and dry-runs
+    publication without prompting for credentials before confirming that
+    nothing was uploaded and printing the next release step. Repository
+    metadata now links directly to the package, docs, changelog, and current
+    project topics.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.19.2] - 2026-07-13
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed `rc.ConfigBase` and `rc.Config` construction and inherited hooks on
+    Python 3.12 and 3.13 when using slotted dataclass subclasses.
+
+  - Fixed storage-root normalization so native Windows processes preserve
+    rooted drive paths while POSIX and WSL retain Windows-drive conversion.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.19.1] - 2026-07-03
+
+<br>
+
+### 🛠️ Changed
+
+  - Changed `apprc scaffold config` and repository example apps so generated
+    config package facades resolve exports lazily, publish typed `.pyi`
+    surfaces, and bundles import section classes from leaf modules. This keeps
+    optional dependencies owned by one section from loading during unrelated
+    config imports.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.19.0] - 2026-07-03
+
+<br>
+
+### ✨ Added
+
+  - Added the public `rc.schema` namespace for read-only AppRC contract
+    metadata used by advanced documentation, inventory, and diagnostics
+    integrations.
+
+  - Added the first-party `apprc` CLI with `apprc scaffold config` for
+    generating the recommended `X.config` package layout.
+
+  - Added tracked `.env.example_apps` defaults plus `.envrc` auto-bootstrap so
+    repository example CLIs can run from one sourced root environment.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 Replaced the root public API with the clean `import apprc as rc`
+    facade: `rc.AppRC`, `rc.Config`, `rc.ConfigBase`, `rc.field`, and the
+    `rc.cli`, `rc.files`, `rc.storage`, and `rc.provenance` namespaces.
+    Affected: Users importing root names such as `AppConfigKit`, `EnvConfig`,
+    `env_field`, `env_owner`, `mount_config_cli`, or storage/file helpers
+    directly from `apprc`.
+    Migration: Create `MyRC = rc.AppRC.<mode>(...)`, register env-backed
+    classes with `@MyRC.config("key", prefix="FULL_PREFIX_")`, inherit
+    `rc.Config`, declare fields with `rc.field("FULL_ENV_KEY", ...)`, inherit
+    `rc.ConfigBase` for Python-only config, mount Typer with
+    `MyRC.mount_cli(app)`, and use namespace modules for advanced helpers.
+
+  - **Breaking:** 💥 Moved the Textual editor dependency to the optional `tui` extra.
+    Affected: Users installing base `apprc` and running generated
+    `config edit` commands or importing TUI classes such as
+    `rc.cli.ConfigEditorApp`.
+    Migration: Install AppRC with `python -m pip install "apprc[tui]"` or add
+    `apprc[tui]` to the application's dependency declaration.
+
+  - **Breaking:** 💥 Moved generated repository example app disk files from root
+    `.apprc-example-*` directories to
+    `examples/example_app_disk_files/.apprc-example-*`.
+    Affected: Maintainers and local scripts sourcing files such as
+    `.apprc-example-storage-only/.env`.
+    Migration: Source `.env.example_apps` and run
+    `python -m apprc_dev.example_apps.bootstrap --output-root "$APPRC_EXAMPLE_APPS_ROOT"`,
+    or use direnv so `.envrc` does both automatically.
+
+  - **Breaking:** 💥 Renamed repository-local example import packages to short names:
+    `env_only`, `storage_only`, `app_wide_config`, `app_wide_storage`,
+    `explicit_env_precedence`, `cli_runtime`, and `_example_apps_utils`.
+    Affected: Maintainers, tests, or local tools importing the old
+    `apprc_*_example` packages or `apprc_example_apps`.
+    Migration: Update imports to the short package names. Console scripts,
+    AppRC app names, and `APPRC_EXAMPLE_*` env vars are unchanged.
+
+  - Changed `@MyRC.bundle` to support dataclass `init=False` config fields and
+    user `__post_init__()` hooks so applications can derive registered child
+    configs from eagerly resolved siblings without leaving the bundle
+    interface.
+
+  - Changed repository example apps to use app-local `config/` packages with
+    `app.py`, `sections/`, `bundle.py`, `catalog.py`, and packaged
+    `config/.env.shared` defaults. Complex config areas now live as nested
+    packages under `sections/`, as shown by the CLI runtime example.
+
+  - Changed the example app tree to separate runnable source packages under
+    `examples/example_apps` from ignored generated disk files under
+    `examples/example_app_disk_files`.
+
+  - Changed config editor storage workflow ownership so archive import and
+    archive/delete orchestration live on the coordinator instead of relying on
+    runtime stubs inherited by leaf workflow classes.
+
+  - Changed release maintenance helpers so `just verify-pypi` checks the
+    current base public API and optional `tui` metadata, `just clean` removes
+    nested package metadata, and lazy facade type surfaces live in `.pyi`
+    stubs.
+
+  - Changed the source distribution to include `examples/example_apps/**`
+    alongside `tests/**` so downstream sdist test runs have the repository
+    example packages they import.
+
+  - Changed the generated PyPI README to rewrite repository-relative docs,
+    example, and asset links to GitHub URLs.
+
+<br>
+
+### 🔥 Removed
+
+  - **Breaking:** 💥 Removed legacy lower-level aggregate facade exports from
+    `apprc.definition`, `apprc.runtime`, `apprc.user_files`, and
+    `apprc.user_files.storage_roots`.
+    Affected: Users importing supported-looking symbols such as
+    `AppConfigKit`, `ConfigOwner`, `EnvBootstrapResult`, `StorageRegistry`,
+    or `register_storage` from those aggregate packages.
+    Migration: Use `import apprc as rc` with `rc.AppRC`, `rc.Config`,
+    `rc.field`, `rc.schema`, `rc.provenance`, `rc.files`, and `rc.storage`.
+    Concrete implementation modules remain importable for AppRC internals but
+    are not the public integration surface.
+
+  - **Breaking:** 💥 Removed the app-specific `apprc.utils.huggingface` helper
+    module.
+    Affected: Users importing `apprc.utils.huggingface` directly.
+    Migration: Move Hugging Face synchronization helpers into the application
+    or a dedicated application dependency.
+
+  - **Breaking:** 💥 Removed selector-unaware config CLI hooks.
+    Affected: Users passing `active_storage_root=` or `initial_storage=` to
+    `AppConfigKit.typer_app(...)`, `rc.cli.mount_config_cli(...)`,
+    `rc.cli.build_config_typer_app(...)`, or `rc.cli.CliRuntime(...)`.
+    Migration: Use `active_storage_root_with_context=` or
+    `initial_storage_with_context=`. The hook may ignore
+    `ConfigSelectorContext` when it only needs app state.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed the CI compile step so it covers current source roots with
+    `src`, `tests`, and `examples/example_apps/src`.
+
+  - Fixed stale release-facing prose by replacing the changelog template name,
+    removing the removed logging package owner row, and updating the justfile
+    optional-extra example to `tui`.
+
+  - Fixed failed storage registration rollback so cleanup failures are logged,
+    attached to the original exception as notes, and shown as warning
+    notifications in the config editor.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.18.0] - 2026-07-02
+
+<br>
+
+### ✨ Added
+
+  - Added `cli_options_from(ctx, OptionsType)` so runtime-independent commands
+    can recover the full app CLI option object preserved by `CliRuntime`.
+
+  - Added `CliRuntime.forwarded_args(...)` and
+    `CliRuntime.run_forwarded(...)` for nested in-process Typer CLIs whose
+    child runtime policy must inspect forwarded child arguments.
+
+  - Added a dev-only `apprc_example_apps` registry helper exposing the
+    repository-local example kits and bootstrap metadata.
+
+  - Added a root facade snapshot test so changes to `apprc.__all__` are
+    explicit and reviewable.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 Renamed the composable Typer bridge/bootstrap API to CLI runtime
+    terminology and removed compatibility aliases.
+    Affected: Users importing or calling `ConfigCliBridge`,
+    `ConfigCliSession`, `HostCliBootstrapPolicy`, `BootstraplessCommand`,
+    `CliBootstrapContext`, `CliBootstrapOptions`,
+    `ConfigBootstrapPolicy`, `bootstrap_policy=...`,
+    `prepare_typer_context(...)`, `apprc_context_from(...)`, or
+    `apprc_options_to_args(...)`.
+    Migration: Use `CliRuntime`, `CliRuntimeSession`,
+    `CliRuntimePolicy`, `RuntimeIndependentCommand`,
+    `CliRuntimeContext`, `CliRuntimeOptions`, `ConfigRuntimePolicy`,
+    `runtime_policy=...`, `prepare_cli_runtime_context(...)`,
+    `cli_runtime_context_from(...)`, and
+    `cli_runtime_options_to_args(...)`.
+
+  - **Breaking:** 💥 Changed `ConfigDoctorPayload` from a dictionary-shaped
+    `TypedDict` to a dataclass model.
+    Affected: Users indexing the result of
+    `build_config_doctor_payload(...)` directly.
+    Migration: Read dataclass attributes such as `payload.status`, or call
+    `payload.to_payload()` when a JSON-friendly dictionary is needed.
+
+  - **Breaking:** 💥 Made `DefaultConfigCliState` keyword-only so applications can
+    subclass it with required fields.
+    Affected: Users constructing `DefaultConfigCliState` with positional
+    arguments.
+    Migration: Pass `env_bootstrap=...` and `storage=...` by keyword, and
+    inherit from `DefaultConfigCliState` for app-owned config CLI state.
+
+  - Changed generated config diagnostics to use a typed
+    `ConfigDoctorPayload` model internally while keeping explicit JSON
+    serialization through `to_payload()`.
+
+  - Changed the config editor storage workflows into action-specific
+    registration, archive, and removal modules behind the existing
+    `ConfigEditorStorageWorkflows` entrypoint.
+
+  - Changed the remaining lazy aggregate facades into documented import-cycle
+    boundaries after verifying that `apprc.runtime`, `apprc.user_files`, and
+    `apprc.user_files.storage_roots` still require lazy loading.
+
+<br>
+
+### 🔥 Removed
+
+  - **Breaking:** 💥 Removed AppRC's semantic logging package and root logging
+    facade exports.
+    Affected: Users importing `apprc.logging`, `apprc.get_logger`,
+    `apprc.setup_logging`, `apprc.AppLogger`, `apprc.LoggingConfig`, or
+    related logging helpers from AppRC.
+    Migration: Add `holylog` as an application dependency and use
+    `import holylog as hlog`, then call `hlog.setup_logging(...)` and
+    `hlog.get_logger(...)`. AppRC's CLI runtime setup still accepts an
+    app-owned `setup_logging` callable.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.17.0] - 2026-07-01
+
+<br>
+
+### ✨ Added
+
+  - Added executable capability-mode examples under
+    `examples/example_apps`, covering `env_only`, `storage_only`,
+    `app_wide_config`, `app_wide_storage`, named storage, explicit env-file
+    selector precedence, and the `ConfigCliBridge` host-callback path. Each
+    example lives in its own import package with local config declarations,
+    `cli.py`, and `.env.shared` files, matching the structure downstream apps
+    should use.
+
+  - Added `python -m apprc_dev.example_apps.bootstrap` to create ignored
+    example sandboxes with commented `.env`, `.env.apprc-app`,
+    `.env.apprc-storage`, and `.apprc.toml` files.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 Replaced the old `apprc.runtime_config` and `apprc.cli`
+    public import paths with the clearer `definition`, `runtime`,
+    `user_files`, and `interfaces` architecture.
+    Affected: Users importing AppRC internals from `apprc.runtime_config.*`
+    or `apprc.cli.*`.
+    Migration: Prefer one root import, `import apprc`, and access stable
+    integration APIs through that handle, such as `apprc.AppConfigKit`,
+    `apprc.EnvConfig`, `apprc.mount_config_cli`, and
+    `apprc.build_config_doctor_payload`. Advanced internal imports now live
+    under `apprc.definition`, `apprc.runtime`, `apprc.user_files`, and
+    `apprc.interfaces`.
+
+  - Changed AppRC's package tree to make ownership visible from paths:
+    declarations live in `apprc.definition`, process-time behavior in
+    `apprc.runtime`, managed user files in `apprc.user_files`, and CLI/TUI
+    surfaces in `apprc.interfaces`.
+
+  - Changed the root `apprc` facade into the stable application import surface
+    for config definitions, runtime bootstrap, diagnostics, generated CLI
+    integration, TUI app classes, dotenv helpers, storage helpers, and optional
+    logging.
+
+<br>
+
+### 🔥 Removed
+
+  - Removed the old `apprc.runtime_config` and `apprc.cli` compatibility
+    packages after moving their implementation into the new architecture.
+
+  - **Breaking:** 💥 Removed the repository-local `apprc_example_app` demo package
+    and its ambiguous `apprc` console script.
+    Affected: Maintainers or downstream test harnesses using the checkout's
+    old `examples/apprc_example_app` package or `apprc` demo executable.
+    Migration: Use the new dev-only `apprc-example-apps` package and its
+    explicit scripts, such as `apprc-storage-only config doctor`,
+    `apprc-app-wide-storage config show`, or
+    `apprc-cli-bridge status`.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.16.4] - 2026-06-30
+
+<br>
+
+### ✨ Added
+
+  - Added `ConfigCliBridge`, `ConfigCliSession`, `ConfigCliStateFactory`,
+    `BootstraplessCommand`, `HostCliBootstrapPolicy`, and
+    `MountConfigCliStateFactory` for apps that need a composable Typer
+    integration layer around custom host callbacks.
+
+  - Added a Graphigs-backed structured dotenv/config-file map showing where
+    AppRC keeps each `.env` and TOML file, which `AppConfigKit` shapes use
+    them, and how startup inputs feed runtime config.
+
+<br>
+
+### 🛠️ Changed
+
+  - Changed `mount_config_cli(...)` and `ConfigCliBridge(...)` so the shipped
+    behavior includes default `DefaultConfigCliState` support, explicit
+    `state_factory` support for app-owned runtime state, custom generated
+    config group names, explicit argv/policy injection for tests and forwarding
+    CLIs, help-safe bootstrap skipping, generated config group collision
+    checks, and context-only handling for bootstrapless generated config
+    commands.
+
+  - Changed CLI bridge docs and config selector wording to use host-level
+    option terminology consistently.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed host and generated-config help parsing so structurally recognized
+    help such as `run --help` can render without runtime storage, while
+    help-like option values such as `--text --help` and separator-protected
+    tokens such as `run -- --help` remain runtime data.
+
+  - Fixed bridge skip-policy composition so app-specific host option sets
+    extend AppRC's standard options, generated config commands strip those
+    custom host options correctly, and direct config bootstrap policies cannot
+    drift from the bridge config group name.
+
+  - Fixed bootstrapless host-command declarations so empty action tuples are
+    rejected clearly; use `skip_empty=True` for bare command groups.
+
+  - Fixed runtimeful generated config commands with custom state so they fail
+    clearly when AppRC bootstrap ran but the host callback did not leave the
+    declared `state_type` on `ctx.obj`, while bootstrapless config commands
+    still use AppRC's stored context.
+
+  - Fixed generated config group mounting so `ConfigCliBridge(...)` and
+    `mount_config_cli(...)` reject host Typer apps that already own the
+    requested config command or group name.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.16.3] - 2026-06-29
+
+<br>
+
+### ✨ Added
+
+  - Added layered Typer integration helpers: `mount_config_cli(...)`,
+    `CliBootstrapOptions`, AppRC Typer context metadata, reusable root option
+    aliases, and configurable config bootstrap skip policies.
+
+  - Added Graphigs-backed docs figure scripts for regenerating
+    `docs-reading-map.svg` and `apprc-runtime-layers.svg`.
+
+  - Added and placed Graphigs-backed graphical abstracts for the README
+    overview, README system model, and runtime bootstrap docs.
+
+<br>
+
+### 🛠️ Changed
+
+  - Improved Graphigs-backed graphical abstract layouts with clearer groups,
+    a wide README hero format, looser labels, and documented figure color
+    roles.
+
+  - Tightened the new Typer convenience helper API before its first release:
+    custom `mount_config_cli(...)` state now requires `state_factory=...`,
+    generated config group renaming uses `config_group_name=...`, and explicit
+    mount hook parameters replace loose keyword forwarding.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.16.2] - 2026-06-28
+
+<br>
+
+### ✨ Added
+
+  - Added public `ConfigSelectorContext` plus context-aware config hooks:
+    `active_storage_root_with_context(state, selector_context)` and
+    `initial_storage_with_context(state, selector_context)`.
+
+  - Added `replace_existing=False` to `extract_archive(...)` so callers must
+    opt in before replacing a non-empty destination.
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 `get_logger(NAME)` now raises `RuntimeError` when `NAME` already
+    belongs to a pre-existing non-`AppLogger`.
+    Affected: Integrations that create stdlib loggers before requesting an
+    AppRC semantic logger for the same name.
+    Migration: Call `install_app_logger_class()` or `get_logger(NAME)` before
+    `logging.getLogger(NAME)` for names that need AppRC semantic helpers, or
+    keep using the existing plain logger directly.
+
+  - **Breaking:** 💥 `extract_archive(...)` now refuses to restore into a non-empty
+    destination unless `replace_existing=True` is passed.
+    Affected: Integrations that called `extract_archive()` to merge or replace
+    existing directories.
+    Migration: Restore into an empty directory, or prompt/confirm externally
+    before calling `extract_archive(..., replace_existing=True)`.
+
+  - **Breaking:** 💥 Blank or whitespace-only storage root text now raises
+    `StorageRootPathError` instead of resolving to the current directory.
+    Affected: CLI or API callers passing `""` or whitespace as a storage root.
+    Migration: Pass `.` explicitly when the current directory is intended.
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed storage-free generated `config edit` commands so app state objects no
+    longer need to define a storage selector field.
+
+  - Fixed storage archive creation so symlinks and in-archive hardlinks are
+    rejected before any archive file is written.
+
+  - Fixed generated `config --help` and `<config subcommand> --help` so help
+    output does not require runtime storage readiness.
+
+  - Fixed skipped-bootstrap config commands so host-level `--env-file` storage
+    selectors and `--env-file-overrides-os-environ` participate in storage
+    selection without mutating `os.environ`.
+
+  - Fixed `config storage add` and `config storage remove` so root
+    `--env-file` values can select the named-storage index through
+    `<APP>_APPRC_TOML`.
+
+  - Fixed storage setup, registry writes, selector resolution, and TUI storage
+    registration so blank storage roots are rejected consistently.
+
+  - Fixed storage registration so corrupt existing registries are detected
+    before storage directories or dotenv files are created.
+
+  - Fixed storage registration rollback so failed registry writes remove only
+    empty artifacts created by that call and preserve existing storage content.
+
+  - Fixed archive restore so all members are validated before extraction, the
+    restore is staged in a sibling temp directory, and non-empty destinations
+    are replaced only after an explicit opt-in.
+
+  - Fixed TUI storage deletion so the registry row is removed before directory
+    deletion; deletion failures now warn without recreating the row.
+
+  - Fixed config help detection to honor custom host-level value options and to
+    ignore `--help` or `-h` after a `--` separator.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.16.1] - 2026-06-27
+
+<br>
+
+### ✨ Added
+
+  - Added explicit capability constructors:
+    `AppConfigKit.env_only(...)`, `AppConfigKit.storage_only(...)`,
+    `AppConfigKit.app_wide_config(...)`, and
+    `AppConfigKit.app_wide_storage(...)`.
+
+  - Added `config paths` to show declared capabilities, active layers,
+    candidate paths, selected storage, named-storage index status, and
+    `writes: none`.
+
+  - Added `config app init`, `config storage add NAME PATH`,
+    `config storage list`, and `config storage remove NAME`.
+
+  - Added doctor statuses `app_config_not_ready` and
+    `named_storage_not_ready`.
+
+<br>
+
+### 🛠️ Changed
+
+
+  - **Breaking:** 💥 Runtime bootstrap, `config paths`, `config doctor`, and editor
+    open are zero-write.
+    Affected: Users and tests that expected normal runtime reads to create the
+    config home, app-wide dotenv, storage dotenv, or `<app>.apprc.toml`.
+    Migration: Run `config app init`, `config setup`, or
+    `config storage add NAME PATH` when files should be created.
+
+  - **Breaking:** 💥 App-wide and storage writes now use explicit scopes when both
+    writable layers are active.
+    Affected: Users running `config set KEY VALUE` after activating both
+    `.env.apprc-app` and a storage root.
+    Migration: Pass `--scope app` or `--scope storage`.
+
+  - **Breaking:** 💥 The Textual editor no longer infers a write target when
+    app-wide and storage scopes are both writable.
+    Affected: Users pressing Enter or Ctrl+S in the value editor while both
+    writable layers are active.
+    Migration: Click `Save App-wide` or `Save Storage`.
+
+  - **Breaking:** 💥 Public filename constructor arguments were renamed.
+    Affected: Integrations passing `apprc_toml_filename`,
+    `global_env_filename`, or `local_env_filename`.
+    Migration: Use `index_filename`, `app_wide_env_filename`, and
+    `storage_env_filename`.
+
+  - Changed runtime bootstrap precedence to packaged `.env.shared`,
+    app-wide `.env.apprc-app`, storage `.env.apprc-storage`, explicit env
+    files, and existing `os.environ`.
+
+  - Changed storage selector resolution so path selectors work without a
+    named-storage index, while named selectors use `<app>.apprc.toml` only when
+    the index is allowed and exists.
+
+  - Changed the Textual editor to show layer-oriented source columns:
+    `Effective`, `Shell`, `App-wide`, `Storage`, `Default`, and `Explanation`.
+
+  - Changed `<APP>_APPRC_TOML` to mean only named-storage index relocation.
+
+  - Changed `config setup` to follow the constructor instead of prompting for
+    optional upgrades.
+
+  - Changed the Textual editor to hide named-storage management controls when
+    named storage is disabled, while keeping active path editing available.
+
+<br>
+
+### 🔥 Removed
+
+  - Removed `StorageMode`.
+
+  - Removed `config init` and `config list`.
+
+  - Removed `.env.global` and `.env.local` fallback reads.
+
+  - **Breaking:** 💥 AppRC no longer reads or writes `.env.global` and `.env.local`.
+    Affected: Users with existing app-wide values in `.env.global` or
+    storage values in `.env.local`.
+    Migration: Move app-wide values to `.env.apprc-app` and storage values to
+    `.env.apprc-storage`. `config doctor` reports legacy-file warnings.
+
+  - **Breaking:** 💥 Top-level generated storage commands were removed.
+    Affected: Users running `config init` or `config list`.
+    Migration: Use `config storage add NAME PATH`,
+    `config storage list`, and `config storage remove NAME`.
+
+  - **Breaking:** 💥 Public local-env helper names were removed.
+    Affected: Integrations importing `LocalEnvUpdate`, `local_env_path`,
+    `read_local_env`, `write_local_env`, `set_local_env_value`, or
+    `clear_local_env_value` from AppRC facades or storage modules.
+    Migration: Use `EnvFileUpdate`, `storage_env_path`, `read_env_file`,
+    `write_env_file`, `set_storage_env_value`, and
+    `clear_storage_env_value`. Use `set_env_file_value` and
+    `clear_env_file_value` for app-wide or other explicit env-file paths.
+
+  - **Breaking:** 💥 `StorageMode` and `storage_mode=` were removed from the public
+    API.
+    Affected: Integrations importing `StorageMode` or passing `storage_mode=`.
+    Migration: Use `AppConfigKit.env_only(...)`,
+    `AppConfigKit.storage_only(...)`, `AppConfigKit.app_wide_config(...)`, or
+    `AppConfigKit.app_wide_storage(...)`.
+
+
+<br>
+
+### 🐛 Fixed
+
+  - Fixed storage-only runtime use so a single `APP_STORAGE=/path` selector no
+    longer requires a config-home file or named-storage index.
+
+  - Fixed optional named-storage handling so path selectors ignore corrupt
+    optional indexes at runtime and report them as doctor warnings, while bare
+    named selectors fail only when they need the invalid index.
+
+  - Fixed `config edit` so host-level storage selectors are honored and editor open
+    remains zero-write when optional named-storage indexes are corrupt but not
+    needed.
+
+  - Fixed `config doctor` so corrupt optional indexes are warnings when no
+    selector exists or the active selector is path-like.
+
+  - Fixed storage-env helper writes so storage roots must already exist, and
+    no-op clears no longer create empty dotenv files.
+
+  - Fixed `config setup` for app-wide storage constructors so config-home
+    errors are reported as clean CLI validation errors.
+
+  - Fixed Textual editor source-copy buttons so app-wide and storage copy
+    actions copy only actual source values.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.16.0] - 2026-06-26
+
+<br>
+
+### 🛠️ Changed
+
+  - **Breaking:** 💥 `setup_logging()` now requires the `apprc[logging]`
+    optional dependency because `structlog` is no longer installed by the base
+    package.
+    Affected: Users calling `setup_logging()` after installing bare `apprc`.
+    Migration: Install AppRC with `python -m pip install "apprc[logging]"` or
+    add `apprc[logging]` to the application's dependency declaration.
+
+<br>
+
+---
+
+<br>
+
+<!-- ======================================================== -->
+
+## [0.1.0] - 2026-06-02
+
+<br>
+
+### ✨ Added
+
+- Released `apprc`.
+
+- Added src-layout packaging, Typer CLI entrypoints, AppRC configuration, documentation, tests, and maintainer tooling.
+
+<br>

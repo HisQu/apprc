@@ -10,17 +10,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 VERSION_RE = re.compile(r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
 RELEASE_HEADING_RE = re.compile(
-    r"^# (?P<version>\d+\.\d+\.\d+) - (?P<date>\d{4}-\d{2}-\d{2})$",
+    r"^## \[(?P<version>\d+\.\d+\.\d+)\] - "
+    r"(?P<date>\d{4}-\d{2}-\d{2})(?P<yanked> \[YANKED\])?$",
     re.MULTILINE,
 )
-UNRELEASED_HEADING = "# [Unreleased]"
+UNRELEASED_HEADING = "## [Unreleased]"
 UNRELEASED_SECTIONS = (
-    "### 💥 Breaking changes",
-    "### ➕ Added",
-    "### 💔 Changed",
-    "### ⚠️ Deprecated",
-    "### 🗑️ Removed",
-    "### 🔨 Fixed",
+    "### ✨ Added",
+    "### 🛠️ Changed",
+    "### 🗑️ Deprecated",
+    "### 🔥 Removed",
+    "### 🐛 Fixed",
     "### 🔒 Security",
 )
 
@@ -41,7 +41,7 @@ def build_release_notes(markdown: str, version: str) -> str:
     match = _release_heading(markdown, version)
     _validate_toc_entry(markdown, match)
 
-    next_heading = re.search(r"^# ", markdown[match.end() :], re.MULTILINE)
+    next_heading = re.search(r"^## \[", markdown[match.end() :], re.MULTILINE)
     section_end = (
         match.end() + next_heading.start()
         if next_heading is not None
@@ -141,14 +141,24 @@ def _release_heading(markdown: str, version: str) -> re.Match[str]:
 
 
 def _validate_toc_entry(markdown: str, match: re.Match[str]) -> None:
-    """Ensure the release heading is linked from the changelog table of contents."""
+    """Require major/minor releases, but not patches, in the changelog TOC."""
     version = match.group("version")
     date = match.group("date")
-    anchor = f"#{version.replace('.', '')}---{date}"
-    entry = f"[{version} - {date}]({anchor})"
-    if markdown.count(entry) != 1:
+    yanked = match.group("yanked") or ""
+    anchor = f"#{version.replace('.', '')}---{date}" + (
+        "-yanked" if yanked else ""
+    )
+    label = rf"[\[{version}\] - {date}{yanked}]"
+    entry = f"{label}({anchor})"
+    occurrences = markdown.count(entry)
+    if version.endswith(".0") and occurrences != 1:
         raise ValueError(
-            f"Changelog table of contents must contain exactly one {entry!r} entry."
+            f"Changelog table of contents must contain exactly one major/minor "
+            f"release entry {entry!r}."
+        )
+    if not version.endswith(".0") and occurrences:
+        raise ValueError(
+            f"Patch release {version} must not appear in the table of contents."
         )
 
 
@@ -189,6 +199,7 @@ def _is_layout_line(line: str) -> bool:
         line == "<br>"
         or line == "---"
         or (line.startswith("<!--") and line.endswith("-->"))
+        or re.match(r"^\[[^]]+\]:\s+\S+", line) is not None
     )
 
 

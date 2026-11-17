@@ -472,11 +472,20 @@ When false, run and pass the full local test suite before merge or release and
 report hosted CI status separately. When true, exact-commit hosted CI must pass.
 This setting is independent of `RELEASE_PYPI`.
 
-Update the changelog first. Any change requiring consumer code, configuration,
-or installation changes belongs under breaking changes with affected users and
-migration instructions. Keep the core, terminal, and GUI distribution versions
+Update the changelog first. Keep its complete release history in `CHANGELOG.md`.
+Use the six Keep a Changelog categories and the heading `## [VERSION] - YYYY-MM-DD`;
+append `[YANKED]` only for a yanked release. Leave all six category headings
+under `[Unreleased]` even when empty, and omit empty categories in released sections.
+Place breaking changes under their actual category with `**Breaking:** 💥`, identify
+affected users, and include migration guidance when possible. Curate entries for
+notable user or contributor effects; omit routine internal refactors and test-only
+work. Keep the core, terminal, and GUI distribution versions
 in sync. Release preparation syncs the GUI version and its exact `apprc-core`
 pin automatically.
+When preparing a release, add an entry to the TOC only for a major/minor
+`X.Y.0` version; omit patch releases. Keep every release section in the history.
+Update comparison reference definitions immediately after the TOC. Link only
+existing tags; do not invent links for tagless history.
 
 `just publish-check` rehearses Linux Python 3.12–3.14 checks, generated metadata,
 all three distributions, pip installation checks, and publication dry runs. It

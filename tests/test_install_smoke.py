@@ -211,11 +211,11 @@ def test_release_prepare_restores_metadata_after_uv_lock_failure(
         "## Table Of Content",
         "",
         "1. [Changelog](#changelog)",
-        "2. [[Unreleased]](#unreleased)",
-        f"3. [{release_version} - {release_date}]"
+        "2. [\\[Unreleased\\]](#unreleased)",
+        f"3. [\\[{release_version}\\] - {release_date}]"
         f"(#{release_version.replace('.', '')}---{release_date})",
         "",
-        "# [Unreleased]",
+        "## [Unreleased]",
         "",
     ]
     for heading in UNRELEASED_SECTIONS:
@@ -224,9 +224,9 @@ def test_release_prepare_restores_metadata_after_uv_lock_failure(
         (
             "---",
             "",
-            f"# {release_version} - {release_date}",
+            f"## [{release_version}] - {release_date}",
             "",
-            "### ➕ Added",
+            "### ✨ Added",
             "",
             "- Prepared fixture release.",
             "",
@@ -304,7 +304,10 @@ def test_release_prepare_restores_metadata_after_uv_lock_failure(
         timeout=120,
     )
 
-    assert result.returncode != 0, result.stdout + result.stderr
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, output
+    normalized_output = " ".join(output.lower().split())
+    assert "network connectivity is disabled" in normalized_output, output
     assert {
         path: (workspace / path).read_bytes() for path in restore_paths
     } == before

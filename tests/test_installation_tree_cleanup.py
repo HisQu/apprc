@@ -505,8 +505,10 @@ def test_pending_uninstall_rejects_new_config_retention_choice(tmp_path):
     assert settings.read_text() == "preserve until confirmed removal"
 
 
+@pytest.mark.parametrize("partial", [False, True])
 def test_external_finalizer_waits_for_owner_and_cleans_staging(
     tmp_path: Path,
+    partial: bool,
 ) -> None:
     import subprocess
     import sys
@@ -535,6 +537,19 @@ def test_external_finalizer_waits_for_owner_and_cleans_staging(
         )
     )
     proof.chmod(0o600)
+    authority_bytes = None
+    resource = tmp_path / "retained-resource"
+    if partial:
+        directory, _ = managed_installation(
+            tmp_path / "retained", hooks=InstallationHooks()
+        )
+        authority_bytes = (directory / "installation.json").read_bytes()
+        resource.write_text("retained data")
+        proof = staging / "handoff.json"
+        proof.write_text(
+            json.dumps({"complete": False, "directory": str(directory)})
+        )
+        proof.chmod(0o600)
     with owned_child_process() as owner:
         finalizer = subprocess.Popen(
             [
@@ -546,6 +561,7 @@ def test_external_finalizer_waits_for_owner_and_cleans_staging(
                 "--directory",
                 str(directory),
                 "--cleanup-staging",
+                *(["--cleanup-only"] if partial else []),
                 "--parent",
                 str(owner.pid),
                 "--parent-token",
@@ -569,7 +585,38 @@ def test_external_finalizer_waits_for_owner_and_cleans_staging(
             assert "Uninstall completed" in err
             assert not staging.exists()
             assert tmp_path.is_dir()
+            if partial:
+                assert (
+                    directory / "installation.json"
+                ).read_bytes() == authority_bytes
+                assert resource.read_text() == "retained data"
         finally:
             if finalizer.poll() is None:
                 finalizer.kill()
                 finalizer.wait(timeout=5)
+
+
+def test_temporary_cleanup_failure_warns_without_failing_uninstall(
+    tmp_path, monkeypatch, capsys
+):
+    import shutil
+    from apprc.distribution.runtime import (
+        namespace_finalizer,
+        uninstall_handoff,
+    )
+
+    staging = tmp_path / "staging"
+    staging.mkdir(mode=0o700)
+    leaf = uninstall_handoff._stage_repository_finalizer(staging)
+    monkeypatch.setattr(namespace_finalizer, "__file__", str(leaf))
+
+    def locked(path):
+        raise PermissionError("temporary directory locked")
+
+    monkeypatch.setattr(shutil, "rmtree", locked)
+    namespace_finalizer.cleanup_staging(staging)
+    message = capsys.readouterr().err
+    assert "uninstall completed" in message
+    assert "temporary cleanup failed" in message
+    assert str(staging) in message
+    assert staging.exists()

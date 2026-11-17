@@ -1307,6 +1307,8 @@ def _execute_pending_handoff(
                 operation_id=operation_id,
                 expected_revision=latest_revision,
             )
+            committed = True
+            _launch_repository_finalizer(plan_file, value, recovery)
             succeeded = True
 
         if plan.complete:
@@ -1358,15 +1360,6 @@ def _execute_pending_handoff(
                     print(
                         _UNKNOWN_EDITABLE_RETENTION, file=sys.stderr, flush=True
                     )
-        if (
-            succeeded
-            and _REPOSITORY_FINALIZER is None
-            and plan_file.parent.exists()
-            and not any(
-                entry.kind == "repository" for entry in inventory.entries
-            )
-        ):
-            shutil.rmtree(plan_file.parent)
 
 
 def _wait_for_caller_exit(value: HandoffPlan) -> None:
@@ -1592,8 +1585,10 @@ def _launch_repository_finalizer(
         isinstance(entry, dict) and entry.get("kind") == "repository"
         for entry in value["inventory"]
     )
-    proof = recovery / (
-        "repository.json" if repository else "finalization.json"
+    proof = (
+        recovery / ("repository.json" if repository else "finalization.json")
+        if value["complete"]
+        else plan_file
     )
     if not proof.is_file():
         raise InstallationError("Committed removal has no finalization proof.")
@@ -1624,6 +1619,8 @@ def _launch_repository_finalizer(
             value["directory"],
             "--cleanup-staging",
         ]
+    if not value["complete"]:
+        arguments.append("--cleanup-only")
     arguments += [
         "--parent",
         str(os.getpid()),

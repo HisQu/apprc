@@ -907,8 +907,9 @@ def test_uninstall_config_prompt_and_unattended_policy(
 
 
 @pytest.mark.parametrize("keep_config", [False, True])
+@pytest.mark.parametrize("repository_selected", [False, True])
 def test_uninstall_tree_separates_retained_paths_and_integrations(
-    tmp_path, keep_config
+    tmp_path, keep_config, repository_selected
 ):
     from dataclasses import replace
     from rich.console import Console
@@ -944,6 +945,14 @@ def test_uninstall_tree_separates_retained_paths_and_integrations(
         ),
         (entry,) if keep_config else (),
     )
+    if repository_selected:
+        inventory = replace(
+            inventory,
+            entries=(
+                *inventory.entries,
+                InventoryEntry(checkout, "repository", "a" * 64),
+            ),
+        )
     record = replace(
         preparation.inspection.record,
         active_runtime=EditableCheckout(checkout, checkout / ".venv"),
@@ -956,14 +965,15 @@ def test_uninstall_tree_separates_retained_paths_and_integrations(
         (),
         True,
     )
-    tree = uninstall_tree(preparation, remove_repository=False)
+    tree = uninstall_tree(preparation)
     console = Console(record=True, width=250)
     with console.capture() as captured:
         console.print(tree)
     output = captured.get()
     deleting, keeping = output.split("Keep", 1)
     assert str(cache) in deleting and str(command) in deleting
-    assert str(checkout) in keeping
+    assert (str(checkout) in keeping) is not repository_selected
+    assert (str(checkout) in deleting) is repository_selected
     assert (str(config) in keeping) is keep_config
     assert (str(config) in deleting) is not keep_config
     assert not config.exists(), "Preview must not create or scan targets"

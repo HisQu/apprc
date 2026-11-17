@@ -54,13 +54,10 @@ def print_installation_path(
     )
 
 
-def uninstall_tree(
-    preparation: UninstallPreparation, *, remove_repository: bool
-) -> Tree:
+def uninstall_tree(preparation: UninstallPreparation) -> Tree:
     """Describe selected deletion and retention without traversing the filesystem.
 
     :param preparation: Exact prepared selection and recorded integrations.
-    :param remove_repository: Whether the checkout is explicitly selected.
     :return: A compact tree with full path labels.
     """
     root = Tree("Uninstall preview")
@@ -122,7 +119,9 @@ def uninstall_tree(
     if (
         record is not None
         and isinstance(record.active_runtime, EditableCheckout)
-        and not remove_repository
+        and not any(
+            entry.kind == "repository" for entry in plan.inventory.entries
+        )
     ):
         keeping.add("Editable checkout").add(
             path_text(record.active_runtime.project)

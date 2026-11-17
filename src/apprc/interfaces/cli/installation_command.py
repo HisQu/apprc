@@ -412,11 +412,7 @@ def mount_installation_group(
                     uninstall_tree,
                 )
 
-                installation_console(ctx).print(
-                    uninstall_tree(
-                        preparation, remove_repository=remove_repository
-                    )
-                )
+                installation_console(ctx).print(uninstall_tree(preparation))
                 for diagnostic in preparation.diagnostics:
                     typer.echo(
                         f"Cannot uninstall: {diagnostic.message} {diagnostic.recovery}",
@@ -439,6 +435,7 @@ def mount_installation_group(
                     preparation.plan,
                     original_pid=os.getpid(),
                     wait=wait,
+                    color=ctx.color,
                     manager_executable=command_context._native_manager_executable,
                 )
                 handoff.wait_ready()

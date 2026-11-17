@@ -150,6 +150,7 @@ def main() -> None:
     parser.add_argument("--parent", type=int)
     parser.add_argument("--parent-token")
     parser.add_argument("--cleanup-staging", action="store_true")
+    parser.add_argument("--cleanup-only", action="store_true")
     parser.add_argument("--wait", action="store_true")
     parser.add_argument("--retained-config", action="append", default=[])
     arguments = parser.parse_args()
@@ -177,9 +178,16 @@ def main() -> None:
                     arguments.parent, arguments.parent_token
                 )
                 process_waiter._wait_open_process(waiter)
-            finalize_namespace(arguments.plan, arguments.directory)
+            if arguments.cleanup_only:
+                validate_partial_cleanup(arguments.plan, arguments.directory)
+            else:
+                finalize_namespace(arguments.plan, arguments.directory)
             if arguments.cleanup_staging:
-                cleanup_staging(arguments.plan.parent.parent)
+                cleanup_staging(
+                    arguments.plan.parent
+                    if arguments.cleanup_only
+                    else arguments.plan.parent.parent
+                )
         if external:
             assert terminal is not None
             terminal.result_line("Uninstall completed.")
@@ -322,6 +330,36 @@ def finalize_repository(proof: Path, parent: int, token: str) -> None:
                     raise
     print(f"Repository removed: {repository}", file=sys.stderr, flush=True)
     cleanup_staging(proof.parent.parent)
+
+
+def validate_partial_cleanup(plan: Path, directory: Path) -> None:
+    """Constrain partial-uninstall housekeeping to its exact staged envelope.
+
+    Remaining installation authority is deliberately not retired or modified.
+
+    :param plan: Existing private handoff envelope.
+    :param directory: Recorded retained installation address.
+    """
+    _assert_no_links(plan)
+    if (
+        not plan.is_absolute()
+        or plan.name != "handoff.json"
+        or plan.parent != Path(__file__).parent
+    ):
+        raise ValueError(
+            "Partial cleanup plan differs from the executing staging directory."
+        )
+    value = json.loads(plan.read_text(), object_pairs_hook=_unique_object)
+    if (
+        not isinstance(value, dict)
+        or value.get("complete") is not False
+        or value.get("directory") != str(directory)
+    ):
+        raise ValueError(
+            "Partial cleanup requires its retained installation envelope."
+        )
+    if directory == plan.parent or directory.is_relative_to(plan.parent):
+        raise ValueError("Retained installation overlaps staging cleanup.")
 
 
 def cleanup_staging(staging: Path) -> None:

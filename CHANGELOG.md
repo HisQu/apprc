@@ -61,6 +61,8 @@ All notable changes to `AppRC` will be documented in this file.
 
 ### ➕ Added
 
+- Windows installations attempt to display the application version in the global executable and Installed apps. Editable checkouts receive an uninstall entry too; optional metadata failures warn without failing installation.
+
 <br>
 
 ### 💔 Changed

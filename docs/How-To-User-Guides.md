@@ -1017,6 +1017,19 @@ demo app install -e
 Alternatively, without activating the environment, run
 `uv run --locked demo app install -e` from the checkout.
 
+On Windows, successful installation also attempts to set the global executable's
+product version and add an entry to Windows Settings → Installed apps. Editable
+checkouts appear there too. Selecting Uninstall uses the existing confirmation
+flow: the checkout and `.venv` remain by default, while managed configuration
+and data are removed. Run `app install -e` again after updating the app to refresh
+Windows' displayed version; `uv sync` alone does not refresh it.
+
+Version display is optional. A metadata failure produces a warning and leaves
+the app installed. Windows' numeric executable version supports plain releases
+such as `0.19.0`; unsupported versions retain the original launcher. The Installed
+apps entry can display the full version string. `--version` remains the way to
+ask the running application for its version.
+
 The command reports the global command and checkout paths after installation.
 On Windows, if replacing the global command is denied, stop running application
 processes, including servers, and retry. If the denial persists, check file

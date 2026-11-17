@@ -16,8 +16,8 @@ from apprc.distribution.runtime._uninstall_controller import (
 def uninstall_package_only(
     directory: Path, *, original_pid: int | None = None
 ) -> NoReturn:
-    """Remove the installed tool while retaining application data and configuration."""
-    preparation = prepare_uninstall(directory, keep_data=True)
+    """Remove the installed tool while retaining configuration only."""
+    preparation = prepare_uninstall(directory, keep_config=True)
     if preparation.plan is None or not preparation.can_execute:
         raise InstallationError("Removal preview is not safe to execute.")
     handoff = start_uninstall_handoff(

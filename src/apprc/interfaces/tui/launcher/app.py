@@ -449,7 +449,7 @@ class LauncherHomeScreen(Screen[None]):
                 asyncio.to_thread(
                     _uninstall_controller.prepare_uninstall,
                     self.context.inspection.directory,
-                    keep_data=None,
+                    keep_config=None,
                 )
             )
             try:
@@ -465,16 +465,17 @@ class LauncherHomeScreen(Screen[None]):
             item.message for item in preparation.diagnostics
         )
         detail = "\n".join(part for part in (entries, diagnostics) if part)
-        preserves_data = (
-            preparation.plan is not None and not preparation.plan.complete
+        preserves_data = preparation.plan is not None and any(
+            entry.resource == "config"
+            for entry in preparation.plan.inventory.retained
         )
         title = (
-            "Remove program and keep data"
+            "Remove program and keep configuration"
             if preserves_data
             else "Remove application and data"
         )
         explanation = (
-            "The native manager will remove program entry points and preserve managed data.\n"
+            "The native manager will remove program entry points and preserve configuration; other managed data is removed.\n"
             if preserves_data
             else "The native manager will remove the program and managed data. Whole-directory targets include all contents:\n"
         )
@@ -488,7 +489,10 @@ class LauncherHomeScreen(Screen[None]):
             ),
         )
         if not preserves_data:
-            actions = (*actions, ("keep-data", "Keep data", "primary"))
+            actions = (
+                *actions,
+                ("keep-config", "Keep configuration", "primary"),
+            )
         result = await self.app.push_screen_wait(
             ConfirmScreen(
                 title=title,
@@ -498,12 +502,12 @@ class LauncherHomeScreen(Screen[None]):
                 actions=actions,
             )
         )
-        if result == "keep-data":
+        if result == "keep-config":
             try:
                 preparation = await asyncio.to_thread(
                     _uninstall_controller.prepare_uninstall,
                     self.context.inspection.directory,
-                    keep_data=True,
+                    keep_config=True,
                 )
             except (OSError, ValueError) as exc:
                 self.notify(str(exc), severity="error", markup=False)
@@ -516,9 +520,9 @@ class LauncherHomeScreen(Screen[None]):
                 return
             confirmed = await self.app.push_screen_wait(
                 ConfirmScreen(
-                    title="Remove program and keep data",
+                    title="Remove program and keep configuration",
                     message=Text(
-                        "Configuration and data will be preserved. Remove program entry points?"
+                        "Configuration will be preserved; other managed data will be removed. Remove program entry points?"
                     ),
                     actions=(("remove", "Remove program", "warning"),),
                 )

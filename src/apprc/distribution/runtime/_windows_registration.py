@@ -229,7 +229,7 @@ def publish_registration(
                 "DisplayName": record.identity.app_id,
                 "DisplayVersion": version,
                 "InstallLocation": str(inspection.directory),
-                "UninstallString": f'"{command}" {group} uninstall',
+                "UninstallString": f'"{command}" {group} uninstall --wait',
             }
             path = inspection.directory / _JOURNAL
             assert_no_links(path)

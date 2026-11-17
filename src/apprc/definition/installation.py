@@ -399,10 +399,6 @@ class InventoryEntry:
             raise InstallationError(
                 "Repository removal is separate from resource categories."
             )
-        if self.kind == "symlink" and self.resource is None:
-            raise InstallationError(
-                "Symbolic-link cleanup requires a recorded resource category."
-            )
         if self.kind == "symlink" and (
             self.revision is None
             or re.fullmatch(r"[0-9a-f]{64}", self.revision) is None

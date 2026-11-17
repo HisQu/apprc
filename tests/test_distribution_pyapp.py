@@ -590,15 +590,12 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
     assert not unrelated_file.exists()
     assert not resource_sentinel.exists()
 
-    # > Program-only uninstall works even when the application venv is absent.
+    # > Config-only retention removes support and all other resources.
     new_host, new_commands = _host(tmp_path / "program-only")
     run(_install(setup_a, new_commands), environment=new_host, cwd=tmp_path)
     new_directory = installation_directory(
         spec.metadata.identity.app_id, environment=new_host
     )
-    new_record = _record(new_directory)
-    active = new_directory / "runtimes" / _active_slot(new_record)
-    shutil.rmtree(active / ".venv")
     unknown_command = new_commands / "unrelated-command"
     unknown_command.write_text("preserve unrelated command", encoding="utf-8")
     unknown_installation_file = new_directory / "unrelated-file"
@@ -606,7 +603,7 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         "preserve unrelated file", encoding="utf-8"
     )
     program_only = run(
-        [str(setup_a), "app", "uninstall", "--keep-data", "--yes"],
+        [str(setup_a), "app", "uninstall", "--keep-config", "--yes"],
         environment=new_host,
         cwd=tmp_path,
         check=False,
@@ -615,15 +612,12 @@ def test_native_managed_update_bridge_doctor_and_editable_lifecycle(
         program_only.stdout + program_only.stderr
     )
     assert not (new_commands / command_name).exists()
-    assert (new_directory / "installation.json").is_file()
+    assert not new_directory.exists()
     assert (
         unknown_command.read_text(encoding="utf-8")
         == "preserve unrelated command"
     )
-    assert (
-        unknown_installation_file.read_text(encoding="utf-8")
-        == "preserve unrelated file"
-    )
+    assert not unknown_installation_file.exists()
 
     # * Editable registration uses the developer's existing environment.
     # * Preserve its package baseline and restore the source after the test.

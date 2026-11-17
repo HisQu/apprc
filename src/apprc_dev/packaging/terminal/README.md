@@ -262,7 +262,7 @@ aliases. Python `ensure_path` and maintenance purge planning remain available
 with their existing [ownership and safety boundaries](https://github.com/HisQu/apprc/blob/main/docs/Explanations.md#maintenance).
 
 Application uninstall removes the program and its managed data by default.
-Use `app uninstall --keep-data` to retain configuration and data. Editable
+Use `app uninstall --keep-config` to retain configuration only. Editable
 repositories remain unless explicitly selected with `--remove-repository`;
 see the [removal guide](https://github.com/HisQu/apprc/blob/main/docs/How-To-User-Guides.md#remove-a-managed-program).
 
